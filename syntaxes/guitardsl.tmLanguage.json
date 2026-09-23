@@ -13,7 +13,7 @@
     },
     {
       "name": "entity.name.section.guitardsl",
-      "match": "\\[[^\]]+\\]"
+      "match": "\\[[^\\]]+\\]"
     },
     {
       "name": "string.quoted.double.lyric.guitardsl",
@@ -21,11 +21,11 @@
     },
     {
       "name": "keyword.operator.barline.guitardsl",
-      "match": "(\\|:|:\\\||\\|\\||\\|)"
+      "match": "(\\|:|:\\||\\|\\||\\|)"
     },
     {
       "name": "entity.name.type.chord.guitardsl",
-      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?\\b"
+      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(:[0-9]+(\\.[0-9]+)?)?\\b"
     },
     {
       "name": "constant.numeric.rhythm.guitardsl",

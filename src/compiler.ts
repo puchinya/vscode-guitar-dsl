@@ -27,7 +27,8 @@ const CHORD_LIBRARY: Record<string, (number | 'x' | 'o')[]> = {
   'A7': ['x', 'o', 2, 'o', 2, 'o'],
   'E7': ['o', 2, 'o', 1, 'o', 'o'],
   'Fmaj7': ['x', 'x', 3, 2, 1, 'o'],
-  'Bm7': ['x', 2, 4, 2, 3, 2]
+  'Bm7': ['x', 2, 4, 2, 3, 2],
+  'Cmaj7': ['x', 3, 2, 'o', 'o', 'o']
 };
 
 interface RhythmItem {
@@ -41,9 +42,14 @@ interface RhythmItem {
   inlineLyric?: string;
 }
 
+export interface ChordPlacement {
+  name: string;
+  beat: number;
+}
+
 interface MeasureData {
   chord: string;
-  chords?: { name: string; beat: number }[];
+  chords: ChordPlacement[];
   repeatStart: boolean;
   repeatEnd: boolean;
   doubleEnd: boolean;
@@ -52,6 +58,36 @@ interface MeasureData {
   sectionName?: string;
   rhythms: RhythmItem[];
   lyric: string;
+}
+
+function parseDurationToBeats(durationStr: string): number {
+  const clean = durationStr.replace(/^r/, '').toLowerCase();
+  switch (clean) {
+    case '1':
+    case 'w':
+      return 4;
+    case '2':
+    case 'h':
+      return 2;
+    case '4':
+    case 'q':
+      return 1;
+    case '8':
+      return 0.5;
+    case '16':
+      return 0.25;
+    default:
+      return 1;
+  }
+}
+
+function parseChordToken(tok: string): { name: string; duration?: number } | null {
+  const match = tok.match(/^([A-G][b#]?(?:maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(?:\/[A-G][b#]?)?)(?::([0-9]+(?:\.[0-9]+)?))?$/);
+  if (!match) return null;
+  return {
+    name: match[1],
+    duration: match[2] !== undefined ? parseFloat(match[2]) : undefined
+  };
 }
 
 export function compileGuitarDslToHtml(dslContent: string): string {
@@ -98,7 +134,7 @@ export function compileGuitarDslToHtml(dslContent: string): string {
       const rawBars = line.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':');
       
       const bars: string[] = [];
-      const CHORD_REGEX = /^[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(\/[A-G][b#]?)?$/;
+      const CHORD_REGEX = /^[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(\/[A-G][b#]?)?(:[0-9]+(\.[0-9]+)?)?$/;
       const RHYTHM_REGEX = /^(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\.[a-z]+)*$/;
 
       let bi = 0;
@@ -106,9 +142,9 @@ export function compileGuitarDslToHtml(dslContent: string): string {
         const cur = rawBars[bi];
         const next = rawBars[bi + 1];
         const curTokens = cur.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
-        const isCurOnlyChord = curTokens.length === 1 && CHORD_REGEX.test(curTokens[0]);
+        const isCurOnlyChords = curTokens.length >= 1 && curTokens.every(t => CHORD_REGEX.test(t));
 
-        if (isCurOnlyChord && next) {
+        if (isCurOnlyChords && next) {
           const nextClean = next.replace(/l:\"[^\"]*\"/, '').trim();
           const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
           const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
@@ -156,14 +192,26 @@ export function compileGuitarDslToHtml(dslContent: string): string {
         }
 
         const tokens = cleanBar.split(/\s+/);
-        let barChord = '';
+        interface RawParsedChord {
+          name: string;
+          duration?: number;
+          accumBeatAtToken: number;
+        }
+        const rawChords: RawParsedChord[] = [];
         const rhythms: RhythmItem[] = [];
+        let runningBeat = 0;
 
-        for (const tok of tokens) {
+        for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
+          const tok = tokens[tokIdx];
           if (!tok || tok === ':' || tok === '|') continue;
-          if (tok.match(CHORD_REGEX)) {
-            barChord = tok;
-            usedChordsSet.add(tok);
+          const parsedChord = parseChordToken(tok);
+          if (parsedChord) {
+            rawChords.push({
+              name: parsedChord.name,
+              duration: parsedChord.duration,
+              accumBeatAtToken: runningBeat
+            });
+            usedChordsSet.add(parsedChord.name);
           } else if (tok.match(/^(\[[12]\.\])$/)) {
             // brackets like [1.] or [2.]
           } else if (RHYTHM_REGEX.test(tok)) {
@@ -193,11 +241,36 @@ export function compileGuitarDslToHtml(dslContent: string): string {
               tie,
               inlineLyric: inlineL
             });
+            runningBeat += parseDurationToBeats(dur);
+          }
+        }
+
+        let barChords: ChordPlacement[] = [];
+        if (rawChords.length === 1) {
+          barChords = [{ name: rawChords[0].name, beat: rawChords[0].accumBeatAtToken }];
+        } else if (rawChords.length > 1) {
+          const allChordsBeforeRhythm = rawChords.every(c => c.accumBeatAtToken === 0);
+          if (allChordsBeforeRhythm) {
+            const anyHasDuration = rawChords.some(c => c.duration !== undefined);
+            if (anyHasDuration) {
+              let curB = 0;
+              barChords = rawChords.map(c => {
+                const b = curB;
+                curB += (c.duration ?? 2);
+                return { name: c.name, beat: b };
+              });
+            } else {
+              const step = 4.0 / rawChords.length;
+              barChords = rawChords.map((c, idx) => ({ name: c.name, beat: idx * step }));
+            }
+          } else {
+            barChords = rawChords.map(c => ({ name: c.name, beat: c.accumBeatAtToken }));
           }
         }
 
         measures.push({
-          chord: barChord,
+          chord: barChords.length > 0 ? barChords[0].name : '',
+          chords: barChords,
           repeatStart: rStart,
           repeatEnd: rEnd,
           doubleEnd: false,
@@ -478,36 +551,9 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       `;
     }
 
-    // Chord (placed clearly above picking marks: baseline at y = 33)
-    if (m.chord) {
-      barsSvg += `<text x="${bx + 8}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
-    }
-
     // Rhythms with duration calculation, Guitar Pro style slash heads, and beam grouping
     const midY = staveLines[2]; // 3rd line = 86
     const stemTopY = 60;
-
-    // Helper: calculate beats from duration string
-    function parseDurationToBeats(durationStr: string): number {
-      const clean = durationStr.replace(/^r/, '').toLowerCase();
-      switch (clean) {
-        case '1':
-        case 'w':
-          return 4;
-        case '2':
-        case 'h':
-          return 2;
-        case '4':
-        case 'q':
-          return 1;
-        case '8':
-          return 0.5;
-        case '16':
-          return 0.25;
-        default:
-          return 1;
-      }
-    }
 
     // Pre-calculate positions and metrics for all rhythm items in this measure
     interface RenderedRhythm {
@@ -559,6 +605,27 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       });
 
       curBeat += beats;
+    });
+
+    // Chords (placed clearly above picking marks: baseline at y = 33)
+    const chordsToRender = m.chords && m.chords.length > 0
+      ? m.chords
+      : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
+
+    let lastChordRight = bx;
+    chordsToRender.forEach((ch, chIdx) => {
+      let chordX = bx + 8;
+      if (chIdx > 0 || ch.beat > 0) {
+        const matchingRhythm = rhythmDetails.find(rd => Math.abs(rd.beatOffset - ch.beat) < 0.05);
+        if (matchingRhythm) {
+          chordX = Math.max(bx + 8, matchingRhythm.rx - 4);
+        } else {
+          chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
+        }
+      }
+      chordX = Math.max(lastChordRight + 6, chordX);
+      lastChordRight = chordX + ch.name.length * 9;
+      barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
     });
 
     // Beam grouping for eighth and sixteenth notes (group by integer beat floor)
