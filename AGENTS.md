@@ -25,6 +25,7 @@ GitHub Markdown transport invariant:
 
 Issue image evidence:
 - Useful/required image evidence SHOULD be attached to the owning Issue with `gh --attach`.
+- For tasks affecting visual rendering or UI (such as score slash notation, beam/rest rendering, SVG output, or webview display), generating, presenting, and attaching rendered preview image evidence (SVG or PNG) is **MANDATORY**.
 - This workflow uses Issue attachments for images only.
 - Required image uploads must be verified after publication.
 

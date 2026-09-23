@@ -82,7 +82,7 @@ A material requirement discovered during implementation that is missing from the
 
 For multiline Issue updates/comments, Pull Request bodies, PR comments, and review bodies, use `--body-file` when the `gh` command supports it. The source file must already contain real newline characters; use `--body` only for genuinely single-line text and never use literal \n as a substitute for an intended line break.
 
-Useful implementation or test screenshots SHOULD be attached to the owning Issue with `gh --attach`. This workflow uses Issue attachments for images only. A required image upload is complete only after checking the resulting Issue/comment and confirming that the expected image asset or link is present; a missing or partial upload cannot be reported as PASS.
+Useful implementation or test screenshots SHOULD be attached to the owning Issue with `gh --attach`. For any task that modifies visual rendering, score notation, SVG output, or webview appearance, generating and attaching rendered preview image evidence (SVG/PNG) is **MANDATORY**, and must be presented to the user during self-review and delivery. This workflow uses Issue attachments for images only. A required image upload is complete only after checking the resulting Issue/comment and confirming that the expected image asset or link is present; a missing or partial upload cannot be reported as PASS.
 
 Keep full Implementation Contracts and raw logs in the existing local Issue-scoped state. Do not paste or convert them into Issue attachments.
 Do not rewrite historical Issue descriptions or comments merely because they contain literal \n.
