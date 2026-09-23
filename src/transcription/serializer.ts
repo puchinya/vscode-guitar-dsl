@@ -20,6 +20,9 @@ function formatRhythmToken(r: RhythmEvent): string {
   if (r.tie) {
     tok += '.t';
   }
+  if (r.arpeggio) {
+    tok += '.arp';
+  }
   return tok;
 }
 
@@ -42,7 +45,9 @@ function isSameRhythm(a: RhythmEvent[], b: RhythmEvent[]): boolean {
     r.duration === b[i].duration &&
     r.direction === b[i].direction &&
     r.accent === b[i].accent &&
-    r.ghost === b[i].ghost
+    r.ghost === b[i].ghost &&
+    r.tie === b[i].tie &&
+    r.arpeggio === b[i].arpeggio
   );
 }
 

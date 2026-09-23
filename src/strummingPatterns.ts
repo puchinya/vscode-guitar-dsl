@@ -754,12 +754,153 @@ export function getPresetById(id: string): StrummingPatternPreset | undefined {
 export type RhythmPatternParseResult =
   | { ok: true; rhythms: RhythmItem[]; beats: Fraction }
   | { ok: false; detail: string };
+/** One stroke of a preset pattern, structurally compatible with the transcription RhythmEvent. */
+export interface PresetStroke {
+  duration: string;
+  direction?: 'd' | 'u';
+  accent?: boolean;
+  ghost?: boolean;
+  tie?: boolean;
+  arpeggio?: boolean;
+}
+
+/**
+ * Splits a preset pattern (e.g. '4.d 8.u.a 1.arp') into strokes: the duration before the first '.',
+ * then the d / u / a / g / t / arp modifiers.
+ */
+export function parsePresetStrokes(pattern: string): PresetStroke[] {
+  return pattern.trim().split(/\s+/).map(token => {
+    const [duration, ...mods] = token.split('.');
+    const stroke: PresetStroke = { duration };
+    for (const mod of mods) {
+      if (mod === 'd' || mod === 'u') stroke.direction = mod;
+      else if (mod === 'a') stroke.accent = true;
+      else if (mod === 'g') stroke.ghost = true;
+      else if (mod === 't') stroke.tie = true;
+      else if (mod === 'arp') stroke.arpeggio = true;
+    }
+    return stroke;
+  });
+}
+
+/**
+ * Replaces the rhythm tokens in a single GuitarDSL measure line with newRhythmPattern.
+ * Preserves chords, barlines (|:, :|, ||, |]), brackets ([1.], [2.]), special marks, and lyrics (l:"...").
+ */
+export function replaceMeasureLineRhythm(line: string, newRhythmPattern: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) return line;
+
+  // Split line by '|'
+  const rawParts = line.split('|');
+  if (rawParts.length < 2) return line;
+
+  // We want to handle format:
+  // '| chords | rhythm |'
+  // '| chords | rhythm l:"..." |'
+  // '| % |' -> '| % | newRhythm |'
+  // '| chords | % |' -> '| chords | newRhythm |'
+
+  const firstBar = rawParts[0]; // e.g. "" or "  "
+  const lastBar = rawParts[rawParts.length - 1]; // e.g. "" or "  "
+
+  const cells = rawParts.slice(1, rawParts.length - 1);
+
+  if (cells.length === 1) {
+    // Single cell: '| chords rhythm |' or '| % |'
+    const cell = cells[0];
+    const lyricMatch = cell.match(/l:\"([^\"]*)\"/);
+    const lyric = lyricMatch ? ` l:"${lyricMatch[1]}"` : '';
+    const cleanCell = cell.replace(/l:\"[^\"]*\"/, '').trim();
+
+    // Check if repeat
+    if (cleanCell === '%') {
+      return `${firstBar}| % | ${newRhythmPattern}${lyric} |${lastBar}`;
+    }
+
+    // Try to extract chords
+    // Chord token pattern
+    const tokens = cleanCell.split(/\s+/).filter(Boolean);
+    const chords: string[] = [];
+    for (const t of tokens) {
+      if (/^[A-G][b#]?(?:m|maj|min|dim|aug|sus[24]|add9|[0-9])*(?:\/[A-G][b#]?)?(?:@[A-Za-z0-9_]+)?(?::[0-9.]+|\/[0-9.t+]+)?$/.test(t)) {
+        chords.push(t);
+      } else {
+        break;
+      }
+    }
+
+    if (chords.length > 0) {
+      return `${firstBar}| ${chords.join(' ')} | ${newRhythmPattern}${lyric} |${lastBar}`;
+    } else {
+      return `${firstBar}| % | ${newRhythmPattern}${lyric} |${lastBar}`;
+    }
+  } else if (cells.length >= 2) {
+    // Standard format: cell 0 is chords, cell 1 is rhythm
+    const chordCell = cells[0];
+    const rhythmCell = cells[1];
+
+    const lyricMatch = rhythmCell.match(/l:\"([^\"]*)\"/);
+    const lyric = lyricMatch ? ` l:"${lyricMatch[1]}"` : '';
+
+    const hasColonStart = rhythmCell.trim().startsWith(':');
+    const hasColonEnd = rhythmCell.trim().endsWith(':');
+    const colonStart = hasColonStart ? ': ' : '';
+    const colonEnd = hasColonEnd ? ' :' : '';
+
+    const chordHasBracket = /\[([0-9]+[.,\-0-9]*)\]/.test(chordCell);
+    const rhythmBracketMatch = rhythmCell.match(/\[([0-9]+[.,\-0-9]*)\]/);
+    const bracket = (!chordHasBracket && rhythmBracketMatch) ? `${rhythmBracketMatch[0]} ` : '';
+
+    const rightPad = hasColonEnd ? '' : ' ';
+    cells[1] = ` ${colonStart}${bracket}${newRhythmPattern}${lyric}${colonEnd}${rightPad}`;
+
+    return `${firstBar}|${cells.join('|')}|${lastBar}`;
+  }
+
+  return line;
+}
 
 /**
  * Parses a rhythm pattern with the GuitarDSL parser itself (one measure of `meter`), so every accepted
  * token is legal DSL. Rejects inline pitches, note groups, `%`, chords and anything the parser reports as an
  * error. `beats` is the exact length in quarter beats.
  */
+export function replaceRhythmInDsl(
+  dslText: string,
+  newRhythmPattern: string,
+  options?: { sectionName?: string }
+): string {
+  const lines = dslText.split(/\r?\n/);
+  const targetSection = options?.sectionName?.trim();
+  let inTargetSection = targetSection === undefined;
+  const resultLines: string[] = [];
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    const sectionMatch = trimmed.match(/^\[(.*)\]$/);
+    if (sectionMatch) {
+      if (targetSection !== undefined) inTargetSection = sectionMatch[1].trim() === targetSection;
+      resultLines.push(rawLine);
+      continue;
+    }
+    if (
+      !inTargetSection ||
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('mel:') ||
+      trimmed.startsWith('lyr:') ||
+      trimmed.startsWith('chord ') ||
+      trimmed.startsWith('---') ||
+      /^pagebreak$/i.test(trimmed) ||
+      !trimmed.includes('|')
+    ) {
+      resultLines.push(rawLine);
+      continue;
+    }
+    resultLines.push(replaceMeasureLineRhythm(rawLine, newRhythmPattern));
+  }
+  return resultLines.join('\n');
+}
+
 export function parseRhythmPattern(pattern: string, meter = '4/4'): RhythmPatternParseResult {
   const tokens = pattern.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return { ok: false, detail: 'empty pattern' };
