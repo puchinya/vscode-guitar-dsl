@@ -51,7 +51,14 @@
       "editor/title": [
         {
           "command": "guitardsl.showPreview",
-          "when": "resourceLangId == guitardsl",
+          "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "guitardsl.showPreview",
+          "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
           "group": "navigation"
         }
       ]
