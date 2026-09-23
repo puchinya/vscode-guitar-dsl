@@ -9,11 +9,15 @@
     },
     {
       "name": "keyword.other.header.guitardsl",
-      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo):"
+      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
     {
       "name": "entity.name.section.guitardsl",
       "match": "\\[[^\\]]+\\]"
+    },
+    {
+      "name": "keyword.control.pagebreak.guitardsl",
+      "match": "^\\s*(---+|(?i:pagebreak))\\s*$"
     },
     {
       "name": "string.quoted.double.lyric.guitardsl",

@@ -1,6 +1,144 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as cp from 'child_process';
 import * as vscode from 'vscode';
-import { compileGuitarDslToHtml } from './compiler';
+import { compileGuitarDslToHtml, compileGuitarDslToPrintHtml, PageSize, PageOrientation } from './compiler';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
+
+export function findHeadlessBrowser(): string | undefined {
+  const platform = process.platform;
+  const candidates: string[] = [];
+
+  if (platform === 'darwin') {
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium'
+    );
+  } else if (platform === 'win32') {
+    const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const localAppData = process.env['LocalAppData'] || '';
+
+    candidates.push(
+      path.join(programFiles, 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(programFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(programFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
+      path.join(programFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe')
+    );
+  } else {
+    // Linux and others
+    candidates.push(
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+      '/snap/bin/chromium'
+    );
+  }
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  // Fallback: check PATH
+  const whichCmd = platform === 'win32' ? 'where' : 'which';
+  for (const bin of ['google-chrome', 'chromium', 'chrome', 'google-chrome-stable', 'msedge']) {
+    try {
+      const out = cp.execSync(`${whichCmd} ${bin}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      const firstLine = out.split(/\r?\n/)[0];
+      if (firstLine && fs.existsSync(firstLine)) {
+        return firstLine;
+      }
+    } catch {
+      // not found in PATH
+    }
+  }
+
+  return undefined;
+}
+
+export async function exportScoreToPdf(
+  doc: vscode.TextDocument,
+  pageSize: PageSize = 'A4',
+  orientation: PageOrientation = 'portrait'
+): Promise<void> {
+  const defaultFileName = doc.fileName.replace(/\.(guitardsl|gdsl)$/i, '') + '.pdf';
+  const targetUri = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(defaultFileName),
+    filters: {
+      'PDF Documents': ['pdf']
+    },
+    title: 'GuitarDSL スコアをPDFとして保存'
+  });
+
+  if (!targetUri) {
+    return;
+  }
+
+  const browserPath = findHeadlessBrowser();
+  if (!browserPath) {
+    vscode.window.showErrorMessage(
+      'PDF保存には Google Chrome、Microsoft Edge、または Chromium が必要です。ブラウザをインストールしてください。'
+    );
+    return;
+  }
+
+  const tmpHtmlPath = path.join(os.tmpdir(), `guitardsl_export_${Date.now()}.html`);
+  const tmpUserDataDir = path.join(os.tmpdir(), `guitardsl_chrome_${Date.now()}`);
+  const htmlContent = compileGuitarDslToPrintHtml(doc.getText(), pageSize, orientation);
+
+  try {
+    fs.writeFileSync(tmpHtmlPath, htmlContent, 'utf8');
+
+    await new Promise<void>((resolve, reject) => {
+      const args = [
+        '--headless=new',
+        '--disable-gpu',
+        '--no-sandbox',
+        '--no-pdf-header-footer',
+        `--user-data-dir=${tmpUserDataDir}`,
+        `--print-to-pdf=${targetUri.fsPath}`,
+        tmpHtmlPath
+      ];
+
+      cp.execFile(browserPath, args, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    const action = await vscode.window.showInformationMessage(
+      `PDFを保存しました: ${path.basename(targetUri.fsPath)}`,
+      'ファイルを開く'
+    );
+    if (action === 'ファイルを開く') {
+      vscode.env.openExternal(targetUri);
+    }
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`PDF保存に失敗しました: ${err.message || err}`);
+  } finally {
+    try {
+      if (fs.existsSync(tmpHtmlPath)) {
+        fs.unlinkSync(tmpHtmlPath);
+      }
+      if (fs.existsSync(tmpUserDataDir)) {
+        fs.rmSync(tmpUserDataDir, { recursive: true, force: true });
+      }
+    } catch {
+      // ignore tmp cleanup error
+    }
+  }
+}
 
 export function isGuitarDslDocument(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
   if (!doc) {
@@ -17,7 +155,7 @@ export async function resolveGuitarDslDocument(
   uri?: vscode.Uri,
   lastDoc?: vscode.TextDocument
 ): Promise<vscode.TextDocument | undefined> {
-  // 1. Uri passed explicitly (e.g. from editor/title menu, explorer context, or command args)
+  // 1. Uri passed explicitly
   if (uri) {
     try {
       const doc = await vscode.workspace.openTextDocument(uri);
@@ -25,7 +163,7 @@ export async function resolveGuitarDslDocument(
         return doc;
       }
     } catch {
-      // Continue fallback on error
+      // Continue fallback
     }
   }
 
@@ -92,6 +230,21 @@ export function activate(context: vscode.ExtensionContext) {
         }
       );
 
+      currentPanel.webview.onDidReceiveMessage(
+        async (message) => {
+          if (message.command === 'savePdf') {
+            const activeDoc = lastActiveGuitarDslDoc || (await resolveGuitarDslDocument(undefined, undefined));
+            if (activeDoc) {
+              await exportScoreToPdf(activeDoc, message.pageSize, message.orientation);
+            } else {
+              vscode.window.showWarningMessage('対象のGuitarDSLドキュメントが見つかりません。');
+            }
+          }
+        },
+        null,
+        context.subscriptions
+      );
+
       currentPanel.onDidDispose(() => {
         currentPanel = undefined;
       }, null, context.subscriptions);
@@ -117,13 +270,13 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }, null, context.subscriptions);
 
-  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', () => {
-    if (!currentPanel) {
-      vscode.commands.executeCommand('guitardsl.showPreview');
+  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (uri?: vscode.Uri) => {
+    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!doc) {
+      vscode.window.showWarningMessage('GuitarDSL (.guitardsl) ファイルを開いてください。');
+      return;
     }
-    setTimeout(() => {
-      currentPanel?.webview.postMessage({ command: 'print' });
-    }, 200);
+    await exportScoreToPdf(doc);
   });
 
   const symbolDisposable = vscode.languages.registerDocumentSymbolProvider(
