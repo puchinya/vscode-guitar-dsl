@@ -17,6 +17,9 @@ function formatRhythmToken(r: RhythmEvent): string {
   if (r.ghost) {
     tok += '.g';
   }
+  if (r.tie) {
+    tok += '.t';
+  }
   return tok;
 }
 

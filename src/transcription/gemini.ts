@@ -21,8 +21,11 @@ export const FIXED_TRANSCRIPTION_PROMPT =
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
   'sequences within each measure must sum to exactly 4 beats. If a vocal melody phrase finishes or pauses early in a measure, ' +
   'you MUST fill the remaining beats of that measure with rest note(s) (pitch: "r") so that every measure sums to EXACTLY 4 beats. ' +
+  'SYNCOPATION & ANTICIPATION: Detect syncopated rhythms, ties, and off-beat chord changes (anticipation / 食いコード). ' +
+  'When a chord change anticipates by an eighth note (e.g. on the 2nd beat off-beat "and"), use note values like duration "4+8" (1.5 beats) and "2+8" (2.5 beats) so the chord change aligns with the syncopation. ' +
+  'When rhythm strumming or melody notes are tied across beats or across the barline, set tie: true (for rhythm) or tieToNext: true (for melody). ' +
   'CRITICAL CHORD DURATION RULES: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). ' +
-  'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2". ' +
+  'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2" unless syncopated (e.g. "4+8" and "2+8"). ' +
   'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
 
 export function buildTranscriptionPrompt(options?: { beatType?: 'auto' | '8beat' | '16beat' }): string {

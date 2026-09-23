@@ -37,6 +37,7 @@ export interface RhythmEvent {
   direction?: 'd' | 'u';
   accent?: boolean;
   ghost?: boolean;
+  tie?: boolean;
 }
 
 export interface MelodyEvent {
@@ -96,7 +97,8 @@ export const MUSIC_IR_JSON_SCHEMA = {
                       duration: { type: 'string', description: 'Rhythm duration (e.g. 4, 8, 16, 8t, 4+8, r4)' },
                       direction: { type: 'string', enum: ['d', 'u'] },
                       accent: { type: 'boolean' },
-                      ghost: { type: 'boolean' }
+                      ghost: { type: 'boolean' },
+                      tie: { type: 'boolean', description: 'True if tied to next stroke (syncopation)' }
                     },
                     required: ['duration']
                   }
@@ -315,6 +317,9 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
         }
         if (rhythmObj.ghost === true) {
           event.ghost = true;
+        }
+        if (rhythmObj.tie === true) {
+          event.tie = true;
         }
         normalizedRhythm.push(event);
       }

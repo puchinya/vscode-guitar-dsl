@@ -36,6 +36,15 @@ describe('render - melody systems', () => {
     assert.strictEqual(g2.rhythmOffset - g1.rhythmOffset, g1.lyricLineHeight);
   });
 
+  it('shifts lyric baseline down dynamically for low melody notes to prevent collisions', () => {
+    const high = parseGuitarDsl(['| C | % |', 'mel: | g4/1 |', 'lyr: あ'].join('\n'));
+    const low = parseGuitarDsl(['| C | % |', 'mel: | g3/1 |', 'lyr: あ'].join('\n'));
+    const gHigh = getSystemGeometry(high.measures, high);
+    const gLow = getSystemGeometry(low.measures, low);
+    assert.strictEqual(gHigh.lyricBaseline, 128);
+    assert.ok(gLow.lyricBaseline > gHigh.lyricBaseline, 'lyricBaseline should shift down for G3');
+  });
+
   it('draws one notehead per melody head and the syllables', () => {
     const svg = svgOf(['| C | % |', 'mel: | c5/4 d e/2 |', 'lyr: ドレミ'].join('\n'));
     assert.strictEqual(count(svg, 'class="notehead"'), 3);
