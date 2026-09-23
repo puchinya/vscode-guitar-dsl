@@ -187,13 +187,22 @@ export function renderRestGlyph(base: NoteBase, rx: number, midY: number, staveL
   return `<g transform="translate(${rx}, ${midY})"><path d="M -1.6,-12 L 3.6,-5.4 C 2,-3.6 1.2,-2 1.6,-0.4 L 3.8,4.2 C 1.4,3.4 -1.4,4.2 -1.4,6.8 C -1.4,8.8 -0.2,10.6 1.2,12 C -2.2,10.8 -4.2,8.4 -4.2,5.8 C -4.2,3.4 -2.4,2.2 0,2.4 L -2.8,-1.6 C -1,-3.2 -0.2,-4.8 -0.6,-6.8 L -3,-9.6 Z" fill="#000"/></g>`;
 }
 
+// Flag outlines in local coordinates: origin at the stem end, x to the right of the stem, y towards the notehead.
+const FLAG_8 = 'M -0.6,0 L 0.7,0 C 1.2,3.6 3.8,5.6 6,8.2 C 8.3,10.9 9.3,14.2 8.4,17.6 C 8,19.2 7.3,20.4 6.4,21.4 C 6.9,18.8 7.1,15.9 5.6,13.4 C 4.2,11.1 1.9,10 -0.6,9.4 Z';
+const FLAG_16 = 'M -0.6,0 L 0.7,0 C 1.2,2.6 3.7,4 5.8,6 C 7.9,8 8.8,10.6 8.2,13.4 C 7.9,14.7 7.3,15.7 6.6,16.5 C 6.9,14.5 6.7,12.6 5.4,11 C 4.1,9.4 1.9,7.2 -0.6,6.6 Z';
+const FLAG_16_GAP = 7.5;
+
+/** Extra stem length for an unbeamed 16th so its two flags stay clear of the notehead. */
+export const FLAG_16_STEM_EXTENSION = 4;
+
 /** Flag(s) for an unbeamed 8th / 16th note. `down` mirrors the flag for a downward stem ending at stemEndY. */
 export function renderFlags(base: NoteBase, stemX: number, stemEndY: number, down = false, opacity = '1.0'): string {
   if (base < 8) return '';
-  const flag = (y: number) => `<path d="M ${stemX},${y} C ${stemX + 4},${y + 4} ${stemX + 6},${y + 8} ${stemX + 6},${y + 13} C ${stemX + 4},${y + 10} ${stemX + 2},${y + 8} ${stemX},${y + 6} Z" fill="#000" opacity="${opacity}"/>`;
-  let out = flag(stemEndY);
-  if (base >= 16) out += flag(stemEndY + 5);
-  return down ? `<g transform="translate(0, ${fmt(2 * stemEndY)}) scale(1, -1)">${out}</g>` : out;
+  const paths = base >= 16
+    ? `<path d="${FLAG_16}"/><path d="${FLAG_16}" transform="translate(0, ${FLAG_16_GAP})"/>`
+    : `<path d="${FLAG_8}"/>`;
+  // Narrowed horizontally so the flag clears a closely following rest in dense 16th passages.
+  return `<g transform="translate(${fmt(stemX)}, ${fmt(stemEndY)}) scale(0.85, ${down ? -1 : 1})" fill="#000" opacity="${opacity}">${paths}</g>`;
 }
 
 /** Sharp / flat / natural drawn as vector paths (independent of the embedded font). */
