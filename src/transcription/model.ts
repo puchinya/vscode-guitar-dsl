@@ -1,7 +1,7 @@
 // Music IR v1 data models, JSON schema and semantic validation for transcription.
 // Pure module independent of VS Code APIs and Gemini SDK.
 
-import { ZERO, fadd, feq, fnum, frac, parseNoteValue, parseRhythmDuration } from '../duration';
+import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, parseNoteValue, parseRhythmDuration } from '../duration';
 import { parseKeySignature } from '../compiler';
 import { isValidChordName } from '../chordDefinition';
 
@@ -130,15 +130,43 @@ export type ValidationResult =
   | { valid: true; song: TranscribedSong }
   | { valid: false; error: string };
 
+export interface ValidationOptions {
+  autoRepair?: boolean;
+}
+
 const FOUR_BEATS = frac(4, 1);
 const MELODY_PITCH_RE = /^(?:r|[a-g][b#]?[0-9])$/;
+
+function durationPartToString(p: NoteValuePart): string {
+  if (p.triplet) return `${p.base}t`;
+  if (p.dotted) return `${p.base}.`;
+  return `${p.base}`;
+}
+
+function decomposeToBeatsOrTriplets(beats: Fraction): NoteValuePart[] | null {
+  const parts = decomposeBeats(beats);
+  if (parts && parts.length > 0) {
+    return parts;
+  }
+  if (beats.d === 3 && beats.n > 0) {
+    const res: NoteValuePart[] = [];
+    let remN = beats.n;
+    while (remN >= 4) { res.push({ base: 2, dotted: false, triplet: true }); remN -= 4; }
+    while (remN >= 2) { res.push({ base: 4, dotted: false, triplet: true }); remN -= 2; }
+    while (remN >= 1) { res.push({ base: 8, dotted: false, triplet: true }); remN -= 1; }
+    return res;
+  }
+  return null;
+}
 
 /**
  * Validates a parsed JSON payload into a semantically valid TranscribedSong.
  * Rejects invalid meters (non-4/4), out-of-range BPM, invalid chord names/durations,
  * and measures whose durations do not sum to exactly 4 beats.
+ * When options.autoRepair is true, automatically pads short melody/rhythm measures with rests
+ * or trims slight excesses to ensure exact 4-beat alignment.
  */
-export function validateTranscribedSong(data: unknown): ValidationResult {
+export function validateTranscribedSong(data: unknown, options?: ValidationOptions): ValidationResult {
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Transcription data must be an object' };
   }
@@ -229,6 +257,25 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
         normalizedChords.push({ name: chordName, duration: chordDur });
       }
 
+      if (!feq(chordBeats, FOUR_BEATS) && options?.autoRepair) {
+        if (normalizedChords.length === 1) {
+          normalizedChords[0].duration = '1';
+          chordBeats = FOUR_BEATS;
+        } else if (fcmp(chordBeats, FOUR_BEATS) < 0) {
+          const deficit = fsub(FOUR_BEATS, chordBeats);
+          const lastChord = normalizedChords[normalizedChords.length - 1];
+          const lastVal = parseNoteValue(lastChord.duration);
+          if (lastVal) {
+            const newBeats = fadd(lastVal.beats, deficit);
+            const parts = decomposeToBeatsOrTriplets(newBeats);
+            if (parts && parts.length > 0) {
+              lastChord.duration = durationPartToString(parts[0]);
+              chordBeats = FOUR_BEATS;
+            }
+          }
+        }
+      }
+
       if (!feq(chordBeats, FOUR_BEATS)) {
         return {
           valid: false,
@@ -272,6 +319,44 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
         normalizedRhythm.push(event);
       }
 
+      if (!feq(rhythmBeats, FOUR_BEATS) && options?.autoRepair) {
+        if (fcmp(rhythmBeats, FOUR_BEATS) < 0) {
+          const deficit = fsub(FOUR_BEATS, rhythmBeats);
+          const parts = decomposeToBeatsOrTriplets(deficit);
+          if (parts && parts.length > 0) {
+            for (const p of parts) {
+              normalizedRhythm.push({
+                duration: durationPartToString(p),
+                direction: 'd'
+              });
+            }
+            rhythmBeats = FOUR_BEATS;
+          }
+        } else {
+          let excess = fsub(rhythmBeats, FOUR_BEATS);
+          while (fcmp(excess, ZERO) > 0 && normalizedRhythm.length > 0) {
+            const last = normalizedRhythm[normalizedRhythm.length - 1];
+            const lastVal = parseRhythmDuration(last.duration);
+            if (!lastVal) break;
+            if (fcmp(lastVal.beats, excess) <= 0) {
+              normalizedRhythm.pop();
+              excess = fsub(excess, lastVal.beats);
+            } else {
+              const newBeats = fsub(lastVal.beats, excess);
+              const parts = decomposeToBeatsOrTriplets(newBeats);
+              if (parts && parts.length > 0) {
+                last.duration = durationPartToString(parts[0]);
+                excess = ZERO;
+              }
+              break;
+            }
+          }
+          if (feq(excess, ZERO)) {
+            rhythmBeats = FOUR_BEATS;
+          }
+        }
+      }
+
       if (!feq(rhythmBeats, FOUR_BEATS)) {
         return {
           valid: false,
@@ -313,6 +398,51 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
 
           melodyBeats = fadd(melodyBeats, noteVal.beats);
           normalizedMelody.push(melEvent);
+        }
+
+        if (!feq(melodyBeats, FOUR_BEATS) && options?.autoRepair) {
+          if (fcmp(melodyBeats, FOUR_BEATS) < 0) {
+            const deficit = fsub(FOUR_BEATS, melodyBeats);
+            const parts = decomposeToBeatsOrTriplets(deficit);
+            if (parts && parts.length > 0) {
+              for (const p of parts) {
+                normalizedMelody.push({
+                  pitch: 'r',
+                  duration: durationPartToString(p)
+                });
+              }
+              melodyBeats = FOUR_BEATS;
+            }
+          } else {
+            let excess = fsub(melodyBeats, FOUR_BEATS);
+            while (fcmp(excess, ZERO) > 0 && normalizedMelody.length > 0) {
+              const last = normalizedMelody[normalizedMelody.length - 1];
+              const lastVal = parseNoteValue(last.duration);
+              if (!lastVal) break;
+              if (fcmp(lastVal.beats, excess) <= 0) {
+                normalizedMelody.pop();
+                excess = fsub(excess, lastVal.beats);
+              } else {
+                const newBeats = fsub(lastVal.beats, excess);
+                const parts = decomposeToBeatsOrTriplets(newBeats);
+                if (parts && parts.length > 0) {
+                  last.duration = durationPartToString(parts[0]);
+                  for (let i = 1; i < parts.length; i++) {
+                    normalizedMelody.push({
+                      pitch: last.pitch,
+                      duration: durationPartToString(parts[i]),
+                      tieToNext: last.tieToNext
+                    });
+                  }
+                  excess = ZERO;
+                }
+                break;
+              }
+            }
+            if (feq(excess, ZERO)) {
+              melodyBeats = FOUR_BEATS;
+            }
+          }
         }
 
         if (!feq(melodyBeats, FOUR_BEATS)) {

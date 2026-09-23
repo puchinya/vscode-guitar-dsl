@@ -218,7 +218,7 @@ describe('transcription - model & semantic validation', () => {
     }
   });
 
-  it('rejects melody totals that do not equal 4 beats', () => {
+  it('rejects melody totals that do not equal 4 beats when autoRepair is false', () => {
     const input = {
       ...baseValidSong,
       sections: [
@@ -238,6 +238,72 @@ describe('transcription - model & semantic validation', () => {
     assert.strictEqual(res.valid, false);
     if (!res.valid) {
       assert.ok(res.error.includes('Melody durations'));
+    }
+  });
+
+  it('auto-repairs melody with 3.5 beats by padding with an 8th rest when autoRepair is true', () => {
+    const input = {
+      ...baseValidSong,
+      sections: [
+        {
+          name: 'Verse 1',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '1' }],
+              rhythm: [{ duration: '1' }],
+              // 7 eighth notes = 3.5 beats (missing 0.5 beat rest at end of phrase)
+              melody: [
+                { pitch: 'g4', duration: '8', lyric: 'き' },
+                { pitch: 'g4', duration: '8', lyric: 'み' },
+                { pitch: 'a4', duration: '8', lyric: 'を' },
+                { pitch: 'g4', duration: '8', lyric: 'わ' },
+                { pitch: 'e4', duration: '8', lyric: 'す' },
+                { pitch: 'd4', duration: '8', lyric: 'れ' },
+                { pitch: 'c4', duration: '8', lyric: 'な' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const res = validateTranscribedSong(input, { autoRepair: true });
+    assert.strictEqual(res.valid, true);
+    if (res.valid) {
+      const mel = res.song.sections[0].measures[0].melody!;
+      assert.strictEqual(mel.length, 8);
+      // The 8th note is the padded rest
+      assert.strictEqual(mel[7].pitch, 'r');
+      assert.strictEqual(mel[7].duration, '8');
+    }
+  });
+
+  it('auto-repairs rhythm and chords when autoRepair is true', () => {
+    const input = {
+      ...baseValidSong,
+      sections: [
+        {
+          name: 'Chorus',
+          measures: [
+            {
+              // Chords missing duration for full 4 beats
+              chords: [{ name: 'C', duration: '2' }],
+              // Rhythm totaling only 3 beats
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const res = validateTranscribedSong(input, { autoRepair: true });
+    assert.strictEqual(res.valid, true);
+    if (res.valid) {
+      const meas = res.song.sections[0].measures[0];
+      assert.strictEqual(meas.chords[0].duration, '1');
+      assert.strictEqual(meas.rhythm.length, 4);
     }
   });
 

@@ -19,7 +19,8 @@ export const FIXED_TRANSCRIPTION_PROMPT =
   'STRUMMING & ARPEGGIO GUIDELINES: Prioritize classic, natural guitar accompaniment patterns (such as standard 8-beat "4.d 8.d 8.u 8.d 8.u 4.d", basic 8-beat "4.d 4.d 8.d 8.u 8.d 8.u", 16-beat "4.d 8.d 16.d 16.u 8.d 8.u 8.d 8.u", 8th-note fingerpicking arpeggios "8 8 8 8 8 8 8 8", triplet arpeggios, or sustained whole/half notes) rather than erratic or overly complex variations. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
-  'sequences within each measure must sum to exactly 4 beats. ' +
+  'sequences within each measure must sum to exactly 4 beats. If a vocal melody phrase finishes or pauses early in a measure, ' +
+  'you MUST fill the remaining beats of that measure with rest note(s) (pitch: "r") so that every measure sums to EXACTLY 4 beats. ' +
   'CRITICAL CHORD DURATION RULES: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). ' +
   'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2". ' +
   'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
@@ -149,7 +150,7 @@ export async function transcribeWithGemini(options: GeminiTranscriptionOptions):
     throw new Error('Gemini model response was not valid JSON.');
   }
 
-  const validation = validateTranscribedSong(parsedJson);
+  const validation = validateTranscribedSong(parsedJson, { autoRepair: true });
   if (!validation.valid) {
     throw new Error(`Invalid transcription data: ${validation.error}`);
   }
