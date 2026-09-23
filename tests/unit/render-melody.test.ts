@@ -104,6 +104,28 @@ describe('render - melody systems', () => {
     assert.ok(svg.includes('translate(') && !svg.includes('M 1.2,-14.5'));
   });
 
+  it('draws one flag for an unbeamed 8th and two separated flags for an unbeamed 16th', () => {
+    const flag8 = 'M -0.6,0 L 0.7,0 C 1.2,3.6';
+    const flag16 = 'M -0.6,0 L 0.7,0 C 1.2,2.6';
+    const svg = svgOf(['| C | % |', 'mel: | c5/8 r/8 d/16 r/16 r/8 r/2 |'].join('\n'));
+    assert.strictEqual(count(svg, flag8), 1);
+    assert.strictEqual(count(svg, flag16), 2);
+    assert.ok(svg.includes('transform="translate(0, 7.5)"'));
+    // B4 and above have downward stems, so their flags are mirrored.
+    assert.ok(svg.includes('scale(0.85, -1)'));
+
+    const rhythm = svgOf('| C | 8.d r8 16.d r16 r8 r2 |');
+    assert.strictEqual(count(rhythm, flag8), 1);
+    assert.strictEqual(count(rhythm, flag16), 2);
+    assert.ok(rhythm.includes('scale(0.85, 1)'));
+  });
+
+  it('extends the stem of an unbeamed 16th so both flags clear the notehead', () => {
+    // c5 (pos 5, y = 82) has a downward stem: 26 + 4 = 30 below the head centre.
+    const svg = svgOf(['| C | % |', 'mel: | c5/16 r/16 r/8 r/4 r/2 |'].join('\n'));
+    assert.ok(/translate\([\d.]+, 112\) scale\(0\.85, -1\)/.test(svg));
+  });
+
   it('draws flats with vector paths', () => {
     const svg = svgOf(['| C | % |', 'mel: | bb4/1 |'].join('\n'));
     assert.strictEqual(count(svg, FLAT), 1);

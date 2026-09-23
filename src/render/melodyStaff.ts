@@ -7,6 +7,7 @@ import { MelodyNote, Pitch } from '../melody';
 import { MELODY_STAVE_BOTTOM, MELODY_STAVE_TOP, SystemGeometry, estimateTextWidth } from './layout';
 import {
   FETA_TREBLE_CLEF_PATH,
+  FLAG_16_STEM_EXTENSION,
   RenderContext,
   chordXAt,
   computeMeasureColumns,
@@ -130,6 +131,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
         const x = columns.xAt(h.offset) ?? bx + width / 2;
         const pos = note.pitch ? staffPosition(note.pitch) : 4;
         const stemUp = pos < 4;
+        // Beamed stems are recomputed later; only an unbeamed 16th keeps this extension.
+        const stemLength = STEM_LENGTH + (h.part.base >= 16 ? FLAG_16_STEM_EXTENSION : 0);
         heads.push({
           measureIdx: idx,
           note,
@@ -143,7 +146,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
           isLastPart: i === expanded.length - 1,
           stemUp,
           stemX: stemUp ? x + HEAD_RX - 0.4 : x - HEAD_RX + 0.4,
-          stemEndY: stemUp ? yOf(pos) - STEM_LENGTH : yOf(pos) + STEM_LENGTH,
+          stemEndY: stemUp ? yOf(pos) - stemLength : yOf(pos) + stemLength,
           beamed: false
         });
         offset = fadd(h.offset, h.beats);
