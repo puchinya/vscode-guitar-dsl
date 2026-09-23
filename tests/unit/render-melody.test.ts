@@ -63,6 +63,40 @@ describe('render - melody systems', () => {
     assert.strictEqual(count(svg, NATURAL), 1);
   });
 
+  it('handles flat keys, minor keys and tied notes', () => {
+    // F major: bb needs no accidental, b natural does.
+    const f = svgOf(['key: F', '| F | % |', 'mel: | bb4/2 b4/2 |'].join('\n'));
+    assert.strictEqual(count(f, FLAT), 1, 'only the key signature flat');
+    assert.strictEqual(count(f, NATURAL), 1);
+    // D minor has one flat as well.
+    assert.strictEqual(count(svgOf(['key: Dm', '| Dm | % |', 'mel: | d4/1 |'].join('\n')), FLAT), 1);
+    // A tied f# carried into the next measure is not marked again.
+    const tie = svgOf(['| C | % |', '| C | % |', 'mel: | c5/2. f#4/4~ | f#4/1 |'].join('\n'));
+    assert.strictEqual(count(tie, SHARP), 1);
+  });
+
+  it('draws a bracket for unbeamed triplets', () => {
+    const svg = svgOf(['| C | % |', 'mel: | c5/4t d e f/2 |'].join('\n'));
+    assert.strictEqual(count(svg, '>3</text>'), 1);
+    assert.ok(svg.includes('stroke-width="0.8"/><text'), 'bracket path precedes the number');
+  });
+
+  it('draws beat slashes for melody-less measures in a lead-sheet system', () => {
+    const mixed = renderContinuousSvg(parseGuitarDsl([
+      'show_rhythm: false',
+      'measures_per_row: 2',
+      '[A]',
+      '| C | 4.d 4.d 4.d 4.d l:"らら" |',
+      '[B]',
+      '| G | 4.d 4.d 4.d 4.d |',
+      'mel: | c5/1 |'
+    ].join('\n')));
+    // 4 beat slashes (no stems, no stroke marks) for the melody-less measure, plus its l:"..." lyric.
+    assert.strictEqual(count(mixed, 'stroke-linejoin="round" opacity="1.0"/>'), 0);
+    assert.strictEqual(count(mixed, '<polygon'), 4);
+    assert.ok(mixed.includes('らら'));
+  });
+
   it('draws flats with vector paths', () => {
     const svg = svgOf(['| C | % |', 'mel: | bb4/1 |'].join('\n'));
     assert.strictEqual(count(svg, FLAT), 1);
