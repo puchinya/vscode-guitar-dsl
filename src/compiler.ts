@@ -1,3 +1,4 @@
+const FETA_TREBLE_CLEF_PATH = "m12.049 3.5296c0.305 3.1263-2.019 5.6563-4.0772 7.7014-0.9349 0.897-0.155 0.148-0.6437 0.594-0.1022-0.479-0.2986-1.731-0.2802-2.11 0.1304-2.6939 2.3198-6.5875 4.2381-8.0236 0.309 0.5767 0.563 0.6231 0.763 1.8382zm0.651 16.142c-1.232-0.906-2.85-1.144-4.3336-0.885-0.1913-1.255-0.3827-2.51-0.574-3.764 2.3506-2.329 4.9066-5.0322 5.0406-8.5394 0.059-2.232-0.276-4.6714-1.678-6.4836-1.7004 0.12823-2.8995 2.156-3.8019 3.4165-1.4889 2.6705-1.1414 5.9169-0.57 8.7965-0.8094 0.952-1.9296 1.743-2.7274 2.734-2.3561 2.308-4.4085 5.43-4.0046 8.878 0.18332 3.334 2.5894 6.434 5.8702 7.227 1.2457 0.315 2.5639 0.346 3.8241 0.099 0.2199 2.25 1.0266 4.629 0.0925 6.813-0.7007 1.598-2.7875 3.004-4.3325 2.192-0.5994-0.316-0.1137-0.051-0.478-0.252 1.0698-0.257 1.9996-1.036 2.26-1.565 0.8378-1.464-0.3998-3.639-2.1554-3.358-2.262 0.046-3.1904 3.14-1.7356 4.685 1.3468 1.52 3.833 1.312 5.4301 0.318 1.8125-1.18 2.0395-3.544 1.8325-5.562-0.07-0.678-0.403-2.67-0.444-3.387 0.697-0.249 0.209-0.059 1.193-0.449 2.66-1.053 4.357-4.259 3.594-7.122-0.318-1.469-1.044-2.914-2.302-3.792zm0.561 5.757c0.214 1.991-1.053 4.321-3.079 4.96-0.136-0.795-0.172-1.011-0.2626-1.475-0.4822-2.46-0.744-4.987-1.116-7.481 1.6246-0.168 3.4576 0.543 4.0226 2.184 0.244 0.577 0.343 1.197 0.435 1.812zm-5.1486 5.196c-2.5441 0.141-4.9995-1.595-5.6343-4.081-0.749-2.153-0.5283-4.63 0.8207-6.504 1.1151-1.702 2.6065-3.105 4.0286-4.543 0.183 1.127 0.366 2.254 0.549 3.382-2.9906 0.782-5.0046 4.725-3.215 7.451 0.5324 0.764 1.9765 2.223 2.7655 1.634-1.102-0.683-2.0033-1.859-1.8095-3.227-0.0821-1.282 1.3699-2.911 2.6513-3.198 0.4384 2.869 0.9413 6.073 1.3797 8.943-0.5054 0.1-1.0211 0.143-1.536 0.143z";
 interface ChordDiagram {
   name: string;
   strings: (number | 'x' | 'o')[]; // 6th string to 1st string
@@ -92,10 +93,38 @@ export function compileGuitarDslToHtml(dslContent: string): string {
       continue;
     }
 
-    // Measure line: | C | 4.d 4.d 4.d 4.d l:"..." |
+    // Measure line: | C | 4.d 4.d 4.d 4.d l:"..." | or | C 4.d ... |
     if (line.includes('|')) {
-      const rawBars = line.split('|').map(s => s.trim()).filter(s => s.length > 0);
-      for (const bar of rawBars) {
+      const rawBars = line.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':');
+      
+      const bars: string[] = [];
+      const CHORD_REGEX = /^[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(\/[A-G][b#]?)?$/;
+      const RHYTHM_REGEX = /^(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\.[a-z]+)*$/;
+
+      let bi = 0;
+      while (bi < rawBars.length) {
+        const cur = rawBars[bi];
+        const next = rawBars[bi + 1];
+        const curTokens = cur.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
+        const isCurOnlyChord = curTokens.length === 1 && CHORD_REGEX.test(curTokens[0]);
+
+        if (isCurOnlyChord && next) {
+          const nextClean = next.replace(/l:\"[^\"]*\"/, '').trim();
+          const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
+          const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
+          const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]));
+
+          if (!nextHasChord && nextHasRhythm) {
+            bars.push(cur + ' ' + next);
+            bi += 2;
+            continue;
+          }
+        }
+        bars.push(cur);
+        bi++;
+      }
+
+      for (const bar of bars) {
         if (bar === ':' || bar === '') continue;
 
         let mLyric = '';
@@ -182,7 +211,7 @@ export function compileGuitarDslToHtml(dslContent: string): string {
   const measuresPerRow = 4;
   const sysWidth = 780;
   const barWidth = sysWidth / measuresPerRow;
-  const sysHeight = 120;
+  const sysHeight = 140;
 
   for (let i = 0; i < measures.length; i += measuresPerRow) {
     const rowMeasures = measures.slice(i, i + measuresPerRow);
@@ -382,25 +411,25 @@ function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string
 }
 
 function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
-  const staveY = 55;
+  const staveY = 70;
   const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
 
   let staveSvg = '';
   staveLines.forEach(y => {
     staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
   });
-  staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="25" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+  staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
 
-  let clefSvg = '';
+  // Treble clef appears at the start of every system row (standard musical notation convention)
+  let clefSvg = `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
   if (isFirst) {
-    // Treble Clef
-    clefSvg += `<path d="M 35,${staveY + 28} C 37,${staveY + 31} 41,${staveY + 31} 42,${staveY + 29} C 43,${staveY + 26} 41,${staveY + 24} 38,${staveY + 24} C 32,${staveY + 24} 29,${staveY + 15} 35,${staveY + 8} C 39,${staveY + 3} 44,${staveY + 7} 42,${staveY + 15} C 40,${staveY + 22} 30,${staveY + 20} 30,${staveY + 13} C 30,${staveY + 9} 33,${staveY + 7} 35,${staveY + 7} C 36,${staveY + 7} 37,${staveY + 8} 36,${staveY + 10} C 35,${staveY + 11} 34,${staveY + 11} 33,${staveY + 13} C 33,${staveY + 16} 38,${staveY + 16} 38,${staveY + 12} C 38,${staveY + 5} 29,${staveY} 36,${staveY - 13} C 39,${staveY - 19} 42,${staveY - 16} 41,${staveY - 10} C 39,${staveY + 3} 38,${staveY + 15} 38,${staveY + 29} C 38,${staveY + 39} 33,${staveY + 42} 29,${staveY + 38} C 27,${staveY + 36} 29,${staveY + 33} 31,${staveY + 34} C 33,${staveY + 35} 35,${staveY + 33} 34,${staveY + 30} Z" fill="#000"/>`;
-    clefSvg += `<text x="50" y="${staveY + 14}" font-family="Arial" font-size="14" font-weight="bold">4</text>`;
-    clefSvg += `<text x="50" y="${staveY + 30}" font-family="Arial" font-size="14" font-weight="bold">4</text>`;
+    clefSvg += `<text x="58" y="${staveY + 14}" font-family="Arial, sans-serif" font-size="14" font-weight="bold">4</text>`;
+    clefSvg += `<text x="58" y="${staveY + 30}" font-family="Arial, sans-serif" font-size="14" font-weight="bold">4</text>`;
   }
 
   let barsSvg = '';
-  const startX = isFirst ? 65 : 25;
+  // Align measure barlines consistently across all rows
+  const startX = 78;
   const usableWidth = (totalWidth - 5) - startX;
   const actualBarWidth = usableWidth / measures.length;
 
@@ -425,53 +454,55 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
     }
 
-    // Section Label
+    // Section Label (placed at the top: y = 6 to 22)
     if (m.sectionName) {
       barsSvg += `
-        <rect x="${bx + 4}" y="${staveY - 45}" width="${m.sectionName.length * 9 + 14}" height="18" fill="#fff" stroke="#000" stroke-width="1.2"/>
-        <text x="${bx + 11}" y="${staveY - 32}" font-family="Arial" font-size="10" font-weight="bold">${escapeXml(m.sectionName)}</text>
+        <rect x="${bx + 4}" y="6" width="${m.sectionName.length * 9 + 14}" height="16" fill="#fff" stroke="#000" stroke-width="1.2"/>
+        <text x="${bx + 11}" y="18" font-family="Arial, sans-serif" font-size="10" font-weight="bold">${escapeXml(m.sectionName)}</text>
       `;
     }
 
-    // Chord
+    // Chord (placed clearly above picking marks: baseline at y = 42)
     if (m.chord) {
-      barsSvg += `<text x="${bx + 8}" y="${staveY - 8}" font-family="Arial" font-size="14" font-weight="900">${escapeXml(m.chord)}</text>`;
+      barsSvg += `<text x="${bx + 8}" y="42" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
     }
 
     // Rhythms
     const rCount = m.rhythms.length;
     const rStep = (actualBarWidth - 20) / (rCount > 0 ? rCount : 1);
-    const midY = staveLines[2]; // 3rd line
+    const midY = staveLines[2]; // 3rd line = 86
 
     m.rhythms.forEach((r, rIdx) => {
       const rx = bx + 12 + rIdx * rStep;
       if (r.isRest) {
-        // Simple quarter/eighth rest shape
-        barsSvg += `<text x="${rx - 4}" y="${midY + 5}" font-family="Arial" font-size="14" font-weight="bold" fill="#333">𝄽</text>`;
+        // Quarter/eighth rest shape
+        barsSvg += `<text x="${rx - 4}" y="${midY + 5}" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">𝄽</text>`;
       } else {
         const opacity = r.ghost ? '0.35' : '1.0';
-        // Slash head
-        barsSvg += `<polygon points="${rx-6},${midY+3} ${rx-3},${midY+5} ${rx+6},${midY-3} ${rx+3},${midY-5}" fill="#000" opacity="${opacity}"/>`;
-        // Stem
-        barsSvg += `<line x1="${rx+4}" y1="${midY-3}" x2="${rx+4}" y2="${midY-24}" stroke="#000" stroke-width="1.3" opacity="${opacity}"/>`;
+        // Slash head centered around midY (86)
+        barsSvg += `<polygon points="${rx-6},${midY+4} ${rx-3},${midY+6} ${rx+6},${midY-3} ${rx+3},${midY-5}" fill="#000" opacity="${opacity}"/>`;
+        // Stem (from y=62 to y=midY-3=83)
+        barsSvg += `<line x1="${rx+4}" y1="62" x2="${rx+4}" y2="${midY-3}" stroke="#000" stroke-width="1.3" opacity="${opacity}"/>`;
 
-        // Down / Up stroke
+        // Down / Up stroke mark (placed at y=52 to 57, above stem y=62, below chord y=42)
+        const py = 52;
         if (r.down) {
-          barsSvg += `<path d="M ${rx+1},${midY-28} L ${rx+1},${midY-33} L ${rx+7},${midY-33} L ${rx+7},${midY-28}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
+          barsSvg += `<path d="M ${rx+1},${py+5} L ${rx+1},${py} L ${rx+7},${py} L ${rx+7},${py+5}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
         } else if (r.up) {
-          barsSvg += `<path d="M ${rx+1},${midY-33} L ${rx+4},${midY-28} L ${rx+7},${midY-33}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
+          barsSvg += `<path d="M ${rx+1},${py} L ${rx+4},${py+5} L ${rx+7},${py}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
         }
 
-        // Accent
+        // Accent (placed at y=46 to 51)
+        const ay = 46;
         if (r.accent) {
-          barsSvg += `<path d="M ${rx+1},${midY-37} L ${rx+7},${midY-35} L ${rx+1},${midY-33}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+          barsSvg += `<path d="M ${rx+1},${ay} L ${rx+7},${ay+3} L ${rx+1},${ay+6}" fill="none" stroke="#000" stroke-width="1.4"/>`;
         }
       }
     });
 
-    // Lyric
+    // Lyric (placed below bottom stave line: baseline y = 120)
     if (m.lyric) {
-      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 16}" font-family="sans-serif" font-size="9" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
     }
   });
 
@@ -484,7 +515,6 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       </svg>
     </div>`;
 }
-
 function escapeXml(str: string): string {
   return str.replace(/[&<>"']/g, c => {
     switch (c) {
