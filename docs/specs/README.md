@@ -6,6 +6,7 @@
 
 | ドキュメント | 概要 |
 |---|---|
+| [`extension.md`](extension.md) | VS Code 拡張機能仕様書（コマンド、エディタ連携、プレビューUI、PDFエクスポート、アウトライン仕様） |
 | [`guitardsl-syntax.md`](guitardsl-syntax.md) | GuitarDSL 言語構文仕様書（メタデータ、セクション、小節線、コード、リズム、歌詞、描画規則） |
 
 ## ドキュメントの位置づけ
