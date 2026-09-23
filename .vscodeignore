@@ -1,0 +1,24 @@
+# Development / agent state
+.agent-state/**
+.vscode/**
+.vscode-test/**
+.github/**
+.gitignore
+
+# Sources, tests and build helpers (the extension runs from out/)
+src/**
+tests/**
+out/tests/**
+scripts/**
+**/tsconfig.json
+**/*.ts
+**/*.map
+
+# Documentation for developers / agents
+docs/**
+docs_only_human/**
+AGENTS.md
+CLAUDE.md
+
+# Sample scores
+samples/**
