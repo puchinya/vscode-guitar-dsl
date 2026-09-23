@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { compileGuitarDslToHtml } from './compiler';
+import { GuitarDslDocumentSymbolProvider } from './symbols';
 
 export function isGuitarDslDocument(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
   if (!doc) {
@@ -125,7 +126,12 @@ export function activate(context: vscode.ExtensionContext) {
     }, 200);
   });
 
-  context.subscriptions.push(previewDisposable, printDisposable);
+  const symbolDisposable = vscode.languages.registerDocumentSymbolProvider(
+    { language: 'guitardsl' },
+    new GuitarDslDocumentSymbolProvider()
+  );
+
+  context.subscriptions.push(previewDisposable, printDisposable, symbolDisposable);
 }
 
 export function deactivate() {}
