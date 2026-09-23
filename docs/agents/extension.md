@@ -15,11 +15,12 @@ The extension provides visualization and language support for GuitarDSL files (`
 - Entry point: `src/extension.ts` (`activate`, `deactivate`).
 - Commands registered in `package.json`:
   - `guitardsl.showPreview`: Opens or reveals a side-by-side WebviewPanel rendering the current GuitarDSL document.
-  - `guitardsl.exportPdf`: Triggers print / PDF export via the webview preview.
+  - `guitardsl.exportPdf`: Exports the score to PDF in-process (pdfkit, no browser).
 
 ### 3. Compiler & Rendering Pipeline
-- Module: `src/compiler.ts`.
-- Compiles GuitarDSL text into musical structures (rhythm slash notations, chord charts, tab scores) and renders SVG / HTML output for webview presentation.
+- `src/compiler.ts`: parses GuitarDSL text into the score AST (`ParsedScore`) only. It must not depend on rendering modules.
+- `src/render/`: layout (`layout.ts`), page SVG rendering (`svg.ts`), chord data (`chordLibrary.ts`) and the webview HTML shell (`previewHtml.ts`).
+- `src/pdf.ts`: converts the same sheet SVGs to PDF with the bundled Noto Sans JP (`media/fonts`).
 
 ### 4. Webview Invariants & Security
 - Webview panel title matches the active document name.
