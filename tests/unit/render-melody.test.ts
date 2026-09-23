@@ -97,6 +97,13 @@ describe('render - melody systems', () => {
     assert.ok(mixed.includes('らら'));
   });
 
+  it('draws quarter rests with the zigzag glyph inside the staff', () => {
+    const svg = svgOf(['| C | % |', 'mel: | c5/2 d/4 r/4 |'].join('\n'));
+    // Glyph spans y = -12..12 around the middle line (y = 86), i.e. within the staff lines 70..102.
+    assert.strictEqual(count(svg, '<path d="M -1.6,-12 L 3.6,-5.4'), 1);
+    assert.ok(svg.includes('translate(') && !svg.includes('M 1.2,-14.5'));
+  });
+
   it('draws flats with vector paths', () => {
     const svg = svgOf(['| C | % |', 'mel: | bb4/1 |'].join('\n'));
     assert.strictEqual(count(svg, FLAT), 1);
