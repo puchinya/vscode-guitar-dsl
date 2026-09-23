@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import { SupportedLocale, getMessages } from '../i18n';
 import { isValidYouTubeUrl } from './youtube';
-import { transcribeWithGemini } from './gemini';
+import { TranscriptionStage, runTranscriptionPipeline } from './pipeline';
 import { serializeSongToGuitarDsl } from './serializer';
 import { parseGuitarDsl } from '../compiler';
 import { STRUMMING_PATTERN_PRESETS } from '../strummingPatterns';
@@ -134,25 +134,41 @@ export class TranscribePanel {
       return;
     }
 
-    this.panel.webview.postMessage({ type: 'transcribing' });
+    const stageText: Record<TranscriptionStage, string> = isJa
+      ? {
+          baseline: 'GeminiでYouTube音源を解析中... (曲構成・メロディ・歌詞)',
+          harmony: 'コード進行を精査中...',
+          verification: '判定の曖昧なコードを再確認中...',
+          groove: 'ストロークのリズムを解析中...',
+          finalizing: 'ストローク・カポを最適化中...'
+        }
+      : {
+          baseline: 'Analyzing YouTube audio with Gemini (structure, melody, lyrics)...',
+          harmony: 'Refining the chord progression...',
+          verification: 'Re-checking ambiguous chords...',
+          groove: 'Analyzing the strumming rhythm...',
+          finalizing: 'Optimizing strumming and capo...'
+        };
+    this.panel.webview.postMessage({ type: 'transcribing', text: stageText.baseline });
 
     try {
-      const song = await transcribeWithGemini({
+      const bpm = options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300
+        ? options.bpmValue
+        : undefined;
+      const capo = options.capoMode === 'manual' && options.capoValue !== undefined && Number.isInteger(options.capoValue) && options.capoValue >= 0 && options.capoValue <= 12
+        ? options.capoValue
+        : undefined;
+
+      const song = await runTranscriptionPipeline({
         apiKey,
         youtubeUrl: url,
         model: options.model,
-        beatType: options.beatType
+        beatType: options.beatType,
+        strummingPresetId: options.strummingPresetId,
+        bpm,
+        capo,
+        onStage: stage => this.panel.webview.postMessage({ type: 'transcribing', text: stageText[stage] })
       });
-
-      // Override BPM if manually specified
-      if (options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300) {
-        song.bpm = Math.round(options.bpmValue);
-      }
-
-      // Override Capo if manually specified
-      if (options.capoMode === 'manual' && options.capoValue !== undefined && options.capoValue >= 0 && options.capoValue <= 12) {
-        song.capo = options.capoValue;
-      }
 
       const dslText = serializeSongToGuitarDsl(song, {
         compressRepeats: options.compressRepeats,
@@ -531,7 +547,7 @@ export class TranscribePanel {
       if (msg.type === 'transcribing') {
         statusBox.className = 'status-box loading';
         statusBox.style.display = 'flex';
-        statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+        statusText.textContent = msg.text || '${isJa ? 'GeminiでYouTube音源を解析中...' : 'Analyzing YouTube audio with Gemini...'}';
         btnStart.disabled = true;
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {

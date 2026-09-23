@@ -191,14 +191,53 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **`model.ts`**:
   - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。カポ（`capo`）、小節歌詞（`lyrics`）、およびメロディ音符ごとの音節歌詞（`lyric`）をサポート。
   - Gemini Structured Output 用の JSON Schema（`MUSIC_IR_JSON_SCHEMA`）。
-  - 純粋なセマンティックバリデーション（`validateTranscribedSong`）：BPM 30..300、キー・コード・ピッチの構文適合性、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。不正データはシリアライザへ渡さず排除。
+  - ベースライン検証（`validateBaselineSong`）: メタ情報、セクション・小節構造、メロディ、歌詞を検証する。ベースラインのコード・リズムは精緻化で置き換えるため文脈扱いとし、拍数は検証しない。メロディ（のみ）は `repairMelodyTiming` で 4 拍に補完・切り詰めする。
+  - 最終検証（`validateTranscribedSong`）: BPM 30..300、キー・コード・ピッチの構文適合性、カポ 0..12、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。コード・リズムの自動補修は行わず、不正データは拒否する。
+  - `beatsToDurationString`: 拍数（有理数）から GuitarDSL 音価文字列を生成する（付点を使わず `+` で連結。3 連の端数は `8t`/`4t`）。コード長とリズム長の算出で共用する。
+  - `RhythmEvent.arpeggio` は `.arp` 修飾子を表す（明示プリセットのアルペジオ用）。
 - **`youtube.ts`**:
   - YouTube URL の形式検証（`isValidYouTubeUrl`）および ID 抽出等の純粋ヘルパー関数群。
   - HTTPS かつ `youtube.com` / `www.youtube.com` / `youtu.be` のみを許可。
 - **`gemini.ts`**:
-  - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。
-  - 固定プロンプト（全セクション・全小節の完全書き起こし、推奨カポ設定、音節歌詞の指定を含む）、YouTube 動画 URI（`{ type: "video", uri }`）、および Music IR JSON Schema を指定してリクエストを送信。
-  - レスポンスのテキスト抽出、JSON パース、および `model.ts` によるセマンティック検証を実行。API キーや生レスポンスはログ出力しない。
+  - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。SDK 依存はこのファイルに閉じる。
+  - `createStructuredInteraction`: 1 回の構造化呼び出しを行い、`{ id, json }` を返す。`store: true` と `response_format`（JSON Schema）を毎回指定し、後続呼び出しでは `previous_interaction_id` を付ける。
+  - `runBaselinePass`: 固定プロンプト、YouTube 動画 URI、Music IR JSON Schema で呼び出す。戻り値は `{ song, interactionId }`。`gemini-3.8-flash` / `3.7-flash` / `3.6-flash` / `3.5-flash-lite` では、動画入力に `processing: 'agentic'` を付ける。
+  - ハーモニー・検証・グルーヴ用のプロンプトビルダー。後続プロンプトには、ベースラインの骨格（セクション名、小節数、小節ごとの歌詞の手がかり）を JSON で埋め込む。
+  - API キー、インタラクション内容、生レスポンスはログ出力しない。
+- **`harmonyRefinement.ts`**:
+  - ハーモニー観測 IR（`HarmonyRefinement`）と検証 IR（`HarmonyVerification`）の型・JSON Schema・検証。検証内容は、tick 0 必須、厳密昇順、候補 1〜3、信頼度が非増加、セクション・小節の形状一致、capo フィールドの禁止。
+  - `findAmbiguousEvents`: 曖昧な変化点を抽出する（最上位 < 0.78、または 1 位と 2 位の差 < 0.18）。
+  - `applyVerification`: 検証結果を反映する。候補外の選択や欠落は、最上位候補に戻す。
+  - `harmonyToChordEvents`: tick 差から `beatsToDurationString` でコード長を算出する。調性による置換は行わない。
+- **`capoOptimizer.ts`**:
+  - `transposeChordName`: ルートとスラッシュベースを半音移調する。クオリティは保持する。
+  - `chooseCapo`: 手動値はそのまま使う。自動時は 0..7 を `getDefaultVoicing` ベースのスコアで評価する（声部配置が未定義のスラッシュコードは分子のコードで採点）。同点は低いカポを選ぶ。
+  - `applyCapo`: コードをプレイ形へ移調し、`key` は実音のまま維持する。
+- **`grooveOptimizer.ts`**:
+  - グルーヴ観測 IR（`GrooveRefinement`）: 小節ごとに `grid`、`style`、`attacks`、`accents?`、`sustainFromPrevious?`、`confidence` を持つ。型・Schema・検証を含む。
+  - 候補は、観測リズム 1 件と、次の 2 条件を満たすプリセット（`STRUMMING_PATTERN_PRESETS`）。
+    - 全打点がグリッドに正確に乗る。
+    - 奏法が一致する。`arpeggio` カテゴリは arpeggio、`ballad` カテゴリは sustain、それ以外は strum に対応する。
+  - 観測候補の ID は、奏法・グリッド・打点・アクセントのシグネチャとし、同一シグネチャなら遷移コストは 0。系統は次のとおり。
+    - arpeggio → `arpeggio`
+    - sustain → `ballad`
+    - strum → グリッド 8 は `8beat`、12 は `triplet`、16 は `16beat`
+  - アルペジオの観測候補には、アルペジオ系プリセットと同様にストローク方向を付けない。
+  - 観測候補の方向は、最も粗いグリッドの振り子規則で付ける。先頭の空きは休符にする。ただし `sustainFromPrevious` が有効な場合は、前小節の最後のストロークに `.t` を付けて延長として扱う。
+  - コストとタイブレーク:
+    - 局所コスト: `10·打点差 + 3·アクセント差`（観測候補は `max(0, 0.85 − conf)·40`）
+    - 遷移コスト: 同一 ID 0、同系統 2、異系統 6
+    - 同点時: プリセット優先 → 宣言順 → 観測候補
+  - セクション単位の DP で最適化する。状態はセクションをまたがない。
+- **`pipeline.ts`**:
+  - `runTranscriptionPipeline` の処理順:
+    1. ベースライン
+    2. ハーモニー（形状不正時は 1 回だけ再要求）
+    3. 必要時のみ検証
+    4. グルーヴ＋DP、または明示プリセットの適用
+    5. BPM・カポの上書き
+    6. 最終検証
+  - VS Code 非依存。進捗は `onStage` コールバックで通知する。
 - **`serializer.ts`**:
   - バリデーション済み Music IR を決定論的な GuitarDSL テキストへ変換（`serializeSongToGuitarDsl`）。VS Code 非依存。
   - 前小節と同一パターンの繰り返しにおける `%`（小節リピート）記法や `mel: | % |` の活用、メロディ音符ごとの音節歌詞（`lyr:`）の出力をサポート。
@@ -294,6 +333,7 @@ sequenceDiagram
     actor User as ユーザー
     participant Ext as extension.ts (SecretStorage / UI)
     participant YT as transcription/youtube.ts
+    participant Pipe as transcription/pipeline.ts
     participant Gem as transcription/gemini.ts (@google/genai)
     participant Model as transcription/model.ts
     participant Ser as transcription/serializer.ts
@@ -314,11 +354,23 @@ sequenceDiagram
         Ext->>User: showErrorMessage (URL エラー)
     else URL 妥当
         Ext->>Ext: window.withProgress
-        Ext->>Gem: transcribeWithGemini(key, url, model)
-        Gem->>Gem: interactions.create({ input: [video, prompt], response_format })
-        Gem->>Model: validateTranscribedSong(json)
-        Model-->>Gem: validated IR
-        Gem-->>Ext: TranscribedSong
+        Ext->>Pipe: runTranscriptionPipeline(key, url, model, options)
+        Pipe->>Gem: runBaselinePass (video + prompt, store)
+        Gem->>Model: validateBaselineSong(json)
+        Gem-->>Pipe: { song, interactionId }
+        Pipe->>Gem: harmony follow-up (previous_interaction_id)
+        opt 曖昧なコードあり
+            Pipe->>Gem: verification follow-up (候補からの選択のみ)
+        end
+        alt 伴奏パターン = 自動
+            Pipe->>Gem: groove follow-up (previous_interaction_id)
+            Pipe->>Pipe: grooveOptimizer (セクション単位 DP)
+        else 明示プリセット
+            Pipe->>Pipe: プリセットのリズムを全小節へ
+        end
+        Pipe->>Pipe: capoOptimizer / BPM 上書き
+        Pipe->>Model: validateTranscribedSong(song) 厳格
+        Pipe-->>Ext: TranscribedSong
         Ext->>Ser: serializeSongToGuitarDsl(song)
         Ser->>Comp: parseGuitarDsl(text) 検証
         Comp-->>Ser: diagnostics (エラー 0 件)

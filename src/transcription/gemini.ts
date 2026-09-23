@@ -2,40 +2,94 @@
 // Encapsulates all @google/genai SDK dependencies.
 
 import { GoogleGenAI } from '@google/genai';
-import { MUSIC_IR_JSON_SCHEMA, TranscribedSong, validateTranscribedSong } from './model';
+import { MUSIC_IR_JSON_SCHEMA, TranscribedSong, validateBaselineSong } from './model';
 import { normalizeYouTubeUrl } from './youtube';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
+/** Models known to support agentic video processing; other/custom models keep the default. */
+export const AGENTIC_VIDEO_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+
 export const FIXED_TRANSCRIPTION_PROMPT =
-  'Transcribe the entire guitar chords, rhythm strumming pattern, vocal melody notes, and vocal lyrics from this YouTube video. ' +
+  'Transcribe the song structure, sounding chords, vocal melody notes, and vocal lyrics from this YouTube video. ' +
   'IMPORTANT: Transcribe the FULL, COMPLETE song from beginning to end without summarizing or skipping measures. ' +
   'Cover all sections sequentially (Intro, Verse, Pre-Chorus, Chorus, Bridge, Solo, Outro, etc.) until the video finishes. ' +
-  'Determine the recommended capo position (0..7) to allow playing with easy open guitar chords, and express chords in that play form. ' +
+  'Report the sounding (concert) key and sounding chord names; do not transpose for a capo. ' +
   'STRICT SYLLABLE-TO-NOTE ALIGNMENT: Every sung syllable must have its own melody note with exact pitch and duration. ' +
   'IMPORTANT FOR JAPANESE LYRICS: Small kana (ゃ, ゅ, ょ, っ, ぁ, ぃ, ぅ, ぇ, ぉ, ゎ, ッ etc.) and long vowel mark (ー) must NEVER be standalone syllables or assigned to separate notes. They MUST always attach to the preceding character (e.g. "きょ", "がっ", "こー", "ふぁ") as a single syllable for one note. ' +
   'For example, if 8 syllables are sung in a measure ("き・ど・う・し・た・きょ・う・に"), output 8 eighth-notes (duration: "8"), each with its exact single syllable in the lyric property. Do NOT lump syllables together or simplify the vocal rhythm. ' +
   'TEMPO / BPM ACCURACY: Carefully detect the true tempo (BPM) from the rhythm section. In upbeat rock/pop 8-beat songs (like BPM 160-220), do NOT mistake the tempo as half-time (e.g. 80-110). Standard 8-beat has the bass drum on beats 1 & 3 and snare drum on beats 2 & 4 at the fast tempo (e.g. around BPM 185 for fast rock). Count each quarter-note beat where snare hits on 2 & 4 to determine the exact BPM. ' +
-  'STRUMMING & ARPEGGIO GUIDELINES: Prioritize classic, natural guitar accompaniment patterns (such as standard 8-beat "4.d 8.d 8.u 8.d 8.u 4.d", basic 8-beat "4.d 4.d 8.d 8.u 8.d 8.u", 16-beat "4.d 8.d 16.d 16.u 8.d 8.u 8.d 8.u", 8th-note fingerpicking arpeggios "8 8 8 8 8 8 8 8", triplet arpeggios, or sustained whole/half notes) rather than erratic or overly complex variations. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
-  'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
-  'sequences within each measure must sum to exactly 4 beats. If a vocal melody phrase finishes or pauses early in a measure, ' +
+  'The time signature must be 4/4. Melody sequences within each measure must sum to exactly 4 beats. If a vocal melody phrase finishes or pauses early in a measure, ' +
   'you MUST fill the remaining beats of that measure with rest note(s) (pitch: "r") so that every measure sums to EXACTLY 4 beats. ' +
-  'SYNCOPATION & ANTICIPATION: Detect syncopated rhythms, ties, and off-beat chord changes (anticipation / 食いコード). ' +
-  'When a chord change anticipates by an eighth note (e.g. on the 2nd beat off-beat "and"), use note values like duration "4+8" (1.5 beats) and "2+8" (2.5 beats) so the chord change aligns with the syncopation. ' +
-  'When rhythm strumming or melody notes are tied across beats or across the barline, set tie: true (for rhythm) or tieToNext: true (for melody). ' +
-  'CRITICAL CHORD DURATION RULES: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). ' +
-  'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2" unless syncopated (e.g. "4+8" and "2+8"). ' +
-  'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
+  'When melody notes are tied across beats or across the barline, set tieToNext: true.';
 
-export function buildTranscriptionPrompt(options?: { beatType?: 'auto' | '8beat' | '16beat' }): string {
-  let prompt = FIXED_TRANSCRIPTION_PROMPT;
-  if (options?.beatType === '8beat') {
-    prompt += ' BEAT TYPE REQUIREMENT: Transcribe the rhythm strictly as an 8-beat guitar groove (e.g. 4.d 8.d 8.u 8.d 8.u 4.d or eighth-note arpeggios). Avoid sixteenth-note divisions.';
-  } else if (options?.beatType === '16beat') {
-    prompt += ' BEAT TYPE REQUIREMENT: Transcribe the rhythm as a 16-beat guitar groove (e.g. 4.d 8.d 16.d 16.u 8.d 8.u 8.d 8.u or 16th-note cutting).';
-  }
-  return prompt;
+export function buildTranscriptionPrompt(): string {
+  return FIXED_TRANSCRIPTION_PROMPT;
+}
+
+/** Baseline skeleton embedded in follow-up prompts so the refinement keeps the exact measure layout. */
+export interface SongSkeletonSection {
+  sectionIndex: number;
+  name: string;
+  measureCount: number;
+  /** Short lyric hint per measure ('' when instrumental). */
+  lyricHints: string[];
+}
+
+function skeletonText(skeleton: SongSkeletonSection[]): string {
+  return 'BASELINE STRUCTURE (authoritative; keep exactly these sections and measure counts, in this order, ' +
+    'with sectionIndex and measureIndex starting at 0): ' + JSON.stringify(skeleton) + ' ';
+}
+
+export function buildHarmonyPrompt(skeleton: SongSkeletonSection[]): string {
+  return 'Re-listen to the same video and refine ONLY the chord progression of the transcription above. ' +
+    skeletonText(skeleton) +
+    'For every measure, list each chord change with tick16 = its 16th-note position within the measure (0..15, 0 = downbeat; ' +
+    'every measure must have a change at tick16 0, and ticks must strictly ascend). ' +
+    'Give 1 to 3 candidate SOUNDING chord names per change (what actually sounds, never transposed for a capo), ' +
+    'ordered by descending confidence (0..1). Listen to the bass line and the full harmony; borrowed chords, secondary ' +
+    'dominants, slash chords and sevenths are allowed. ' +
+    'SYNCOPATION / ANTICIPATION: when a chord change is anticipated before the beat (e.g. on the "and" of beat 2 = tick16 6, ' +
+    'or the last eighth of a measure = tick16 14 for the next measure\'s chord), report it at the actual anticipated tick. ' +
+    'A change anticipated across the barline belongs to the previous measure at its anticipated tick. ' +
+    'Do NOT output durations or a capo. Optionally confirm the sounding key as soundingKey.';
+}
+
+export interface VerificationItem {
+  sectionIndex: number;
+  measureIndex: number;
+  tick16: number;
+  candidates: string[];
+  previousChord?: string;
+  nextChord?: string;
+}
+
+export function buildVerificationPrompt(items: VerificationItem[]): string {
+  return 'Some chord changes above are uncertain. Re-check the video at each listed position and, for each item, ' +
+    'select exactly one name from its candidates. You MUST NOT answer a chord that is not in the candidates list. ' +
+    'Neighboring chords are given as context. Items: ' + JSON.stringify(items);
+}
+
+export function buildGroovePrompt(skeleton: SongSkeletonSection[], beatType: 'auto' | '8beat' | '16beat'): string {
+  const gridRule = beatType === '8beat'
+    ? 'Use grid 8 for every measure. '
+    : beatType === '16beat'
+      ? 'Use grid 16 for every measure. '
+      : 'Choose grid 8 (eighths), 12 (eighth-note triplets / shuffle) or 16 (sixteenths) per measure. ';
+  return 'Re-listen to the same video and observe ONLY the guitar accompaniment rhythm. ' +
+    skeletonText(skeleton) +
+    gridRule +
+    'For every measure report: style (strum, arpeggio for picked/broken chords, or sustain for held whole/half-note chords); ' +
+    'attacks = ascending grid slots (0..grid-1) where the guitar actually strikes; ' +
+    'accents = only the clearly accented attack slots (omit if unsure); ' +
+    'sustainFromPrevious = true only when the previous measure\'s last stroke is held across the barline (syncopated tie) and there is no new attack on beat 1; ' +
+    'confidence 0..1. Include syncopated attacks exactly where they occur. ' +
+    'Do NOT output stroke directions or note durations.';
+}
+
+export function buildRetryPrompt(error: string, skeleton: SongSkeletonSection[]): string {
+  return `Your previous answer was structurally invalid: ${error}. Answer the same request again. ` + skeletonText(skeleton);
 }
 
 export interface GeminiClientLike {
@@ -44,12 +98,8 @@ export interface GeminiClientLike {
   };
 }
 
-export interface GeminiTranscriptionOptions {
-  apiKey: string;
-  youtubeUrl: string;
-  model?: string;
-  beatType?: 'auto' | '8beat' | '16beat';
-  client?: GeminiClientLike;
+export function createGeminiClient(apiKey: string): GeminiClientLike {
+  return new GoogleGenAI({ apiKey });
 }
 
 function extractTextFromOutput(interaction: any): string | undefined {
@@ -101,37 +151,41 @@ function classifyGeminiError(err: unknown): Error {
   return new Error('An unknown error occurred while communicating with the Gemini API.');
 }
 
-/**
- * Calls Gemini interactions.create with the YouTube video URL and Music IR schema,
- * then validates and returns the TranscribedSong.
- * Never logs API keys or raw responses.
- */
-export async function transcribeWithGemini(options: GeminiTranscriptionOptions): Promise<TranscribedSong> {
-  const canonicalUrl = normalizeYouTubeUrl(options.youtubeUrl);
-  const modelName = options.model?.trim() || DEFAULT_GEMINI_MODEL;
+export interface StructuredInteractionRequest {
+  client: GeminiClientLike;
+  model: string;
+  input: unknown[];
+  schema: object;
+  previousInteractionId?: string;
+}
 
-  const client: GeminiClientLike = options.client ?? new GoogleGenAI({ apiKey: options.apiKey });
+export interface StructuredInteractionResult {
+  id: string;
+  json: unknown;
+}
+
+/**
+ * One stored interactions.create call with a JSON-schema response. The response format is always
+ * re-specified; follow-ups chain through previous_interaction_id. Never logs keys or responses.
+ */
+export async function createStructuredInteraction(request: StructuredInteractionRequest): Promise<StructuredInteractionResult> {
+  const params: Record<string, unknown> = {
+    model: request.model,
+    input: request.input,
+    store: true,
+    response_format: {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: request.schema
+    }
+  };
+  if (request.previousInteractionId) {
+    params.previous_interaction_id = request.previousInteractionId;
+  }
 
   let interaction: any;
   try {
-    interaction = await client.interactions.create({
-      model: modelName,
-      input: [
-        {
-          type: 'video',
-          uri: canonicalUrl
-        },
-        {
-          type: 'text',
-          text: buildTranscriptionPrompt({ beatType: options.beatType })
-        }
-      ],
-      response_format: {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: MUSIC_IR_JSON_SCHEMA
-      }
-    });
+    interaction = await request.client.interactions.create(params);
   } catch (err) {
     throw classifyGeminiError(err);
   }
@@ -146,17 +200,48 @@ export async function transcribeWithGemini(options: GeminiTranscriptionOptions):
     throw new Error('Gemini API returned an empty response.');
   }
 
-  let parsedJson: unknown;
+  let json: unknown;
   try {
-    parsedJson = JSON.parse(rawText);
+    json = JSON.parse(rawText);
   } catch {
     throw new Error('Gemini model response was not valid JSON.');
   }
 
-  const validation = validateTranscribedSong(parsedJson, { autoRepair: true });
+  if (typeof interaction.id !== 'string' || !interaction.id) {
+    throw new Error('Gemini API did not return an interaction id.');
+  }
+  return { id: interaction.id, json };
+}
+
+export interface BaselinePassOptions {
+  youtubeUrl: string;
+  model: string;
+  client: GeminiClientLike;
+}
+
+export interface BaselinePassResult {
+  song: TranscribedSong;
+  interactionId: string;
+}
+
+/** Baseline pass: full-song structure, melody and lyrics from the video. Chords/rhythm are context only. */
+export async function runBaselinePass(options: BaselinePassOptions): Promise<BaselinePassResult> {
+  const canonicalUrl = normalizeYouTubeUrl(options.youtubeUrl);
+  const video: Record<string, unknown> = { type: 'video', uri: canonicalUrl };
+  if (AGENTIC_VIDEO_MODELS.includes(options.model)) {
+    video.processing = 'agentic';
+  }
+
+  const result = await createStructuredInteraction({
+    client: options.client,
+    model: options.model,
+    input: [video, { type: 'text', text: buildTranscriptionPrompt() }],
+    schema: MUSIC_IR_JSON_SCHEMA
+  });
+
+  const validation = validateBaselineSong(result.json);
   if (!validation.valid) {
     throw new Error(`Invalid transcription data: ${validation.error}`);
   }
-
-  return validation.song;
+  return { song: validation.song, interactionId: result.id };
 }

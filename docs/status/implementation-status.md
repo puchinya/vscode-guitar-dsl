@@ -51,7 +51,7 @@
 | | `guitardsl.transcribeYouTube` (YouTube自動採譜) | ✅ 完了 | コマンドパレットのみ。Gemini API経由でMusic IR取得・バリデーション・DSL生成・新規エディタ表示 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
-| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
+| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL, Pipeline) | ✅ 完了 | 4/4拍子限定。ベースライン＋ハーモニー精緻化／曖昧コード検証／グルーヴ観測の多段パス（`previous_interaction_id` 連結）、セクション単位 DP のストローク最適化、ローカルのカポ最適化、厳格な最終検証（コード・リズムの自動補修なし）、SecretStorage保護。実 Gemini での品質確認は未実施 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
 | **プレビュー画面** | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
@@ -82,8 +82,12 @@
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
   - `tests/unit/chord.test.ts`: `chord` 定義の解析・整形の往復、`@ラベル` 参照と診断、ダイアグラムの解決と描画、コード名の自動判定、プリセット（全ルート・タイプ、自動判定との一致）、エディタのモデル（開始・保存位置・重複）
-  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
-- **テスト実行結果**: **159 / 159 件 PASS** (0 failures)
+  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御、agentic 動画処理の指定）
+  - `tests/unit/harmonyRefinement.test.ts`: ハーモニー IR 検証、tick → コード長変換、曖昧判定の閾値、候補外選択の拒否とフォールバック
+  - `tests/unit/capoOptimizer.test.ts`: コード移調（スラッシュベース含む）、押さえやすさ採点、手動／自動カポ、同点時の低カポ優先
+  - `tests/unit/grooveOptimizer.test.ts`: グルーヴ IR 検証、プリセットのマスク化、振り子方向規則、観測候補の音価生成、セクション単位 DP、小節線をまたぐタイ
+  - `tests/unit/transcriptionPipeline.test.ts`: モック Gemini による多段パスの連結・スキーマ再指定・再試行・失敗時挙動、明示プリセット時のグルーヴ省略、メロディ・歌詞の保持、生成 DSL のゼロエラー
+- **テスト実行結果**: **277 / 277 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
