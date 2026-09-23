@@ -38,10 +38,15 @@ export function renderScorePdf(
 
   return new Promise<Buffer>((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
-        autoFirstPage: false,
-        info: { Title: score.title, Author: score.artist || undefined, Creator: 'GuitarDSL Previewer' }
-      });
+      // pdfkit calls valueOf() on every info entry, so empty fields must be omitted rather than set to undefined.
+      const info: PDFKit.DocumentInfo = { Creator: 'GuitarDSL Previewer' };
+      if (score.title) {
+        info.Title = score.title;
+      }
+      if (score.artist) {
+        info.Author = score.artist;
+      }
+      const doc = new PDFDocument({ autoFirstPage: false, info });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
