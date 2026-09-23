@@ -91,7 +91,12 @@ function parseChordToken(tok: string): { name: string; duration?: number } | nul
   };
 }
 
-interface ParsedScore {
+export interface ScorePage {
+  pageNumber: number;
+  measures: MeasureData[];
+}
+
+export interface ParsedScore {
   title: string;
   artist: string;
   capo: string;
@@ -100,6 +105,7 @@ interface ParsedScore {
   memo: string;
   usedChords: string[];
   measures: MeasureData[];
+  pages: ScorePage[];
 }
 
 function parseGuitarDsl(dslContent: string): ParsedScore {
@@ -113,12 +119,23 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
   let memo = '';
   
   const measures: MeasureData[] = [];
+  const pages: ScorePage[] = [{ pageNumber: 1, measures: [] }];
+  let currentPageIndex = 0;
   let currentSection = '';
   const usedChordsSet = new Set<string>();
 
   for (let rawLine of lines) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
+
+    // Page break: --- or pagebreak
+    if (/^---+$/.test(line) || /^pagebreak$/i.test(line)) {
+      if (pages[currentPageIndex].measures.length > 0) {
+        currentPageIndex++;
+        pages.push({ pageNumber: currentPageIndex + 1, measures: [] });
+      }
+      continue;
+    }
 
     // Headers
     const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo):\s*(.*)$/i);
@@ -293,7 +310,7 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
           barChords.forEach(c => usedChordsSet.add(c.name));
         }
 
-        measures.push({
+        const mData: MeasureData = {
           chord: barChords.length > 0 ? barChords[0].name : '',
           chords: barChords,
           isMeasureRepeat,
@@ -308,11 +325,18 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
             { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false }
           ]),
           lyric: mLyric
-        });
+        };
+        measures.push(mData);
+        pages[currentPageIndex].measures.push(mData);
         currentSection = ''; // consume section for the first bar
       }
     }
   }
+
+  const validPages = pages.filter((p, idx) => p.measures.length > 0 || idx === 0);
+  validPages.forEach((p, idx) => {
+    p.pageNumber = idx + 1;
+  });
 
   return {
     title,
@@ -322,7 +346,8 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
     bpm,
     memo,
     usedChords: Array.from(usedChordsSet),
-    measures
+    measures,
+    pages: validPages
   };
 }
 
@@ -337,22 +362,55 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     chordSvgs += renderChordDiagram(chord, frets);
   }
 
-  // Render Measures into Systems (4 measures per row)
-  let systemsSvg = '';
   const measuresPerRow = 4;
   const sysWidth = 780;
   const barWidth = sysWidth / measuresPerRow;
   const sysHeight = 140;
+  const totalPages = score.pages.length;
 
-  for (let i = 0; i < score.measures.length; i += measuresPerRow) {
-    const rowMeasures = score.measures.slice(i, i + measuresPerRow);
-    systemsSvg += renderSystemRow(rowMeasures, i === 0, barWidth, sysHeight, sysWidth);
+  let pagesHtml = '';
+  for (const page of score.pages) {
+    let pageSystemsSvg = '';
+    for (let i = 0; i < page.measures.length; i += measuresPerRow) {
+      const rowMeasures = page.measures.slice(i, i + measuresPerRow);
+      const isFirstRowOfScore = (page.pageNumber === 1 && i === 0);
+      pageSystemsSvg += renderSystemRow(rowMeasures, isFirstRowOfScore, barWidth, sysHeight, sysWidth);
+    }
+
+    pagesHtml += `
+    <div class="sheet-page" data-page="${page.pageNumber}">
+      ${page.pageNumber === 1 ? `
+        <div class="score-header">
+          <div class="title-area">
+            <h1>${escapeXml(title)}</h1>
+            <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
+          </div>
+          <div class="play-info">
+            <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
+            <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+          </div>
+        </div>
+        ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+      ` : `
+        <div class="running-header">
+          <div class="running-title">${escapeXml(title)}</div>
+          <div class="running-page">- ${page.pageNumber} -</div>
+        </div>
+      `}
+      <div class="score-sheet">
+        ${pageSystemsSvg}
+      </div>
+      <div class="page-footer">
+        <span>${page.pageNumber} / ${totalPages}</span>
+      </div>
+    </div>`;
   }
 
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeXml(title)}</title>
 <style>
   @page {
@@ -368,40 +426,163 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
     color: #111;
     margin: 0;
-    padding: 20px;
-    background: #f7f7f7;
+    padding: 66px 16px 32px 16px;
+    background: #e9ecef;
+    min-height: 100vh;
   }
-  .page-container {
-    max-width: 840px;
-    margin: 0 auto;
-    background: #fff;
-    padding: 24px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-  }
-  @media print {
-    body { background: #fff; padding: 0; }
-    .page-container { box-shadow: none; padding: 0; max-width: 100%; }
-    .action-bar { display: none !important; }
-  }
-  .action-bar {
+
+  /* Fixed External Toolbar */
+  .toolbar-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    background: #252526;
+    border-bottom: 1px solid #3c3c3c;
     display: flex;
-    justify-content: flex-end;
-    margin-bottom: 12px;
-    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    color: #cccccc;
+    user-select: none;
+  }
+  .toolbar-left, .toolbar-center, .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    margin-right: 2px;
+  }
+  .segmented-control {
+    display: inline-flex;
+    background: #1e1e1e;
+    border-radius: 4px;
+    padding: 2px;
+    border: 1px solid #3c3c3c;
+  }
+  .tool-btn {
+    background: transparent;
+    color: #aaa;
+    border: none;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tool-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .tool-btn.active {
+    background: #007acc;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .nav-btn {
+    background: #333333;
+    color: #eeeeee;
+    border: 1px solid #444444;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .nav-btn:hover:not(:disabled) {
+    background: #444444;
+    color: #ffffff;
+    border-color: #666;
+  }
+  .nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .page-status {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+    min-width: 65px;
+    text-align: center;
   }
   .btn-print {
     background: #107c41;
     color: #fff;
     border: none;
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: 6px 14px;
+    font-size: 12px;
     font-weight: bold;
     border-radius: 4px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s ease;
   }
-  .btn-print:hover { background: #0b5a2f; }
+  .btn-print:hover {
+    background: #0b5a2f;
+  }
 
-  /* Header */
+  /* Sheet Page */
+  .sheet-page {
+    background: #ffffff;
+    padding: 24px 28px 20px 28px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 840px;
+    border-radius: 2px;
+    position: relative;
+  }
+
+  /* Display Modes */
+  /* Single Page Mode (Default) */
+  body[data-display-mode="single"] .sheet-page {
+    display: none;
+    margin: 0 auto;
+  }
+  body[data-display-mode="single"] .sheet-page.active {
+    display: block;
+  }
+
+  /* Spread Mode (見開き) */
+  body[data-display-mode="spread"] .pages-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 20px;
+    max-width: 1720px;
+    margin: 0 auto;
+  }
+  body[data-display-mode="spread"] .sheet-page {
+    display: none;
+    flex: 1 1 0;
+    max-width: 840px;
+    min-width: 380px;
+    margin: 0;
+  }
+  body[data-display-mode="spread"] .sheet-page.active-spread {
+    display: block;
+  }
+
+  /* Web Mode (連続スクロール) */
+  body[data-display-mode="web"] .sheet-page {
+    display: block;
+    margin: 0 auto 28px auto;
+  }
+
+  /* Header (Page 1) */
   .score-header {
     border-bottom: 2px solid #000;
     padding-bottom: 6px;
@@ -434,6 +615,37 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     border-radius: 2px;
     font-size: 8.5pt;
   }
+
+  /* Running Header (Page 2+) */
+  .running-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #999;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+    font-size: 9pt;
+    color: #555;
+  }
+  .running-title {
+    font-weight: bold;
+    color: #222;
+  }
+  .running-page {
+    font-size: 8.5pt;
+    color: #666;
+  }
+
+  /* Page Footer */
+  .page-footer {
+    margin-top: 14px;
+    padding-top: 6px;
+    border-top: 1px solid #eee;
+    text-align: right;
+    font-size: 8pt;
+    color: #888;
+  }
+
   /* Chord Diagrams */
   .diagrams-row {
     display: flex;
@@ -453,6 +665,7 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     font-weight: bold;
     font-family: Arial, sans-serif;
   }
+
   /* Systems */
   .system-row {
     margin-bottom: 8px;
@@ -462,38 +675,214 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     height: auto;
     display: block;
   }
+
+  /* Print Styles */
+  @media print {
+    body {
+      background: #ffffff !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .toolbar-container {
+      display: none !important;
+    }
+    .pages-wrapper {
+      display: block !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .sheet-page {
+      display: block !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      border-radius: 0 !important;
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+    .sheet-page:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
+    }
+    .page-footer {
+      border-top: none !important;
+    }
+  }
 </style>
 </head>
-<body>
-  <div class="page-container">
-    <div class="action-bar">
-      <button class="btn-print" onclick="window.print()">A4印刷 / PDF保存</button>
-    </div>
-
-    <div class="score-header">
-      <div class="title-area">
-        <h1>${escapeXml(title)}</h1>
-        <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
-      </div>
-      <div class="play-info">
-        <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
-        <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+<body data-display-mode="single">
+  <div class="toolbar-container">
+    <div class="toolbar-left">
+      <span class="toolbar-label">表示</span>
+      <div class="segmented-control">
+        <button class="tool-btn active" data-mode="single" title="1ページ単位表示（デフォルト）">1ページ</button>
+        <button class="tool-btn" data-mode="spread" title="見開き表示">見開き</button>
+        <button class="tool-btn" data-mode="web" title="Web表示（連続スクロール）">Web</button>
       </div>
     </div>
 
-    ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+    <div class="toolbar-center" id="pagination-controls">
+      <button class="nav-btn" id="prev-page" title="前のページ (←)">&lt; 前へ</button>
+      <span class="page-status" id="page-status">1 / ${totalPages}</span>
+      <button class="nav-btn" id="next-page" title="次のページ (→)">次へ &gt;</button>
+    </div>
 
-    <div class="score-sheet">
-      ${systemsSvg}
+    <div class="toolbar-right">
+      <button class="btn-print" onclick="window.print()" title="A4印刷またはPDF出力">A4印刷 / PDF保存</button>
     </div>
   </div>
 
+  <div class="pages-wrapper">
+    ${pagesHtml}
+  </div>
+
   <script>
-    window.addEventListener('message', event => {
-      if (event.data && event.data.command === 'print') {
-        window.print();
+    (function() {
+      const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+      const totalPages = ${totalPages};
+      let currentMode = 'single';
+      let currentPage = 1;
+
+      // Restore state if available
+      if (vscode) {
+        const state = vscode.getState();
+        if (state) {
+          if (state.currentMode && ['single', 'spread', 'web'].includes(state.currentMode)) {
+            currentMode = state.currentMode;
+          }
+          if (typeof state.currentPage === 'number' && state.currentPage >= 1 && state.currentPage <= totalPages) {
+            currentPage = state.currentPage;
+          }
+        }
       }
-    });
+
+      function saveState() {
+        if (vscode) {
+          vscode.setState({ currentMode, currentPage });
+        }
+      }
+
+      const body = document.body;
+      const paginationControls = document.getElementById('pagination-controls');
+      const prevBtn = document.getElementById('prev-page');
+      const nextBtn = document.getElementById('next-page');
+      const pageStatus = document.getElementById('page-status');
+      const modeButtons = document.querySelectorAll('.tool-btn');
+      const pages = document.querySelectorAll('.sheet-page');
+
+      function updateView() {
+        body.setAttribute('data-display-mode', currentMode);
+
+        modeButtons.forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-mode') === currentMode);
+        });
+
+        pages.forEach(p => {
+          p.classList.remove('active', 'active-spread');
+        });
+
+        if (currentMode === 'web') {
+          paginationControls.style.visibility = 'hidden';
+          pages.forEach(p => p.classList.add('active'));
+          saveState();
+          return;
+        }
+
+        paginationControls.style.visibility = 'visible';
+
+        if (currentMode === 'single') {
+          const el = document.querySelector('.sheet-page[data-page="' + currentPage + '"]');
+          if (el) el.classList.add('active');
+          pageStatus.textContent = currentPage + ' / ' + totalPages;
+          prevBtn.disabled = (currentPage <= 1);
+          nextBtn.disabled = (currentPage >= totalPages);
+        } else if (currentMode === 'spread') {
+          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
+          const p2 = (p1 + 1 <= totalPages) ? p1 + 1 : null;
+
+          const el1 = document.querySelector('.sheet-page[data-page="' + p1 + '"]');
+          if (el1) el1.classList.add('active-spread');
+
+          if (p2) {
+            const el2 = document.querySelector('.sheet-page[data-page="' + p2 + '"]');
+            if (el2) el2.classList.add('active-spread');
+            pageStatus.textContent = p1 + '-' + p2 + ' / ' + totalPages;
+          } else {
+            pageStatus.textContent = p1 + ' / ' + totalPages;
+          }
+
+          prevBtn.disabled = (p1 <= 1);
+          nextBtn.disabled = (p1 + 1 >= totalPages || p2 === null);
+        }
+
+        saveState();
+      }
+
+      function prevPage() {
+        if (currentMode === 'single') {
+          if (currentPage > 1) {
+            currentPage--;
+            updateView();
+          }
+        } else if (currentMode === 'spread') {
+          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
+          if (p1 > 2) {
+            currentPage = p1 - 2;
+            updateView();
+          } else if (p1 > 1) {
+            currentPage = 1;
+            updateView();
+          }
+        }
+      }
+
+      function nextPage() {
+        if (currentMode === 'single') {
+          if (currentPage < totalPages) {
+            currentPage++;
+            updateView();
+          }
+        } else if (currentMode === 'spread') {
+          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
+          if (p1 + 2 <= totalPages) {
+            currentPage = p1 + 2;
+            updateView();
+          }
+        }
+      }
+
+      modeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentMode = btn.getAttribute('data-mode');
+          updateView();
+        });
+      });
+
+      prevBtn.addEventListener('click', prevPage);
+      nextBtn.addEventListener('click', nextPage);
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+          return;
+        }
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          prevPage();
+        } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          nextPage();
+        }
+      });
+
+      window.addEventListener('message', event => {
+        if (event.data && event.data.command === 'print') {
+          window.print();
+        }
+      });
+
+      updateView();
+    })();
   </script>
 </body>
 </html>`;
@@ -507,7 +896,12 @@ export function compileGuitarDslToSvg(dslContent: string): string {
   const sysWidth = 780;
   const barWidth = sysWidth / measuresPerRow;
   const sysHeight = 140;
-  const numRows = Math.ceil(score.measures.length / measuresPerRow);
+
+  let numRows = 0;
+  for (const page of score.pages) {
+    numRows += Math.ceil(page.measures.length / measuresPerRow);
+  }
+  if (numRows === 0) numRows = 1;
 
   const headerHeight = 70;
   const chordDiagramsHeight = score.usedChords.length > 0 ? 80 : 0;
@@ -548,14 +942,17 @@ export function compileGuitarDslToSvg(dslContent: string): string {
     currentY += chordDiagramsHeight;
   }
 
-  // System rows
-  for (let i = 0; i < score.measures.length; i += measuresPerRow) {
-    const rowMeasures = score.measures.slice(i, i + measuresPerRow);
-    const isFirst = (i === 0);
-    svg += `<g transform="translate(${leftMargin}, ${currentY})">\n`;
-    svg += renderSystemSvgContent(rowMeasures, isFirst, barWidth, sysHeight, sysWidth);
-    svg += `</g>\n`;
-    currentY += sysHeight;
+  // System rows by page
+  for (let pIdx = 0; pIdx < score.pages.length; pIdx++) {
+    const page = score.pages[pIdx];
+    for (let i = 0; i < page.measures.length; i += measuresPerRow) {
+      const rowMeasures = page.measures.slice(i, i + measuresPerRow);
+      const isFirst = (pIdx === 0 && i === 0);
+      svg += `<g transform="translate(${leftMargin}, ${currentY})">\n`;
+      svg += renderSystemSvgContent(rowMeasures, isFirst, barWidth, sysHeight, sysWidth);
+      svg += `</g>\n`;
+      currentY += sysHeight;
+    }
   }
 
   svg += `</svg>\n`;

@@ -56,7 +56,7 @@ export class GuitarDslDocumentSymbolProvider implements vscode.DocumentSymbolPro
       const line = document.lineAt(lineIdx);
       const text = line.text.trim();
 
-      if (!text || text.startsWith('#')) {
+      if (!text || text.startsWith('#') || /^---+$/.test(text) || /^pagebreak$/i.test(text)) {
         continue;
       }
 

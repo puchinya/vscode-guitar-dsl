@@ -16,6 +16,10 @@
       "match": "\\[[^\\]]+\\]"
     },
     {
+      "name": "keyword.control.pagebreak.guitardsl",
+      "match": "^\\s*(---+|(?i:pagebreak))\\s*$"
+    },
+    {
       "name": "string.quoted.double.lyric.guitardsl",
       "match": "l:\"[^\"]*\"|~\"[^\"]*\""
     },
