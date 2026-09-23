@@ -1,4 +1,4 @@
-import { MeasureData, ParsedScore } from '../compiler';
+import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore } from '../compiler';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -32,10 +32,69 @@ export const MARGIN_SIDE = 12 * PT_PER_MM;
 export const COLUMN_GUTTER = 12 * PT_PER_MM;
 
 // A system (one row of measures) is drawn in its own unit space and scaled to the column width.
-export const MEASURES_PER_ROW = 4;
+export const MEASURES_PER_ROW = DEFAULT_MEASURES_PER_ROW;
 export const SYSTEM_UNIT_WIDTH = 780;
 export const SYSTEM_UNIT_HEIGHT = 140;
 export const SYSTEM_UNIT_GAP = 8;
+
+// Melody staff geometry (system unit coordinates). The melody staff sits where the rhythm staff
+// sits in a rhythm-only system (lines y = 70..102); the rhythm staff of a melody system is drawn
+// below the lyrics by translating the rhythm drawing down by `rhythmOffset`.
+export const MELODY_STAVE_TOP = 70;
+export const MELODY_STAVE_BOTTOM = MELODY_STAVE_TOP + 32;
+const MELODY_LYRIC_FIRST_BASELINE_GAP = 26; // below the bottom staff line (leaves room for 2 ledger lines)
+const MELODY_BLOCK_BOTTOM_PADDING = 8;
+const MELODY_NO_LYRIC_BOTTOM = MELODY_STAVE_BOTTOM + 22;
+// The rhythm drawing starts at its accent row (y = 38) and ends at the system height (140).
+const RHYTHM_BLOCK_TOP = 36;
+const LEAD_SHEET_BOTTOM_PADDING = 6;
+
+export type SystemKind = 'rhythm' | 'melody' | 'leadSheet';
+
+export interface SystemGeometry {
+  kind: SystemKind;
+  unitHeight: number;
+  verseCount: number;
+  /** Baseline of verse 1 of the syllable lyrics (melody systems). */
+  lyricBaseline: number;
+  lyricLineHeight: number;
+  /** Vertical translation of the rhythm drawing (melody systems with the rhythm staff). */
+  rhythmOffset: number;
+}
+
+export function lyricLineHeight(lyricSize: number): number {
+  return Math.round(lyricSize * 1.5 * 100) / 100;
+}
+
+/** Height and vertical layout of one system; rhythm-only systems keep the original 140 unit height. */
+export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedScore, 'showRhythm' | 'style'>): SystemGeometry {
+  const hasMelody = measures.some(m => m.melody !== undefined);
+  const lyricSize = score.style.lyricSize ?? 10;
+  const lineHeight = lyricLineHeight(lyricSize);
+  if (!hasMelody) {
+    return { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+  }
+  let verseCount = 0;
+  for (const m of measures) {
+    for (const n of m.melody ?? []) {
+      verseCount = Math.max(verseCount, n.syllables.length);
+    }
+  }
+  const leadSheet = !score.showRhythm;
+  // Lead sheets draw the measure lyric (l:"...") of melody-less measures on the first lyric line.
+  if (leadSheet && verseCount === 0 && measures.some(m => !m.melody && m.lyric)) {
+    verseCount = 1;
+  }
+  const lyricBaseline = MELODY_STAVE_BOTTOM + MELODY_LYRIC_FIRST_BASELINE_GAP;
+  const melodyBottom = verseCount > 0
+    ? lyricBaseline + (verseCount - 1) * lineHeight + MELODY_BLOCK_BOTTOM_PADDING
+    : MELODY_NO_LYRIC_BOTTOM;
+  if (leadSheet) {
+    return { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+  }
+  const rhythmOffset = melodyBottom - RHYTHM_BLOCK_TOP;
+  return { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset };
+}
 
 // Header / running header / footer metrics (pt)
 export const DEFAULT_TITLE_SIZE = 20;
@@ -58,6 +117,7 @@ export const PAGE_BREAK_SEPARATOR_HEIGHT = 28;
 export interface SystemRow {
   measures: MeasureData[];
   isFirstSystem: boolean;
+  geometry: SystemGeometry;
 }
 
 export interface LayoutPage {
@@ -125,14 +185,17 @@ export function getDiagramGrid(count: number, width: number): DiagramGrid {
   return { perRow, rows, height: gridHeight + 6 + BLOCK_SPACING };
 }
 
-/** Splits each manual page into system rows (4 measures per row). */
+/** Splits each manual page into system rows (`measuresPerRow` measures per row, default 4). */
 export function splitIntoRows(score: ParsedScore): SystemRow[][] {
+  const perRow = score.measuresPerRow || MEASURES_PER_ROW;
   return score.pages.map((page, pIdx) => {
     const rows: SystemRow[] = [];
-    for (let i = 0; i < page.measures.length; i += MEASURES_PER_ROW) {
+    for (let i = 0; i < page.measures.length; i += perRow) {
+      const measures = page.measures.slice(i, i + perRow);
       rows.push({
-        measures: page.measures.slice(i, i + MEASURES_PER_ROW),
-        isFirstSystem: pIdx === 0 && i === 0
+        measures,
+        isFirstSystem: pIdx === 0 && i === 0,
+        geometry: getSystemGeometry(measures, score)
       });
     }
     return rows;
@@ -173,11 +236,12 @@ export function layoutScore(score: ParsedScore, pageSize: PageSize, orientation:
   for (const manualRows of splitIntoRows(score)) {
     openPage();
     for (const row of manualRows) {
-      if (current!.rows.length > 0 && remaining < systemHeight) {
+      const rowHeight = row.geometry.unitHeight * systemScale;
+      if (current!.rows.length > 0 && remaining < rowHeight) {
         openPage();
       }
       current!.rows.push(row);
-      remaining -= systemHeight + systemGap;
+      remaining -= rowHeight + systemGap;
     }
   }
   if (pages.length === 0) {

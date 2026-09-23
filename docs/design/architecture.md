@@ -92,6 +92,9 @@ flowchart TD
   - 同梱フォントを Webview で読み込むため、`localResourceRoots` に `media/fonts` を指定し、`asWebviewUri` で得た URI を `compileGuitarDslToHtml` に渡す。
 - **PDFエクスポート制御 (`exportScoreToPdf`)**:
   - 保存ダイアログで保存先を選択させ、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
+- **診断 (`DiagnosticCollection('guitardsl')`)**:
+  - GuitarDSL 文書の open / change 時に `parseGuitarDsl` を実行し、`ParsedScore.diagnostics` を `vscode.Diagnostic` に変換して発行する（プレビューの有無に依存しない）。close 時にクリアする。
+  - 文言は `i18n.ts` の `formatDiagnostic(code, args, locale)` で生成する。コンパイラは文言を持たない。
 
 ### 2.2 GuitarDSL Compiler (`src/compiler.ts`)
 テキストとしてのDSL入力をパースし、楽譜の AST（`ParsedScore`）を構築する。描画処理は持たない。
@@ -101,7 +104,12 @@ flowchart TD
   - `ScorePage`: 手動改ページ（`pagebreak`）単位の小節の配列。
   - `MeasureData`: 1小節分のデータ（小節内コード配列 `chords`、反復記号 `repeatStart` / `repeatEnd` / `isMeasureRepeat`、リズム配列 `rhythms`、歌詞 `lyric`、セクション名 `sectionName` 等）。
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
+  - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
+  - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
+- **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 3連）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
 - **パーサー (`parseGuitarDsl`)**:
+  - `mel:` / `lyr:` 行は小節行より先に判定する。メロディは「未割り当て小節カーソル」で小節へ割り当て、セクション見出し・改ページでカーソルを末尾へ進める。`lyr:` は直前の `mel:` 行が割り当てた音符列に番ごとに音節を割り当てる。
+  - 構文上の問題は例外にせず `diagnostics` に積み、該当トークンを捨てて処理を継続する（§5）。
   - 行単位でテキストを走査。
   - ヘッダー部（`key: value`）から楽曲メタデータおよびスタイル指定を抽出。
   - セクション見出し（`[...]`）および改ページ指示（`pagebreak`）を認識し、ページ構造（`ScorePage`）を分割。
@@ -114,13 +122,16 @@ AST からページ SVG と Webview HTML を生成する。VS Code API に依存
 - **`layout.ts`**:
   - 用紙定義（`PAGE_CONFIG`）と座標系。座標単位は pt（1/72 inch）で、シート SVG の `viewBox` は用紙サイズ（pt）と一致する。これにより同じ SVG が PDF ページへ 1:1 で対応する。
   - 余白（上下 10mm、左右 12mm）、横向き時の 2 カラム（ガター 12mm）。
-  - 段（4 小節）は 780×140 の段座標で描画し、カラム幅に合わせて `scale` する。段間隔も段座標（8）で持つため、用紙サイズによらず比率が一定。
-  - `layoutScore()`: 手動改ページごとに新ページを開始し、残り高さに収まらない段を次ページへ送る（自動改ページ）。空ページでも最低 1 段は受け入れ、無限ループを防ぐ。縦向きは 1 ページ / シート、横向きは 2 ページ / シート。
+  - 段（`measuresPerRow` 小節、既定 4）は幅 780 の段座標で描画し、カラム幅に合わせて `scale` する。段間隔も段座標（8）で持つため、用紙サイズによらず比率が一定。
+  - 段の高さは `SystemRow.unitHeight` として段ごとに算出する。メロディのない段は 140（従来と同一）、メロディのある段はメロディ部（譜表・加線域・歌詞番数）を加えた高さ、リードシートモードのメロディ段はメロディ部のみ。
+  - `layoutScore()`: 手動改ページごとに新ページを開始し、各段の高さを用いて残り高さに収まらない段を次ページへ送る（自動改ページ）。空ページでも最低 1 段は受け入れ、無限ループを防ぐ。縦向きは 1 ページ / シート、横向きは 2 ページ / シート。
   - `estimateTextWidth()`: 同梱フォントの ASCII 文字幅テーブル（実測値）と全角 = 1em による文字幅見積もり。拡張機能ホストには DOM が無いため、タイトルの縮小・省略判定に用いる。
 - **`svg.ts`**:
   - `renderScoreSheets()`: シートごとの単一 SVG（ヘッダー、コードダイアグラム、段、ランニングヘッダー、フッター）。
   - `renderContinuousSvg()` / `compileGuitarDslToSvg()`: Web モード用のページ分割なしの縦長 SVG。
   - 段描画（`renderSystemSvgContent`）：五線、ト音記号、スラッシュ、符尾・ビーム、タイ、ストローク記号、小節線、歌詞。
+  - メロディ段：メロディ譜表（調号、符頭、加線、臨時記号、符幹、連桁、3連括弧、タイ）と音節歌詞を上に描画し、既存のリズム描画を y 方向に平行移動して下に描画する。小節内の x 座標は、リズムとメロディの発音拍の和集合を等間隔に並べた列から決める（メロディのない小節は従来通りリズム項目の等間隔）。
+  - 臨時記号の要否は調号と小節内の臨時記号状態から決める。♯・♭・♮ はフォントに依存しないベクターパスで描き、プレビューと PDF の同一性を保つ。
   - フォントはルート要素の `font-family`（同梱 Noto Sans JP）に統一し、要素ごとの `font-family` 指定は持たない。全テキストは `escapeXml` を通す。
 - **`chordLibrary.ts`**: コード押弦データ（`CHORD_LIBRARY`）と未登録コードのフォールバック。
 - **`previewHtml.ts`** (`compileGuitarDslToHtml`):
@@ -230,6 +241,7 @@ sequenceDiagram
 
 1. **構文エラーの自己回復性**:
    - DSLパーサーは、未知のトークンや構文違反に遭遇しても処理を中断（throw）せず、安全にフォールバック（小節のスキップ、プレースホルダー表示、デフォルト値の適用）を行い、プレビュー描画がクラッシュするのを防ぐ。
+   - メロディ・歌詞・音価・新ヘッダーの問題は `ParsedScore.diagnostics` に記録し、拡張機能ホストが VS Code の診断として表示する。
 2. **環境非依存の PDF 出力**:
    - PDF 生成は拡張機能内（pdfkit）で完結し、外部ブラウザや OS のフォントに依存しない。
 3. **失敗時のファイル整合性**:

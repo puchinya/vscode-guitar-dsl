@@ -1,0 +1,41 @@
+title: ゆうやけコンパス - Melody Sample
+artist: GuitarDSL Original
+key: C
+bpm: 96
+memo: メロディライン（mel:）と音符単位の歌詞（lyr:）のサンプル。Aメロは4小節まとめて、サビは1小節ごとに mel/lyr を記述。
+
+[Intro]
+| C  | 4.d 4.d 4.d 4.d |
+| G  | 4.d 4.d 4.d 4.d |
+
+[Aメロ]
+| C  | 8.d 8.u 4.d 8.d 8.u 4.d |
+| G  | % |
+| Am | % |
+| Em | 4.d 4.d 2.d |
+mel: | r/8 e4/8 e g a g e d | d4/8 d e d c/4 r/4 | c4/8 c d e a/4 g | g4/2~ g/4 r/4 |
+lyr: | あさの ひかりを      | あびな がら         | ちいさな ゆめ      | を              |
+lyr: | ゆうやけ そらに      | つきが でる         | しゃぼんだま _     | が              |
+
+[Bメロ]
+# メロディなし → 従来の小節単位歌詞 l:"..." で記述
+| F  | 4.d 4.d 4.d 4.d l:"まよいそうな わかれみちも" |
+| G  | % l:"かぜが せなかを おしてくれる" |
+
+[サビ]
+| F  | 4.d 8.d 8.u.a 8.u 8.d 4.d |
+mel: | a4/4. g/8 f/4 e |
+lyr: | いまこそ |
+| G  | % |
+mel: | d4/8 e f g/4 a r/8 |
+lyr: | あのそらへ |
+| C  | % |
+mel: | % |
+lyr: | (ひか)りのなか |
+| C:3 C7:1 | 2.d 2.d |
+mel: | bb4/4 a g/2 |
+lyr: | ゆこう |
+
+[Outro]
+| F/2+8 G/4. | 8t.d 8t.u 8t.d 8t.u 8t.d 8t.u 2.d |
+| C  | 1.d |

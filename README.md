@@ -7,6 +7,8 @@
 - 横分割 Webview によるリアルタイム SVG レンダリング
 - 外部 CDN やインターネット接続不要の完全スタンドアロン動作
 - ワンクリックで PDF 保存（外部ブラウザ不要。A4/A3/A5/B4/B5/Letter、縦・横見開き）
+- メロディライン（`mel:`）と音符単位の歌詞（`lyr:`）、調号、リードシート表示（`samples/sample_melody.guitardsl`, `samples/sample_leadsheet.guitardsl`）
+- 記述ミスをエディタの「問題」パネルに表示
 
 ## ライセンス表記
 - 同梱フォント `media/fonts/NotoSansJP-*.ttf`（Noto Sans JP）は SIL Open Font License 1.1 に従います（`media/fonts/OFL.txt`）。

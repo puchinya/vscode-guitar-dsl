@@ -4,7 +4,8 @@ import { compileGuitarDslToHtml } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { getBundledFontFiles, writeScorePdf } from './pdf';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
-import { resolveLocale, getMessages } from './i18n';
+import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale } from './i18n';
+import { parseGuitarDsl } from './compiler';
 
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
@@ -99,11 +100,39 @@ export async function resolveGuitarDslDocument(
   return undefined;
 }
 
+/** Converts compiler diagnostics of a GuitarDSL document into VS Code diagnostics (spec extension.md §5A). */
+export function computeDocumentDiagnostics(doc: vscode.TextDocument, locale: SupportedLocale): vscode.Diagnostic[] {
+  return parseGuitarDsl(doc.getText()).diagnostics.map(d => {
+    const lineLength = d.line < doc.lineCount ? doc.lineAt(d.line).text.length : 0;
+    const range = new vscode.Range(d.line, Math.min(d.startCol, lineLength), d.line, Math.min(d.endCol, lineLength));
+    const diagnostic = new vscode.Diagnostic(
+      range,
+      formatDiagnostic(d.code, d.args, locale),
+      d.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning
+    );
+    diagnostic.source = 'guitardsl';
+    diagnostic.code = d.code;
+    return diagnostic;
+  });
+}
+
 export function activate(context: vscode.ExtensionContext) {
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
+
+  const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
+  context.subscriptions.push(diagnosticCollection);
+  const refreshDiagnostics = (doc: vscode.TextDocument) => {
+    if (isGuitarDslDocument(doc)) {
+      diagnosticCollection.set(doc.uri, computeDocumentDiagnostics(doc, currentLocale));
+    }
+  };
+  vscode.workspace.textDocuments.forEach(refreshDiagnostics);
+  vscode.workspace.onDidOpenTextDocument(refreshDiagnostics, null, context.subscriptions);
+  vscode.workspace.onDidChangeTextDocument(e => refreshDiagnostics(e.document), null, context.subscriptions);
+  vscode.workspace.onDidCloseTextDocument(doc => diagnosticCollection.delete(doc.uri), null, context.subscriptions);
 
   const fontsRoot = vscode.Uri.joinPath(context.extensionUri, 'media', 'fonts');
   // Paper size / orientation of the preview; the webview requests changes via 'layoutChanged'.

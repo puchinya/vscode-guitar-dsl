@@ -67,4 +67,34 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(introSymbol, 'Intro section symbol should exist');
     assert.ok(introSymbol.children.length >= 1, 'Intro should have measure symbols');
   });
+
+  test('Diagnostics should be published for invalid melody lines and cleared on fix', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['| C | 4.d 4.d 4.d 4.d |', 'mel: | E4/4 d e f |'].join('\n')
+    });
+    await vscode.window.showTextDocument(doc);
+
+    const waitFor = async (predicate: (d: readonly vscode.Diagnostic[]) => boolean) => {
+      for (let i = 0; i < 50; i++) {
+        const diags = vscode.languages.getDiagnostics(doc.uri);
+        if (predicate(diags)) return diags;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return vscode.languages.getDiagnostics(doc.uri);
+    };
+
+    const diags = await waitFor(d => d.length > 0);
+    const upper = diags.find(d => d.code === 'upperCaseNoteName');
+    assert.ok(upper, 'upperCaseNoteName diagnostic should be published');
+    assert.strictEqual(upper.severity, vscode.DiagnosticSeverity.Error);
+    assert.strictEqual(upper.range.start.line, 1);
+    assert.strictEqual(doc.getText(upper.range), 'E4/4');
+
+    const editor = vscode.window.activeTextEditor!;
+    await editor.edit(edit => edit.replace(upper.range, 'c5/4'));
+    const cleared = await waitFor(d => d.length === 0);
+    assert.strictEqual(cleared.length, 0, 'Diagnostics should be cleared after fixing the note');
+  });
 });
+
