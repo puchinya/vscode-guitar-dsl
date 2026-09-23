@@ -1,39 +1,35 @@
-export type Fret = number | 'x' | 'o';
+import { ChordDefinition, ChordVoicing, chordKey, splitChordKey } from '../chordDefinition';
+import { getDefaultVoicing } from '../chordPresets';
 
-export interface ChordDiagram {
+export interface ResolvedChordDiagram {
+  /** `name` or `name@label`. */
+  key: string;
   name: string;
-  strings: Fret[]; // 6th string to 1st string
-  baseFret?: number;
+  label?: string;
+  voicing: ChordVoicing;
+  source: 'definition' | 'library' | 'fallback';
 }
 
-export const CHORD_LIBRARY: Record<string, Fret[]> = {
-  'C': ['x', 3, 2, 'o', 1, 'o'],
-  'G': [3, 2, 'o', 'o', 'o', 3],
-  'D': ['x', 'x', 'o', 2, 3, 2],
-  'A': ['x', 'o', 2, 2, 2, 'o'],
-  'E': ['o', 2, 2, 1, 'o', 'o'],
-  'Am': ['x', 'o', 2, 2, 1, 'o'],
-  'Em': ['o', 2, 2, 'o', 'o', 'o'],
-  'Dm': ['x', 'x', 'o', 2, 3, 1],
-  'F': [1, 3, 3, 2, 1, 1],
-  'B7': ['x', 2, 1, 2, 'o', 2],
-  'Cadd9': ['x', 3, 2, 'o', 3, 3],
-  'G/B': ['x', 2, 'o', 'o', 3, 3],
-  'D/F#': [2, 'o', 'o', 2, 3, 2],
-  'Dm7': ['x', 'x', 'o', 2, 1, 1],
-  'Am7': ['x', 'o', 2, 'o', 1, 'o'],
-  'Em7': ['o', 2, 2, 'o', 3, 3],
-  'G7': [3, 2, 'o', 'o', 'o', 1],
-  'C7': ['x', 3, 2, 3, 1, 'o'],
-  'A7': ['x', 'o', 2, 'o', 2, 'o'],
-  'E7': ['o', 2, 'o', 1, 'o', 'o'],
-  'Fmaj7': ['x', 'x', 3, 2, 1, 'o'],
-  'Bm7': ['x', 2, 4, 2, 3, 2],
-  'Cmaj7': ['x', 3, 2, 'o', 'o', 'o']
-};
+const FALLBACK_VOICING: ChordVoicing = { frets: ['x', 'x', 0, 2, 3, 2], barres: [] };
 
-const FALLBACK_FRETS: Fret[] = ['x', 'x', 'o', 2, 3, 2];
+/**
+ * Diagram for a key (spec §7.4): the file's definition of that key; for an unlabeled name or an
+ * undefined label, the unlabeled definition, then the preset library, then the fallback shape.
+ */
+export function resolveChordDiagram(key: string, definitions: ChordDefinition[]): ResolvedChordDiagram {
+  const { name, label } = splitChordKey(key);
+  const find = (k: string) => definitions.find(d => chordKey(d.name, d.label) === k);
+  const own = find(key) ?? (label !== undefined ? find(name) : undefined);
+  if (own) {
+    return { key, name, label, voicing: own, source: 'definition' };
+  }
+  const library = getDefaultVoicing(name);
+  if (library) {
+    return { key, name, label, voicing: library, source: 'library' };
+  }
+  return { key, name, label, voicing: FALLBACK_VOICING, source: 'fallback' };
+}
 
-export function getChordFrets(name: string): Fret[] {
-  return CHORD_LIBRARY[name] || FALLBACK_FRETS;
+export function resolveScoreDiagrams(score: { usedChords: string[]; chordDefinitions: ChordDefinition[] }): ResolvedChordDiagram[] {
+  return score.usedChords.map(key => resolveChordDiagram(key, score.chordDefinitions));
 }

@@ -95,6 +95,7 @@ flowchart TD
 - **診断 (`DiagnosticCollection('guitardsl')`)**:
   - GuitarDSL 文書の open / change 時に `parseGuitarDsl` を実行し、`ParsedScore.diagnostics` を `vscode.Diagnostic` に変換して発行する（プレビューの有無に依存しない）。close 時にクリアする。
   - 文言は `i18n.ts` の `formatDiagnostic(code, args, locale)` で生成する。コンパイラは文言を持たない。
+- **コードダイアグラムエディタの入口**: `guitardsl.editChordDiagram` コマンド、`ChordDefinitionCodeLensProvider`、プレビューからの `editChord` メッセージを登録する（実体は §2.7）。
 
 ### 2.2 GuitarDSL Compiler (`src/compiler.ts`)
 テキストとしてのDSL入力をパースし、楽譜の AST（`ParsedScore`）を構築する。描画処理は持たない。
@@ -114,7 +115,11 @@ flowchart TD
   - ヘッダー部（`key: value`）から楽曲メタデータおよびスタイル指定を抽出。
   - セクション見出し（`[...]`）および改ページ指示（`pagebreak`）を認識し、ページ構造（`ScorePage`）を分割。
   - 小節行（`|` 区切り）を行分割・トークン分解し、コード、リズム（音価・ピッキング記号・タイ等）、歌詞（`l:"..."`）を構造化。
-  - 使用されているコードを自動収集する。
+  - 使用されているコードを自動収集する。キーは `コード名` または `コード名@ラベル`（`ParsedScore.usedChords`）。`ChordPlacement.name` は表示名（ラベルなし）で、ラベルは `ChordPlacement.label` に分けて持つ。
+  - `chord` 行はヘッダーより先に判定し、`ParsedScore.chordDefinitions` に集める（重複は先勝ち）。`@ラベル` 参照と定義の照合は全行の走査後に行うため、定義と参照の前後関係は問わない。
+- **コード定義 (`src/chordDefinition.ts`)**: `chord` 行のモデル（`ChordVoicing` / `ChordDefinition`、弦インデックス 0 = 6 弦）、解析 `parseChordDefinition`（エラー理由コードを返し、例外にしない）、整形 `formatChordDefinition`（解析と往復で一致）、開始フレットの自動決定 `resolveBaseFret`、コード名パターン `CHORD_NAME_PATTERN`。コンパイラ・描画・エディタで共用し、VS Code API に依存しない。
+- **コード理論 (`src/chordDetect.ts`)**: 標準チューニングの押弦からの自動判定 `detectChordNames`（ピッチクラス集合とタイプの照合、7th・9th 系の 5 度省略、最低音による分数コード、単純な名前ほど上位）と、コード名の分解 `parseChordName`。
+- **プリセット (`src/chordPresets.ts`)**: 手書きの基本形 `CHORD_LIBRARY` と、CAGED 系の形テンプレートを 12 ルートへ平行移動したボイシング（`getPresetVoicings`）。手書き → 開放弦あり → 低いフレットの順に並べ、重複を除く。セーハは `inferBarres` で推定する。`getDefaultVoicing` がラベルなしコードの既定の押さえ方。
 
 ### 2.3 Renderer (`src/render/`)
 AST からページ SVG と Webview HTML を生成する。VS Code API に依存しない純粋関数群。
@@ -133,7 +138,10 @@ AST からページ SVG と Webview HTML を生成する。VS Code API に依存
   - メロディ段：メロディ譜表（調号、符頭、加線、臨時記号、符幹、連桁、3連括弧、タイ）と音節歌詞を上に描画し、既存のリズム描画を y 方向に平行移動して下に描画する。小節内の x 座標は、リズムとメロディの発音拍の和集合を等間隔に並べた列から決める（メロディのない小節は従来通りリズム項目の等間隔）。
   - 臨時記号の要否は調号と小節内の臨時記号状態から決める。♯・♭・♮ はフォントに依存しないベクターパスで描き、プレビューと PDF の同一性を保つ。
   - フォントはルート要素の `font-family`（同梱 Noto Sans JP）に統一し、要素ごとの `font-family` 指定は持たない。全テキストは `escapeXml` を通す。
-- **`chordLibrary.ts`**: コード押弦データ（`CHORD_LIBRARY`）と未登録コードのフォールバック。
+- **`chordLibrary.ts`**: ダイアグラムの解決 `resolveChordDiagram` / `resolveScoreDiagrams`（ファイル内の定義 → ラベルなし定義 → プリセット → フォールバック）。
+- **`chordDiagram.ts`**: 1 枚のダイアグラムの SVG（`renderChordDiagramSvg`、ダイアグラム単位座標）。楽譜ヘッダーとエディタのプレビュー・サムネイルで共用する。`notation.ts` → `layout.ts` の循環を避けるため `notation.ts` を import しない。
+- **ダイアグラム領域**: `getDiagramGrid` は解決済みダイアグラムから、ラベル行と指番号行が要るかを判定してセル高さを決める。各セルは `<g class="chord-diagram" data-chord-key>` で、プレビューのクリック対象になる（PDF には影響しない属性）。
+- **`chordEditorHtml.ts`**: コードダイアグラムエディタ Webview の静的な HTML（文言は JSON として埋め込む）。
 - **`previewHtml.ts`** (`compileGuitarDslToHtml`):
   - ツールバー（HTML）とシート SVG 群・連続 SVG を包含する Webview HTML を構築する。表示モードは CSS（`data-display-mode`）で切り替える。
   - `fontUris` 指定時は `@font-face` で同梱フォントを読み込む。
@@ -159,6 +167,22 @@ VS Codeのエディタコアにおけるリアルタイムな字句ハイライ�
 
 - 正規表現による高速なパターンマッチング。
 - セクション見出し、メタデータヘッダー、小節線、反復記号、コードネーム、リズムストローク記号、歌詞トークンを標準的なスコープ名へマッピング。
+- `chord` 定義行は `begin` / `end` の領域として、コード名・ラベル・フレット文字列・オプションを個別にマッピングする。
+
+### 2.7 コードダイアグラムエディタ (`src/chordEditor.ts`, `src/chordEditorModel.ts`, `media/chordEditor.js`)
+- **責務の分担**: 検証・描画・自動判定・保存は拡張機能ホストが行い、Webview のスクリプト（`media/chordEditor.js`、ビルド対象外の素の JS）は編集状態の操作と表示だけを行う。ビルドは tsc のみのため、Webview 用のバンドルは作らず、TS のロジックはメッセージ経由で使う。
+- **`chordEditorModel.ts`**（VS Code 非依存、単体テスト対象）: 編集状態 `ChordEditorState`（`windowBase` = グリッドの開始フレット）、`createEditorSession`（既存定義またはキーの解決結果から開始）、`buildChordLine`（整形してから解析し直して検証。開始フレットは自動値と違うときだけ `base:` にする）、`planChordSave`（置換・挿入位置・重複の判定）。
+- **`ChordEditorPanel`**: シングルトン。開いた文書の URI と編集中の行番号を保持する。保存時は文書を開き直し、編集中の行がまだ `chord` 行であることを確かめてから `WorkspaceEdit` を適用し、保存後に解析し直して行番号を更新する。Webview からの状態は `sanitizeState` で形を整えてから使う。
+- **`ChordDefinitionCodeLensProvider`**: 解析に成功した `chord` 行ごとに CodeLens を返す。
+- **メッセージ**:
+
+| 方向 | メッセージ | 内容 |
+|---|---|---|
+| Webview → Ext | `ready` | 初期化完了。Ext は `load` を返す |
+| Webview → Ext | `change` | 編集状態。Ext は `preview`（SVG、DSL 行、エラー、判定候補）を返す |
+| Webview → Ext | `presets` | ルートとタイプ。Ext は `presets`（状態と SVG の一覧）を返す |
+| Webview → Ext | `save` / `close` | 保存（`asNew`）、パネルを閉じる |
+| Ext → Webview | `status` | 保存結果・エラー、編集中表示 |
 
 ---
 
@@ -213,6 +237,32 @@ sequenceDiagram
     Pdf->>Pdf: pdfkit + svg-to-pdfkit でページ描画・フォントサブセット埋め込み
     Pdf->>FS: 一時ファイルへ書き出し → rename
     Ext->>User: showInformationMessage ("PDFを保存しました")
+```
+
+### 3.3 コードダイアグラム編集フロー
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as ユーザー
+    participant Entry as プレビュー / CodeLens / コマンド
+    participant Ext as chordEditor.ts
+    participant WV as エディタ Webview
+    participant Doc as TextDocument
+
+    User->>Entry: ダイアグラムをクリック / 「ダイアグラムを編集」
+    Entry->>Ext: guitardsl.editChordDiagram(uri, key)
+    Ext->>Ext: createEditorSession(text, key)
+    WV->>Ext: ready
+    Ext->>WV: load(state, presets の一覧)
+    User->>WV: グリッド・プリセット・名前を編集
+    WV->>Ext: change(state)
+    Ext->>WV: preview(svg, line, error, candidates)
+    User->>WV: 保存
+    WV->>Ext: save(state, asNew)
+    Ext->>Ext: buildChordLine → planChordSave
+    Ext->>Doc: WorkspaceEdit (置換 / 挿入)
+    Doc-->>Entry: onDidChangeTextDocument（プレビュー・診断・CodeLens が更新）
 ```
 
 ---

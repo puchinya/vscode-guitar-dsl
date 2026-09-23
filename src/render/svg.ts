@@ -1,12 +1,12 @@
 import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl } from '../compiler';
 import { Fraction, NoteValuePart, ZERO, fadd, fnum } from '../duration';
-import { getChordFrets } from './chordLibrary';
+import { diagramStringX, renderChordDiagramSvg } from './chordDiagram';
+import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
 import {
   BLOCK_SPACING,
   DIAGRAM_CELL_WIDTH,
   DIAGRAM_GAP_X,
   DIAGRAM_GAP_Y,
-  DIAGRAM_CELL_HEIGHT,
   DIAGRAM_NAME_HEIGHT,
   DIAGRAM_SCALE,
   DiagramGrid,
@@ -83,11 +83,12 @@ export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4
   const systemGap = SYSTEM_UNIT_GAP * scale;
   const ctx = getRenderContext(score);
   const header = getHeaderMetrics(score.style.titleSize ?? DEFAULT_TITLE_SIZE);
-  const grid = getDiagramGrid(score.usedChords.length, contentWidth);
+  const diagrams = resolveScoreDiagrams(score);
+  const grid = getDiagramGrid(diagrams, contentWidth);
 
   let body = renderScoreHeader(score, contentWidth, header);
   let y = header.height;
-  body += `<g transform="translate(0, ${fmt(y)})">${renderDiagramGrid(score.usedChords, contentWidth, grid)}</g>`;
+  body += `<g transform="translate(0, ${fmt(y)})">${renderDiagramGrid(diagrams, contentWidth, grid)}</g>`;
   y += grid.height;
 
   splitIntoRows(score).forEach((rows, pIdx) => {
@@ -123,7 +124,7 @@ function renderPage(score: ParsedScore, layout: ScoreLayout, page: LayoutPage, t
   if (page.hasScoreHeader) {
     out += renderScoreHeader(score, width, layout.header);
     y += layout.header.height;
-    out += `<g transform="translate(0, ${fmt(y)})">${renderDiagramGrid(score.usedChords, width, layout.diagrams)}</g>`;
+    out += `<g transform="translate(0, ${fmt(y)})">${renderDiagramGrid(resolveScoreDiagrams(score), width, layout.diagrams)}</g>`;
     y += layout.diagrams.height;
   } else {
     out += renderRunningHeader(score.title, page.pageNumber, width);
@@ -185,19 +186,25 @@ function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics):
   return out;
 }
 
-function renderDiagramGrid(chords: string[], width: number, grid: DiagramGrid): string {
+/** Diagram cells carry `data-chord-key` so the preview can open the chord editor on click. */
+function renderDiagramGrid(diagrams: ResolvedChordDiagram[], width: number, grid: DiagramGrid): string {
   if (grid.rows === 0) {
     return '';
   }
+  const centerX = (diagramStringX(0) + diagramStringX(5)) / 2 * DIAGRAM_SCALE;
   let out = '';
-  chords.forEach((name, idx) => {
+  diagrams.forEach((d, idx) => {
     const col = idx % grid.perRow;
     const row = Math.floor(idx / grid.perRow);
     const x = col * (DIAGRAM_CELL_WIDTH + DIAGRAM_GAP_X);
-    const y = row * (DIAGRAM_CELL_HEIGHT + DIAGRAM_GAP_Y);
-    out += `<g transform="translate(${fmt(x)}, ${fmt(y)})">`;
-    out += `<text x="${fmt(DIAGRAM_CELL_WIDTH / 2)}" y="9" font-size="9.5" font-weight="bold" text-anchor="middle" fill="#000">${escapeXml(name)}</text>`;
-    out += `<g transform="translate(0, ${DIAGRAM_NAME_HEIGHT}) scale(${DIAGRAM_SCALE})">${renderChordDiagramSvg(getChordFrets(name))}</g>`;
+    const y = row * (grid.cellHeight + DIAGRAM_GAP_Y);
+    out += `<g class="chord-diagram" data-chord-key="${escapeXml(d.key)}" transform="translate(${fmt(x)}, ${fmt(y)})">`;
+    out += `<rect x="0" y="0" width="${fmt(DIAGRAM_CELL_WIDTH)}" height="${fmt(grid.cellHeight)}" fill="#fff" fill-opacity="0"/>`;
+    out += `<text x="${fmt(centerX)}" y="9" font-size="9.5" font-weight="bold" text-anchor="middle" fill="#000">${escapeXml(d.name)}</text>`;
+    if (d.label) {
+      out += `<text x="${fmt(centerX)}" y="${fmt(DIAGRAM_NAME_HEIGHT + 4.5)}" font-size="6" text-anchor="middle" fill="#777">${escapeXml(d.label)}</text>`;
+    }
+    out += `<g transform="translate(0, ${fmt(grid.headHeight)}) scale(${DIAGRAM_SCALE})">${renderChordDiagramSvg(d.voicing)}</g>`;
     out += `</g>`;
   });
   const ruleY = grid.height - BLOCK_SPACING;
@@ -241,42 +248,6 @@ function fitText(text: string, fontSize: number, maxWidth: number, bold: boolean
 }
 
 
-
-function renderChordDiagramSvg(frets: (number | 'x' | 'o')[]): string {
-  let circles = '';
-  let topMarks = '';
-
-  for (let s = 0; s < 6; s++) {
-    const x = 5 + s * 8;
-    const f = frets[s];
-    if (f === 'x') {
-      topMarks += `<text x="${x}" y="9" font-size="8" text-anchor="middle" fill="#000">×</text>`;
-    } else if (f === 'o') {
-      topMarks += `<circle cx="${x}" cy="7" r="2" fill="none" stroke="#000" stroke-width="0.8"/>`;
-    } else if (typeof f === 'number' && f > 0) {
-      const y = 14 + (f - 1) * 9 + 4.5;
-      circles += `<circle cx="${x}" cy="${y}" r="3" fill="#000"/>`;
-    }
-  }
-
-  return `
-    ${topMarks}
-    <!-- Nut -->
-    <line x1="5" y1="14" x2="45" y2="14" stroke="#000" stroke-width="2.2"/>
-    <!-- Frets -->
-    <line x1="5" y1="23" x2="45" y2="23" stroke="#888" stroke-width="0.7"/>
-    <line x1="5" y1="32" x2="45" y2="32" stroke="#888" stroke-width="0.7"/>
-    <line x1="5" y1="41" x2="45" y2="41" stroke="#888" stroke-width="0.7"/>
-    <line x1="5" y1="50" x2="45" y2="50" stroke="#888" stroke-width="0.7"/>
-    <!-- Strings -->
-    <line x1="5" y1="14" x2="5" y2="50" stroke="#000" stroke-width="0.7"/>
-    <line x1="13" y1="14" x2="13" y2="50" stroke="#000" stroke-width="0.7"/>
-    <line x1="21" y1="14" x2="21" y2="50" stroke="#000" stroke-width="0.7"/>
-    <line x1="29" y1="14" x2="29" y2="50" stroke="#000" stroke-width="0.7"/>
-    <line x1="37" y1="14" x2="37" y2="50" stroke="#000" stroke-width="0.7"/>
-    <line x1="45" y1="14" x2="45" y2="50" stroke="#000" stroke-width="0.7"/>
-    ${circles}`;
-}
 
 interface RhythmStaffOptions {
   /** Draw section labels and chord names (false when the melody staff above already shows them). */

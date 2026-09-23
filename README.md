@@ -9,6 +9,7 @@
 - ワンクリックで PDF 保存（外部ブラウザ不要。A4/A3/A5/B4/B5/Letter、縦・横見開き）
 - メロディライン（`mel:`）と音符単位の歌詞（`lyr:`）、調号、リードシート表示（`samples/sample_melody.guitardsl`, `samples/sample_leadsheet.guitardsl`。使える音符・記号の一覧は `samples/sample_notes.guitardsl`）
 - 記述ミスをエディタの「問題」パネルに表示
+- コードダイアグラムの定義（`chord C@barre = x35553 ...`）と `@ラベル` による押さえ方の使い分け、Guitar Pro 風の GUI エディタ（プリセット、指番号、セーハ、コード名の自動判定）。プレビューのダイアグラムをクリック、`chord` 行の CodeLens、または `GuitarDSL: Edit Chord Diagram` で開く（`samples/sample_voicings.guitardsl`）
 
 ## ライセンス表記
 - 同梱フォント `media/fonts/NotoSansJP-*.ttf`（Noto Sans JP）は SIL Open Font License 1.1 に従います（`media/fonts/OFL.txt`）。

@@ -46,6 +46,10 @@
       {
         "command": "guitardsl.exportPdf",
         "title": "%command.exportPdf.title%"
+      },
+      {
+        "command": "guitardsl.editChordDiagram",
+        "title": "%command.editChordDiagram.title%"
       }
     ],
     "menus": {

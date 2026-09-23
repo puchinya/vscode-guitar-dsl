@@ -29,7 +29,40 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(
       commands.includes('guitardsl.exportPdf'),
       'Command guitardsl.exportPdf should be registered'
+    );    assert.ok(
+      commands.includes('guitardsl.editChordDiagram'),
+      'Command guitardsl.editChordDiagram should be registered'
     );
+  });
+
+  test('CodeLens should offer the chord editor on chord definition lines', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['title: Chords', 'chord C@barre = x35553 base:3', 'chord D = nope', '| C@barre |'].join('\n')
+    });
+    const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', doc.uri);
+    assert.ok(lenses, 'CodeLenses should be returned');
+    const chordLenses = lenses.filter(l => l.command?.command === 'guitardsl.editChordDiagram');
+    assert.strictEqual(chordLenses.length, 1, 'Only the valid chord line gets a CodeLens');
+    assert.strictEqual(chordLenses[0].range.start.line, 1);
+    assert.strictEqual(chordLenses[0].command!.arguments![1], 'C@barre');
+  });
+
+  test('Edit chord diagram command should open the editor panel', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['chord C@barre = x35553 base:3', '| C@barre |'].join('\n')
+    });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('guitardsl.editChordDiagram', doc.uri, 'C@barre');
+    let tabs: vscode.Tab[] = [];
+    let editorTab: vscode.Tab | undefined;
+    for (let i = 0; i < 50 && !editorTab; i++) {
+      tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+      editorTab = tabs.find(t => t.input instanceof vscode.TabInputWebview && t.label.endsWith(': C@barre'));
+      if (!editorTab) await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(editorTab, `Chord editor tab should be open (tabs: ${tabs.map(t => t.label).join(', ')})`);
   });
 
   test('Document symbol provider should provide symbols for guitardsl document', async () => {

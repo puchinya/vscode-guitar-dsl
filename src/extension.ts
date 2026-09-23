@@ -4,7 +4,8 @@ import { compileGuitarDslToHtml } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { getBundledFontFiles, writeScorePdf } from './pdf';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
-import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale } from './i18n';
+import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
+import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
 
 export async function exportScoreToPdf(
@@ -190,6 +191,10 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
               vscode.window.showWarningMessage(msgs.msgDocNotFound);
             }
+          } else if (message.command === 'editChord') {
+            if (lastActiveGuitarDslDoc && typeof message.key === 'string') {
+              await vscode.commands.executeCommand(EDIT_CHORD_COMMAND, lastActiveGuitarDslDoc.uri, message.key);
+            }
           } else if (message.command === 'layoutChanged') {
             previewPageSize = pageSize;
             previewOrientation = orientation;
@@ -241,7 +246,25 @@ export function activate(context: vscode.ExtensionContext) {
     new GuitarDslDocumentSymbolProvider()
   );
 
-  context.subscriptions.push(previewDisposable, printDisposable, symbolDisposable);
+  // Chord diagram editor: command palette (quick pick), CodeLens on `chord` lines, preview diagram click.
+  const chordMsgs = getChordEditorMessages(currentLocale);
+  const editChordDisposable = vscode.commands.registerCommand(EDIT_CHORD_COMMAND, async (uri?: vscode.Uri, key?: string) => {
+    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!doc) {
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
+      return;
+    }
+    const target = typeof key === 'string' && isValidChordKey(key) ? key : await pickChordKey(doc, chordMsgs);
+    if (target) {
+      ChordEditorPanel.show(context.extensionUri, doc, target, currentLocale);
+    }
+  });
+  const codeLensDisposable = vscode.languages.registerCodeLensProvider(
+    { language: 'guitardsl' },
+    new ChordDefinitionCodeLensProvider(chordMsgs)
+  );
+
+  context.subscriptions.push(previewDisposable, printDisposable, symbolDisposable, editChordDisposable, codeLensDisposable);
 }
 
 export function deactivate() {}

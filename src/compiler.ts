@@ -3,8 +3,10 @@
 
 import { Fraction, ZERO, fadd, feq, fnum, frac, parseBeats, parseNoteValue, parseRhythmDuration } from './duration';
 import { MelodyNote, MelodyTokenState, parseMelodyToken, takesSyllable, tokenizeLyrics } from './melody';
+import { CHORD_LABEL_PATTERN, CHORD_NAME_PATTERN, ChordDefinition, chordKey, isChordDefinitionLine, parseChordDefinition } from './chordDefinition';
 
 export type { MelodyNote, Pitch, Syllable } from './melody';
+export type { ChordDefinition } from './chordDefinition';
 
 export interface RhythmItem {
   duration: string; // '4', '8', '16', '2', '1', 'w', 'h', 'q', '8t', '4+8', 'r...'
@@ -18,8 +20,11 @@ export interface RhythmItem {
 }
 
 export interface ChordPlacement {
+  /** Displayed chord name (without the `@label`). */
   name: string;
   beat: number;
+  /** Diagram variant label from `name@label` (spec §7.4). */
+  label?: string;
 }
 
 export interface MeasureData {
@@ -52,7 +57,10 @@ export type DiagnosticCode =
   | 'syllableCountMismatch'
   | 'lyricBarMismatch'
   | 'measureLyricWithMelody'
-  | 'invalidMeasuresPerRow';
+  | 'invalidMeasuresPerRow'
+  | 'invalidChordDefinition'
+  | 'duplicateChordDefinition'
+  | 'unknownChordVariant';
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -77,7 +85,10 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   syllableCountMismatch: 'warning',
   lyricBarMismatch: 'warning',
   measureLyricWithMelody: 'warning',
-  invalidMeasuresPerRow: 'warning'
+  invalidMeasuresPerRow: 'warning',
+  invalidChordDefinition: 'error',
+  duplicateChordDefinition: 'warning',
+  unknownChordVariant: 'warning'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -91,12 +102,12 @@ function rhythmBeatsFraction(durationStr: string): Fraction {
   return value ? value.beats : frac(1);
 }
 
-const CHORD_NAME_PATTERN = '[A-G][b#]?(?:maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(?:\\/[A-G][b#]?)?';
-// Length: ':' = beat count (legacy), '/' followed by a digit = note value.
-const CHORD_TOKEN_RE = new RegExp(`^(${CHORD_NAME_PATTERN})(?::([0-9][0-9.]*)|\\/([0-9][0-9.t+]*))?$`);
+// Optional `@label` selects a diagram variant (§7.4). Length: ':' = beat count (legacy), '/' followed by a digit = note value.
+const CHORD_TOKEN_RE = new RegExp(`^(${CHORD_NAME_PATTERN})(?:@(${CHORD_LABEL_PATTERN}))?(?::([0-9][0-9.]*)|\\/([0-9][0-9.t+]*))?$`);
 
 interface ParsedChordToken {
   name: string;
+  label?: string;
   duration?: Fraction;
   invalidLength?: boolean;
 }
@@ -104,15 +115,16 @@ interface ParsedChordToken {
 function parseChordToken(tok: string): ParsedChordToken | null {
   const match = tok.match(CHORD_TOKEN_RE);
   if (!match) return null;
-  if (match[2] !== undefined) {
-    const beats = parseBeats(match[2]);
-    return beats ? { name: match[1], duration: beats } : { name: match[1], invalidLength: true };
-  }
+  const base = { name: match[1], label: match[2] };
   if (match[3] !== undefined) {
-    const value = parseNoteValue(match[3]);
-    return value ? { name: match[1], duration: value.beats } : { name: match[1], invalidLength: true };
+    const beats = parseBeats(match[3]);
+    return beats ? { ...base, duration: beats } : { ...base, invalidLength: true };
   }
-  return { name: match[1] };
+  if (match[4] !== undefined) {
+    const value = parseNoteValue(match[4]);
+    return value ? { ...base, duration: value.beats } : { ...base, invalidLength: true };
+  }
+  return base;
 }
 
 const MAJOR_KEY_SIGNATURES: Record<string, number> = {
@@ -156,7 +168,10 @@ export interface ParsedScore {
   bpm: string;
   memo: string;
   style: ScoreStyle;
+  /** Diagram keys (`name` or `name@label`) in order of first use. */
   usedChords: string[];
+  /** `chord` definitions in source order (first definition of a key wins). */
+  chordDefinitions: ChordDefinition[];
   measures: MeasureData[];
   pages: ScorePage[];
   /** Sharps (> 0) / flats (< 0) derived from `key:`; null when the key cannot be parsed. */
@@ -194,6 +209,8 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
   let currentPageIndex = 0;
   let currentSection = '';
   const usedChordsSet = new Set<string>();
+  const chordDefinitions: ChordDefinition[] = [];
+  const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
 
   // Index of the first measure that has not received a melody yet (§12.3).
   let melodyCursor = 0;
@@ -218,6 +235,22 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
       }
       melodyCursor = measures.length;
       lastMelodyGroup = null;
+      continue;
+    }
+
+    // Chord diagram definition: chord C@barre = x35553 base:3
+    if (isChordDefinitionLine(line)) {
+      const result = parseChordDefinition(line);
+      if (!result.ok) {
+        report(lineIdx, lineStart, lineEnd, 'invalidChordDefinition', { reason: result.error, detail: result.detail });
+      } else {
+        const key = chordKey(result.definition.name, result.definition.label);
+        if (chordDefinitions.some(d => chordKey(d.name, d.label) === key)) {
+          report(lineIdx, lineStart, lineEnd, 'duplicateChordDefinition', { chord: key });
+        } else {
+          chordDefinitions.push({ ...result.definition, line: lineIdx });
+        }
+      }
       continue;
     }
 
@@ -300,7 +333,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
     const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':');
 
     const bars: string[] = [];
-    const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?::[0-9][0-9.]*|\\/[0-9][0-9.t+]*)?$`);
+    const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+]*)?$`);
     const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)t?(?:\+(?:16|8|4|2|1)t?)*|w|h|q)|r[a-z0-9]*)(\.[a-z]+)*$/;
     let searchPos = 0;
 
@@ -361,6 +394,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
       const tokens = cleanBar.split(/\s+/);
       interface RawParsedChord {
         name: string;
+        label?: string;
         duration?: Fraction;
         accumBeatAtToken: number;
       }
@@ -391,10 +425,15 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
           }
           rawChords.push({
             name: parsedChord.name,
+            label: parsedChord.label,
             duration: parsedChord.duration,
             accumBeatAtToken: fnum(runningBeat)
           });
-          usedChordsSet.add(parsedChord.name);
+          const key = chordKey(parsedChord.name, parsedChord.label);
+          usedChordsSet.add(key);
+          if (parsedChord.label !== undefined) {
+            chordUses.push({ key, line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
+          }
         } else if (tok.match(/^(\[[12]\.\])$/)) {
           // brackets like [1.] or [2.]
         } else if (RHYTHM_REGEX.test(tok)) {
@@ -435,7 +474,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
 
       let barChords: ChordPlacement[] = [];
       if (rawChords.length === 1) {
-        barChords = [{ name: rawChords[0].name, beat: rawChords[0].accumBeatAtToken }];
+        barChords = [placement(rawChords[0], rawChords[0].accumBeatAtToken)];
       } else if (rawChords.length > 1) {
         const allChordsBeforeRhythm = rawChords.every(c => c.accumBeatAtToken === 0);
         if (allChordsBeforeRhythm) {
@@ -445,14 +484,14 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
             barChords = rawChords.map(c => {
               const b = curB;
               curB = fadd(curB, c.duration ?? frac(2));
-              return { name: c.name, beat: fnum(b) };
+              return placement(c, fnum(b));
             });
           } else {
             const step = 4.0 / rawChords.length;
-            barChords = rawChords.map((c, idx) => ({ name: c.name, beat: idx * step }));
+            barChords = rawChords.map((c, idx) => placement(c, idx * step));
           }
         } else {
-          barChords = rawChords.map(c => ({ name: c.name, beat: c.accumBeatAtToken }));
+          barChords = rawChords.map(c => placement(c, c.accumBeatAtToken));
         }
       } else if (isMeasureRepeat && measures.length > 0) {
         const prev = measures[measures.length - 1];
@@ -461,7 +500,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
         } else if (prev.chord) {
           barChords = [{ name: prev.chord, beat: 0 }];
         }
-        barChords.forEach(c => usedChordsSet.add(c.name));
+        barChords.forEach(c => usedChordsSet.add(chordKey(c.name, c.label)));
       }
 
       const mData: MeasureData = {
@@ -484,6 +523,10 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
       pages[currentPageIndex].measures.push(mData);
       currentSection = ''; // consume section for the first bar
     }
+  }
+
+  function placement(c: { name: string; label?: string }, beat: number): ChordPlacement {
+    return c.label !== undefined ? { name: c.name, beat, label: c.label } : { name: c.name, beat };
   }
 
   function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number): MelodyGroup {
@@ -607,6 +650,14 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
     }
   }
 
+  // `name@label` references need a matching definition (definitions may appear anywhere in the file).
+  const definedKeys = new Set(chordDefinitions.map(d => chordKey(d.name, d.label)));
+  for (const use of chordUses) {
+    if (!definedKeys.has(use.key)) {
+      report(use.line, use.startCol, use.endCol, 'unknownChordVariant', { chord: use.key });
+    }
+  }
+
   const validPages = pages.filter((p, idx) => p.measures.length > 0 || idx === 0);
   validPages.forEach((p, idx) => {
     p.pageNumber = idx + 1;
@@ -621,6 +672,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
     memo,
     style,
     usedChords: Array.from(usedChordsSet),
+    chordDefinitions,
     measures,
     pages: validPages,
     keySignature: parseKeySignature(originalKey),
