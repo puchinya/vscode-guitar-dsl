@@ -229,3 +229,27 @@ Webview内では、CSS Flexbox / Grid およびインラインスタイルを用
    - PDFエクスポートにおいて、優先順位に従って複数のブラウザパスを探索。見つからない場合も例外でクラッシュさせず、ユーザーに対してわかりやすい警告通知を表示。
 3. **一時ファイルの確実な解放**:
    - 一時HTMLファイルおよびユーザーデータディレクトリのクリーンアップは `try ... finally` ブロック内で確実に実行し、異常終了時にもディスクリークを防止。
+
+---
+
+## 6. 国際化・ローカライゼーション設計 (Internationalization Architecture)
+
+### 6.1 モジュール構成 (`src/i18n.ts`)
+- **責務**:
+  - 対応ロケール（`'ja' | 'en'`）の型定義。
+  - VS Code ロケール文字列（例: `'ja'`, `'ja-JP'`, `'en'`, `'en-US'`, `'fr'` 等）を受け取り、日本語プレフィックス以外をすべて `'en'` に縮退解決する `resolveLocale` 関数。
+  - ホストメッセージおよびWebviewツールバーUIメッセージの型定義（`Messages`）および静的辞書（`MESSAGES_JA`, `MESSAGES_EN`）の提供。
+  - 解決されたロケールに応じたメッセージ辞書を取得する `getMessages` ヘルパー。
+
+### 6.2 拡張機能ホストとプレビューHTMLの連携
+- **拡張機能ホスト (`src/extension.ts`)**:
+  - `vscode.env.language` からロケールを判別。
+  - 保存ダイアログ、通知メッセージ（情報/警告/エラー）、アクションボタンをローカライズ。
+  - `updateWebview` 実行時に解決済みロケールを `compileGuitarDslToHtml(dsl, { locale })` に渡す。
+- **DSL コンパイラ (`src/compiler.ts`)**:
+  - `compileGuitarDslToHtml` はオプション引数 `{ locale?: string }` を受け取り、内部で `resolveLocale` を呼び出してメッセージ辞書を取得。
+  - ツールバーの各ボタンテキスト（1ページ / Single Page、見開き / Spread、Web / Web）、用紙設定ラベル、向き切替ラベル、PDF保存ボタン、および各ボタンのツールチップ（title 属性）を動的に差し替えてレンダリング。
+  - オプション未指定時のデフォルト動作は英語（`'en'`）とし、外部呼び出し・単体テストとの後方互換性を保証。
+- **VS Code マニフェスト (`package.json`, `package.nls.json`, `package.nls.ja.json`)**:
+  - コマンドタイトルを `%command.showPreview.title%` / `%command.exportPdf.title%` に置換し、VS Code プラットフォーム標準の NLS 機構と完全連動。
+

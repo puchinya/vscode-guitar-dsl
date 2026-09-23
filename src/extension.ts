@@ -5,6 +5,7 @@ import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { compileGuitarDslToHtml, compileGuitarDslToPrintHtml, PageSize, PageOrientation } from './compiler';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
+import { resolveLocale, getMessages } from './i18n';
 
 export function findHeadlessBrowser(): string | undefined {
   const platform = process.platform;
@@ -67,15 +68,19 @@ export function findHeadlessBrowser(): string | undefined {
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
   pageSize: PageSize = 'A4',
-  orientation: PageOrientation = 'portrait'
+  orientation: PageOrientation = 'portrait',
+  locale?: string
 ): Promise<void> {
+  const currentLocale = resolveLocale(locale ?? vscode.env.language);
+  const msgs = getMessages(currentLocale);
+
   const defaultFileName = doc.fileName.replace(/\.(guitardsl|gdsl)$/i, '') + '.pdf';
   const targetUri = await vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(defaultFileName),
     filters: {
       'PDF Documents': ['pdf']
     },
-    title: 'GuitarDSL スコアをPDFとして保存'
+    title: msgs.dialogSavePdfTitle
   });
 
   if (!targetUri) {
@@ -84,9 +89,7 @@ export async function exportScoreToPdf(
 
   const browserPath = findHeadlessBrowser();
   if (!browserPath) {
-    vscode.window.showErrorMessage(
-      'PDF保存には Google Chrome、Microsoft Edge、または Chromium が必要です。ブラウザをインストールしてください。'
-    );
+    vscode.window.showErrorMessage(msgs.msgNeedBrowser);
     return;
   }
 
@@ -118,14 +121,14 @@ export async function exportScoreToPdf(
     });
 
     const action = await vscode.window.showInformationMessage(
-      `PDFを保存しました: ${path.basename(targetUri.fsPath)}`,
-      'ファイルを開く'
+      msgs.msgPdfSaved(path.basename(targetUri.fsPath)),
+      msgs.msgOpenFile
     );
-    if (action === 'ファイルを開く') {
+    if (action === msgs.msgOpenFile) {
       vscode.env.openExternal(targetUri);
     }
   } catch (err: any) {
-    vscode.window.showErrorMessage(`PDF保存に失敗しました: ${err.message || err}`);
+    vscode.window.showErrorMessage(msgs.msgPdfFailed(err.message || err));
   } finally {
     try {
       if (fs.existsSync(tmpHtmlPath)) {
@@ -198,12 +201,14 @@ export async function resolveGuitarDslDocument(
 export function activate(context: vscode.ExtensionContext) {
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
+  const currentLocale = resolveLocale(vscode.env.language);
+  const msgs = getMessages(currentLocale);
 
   const updateWebview = (doc: vscode.TextDocument) => {
     if (currentPanel && isGuitarDslDocument(doc)) {
       lastActiveGuitarDslDoc = doc;
       const text = doc.getText();
-      const htmlContent = compileGuitarDslToHtml(text);
+      const htmlContent = compileGuitarDslToHtml(text, { locale: currentLocale });
       currentPanel.webview.html = htmlContent;
     }
   };
@@ -211,7 +216,7 @@ export function activate(context: vscode.ExtensionContext) {
   const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri) => {
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!doc) {
-      vscode.window.showWarningMessage('GuitarDSL (.guitardsl) ファイルを開いてください。');
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
 
@@ -222,7 +227,7 @@ export function activate(context: vscode.ExtensionContext) {
     } else {
       currentPanel = vscode.window.createWebviewPanel(
         'guitardslPreview',
-        'GuitarDSL Score Preview',
+        msgs.previewTitle,
         vscode.ViewColumn.Beside,
         {
           enableScripts: true,
@@ -235,9 +240,9 @@ export function activate(context: vscode.ExtensionContext) {
           if (message.command === 'savePdf') {
             const activeDoc = lastActiveGuitarDslDoc || (await resolveGuitarDslDocument(undefined, undefined));
             if (activeDoc) {
-              await exportScoreToPdf(activeDoc, message.pageSize, message.orientation);
+              await exportScoreToPdf(activeDoc, message.pageSize, message.orientation, currentLocale);
             } else {
-              vscode.window.showWarningMessage('対象のGuitarDSLドキュメントが見つかりません。');
+              vscode.window.showWarningMessage(msgs.msgDocNotFound);
             }
           }
         },
@@ -273,10 +278,10 @@ export function activate(context: vscode.ExtensionContext) {
   const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (uri?: vscode.Uri) => {
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!doc) {
-      vscode.window.showWarningMessage('GuitarDSL (.guitardsl) ファイルを開いてください。');
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
-    await exportScoreToPdf(doc);
+    await exportScoreToPdf(doc, 'A4', 'portrait', currentLocale);
   });
 
   const symbolDisposable = vscode.languages.registerDocumentSymbolProvider(

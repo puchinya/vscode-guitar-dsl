@@ -142,3 +142,36 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
   - `SymbolKind.Field`
   - セクション内に含まれる各小節行を展開し、含まれるコードネームの要約（例: `| C | G | Am | Em |`）を子シンボルとして一覧表示。
   - アウトライン項目をクリックすることで、エディタ上の該当セクションまたは小節へ即座にカーソルがジャンプする。
+
+---
+
+## 6. 国際化・多言語対応仕様 (Internationalization / Localization)
+
+拡張機能は日本語および英語の表示に対応する。
+
+### 6.1 ロケール解決規則
+- VS Code の環境設定 `vscode.env.language` を参照する。
+- 言語コードが `ja` または `ja-` で始まる場合（大文字小文字問わず）は **日本語 (Japanese)** として解決する。
+- それ以外のすべての言語コード（`en`, `fr`, `de`, `zh-cn`、または未設定等）は **英語 (English)** として解決する（「日本語以外は英語」規則）。
+
+### 6.2 パッケージマニフェスト (`package.json`) のローカライズ
+- コマンドタイトルなどの貢献項目テキストは NLS 形式（`%key%`）で参照し、以下のファイルにより多言語化する。
+  - `package.nls.json`: デフォルト言語（英語）
+  - `package.nls.ja.json`: 日本語
+- 定義キー:
+  - `%command.showPreview.title%`
+  - `%command.exportPdf.title%`
+
+### 6.3 拡張機能メッセージのローカライズ
+- 以下のホスト側UIメッセージおよびダイアログは、解決されたロケールに従ってローカライズされる。
+  - Webview パネルタイトル: `GuitarDSL Score Preview` (EN) / `GuitarDSL スコアプレビュー` (JA)
+  - PDF保存ダイアログタイトル: `Save GuitarDSL Score as PDF` (EN) / `GuitarDSL スコアをPDFとして保存` (JA)
+  - ヘッドレスブラウザ必要通知: 英語 / 日本語
+  - PDF保存完了通知およびアクションボタン「Open File」 / 「ファイルを開く」: 英語 / 日本語
+  - 各種警告・エラー通知: 英語 / 日本語
+
+### 6.4 Webview プレビューツールバーのローカライズ
+- `compileGuitarDslToHtml(dslContent, options?: { locale?: string })` を提供する。
+- 指定されたロケールに従い、ツールバーの各コントロール（表示モード切替、用紙サイズ、向き切替、PDF保存ボタン）の表示ラベルおよびツールチップ（title 属性）をローカライズして描画する。
+- 引数 `options` が省略された場合のデフォルトロケールは英語（`en`）とする。
+
