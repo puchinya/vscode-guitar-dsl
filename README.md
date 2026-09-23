@@ -18,4 +18,4 @@
    npm run compile
    ```
 3. VS Code で本フォルダを開き、`F5` キーを押すと拡張機能開発ホストが起動します。
-4. 開発ホスト側で `sample.guitardsl` を開き、右上のプレビューボタン（または `Ctrl+Shift+P` -> `GuitarDSL: Open Preview to the Side`）を実行してください。
+4. 開発ホスト側で `samples/sample.guitardsl` を開き、右上のプレビューボタン（または `Ctrl+Shift+P` -> `GuitarDSL: Open Preview to the Side`）を実行してください。
