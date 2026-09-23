@@ -1,4 +1,4 @@
-import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore } from '../compiler';
+import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
 
@@ -244,13 +244,27 @@ export function layoutScore(score: ParsedScore, pageSize: PageSize, orientation:
 
   for (const manualRows of splitIntoRows(score)) {
     openPage();
-    for (const row of manualRows) {
+    for (let rIdx = 0; rIdx < manualRows.length; rIdx++) {
+      let row = manualRows[rIdx];
       const rowHeight = row.geometry.unitHeight * systemScale;
       if (current!.rows.length > 0 && remaining < rowHeight) {
         openPage();
       }
+      if (current!.rows.length === 0 && pages.length > 1 && score.expandPageBreakRepeats !== false) {
+        if (row.measures.length > 0 && row.measures[0].isMeasureRepeat) {
+          row = {
+            ...row,
+            measures: [
+              expandMeasureRepeat(row.measures[0], score.measures),
+              ...row.measures.slice(1)
+            ]
+          };
+          row.geometry = getSystemGeometry(row.measures, score);
+        }
+      }
       current!.rows.push(row);
-      remaining -= rowHeight + systemGap;
+      const actualHeight = row.geometry.unitHeight * systemScale;
+      remaining -= actualHeight + systemGap;
     }
   }
   if (pages.length === 0) {

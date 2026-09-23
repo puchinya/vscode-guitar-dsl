@@ -16,12 +16,23 @@ export const FIXED_TRANSCRIPTION_PROMPT =
   'IMPORTANT FOR JAPANESE LYRICS: Small kana (ゃ, ゅ, ょ, っ, ぁ, ぃ, ぅ, ぇ, ぉ, ゎ, ッ etc.) and long vowel mark (ー) must NEVER be standalone syllables or assigned to separate notes. They MUST always attach to the preceding character (e.g. "きょ", "がっ", "こー", "ふぁ") as a single syllable for one note. ' +
   'For example, if 8 syllables are sung in a measure ("き・ど・う・し・た・きょ・う・に"), output 8 eighth-notes (duration: "8"), each with its exact single syllable in the lyric property. Do NOT lump syllables together or simplify the vocal rhythm. ' +
   'TEMPO / BPM ACCURACY: Carefully detect the true tempo (BPM) from the rhythm section. In upbeat rock/pop 8-beat songs (like BPM 160-220), do NOT mistake the tempo as half-time (e.g. 80-110). Standard 8-beat has the bass drum on beats 1 & 3 and snare drum on beats 2 & 4 at the fast tempo (e.g. around BPM 185 for fast rock). Count each quarter-note beat where snare hits on 2 & 4 to determine the exact BPM. ' +
+  'STRUMMING & ARPEGGIO GUIDELINES: Prioritize classic, natural guitar accompaniment patterns (such as standard 8-beat "4.d 8.d 8.u 8.d 8.u 4.d", basic 8-beat "4.d 4.d 8.d 8.u 8.d 8.u", 16-beat "4.d 8.d 16.d 16.u 8.d 8.u 8.d 8.u", 8th-note fingerpicking arpeggios "8 8 8 8 8 8 8 8", triplet arpeggios, or sustained whole/half notes) rather than erratic or overly complex variations. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
   'sequences within each measure must sum to exactly 4 beats. ' +
   'CRITICAL CHORD DURATION RULES: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). ' +
   'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2". ' +
   'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
+
+export function buildTranscriptionPrompt(options?: { beatType?: 'auto' | '8beat' | '16beat' }): string {
+  let prompt = FIXED_TRANSCRIPTION_PROMPT;
+  if (options?.beatType === '8beat') {
+    prompt += ' BEAT TYPE REQUIREMENT: Transcribe the rhythm strictly as an 8-beat guitar groove (e.g. 4.d 8.d 8.u 8.d 8.u 4.d or eighth-note arpeggios). Avoid sixteenth-note divisions.';
+  } else if (options?.beatType === '16beat') {
+    prompt += ' BEAT TYPE REQUIREMENT: Transcribe the rhythm as a 16-beat guitar groove (e.g. 4.d 8.d 16.d 16.u 8.d 8.u 8.d 8.u or 16th-note cutting).';
+  }
+  return prompt;
+}
 
 export interface GeminiClientLike {
   interactions: {
@@ -33,6 +44,7 @@ export interface GeminiTranscriptionOptions {
   apiKey: string;
   youtubeUrl: string;
   model?: string;
+  beatType?: 'auto' | '8beat' | '16beat';
   client?: GeminiClientLike;
 }
 
@@ -107,7 +119,7 @@ export async function transcribeWithGemini(options: GeminiTranscriptionOptions):
         },
         {
           type: 'text',
-          text: FIXED_TRANSCRIPTION_PROMPT
+          text: buildTranscriptionPrompt({ beatType: options.beatType })
         }
       ],
       response_format: {

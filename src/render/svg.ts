@@ -1,4 +1,4 @@
-import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl } from '../compiler';
+import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl, expandMeasureRepeat } from '../compiler';
 import { Fraction, NoteValuePart, ZERO, fadd, fnum } from '../duration';
 import { diagramStringX, renderChordDiagramSvg } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
@@ -30,6 +30,7 @@ import {
   getDiagramGrid,
   getHeaderMetrics,
   getSheetSize,
+  getSystemGeometry,
   layoutScore,
   splitIntoRows,
   DEFAULT_TITLE_SIZE
@@ -45,11 +46,16 @@ import {
   fmt,
   getRenderContext,
   measureBounds,
+  renderAccidental,
+  renderArpeggioSign,
   renderChordName,
   renderFlags,
+  renderNotehead,
   renderRestGlyph,
   renderTieArc,
   rhythmParts,
+  staffPosition,
+  HEAD_RX,
   tripletGroups
 } from './notation';
 
@@ -96,6 +102,16 @@ export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4
     if (pIdx > 0) {
       body += renderPageBreakSeparator(score.pages[pIdx].pageNumber, contentWidth, y);
       y += PAGE_BREAK_SEPARATOR_HEIGHT;
+      if (score.expandPageBreakRepeats !== false && rows.length > 0 && rows[0].measures.length > 0 && rows[0].measures[0].isMeasureRepeat) {
+        rows[0] = {
+          ...rows[0],
+          measures: [
+            expandMeasureRepeat(rows[0].measures[0], score.measures),
+            ...rows[0].measures.slice(1)
+          ]
+        };
+        rows[0].geometry = getSystemGeometry(rows[0].measures, score);
+      }
     }
     for (const row of rows) {
       body += renderSystem(row, scale, y, ctx);
@@ -404,6 +420,8 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       isHalf: boolean;
       isQuarterOrShorter: boolean;
       isFirstPart: boolean;
+      pos?: number;
+      noteY?: number;
     }
 
     const columns = computeMeasureColumns(m, bx, actualBarWidth, true);
@@ -415,6 +433,9 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
         const isWhole = head.part.base === 1;
         const isHalf = head.part.base === 2;
         const rx = columns.xAt(head.offset) ?? bx + actualBarWidth / 2;
+        const pos = r.pitch ? staffPosition(r.pitch) : undefined;
+        const noteY = pos !== undefined ? staveLines[4] - pos * 4 : undefined;
+        const stemX = r.pitch ? rx + HEAD_RX - 0.4 : (isWhole ? rx : rx + 6.5);
         rhythmDetails.push({
           item: r,
           beats: fnum(head.beats),
@@ -422,11 +443,13 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
           part: head.part,
           beatOffset: fnum(head.offset),
           rx,
-          stemX: isWhole ? rx : rx + 6.5,
+          stemX,
           isWhole,
           isHalf,
           isQuarterOrShorter: !isWhole && !isHalf,
-          isFirstPart: head.isFirstPart
+          isFirstPart: head.isFirstPart,
+          pos,
+          noteY
         });
         curBeat = fadd(head.offset, head.beats);
       }
@@ -525,6 +548,44 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
 
       if (r.isRest) {
         barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines);
+      } else if (r.pitch && rd.noteY !== undefined && rd.pos !== undefined) {
+        // Inline pitch note (arpeggio / melody note in rhythm staff)
+        const noteY = rd.noteY;
+        const pos = rd.pos;
+
+        // Ledger lines
+        for (let p = -2; p >= pos; p -= 2) {
+          barsSvg += `<line x1="${fmt(rx - 8)}" y1="${fmt(staveLines[4] - p * 4)}" x2="${fmt(rx + 8)}" y2="${fmt(staveLines[4] - p * 4)}" stroke="#000" stroke-width="1"/>`;
+        }
+        for (let p = 10; p <= pos; p += 2) {
+          barsSvg += `<line x1="${fmt(rx - 8)}" y1="${fmt(staveLines[4] - p * 4)}" x2="${fmt(rx + 8)}" y2="${fmt(staveLines[4] - p * 4)}" stroke="#000" stroke-width="1"/>`;
+        }
+
+        // Accidental if alter !== 0
+        if (r.pitch.alter !== 0 && rd.isFirstPart) {
+          barsSvg += renderAccidental(r.pitch.alter, rx - 11, noteY);
+        }
+
+        // Notehead (oval, hollow for 1 & 2, filled for quarter/shorter)
+        barsSvg += renderNotehead(rd.part.base, rx, noteY);
+
+        if (rd.part.dotted) {
+          const dotY = pos % 2 === 0 ? noteY - 4 : noteY;
+          barsSvg += `<circle cx="${fmt(rx + 8.5)}" cy="${fmt(dotY)}" r="1.6" fill="#000"/>`;
+        }
+
+        // Stem and flags
+        if (rd.part.base >= 2) {
+          barsSvg += `<line x1="${fmt(stemX)}" y1="${stemTopY}" x2="${fmt(stemX)}" y2="${fmt(noteY - 1)}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
+          if (!beamedIndices.has(rIdx)) {
+            barsSvg += renderFlags(rd.part.base, stemX, stemTopY, false, opacity);
+          }
+        }
+
+        // Arpeggiato sign if requested
+        if (r.arpeggio && rd.isFirstPart) {
+          barsSvg += renderArpeggioSign(rx - 12, noteY - 10, noteY + 10, opacity);
+        }
       } else {
         // Guitar Pro style slash heads
         if (rd.isWhole) {
@@ -545,6 +606,12 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
           if (!beamedIndices.has(rIdx)) {
             barsSvg += renderFlags(rd.part.base, stemX, stemTopY, false, opacity);
           }
+        }
+
+        // Arpeggiato sign on slash
+        if (r.arpeggio && rd.isFirstPart) {
+          const arpX = rd.isWhole ? rx - 16 : rx - 11;
+          barsSvg += renderArpeggioSign(arpX, midY - 9, midY + 9, opacity);
         }
 
         // Tie from the previous head of a compound value (4+8)

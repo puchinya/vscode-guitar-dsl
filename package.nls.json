@@ -5,6 +5,8 @@
   "command.transcribeYouTube.title": "GuitarDSL: Transcribe from YouTube",
   "command.setGeminiApiKey.title": "GuitarDSL: Set Gemini API Key",
   "command.clearGeminiApiKey.title": "GuitarDSL: Clear Gemini API Key",
+  "command.applyStrummingPattern.title": "GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)",
   "config.geminiModel.description": "Gemini model to use for YouTube audio transcription.",
-  "config.compressRepeats.description": "Compress repeated sections with identical chords and melody into repeat barlines (|: :|) and multi-line lyrics to shorten the score."
+  "config.compressRepeats.description": "Compress repeated sections with identical chords and melody into repeat barlines (|: :|) and multi-line lyrics to shorten the score.",
+  "config.expandPageBreakRepeats.description": "Automatically expand measure repeat symbols (%) when they appear at the start of a page."
 }

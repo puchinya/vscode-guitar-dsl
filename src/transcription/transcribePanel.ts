@@ -5,6 +5,7 @@ import { isValidYouTubeUrl } from './youtube';
 import { transcribeWithGemini } from './gemini';
 import { serializeSongToGuitarDsl } from './serializer';
 import { parseGuitarDsl } from '../compiler';
+import { STRUMMING_PATTERN_PRESETS } from '../strummingPatterns';
 
 export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
@@ -100,6 +101,8 @@ export class TranscribePanel {
     bpmValue?: number;
     capoMode: 'auto' | 'manual';
     capoValue?: number;
+    beatType?: 'auto' | '8beat' | '16beat';
+    strummingPresetId?: string;
     compressRepeats: boolean;
     model: string;
   }): Promise<void> {
@@ -137,7 +140,8 @@ export class TranscribePanel {
       const song = await transcribeWithGemini({
         apiKey,
         youtubeUrl: url,
-        model: options.model
+        model: options.model,
+        beatType: options.beatType
       });
 
       // Override BPM if manually specified
@@ -151,7 +155,8 @@ export class TranscribePanel {
       }
 
       const dslText = serializeSongToGuitarDsl(song, {
-        compressRepeats: options.compressRepeats
+        compressRepeats: options.compressRepeats,
+        strummingPresetId: options.strummingPresetId && options.strummingPresetId !== 'auto' ? options.strummingPresetId : undefined
       });
 
       const parsed = parseGuitarDsl(dslText);
@@ -289,6 +294,11 @@ export class TranscribePanel {
     .btn-primary:hover {
       background: var(--vscode-button-hoverBackground, #0062a3);
     }
+    .btn-primary:disabled {
+      background: var(--vscode-button-secondaryBackground, #5a5d5e) !important;
+      opacity: 0.5 !important;
+      cursor: not-allowed !important;
+    }
     .btn-secondary {
       background: var(--vscode-button-secondaryBackground, #5a5d5e);
       color: var(--vscode-button-secondaryForeground, #fff);
@@ -394,6 +404,29 @@ export class TranscribePanel {
   </div>
 
   <div class="field-group">
+    <label>${isJa ? 'ビート種別 (Beat Type)' : 'Beat Type'}</label>
+    <div class="inline-row">
+      <label style="font-weight:normal; margin-bottom:0; display:flex; align-items:center; gap:4px; cursor:pointer;">
+        <input type="radio" name="beatType" value="auto" checked /> ${isJa ? '自動判定 (AIが判別)' : 'Auto Detect'}
+      </label>
+      <label style="font-weight:normal; margin-bottom:0; display:flex; align-items:center; gap:4px; cursor:pointer;">
+        <input type="radio" name="beatType" value="8beat" /> ${isJa ? '8ビート優先' : '8-Beat'}
+      </label>
+      <label style="font-weight:normal; margin-bottom:0; display:flex; align-items:center; gap:4px; cursor:pointer;">
+        <input type="radio" name="beatType" value="16beat" /> ${isJa ? '16ビート優先' : '16-Beat'}
+      </label>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label for="strummingPreset">${isJa ? '伴奏パターン (ストローク／アルペジオ)' : 'Accompaniment Pattern'}</label>
+    <select id="strummingPreset">
+      <option value="auto">${isJa ? '自動（曲に合わせて耳コピ・定番パターンを優先）' : 'Auto (Standard guitar patterns)'}</option>
+      ${STRUMMING_PATTERN_PRESETS.map(p => `<option value="${p.id}">${isJa ? p.nameJa : p.nameEn} [${p.pattern}]</option>`).join('')}
+    </select>
+  </div>
+
+  <div class="field-group">
     <label class="checkbox-label">
       <input type="checkbox" id="compressRepeats" ${ctx.compressRepeats ? 'checked' : ''} />
       <span>
@@ -464,8 +497,17 @@ export class TranscribePanel {
       const bpmVal = parseInt(bpmValue.value, 10);
       const capoMode = document.querySelector('input[name="capoMode"]:checked').value;
       const capoVal = parseInt(capoValue.value, 10);
+      const beatType = document.querySelector('input[name="beatType"]:checked')?.value || 'auto';
+      const strummingPresetId = document.getElementById('strummingPreset')?.value || 'auto';
       const compressRepeats = document.getElementById('compressRepeats').checked;
       const model = document.getElementById('modelSelect').value;
+
+      // Immediately disable button and show loading state
+      btnStart.disabled = true;
+      btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
+      statusBox.className = 'status-box loading';
+      statusBox.style.display = 'flex';
+      statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
 
       vscode.postMessage({
         command: 'startTranscription',
@@ -476,6 +518,8 @@ export class TranscribePanel {
           bpmValue: isNaN(bpmVal) ? undefined : bpmVal,
           capoMode,
           capoValue: isNaN(capoVal) ? undefined : capoVal,
+          beatType,
+          strummingPresetId,
           compressRepeats,
           model
         }
@@ -486,16 +530,21 @@ export class TranscribePanel {
       const msg = event.data;
       if (msg.type === 'transcribing') {
         statusBox.className = 'status-box loading';
+        statusBox.style.display = 'flex';
         statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
         btnStart.disabled = true;
+        btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {
         statusBox.className = 'status-box error';
+        statusBox.style.display = 'flex';
         statusText.textContent = '❌ ' + msg.message;
         btnStart.disabled = false;
+        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
       } else if (msg.type === 'success') {
         statusBox.className = 'status-box';
         statusBox.style.display = 'none';
         btnStart.disabled = false;
+        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
       } else if (msg.type === 'apiKeySaved') {
         alert('${isJa ? 'Gemini API キーを保存しました。' : 'Gemini API key saved.'}');
       } else if (msg.type === 'apiKeyCleared') {

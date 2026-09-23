@@ -4,6 +4,7 @@
 import { TranscribedSong, Section, Measure, RhythmEvent, MelodyEvent } from './model';
 import { parseGuitarDsl } from '../compiler';
 import { tokenizeLyrics } from '../melody';
+import { getPresetById } from '../strummingPatterns';
 
 function formatRhythmToken(r: RhythmEvent): string {
   let tok = r.duration;
@@ -114,6 +115,7 @@ function canCompressSections(s1: Section, s2: Section): boolean {
 
 export interface SerializationOptions {
   compressRepeats?: boolean;
+  strummingPresetId?: string;
 }
 
 /**
@@ -136,6 +138,8 @@ export function serializeSongToGuitarDsl(song: TranscribedSong, options?: Serial
   lines.push(`bpm: ${song.bpm}`);
   lines.push('');
 
+  const preset = options?.strummingPresetId ? getPresetById(options.strummingPresetId) : undefined;
+
   let sIdx = 0;
   while (sIdx < song.sections.length) {
     const section = song.sections[sIdx];
@@ -152,14 +156,14 @@ export function serializeSongToGuitarDsl(song: TranscribedSong, options?: Serial
       const isLastBar = mIdx === section.measures.length - 1;
 
       const chordsStr = measure.chords.map(c => `${c.name}/${c.duration}`).join(' ');
-      const rhythmStr = measure.rhythm.map(formatRhythmToken).join(' ');
+      const rhythmStr = preset ? preset.pattern : measure.rhythm.map(formatRhythmToken).join(' ');
 
       // Never use repeat sign % on the first measure of a section or the first measure of a 4-measure system (row)
       const isRowStart = mIdx % 4 === 0;
       const allowRepeat = !isRowStart && prevMeasure !== undefined;
 
       const sameChords = allowRepeat ? isSameChords(measure.chords, prevMeasure.chords) : false;
-      const sameRhythm = allowRepeat ? isSameRhythm(measure.rhythm, prevMeasure.rhythm) : false;
+      const sameRhythm = allowRepeat ? (preset ? true : isSameRhythm(measure.rhythm, prevMeasure.rhythm)) : false;
 
       // Only use measure-level lyrics if there is no melody line
       const firstLyric = Array.isArray(measure.lyrics) ? measure.lyrics[0] : measure.lyrics;

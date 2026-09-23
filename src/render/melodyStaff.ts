@@ -12,6 +12,10 @@ import {
   chordXAt,
   computeMeasureColumns,
   escapeXml,
+  HEAD_RX,
+  HEAD_RY,
+  renderNotehead,
+  staffPosition,
   expandParts,
   fmt,
   keyAlter,
@@ -25,17 +29,11 @@ import {
   tripletGroups
 } from './notation';
 
+export { staffPosition };
+
 const STAVE_LINES = [0, 8, 16, 24, 32].map(dy => MELODY_STAVE_TOP + dy);
 const MID_Y = STAVE_LINES[2];
 const STEM_LENGTH = 26;
-const HEAD_RX = 5;
-const HEAD_RY = 3.7;
-const STEP_INDEX: Record<string, number> = { c: 0, d: 1, e: 2, f: 3, g: 4, a: 5, b: 6 };
-
-/** Staff position: 0 = bottom line (E4), +1 per diatonic step. */
-export function staffPosition(p: Pitch): number {
-  return p.octave * 7 + STEP_INDEX[p.step] - (4 * 7 + 2);
-}
 
 function yOf(pos: number): number {
   return MELODY_STAVE_BOTTOM - pos * 4;
@@ -323,30 +321,6 @@ function renderHeads(heads: Head[], ctx: RenderContext): string {
     }
   }
   return out;
-}
-
-/** Closed ellipse path (usable with fill-rule="evenodd" to cut the hole of hollow noteheads). */
-function ellipsePath(cx: number, cy: number, rx: number, ry: number, deg: number): string {
-  const t = (deg * Math.PI) / 180;
-  const dx = rx * Math.cos(t);
-  const dy = rx * Math.sin(t);
-  const p1 = `${fmt(cx + dx)},${fmt(cy + dy)}`;
-  const p2 = `${fmt(cx - dx)},${fmt(cy - dy)}`;
-  return `M ${p1} A ${rx} ${ry} ${deg} 1 0 ${p2} A ${rx} ${ry} ${deg} 1 0 ${p1} Z`;
-}
-
-/**
- * Whole note: level oval with thick sides and a hole tilted to the upper right.
- * Half note: tilted oval with a thin elongated hole. Quarter and shorter: filled tilted oval.
- */
-function renderNotehead(base: NoteBase, x: number, y: number): string {
-  if (base === 1) {
-    return `<path class="notehead" d="${ellipsePath(x, y, 6.4, 4.2, 0)} ${ellipsePath(x, y, 3.3, 1.9, -55)}" fill="#000" fill-rule="evenodd"/>`;
-  }
-  if (base === 2) {
-    return `<path class="notehead" d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
-  }
-  return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
 }
 
 function renderTies(heads: Head[], ctx: RenderContext): string {
