@@ -7,6 +7,7 @@ import { CHORD_LIBRARY, PRESET_QUALITIES, getDefaultVoicing, getPresetVoicings, 
 import { resolveChordDiagram } from '../../src/render/chordLibrary';
 import { renderChordDiagramSvg } from '../../src/render/chordDiagram';
 import { compileGuitarDslToSvg } from '../../src/render/svg';
+import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
 
 function def(line: string) {
   const r = parseChordDefinition(line);
@@ -147,6 +148,13 @@ describe('chord diagram rendering', () => {
     assert.ok(svg.includes('data-chord-key="C"'));
     assert.ok(svg.includes('data-chord-key="C@barre"'));
     assert.ok(svg.includes('fill="#777">barre</text>'));
+  });
+
+  it('makes preview diagrams clickable to open the chord editor', () => {
+    const html = compileGuitarDslToHtml('| C |');
+    assert.ok(html.includes('class="chord-diagram" data-chord-key="C"'));
+    assert.ok(html.includes("closest('.chord-diagram')"));
+    assert.ok(html.includes("command: 'editChord'"));
   });
 });
 

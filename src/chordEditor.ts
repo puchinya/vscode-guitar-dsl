@@ -1,7 +1,7 @@
 // Chord diagram editor panel (webview) and its entry points: command, CodeLens, preview click.
 
 import * as vscode from 'vscode';
-import { STRING_COUNT, chordKey, formatFrets, isChordDefinitionLine, isValidChordLabel, isValidChordName, parseChordDefinition, splitChordKey } from './chordDefinition';
+import { ChordDefinitionError, STRING_COUNT, chordKey, formatFrets, isChordDefinitionLine, isValidChordLabel, isValidChordName, parseChordDefinition, splitChordKey } from './chordDefinition';
 import { NOTE_NAMES, detectChordNames, parseChordName } from './chordDetect';
 import { ChordEditorState, buildChordLine, createEditorSession, planChordSave, stateFromVoicing } from './chordEditorModel';
 import { PRESET_QUALITIES, PRESET_ROOTS, getPresetVoicings } from './chordPresets';
@@ -136,47 +136,66 @@ export class ChordEditorPanel {
   }
 
   private async save(state: ChordEditorState, asNew: boolean): Promise<void> {
-    const built = buildChordLine(state);
-    if (!built.ok) {
-      this.postStatus(formatChordDefinitionError(built.error, built.detail, this.locale), true);
+    const result = await applyChordSave(this.uri, state, this.line, asNew);
+    if (!result.ok) {
+      const text = result.error === 'duplicate'
+        ? this.m.duplicate(result.detail)
+        : formatChordDefinitionError(result.error, result.detail, this.locale);
+      this.postStatus(text, true);
       return;
     }
-    const doc = await vscode.workspace.openTextDocument(this.uri);
-    // The document may have changed since the editor opened: re-check that the edited line is still a definition.
-    const editingLine = this.line !== undefined && this.line < doc.lineCount && isChordDefinitionLine(doc.lineAt(this.line).text) ? this.line : undefined;
-    const plan = planChordSave(doc.getText(), built.line, built.definition, editingLine, asNew);
-    if (plan.kind === 'duplicate') {
-      this.postStatus(this.m.duplicate(plan.key), true);
-      return;
+    if (result.applied) {
+      this.line = result.line;
+      this.panel.title = `${this.m.panelTitle}: ${result.key}`;
+      this.postStatus(this.m.saved(result.key), false);
     }
-
-    const edit = new vscode.WorkspaceEdit();
-    if (plan.kind === 'replace') {
-      // Keep the line's indentation and end-of-line comment.
-      const old = doc.lineAt(plan.line).text;
-      const indent = old.match(/^\s*/)![0];
-      const comment = old.match(/\s#.*$/)?.[0] ?? '';
-      edit.replace(doc.uri, doc.lineAt(plan.line).range, indent + plan.text + comment);
-    } else if (plan.line < doc.lineCount) {
-      edit.insert(doc.uri, new vscode.Position(plan.line, 0), plan.text + '\n');
-    } else {
-      const end = doc.lineAt(doc.lineCount - 1).range.end;
-      edit.insert(doc.uri, end, (doc.lineAt(doc.lineCount - 1).text === '' ? '' : '\n') + plan.text + '\n');
-    }
-    if (!(await vscode.workspace.applyEdit(edit))) {
-      return;
-    }
-
-    const key = chordKey(built.definition.name, built.definition.label);
-    const updated = parseGuitarDsl((await vscode.workspace.openTextDocument(this.uri)).getText());
-    this.line = updated.chordDefinitions.find(d => chordKey(d.name, d.label) === key)?.line;
-    this.panel.title = `${this.m.panelTitle}: ${key}`;
-    this.postStatus(this.m.saved(key), false);
   }
 
   private postStatus(text: string, error: boolean): void {
     this.panel.webview.postMessage({ type: 'status', text, error, editingText: this.editingText() });
   }
+}
+
+export type ChordSaveResult =
+  | { ok: true; applied: boolean; key: string; line?: number }
+  | { ok: false; error: ChordDefinitionError | 'duplicate'; detail: string };
+
+/**
+ * Writes the editor state into the document as a `chord` line (spec extension.md §4A.4) with an
+ * undoable WorkspaceEdit. `editingLine` is the definition being edited, if any.
+ */
+export async function applyChordSave(uri: vscode.Uri, state: ChordEditorState, editingLine: number | undefined, asNew: boolean): Promise<ChordSaveResult> {
+  const built = buildChordLine(state);
+  if (!built.ok) {
+    return { ok: false, error: built.error, detail: built.detail };
+  }
+  const doc = await vscode.workspace.openTextDocument(uri);
+  // The document may have changed since the editor opened: re-check that the edited line is still a definition.
+  const current = editingLine !== undefined && editingLine < doc.lineCount && isChordDefinitionLine(doc.lineAt(editingLine).text) ? editingLine : undefined;
+  const plan = planChordSave(doc.getText(), built.line, built.definition, current, asNew);
+  if (plan.kind === 'duplicate') {
+    return { ok: false, error: 'duplicate', detail: plan.key };
+  }
+
+  const edit = new vscode.WorkspaceEdit();
+  if (plan.kind === 'replace') {
+    // Keep the line's indentation and end-of-line comment.
+    const old = doc.lineAt(plan.line).text;
+    const indent = old.match(/^\s*/)![0];
+    const comment = old.match(/\s#.*$/)?.[0] ?? '';
+    edit.replace(doc.uri, doc.lineAt(plan.line).range, indent + plan.text + comment);
+  } else if (plan.line < doc.lineCount) {
+    edit.insert(doc.uri, new vscode.Position(plan.line, 0), plan.text + '\n');
+  } else {
+    const last = doc.lineAt(doc.lineCount - 1);
+    edit.insert(doc.uri, last.range.end, (last.text === '' ? '' : '\n') + plan.text + '\n');
+  }
+  const key = chordKey(built.definition.name, built.definition.label);
+  if (!(await vscode.workspace.applyEdit(edit))) {
+    return { ok: true, applied: false, key };
+  }
+  const updated = parseGuitarDsl((await vscode.workspace.openTextDocument(uri)).getText());
+  return { ok: true, applied: true, key, line: updated.chordDefinitions.find(d => chordKey(d.name, d.label) === key)?.line };
 }
 
 /** CodeLens "Edit Diagram" above every valid `chord` definition line. */
