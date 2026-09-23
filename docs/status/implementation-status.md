@@ -47,6 +47,9 @@
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
 | | Language Configuration | ✅ 完了 | コメント記号、括弧自動閉じ |
+| **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |
+| | Webview ツールバー多言語化 (`src/compiler.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
+| | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
 
 ---
 
@@ -55,9 +58,10 @@
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
 - **テストファイル**:
-  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、HTML/SVG生成、印刷CSS出力
+  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、HTML/SVG生成、印刷CSS出力、ツールバー多言語レンダリング
+  - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）およびメッセージ辞書整合性
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
-- **テスト実行結果**: **26 / 26 件 PASS** (0 failures)
+- **テスト実行結果**: **35 / 35 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`

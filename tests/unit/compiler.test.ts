@@ -251,4 +251,45 @@ describe('compiler - HTML and SVG Rendering', () => {
     assert.strictEqual(PAGE_CONFIG['B5'].widthMm, 176);
     assert.strictEqual(PAGE_CONFIG['B5'].heightMm, 250);
   });
+
+  describe('compiler - i18n toolbar rendering', () => {
+    it('should render English toolbar by default or when locale is en', () => {
+      const defaultHtml = compileGuitarDslToHtml(sampleDsl);
+      assert.ok(defaultHtml.includes('<html lang="en">'));
+      assert.ok(defaultHtml.includes('>View<'));
+      assert.ok(defaultHtml.includes('>Single Page<'));
+      assert.ok(defaultHtml.includes('>Spread<'));
+      assert.ok(defaultHtml.includes('>Paper<'));
+      assert.ok(defaultHtml.includes('>Orientation<'));
+      assert.ok(defaultHtml.includes('>Portrait<'));
+      assert.ok(defaultHtml.includes('>Landscape<'));
+      assert.ok(defaultHtml.includes('>📄 Save PDF<'));
+
+      const enHtml = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
+      assert.ok(enHtml.includes('<html lang="en">'));
+      assert.ok(enHtml.includes('>View<'));
+      assert.ok(enHtml.includes('>Single Page<'));
+    });
+
+    it('should render Japanese toolbar when locale is ja', () => {
+      const jaHtml = compileGuitarDslToHtml(sampleDsl, { locale: 'ja' });
+      assert.ok(jaHtml.includes('<html lang="ja">'));
+      assert.ok(jaHtml.includes('>表示<'));
+      assert.ok(jaHtml.includes('>1ページ<'));
+      assert.ok(jaHtml.includes('>見開き<'));
+      assert.ok(jaHtml.includes('>用紙<'));
+      assert.ok(jaHtml.includes('>向き<'));
+      assert.ok(jaHtml.includes('>縦<'));
+      assert.ok(jaHtml.includes('>横（見開き）<'));
+      assert.ok(jaHtml.includes('>📄 PDF保存<'));
+    });
+
+    it('should fallback to English for other locales', () => {
+      const frHtml = compileGuitarDslToHtml(sampleDsl, { locale: 'fr' });
+      assert.ok(frHtml.includes('<html lang="en">'));
+      assert.ok(frHtml.includes('>View<'));
+      assert.ok(frHtml.includes('>Single Page<'));
+      assert.ok(frHtml.includes('>📄 Save PDF<'));
+    });
+  });
 });

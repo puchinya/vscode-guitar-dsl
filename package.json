@@ -40,12 +40,12 @@
     "commands": [
       {
         "command": "guitardsl.showPreview",
-        "title": "GuitarDSL: Open Preview to the Side",
+        "title": "%command.showPreview.title%",
         "icon": "$(open-preview)"
       },
       {
         "command": "guitardsl.exportPdf",
-        "title": "GuitarDSL: Export PDF / Print"
+        "title": "%command.exportPdf.title%"
       }
     ],
     "menus": {
