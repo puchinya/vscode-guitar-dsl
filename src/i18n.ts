@@ -29,6 +29,15 @@ export interface Messages {
   uiLandscapeTitle: string;
   uiSavePdf: string;
   uiSavePdfTitle: string;
+
+  // YouTube transcription messages
+  msgPromptApiKey: string;
+  msgApiKeySaved: string;
+  msgApiKeyCleared: string;
+  msgPromptYouTubeUrl: string;
+  msgYouTubeUrlPlaceholder: string;
+  msgInvalidYouTubeUrl: string;
+  msgTranscribingProgress: string;
 }
 
 export const MESSAGES_JA: Messages = {
@@ -55,7 +64,15 @@ export const MESSAGES_JA: Messages = {
   uiLandscape: '横（見開き）',
   uiLandscapeTitle: '横向き（見開き印刷）',
   uiSavePdf: '📄 PDF保存',
-  uiSavePdfTitle: '選択中の用紙サイズと向きでPDFを保存'
+  uiSavePdfTitle: '選択中の用紙サイズと向きでPDFを保存',
+
+  msgPromptApiKey: 'Gemini API キーを入力してください',
+  msgApiKeySaved: 'Gemini API キーを保存しました。',
+  msgApiKeyCleared: 'Gemini API キーを削除しました。',
+  msgPromptYouTubeUrl: '採譜するYouTube動画のURLを入力してください',
+  msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
+  msgInvalidYouTubeUrl: '有効なYouTube動画のURL（https://...）を入力してください。',
+  msgTranscribingProgress: 'GeminiでYouTube音源を自動採譜中...'
 };
 
 export const MESSAGES_EN: Messages = {
@@ -82,7 +99,15 @@ export const MESSAGES_EN: Messages = {
   uiLandscape: 'Landscape',
   uiLandscapeTitle: 'Landscape orientation (2-up spread)',
   uiSavePdf: '📄 Save PDF',
-  uiSavePdfTitle: 'Save score as PDF with selected paper size and orientation'
+  uiSavePdfTitle: 'Save score as PDF with selected paper size and orientation',
+
+  msgPromptApiKey: 'Enter your Gemini API key',
+  msgApiKeySaved: 'Gemini API key has been saved.',
+  msgApiKeyCleared: 'Gemini API key has been cleared.',
+  msgPromptYouTubeUrl: 'Enter the YouTube video URL to transcribe',
+  msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
+  msgInvalidYouTubeUrl: 'Please enter a valid YouTube video URL (https://...).',
+  msgTranscribingProgress: 'Transcribing YouTube audio with Gemini...'
 };
 
 export function resolveLocale(vscodeLang?: string): SupportedLocale {

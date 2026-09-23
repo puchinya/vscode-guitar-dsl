@@ -1,6 +1,7 @@
-import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore } from '../compiler';
+import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
+import { staffPosition } from './notation';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -87,7 +88,33 @@ export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedSco
   if (leadSheet && verseCount === 0 && measures.some(m => !m.melody && m.lyric)) {
     verseCount = 1;
   }
-  const lyricBaseline = MELODY_STAVE_BOTTOM + MELODY_LYRIC_FIRST_BASELINE_GAP;
+  // Dynamically compute the lowest visual point among all melody notes in this system (low noteheads, stems, ties, ledger lines)
+  let maxMelodyBottom = MELODY_STAVE_BOTTOM; // bottom staff line (y = 102)
+  for (const m of measures) {
+    for (const n of m.melody ?? []) {
+      if (!n.isRest && n.pitch) {
+        const pos = staffPosition(n.pitch);
+        const y = MELODY_STAVE_BOTTOM - pos * 4;
+        let bottom = y + 5; // notehead bottom
+        if (pos <= 3) {
+          // Stems up: tie arc hangs below notehead
+          if (n.tieToNext || n.tiedFromPrev) {
+            bottom = Math.max(bottom, y + 18);
+          }
+        } else {
+          // Stems down: stem reaches downwards
+          bottom = Math.max(bottom, y + 32);
+        }
+        if (pos <= -2) {
+          bottom = Math.max(bottom, y + 6);
+        }
+        maxMelodyBottom = Math.max(maxMelodyBottom, bottom);
+      }
+    }
+  }
+
+  const minBaseline = maxMelodyBottom + lyricSize * 0.9 + 6;
+  const lyricBaseline = Math.round(Math.max(MELODY_STAVE_BOTTOM + MELODY_LYRIC_FIRST_BASELINE_GAP, minBaseline) * 100) / 100;
   const melodyBottom = verseCount > 0
     ? lyricBaseline + (verseCount - 1) * lineHeight + MELODY_BLOCK_BOTTOM_PADDING
     : MELODY_NO_LYRIC_BOTTOM;
@@ -244,13 +271,27 @@ export function layoutScore(score: ParsedScore, pageSize: PageSize, orientation:
 
   for (const manualRows of splitIntoRows(score)) {
     openPage();
-    for (const row of manualRows) {
+    for (let rIdx = 0; rIdx < manualRows.length; rIdx++) {
+      let row = manualRows[rIdx];
       const rowHeight = row.geometry.unitHeight * systemScale;
       if (current!.rows.length > 0 && remaining < rowHeight) {
         openPage();
       }
+      if (current!.rows.length === 0 && pages.length > 1 && score.expandPageBreakRepeats !== false) {
+        if (row.measures.length > 0 && row.measures[0].isMeasureRepeat) {
+          row = {
+            ...row,
+            measures: [
+              expandMeasureRepeat(row.measures[0], score.measures),
+              ...row.measures.slice(1)
+            ]
+          };
+          row.geometry = getSystemGeometry(row.measures, score);
+        }
+      }
       current!.rows.push(row);
-      remaining -= rowHeight + systemGap;
+      const actualHeight = row.geometry.unitHeight * systemScale;
+      remaining -= actualHeight + systemGap;
     }
   }
   if (pages.length === 0) {

@@ -14,6 +14,7 @@ export interface CompileHtmlOptions {
   orientation?: PageOrientation;
   /** Webview URIs of the bundled Noto Sans JP fonts. When omitted, the preview falls back to installed fonts. */
   fontUris?: ScoreFontUris;
+  expandPageBreakRepeats?: boolean;
 }
 
 const PX_PER_PT = 96 / 72;
@@ -24,7 +25,9 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const msgs = getMessages(locale);
   const pageSize = options?.pageSize ?? 'A4';
   const orientation = options?.orientation ?? 'portrait';
-  const score = parseGuitarDsl(dslContent);
+  const score = parseGuitarDsl(dslContent, {
+    expandPageBreakRepeats: options?.expandPageBreakRepeats
+  });
 
   const sheets = renderScoreSheets(score, pageSize, orientation);
   const spreadGroups: string[] = [];

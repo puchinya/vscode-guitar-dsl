@@ -68,6 +68,16 @@ describe('render - HTML and SVG', () => {
     assert.ok(svg.includes('Rendering Test'));
   });
 
+  it('renders Volta brackets, final barline, and special jump marks in SVG', () => {
+    const dsl = [
+      '|: C | [1.] G :| [2.] Am Fine | F |]'
+    ].join('\n');
+    const svg = compileGuitarDslToSvg(dsl);
+    assert.ok(svg.includes('>1.</text>'), 'should render Volta bracket 1.');
+    assert.ok(svg.includes('>2.</text>'), 'should render Volta bracket 2.');
+    assert.ok(svg.includes('>Fine</text>'), 'should render Fine mark');
+  });
+
   it('PAGE_CONFIG should contain expected standard paper dimensions', () => {
     assert.strictEqual(PAGE_CONFIG['A4'].widthMm, 210);
     assert.strictEqual(PAGE_CONFIG['A4'].heightMm, 297);

@@ -12,6 +12,10 @@ import {
   chordXAt,
   computeMeasureColumns,
   escapeXml,
+  HEAD_RX,
+  HEAD_RY,
+  renderNotehead,
+  staffPosition,
   expandParts,
   fmt,
   keyAlter,
@@ -25,17 +29,11 @@ import {
   tripletGroups
 } from './notation';
 
+export { staffPosition };
+
 const STAVE_LINES = [0, 8, 16, 24, 32].map(dy => MELODY_STAVE_TOP + dy);
 const MID_Y = STAVE_LINES[2];
 const STEM_LENGTH = 26;
-const HEAD_RX = 5;
-const HEAD_RY = 3.7;
-const STEP_INDEX: Record<string, number> = { c: 0, d: 1, e: 2, f: 3, g: 4, a: 5, b: 6 };
-
-/** Staff position: 0 = bottom line (E4), +1 per diatonic step. */
-export function staffPosition(p: Pitch): number {
-  return p.octave * 7 + STEP_INDEX[p.step] - (4 * 7 + 2);
-}
 
 function yOf(pos: number): number {
   return MELODY_STAVE_BOTTOM - pos * 4;
@@ -112,6 +110,33 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       out += chordName.svg;
     });
 
+    // Volta Bracket ([1.], [2.], etc.)
+    if (m.bracket) {
+      const bracketY = 16;
+      const hookH = 7;
+      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY + hookH)}" x2="${fmt(bx)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      out += `<text x="${fmt(bx + 4)}" y="${fmt(bracketY + 9)}" font-size="9" font-weight="bold" fill="#000">${escapeXml(m.bracket)}</text>`;
+      if (m.repeatEnd) {
+        out += `<line x1="${fmt(bEnd)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY + hookH)}" stroke="#000" stroke-width="1.2"/>`;
+      }
+    }
+
+    // Special Mark (Fine, D.C., D.S., Coda, Segno)
+    if (m.specialMark) {
+      const markY = 16;
+      let markText = '';
+      if (m.specialMark === 'fine') markText = 'Fine';
+      else if (m.specialMark === 'dc') markText = 'D.C.';
+      else if (m.specialMark === 'ds') markText = 'D.S.';
+      else if (m.specialMark === 'coda') markText = '𝄌 Coda';
+      else if (m.specialMark === 'to_coda') markText = 'to Coda';
+      else if (m.specialMark === 'segno') markText = '𝄋 Segno';
+      if (markText) {
+        out += `<text x="${fmt(bEnd - 4)}" y="${fmt(markY)}" font-size="9.5" font-style="italic" font-weight="bold" text-anchor="end" fill="#000">${markText}</text>`;
+      }
+    }
+
     if (!m.melody) {
       if (leadSheet) {
         // Beat slashes on the melody staff for measures without melody (spec §14.2).
@@ -172,6 +197,12 @@ function renderBarline(m: MeasureData, bx: number, bEnd: number): string {
     out += `<circle cx="${fmt(bEnd - 12)}" cy="${STAVE_LINES[2] + 4}" r="2" fill="#000"/>`;
     out += `<line x1="${fmt(bEnd - 5)}" y1="${top}" x2="${fmt(bEnd - 5)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
     out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="3"/>`;
+  } else if (m.finalEnd) {
+    out += `<line x1="${fmt(bEnd - 5)}" y1="${top}" x2="${fmt(bEnd - 5)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
+    out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="3"/>`;
+  } else if (m.doubleEnd) {
+    out += `<line x1="${fmt(bEnd - 4)}" y1="${top}" x2="${fmt(bEnd - 4)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
+    out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
   } else {
     out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
   }
@@ -290,30 +321,6 @@ function renderHeads(heads: Head[], ctx: RenderContext): string {
     }
   }
   return out;
-}
-
-/** Closed ellipse path (usable with fill-rule="evenodd" to cut the hole of hollow noteheads). */
-function ellipsePath(cx: number, cy: number, rx: number, ry: number, deg: number): string {
-  const t = (deg * Math.PI) / 180;
-  const dx = rx * Math.cos(t);
-  const dy = rx * Math.sin(t);
-  const p1 = `${fmt(cx + dx)},${fmt(cy + dy)}`;
-  const p2 = `${fmt(cx - dx)},${fmt(cy - dy)}`;
-  return `M ${p1} A ${rx} ${ry} ${deg} 1 0 ${p2} A ${rx} ${ry} ${deg} 1 0 ${p1} Z`;
-}
-
-/**
- * Whole note: level oval with thick sides and a hole tilted to the upper right.
- * Half note: tilted oval with a thin elongated hole. Quarter and shorter: filled tilted oval.
- */
-function renderNotehead(base: NoteBase, x: number, y: number): string {
-  if (base === 1) {
-    return `<path class="notehead" d="${ellipsePath(x, y, 6.4, 4.2, 0)} ${ellipsePath(x, y, 3.3, 1.9, -55)}" fill="#000" fill-rule="evenodd"/>`;
-  }
-  if (base === 2) {
-    return `<path class="notehead" d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
-  }
-  return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
 }
 
 function renderTies(heads: Head[], ctx: RenderContext): string {

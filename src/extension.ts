@@ -7,6 +7,13 @@ import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
+import { transcribeWithGemini } from './transcription/gemini';
+import { serializeSongToGuitarDsl } from './transcription/serializer';
+import { isValidYouTubeUrl } from './transcription/youtube';
+import { TranscribePanel } from './transcription/transcribePanel';
+import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
+
+export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
@@ -32,7 +39,11 @@ export async function exportScoreToPdf(
   }
 
   try {
-    await writeScorePdf(targetUri.fsPath, doc.getText(), pageSize, orientation, getBundledFontFiles(extensionRoot));
+    const config = vscode.workspace.getConfiguration('guitardsl');
+    const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
+    await writeScorePdf(targetUri.fsPath, doc.getText(), pageSize, orientation, getBundledFontFiles(extensionRoot), {
+      expandPageBreakRepeats
+    });
 
     const action = await vscode.window.showInformationMessage(
       msgs.msgPdfSaved(path.basename(targetUri.fsPath)),
@@ -144,10 +155,13 @@ export function activate(context: vscode.ExtensionContext) {
     if (currentPanel && isGuitarDslDocument(doc)) {
       lastActiveGuitarDslDoc = doc;
       const webview = currentPanel.webview;
+      const config = vscode.workspace.getConfiguration('guitardsl');
+      const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
       const htmlContent = compileGuitarDslToHtml(doc.getText(), {
         locale: currentLocale,
         pageSize: previewPageSize,
         orientation: previewOrientation,
+        expandPageBreakRepeats,
         fontUris: {
           regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
           bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
@@ -264,7 +278,56 @@ export function activate(context: vscode.ExtensionContext) {
     new ChordDefinitionCodeLensProvider(chordMsgs)
   );
 
-  context.subscriptions.push(previewDisposable, printDisposable, symbolDisposable, editChordDisposable, codeLensDisposable);
+  const setApiKeyDisposable = vscode.commands.registerCommand('guitardsl.setGeminiApiKey', async () => {
+    const key = await vscode.window.showInputBox({
+      password: true,
+      prompt: msgs.msgPromptApiKey,
+      ignoreFocusOut: true
+    });
+    if (key !== undefined && key.trim() !== '') {
+      await context.secrets.store(GEMINI_API_KEY_SECRET, key.trim());
+      vscode.window.showInformationMessage(msgs.msgApiKeySaved);
+    }
+  });
+
+  const clearApiKeyDisposable = vscode.commands.registerCommand('guitardsl.clearGeminiApiKey', async () => {
+    await context.secrets.delete(GEMINI_API_KEY_SECRET);
+    vscode.window.showInformationMessage(msgs.msgApiKeyCleared);
+  });
+
+  const transcribeYouTubeDisposable = vscode.commands.registerCommand('guitardsl.transcribeYouTube', async () => {
+    TranscribePanel.createOrShow(context.extensionUri, context.secrets, currentLocale);
+  });
+
+  const strummingCodeLensDisposable = vscode.languages.registerCodeLensProvider(
+    { language: 'guitardsl' },
+    new StrummingCodeLensProvider(currentLocale)
+  );
+
+  const applyStrummingDisposable = vscode.commands.registerCommand(
+    APPLY_STRUMMING_PATTERN_COMMAND,
+    async (uri?: vscode.Uri, sectionName?: string) => {
+      const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+      if (!doc) {
+        vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
+        return;
+      }
+      await promptAndApplyStrummingPattern(doc, sectionName, currentLocale);
+    }
+  );
+
+  context.subscriptions.push(
+    previewDisposable,
+    printDisposable,
+    symbolDisposable,
+    editChordDisposable,
+    codeLensDisposable,
+    setApiKeyDisposable,
+    clearApiKeyDisposable,
+    transcribeYouTubeDisposable,
+    strummingCodeLensDisposable,
+    applyStrummingDisposable
+  );
 }
 
 export function deactivate() {}

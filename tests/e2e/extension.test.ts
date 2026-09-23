@@ -33,6 +33,18 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       commands.includes('guitardsl.editChordDiagram'),
       'Command guitardsl.editChordDiagram should be registered'
     );
+    assert.ok(
+      commands.includes('guitardsl.transcribeYouTube'),
+      'Command guitardsl.transcribeYouTube should be registered'
+    );
+    assert.ok(
+      commands.includes('guitardsl.setGeminiApiKey'),
+      'Command guitardsl.setGeminiApiKey should be registered'
+    );
+    assert.ok(
+      commands.includes('guitardsl.clearGeminiApiKey'),
+      'Command guitardsl.clearGeminiApiKey should be registered'
+    );
   });
 
   test('CodeLens should offer the chord editor on chord definition lines', async () => {

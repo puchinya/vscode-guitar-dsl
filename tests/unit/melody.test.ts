@@ -102,13 +102,13 @@ describe('compiler - melody (mel:)', () => {
 });
 
 describe('compiler - syllable lyrics (lyr:)', () => {
-  it('splits Japanese per character, joining small kana and keeping っ / ー', () => {
-    const texts = tokenizeLyrics('しゃぼんだま きょう がっこー').map(i => (i.kind === 'syllable' ? i.text : i.kind));
-    assert.deepStrictEqual(texts, ['しゃ', 'ぼ', 'ん', 'だ', 'ま', 'きょ', 'う', 'が', 'っ', 'こ', 'ー']);
+  it('splits lyrics by whitespace, preserving syllables like small kana and ー / っ in each token', () => {
+    const texts = tokenizeLyrics('しゃ ぼ ん だ ま  きょ う  がっ こー').map(i => (i.kind === 'syllable' ? i.text : i.kind));
+    assert.deepStrictEqual(texts, ['しゃ', 'ぼ', 'ん', 'だ', 'ま', 'きょ', 'う', 'がっ', 'こー']);
   });
 
   it('handles groups, melisma, skip, English hyphens and bars', () => {
-    const items = tokenizeLyrics('(ひか)り _ * | sun- shine');
+    const items = tokenizeLyrics('(ひか) り _ * | sun- shine');
     assert.deepStrictEqual(items, [
       { kind: 'syllable', text: 'ひか', hyphenToNext: false },
       { kind: 'syllable', text: 'り', hyphenToNext: false },
@@ -124,8 +124,8 @@ describe('compiler - syllable lyrics (lyr:)', () => {
     const score = parseGuitarDsl([
       '| C | % |',
       'mel: | r/4 c5/4~ c d |',
-      'lyr: | あい |',
-      'lyr: | かさ |'
+      'lyr: | あ い |',
+      'lyr: | か さ |'
     ].join('\n'));
     const mel = score.measures[0].melody!;
     assert.deepStrictEqual(mel.map(n => n.syllables.map(s => s?.text)), [[], ['あ', 'か'], [], ['い', 'さ']]);
@@ -133,8 +133,8 @@ describe('compiler - syllable lyrics (lyr:)', () => {
   });
 
   it('warns on syllable count and bar mismatches, errors without mel:', () => {
-    assert.deepStrictEqual(codes(['| C | % |', 'mel: | c5/2 d |', 'lyr: あいう'].join('\n')), ['syllableCountMismatch']);
-    assert.deepStrictEqual(codes(['| C | % |', '| G | % |', 'mel: | c5/2 d | e5/1 |', 'lyr: | あ | いう |'].join('\n')), ['lyricBarMismatch']);
+    assert.deepStrictEqual(codes(['| C | % |', 'mel: | c5/2 d |', 'lyr: あ い う'].join('\n')), ['syllableCountMismatch']);
+    assert.deepStrictEqual(codes(['| C | % |', '| G | % |', 'mel: | c5/2 d | e5/2 f |', 'lyr: | あ | い う え |'].join('\n')), ['lyricBarMismatch']);
     assert.deepStrictEqual(codes(['| C | % |', 'lyr: あ'].join('\n')), ['lyricsWithoutMelody']);
   });
 });

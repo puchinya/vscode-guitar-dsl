@@ -3,6 +3,7 @@
 
 import { MeasureData, ParsedScore } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, isDyadic, partBeats, parseRhythmDuration } from '../duration';
+import { Pitch } from '../melody';
 import { SYSTEM_UNIT_WIDTH, estimateTextWidth } from './layout';
 
 export function escapeXml(str: string): string {
@@ -272,4 +273,51 @@ export function renderTieArc(x1: number, x2: number, y: number, below: boolean):
   const thick = below ? 1.6 : -1.6;
   const mid = (x1 + x2) / 2;
   return `<path d="M ${fmt(x1)},${fmt(y)} Q ${fmt(mid)},${fmt(y + bend * 2)} ${fmt(x2)},${fmt(y)} Q ${fmt(mid)},${fmt(y + bend * 2 - thick)} ${fmt(x1)},${fmt(y)} Z" fill="#000"/>`;
+}
+
+/** Vertical wavy line (arpeggiato / rolled chord) placed to the left of the chord slash. */
+export function renderArpeggioSign(x: number, yTop: number, yBottom: number, opacity = '1.0'): string {
+  const height = yBottom - yTop;
+  const cycles = 3;
+  const step = height / cycles;
+  let d = `M ${fmt(x)},${fmt(yTop)}`;
+  for (let i = 0; i < cycles; i++) {
+    const cy = yTop + i * step;
+    d += ` C ${fmt(x - 3)},${fmt(cy + step * 0.25)} ${fmt(x - 3)},${fmt(cy + step * 0.75)} ${fmt(x)},${fmt(cy + step)}`;
+  }
+  const arrow = `<path d="M ${fmt(x - 2.5)},${fmt(yTop + 3.5)} L ${fmt(x)},${fmt(yTop)} L ${fmt(x + 2.5)},${fmt(yTop + 3.5)}" fill="none" stroke="#000" stroke-width="1.2" stroke-linecap="round"/>`;
+  return `<g opacity="${opacity}"><path d="${d}" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>${arrow}</g>`;
+}
+
+export const HEAD_RX = 5;
+export const HEAD_RY = 3.7;
+export const STEP_INDEX: Record<string, number> = { c: 0, d: 1, e: 2, f: 3, g: 4, a: 5, b: 6 };
+
+/** Staff position: 0 = bottom line (E4), +1 per diatonic step. */
+export function staffPosition(p: Pitch): number {
+  return p.octave * 7 + STEP_INDEX[p.step] - (4 * 7 + 2);
+}
+
+/** Closed ellipse path (usable with fill-rule="evenodd" to cut the hole of hollow noteheads). */
+export function ellipsePath(cx: number, cy: number, rx: number, ry: number, deg: number): string {
+  const t = (deg * Math.PI) / 180;
+  const dx = rx * Math.cos(t);
+  const dy = rx * Math.sin(t);
+  const p1 = `${fmt(cx + dx)},${fmt(cy + dy)}`;
+  const p2 = `${fmt(cx - dx)},${fmt(cy - dy)}`;
+  return `M ${p1} A ${rx} ${ry} ${deg} 1 0 ${p2} A ${rx} ${ry} ${deg} 1 0 ${p1} Z`;
+}
+
+/**
+ * Whole note: level oval with thick sides and a hole tilted to the upper right.
+ * Half note: tilted oval with a thin elongated hole. Quarter and shorter: filled tilted oval.
+ */
+export function renderNotehead(base: NoteBase, x: number, y: number): string {
+  if (base === 1) {
+    return `<path class="notehead" d="${ellipsePath(x, y, 6.4, 4.2, 0)} ${ellipsePath(x, y, 3.3, 1.9, -55)}" fill="#000" fill-rule="evenodd"/>`;
+  }
+  if (base === 2) {
+    return `<path class="notehead" d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
+  }
+  return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
 }

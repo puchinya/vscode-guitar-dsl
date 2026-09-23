@@ -118,6 +118,30 @@ describe('compiler - parseGuitarDsl', () => {
       assert.strictEqual(measures[measures.length - 1].repeatEnd, true);
     });
 
+    it('should parse doubleEnd, finalEnd and Volta brackets [1.] and [2.]', () => {
+      const dsl = '|: C G | [1.] Am Em :| [2.] F G ||';
+      const parsed = parseGuitarDsl(dsl);
+      assert.strictEqual(parsed.measures.length, 3);
+      assert.strictEqual(parsed.measures[0].repeatStart, true);
+      assert.strictEqual(parsed.measures[1].bracket, '1.');
+      assert.strictEqual(parsed.measures[1].repeatEnd, true);
+      assert.strictEqual(parsed.measures[2].bracket, '2.');
+      assert.strictEqual(parsed.measures[2].doubleEnd, true);
+
+      const dslFinal = '| C | G |]';
+      const parsedFinal = parseGuitarDsl(dslFinal);
+      assert.strictEqual(parsedFinal.measures[1].finalEnd, true);
+    });
+
+    it('should parse special jump marks (Fine, D.C., D.S., Coda, Segno)', () => {
+      const dsl = '| C Segno | G to Coda | Am Fine | F D.S. |';
+      const parsed = parseGuitarDsl(dsl);
+      assert.strictEqual(parsed.measures[0].specialMark, 'segno');
+      assert.strictEqual(parsed.measures[1].specialMark, 'to_coda');
+      assert.strictEqual(parsed.measures[2].specialMark, 'fine');
+      assert.strictEqual(parsed.measures[3].specialMark, 'ds');
+    });
+
     it('should parse lyrics on the corresponding measure', () => {
       const dsl = '| C G | Am Em l:"Hello beautiful world" |';
       const parsed = parseGuitarDsl(dsl);

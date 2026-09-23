@@ -30,9 +30,10 @@ export function renderScorePdf(
   dslContent: string,
   pageSize: PageSize,
   orientation: PageOrientation,
-  fonts: ScoreFontFiles
+  fonts: ScoreFontFiles,
+  options?: { expandPageBreakRepeats?: boolean }
 ): Promise<Buffer> {
-  const score = parseGuitarDsl(dslContent);
+  const score = parseGuitarDsl(dslContent, { expandPageBreakRepeats: options?.expandPageBreakRepeats });
   const sheets = renderScoreSheets(score, pageSize, orientation);
   const { width, height } = getSheetSize(pageSize, orientation);
 
@@ -81,9 +82,10 @@ export async function writeScorePdf(
   dslContent: string,
   pageSize: PageSize,
   orientation: PageOrientation,
-  fonts: ScoreFontFiles
+  fonts: ScoreFontFiles,
+  options?: { expandPageBreakRepeats?: boolean }
 ): Promise<void> {
-  const pdf = await renderScorePdf(dslContent, pageSize, orientation, fonts);
+  const pdf = await renderScorePdf(dslContent, pageSize, orientation, fonts, options);
   const tmpPath = `${targetPath}.${process.pid}.tmp`;
   try {
     await fs.promises.writeFile(tmpPath, pdf);
