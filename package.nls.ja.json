@@ -5,5 +5,6 @@
   "command.transcribeYouTube.title": "GuitarDSL: YouTubeから採譜",
   "command.setGeminiApiKey.title": "GuitarDSL: Gemini API キーを設定",
   "command.clearGeminiApiKey.title": "GuitarDSL: Gemini API キーを削除",
-  "config.geminiModel.description": "YouTube音源の自動採譜に使用するGeminiモデル名。"
+  "config.geminiModel.description": "YouTube音源の自動採譜に使用するGeminiモデル名。",
+  "config.compressRepeats.description": "コードとメロディが一致する繰り返しセクションを反復記号（|: :|）と複数行歌詞に圧縮して楽譜を短縮します。"
 }

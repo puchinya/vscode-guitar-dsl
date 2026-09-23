@@ -24,7 +24,7 @@ export interface Measure {
   chords: ChordEvent[];
   rhythm: RhythmEvent[];
   melody?: MelodyEvent[];
-  lyrics?: string;
+  lyrics?: string | string[];
 }
 
 export interface ChordEvent {
@@ -53,7 +53,7 @@ export const MUSIC_IR_JSON_SCHEMA = {
     artist: { type: 'string', description: 'Artist name' },
     key: { type: 'string', description: 'Musical key of the song, e.g. C, Am, G, F#m, Bb' },
     capo: { type: 'integer', description: 'Recommended capo fret number (0..7) to play with easy open guitar chords, or 0 if no capo' },
-    bpm: { type: 'integer', description: 'Tempo in BPM (30..300)' },
+    bpm: { type: 'integer', description: 'Tempo in BPM (30..300). For upbeat 8-beat rock/pop songs, use the true full-time tempo (e.g. 160-220, where snare hits on beats 2 and 4), not half-time.' },
     timeSignature: {
       type: 'object',
       properties: {

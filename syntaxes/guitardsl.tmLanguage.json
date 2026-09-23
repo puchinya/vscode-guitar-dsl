@@ -112,8 +112,16 @@
       "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
     {
+      "name": "keyword.operator.repeat.bracket.guitardsl",
+      "match": "\\[[0-9]+[.,\\-0-9]*\\]"
+    },
+    {
       "name": "entity.name.section.guitardsl",
       "match": "\\[[^\\]]+\\]"
+    },
+    {
+      "name": "keyword.control.repeat.jump.guitardsl",
+      "match": "\\b(?i:D\\.C\\.|D\\.S\\.|Fine|Coda|Segno|to\\s*Coda)\\b"
     },
     {
       "name": "keyword.control.pagebreak.guitardsl",
@@ -125,7 +133,7 @@
     },
     {
       "name": "keyword.operator.barline.guitardsl",
-      "match": "(\\|:|:\\||\\|\\||\\|)"
+      "match": "(\\|:|:\\||\\|\\||\\|\\]|\\|)"
     },
     {
       "name": "entity.name.type.chord.guitardsl",

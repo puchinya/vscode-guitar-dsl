@@ -403,9 +403,9 @@ describe('transcription - serializer', () => {
                 { duration: '4', direction: 'u' }
               ],
               melody: [
-                { pitch: 'c4', duration: '4', lyric: 'き' },
-                { pitch: 'd4', duration: '4', lyric: 'ょ' },
-                { pitch: 'e4', duration: '4', lyric: 'う' },
+                { pitch: 'c4', duration: '4', lyric: 'きょ' },
+                { pitch: 'd4', duration: '4', lyric: 'う' },
+                { pitch: 'e4', duration: '4', lyric: 'も' },
                 { pitch: 'g4', duration: '4', lyric: 'は' }
               ]
             },
@@ -454,12 +454,71 @@ describe('transcription - serializer', () => {
     const dsl = serializeSongToGuitarDsl(song);
     assert.ok(dsl.includes('capo: 3'));
     assert.ok(dsl.includes('mel: | c4/4 d4/4 e4/4 g4/4 |'));
-    assert.ok(dsl.includes('lyr: き ょ う は'));
+    assert.ok(dsl.includes('lyr: きょ う も は'));
     assert.ok(dsl.includes('| % |'));
     assert.ok(dsl.includes('mel: | % |'));
     assert.ok(dsl.includes('lyr: あ し た も'));
     assert.ok(dsl.includes('| F/2 G/2 | % |'));
     assert.ok(dsl.includes('| C/1 | 1.d l:"インスト終了" |'));
+
+    const parsed = parseGuitarDsl(dsl);
+    const errors = parsed.diagnostics.filter(d => d.severity === 'error');
+    assert.strictEqual(errors.length, 0);
+  });
+
+  it('compresses identical repeated sections with repeat barlines and multiple lyr lines when compressRepeats is true', () => {
+    const song: TranscribedSong = {
+      key: 'C',
+      bpm: 185,
+      timeSignature: { numerator: 4, denominator: 4 },
+      sections: [
+        {
+          name: 'Verse 1',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' }
+              ],
+              melody: [
+                { pitch: 'c4', duration: '4', lyric: 'き' },
+                { pitch: 'd4', duration: '4', lyric: 'ょ' },
+                { pitch: 'e4', duration: '4', lyric: 'う' }
+              ]
+            }
+          ]
+        },
+        {
+          name: 'Verse 2',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' }
+              ],
+              melody: [
+                { pitch: 'c4', duration: '4', lyric: 'あ' },
+                { pitch: 'd4', duration: '4', lyric: 'す' },
+                { pitch: 'e4', duration: '4', lyric: 'も' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const dsl = serializeSongToGuitarDsl(song, { compressRepeats: true });
+    assert.ok(dsl.includes('|: C/2 G/2 |'));
+    assert.ok(dsl.includes(':|'));
+    // Small kana 'ょ' must merge with 'き' -> 'きょ'
+    assert.ok(dsl.includes('lyr: きょ う _'));
+    assert.ok(dsl.includes('lyr: あ す も'));
 
     const parsed = parseGuitarDsl(dsl);
     const errors = parsed.diagnostics.filter(d => d.severity === 'error');

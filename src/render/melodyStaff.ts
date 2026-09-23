@@ -112,6 +112,33 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       out += chordName.svg;
     });
 
+    // Volta Bracket ([1.], [2.], etc.)
+    if (m.bracket) {
+      const bracketY = 16;
+      const hookH = 7;
+      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY + hookH)}" x2="${fmt(bx)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      out += `<text x="${fmt(bx + 4)}" y="${fmt(bracketY + 9)}" font-size="9" font-weight="bold" fill="#000">${escapeXml(m.bracket)}</text>`;
+      if (m.repeatEnd) {
+        out += `<line x1="${fmt(bEnd)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY + hookH)}" stroke="#000" stroke-width="1.2"/>`;
+      }
+    }
+
+    // Special Mark (Fine, D.C., D.S., Coda, Segno)
+    if (m.specialMark) {
+      const markY = 16;
+      let markText = '';
+      if (m.specialMark === 'fine') markText = 'Fine';
+      else if (m.specialMark === 'dc') markText = 'D.C.';
+      else if (m.specialMark === 'ds') markText = 'D.S.';
+      else if (m.specialMark === 'coda') markText = '𝄌 Coda';
+      else if (m.specialMark === 'to_coda') markText = 'to Coda';
+      else if (m.specialMark === 'segno') markText = '𝄋 Segno';
+      if (markText) {
+        out += `<text x="${fmt(bEnd - 4)}" y="${fmt(markY)}" font-size="9.5" font-style="italic" font-weight="bold" text-anchor="end" fill="#000">${markText}</text>`;
+      }
+    }
+
     if (!m.melody) {
       if (leadSheet) {
         // Beat slashes on the melody staff for measures without melody (spec §14.2).
@@ -172,6 +199,12 @@ function renderBarline(m: MeasureData, bx: number, bEnd: number): string {
     out += `<circle cx="${fmt(bEnd - 12)}" cy="${STAVE_LINES[2] + 4}" r="2" fill="#000"/>`;
     out += `<line x1="${fmt(bEnd - 5)}" y1="${top}" x2="${fmt(bEnd - 5)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
     out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="3"/>`;
+  } else if (m.finalEnd) {
+    out += `<line x1="${fmt(bEnd - 5)}" y1="${top}" x2="${fmt(bEnd - 5)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
+    out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="3"/>`;
+  } else if (m.doubleEnd) {
+    out += `<line x1="${fmt(bEnd - 4)}" y1="${top}" x2="${fmt(bEnd - 4)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
+    out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
   } else {
     out += `<line x1="${fmt(bEnd)}" y1="${top}" x2="${fmt(bEnd)}" y2="${bottom}" stroke="#000" stroke-width="1.2"/>`;
   }

@@ -13,7 +13,9 @@ export const FIXED_TRANSCRIPTION_PROMPT =
   'Cover all sections sequentially (Intro, Verse, Pre-Chorus, Chorus, Bridge, Solo, Outro, etc.) until the video finishes. ' +
   'Determine the recommended capo position (0..7) to allow playing with easy open guitar chords, and express chords in that play form. ' +
   'STRICT SYLLABLE-TO-NOTE ALIGNMENT: Every sung syllable must have its own melody note with exact pitch and duration. ' +
+  'IMPORTANT FOR JAPANESE LYRICS: Small kana (ゃ, ゅ, ょ, っ, ぁ, ぃ, ぅ, ぇ, ぉ, ゎ, ッ etc.) and long vowel mark (ー) must NEVER be standalone syllables or assigned to separate notes. They MUST always attach to the preceding character (e.g. "きょ", "がっ", "こー", "ふぁ") as a single syllable for one note. ' +
   'For example, if 8 syllables are sung in a measure ("き・ど・う・し・た・きょ・う・に"), output 8 eighth-notes (duration: "8"), each with its exact single syllable in the lyric property. Do NOT lump syllables together or simplify the vocal rhythm. ' +
+  'TEMPO / BPM ACCURACY: Carefully detect the true tempo (BPM) from the rhythm section. In upbeat rock/pop 8-beat songs (like BPM 160-220), do NOT mistake the tempo as half-time (e.g. 80-110). Standard 8-beat has the bass drum on beats 1 & 3 and snare drum on beats 2 & 4 at the fast tempo (e.g. around BPM 185 for fast rock). Count each quarter-note beat where snare hits on 2 & 4 to determine the exact BPM. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
   'sequences within each measure must sum to exactly 4 beats. ' +

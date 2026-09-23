@@ -71,6 +71,11 @@
           "type": "string",
           "default": "gemini-3.8-flash",
           "description": "%config.geminiModel.description%"
+        },
+        "guitardsl.transcription.compressRepeats": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.compressRepeats.description%"
         }
       }
     },

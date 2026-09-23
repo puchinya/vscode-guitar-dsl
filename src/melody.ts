@@ -102,8 +102,8 @@ export type LyricItem =
   | { kind: 'skip' }
   | { kind: 'bar' };
 
-// Small kana that join the preceding character into one mora (っ / ッ / ー are syllables of their own).
-const SMALL_KANA = new Set('ゃゅょぁぃぅぇぉゎャュョァィゥェォヮ'.split(''));
+// Small kana, sokuon (っ) and chouon (ー) that join the preceding character into one mora.
+const SMALL_KANA = new Set('ゃゅょぁぃぅぇぉゎっヵヶャュョァィゥェォヮッー'.split(''));
 // Punctuation that attaches to the preceding syllable instead of taking a note.
 const TRAILING_PUNCT = new Set('、。，．！？!?,.」』)）'.split(''));
 
@@ -114,70 +114,119 @@ function isAsciiWordChar(ch: string): boolean {
 /** Splits the text after `lyr:` into syllables and markers (§13.2). */
 export function tokenizeLyrics(text: string): LyricItem[] {
   const items: LyricItem[] = [];
-  const chars = Array.from(text);
-  let i = 0;
-  // Index of the last syllable produced from a CJK run, so small kana / punctuation can join it.
-  let lastCjk = -1;
+  const rawSegments = text.split(/(\|)/);
 
-  while (i < chars.length) {
-    const ch = chars[i];
-    if (/\s/.test(ch)) {
-      i++;
-      lastCjk = -1;
-      continue;
-    }
-    if (ch === '|') {
+  for (const seg of rawSegments) {
+    if (seg === '|') {
       items.push({ kind: 'bar' });
-      i++;
-      lastCjk = -1;
       continue;
     }
-    if (ch === '_') {
-      items.push({ kind: 'extend' });
-      i++;
-      lastCjk = -1;
-      continue;
-    }
-    if (ch === '*') {
-      items.push({ kind: 'skip' });
-      i++;
-      lastCjk = -1;
-      continue;
-    }
-    if (ch === '(' || ch === '（') {
-      const close = ch === '(' ? ')' : '）';
-      let j = i + 1;
-      let group = '';
-      while (j < chars.length && chars[j] !== close) {
-        group += chars[j];
-        j++;
+
+    const trimmed = seg.trim();
+    if (!trimmed) continue;
+
+    // When the segment contains whitespace between tokens, whitespace delimits syllables.
+    const hasSpace = /\s/.test(trimmed);
+
+    if (hasSpace) {
+      const chars = Array.from(trimmed);
+      let i = 0;
+      while (i < chars.length) {
+        const ch = chars[i];
+        if (/\s/.test(ch)) {
+          i++;
+          continue;
+        }
+        if (ch === '_') {
+          items.push({ kind: 'extend' });
+          i++;
+          continue;
+        }
+        if (ch === '*') {
+          items.push({ kind: 'skip' });
+          i++;
+          continue;
+        }
+        if (ch === '(' || ch === '（') {
+          const close = ch === '(' ? ')' : '）';
+          let j = i + 1;
+          let group = '';
+          while (j < chars.length && chars[j] !== close) {
+            group += chars[j];
+            j++;
+          }
+          items.push({ kind: 'syllable', text: group.trim(), hyphenToNext: false });
+          i = j + 1;
+          continue;
+        }
+
+        let word = '';
+        while (i < chars.length && !/\s/.test(chars[i]) && chars[i] !== '(' && chars[i] !== '（') {
+          word += chars[i];
+          i++;
+        }
+        if (word === '_') {
+          items.push({ kind: 'extend' });
+        } else if (word === '*') {
+          items.push({ kind: 'skip' });
+        } else if (word.length > 0) {
+          const hyphen = word.length > 1 && word.endsWith('-');
+          items.push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen });
+        }
       }
-      items.push({ kind: 'syllable', text: group.trim(), hyphenToNext: false });
-      i = j + 1;
-      lastCjk = -1;
-      continue;
-    }
-    if (isAsciiWordChar(ch)) {
-      let word = '';
-      while (i < chars.length && (isAsciiWordChar(chars[i]) || TRAILING_PUNCT.has(chars[i]))) {
-        word += chars[i];
+    } else {
+      // Unspaced text: split character by character with small kana / ー / っ joining
+      const chars = Array.from(trimmed);
+      let i = 0;
+      while (i < chars.length) {
+        const ch = chars[i];
+        if (ch === '_') {
+          items.push({ kind: 'extend' });
+          i++;
+          continue;
+        }
+        if (ch === '*') {
+          items.push({ kind: 'skip' });
+          i++;
+          continue;
+        }
+        if (ch === '(' || ch === '（') {
+          const close = ch === '(' ? ')' : '）';
+          let j = i + 1;
+          let group = '';
+          while (j < chars.length && chars[j] !== close) {
+            group += chars[j];
+            j++;
+          }
+          items.push({ kind: 'syllable', text: group.trim(), hyphenToNext: false });
+          i = j + 1;
+          continue;
+        }
+
+        if (isAsciiWordChar(ch)) {
+          let word = '';
+          while (i < chars.length && (isAsciiWordChar(chars[i]) || TRAILING_PUNCT.has(chars[i]))) {
+            word += chars[i];
+            i++;
+          }
+          const hyphen = word.length > 1 && word.endsWith('-');
+          items.push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen });
+          continue;
+        }
+
+        if ((SMALL_KANA.has(ch) || TRAILING_PUNCT.has(ch)) && items.length > 0 && items[items.length - 1].kind === 'syllable') {
+          const prev = items[items.length - 1] as { kind: 'syllable'; text: string };
+          prev.text += ch;
+          i++;
+          continue;
+        }
+
+        items.push({ kind: 'syllable', text: ch, hyphenToNext: false });
         i++;
       }
-      const hyphen = word.length > 1 && word.endsWith('-');
-      items.push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen });
-      lastCjk = -1;
-      continue;
     }
-    if ((SMALL_KANA.has(ch) || TRAILING_PUNCT.has(ch)) && lastCjk >= 0) {
-      const prev = items[lastCjk] as { kind: 'syllable'; text: string };
-      prev.text += ch;
-      i++;
-      continue;
-    }
-    items.push({ kind: 'syllable', text: ch, hyphenToNext: false });
-    lastCjk = items.length - 1;
-    i++;
   }
+
   return items;
 }
 

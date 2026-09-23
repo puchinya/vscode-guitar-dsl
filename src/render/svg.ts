@@ -294,6 +294,12 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       barsSvg += `<circle cx="${bEnd - 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
       barsSvg += `<line x1="${bEnd - 5}" y1="${staveLines[0]}" x2="${bEnd - 5}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
       barsSvg += `<line x1="${bEnd}" y1="${staveLines[0]}" x2="${bEnd}" y2="${staveLines[4]}" stroke="#000" stroke-width="3"/>`;
+    } else if (m.finalEnd) {
+      barsSvg += `<line x1="${bEnd - 5}" y1="${staveLines[0]}" x2="${bEnd - 5}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
+      barsSvg += `<line x1="${bEnd}" y1="${staveLines[0]}" x2="${bEnd}" y2="${staveLines[4]}" stroke="#000" stroke-width="3"/>`;
+    } else if (m.doubleEnd) {
+      barsSvg += `<line x1="${bEnd - 4}" y1="${staveLines[0]}" x2="${bEnd - 4}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
+      barsSvg += `<line x1="${bEnd}" y1="${staveLines[0]}" x2="${bEnd}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
     } else {
       barsSvg += `<line x1="${bEnd}" y1="${staveLines[0]}" x2="${bEnd}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
     }
@@ -303,6 +309,33 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       barsSvg += `<line x1="${bx + 5}" y1="${staveLines[0]}" x2="${bx + 5}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[1] + 4}" r="2" fill="#000"/>`;
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
+    }
+
+    // Volta Bracket ([1.], [2.], etc.)
+    if (m.bracket) {
+      const bracketY = 18;
+      const hookH = 7;
+      barsSvg += `<line x1="${bx}" y1="${bracketY + hookH}" x2="${bx}" y2="${bracketY}" stroke="#000" stroke-width="1.2"/>`;
+      barsSvg += `<line x1="${bx}" y1="${bracketY}" x2="${bEnd}" y2="${bracketY}" stroke="#000" stroke-width="1.2"/>`;
+      barsSvg += `<text x="${bx + 4}" y="${bracketY + 9}" font-size="9" font-weight="bold" fill="#000">${escapeXml(m.bracket)}</text>`;
+      if (m.repeatEnd) {
+        barsSvg += `<line x1="${bEnd}" y1="${bracketY}" x2="${bEnd}" y2="${bracketY + hookH}" stroke="#000" stroke-width="1.2"/>`;
+      }
+    }
+
+    // Special Mark (Fine, D.C., D.S., Coda, Segno)
+    if (m.specialMark) {
+      const markY = 18;
+      let markText = '';
+      if (m.specialMark === 'fine') markText = 'Fine';
+      else if (m.specialMark === 'dc') markText = 'D.C.';
+      else if (m.specialMark === 'ds') markText = 'D.S.';
+      else if (m.specialMark === 'coda') markText = '𝄌 Coda';
+      else if (m.specialMark === 'to_coda') markText = 'to Coda';
+      else if (m.specialMark === 'segno') markText = '𝄋 Segno';
+      if (markText) {
+        barsSvg += `<text x="${bEnd - 4}" y="${markY}" font-size="9.5" font-style="italic" font-weight="bold" text-anchor="end" fill="#000">${markText}</text>`;
+      }
     }
 
     // Section Label (placed at the top: y = 2 to 16)

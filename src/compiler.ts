@@ -34,8 +34,9 @@ export interface MeasureData {
   repeatStart: boolean;
   repeatEnd: boolean;
   doubleEnd: boolean;
+  finalEnd?: boolean;
   bracket?: string; // '1.', '2.'
-  specialMark?: string; // 'segno', 'coda', 'fine', 'to_coda'
+  specialMark?: string; // 'segno', 'coda', 'fine', 'to_coda', 'dc', 'ds'
   sectionName?: string;
   rhythms: RhythmItem[];
   lyric: string;
@@ -330,7 +331,7 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
   }
 
   function parseMeasureLine(rawLine: string, lineIdx: number) {
-    const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':');
+    const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
 
     const bars: string[] = [];
     const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+]*)?$`);
@@ -376,6 +377,8 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
 
       let rStart = false;
       let rEnd = false;
+      let dEnd = false;
+      let fEnd = false;
 
       if (cleanBar.startsWith(':')) {
         rStart = true;
@@ -391,6 +394,24 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
         rEnd = true;
       }
 
+      if (barIdx === bars.length - 1) {
+        const trimmedLine = rawLine.trim();
+        if (trimmedLine.endsWith('|]') || trimmedLine.endsWith(':|]')) {
+          fEnd = true;
+        } else if (trimmedLine.endsWith('||')) {
+          dEnd = true;
+        }
+      }
+      if (cleanBar.endsWith(']')) {
+        fEnd = true;
+        cleanBar = cleanBar.replace(/\]+$/, '').trim();
+      }
+
+      if (cleanBar.endsWith('||')) {
+        dEnd = true;
+        cleanBar = cleanBar.replace(/\|\|+$/, '').trim();
+      }
+
       const tokens = cleanBar.split(/\s+/);
       interface RawParsedChord {
         name: string;
@@ -404,6 +425,8 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
       let isMeasureRepeat = false;
       let invalidChordLength = false;
       let firstTokenCol = -1;
+      let mBracket: string | undefined = undefined;
+      let mSpecialMark: string | undefined = undefined;
 
       for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
         const tok = tokens[tokIdx];
@@ -417,6 +440,28 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
           isMeasureRepeat = true;
           continue;
         }
+
+        const bracketMatch = tok.match(/^\[([0-9]+[.,\-0-9]*)\]$/);
+        if (bracketMatch) {
+          mBracket = bracketMatch[1];
+          continue;
+        }
+
+        if (tok.toLowerCase() === 'to' && tokens[tokIdx + 1]?.toLowerCase() === 'coda') {
+          mSpecialMark = 'to_coda';
+          tokIdx++;
+          continue;
+        }
+
+        const markMatch = tok.match(/^(D\.C\.|D\.S\.|Fine|Coda|Segno|to_?Coda)$/i);
+        if (markMatch) {
+          let norm = markMatch[1].toLowerCase().replace(/[\s.]+/g, '_').replace(/^_|_$/g, '');
+          if (norm === 'd_c') norm = 'dc';
+          if (norm === 'd_s') norm = 'ds';
+          mSpecialMark = norm;
+          continue;
+        }
+
         const parsedChord = parseChordToken(tok);
         if (parsedChord) {
           if (parsedChord.invalidLength) {
@@ -434,8 +479,6 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
           if (parsedChord.label !== undefined) {
             chordUses.push({ key, line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
           }
-        } else if (tok.match(/^(\[[12]\.\])$/)) {
-          // brackets like [1.] or [2.]
         } else if (RHYTHM_REGEX.test(tok)) {
           // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, 8t.d, 4+8.d, etc.
           const parts = tok.split('.');
@@ -509,7 +552,10 @@ export function parseGuitarDsl(dslContent: string): ParsedScore {
         isMeasureRepeat,
         repeatStart: rStart,
         repeatEnd: rEnd,
-        doubleEnd: false,
+        doubleEnd: dEnd,
+        finalEnd: fEnd,
+        bracket: mBracket,
+        specialMark: mSpecialMark,
         sectionName: currentSection,
         rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : [
           { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
