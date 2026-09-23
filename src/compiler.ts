@@ -454,17 +454,17 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
     }
 
-    // Section Label (placed at the top: y = 6 to 22)
+    // Section Label (placed at the top: y = 2 to 16)
     if (m.sectionName) {
       barsSvg += `
-        <rect x="${bx + 4}" y="6" width="${m.sectionName.length * 9 + 14}" height="16" fill="#fff" stroke="#000" stroke-width="1.2"/>
-        <text x="${bx + 11}" y="18" font-family="Arial, sans-serif" font-size="10" font-weight="bold">${escapeXml(m.sectionName)}</text>
+        <rect x="${bx + 4}" y="2" width="${m.sectionName.length * 9 + 12}" height="14" fill="#fff" stroke="#000" stroke-width="1.2"/>
+        <text x="${bx + 10}" y="13" font-family="Arial, sans-serif" font-size="9.5" font-weight="bold">${escapeXml(m.sectionName)}</text>
       `;
     }
 
-    // Chord (placed clearly above picking marks: baseline at y = 32)
+    // Chord (placed clearly above picking marks: baseline at y = 33)
     if (m.chord) {
-      barsSvg += `<text x="${bx + 8}" y="32" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
+      barsSvg += `<text x="${bx + 8}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
     }
 
     // Rhythms with duration calculation, Guitar Pro style slash heads, and beam grouping
