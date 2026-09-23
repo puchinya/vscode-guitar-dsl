@@ -77,6 +77,7 @@ npm run vscode:prepublish
 ```
 - Verifies compilation completes without errors before packaging.
 - Optionally run `npx @vscode/vsce ls` to ensure package files are resolved correctly.
+- Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
 
 ## Iteration vs. Final Gate
 - During iteration: use focused checks (`npm run test:unit` for logic changes, `npx tsc --noEmit` or `npm run watch`).
