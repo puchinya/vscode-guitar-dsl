@@ -50,6 +50,7 @@ export interface ChordPlacement {
 interface MeasureData {
   chord: string;
   chords: ChordPlacement[];
+  isMeasureRepeat?: boolean;
   repeatStart: boolean;
   repeatEnd: boolean;
   doubleEnd: boolean;
@@ -90,7 +91,18 @@ function parseChordToken(tok: string): { name: string; duration?: number } | nul
   };
 }
 
-export function compileGuitarDslToHtml(dslContent: string): string {
+interface ParsedScore {
+  title: string;
+  artist: string;
+  capo: string;
+  originalKey: string;
+  bpm: string;
+  memo: string;
+  usedChords: string[];
+  measures: MeasureData[];
+}
+
+function parseGuitarDsl(dslContent: string): ParsedScore {
   const lines = dslContent.split(/\r?\n/);
   
   let title = 'Guitar Rhythm Score';
@@ -148,7 +160,7 @@ export function compileGuitarDslToHtml(dslContent: string): string {
           const nextClean = next.replace(/l:\"[^\"]*\"/, '').trim();
           const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
           const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
-          const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]));
+          const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]) || t === '%');
 
           if (!nextHasChord && nextHasRhythm) {
             bars.push(cur + ' ' + next);
@@ -200,10 +212,15 @@ export function compileGuitarDslToHtml(dslContent: string): string {
         const rawChords: RawParsedChord[] = [];
         const rhythms: RhythmItem[] = [];
         let runningBeat = 0;
+        let isMeasureRepeat = false;
 
         for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
           const tok = tokens[tokIdx];
           if (!tok || tok === ':' || tok === '|') continue;
+          if (tok === '%') {
+            isMeasureRepeat = true;
+            continue;
+          }
           const parsedChord = parseChordToken(tok);
           if (parsedChord) {
             rawChords.push({
@@ -266,21 +283,30 @@ export function compileGuitarDslToHtml(dslContent: string): string {
           } else {
             barChords = rawChords.map(c => ({ name: c.name, beat: c.accumBeatAtToken }));
           }
+        } else if (isMeasureRepeat && measures.length > 0) {
+          const prev = measures[measures.length - 1];
+          if (prev.chords && prev.chords.length > 0) {
+            barChords = prev.chords.map(c => ({ ...c }));
+          } else if (prev.chord) {
+            barChords = [{ name: prev.chord, beat: 0 }];
+          }
+          barChords.forEach(c => usedChordsSet.add(c.name));
         }
 
         measures.push({
           chord: barChords.length > 0 ? barChords[0].name : '',
           chords: barChords,
+          isMeasureRepeat,
           repeatStart: rStart,
           repeatEnd: rEnd,
           doubleEnd: false,
           sectionName: currentSection,
-          rhythms: rhythms.length > 0 ? rhythms : [
+          rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : [
             { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
             { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false },
             { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
             { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false }
-          ],
+          ]),
           lyric: mLyric
         });
         currentSection = ''; // consume section for the first bar
@@ -288,9 +314,25 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     }
   }
 
+  return {
+    title,
+    artist,
+    capo,
+    originalKey,
+    bpm,
+    memo,
+    usedChords: Array.from(usedChordsSet),
+    measures
+  };
+}
+
+export function compileGuitarDslToHtml(dslContent: string): string {
+  const score = parseGuitarDsl(dslContent);
+  const { title, artist, capo, originalKey, bpm } = score;
+
   // Generate Chord Diagrams SVG
   let chordSvgs = '';
-  for (const chord of Array.from(usedChordsSet)) {
+  for (const chord of score.usedChords) {
     const frets = CHORD_LIBRARY[chord] || ['x', 'x', 'o', 2, 3, 2];
     chordSvgs += renderChordDiagram(chord, frets);
   }
@@ -302,8 +344,8 @@ export function compileGuitarDslToHtml(dslContent: string): string {
   const barWidth = sysWidth / measuresPerRow;
   const sysHeight = 140;
 
-  for (let i = 0; i < measures.length; i += measuresPerRow) {
-    const rowMeasures = measures.slice(i, i + measuresPerRow);
+  for (let i = 0; i < score.measures.length; i += measuresPerRow) {
+    const rowMeasures = score.measures.slice(i, i + measuresPerRow);
     systemsSvg += renderSystemRow(rowMeasures, i === 0, barWidth, sysHeight, sysWidth);
   }
 
@@ -457,8 +499,70 @@ export function compileGuitarDslToHtml(dslContent: string): string {
 </html>`;
 }
 
-function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string {
-  // 6 strings: x coords 5, 13, 21, 29, 37, 45
+export function compileGuitarDslToSvg(dslContent: string): string {
+  const score = parseGuitarDsl(dslContent);
+  const { title, artist, capo, originalKey, bpm } = score;
+
+  const measuresPerRow = 4;
+  const sysWidth = 780;
+  const barWidth = sysWidth / measuresPerRow;
+  const sysHeight = 140;
+  const numRows = Math.ceil(score.measures.length / measuresPerRow);
+
+  const headerHeight = 70;
+  const chordDiagramsHeight = score.usedChords.length > 0 ? 80 : 0;
+  const totalWidth = 840;
+  const leftMargin = 30;
+  const topMargin = 20;
+  const totalHeight = topMargin + headerHeight + chordDiagramsHeight + numRows * sysHeight + 40;
+
+  let svg = `<svg width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" style="background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;">\n`;
+
+  // Header
+  svg += `<text x="${leftMargin}" y="${topMargin + 28}" font-size="22" font-weight="900" fill="#111">${escapeXml(title)}</text>\n`;
+  if (artist) {
+    svg += `<text x="${leftMargin}" y="${topMargin + 46}" font-size="11" fill="#444">Words &amp; Music: ${escapeXml(artist)}</text>\n`;
+  }
+  const rightX = totalWidth - leftMargin;
+  svg += `<text x="${rightX}" y="${topMargin + 24}" font-size="11" text-anchor="end" fill="#111">Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</text>\n`;
+  svg += `<rect x="${rightX - 65}" y="${topMargin + 32}" width="65" height="18" rx="2" fill="#000"/>\n`;
+  svg += `<text x="${rightX - 32.5}" y="${topMargin + 45}" font-size="10.5" font-weight="bold" fill="#fff" text-anchor="middle">Capo: ${escapeXml(capo)}</text>\n`;
+  svg += `<line x1="${leftMargin}" y1="${topMargin + 58}" x2="${rightX}" y2="${topMargin + 58}" stroke="#000" stroke-width="2"/>\n`;
+
+  let currentY = topMargin + headerHeight;
+
+  // Chord diagrams
+  if (score.usedChords.length > 0) {
+    let diagX = leftMargin;
+    for (const chord of score.usedChords) {
+      const frets = CHORD_LIBRARY[chord] || ['x', 'x', 'o', 2, 3, 2];
+      svg += `<g transform="translate(${diagX}, ${currentY})">\n`;
+      svg += `  <text x="25" y="0" font-size="12" font-weight="bold" font-family="Arial" text-anchor="middle" fill="#000">${escapeXml(chord)}</text>\n`;
+      svg += `  <g transform="translate(0, 5)">\n`;
+      svg += renderChordDiagramSvg(frets);
+      svg += `  </g>\n`;
+      svg += `</g>\n`;
+      diagX += 56;
+    }
+    svg += `<line x1="${leftMargin}" y1="${currentY + 68}" x2="${rightX}" y2="${currentY + 68}" stroke="#aaa" stroke-width="1"/>\n`;
+    currentY += chordDiagramsHeight;
+  }
+
+  // System rows
+  for (let i = 0; i < score.measures.length; i += measuresPerRow) {
+    const rowMeasures = score.measures.slice(i, i + measuresPerRow);
+    const isFirst = (i === 0);
+    svg += `<g transform="translate(${leftMargin}, ${currentY})">\n`;
+    svg += renderSystemSvgContent(rowMeasures, isFirst, barWidth, sysHeight, sysWidth);
+    svg += `</g>\n`;
+    currentY += sysHeight;
+  }
+
+  svg += `</svg>\n`;
+  return svg;
+}
+
+function renderChordDiagramSvg(frets: (number | 'x' | 'o')[]): string {
   let circles = '';
   let topMarks = '';
 
@@ -466,7 +570,7 @@ function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string
     const x = 5 + s * 8;
     const f = frets[s];
     if (f === 'x') {
-      topMarks += `<text x="${x}" y="9" font-size="8" font-family="Arial" text-anchor="middle">×</text>`;
+      topMarks += `<text x="${x}" y="9" font-size="8" font-family="Arial" text-anchor="middle" fill="#000">×</text>`;
     } else if (f === 'o') {
       topMarks += `<circle cx="${x}" cy="7" r="2" fill="none" stroke="#000" stroke-width="0.8"/>`;
     } else if (typeof f === 'number' && f > 0) {
@@ -476,30 +580,44 @@ function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string
   }
 
   return `
+    ${topMarks}
+    <!-- Nut -->
+    <line x1="5" y1="14" x2="45" y2="14" stroke="#000" stroke-width="2.2"/>
+    <!-- Frets -->
+    <line x1="5" y1="23" x2="45" y2="23" stroke="#888" stroke-width="0.7"/>
+    <line x1="5" y1="32" x2="45" y2="32" stroke="#888" stroke-width="0.7"/>
+    <line x1="5" y1="41" x2="45" y2="41" stroke="#888" stroke-width="0.7"/>
+    <line x1="5" y1="50" x2="45" y2="50" stroke="#888" stroke-width="0.7"/>
+    <!-- Strings -->
+    <line x1="5" y1="14" x2="5" y2="50" stroke="#000" stroke-width="0.7"/>
+    <line x1="13" y1="14" x2="13" y2="50" stroke="#000" stroke-width="0.7"/>
+    <line x1="21" y1="14" x2="21" y2="50" stroke="#000" stroke-width="0.7"/>
+    <line x1="29" y1="14" x2="29" y2="50" stroke="#000" stroke-width="0.7"/>
+    <line x1="37" y1="14" x2="37" y2="50" stroke="#000" stroke-width="0.7"/>
+    <line x1="45" y1="14" x2="45" y2="50" stroke="#000" stroke-width="0.7"/>
+    ${circles}`;
+}
+
+function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string {
+  return `
     <div class="diagram-box">
       <span class="diagram-name">${escapeXml(name)}</span>
       <svg width="42" height="50" viewBox="0 0 50 58">
-        ${topMarks}
-        <!-- Nut -->
-        <line x1="5" y1="14" x2="45" y2="14" stroke="#000" stroke-width="2.2"/>
-        <!-- Frets -->
-        <line x1="5" y1="23" x2="45" y2="23" stroke="#888" stroke-width="0.7"/>
-        <line x1="5" y1="32" x2="45" y2="32" stroke="#888" stroke-width="0.7"/>
-        <line x1="5" y1="41" x2="45" y2="41" stroke="#888" stroke-width="0.7"/>
-        <line x1="5" y1="50" x2="45" y2="50" stroke="#888" stroke-width="0.7"/>
-        <!-- Strings -->
-        <line x1="5" y1="14" x2="5" y2="50" stroke="#000" stroke-width="0.7"/>
-        <line x1="13" y1="14" x2="13" y2="50" stroke="#000" stroke-width="0.7"/>
-        <line x1="21" y1="14" x2="21" y2="50" stroke="#000" stroke-width="0.7"/>
-        <line x1="29" y1="14" x2="29" y2="50" stroke="#000" stroke-width="0.7"/>
-        <line x1="37" y1="14" x2="37" y2="50" stroke="#000" stroke-width="0.7"/>
-        <line x1="45" y1="14" x2="45" y2="50" stroke="#000" stroke-width="0.7"/>
-        ${circles}
+        ${renderChordDiagramSvg(frets)}
       </svg>
     </div>`;
 }
 
 function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
+  return `
+    <div class="system-row">
+      <svg class="system-svg" viewBox="0 0 ${totalWidth} ${height}" xmlns="http://www.w3.org/2000/svg">
+        ${renderSystemSvgContent(measures, isFirst, barWidth, height, totalWidth)}
+      </svg>
+    </div>`;
+}
+
+function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
   const staveY = 70;
   const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
 
@@ -549,6 +667,43 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
         <rect x="${bx + 4}" y="2" width="${m.sectionName.length * 9 + 12}" height="14" fill="#fff" stroke="#000" stroke-width="1.2"/>
         <text x="${bx + 10}" y="13" font-family="Arial, sans-serif" font-size="9.5" font-weight="bold">${escapeXml(m.sectionName)}</text>
       `;
+    }
+
+    if (m.isMeasureRepeat) {
+      // Chords (placed clearly above: baseline at y = 33)
+      const chordsToRender = m.chords && m.chords.length > 0
+        ? m.chords
+        : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
+
+      const padLeft = 14;
+      const padRight = 14;
+      const usableW = actualBarWidth - padLeft - padRight;
+      let lastChordRight = bx;
+
+      chordsToRender.forEach((ch, chIdx) => {
+        let chordX = bx + 8;
+        if (chIdx > 0 || ch.beat > 0) {
+          chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
+        }
+        chordX = Math.max(lastChordRight + 6, chordX);
+        lastChordRight = chordX + ch.name.length * 9;
+        barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+      });
+
+      // Measure Repeat Sign (Simile mark: diagonal slash with two dots)
+      const centerX = bx + actualBarWidth / 2;
+      // Diagonal slash across stave lines 2 to 4 (y=74 to y=98)
+      barsSvg += `<line x1="${centerX - 13}" y1="98" x2="${centerX + 13}" y2="74" stroke="#000" stroke-width="3.6" stroke-linecap="round"/>`;
+      // Upper dot in space 2 (y=82)
+      barsSvg += `<circle cx="${centerX - 7}" cy="82" r="2.6" fill="#000"/>`;
+      // Lower dot in space 3 (y=90)
+      barsSvg += `<circle cx="${centerX + 7}" cy="90" r="2.6" fill="#000"/>`;
+
+      // Lyric (placed below bottom stave line: baseline y = 120)
+      if (m.lyric) {
+        barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+      }
+      return;
     }
 
     // Rhythms with duration calculation, Guitar Pro style slash heads, and beam grouping
@@ -775,13 +930,9 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
   });
 
   return `
-    <div class="system-row">
-      <svg class="system-svg" viewBox="0 0 ${totalWidth} ${height}" xmlns="http://www.w3.org/2000/svg">
-        ${staveSvg}
-        ${clefSvg}
-        ${barsSvg}
-      </svg>
-    </div>`;
+    ${staveSvg}
+    ${clefSvg}
+    ${barsSvg}`;
 }
 function escapeXml(str: string): string {
   return str.replace(/[&<>"']/g, c => {

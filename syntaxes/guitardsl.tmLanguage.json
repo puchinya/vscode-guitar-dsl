@@ -28,6 +28,10 @@
       "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(:[0-9]+(\\.[0-9]+)?)?\\b"
     },
     {
+      "name": "keyword.operator.repeat.guitardsl",
+      "match": "%"
+    },
+    {
       "name": "constant.numeric.rhythm.guitardsl",
       "match": "\\b(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*\\b"
     }
