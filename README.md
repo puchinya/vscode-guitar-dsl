@@ -6,7 +6,10 @@
 - `.guitardsl` ファイルのシンタックスハイライト
 - 横分割 Webview によるリアルタイム SVG レンダリング
 - 外部 CDN やインターネット接続不要の完全スタンドアロン動作
-- ワンクリックでブラウザ印刷ダイアログを起動し、A4 PDF 保存可能
+- ワンクリックで PDF 保存（外部ブラウザ不要。A4/A3/A5/B4/B5/Letter、縦・横見開き）
+
+## ライセンス表記
+- 同梱フォント `media/fonts/NotoSansJP-*.ttf`（Noto Sans JP）は SIL Open Font License 1.1 に従います（`media/fonts/OFL.txt`）。
 
 ## 使い方・開発
 1. 依存ライブラリのインストール:

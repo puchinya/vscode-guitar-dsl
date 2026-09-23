@@ -10,7 +10,7 @@
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
-### 1.1 言語構文・コンパイラ機能 (`src/compiler.ts`)
+### 1.1 言語構文・コンパイラ / 描画機能 (`src/compiler.ts`, `src/render/`)
 
 | 機能区分 | 機能名 / 構文 | ステータス | 備考 |
 |---|---|:---:|---|
@@ -30,7 +30,9 @@
 | | タイ記号 `_` | ✅ 完了 | 音符間を弧線で連結 |
 | | 休符指定 `r4`, `r8` 等 | ✅ 完了 | 音楽フォント準拠の休符記号を描画 |
 | **歌詞** | `l:"歌詞テキスト"` による歌詞配置 | ✅ 完了 | 五線譜の下部に等間隔・小節同期で描画 |
-| **改ページ** | `pagebreak` 指示子による複数ページ分割 | ✅ 完了 | 独立したページ（`.page`）として分割出力 |
+| **改ページ** | `pagebreak` 指示子による複数ページ分割 | ✅ 完了 | 指定位置で新ページを開始 |
+| | 自動改ページ | ✅ 完了 | ページ高さを超える段を次ページへ送る |
+| **ページ描画** | シート単位の単一 SVG（ヘッダー・ダイアグラム・楽譜・フッター） | ✅ 完了 | プレビューと PDF で共通。同梱 Noto Sans JP で描画 |
 
 ### 1.2 エディタ統合・拡張機能コア (`src/extension.ts`, `src/symbols.ts`)
 
@@ -40,15 +42,14 @@
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
 | **プレビュー画面** | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
-| | ツールバー（ページ送りコントロール） | ✅ 完了 | `[< 前へ]`, `X / Y ページ`, `[次へ >]` |
-| | 表示モード（Continuous / Single / Spread） | ✅ 完了 | 連続スクロール、単一ページ、見開き2ページ |
-| | 印刷・PDF保存モーダルダイアログ | ✅ 完了 | 用紙サイズ（A4/A3/A5/B4/B5/Letter）、縦横指定 |
-| **PDFエクスポート** | ヘッドレスブラウザ検出・自動生成 | ✅ 完了 | Chrome / Edge / Chromium / Brave を自動検出 |
+| | 表示モード（1ページ / 見開き / Web） | ✅ 完了 | シート SVG の縦並び・横並び、連続 SVG |
+| | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
+| **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。macOS で確認済み、Windows / Linux は未検証 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
 | | Language Configuration | ✅ 完了 | コメント記号、括弧自動閉じ |
 | **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |
-| | Webview ツールバー多言語化 (`src/compiler.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
+| | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
 | | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
 
 ---
@@ -58,10 +59,12 @@
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
 - **テストファイル**:
-  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、HTML/SVG生成、印刷CSS出力、ツールバー多言語レンダリング
+  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、モジュール境界（描画 API を公開しないこと）
+  - `tests/unit/render.test.ts`: シート SVG / 連続 SVG / Webview HTML 生成、用紙設定反映、XML エスケープ、自動改ページ、横向き 2 ページ配置、ツールバー多言語レンダリング
+  - `tests/unit/pdf.test.ts`: PDF 生成（ページ数、フォント埋め込み、書き出し、フォント欠落時の失敗）
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）およびメッセージ辞書整合性
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
-- **テスト実行結果**: **35 / 35 件 PASS** (0 failures)
+- **テスト実行結果**: **50 / 50 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`

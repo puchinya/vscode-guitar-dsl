@@ -1,72 +1,14 @@
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import * as cp from 'child_process';
 import * as vscode from 'vscode';
-import { compileGuitarDslToHtml, compileGuitarDslToPrintHtml, PageSize, PageOrientation } from './compiler';
+import { compileGuitarDslToHtml } from './render/previewHtml';
+import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
+import { getBundledFontFiles, writeScorePdf } from './pdf';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages } from './i18n';
 
-export function findHeadlessBrowser(): string | undefined {
-  const platform = process.platform;
-  const candidates: string[] = [];
-
-  if (platform === 'darwin') {
-    candidates.push(
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium'
-    );
-  } else if (platform === 'win32') {
-    const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-    const localAppData = process.env['LocalAppData'] || '';
-
-    candidates.push(
-      path.join(programFiles, 'Google\\Chrome\\Application\\chrome.exe'),
-      path.join(programFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
-      path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
-      path.join(programFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
-      path.join(programFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe')
-    );
-  } else {
-    // Linux and others
-    candidates.push(
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/chromium',
-      '/snap/bin/chromium'
-    );
-  }
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-
-  // Fallback: check PATH
-  const whichCmd = platform === 'win32' ? 'where' : 'which';
-  for (const bin of ['google-chrome', 'chromium', 'chrome', 'google-chrome-stable', 'msedge']) {
-    try {
-      const out = cp.execSync(`${whichCmd} ${bin}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
-      const firstLine = out.split(/\r?\n/)[0];
-      if (firstLine && fs.existsSync(firstLine)) {
-        return firstLine;
-      }
-    } catch {
-      // not found in PATH
-    }
-  }
-
-  return undefined;
-}
-
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
+  extensionRoot: string,
   pageSize: PageSize = 'A4',
   orientation: PageOrientation = 'portrait',
   locale?: string
@@ -87,38 +29,8 @@ export async function exportScoreToPdf(
     return;
   }
 
-  const browserPath = findHeadlessBrowser();
-  if (!browserPath) {
-    vscode.window.showErrorMessage(msgs.msgNeedBrowser);
-    return;
-  }
-
-  const tmpHtmlPath = path.join(os.tmpdir(), `guitardsl_export_${Date.now()}.html`);
-  const tmpUserDataDir = path.join(os.tmpdir(), `guitardsl_chrome_${Date.now()}`);
-  const htmlContent = compileGuitarDslToPrintHtml(doc.getText(), pageSize, orientation);
-
   try {
-    fs.writeFileSync(tmpHtmlPath, htmlContent, 'utf8');
-
-    await new Promise<void>((resolve, reject) => {
-      const args = [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-sandbox',
-        '--no-pdf-header-footer',
-        `--user-data-dir=${tmpUserDataDir}`,
-        `--print-to-pdf=${targetUri.fsPath}`,
-        tmpHtmlPath
-      ];
-
-      cp.execFile(browserPath, args, (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
+    await writeScorePdf(targetUri.fsPath, doc.getText(), pageSize, orientation, getBundledFontFiles(extensionRoot));
 
     const action = await vscode.window.showInformationMessage(
       msgs.msgPdfSaved(path.basename(targetUri.fsPath)),
@@ -129,17 +41,6 @@ export async function exportScoreToPdf(
     }
   } catch (err: any) {
     vscode.window.showErrorMessage(msgs.msgPdfFailed(err.message || err));
-  } finally {
-    try {
-      if (fs.existsSync(tmpHtmlPath)) {
-        fs.unlinkSync(tmpHtmlPath);
-      }
-      if (fs.existsSync(tmpUserDataDir)) {
-        fs.rmSync(tmpUserDataDir, { recursive: true, force: true });
-      }
-    } catch {
-      // ignore tmp cleanup error
-    }
   }
 }
 
@@ -204,12 +105,25 @@ export function activate(context: vscode.ExtensionContext) {
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
 
+  const fontsRoot = vscode.Uri.joinPath(context.extensionUri, 'media', 'fonts');
+  // Paper size / orientation of the preview; the webview requests changes via 'layoutChanged'.
+  let previewPageSize: PageSize = 'A4';
+  let previewOrientation: PageOrientation = 'portrait';
+
   const updateWebview = (doc: vscode.TextDocument) => {
     if (currentPanel && isGuitarDslDocument(doc)) {
       lastActiveGuitarDslDoc = doc;
-      const text = doc.getText();
-      const htmlContent = compileGuitarDslToHtml(text, { locale: currentLocale });
-      currentPanel.webview.html = htmlContent;
+      const webview = currentPanel.webview;
+      const htmlContent = compileGuitarDslToHtml(doc.getText(), {
+        locale: currentLocale,
+        pageSize: previewPageSize,
+        orientation: previewOrientation,
+        fontUris: {
+          regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
+          bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
+        }
+      });
+      webview.html = htmlContent;
     }
   };
 
@@ -231,18 +145,27 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.ViewColumn.Beside,
         {
           enableScripts: true,
-          retainContextWhenHidden: true
+          retainContextWhenHidden: true,
+          localResourceRoots: [fontsRoot]
         }
       );
 
       currentPanel.webview.onDidReceiveMessage(
         async (message) => {
+          const pageSize: PageSize = isPageSize(message.pageSize) ? message.pageSize : previewPageSize;
+          const orientation: PageOrientation = isPageOrientation(message.orientation) ? message.orientation : previewOrientation;
           if (message.command === 'savePdf') {
             const activeDoc = lastActiveGuitarDslDoc || (await resolveGuitarDslDocument(undefined, undefined));
             if (activeDoc) {
-              await exportScoreToPdf(activeDoc, message.pageSize, message.orientation, currentLocale);
+              await exportScoreToPdf(activeDoc, context.extensionPath, pageSize, orientation, currentLocale);
             } else {
               vscode.window.showWarningMessage(msgs.msgDocNotFound);
+            }
+          } else if (message.command === 'layoutChanged') {
+            previewPageSize = pageSize;
+            previewOrientation = orientation;
+            if (lastActiveGuitarDslDoc) {
+              updateWebview(lastActiveGuitarDslDoc);
             }
           }
         },
@@ -281,7 +204,7 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
-    await exportScoreToPdf(doc, 'A4', 'portrait', currentLocale);
+    await exportScoreToPdf(doc, context.extensionPath, previewPageSize, previewOrientation, currentLocale);
   });
 
   const symbolDisposable = vscode.languages.registerDocumentSymbolProvider(

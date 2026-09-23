@@ -6,7 +6,7 @@
 
 ## 1. 全体アーキテクチャ概要 (Architecture Overview)
 
-`vscode-guitar-dsl` は、エディタ機能の統合を担う **VS Code Extension Core**、DSLの解析と楽譜SVG/HTMLの生成を担う **GuitarDSL Compiler**、およびVS Codeのアウトライン機能を提供する **Document Symbol Provider** の3つの主要レイヤーから構成される。
+`vscode-guitar-dsl` は、エディタ機能の統合を担う **VS Code Extension Core**、DSL を AST に変換する **GuitarDSL Compiler**、AST からページ SVG / Webview HTML を生成する **Renderer**、SVG をベクター PDF に変換する **PDF Exporter**、およびアウトライン機能を提供する **Document Symbol Provider** から構成される。依存方向は `extension → pdf / render → compiler` であり、`compiler.ts` は描画モジュールに依存しない。
 
 ```mermaid
 flowchart TD
@@ -20,7 +20,6 @@ flowchart TD
         Lifecycle["Extension Lifecycle & Event Listener"]
         DocResolver["Document Resolver"]
         PanelManager["Webview Panel Manager"]
-        PdfExporter["Headless Browser PDF Exporter"]
     end
 
     subgraph SymbolProvider["Symbol Provider (src/symbols.ts)"]
@@ -28,20 +27,24 @@ flowchart TD
     end
 
     subgraph Compiler["DSL Compiler (src/compiler.ts)"]
-        DSLParser["parseGuitarDsl()"]
-        SVGRenderer["compileGuitarDslToSvg()"]
-        HTMLBuilder["compileGuitarDslToHtml()"]
-        PrintBuilder["compileGuitarDslToPrintHtml()"]
+        DSLParser["parseGuitarDsl() → ParsedScore (AST)"]
     end
 
-    subgraph WebviewHost["Webview Panel (HTML / SVG)"]
-        Toolbar["Toolbar (Page controls, View mode, PDF)"]
-        ScoreContainer["Score Render Area (SVG Pages)"]
+    subgraph Renderer["Renderer (src/render/)"]
+        Layout["layout.ts: layoutScore()"]
+        SVGRenderer["svg.ts: renderScoreSheets() / renderContinuousSvg()"]
+        HTMLBuilder["previewHtml.ts: compileGuitarDslToHtml()"]
     end
 
-    subgraph External["External Environment"]
-        Chrome["Headless Chrome / Edge / Chromium"]
-        PDF["Exported PDF File"]
+    subgraph Pdf["PDF Exporter (src/pdf.ts)"]
+        PdfRenderer["renderScorePdf() (pdfkit + svg-to-pdfkit)"]
+    end
+
+    Fonts["media/fonts (Noto Sans JP)"]
+
+    subgraph WebviewHost["Webview Panel"]
+        Toolbar["Toolbar (HTML)"]
+        ScoreContainer["Sheet SVGs / Continuous SVG"]
     end
 
     Editor -->|Text / Change Event| Lifecycle
@@ -51,18 +54,18 @@ flowchart TD
     Lifecycle -->|Request Outline| SymbolParser
     SymbolParser --> Outline
 
-    PanelManager -->|Raw DSL Text| HTMLBuilder
-    HTMLBuilder --> DSLParser
-    DSLParser --> SVGRenderer
-    SVGRenderer --> HTMLBuilder
+    PanelManager -->|DSL + pageSize/orientation| HTMLBuilder
+    HTMLBuilder --> SVGRenderer
+    SVGRenderer --> Layout
+    SVGRenderer --> DSLParser
     HTMLBuilder -->|Webview HTML| WebviewHost
+    Fonts -->|asWebviewUri / @font-face| WebviewHost
 
-    Toolbar -->|postMessage 'savePdf'| PanelManager
-    PanelManager --> PdfExporter
-    PdfExporter --> PrintBuilder
-    PrintBuilder --> External
-    PdfExporter -->|CLI Exec| Chrome
-    Chrome -->|Save| PDF
+    Toolbar -->|postMessage 'layoutChanged' / 'savePdf'| PanelManager
+    PanelManager --> PdfRenderer
+    PdfRenderer --> SVGRenderer
+    Fonts -->|subset embedding| PdfRenderer
+    PdfRenderer -->|Save| PDF["Exported PDF File"]
 ```
 
 ---
@@ -84,39 +87,54 @@ flowchart TD
 - **イベント駆動同期**:
   - `onDidChangeTextDocument`: テキストが編集された際、現在プレビュー対象のファイルと同一であれば即座に再描画（`compileGuitarDslToHtml`）を実行。
   - `onDidChangeActiveTextEditor`: ユーザが別の `.guitardsl` ファイルをアクティブにした際、プレビューの描画対象を自動追従。
-- **PDFエクスポート制御 (`exportScoreToPdf`, `findHeadlessBrowser`)**:
-  - OS（macOS, Windows, Linux）に応じた既知の実行可能パス、および `PATH` 環境変数（`which` / `where`）から Chrome / Edge / Chromium / Brave 等のヘッドレスブラウザを検出。
-  - 印刷専用HTML（`compileGuitarDslToPrintHtml`）を一時ファイルに出力し、`--headless=new --print-to-pdf` 引数でヘッドレスブラウザを呼び出してPDFを生成。
-  - 処理完了後は一時ディレクトリおよびファイルを確実にクリーンアップ（`finally` 節）。
+- **プレビューの用紙設定**:
+  - 用紙サイズ・向き（初期値 `A4` / 縦）を拡張機能ホスト側で保持する。Webview からの `layoutChanged` メッセージ（値は `isPageSize` / `isPageOrientation` で検証）で更新し、再描画する。Webview 側は表示モードのみを `vscode.setState` で保持する。
+  - 同梱フォントを Webview で読み込むため、`localResourceRoots` に `media/fonts` を指定し、`asWebviewUri` で得た URI を `compileGuitarDslToHtml` に渡す。
+- **PDFエクスポート制御 (`exportScoreToPdf`)**:
+  - 保存ダイアログで保存先を選択させ、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
 
 ### 2.2 GuitarDSL Compiler (`src/compiler.ts`)
-テキストとしてのDSL入力をパースし、楽譜のデータモデルを構築した上で、ベクターSVGおよびスタンドアロンHTMLを出力するコアレンダリングエンジン。
+テキストとしてのDSL入力をパースし、楽譜の AST（`ParsedScore`）を構築する。描画処理は持たない。
 
 - **データモデル**:
   - `ParsedScore`: パース済みの楽曲全体（メタデータ、使用コード一覧、ページ配列、スタイル情報）。
-  - `ScorePage`: ページごとのセクションおよび小節の配列。
+  - `ScorePage`: 手動改ページ（`pagebreak`）単位の小節の配列。
   - `MeasureData`: 1小節分のデータ（小節内コード配列 `chords`、反復記号 `repeatStart` / `repeatEnd` / `isMeasureRepeat`、リズム配列 `rhythms`、歌詞 `lyric`、セクション名 `sectionName` 等）。
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
-- **主要パイプライン**:
-  1. **パーサー (`parseGuitarDsl`)**:
-     - 行単位でテキストを走査。
-     - ヘッダー部（`key: value`）から楽曲メタデータおよびスタイル指定を抽出。
-     - セクション見出し（`[...]`）および改ページ指示（`pagebreak`）を認識し、ページ構造（`ScorePage`）を分割。
-     - 小節行（`|` 区切り）を行分割・トークン分解し、コード、リズム（音価・ピッキング記号・タイ等）、歌詞（`l:"..."`）を構造化。
-     - 使用されているコードを自動収集し、コードライブラリ（`CHORD_LIBRARY`）と照合。
-  2. **SVG生成 (`compileGuitarDslToSvg`)**:
-     - ページ単位でベクターSVGを構築。
-     - 五線（Staff Lines）、ト音記号（FETA Treble Clef ベクターパス）、調号・拍子記号の描画。
-     - スラッシュノートヘッド、符尾、符桁（ビーム）、タイ弧線の数学的座標計算と描画。
-     - 小節反復記号（`%`）および小節線（開始反復、終了反復、複縦線、カッコ番号）の描画。
-     - 五線下部への歌詞文字列の均等・同期配置。
-  3. **Webview HTMLビルダー (`compileGuitarDslToHtml`)**:
-     - SVGページ群を包含するHTMLシェルを構築。
-     - ツールバーUI（ページ送り、表示モード切り替え、印刷ダイアログ）とWebview内JavaScriptをバンドル。
-  4. **印刷専用HTMLビルダー (`compileGuitarDslToPrintHtml`)**:
-     - ツールバーやUIスクリプトを排除し、純粋なSVGページと印刷用CSS（`@page`, `@media print`）のみで構成されるHTMLを出力。
+- **パーサー (`parseGuitarDsl`)**:
+  - 行単位でテキストを走査。
+  - ヘッダー部（`key: value`）から楽曲メタデータおよびスタイル指定を抽出。
+  - セクション見出し（`[...]`）および改ページ指示（`pagebreak`）を認識し、ページ構造（`ScorePage`）を分割。
+  - 小節行（`|` 区切り）を行分割・トークン分解し、コード、リズム（音価・ピッキング記号・タイ等）、歌詞（`l:"..."`）を構造化。
+  - 使用されているコードを自動収集する。
 
-### 2.3 Document Symbol Provider (`src/symbols.ts`)
+### 2.3 Renderer (`src/render/`)
+AST からページ SVG と Webview HTML を生成する。VS Code API に依存しない純粋関数群。
+
+- **`layout.ts`**:
+  - 用紙定義（`PAGE_CONFIG`）と座標系。座標単位は pt（1/72 inch）で、シート SVG の `viewBox` は用紙サイズ（pt）と一致する。これにより同じ SVG が PDF ページへ 1:1 で対応する。
+  - 余白（上下 10mm、左右 12mm）、横向き時の 2 カラム（ガター 12mm）。
+  - 段（4 小節）は 780×140 の段座標で描画し、カラム幅に合わせて `scale` する。段間隔も段座標（8）で持つため、用紙サイズによらず比率が一定。
+  - `layoutScore()`: 手動改ページごとに新ページを開始し、残り高さに収まらない段を次ページへ送る（自動改ページ）。空ページでも最低 1 段は受け入れ、無限ループを防ぐ。縦向きは 1 ページ / シート、横向きは 2 ページ / シート。
+  - `estimateTextWidth()`: 同梱フォントの ASCII 文字幅テーブル（実測値）と全角 = 1em による文字幅見積もり。拡張機能ホストには DOM が無いため、タイトルの縮小・省略判定に用いる。
+- **`svg.ts`**:
+  - `renderScoreSheets()`: シートごとの単一 SVG（ヘッダー、コードダイアグラム、段、ランニングヘッダー、フッター）。
+  - `renderContinuousSvg()` / `compileGuitarDslToSvg()`: Web モード用のページ分割なしの縦長 SVG。
+  - 段描画（`renderSystemSvgContent`）：五線、ト音記号、スラッシュ、符尾・ビーム、タイ、ストローク記号、小節線、歌詞。
+  - フォントはルート要素の `font-family`（同梱 Noto Sans JP）に統一し、要素ごとの `font-family` 指定は持たない。全テキストは `escapeXml` を通す。
+- **`chordLibrary.ts`**: コード押弦データ（`CHORD_LIBRARY`）と未登録コードのフォールバック。
+- **`previewHtml.ts`** (`compileGuitarDslToHtml`):
+  - ツールバー（HTML）とシート SVG 群・連続 SVG を包含する Webview HTML を構築する。表示モードは CSS（`data-display-mode`）で切り替える。
+  - `fontUris` 指定時は `@font-face` で同梱フォントを読み込む。
+
+### 2.4 PDF Exporter (`src/pdf.ts`)
+- `renderScorePdf()`: `renderScoreSheets()` の SVG を `svg-to-pdfkit` で pdfkit のページへ描画する（1 シート = 1 ページ、ベクター）。
+- フォントは同梱の Noto Sans JP Regular / Bold を登録し、`fontCallback` で太字（`font-weight` 600 以上）と通常を切り替える。pdfkit が使用グリフのみをサブセット埋め込みする。
+- フォント読み込みは描画前に明示的に行う（svg-to-pdfkit はフォント読み込み失敗時に警告のみで Helvetica へ切り替えるため、そのままでは文字化けした PDF が生成されてしまう）。
+- `writeScorePdf()`: 一時ファイルに書き出してから `rename` し、失敗時に不完全なファイルを残さない。
+- VS Code API に依存しないため、単体テストで PDF 生成を検証できる。
+
+### 2.5 Document Symbol Provider (`src/symbols.ts`)
 VS Codeの「アウトライン」機能およびシンボル検索と連携し、DSLドキュメントの構造ツリーを構築する。
 
 - **`GuitarDslDocumentSymbolProvider`**:
@@ -125,7 +143,7 @@ VS Codeの「アウトライン」機能およびシンボル検索と連携し�
   - 各セクション（`[Intro]`, `[Aメロ]` 等）を `SymbolKind.Namespace` として登録し、そのセクション内の小節行の終了行までを行範囲（`range`）として確定。
   - セクション配下の小節行を `formatMeasureSummary` により要約文字列（例: `| C G | Am Em |`）に変換し、子シンボル（`SymbolKind.Field`）として階層的に追加。
 
-### 2.4 TextMate 構文定義 (`syntaxes/guitardsl.tmLanguage.json`)
+### 2.6 TextMate 構文定義 (`syntaxes/guitardsl.tmLanguage.json`)
 VS Codeのエディタコアにおけるリアルタイムな字句ハイライトを行う。
 
 - 正規表現による高速なパターンマッチング。
@@ -143,18 +161,23 @@ sequenceDiagram
     actor User as ユーザー (エディタ操作)
     participant Editor as VS Code エディタ
     participant Ext as extension.ts (Extension Core)
+    participant Html as render/previewHtml.ts
+    participant Svg as render/svg.ts + layout.ts
     participant Comp as compiler.ts
     participant WV as Webview Panel (Score Preview)
 
     User->>Editor: DSLテキスト編集
     Editor->>Ext: onDidChangeTextDocument イベント
     Ext->>Ext: プレビュー対象ドキュメントか確認
-    Ext->>Comp: compileGuitarDslToHtml(doc.getText())
-    Comp->>Comp: parseGuitarDsl()
-    Comp->>Comp: compileGuitarDslToSvg()
-    Comp-->>Ext: 完全な HTML 文字列 (SVG + UI + スクリプト)
+    Ext->>Html: compileGuitarDslToHtml(dsl, { locale, pageSize, orientation, fontUris })
+    Html->>Comp: parseGuitarDsl()
+    Html->>Svg: renderScoreSheets() / renderContinuousSvg()
+    Html-->>Ext: HTML 文字列 (ツールバー + シート SVG)
     Ext->>WV: currentPanel.webview.html = htmlContent
-    WV->>User: リアルタイムにプレビュー画面が再描画
+    WV->>User: プレビュー再描画
+    User->>WV: 用紙サイズ / 向きを変更
+    WV->>Ext: postMessage({ command: 'layoutChanged', pageSize, orientation })
+    Ext->>Html: 新しい用紙設定で再生成
 ```
 
 ### 3.2 PDFエクスポートフロー
@@ -166,58 +189,40 @@ sequenceDiagram
     participant WV as Webview ツールバー
     participant Ext as extension.ts
     participant Dialog as VS Code UI (Save Dialog)
-    participant Comp as compiler.ts
-    participant FS as ローカルファイルシステム (tmp)
-    participant Chrome as ヘッドレスブラウザ (Chrome/Edge)
+    participant Pdf as pdf.ts
+    participant Svg as render/svg.ts
+    participant FS as ローカルファイルシステム
 
-    User->>WV: 「PDFとして保存」をクリック
+    User->>WV: 「PDF保存」をクリック
     WV->>Ext: postMessage({ command: 'savePdf', pageSize, orientation })
     Ext->>Dialog: showSaveDialog (保存先パスの選択)
-    Dialog-->>Ext: targetUri (選択されたファイルパス)
-    Ext->>Ext: findHeadlessBrowser()
-    Ext->>Comp: compileGuitarDslToPrintHtml(dsl, pageSize, orientation)
-    Comp-->>Ext: 印刷専用 HTML 文字列
-    Ext->>FS: 一時HTMLファイル書き出し
-    Ext->>Chrome: execFile(browser, ['--headless=new', '--print-to-pdf=...', tmpHtml])
-    Chrome->>FS: 指定パスへ PDF 出力
-    Chrome-->>Ext: 終了コード 0 (成功)
-    Ext->>FS: 一時HTMLおよび作業ディレクトリ削除
+    Dialog-->>Ext: targetUri
+    Ext->>Pdf: writeScorePdf(path, dsl, pageSize, orientation, bundledFonts)
+    Pdf->>Svg: renderScoreSheets()
+    Pdf->>Pdf: pdfkit + svg-to-pdfkit でページ描画・フォントサブセット埋め込み
+    Pdf->>FS: 一時ファイルへ書き出し → rename
     Ext->>User: showInformationMessage ("PDFを保存しました")
 ```
 
 ---
 
-## 4. ページネーションと印刷レイアウト設計 (Pagination & Layout Design)
+## 4. ページネーションとレイアウト設計 (Pagination & Layout Design)
 
 ### 4.1 ページ分割ロジック
-- **`pagebreak` 指示子**: DSL内の `pagebreak` 行を検出し、そこで明示的に新規ページ（`ScorePage`）を生成する。
-- **ヘッダー描画**: 1ページ目にはタイトル、アーティスト、メタデータ、およびコードダイアグラムを描画し、2ページ目以降は楽曲本文のみを五線レイアウトとして配置。
+- **手動改ページ**: パーサーが `pagebreak` で `ScorePage` を分割し、レイアウトは各 `ScorePage` の先頭で新しいページを開始する。
+- **自動改ページ**: `layoutScore()` がページの残り高さ（カラム高さ − ヘッダー / ランニングヘッダー − フッター）を追跡し、次の段が収まらなければ新しいページを開始する。
+- **ヘッダー描画**: 1ページ目にはタイトル、アーティスト、メタデータ、およびコードダイアグラムを描画し、2ページ目以降はランニングヘッダーを描画する。
+- **ページ番号**: 自動改ページ後の物理ページ番号（`LayoutPage.pageNumber`）を用いる。
 
 ### 4.2 プレビュー表示モード (View Modes)
-Webview内では、CSS Flexbox / Grid およびインラインスタイルを用いて以下の表示モードを提供する。
-- **Continuous (連続)**:
-  - 全ての `.page` 要素を縦方向にマージンを空けて並べ、通常のスクロールで全ページを閲覧可能にする。
-- **Single Page (単一ページ)**:
-  - 現在選択されているインデックスの `.page` のみを表示（`display: block`）、他を非表示（`display: none`）にし、ツールバーのページ送りボタンで切り替える。
-- **Spread (見開き)**:
-  - 2ページずつ横並びで表示（偶数・奇数ページのペアリング）。
+- **Single Page (1ページ)**: シート SVG を縦に並べる。
+- **Spread (見開き)**: シート SVG を 2 枚ずつ横に並べる。
+- **Web**: 連続 SVG を表示する。
+- 各 SVG は `width: 100%` で表示幅に合わせて縮小し、`max-width` は用紙の実寸（96dpi 換算）とする。
 
-### 4.3 印刷用CSS設計 (`@page`, `@media print`)
-- 印刷用HTMLでは、以下のスタイルルールによりブラウザの印刷機能と正確に連動する。
-  ```css
-  @page {
-    size: A4 portrait; /* 指定された用紙サイズと向き */
-    margin: 0;
-  }
-  .page {
-    page-break-after: always;
-    break-after: page;
-    width: 210mm;
-    height: 297mm;
-    box-sizing: border-box;
-  }
-  ```
-- ヘッダー・フッターのURLや日付の自動出力を防止（ブラウザ実行時引数 `--no-pdf-header-footer` の併用）。
+### 4.3 プレビューと PDF の同一性
+- プレビューと PDF はどちらも `renderScoreSheets()` の出力を用い、フォントも同梱 Noto Sans JP に統一する。
+- 旧来のブラウザ印刷用 HTML（`@page` CSS）は廃止した。
 
 ---
 
@@ -225,10 +230,12 @@ Webview内では、CSS Flexbox / Grid およびインラインスタイルを用
 
 1. **構文エラーの自己回復性**:
    - DSLパーサーは、未知のトークンや構文違反に遭遇しても処理を中断（throw）せず、安全にフォールバック（小節のスキップ、プレースホルダー表示、デフォルト値の適用）を行い、プレビュー描画がクラッシュするのを防ぐ。
-2. **ブラウザ非依存性・フォールバック**:
-   - PDFエクスポートにおいて、優先順位に従って複数のブラウザパスを探索。見つからない場合も例外でクラッシュさせず、ユーザーに対してわかりやすい警告通知を表示。
-3. **一時ファイルの確実な解放**:
-   - 一時HTMLファイルおよびユーザーデータディレクトリのクリーンアップは `try ... finally` ブロック内で確実に実行し、異常終了時にもディスクリークを防止。
+2. **環境非依存の PDF 出力**:
+   - PDF 生成は拡張機能内（pdfkit）で完結し、外部ブラウザや OS のフォントに依存しない。
+3. **失敗時のファイル整合性**:
+   - PDF は一時ファイルに書き出した後で `rename` する。フォント読み込みや書き込みに失敗した場合は一時ファイルを削除し、エラーを通知する。
+4. **Webview メッセージの検証**:
+   - `layoutChanged` / `savePdf` の `pageSize` / `orientation` は型ガードで検証し、不正値は現在値で置き換える。
 
 ---
 
@@ -245,8 +252,8 @@ Webview内では、CSS Flexbox / Grid およびインラインスタイルを用
 - **拡張機能ホスト (`src/extension.ts`)**:
   - `vscode.env.language` からロケールを判別。
   - 保存ダイアログ、通知メッセージ（情報/警告/エラー）、アクションボタンをローカライズ。
-  - `updateWebview` 実行時に解決済みロケールを `compileGuitarDslToHtml(dsl, { locale })` に渡す。
-- **DSL コンパイラ (`src/compiler.ts`)**:
+  - `updateWebview` 実行時に解決済みロケールを `compileGuitarDslToHtml(dsl, { locale, ... })` に渡す。
+- **プレビュー HTML ビルダー (`src/render/previewHtml.ts`)**:
   - `compileGuitarDslToHtml` はオプション引数 `{ locale?: string }` を受け取り、内部で `resolveLocale` を呼び出してメッセージ辞書を取得。
   - ツールバーの各ボタンテキスト（1ページ / Single Page、見開き / Spread、Web / Web）、用紙設定ラベル、向き切替ラベル、PDF保存ボタン、および各ボタンのツールチップ（title 属性）を動的に差し替えてレンダリング。
   - オプション未指定時のデフォルト動作は英語（`'en'`）とし、外部呼び出し・単体テストとの後方互換性を保証。

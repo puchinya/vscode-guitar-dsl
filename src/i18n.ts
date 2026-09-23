@@ -4,7 +4,6 @@ export interface Messages {
   // Extension host messages
   msgOpenGuitarDslFile: string;
   msgDocNotFound: string;
-  msgNeedBrowser: string;
   msgPdfSaved: (filename: string) => string;
   msgOpenFile: string;
   msgPdfFailed: (err: string) => string;
@@ -33,7 +32,6 @@ export interface Messages {
 export const MESSAGES_JA: Messages = {
   msgOpenGuitarDslFile: 'GuitarDSL (.guitardsl) ファイルを開いてください。',
   msgDocNotFound: '対象のGuitarDSLドキュメントが見つかりません。',
-  msgNeedBrowser: 'PDF保存には Google Chrome、Microsoft Edge、または Chromium が必要です。ブラウザをインストールしてください。',
   msgPdfSaved: (filename: string) => `PDFを保存しました: ${filename}`,
   msgOpenFile: 'ファイルを開く',
   msgPdfFailed: (err: string) => `PDF保存に失敗しました: ${err}`,
@@ -61,7 +59,6 @@ export const MESSAGES_JA: Messages = {
 export const MESSAGES_EN: Messages = {
   msgOpenGuitarDslFile: 'Please open a GuitarDSL (.guitardsl) file.',
   msgDocNotFound: 'Target GuitarDSL document not found.',
-  msgNeedBrowser: 'Google Chrome, Microsoft Edge, or Chromium is required to export PDF. Please install a supported browser.',
   msgPdfSaved: (filename: string) => `PDF saved: ${filename}`,
   msgOpenFile: 'Open File',
   msgPdfFailed: (err: string) => `Failed to export PDF: ${err}`,
