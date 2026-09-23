@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GuitarDSL",
+  "scopeName": "source.guitardsl",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.guitardsl",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.other.header.guitardsl",
+      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo):"
+    },
+    {
+      "name": "entity.name.section.guitardsl",
+      "match": "\\[[^\]]+\\]"
+    },
+    {
+      "name": "string.quoted.double.lyric.guitardsl",
+      "match": "l:\"[^\"]*\"|~\"[^\"]*\""
+    },
+    {
+      "name": "keyword.operator.barline.guitardsl",
+      "match": "(\\|:|:\\\||\\|\\||\\|)"
+    },
+    {
+      "name": "entity.name.type.chord.guitardsl",
+      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?\\b"
+    },
+    {
+      "name": "constant.numeric.rhythm.guitardsl",
+      "match": "\\b(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*\\b"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+# 依存関係
+node_modules/
+jspm_packages/
+web_modules/
+
+# TypeScript コンパイル出力
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ログファイル
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 環境変数・シークレット
+.env
+.env.local
+.env.*.local
+
+# エディタ・OS 固有ファイル
+.DS_Store
+Thumbs.db
+*.sublime-workspace
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# VS Code（個人設定やテスト用バイナリを除外）
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.vscode-test/
+
+# パッケージング・配布アーカイブ
+*.vsix
+*.tgz
+*.zip
+
+# テスト・カバレッジ
+coverage/
+.nyc_output/
