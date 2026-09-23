@@ -1,5 +1,9 @@
 {
   "command.showPreview.title": "GuitarDSL: プレビューを横に開く",
   "command.exportPdf.title": "GuitarDSL: PDF出力 / 印刷",
-  "command.editChordDiagram.title": "GuitarDSL: コードダイアグラムを編集"
+  "command.editChordDiagram.title": "GuitarDSL: コードダイアグラムを編集",
+  "command.transcribeYouTube.title": "GuitarDSL: YouTubeから採譜",
+  "command.setGeminiApiKey.title": "GuitarDSL: Gemini API キーを設定",
+  "command.clearGeminiApiKey.title": "GuitarDSL: Gemini API キーを削除",
+  "config.geminiModel.description": "YouTube音源の自動採譜に使用するGeminiモデル名。"
 }

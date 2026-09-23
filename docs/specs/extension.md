@@ -55,13 +55,16 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の3つのコマンドを提供する。
+拡張機能は以下の6つのコマンドを提供する。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
 | `guitardsl.showPreview` | `GuitarDSL: Open Preview to the Side` | エディタタイトルバー、エクスプローラーコンテキストメニュー、コマンドパレット | `$(open-preview)` |
 | `guitardsl.exportPdf` | `GuitarDSL: Export PDF / Print` | コマンドパレット、プレビュー内ツールバー | - |
 | `guitardsl.editChordDiagram` | `GuitarDSL: Edit Chord Diagram` | コマンドパレット、`chord` 行の CodeLens、プレビューのダイアグラムクリック | - |
+| `guitardsl.transcribeYouTube` | `GuitarDSL: Transcribe from YouTube` | コマンドパレット | - |
+| `guitardsl.setGeminiApiKey` | `GuitarDSL: Set Gemini API Key` | コマンドパレット | - |
+| `guitardsl.clearGeminiApiKey` | `GuitarDSL: Clear Gemini API Key` | コマンドパレット | - |
 
 ### 3.1 `guitardsl.showPreview`
 GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn.Beside`）の Webview パネルとして開く。
@@ -103,6 +106,47 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
   - 「新規作成…」: 入力ボックスでキーを入力する（コード名・ラベルとして不正な値は入力時に検証エラー）
 - **CodeLens**: 構文が正しい各 `chord` 定義行の上に「ダイアグラムを編集」を表示し、そのキーでこのコマンドを実行する。構文エラーの行には表示しない。
 - **プレビュー**: プレビューのダイアグラムをクリックすると、そのダイアグラムのキーでこのコマンドを実行する。
+
+### 3.4 `guitardsl.transcribeYouTube`
+Gemini API の動画理解機能を活用し、YouTube の公開動画 URL から GuitarDSL 楽譜（コード、リズム、メロディ）を自動採譜して新しいエディタタブ（未保存ドキュメント）に開く。
+
+- **実行コンテキスト**: コマンドパレットのみ。
+- **前提条件・認証**:
+  1. `ExtensionContext.secrets`（キー名: `guitardsl.geminiApiKey`）に保存された API キーを読み出す。
+  2. 未設定の場合はマスキングされた入力ボックス（`showInputBox({ password: true })`）を表示し、キーの入力を促して保存する。キャンセルされた場合は処理を中止し副作用を生じさせない。
+- **URL入力・バリデーション**:
+  1. YouTube URL の入力ボックスを表示。
+  2. 入力値は HTTPS かつ `youtube.com`、`www.youtube.com`、`youtu.be` のみを受け付ける。不正な URL は API 呼び出し前に拒絶する。
+- **実行と進捗表示**:
+  1. `window.withProgress` により進捗通知を表示。
+  2. Gemini API（`@google/genai` の `interactions.create`）へ固定プロンプト、YouTube URL、および JSON Schema（Music IR）を送信。
+  3. 受信したレスポンスの構造バリデーションおよびセマンティックバリデーション（BPM 30..300、4/4 拍子、各小節内合計 4 拍、コード名・音高妥当性）を実施。
+  4. バリデーション済み IR を純粋シリアライザにより決定論的 GuitarDSL テキストへ変換。
+  5. `parseGuitarDsl` により構文検証を実施し、エラー診断が 0 件であることを確認。
+  6. 成功時のみ `workspace.openTextDocument({ language: 'guitardsl', content })` を呼び出し、`showTextDocument` で新規エディタとして開く。
+  7. 既存ファイルの上書きや自動保存は行わない。
+- **エラー処理**:
+  - 不正な URL、認証・クォータ・ネットワーク・API エラー、非公開動画、無効な IR、非対応の拍子（4/4 以外）等の失敗時はドキュメントを作成せず、既存ファイルを一切変更しない。
+  - API キー、モデルの生レスポンス、スタックトレースを含まない簡潔に分類されたエラーメッセージを通知する。自動リトライは行わない。
+
+### 3.5 `guitardsl.setGeminiApiKey`
+Gemini API キーを設定・更新する。
+
+- **実行コンテキスト**: コマンドパレットのみ。
+- **処理フロー**: マスキングされた入力ボックスを表示し、入力された文字列を `ExtensionContext.secrets`（`guitardsl.geminiApiKey`）に保存する。設定値（VS Code settings）には保存しない。キャンセル時は何もしない。
+
+### 3.6 `guitardsl.clearGeminiApiKey`
+保存された Gemini API キーを削除する。
+
+- **実行コンテキスト**: コマンドパレットのみ。
+- **処理フロー**: `ExtensionContext.secrets` から `guitardsl.geminiApiKey` を削除し、完了メッセージを表示する。次回の採譜実行時には API キーの入力が求められる。
+
+### 3.7 設定仕様 (Configuration)
+拡張機能は以下の設定項目を提供する。
+
+| 設定キー | 型 | デフォルト値 | 説明 |
+|---|---|---|---|
+| `guitardsl.gemini.model` | `string` | `"gemini-3.8-flash"` | YouTube 音源の自動採譜に使用する Gemini モデル名。 |
 
 ---
 
@@ -250,6 +294,10 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
   - `%command.showPreview.title%`
   - `%command.exportPdf.title%`
   - `%command.editChordDiagram.title%`
+  - `%command.transcribeYouTube.title%`
+  - `%command.setGeminiApiKey.title%`
+  - `%command.clearGeminiApiKey.title%`
+  - `%config.geminiModel.description%`
 
 ### 6.3 拡張機能メッセージのローカライズ
 - 以下のホスト側UIメッセージおよびダイアログは、解決されたロケールに従ってローカライズされる。
@@ -265,4 +313,7 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
 
 ### 6.5 コードダイアグラムエディタのローカライズ
 - エディタパネルの全ラベル・説明・ボタン、CodeLens の表示、クイックピックと入力ボックスの文言、保存結果とエラーの表示をロケールに従ってローカライズする。
+
+### 6.6 YouTube 自動採譜メッセージのローカライズ
+- YouTube URL 入力ボックス、API キー入力プロンプト、進捗メッセージ、および各種エラー通知メッセージ（API エラー、URL 不正、バリデーション失敗等）をロケールに従ってローカライズする。
 

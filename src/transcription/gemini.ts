@@ -1,0 +1,137 @@
+// Gemini API adapter for YouTube audio transcription.
+// Encapsulates all @google/genai SDK dependencies.
+
+import { GoogleGenAI } from '@google/genai';
+import { MUSIC_IR_JSON_SCHEMA, TranscribedSong, validateTranscribedSong } from './model';
+import { normalizeYouTubeUrl } from './youtube';
+
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
+export const FIXED_TRANSCRIPTION_PROMPT =
+  'Transcribe the guitar chords, rhythm strumming pattern, and main melody line from this YouTube video. ' +
+  'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
+  'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
+  'sequences within each measure must sum to exactly 4 beats. ' +
+  'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
+
+export interface GeminiClientLike {
+  interactions: {
+    create: (params: any) => Promise<any>;
+  };
+}
+
+export interface GeminiTranscriptionOptions {
+  apiKey: string;
+  youtubeUrl: string;
+  model?: string;
+  client?: GeminiClientLike;
+}
+
+function extractTextFromOutput(interaction: any): string | undefined {
+  if (typeof interaction.output_text === 'string' && interaction.output_text.trim()) {
+    return interaction.output_text.trim();
+  }
+
+  // Fallback to checking steps if output_text is not populated
+  if (Array.isArray(interaction.steps)) {
+    for (const step of interaction.steps) {
+      if (step.type === 'model_output' && Array.isArray(step.content)) {
+        for (const content of step.content) {
+          if (content.type === 'text' && typeof content.text === 'string') {
+            return content.text.trim();
+          }
+          if (Array.isArray(content.parts)) {
+            for (const part of content.parts) {
+              if (typeof part.text === 'string') {
+                return part.text.trim();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function classifyGeminiError(err: unknown): Error {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('api_key') || msg.includes('api key') || msg.includes('unauthenticated') || msg.includes('auth')) {
+      return new Error('Gemini API authentication failed. Please check your API key.');
+    }
+    if (msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource_exhausted')) {
+      return new Error('Gemini API quota exceeded or rate limit reached. Please try again later.');
+    }
+    if (msg.includes('not found') || msg.includes('video') || msg.includes('unsupported')) {
+      return new Error('The requested YouTube video could not be processed or is unavailable.');
+    }
+    if (msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused') || msg.includes('etimedout')) {
+      return new Error('Network error while connecting to Gemini API. Please check your internet connection.');
+    }
+    // Return sanitized message without stack traces or secrets
+    return new Error(`Gemini API error: ${err.message.split('\n')[0]}`);
+  }
+  return new Error('An unknown error occurred while communicating with the Gemini API.');
+}
+
+/**
+ * Calls Gemini interactions.create with the YouTube video URL and Music IR schema,
+ * then validates and returns the TranscribedSong.
+ * Never logs API keys or raw responses.
+ */
+export async function transcribeWithGemini(options: GeminiTranscriptionOptions): Promise<TranscribedSong> {
+  const canonicalUrl = normalizeYouTubeUrl(options.youtubeUrl);
+  const modelName = options.model?.trim() || DEFAULT_GEMINI_MODEL;
+
+  const client: GeminiClientLike = options.client ?? new GoogleGenAI({ apiKey: options.apiKey });
+
+  let interaction: any;
+  try {
+    interaction = await client.interactions.create({
+      model: modelName,
+      input: [
+        {
+          type: 'video',
+          uri: canonicalUrl
+        },
+        {
+          type: 'text',
+          text: FIXED_TRANSCRIPTION_PROMPT
+        }
+      ],
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: MUSIC_IR_JSON_SCHEMA
+      }
+    });
+  } catch (err) {
+    throw classifyGeminiError(err);
+  }
+
+  if (interaction?.status === 'failed') {
+    const detail = interaction.errors?.[0]?.message || 'Interaction failed';
+    throw new Error(`Gemini transcription interaction failed: ${detail}`);
+  }
+
+  const rawText = extractTextFromOutput(interaction);
+  if (!rawText) {
+    throw new Error('Gemini API returned an empty response.');
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(rawText);
+  } catch {
+    throw new Error('Gemini model response was not valid JSON.');
+  }
+
+  const validation = validateTranscribedSong(parsedJson);
+  if (!validation.valid) {
+    throw new Error(`Invalid transcription data: ${validation.error}`);
+  }
+
+  return validation.song;
+}

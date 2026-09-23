@@ -1,5 +1,9 @@
 {
   "command.showPreview.title": "GuitarDSL: Open Preview to the Side",
   "command.exportPdf.title": "GuitarDSL: Export PDF / Print",
-  "command.editChordDiagram.title": "GuitarDSL: Edit Chord Diagram"
+  "command.editChordDiagram.title": "GuitarDSL: Edit Chord Diagram",
+  "command.transcribeYouTube.title": "GuitarDSL: Transcribe from YouTube",
+  "command.setGeminiApiKey.title": "GuitarDSL: Set Gemini API Key",
+  "command.clearGeminiApiKey.title": "GuitarDSL: Clear Gemini API Key",
+  "config.geminiModel.description": "Gemini model to use for YouTube audio transcription."
 }

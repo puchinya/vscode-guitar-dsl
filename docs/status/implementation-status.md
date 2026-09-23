@@ -48,6 +48,10 @@
 | **コマンド** | `guitardsl.showPreview` (プレビュー表示) | ✅ 完了 | エディタタイトルバー・コンテキストメニュー対応 |
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
+| | `guitardsl.transcribeYouTube` (YouTube自動採譜) | ✅ 完了 | コマンドパレットのみ。Gemini API経由でMusic IR取得・バリデーション・DSL生成・新規エディタ表示 |
+| | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
+| | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
+| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
 | **プレビュー画面** | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
@@ -78,14 +82,15 @@
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
   - `tests/unit/chord.test.ts`: `chord` 定義の解析・整形の往復、`@ラベル` 参照と診断、ダイアグラムの解決と描画、コード名の自動判定、プリセット（全ルート・タイプ、自動判定との一致）、エディタのモデル（開始・保存位置・重複）
-- **テスト実行結果**: **133 / 133 件 PASS** (0 failures)
+  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、コード・リズム・メロディ各小節4拍検証）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
+- **テスト実行結果**: **158 / 158 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.transcribeYouTube`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
   - ドキュメントシンボル
   - メロディ行の診断の発行と修正時のクリア
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）

@@ -50,8 +50,30 @@
       {
         "command": "guitardsl.editChordDiagram",
         "title": "%command.editChordDiagram.title%"
+      },
+      {
+        "command": "guitardsl.transcribeYouTube",
+        "title": "%command.transcribeYouTube.title%"
+      },
+      {
+        "command": "guitardsl.setGeminiApiKey",
+        "title": "%command.setGeminiApiKey.title%"
+      },
+      {
+        "command": "guitardsl.clearGeminiApiKey",
+        "title": "%command.clearGeminiApiKey.title%"
       }
     ],
+    "configuration": {
+      "title": "GuitarDSL",
+      "properties": {
+        "guitardsl.gemini.model": {
+          "type": "string",
+          "default": "gemini-3.8-flash",
+          "description": "%config.geminiModel.description%"
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
@@ -91,6 +113,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "pdfkit": "^0.20.2",
     "svg-to-pdfkit": "^0.1.8"
   }

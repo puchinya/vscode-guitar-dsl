@@ -185,6 +185,25 @@ VS Codeのエディタコアにおけるリアルタイムな字句ハイライ�
 | Webview → Ext | `save` / `close` | 保存（`asNew`）、パネルを閉じる |
 | Ext → Webview | `status` | 保存結果・エラー、編集中表示 |
 
+### 2.8 YouTube 採譜サブシステム (`src/transcription/`)
+Gemini API の動画理解機能を介して YouTube 音源から構造化 Music IR を抽出し、決定論的に GuitarDSL へ変換する独立モジュール群。VS Code 拡張機能コア以外（コンパイラ・レンダラ・PDF）からは独立し、Gemini SDK はこのサブシステム内に隠蔽される。
+
+- **`model.ts`**:
+  - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。
+  - Gemini Structured Output 用の JSON Schema（`MUSIC_IR_JSON_SCHEMA`）。
+  - 純粋なセマンティックバリデーション（`validateTranscribedSong`）：BPM 30..300、キー・コード・ピッチの構文適合性、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。不正データはシリアライザへ渡さず排除。
+- **`youtube.ts`**:
+  - YouTube URL の形式検証（`isValidYouTubeUrl`）および ID 抽出等の純粋ヘルパー関数群。
+  - HTTPS かつ `youtube.com` / `www.youtube.com` / `youtu.be` のみを許可。
+- **`gemini.ts`**:
+  - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。
+  - 固定プロンプト、YouTube 動画 URI（`{ type: "video", uri }`）、および Music IR JSON Schema を指定してリクエストを送信。
+  - レスポンスのテキスト抽出、JSON パース、および `model.ts` によるセマンティック検証を実行。API キーや生レスポンスはログ出力しない。
+- **`serializer.ts`**:
+  - バリデーション済み Music IR を決定論的な GuitarDSL テキストへ変換（`serializeSongToGuitarDsl`）。VS Code 非依存。
+  - 同一 IR から常に同一の文字列を出力。
+  - シリアライズ直後に `parseGuitarDsl` を呼び出し、エラー診断が 0 件であることを確認。
+
 ---
 
 ## 3. データフローとメッセージング (Data & Event Flow)
@@ -266,6 +285,48 @@ sequenceDiagram
     Doc-->>Entry: onDidChangeTextDocument（プレビュー・診断・CodeLens が更新）
 ```
 
+### 3.4 YouTube 自動採譜フロー
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as ユーザー
+    participant Ext as extension.ts (SecretStorage / UI)
+    participant YT as transcription/youtube.ts
+    participant Gem as transcription/gemini.ts (@google/genai)
+    participant Model as transcription/model.ts
+    participant Ser as transcription/serializer.ts
+    participant Comp as compiler.ts (parseGuitarDsl)
+    participant Editor as 新規エディタ (未保存)
+
+    User->>Ext: guitardsl.transcribeYouTube
+    Ext->>Ext: SecretStorage から API キー取得
+    alt API キー未登録
+        Ext->>User: showInputBox (password: true)
+        User-->>Ext: API キー入力 (SecretStorage に保存)
+    end
+    Ext->>User: showInputBox (YouTube URL 入力)
+    User-->>Ext: URL 入力
+    Ext->>YT: isValidYouTubeUrl(url)
+    alt URL 不正
+        YT-->>Ext: false
+        Ext->>User: showErrorMessage (URL エラー)
+    else URL 妥当
+        Ext->>Ext: window.withProgress
+        Ext->>Gem: transcribeWithGemini(key, url, model)
+        Gem->>Gem: interactions.create({ input: [video, prompt], response_format })
+        Gem->>Model: validateTranscribedSong(json)
+        Model-->>Gem: validated IR
+        Gem-->>Ext: TranscribedSong
+        Ext->>Ser: serializeSongToGuitarDsl(song)
+        Ser->>Comp: parseGuitarDsl(text) 検証
+        Comp-->>Ser: diagnostics (エラー 0 件)
+        Ser-->>Ext: dslText
+        Ext->>Editor: openTextDocument({ language: 'guitardsl', content })
+        Ext->>User: showTextDocument(doc)
+    end
+```
+
 ---
 
 ## 4. ページネーションとレイアウト設計 (Pagination & Layout Design)
@@ -299,6 +360,11 @@ sequenceDiagram
    - PDF は一時ファイルに書き出した後で `rename` する。フォント読み込みや書き込みに失敗した場合は一時ファイルを削除し、エラーを通知する。
 4. **Webview メッセージの検証**:
    - `layoutChanged` / `savePdf` の `pageSize` / `orientation` は型ガードで検証し、不正値は現在値で置き換える。
+5. **YouTube 採譜における機密保護と堅牢性**:
+   - API キーは `ExtensionContext.secrets`（`guitardsl.geminiApiKey`）にのみ安全に保存し、VS Code settings やログには一切出力・永続化しない。
+   - YouTube URL は HTTPS かつ許可ドメイン（`youtube.com` / `www.youtube.com` / `youtu.be`）以外を API 呼び出し前に遮断する。
+   - モデルの生レスポンスやスタックトレースはログ出力・通知せず、分類された簡潔なエラーメッセージのみを表示する。
+   - URL 不正、API エラー、バリデーション失敗時はいかなるドキュメントも生成せず、既存ファイルやエディタを一切変更しない。
 
 ---
 

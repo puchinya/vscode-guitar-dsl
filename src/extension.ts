@@ -7,6 +7,11 @@ import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
+import { transcribeWithGemini } from './transcription/gemini';
+import { serializeSongToGuitarDsl } from './transcription/serializer';
+import { isValidYouTubeUrl } from './transcription/youtube';
+
+export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
@@ -264,7 +269,99 @@ export function activate(context: vscode.ExtensionContext) {
     new ChordDefinitionCodeLensProvider(chordMsgs)
   );
 
-  context.subscriptions.push(previewDisposable, printDisposable, symbolDisposable, editChordDisposable, codeLensDisposable);
+  const setApiKeyDisposable = vscode.commands.registerCommand('guitardsl.setGeminiApiKey', async () => {
+    const key = await vscode.window.showInputBox({
+      password: true,
+      prompt: msgs.msgPromptApiKey,
+      ignoreFocusOut: true
+    });
+    if (key !== undefined && key.trim() !== '') {
+      await context.secrets.store(GEMINI_API_KEY_SECRET, key.trim());
+      vscode.window.showInformationMessage(msgs.msgApiKeySaved);
+    }
+  });
+
+  const clearApiKeyDisposable = vscode.commands.registerCommand('guitardsl.clearGeminiApiKey', async () => {
+    await context.secrets.delete(GEMINI_API_KEY_SECRET);
+    vscode.window.showInformationMessage(msgs.msgApiKeyCleared);
+  });
+
+  const transcribeYouTubeDisposable = vscode.commands.registerCommand('guitardsl.transcribeYouTube', async () => {
+    let apiKey = await context.secrets.get(GEMINI_API_KEY_SECRET);
+    if (!apiKey) {
+      const inputKey = await vscode.window.showInputBox({
+        password: true,
+        prompt: msgs.msgPromptApiKey,
+        ignoreFocusOut: true
+      });
+      if (inputKey === undefined || inputKey.trim() === '') {
+        return;
+      }
+      apiKey = inputKey.trim();
+      await context.secrets.store(GEMINI_API_KEY_SECRET, apiKey);
+    }
+
+    const urlInput = await vscode.window.showInputBox({
+      prompt: msgs.msgPromptYouTubeUrl,
+      placeHolder: msgs.msgYouTubeUrlPlaceholder,
+      ignoreFocusOut: true
+    });
+    if (!urlInput || urlInput.trim() === '') {
+      return;
+    }
+
+    const trimmedUrl = urlInput.trim();
+    if (!isValidYouTubeUrl(trimmedUrl)) {
+      vscode.window.showErrorMessage(msgs.msgInvalidYouTubeUrl);
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration('guitardsl');
+    const model = config.get<string>('gemini.model') || 'gemini-3.8-flash';
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: msgs.msgTranscribingProgress,
+        cancellable: false
+      },
+      async () => {
+        try {
+          const song = await transcribeWithGemini({
+            apiKey,
+            youtubeUrl: trimmedUrl,
+            model
+          });
+          const dslText = serializeSongToGuitarDsl(song);
+
+          const parsed = parseGuitarDsl(dslText);
+          const errors = parsed.diagnostics.filter(d => d.severity === 'error');
+          if (errors.length > 0) {
+            throw new Error('Compiler validation failed for generated score');
+          }
+
+          const doc = await vscode.workspace.openTextDocument({
+            language: 'guitardsl',
+            content: dslText
+          });
+          await vscode.window.showTextDocument(doc);
+        } catch (err: any) {
+          vscode.window.showErrorMessage(err?.message || 'Failed to transcribe YouTube audio');
+        }
+      }
+    );
+  });
+
+  context.subscriptions.push(
+    previewDisposable,
+    printDisposable,
+    symbolDisposable,
+    editChordDisposable,
+    codeLensDisposable,
+    setApiKeyDisposable,
+    clearApiKeyDisposable,
+    transcribeYouTubeDisposable
+  );
 }
 
 export function deactivate() {}
