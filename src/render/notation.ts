@@ -161,10 +161,6 @@ export function tripletGroups<T extends { part: NoteValuePart; beats: Fraction }
   return groups;
 }
 
-export function isFilledHead(base: NoteBase): boolean {
-  return base >= 4;
-}
-
 /** Rest glyph centred on (x, midY); `staveLines` are the five line y positions (top to bottom). */
 export function renderRestGlyph(base: NoteBase, rx: number, midY: number, staveLines: number[]): string {
   if (base === 1) {

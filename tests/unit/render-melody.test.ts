@@ -38,7 +38,7 @@ describe('render - melody systems', () => {
 
   it('draws one notehead per melody head and the syllables', () => {
     const svg = svgOf(['| C | % |', 'mel: | c5/4 d e/2 |', 'lyr: ドレミ'].join('\n'));
-    assert.strictEqual(count(svg, '<ellipse'), 3);
+    assert.strictEqual(count(svg, 'class="notehead"'), 3);
     for (const syl of ['ド', 'レ', 'ミ']) {
       assert.ok(svg.includes(`>${syl}</text>`), syl);
     }
@@ -46,7 +46,7 @@ describe('render - melody systems', () => {
 
   it('splits added note values into tied heads', () => {
     const svg = svgOf(['| C | % |', 'mel: | c5/2+8 r/8 d/4 |'].join('\n'));
-    assert.strictEqual(count(svg, '<ellipse'), 3);
+    assert.strictEqual(count(svg, 'class="notehead"'), 3);
   });
 
   it('draws key signatures and only the accidentals that differ from the key', () => {
@@ -158,7 +158,7 @@ describe('render - melody systems', () => {
       const dsl = fs.readFileSync(path.join(__dirname, '..', '..', 'samples', name), 'utf8');
       const sheets = renderScoreSheets(parseGuitarDsl(dsl), 'A4', 'portrait');
       assert.ok(sheets.length >= 1, name);
-      assert.ok(sheets.every(s => s.includes('<ellipse')), name);
+      assert.ok(sheets.every(s => s.includes('class="notehead"')), name);
     }
   });
 });
