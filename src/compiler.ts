@@ -124,7 +124,8 @@ export function compileGuitarDslToHtml(dslContent: string): string {
         bi++;
       }
 
-      for (const bar of bars) {
+      for (let barIdx = 0; barIdx < bars.length; barIdx++) {
+        const bar = bars[barIdx];
         if (bar === ':' || bar === '') continue;
 
         let mLyric = '';
@@ -137,20 +138,35 @@ export function compileGuitarDslToHtml(dslContent: string): string {
           cleanBar = cleanBar.replace(/l:\"([^\"]*)\"/, '').trim();
         }
 
+        let rStart = false;
+        let rEnd = false;
+
+        if (cleanBar.startsWith(':')) {
+          rStart = true;
+          cleanBar = cleanBar.replace(/^:+/, '').trim();
+        } else if (barIdx === 0 && rawLine.trim().startsWith('|:')) {
+          rStart = true;
+        }
+
+        if (cleanBar.endsWith(':')) {
+          rEnd = true;
+          cleanBar = cleanBar.replace(/:+$/, '').trim();
+        } else if (barIdx === bars.length - 1 && rawLine.trim().endsWith(':|')) {
+          rEnd = true;
+        }
+
         const tokens = cleanBar.split(/\s+/);
         let barChord = '';
         const rhythms: RhythmItem[] = [];
-        let rStart = bar.startsWith(':') || rawLine.includes('|:');
-        let rEnd = bar.endsWith(':') || rawLine.includes(':|');
 
         for (const tok of tokens) {
-          if (!tok) continue;
-          if (tok.match(/^[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(\/[A-G][b#]?)?$/)) {
+          if (!tok || tok === ':' || tok === '|') continue;
+          if (tok.match(CHORD_REGEX)) {
             barChord = tok;
             usedChordsSet.add(tok);
           } else if (tok.match(/^(\[[12]\.\])$/)) {
             // brackets like [1.] or [2.]
-          } else {
+          } else if (RHYTHM_REGEX.test(tok)) {
             // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, etc.
             const parts = tok.split('.');
             const dur = parts[0];
@@ -506,14 +522,14 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
     }
 
     const rhythmDetails: RenderedRhythm[] = [];
-    const sumBeats = m.rhythms.reduce((acc, r) => acc + parseDurationToBeats(r.duration), 0);
-    const totalBeats = Math.max(4, sumBeats);
     const padLeft = 14;
-    const padRight = 12;
+    const padRight = 14;
     const usableW = actualBarWidth - padLeft - padRight;
+    const rCount = m.rhythms.length;
+    const rStep = usableW / (rCount > 0 ? rCount : 1);
 
     let curBeat = 0;
-    m.rhythms.forEach((r) => {
+    m.rhythms.forEach((r, idx) => {
       const beats = parseDurationToBeats(r.duration);
       const cleanDur = r.duration.replace(/^r/, '').toLowerCase();
       const isWhole = cleanDur === '1' || cleanDur === 'w';
@@ -521,12 +537,12 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       const isQuarterOrShorter = !isWhole && !isHalf;
 
       let rx: number;
-      if (m.rhythms.length === 1 && isWhole) {
-        // Center whole note in measure
+      if (rCount === 1) {
+        // Center single note in measure
         rx = bx + actualBarWidth / 2;
       } else {
-        // Space proportionally to beat offset
-        rx = bx + padLeft + (curBeat / totalBeats) * usableW + (beats / totalBeats) * usableW * 0.2;
+        // Equal spacing across the measure
+        rx = bx + padLeft + (idx + 0.5) * rStep;
       }
 
       const stemX = isWhole ? rx : rx + 6.5;
