@@ -1,0 +1,21 @@
+title: はれたそら - Lead Sheet Sample
+artist: GuitarDSL Original
+key: D
+bpm: 88
+show_rhythm: false
+measures_per_row: 2
+memo: D メジャー（♯2つ）の調号・3連符・リードシート表示のサンプル。
+
+[Verse]
+| D  | % |
+mel: | d4/4 f# a/2 |
+lyr: | はれた |
+| G  | % |
+mel: | b4/8t a g f#/4 e/2 |
+lyr: | あおいそら |
+| A7 | % |
+mel: | e4/4 g/8 f# e/4 c# |
+lyr: | どこまでも |
+| D  | % |
+mel: | d4/1 |
+lyr: | (いこう) |

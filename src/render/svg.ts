@@ -1,4 +1,5 @@
-import { MeasureData, ParsedScore, RhythmItem, ScoreStyle, parseDurationToBeats, parseGuitarDsl } from '../compiler';
+import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl } from '../compiler';
+import { Fraction, NoteValuePart, ZERO, fadd, fnum } from '../duration';
 import { getChordFrets } from './chordLibrary';
 import {
   BLOCK_SPACING,
@@ -16,14 +17,12 @@ import {
   MARGIN_SIDE,
   MARGIN_TOP,
   COLUMN_GUTTER,
-  MEASURES_PER_ROW,
   META_FONT_SIZE,
   PAGE_BREAK_SEPARATOR_HEIGHT,
   PageOrientation,
   PageSize,
   RUNNING_HEADER_HEIGHT,
   SYSTEM_UNIT_GAP,
-  SYSTEM_UNIT_HEIGHT,
   SYSTEM_UNIT_WIDTH,
   ScoreLayout,
   SystemRow,
@@ -35,6 +34,25 @@ import {
   splitIntoRows,
   DEFAULT_TITLE_SIZE
 } from './layout';
+import { renderMelodyStaff } from './melodyStaff';
+import {
+  FETA_TREBLE_CLEF_PATH,
+  RenderContext,
+  chordXAt,
+  computeMeasureColumns,
+  escapeXml,
+  expandParts,
+  fmt,
+  getRenderContext,
+  measureBounds,
+  renderFlags,
+  renderRestGlyph,
+  renderTieArc,
+  rhythmParts,
+  tripletGroups
+} from './notation';
+
+export { escapeXml } from './notation';
 
 // Bundled Noto Sans JP (media/fonts) is loaded under this name in the preview and embedded in PDFs.
 export const SCORE_FONT_FAMILY = 'GuitarDSL Noto Sans JP';
@@ -62,8 +80,8 @@ export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4
   const { width } = getSheetSize(pageSize, 'portrait');
   const contentWidth = width - 2 * MARGIN_SIDE;
   const scale = contentWidth / SYSTEM_UNIT_WIDTH;
-  const systemHeight = SYSTEM_UNIT_HEIGHT * scale;
   const systemGap = SYSTEM_UNIT_GAP * scale;
+  const ctx = getRenderContext(score);
   const header = getHeaderMetrics(score.style.titleSize ?? DEFAULT_TITLE_SIZE);
   const grid = getDiagramGrid(score.usedChords.length, contentWidth);
 
@@ -78,8 +96,8 @@ export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4
       y += PAGE_BREAK_SEPARATOR_HEIGHT;
     }
     for (const row of rows) {
-      body += renderSystem(row, scale, y, score.style);
-      y += systemHeight + systemGap;
+      body += renderSystem(row, scale, y, ctx);
+      y += row.geometry.unitHeight * scale + systemGap;
     }
   });
 
@@ -112,18 +130,33 @@ function renderPage(score: ParsedScore, layout: ScoreLayout, page: LayoutPage, t
     y += RUNNING_HEADER_HEIGHT;
   }
 
+  const ctx = getRenderContext(score);
   for (const row of page.rows) {
-    out += renderSystem(row, layout.systemScale, y, score.style);
-    y += layout.systemHeight + layout.systemGap;
+    out += renderSystem(row, layout.systemScale, y, ctx);
+    y += row.geometry.unitHeight * layout.systemScale + layout.systemGap;
   }
 
   out += renderFooter(page.pageNumber, totalPages, width, layout.columnHeight);
   return out;
 }
 
-function renderSystem(row: SystemRow, scale: number, y: number, style: ScoreStyle): string {
-  const barWidth = SYSTEM_UNIT_WIDTH / MEASURES_PER_ROW;
-  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${renderSystemSvgContent(row.measures, row.isFirstSystem, barWidth, SYSTEM_UNIT_HEIGHT, SYSTEM_UNIT_WIDTH, style)}</g>\n`;
+function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderContext): string {
+  const geometry = row.geometry;
+  let content: string;
+  if (geometry.kind === 'rhythm') {
+    content = renderSystemSvgContent(row.measures, row.isFirstSystem, ctx, { drawHeader: true, drawTimeSignature: true });
+  } else {
+    // Melody system: melody staff + syllable lyrics on top, then (unless lead sheet) the rhythm staff shifted down.
+    content = renderMelodyStaff(row.measures, ctx, {
+      isFirstSystem: row.isFirstSystem,
+      geometry,
+      includeRhythmColumns: geometry.kind === 'melody'
+    });
+    if (geometry.kind === 'melody') {
+      content += `<g transform="translate(0, ${fmt(geometry.rhythmOffset)})">${renderSystemSvgContent(row.measures, row.isFirstSystem, ctx, { drawHeader: false, drawTimeSignature: true })}</g>`;
+    }
+  }
+  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${content}</g>\n`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {
@@ -207,11 +240,7 @@ function fitText(text: string, fontSize: number, maxWidth: number, bold: boolean
   return chars.join('') + '…';
 }
 
-function fmt(n: number, digits = 2): string {
-  return String(Number(n.toFixed(digits)));
-}
 
-const FETA_TREBLE_CLEF_PATH = "m12.049 3.5296c0.305 3.1263-2.019 5.6563-4.0772 7.7014-0.9349 0.897-0.155 0.148-0.6437 0.594-0.1022-0.479-0.2986-1.731-0.2802-2.11 0.1304-2.6939 2.3198-6.5875 4.2381-8.0236 0.309 0.5767 0.563 0.6231 0.763 1.8382zm0.651 16.142c-1.232-0.906-2.85-1.144-4.3336-0.885-0.1913-1.255-0.3827-2.51-0.574-3.764 2.3506-2.329 4.9066-5.0322 5.0406-8.5394 0.059-2.232-0.276-4.6714-1.678-6.4836-1.7004 0.12823-2.8995 2.156-3.8019 3.4165-1.4889 2.6705-1.1414 5.9169-0.57 8.7965-0.8094 0.952-1.9296 1.743-2.7274 2.734-2.3561 2.308-4.4085 5.43-4.0046 8.878 0.18332 3.334 2.5894 6.434 5.8702 7.227 1.2457 0.315 2.5639 0.346 3.8241 0.099 0.2199 2.25 1.0266 4.629 0.0925 6.813-0.7007 1.598-2.7875 3.004-4.3325 2.192-0.5994-0.316-0.1137-0.051-0.478-0.252 1.0698-0.257 1.9996-1.036 2.26-1.565 0.8378-1.464-0.3998-3.639-2.1554-3.358-2.262 0.046-3.1904 3.14-1.7356 4.685 1.3468 1.52 3.833 1.312 5.4301 0.318 1.8125-1.18 2.0395-3.544 1.8325-5.562-0.07-0.678-0.403-2.67-0.444-3.387 0.697-0.249 0.209-0.059 1.193-0.449 2.66-1.053 4.357-4.259 3.594-7.122-0.318-1.469-1.044-2.914-2.302-3.792zm0.561 5.757c0.214 1.991-1.053 4.321-3.079 4.96-0.136-0.795-0.172-1.011-0.2626-1.475-0.4822-2.46-0.744-4.987-1.116-7.481 1.6246-0.168 3.4576 0.543 4.0226 2.184 0.244 0.577 0.343 1.197 0.435 1.812zm-5.1486 5.196c-2.5441 0.141-4.9995-1.595-5.6343-4.081-0.749-2.153-0.5283-4.63 0.8207-6.504 1.1151-1.702 2.6065-3.105 4.0286-4.543 0.183 1.127 0.366 2.254 0.549 3.382-2.9906 0.782-5.0046 4.725-3.215 7.451 0.5324 0.764 1.9765 2.223 2.7655 1.634-1.102-0.683-2.0033-1.859-1.8095-3.227-0.0821-1.282 1.3699-2.911 2.6513-3.198 0.4384 2.869 0.9413 6.073 1.3797 8.943-0.5054 0.1-1.0211 0.143-1.536 0.143z";
 
 function renderChordDiagramSvg(frets: (number | 'x' | 'o')[]): string {
   let circles = '';
@@ -249,7 +278,16 @@ function renderChordDiagramSvg(frets: (number | 'x' | 'o')[]): string {
     ${circles}`;
 }
 
-function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number, style?: ScoreStyle): string {
+interface RhythmStaffOptions {
+  /** Draw section labels and chord names (false when the melody staff above already shows them). */
+  drawHeader: boolean;
+  /** Omit the time signature (drawn on the melody staff instead). */
+  drawTimeSignature: boolean;
+}
+
+function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: RenderContext, opts: RhythmStaffOptions): string {
+  const style = ctx.score.style;
+  const totalWidth = ctx.totalWidth;
   const chordSize = style?.chordSize ?? 15;
   const sectionSize = style?.sectionSize ?? 9.5;
   const lyricSize = style?.lyricSize ?? 10;
@@ -265,19 +303,17 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
 
   // Treble clef appears at the start of every system row (standard musical notation convention)
   let clefSvg = `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
-  if (isFirst) {
-    clefSvg += `<text x="58" y="${staveY + 14}" font-size="14" font-weight="bold">4</text>`;
-    clefSvg += `<text x="58" y="${staveY + 30}" font-size="14" font-weight="bold">4</text>`;
+  if (isFirst && opts.drawTimeSignature) {
+    const tx = 58 + ctx.keySignatureWidth;
+    clefSvg += `<text x="${tx}" y="${staveY + 14}" font-size="14" font-weight="bold">4</text>`;
+    clefSvg += `<text x="${tx}" y="${staveY + 30}" font-size="14" font-weight="bold">4</text>`;
   }
 
   let barsSvg = '';
-  // Align measure barlines consistently across all rows
-  const startX = 78;
-  const usableWidth = (totalWidth - 5) - startX;
-  const actualBarWidth = usableWidth / measures.length;
 
   measures.forEach((m, idx) => {
-    const bx = startX + idx * actualBarWidth;
+    // Align measure barlines consistently across all rows
+    const { bx, width: actualBarWidth } = measureBounds(ctx, measures.length, idx);
     const bEnd = bx + actualBarWidth;
 
     // Barline
@@ -298,33 +334,35 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
     }
 
     // Section Label (placed at the top: y = 2 to 16)
-    if (m.sectionName) {
-      barsSvg += `
-        <rect x="${bx + 4}" y="2" width="${m.sectionName.length * (sectionSize * 0.95) + 12}" height="${sectionSize + 5}" fill="#fff" stroke="#000" stroke-width="1.2"/>
-        <text x="${bx + 10}" y="${sectionSize + 3.5}" font-size="${sectionSize}" font-weight="bold">${escapeXml(m.sectionName)}</text>
-      `;
+    if (opts.drawHeader && m.sectionName) {
+      barsSvg += renderSectionLabel(m.sectionName, bx, sectionSize);
     }
+
+    // The measure lyric is replaced by syllable lyrics when the measure has a melody (spec §9.2).
+    const measureLyric = m.melody ? '' : m.lyric;
 
     if (m.isMeasureRepeat) {
       // Chords (placed clearly above: baseline at y = 33)
-      const chordsToRender = m.chords && m.chords.length > 0
-        ? m.chords
-        : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
+      if (opts.drawHeader) {
+        const chordsToRender = m.chords && m.chords.length > 0
+          ? m.chords
+          : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
 
-      const padLeft = 14;
-      const padRight = 14;
-      const usableW = actualBarWidth - padLeft - padRight;
-      let lastChordRight = bx;
+        const padLeft = 14;
+        const padRight = 14;
+        const usableW = actualBarWidth - padLeft - padRight;
+        let lastChordRight = bx;
 
-      chordsToRender.forEach((ch, chIdx) => {
-        let chordX = bx + 8;
-        if (chIdx > 0 || ch.beat > 0) {
-          chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
-        }
-        chordX = Math.max(lastChordRight + 6, chordX);
-        lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
-        barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
-      });
+        chordsToRender.forEach((ch, chIdx) => {
+          let chordX = bx + 8;
+          if (chIdx > 0 || ch.beat > 0) {
+            chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
+          }
+          chordX = Math.max(lastChordRight + 6, chordX);
+          lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
+          barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+        });
+      }
 
       // Measure Repeat Sign (Simile mark: diagonal slash with two dots)
       const centerX = bx + actualBarWidth / 2;
@@ -336,8 +374,8 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
       barsSvg += `<circle cx="${centerX + 7}" cy="90" r="2.6" fill="#000"/>`;
 
       // Lyric (placed below bottom stave line: baseline y = 120)
-      if (m.lyric) {
-        barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+      if (measureLyric) {
+        barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(measureLyric)}</text>`;
       }
       return;
     }
@@ -346,86 +384,73 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
     const midY = staveLines[2]; // 3rd line = 86
     const stemTopY = 60;
 
-    // Pre-calculate positions and metrics for all rhythm items in this measure
+    // Pre-calculate positions and metrics for all rhythm heads in this measure.
+    // Compound values (4+8) expand into tied heads; triplets (8t) keep their base note shape.
     interface RenderedRhythm {
       item: RhythmItem;
       beats: number;
+      beatFraction: Fraction;
+      part: NoteValuePart;
       beatOffset: number;
       rx: number;
       stemX: number;
       isWhole: boolean;
       isHalf: boolean;
       isQuarterOrShorter: boolean;
+      isFirstPart: boolean;
     }
 
+    const columns = computeMeasureColumns(m, bx, actualBarWidth, true);
     const rhythmDetails: RenderedRhythm[] = [];
-    const padLeft = 14;
-    const padRight = 14;
-    const usableW = actualBarWidth - padLeft - padRight;
-    const rCount = m.rhythms.length;
-    const rStep = usableW / (rCount > 0 ? rCount : 1);
 
-    let curBeat = 0;
-    m.rhythms.forEach((r, idx) => {
-      const beats = parseDurationToBeats(r.duration);
-      const cleanDur = r.duration.replace(/^r/, '').toLowerCase();
-      const isWhole = cleanDur === '1' || cleanDur === 'w';
-      const isHalf = cleanDur === '2' || cleanDur === 'h';
-      const isQuarterOrShorter = !isWhole && !isHalf;
-
-      let rx: number;
-      if (rCount === 1) {
-        // Center single note in measure
-        rx = bx + actualBarWidth / 2;
-      } else {
-        // Equal spacing across the measure
-        rx = bx + padLeft + (idx + 0.5) * rStep;
+    let curBeat = ZERO;
+    m.rhythms.forEach(r => {
+      for (const head of expandParts(rhythmParts(r.duration), curBeat)) {
+        const isWhole = head.part.base === 1;
+        const isHalf = head.part.base === 2;
+        const rx = columns.xAt(head.offset) ?? bx + actualBarWidth / 2;
+        rhythmDetails.push({
+          item: r,
+          beats: fnum(head.beats),
+          beatFraction: head.beats,
+          part: head.part,
+          beatOffset: fnum(head.offset),
+          rx,
+          stemX: isWhole ? rx : rx + 6.5,
+          isWhole,
+          isHalf,
+          isQuarterOrShorter: !isWhole && !isHalf,
+          isFirstPart: head.isFirstPart
+        });
+        curBeat = fadd(head.offset, head.beats);
       }
-
-      const stemX = isWhole ? rx : rx + 6.5;
-
-      rhythmDetails.push({
-        item: r,
-        beats,
-        beatOffset: curBeat,
-        rx,
-        stemX,
-        isWhole,
-        isHalf,
-        isQuarterOrShorter
-      });
-
-      curBeat += beats;
     });
 
     // Chords (placed clearly above picking marks: baseline at y = 33)
-    const chordsToRender = m.chords && m.chords.length > 0
-      ? m.chords
-      : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
+    if (opts.drawHeader) {
+      const chordsToRender = m.chords && m.chords.length > 0
+        ? m.chords
+        : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
 
-    let lastChordRight = bx;
-    chordsToRender.forEach((ch, chIdx) => {
-      let chordX = bx + 8;
-      if (chIdx > 0 || ch.beat > 0) {
-        const matchingRhythm = rhythmDetails.find(rd => Math.abs(rd.beatOffset - ch.beat) < 0.05);
-        if (matchingRhythm) {
-          chordX = Math.max(bx + 8, matchingRhythm.rx - 4);
-        } else {
-          chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
+      let lastChordRight = bx;
+      chordsToRender.forEach((ch, chIdx) => {
+        let chordX = bx + 8;
+        if (chIdx > 0 || ch.beat > 0) {
+          chordX = chordXAt(columns, bx, actualBarWidth, ch.beat);
         }
-      }
-      chordX = Math.max(lastChordRight + 6, chordX);
-      lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
-      barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
-    });
+        chordX = Math.max(lastChordRight + 6, chordX);
+        lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
+        barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+      });
+    }
 
     // Beam grouping for eighth and sixteenth notes (group by integer beat floor)
     const beamedIndices = new Set<number>();
     const beatGroups: Map<number, number[]> = new Map();
 
     rhythmDetails.forEach((rd, idx) => {
-      if (!rd.item.isRest && rd.beats <= 0.5) {
-        const beatKey = Math.floor(rd.beatOffset);
+      if (!rd.item.isRest && rd.part.base >= 8) {
+        const beatKey = Math.floor(rd.beatOffset + 1e-9);
         if (!beatGroups.has(beatKey)) {
           beatGroups.set(beatKey, []);
         }
@@ -450,7 +475,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
 
         for (let i = 0; i < indices.length; i++) {
           const rd = rhythmDetails[indices[i]];
-          if (rd.beats <= 0.25) {
+          if (rd.part.base >= 16) {
             if (!subStart) subStart = rd;
             subEnd = rd;
           } else {
@@ -478,6 +503,12 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
       }
     });
 
+    // Triplet numbers: above the stroke marks (y = 47..52), below the chord names
+    for (const group of tripletGroups(rhythmDetails.map(rd => ({ ...rd, beats: rd.beatFraction })))) {
+      const cx = (group[0].stemX + group[group.length - 1].stemX) / 2;
+      barsSvg += `<text x="${fmt(cx)}" y="45" font-size="8" font-style="italic" text-anchor="middle" fill="#000">3</text>`;
+    }
+
     // Render individual rhythm items
     rhythmDetails.forEach((rd, rIdx) => {
       const r = rd.item;
@@ -486,33 +517,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
       const opacity = r.ghost ? '0.35' : '1.0';
 
       if (r.isRest) {
-        const cleanDur = r.duration.replace(/^r/, '').toLowerCase();
-        if (cleanDur === '1' || cleanDur === 'w') {
-          // Whole rest: hanging from 4th stave line (index 1: y = 78)
-          barsSvg += `<rect x="${rx - 6}" y="${staveLines[1]}" width="12" height="5" fill="#000"/>`;
-        } else if (cleanDur === '2' || cleanDur === 'h') {
-          // Half rest: sitting on 3rd stave line (index 2: y = 86)
-          barsSvg += `<rect x="${rx - 6}" y="${staveLines[2] - 5}" width="12" height="5" fill="#000"/>`;
-        } else if (cleanDur === '8') {
-          // Eighth rest vector
-          barsSvg += `<g transform="translate(${rx}, ${midY})">
-            <circle cx="-2" cy="-5" r="2.4" fill="#000"/>
-            <path d="M -0.2,-5 C 1.2,-5 2.8,-6.2 3.8,-8.5 L 4.5,-8.5 C 3.2,-3.5 0.5,3.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-1.5 1.5,-4.5 C 0.8,-4.2 0.2,-4.2 -0.2,-4.2 Z" fill="#000"/>
-          </g>`;
-        } else if (cleanDur === '16') {
-          // Sixteenth rest vector
-          barsSvg += `<g transform="translate(${rx}, ${midY})">
-            <circle cx="-2" cy="-8" r="2.2" fill="#000"/>
-            <circle cx="-3" cy="-1" r="2.2" fill="#000"/>
-            <path d="M -0.2,-8 C 1.2,-8 2.5,-9.2 3.5,-11.5 L 4.2,-11.5 C 3.0,-6.5 0.5,2.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-2.5 1.5,-5.5 C 0.8,-5.2 0.2,-5.2 -0.2,-5.2 Z" fill="#000"/>
-            <path d="M -1.2,-1 C 0.2,-1 1.5,-2.2 2.5,-4.5 L 3.2,-4.5 C 2.5,-1.5 1.5,2.5 -0.5,5.5 L -1.5,5.0 C 0,-1.0 0.5,-3.0 0.5,-3.0 Z" fill="#000"/>
-          </g>`;
-        } else {
-          // Quarter rest vector (default)
-          barsSvg += `<g transform="translate(${rx}, ${midY})">
-            <path d="M 1.2,-14.5 C 1.8,-15.5 2.8,-16 4.0,-16 C 5.5,-16 6.8,-14.8 6.8,-13.2 C 6.8,-11.5 5.2,-9.8 3.5,-8.2 L -1.5,-3.5 C -0.8,-3.2 0,-3.2 0.8,-3.2 C 3.2,-3.2 5.2,-1.5 5.2,1.2 C 5.2,3.2 3.8,4.8 1.8,5.8 L -2.5,7.8 C -3.8,8.5 -4.8,9.8 -4.8,11.2 C -4.8,13.2 -3.0,14.8 -0.8,14.8 C 0.5,14.8 1.8,14.2 2.8,13.2 L 3.5,14.2 C 2.2,15.5 0.8,16.2 -0.8,16.2 C -3.8,16.2 -6.2,13.8 -6.2,10.8 C -6.2,8.8 -4.8,7.0 -2.8,6.0 L 1.2,4.0 C 2.5,3.2 3.2,2.2 3.2,1.2 C 3.2,-0.2 2.0,-1.5 0.5,-1.5 C -0.5,-1.5 -1.5,-1.0 -2.5,-0.2 L -3.8,-1.5 L 1.2,-6.2 C -0.5,-7.8 -2.2,-9.5 -2.2,-11.5 C -2.2,-13.8 0,-15.8 2.2,-16 L 1.2,-14.5 Z" fill="#000"/>
-          </g>`;
-        }
+        barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines);
       } else {
         // Guitar Pro style slash heads
         if (rd.isWhole) {
@@ -531,37 +536,38 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
 
           // If not beamed, draw flag for eighth / sixteenth notes
           if (!beamedIndices.has(rIdx)) {
-            if (rd.beats === 0.5) {
-              // 8th flag
-              barsSvg += `<path d="M ${stemX},${stemTopY} C ${stemX + 4},${stemTopY + 4} ${stemX + 6},${stemTopY + 8} ${stemX + 6},${stemTopY + 13} C ${stemX + 4},${stemTopY + 10} ${stemX + 2},${stemTopY + 8} ${stemX},${stemTopY + 6} Z" fill="#000" opacity="${opacity}"/>`;
-            } else if (rd.beats <= 0.25) {
-              // 16th double flag
-              barsSvg += `<path d="M ${stemX},${stemTopY} C ${stemX + 4},${stemTopY + 4} ${stemX + 6},${stemTopY + 8} ${stemX + 6},${stemTopY + 13} C ${stemX + 4},${stemTopY + 10} ${stemX + 2},${stemTopY + 8} ${stemX},${stemTopY + 6} Z" fill="#000" opacity="${opacity}"/>`;
-              barsSvg += `<path d="M ${stemX},${stemTopY + 5} C ${stemX + 4},${stemTopY + 9} ${stemX + 6},${stemTopY + 13} ${stemX + 6},${stemTopY + 18} C ${stemX + 4},${stemTopY + 15} ${stemX + 2},${stemTopY + 13} ${stemX},${stemTopY + 11} Z" fill="#000" opacity="${opacity}"/>`;
-            }
+            barsSvg += renderFlags(rd.part.base, stemX, stemTopY, false, opacity);
           }
         }
 
-        // Down / Up stroke mark (placed at y = 47 to 52, above stemTopY = 60, below chord baseline = 32)
-        const py = 47;
-        const markX = rd.isWhole ? rx : stemX;
-        if (r.down) {
-          barsSvg += `<path d="M ${markX - 3},${py + 5} L ${markX - 3},${py} L ${markX + 3},${py} L ${markX + 3},${py + 5}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
-        } else if (r.up) {
-          barsSvg += `<path d="M ${markX - 3},${py} L ${markX},${py + 5} L ${markX + 3},${py}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+        // Tie from the previous head of a compound value (4+8)
+        if (!rd.isFirstPart && rIdx > 0) {
+          const prev = rhythmDetails[rIdx - 1];
+          barsSvg += renderTieArc(prev.rx + 5, rx - 5, midY + 9, true);
         }
 
-        // Accent (placed at y = 38 to 44, between chord baseline = 32 and stroke mark = 47)
-        const ay = 38;
-        if (r.accent) {
-          barsSvg += `<path d="M ${markX - 3},${ay} L ${markX + 3},${ay + 3} L ${markX - 3},${ay + 6}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+        // Down / Up stroke mark (placed at y = 47 to 52, above stemTopY = 60, below chord baseline = 32)
+        if (rd.isFirstPart) {
+          const py = 47;
+          const markX = rd.isWhole ? rx : stemX;
+          if (r.down) {
+            barsSvg += `<path d="M ${markX - 3},${py + 5} L ${markX - 3},${py} L ${markX + 3},${py} L ${markX + 3},${py + 5}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+          } else if (r.up) {
+            barsSvg += `<path d="M ${markX - 3},${py} L ${markX},${py + 5} L ${markX + 3},${py}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+          }
+
+          // Accent (placed at y = 38 to 44, between chord baseline = 32 and stroke mark = 47)
+          const ay = 38;
+          if (r.accent) {
+            barsSvg += `<path d="M ${markX - 3},${ay} L ${markX + 3},${ay + 3} L ${markX - 3},${ay + 6}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+          }
         }
       }
     });
 
     // Lyric (placed below bottom stave line: baseline y = 120)
-    if (m.lyric) {
-      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+    if (measureLyric) {
+      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(measureLyric)}</text>`;
     }
   });
 
@@ -570,15 +576,11 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
     ${clefSvg}
     ${barsSvg}`;
 }
-export function escapeXml(str: string): string {
-  return str.replace(/[&<>"']/g, c => {
-    switch (c) {
-      case '&': return '&amp;';
-      case '<': return '&lt;';
-      case '>': return '&gt;';
-      case '"': return '&quot;';
-      case "'": return '&#39;';
-      default: return c;
-    }
-  });
+
+function renderSectionLabel(name: string, bx: number, sectionSize: number): string {
+  return `
+        <rect x="${bx + 4}" y="2" width="${name.length * (sectionSize * 0.95) + 12}" height="${sectionSize + 5}" fill="#fff" stroke="#000" stroke-width="1.2"/>
+        <text x="${bx + 10}" y="${sectionSize + 3.5}" font-size="${sectionSize}" font-weight="bold">${escapeXml(name)}</text>
+      `;
 }
+

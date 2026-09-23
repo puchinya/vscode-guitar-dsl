@@ -1,3 +1,5 @@
+import type { DiagnosticCode } from './compiler';
+
 export type SupportedLocale = 'ja' | 'en';
 
 export interface Messages {
@@ -96,4 +98,42 @@ export function resolveLocale(vscodeLang?: string): SupportedLocale {
 
 export function getMessages(locale: SupportedLocale): Messages {
   return locale === 'ja' ? MESSAGES_JA : MESSAGES_EN;
+}
+
+type DiagnosticArgs = Record<string, string | number>;
+type DiagnosticTemplates = Record<DiagnosticCode, (a: DiagnosticArgs) => string>;
+
+const DIAGNOSTICS_JA: DiagnosticTemplates = {
+  upperCaseNoteName: a => `メロディの音名は小文字で書いてください: ${a.token}`,
+  invalidMelodyNote: a => `メロディの音符として解釈できません: ${a.token}`,
+  invalidLength: a => `長さの指定が不正です: ${a.token}（\`/\` の後は音価 1・2・4・8・16 と . t +、\`:\` の後は拍数）`,
+  missingInitialOctaveOrLength: a => `mel: 行の最初の音符にはオクターブと長さが必要です: ${a.token}`,
+  tooManyMelodyMeasures: () => 'メロディを割り当てる小節がありません（mel: のセル数が小節数を超えています）',
+  melodyRepeatWithoutPrevious: () => '% で繰り返す直前の小節にメロディがありません',
+  lyricsWithoutMelody: () => 'lyr: の前に対応する mel: 行がありません',
+  beatCountMismatch: a => `小節の長さが4拍ではありません（${a.beats}拍）`,
+  syllableCountMismatch: a => `歌詞の音節数（${a.syllables}）と歌う音符の数（${a.notes}）が一致しません`,
+  lyricBarMismatch: () => '歌詞の | の位置がメロディの小節区切りと一致しません',
+  measureLyricWithMelody: () => 'メロディのある小節の l:"..." は表示されません（lyr: を使ってください）',
+  invalidMeasuresPerRow: a => `measures_per_row は 1〜8 の整数で指定してください: ${a.value}`
+};
+
+const DIAGNOSTICS_EN: DiagnosticTemplates = {
+  upperCaseNoteName: a => `Melody note names must be lowercase: ${a.token}`,
+  invalidMelodyNote: a => `Not a valid melody note: ${a.token}`,
+  invalidLength: a => `Invalid length: ${a.token} (after \`/\` use a note value 1, 2, 4, 8, 16 with . t +; after \`:\` use a beat count)`,
+  missingInitialOctaveOrLength: a => `The first note of a mel: line needs an octave and a length: ${a.token}`,
+  tooManyMelodyMeasures: () => 'No measure left for this melody cell (the mel: line has more cells than measures)',
+  melodyRepeatWithoutPrevious: () => 'The measure before % has no melody to repeat',
+  lyricsWithoutMelody: () => 'lyr: line has no preceding mel: line',
+  beatCountMismatch: a => `Measure length is not 4 beats (${a.beats} beats)`,
+  syllableCountMismatch: a => `Syllable count (${a.syllables}) does not match the sung notes (${a.notes})`,
+  lyricBarMismatch: () => 'The | positions in the lyrics do not match the melody measures',
+  measureLyricWithMelody: () => 'l:"..." is not shown in a measure with a melody (use lyr:)',
+  invalidMeasuresPerRow: a => `measures_per_row must be an integer from 1 to 8: ${a.value}`
+};
+
+export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {
+  const templates = locale === 'ja' ? DIAGNOSTICS_JA : DIAGNOSTICS_EN;
+  return templates[code](args ?? {});
 }

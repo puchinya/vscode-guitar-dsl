@@ -46,6 +46,8 @@
   - 歌詞トークン: `l:"..."` (`string.quoted.double.lyric.guitardsl`)
   - 特殊記号・カッコ番号: `1.`, `2.`, `segno`, `coda`, `fine` (`keyword.control.navigation.guitardsl`)
   - 改ページ記号: `pagebreak` (`keyword.control.pagebreak.guitardsl`)
+  - メロディ行: 行頭 `mel:` (`keyword.other.melody.guitardsl`)、音符 `e4/8` 等 (`constant.other.note.guitardsl`)、休符 (`constant.other.rest.guitardsl`)、解釈できないトークン (`invalid.illegal.note.guitardsl`)
+  - 音節歌詞行: 行頭 `lyr:` (`keyword.other.lyrics.guitardsl`)、歌詞本文 (`string.unquoted.lyric.guitardsl`)、`_` `*` (`keyword.operator.melisma.guitardsl`)
 
 ---
 
@@ -144,6 +146,30 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
   - `SymbolKind.Field`
   - セクション内に含まれる各小節行を展開し、含まれるコードネームの要約（例: `| C | G | Am | Em |`）を子シンボルとして一覧表示。
   - アウトライン項目をクリックすることで、エディタ上の該当セクションまたは小節へ即座にカーソルがジャンプする。
+
+---
+
+## 5A. 診断仕様 (Diagnostics)
+
+- GuitarDSL 文書（言語 ID `guitardsl`）を開いたとき・編集したときに、コンパイラが検出した構文上の問題を VS Code の診断（「問題」パネルおよびエディタ上の波線）として表示する。
+- 文書を閉じると、その文書の診断はクリアされる。
+- 重大度は **エラー**（記述が無視される問題）と **警告**（描画は継続されるが意図とずれている可能性がある問題）の2種類。
+- 診断メッセージはロケール（§6.1）に従い日本語または英語で表示する。
+- 診断の対象（`docs/specs/guitardsl-syntax.md` 参照）:
+
+| 重大度 | 内容 |
+|---|---|
+| エラー | 音名が大文字（§12.2） |
+| エラー | 不正なメロディ音符（§12.2） |
+| エラー | コード・メロディの長さ指定が不正（`/` の音価、`:` の拍数、§7.2, §12.2） |
+| エラー | `mel:` 行の最初の音符でオクターブまたは長さが省略されている（§12.2） |
+| エラー | `mel:` のセル数が未割り当て小節数を超えている（§12.3） |
+| エラー | `mel:` の `%` の直前小節にメロディがない（§12.1） |
+| エラー | `mel:` より前の `lyr:`（§13.1） |
+| 警告 | 小節の合計拍数が 4 拍と一致しない（§8.2.1, §12.3） |
+| 警告 | 歌詞の音節数と音符数の不一致、`\|` 位置の不一致（§13.2） |
+| 警告 | 同一小節での `l:"..."` とメロディの併記（§9.2） |
+| 警告 | `measures_per_row` の範囲外・不正値（§14.3） |
 
 ---
 

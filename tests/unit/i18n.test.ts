@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { resolveLocale, getMessages, MESSAGES_JA, MESSAGES_EN } from '../../src/i18n';
+import { resolveLocale, getMessages, MESSAGES_JA, MESSAGES_EN, formatDiagnostic } from '../../src/i18n';
+import { DiagnosticCode } from '../../src/compiler';
 
 describe('i18n - resolveLocale', () => {
   it('should resolve Japanese locale for ja and regional variants', () => {
@@ -49,5 +50,22 @@ describe('i18n - getMessages', () => {
     const jaKeys = Object.keys(MESSAGES_JA).sort();
     const enKeys = Object.keys(MESSAGES_EN).sort();
     assert.deepStrictEqual(jaKeys, enKeys);
+  });
+
+  it('formats every diagnostic code in Japanese and English', () => {
+    const allCodes: DiagnosticCode[] = [
+      'upperCaseNoteName', 'invalidMelodyNote', 'invalidLength', 'missingInitialOctaveOrLength',
+      'tooManyMelodyMeasures', 'melodyRepeatWithoutPrevious', 'lyricsWithoutMelody', 'beatCountMismatch',
+      'syllableCountMismatch', 'lyricBarMismatch', 'measureLyricWithMelody', 'invalidMeasuresPerRow'
+    ];
+    const args = { token: 'E4/8', beats: '3', syllables: 2, notes: 3, value: '9' };
+    for (const code of allCodes) {
+      const ja = formatDiagnostic(code, args, 'ja');
+      const en = formatDiagnostic(code, args, 'en');
+      assert.ok(ja.length > 0 && en.length > 0, code);
+      assert.notStrictEqual(ja, en, code);
+    }
+    assert.ok(formatDiagnostic('upperCaseNoteName', args, 'ja').includes('E4/8'));
+    assert.ok(formatDiagnostic('beatCountMismatch', args, 'en').includes('3 beats'));
   });
 });

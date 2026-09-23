@@ -4,12 +4,69 @@
   "scopeName": "source.guitardsl",
   "patterns": [
     {
+      "name": "meta.melody.guitardsl",
+      "begin": "^\\s*(mel:)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.melody.guitardsl"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "name": "keyword.operator.barline.guitardsl",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.repeat.guitardsl",
+          "match": "%"
+        },
+        {
+          "name": "constant.other.note.guitardsl",
+          "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)[.t]?(?:\\+(?:16|8|4|2|1)[.t]?)*|:[0-9]+(?:\\.[0-9]+)?)?~?(?![^\\s|])"
+        },
+        {
+          "name": "constant.other.rest.guitardsl",
+          "match": "(?<![^\\s|])r(?:/(?:16|8|4|2|1)[.t]?(?:\\+(?:16|8|4|2|1)[.t]?)*|:[0-9]+(?:\\.[0-9]+)?)?(?![^\\s|])"
+        },
+        {
+          "name": "invalid.illegal.note.guitardsl",
+          "match": "[^\\s|]+"
+        }
+      ]
+    },
+    {
+      "name": "meta.lyrics.guitardsl",
+      "begin": "^\\s*(lyr:)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.lyrics.guitardsl"
+        }
+      },
+      "end": "$",
+      "contentName": "string.unquoted.lyric.guitardsl",
+      "patterns": [
+        {
+          "name": "keyword.operator.barline.guitardsl",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.melisma.guitardsl",
+          "match": "[_*]"
+        },
+        {
+          "name": "punctuation.definition.group.guitardsl",
+          "match": "[()（）]"
+        }
+      ]
+    },
+    {
       "name": "comment.line.number-sign.guitardsl",
       "match": "#.*$"
     },
     {
       "name": "keyword.other.header.guitardsl",
-      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
+      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
     {
       "name": "entity.name.section.guitardsl",
@@ -29,7 +86,7 @@
     },
     {
       "name": "entity.name.type.chord.guitardsl",
-      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(:[0-9]+(\\.[0-9]+)?)?\\b"
+      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(:[0-9]+(\\.[0-9]+)?|/(16|8|4|2|1)[.t]?(\\+(16|8|4|2|1)[.t]?)*)?(?![\\w/])"
     },
     {
       "name": "keyword.operator.repeat.guitardsl",
@@ -37,7 +94,7 @@
     },
     {
       "name": "constant.numeric.rhythm.guitardsl",
-      "match": "\\b(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*\\b"
+      "match": "\\b(r?(16|8|4|2|1)t?(\\+(16|8|4|2|1)t?)*|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*\\b"
     }
   ]
 }
