@@ -3,6 +3,7 @@
   "displayName": "GuitarDSL Previewer",
   "description": "Guitar rhythm slash notation and tab score previewer for guitarDSL",
   "version": "0.1.0",
+  "publisher": "puchinya",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -67,11 +68,21 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "compile:tests": "tsc -p ./tests",
+    "compile:all": "npm run compile && npm run compile:tests",
+    "watch": "tsc -watch -p ./",
+    "test:unit": "mocha -r tsx -r ./tests/unit/setup.ts 'tests/unit/**/*.test.ts'",
+    "test:e2e": "npm run compile:all && node out/tests/e2e/runTest.js",
+    "test": "npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^3.1.0",
+    "glob": "^13.0.6",
+    "mocha": "^12.0.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.3.3"
   }
 }
