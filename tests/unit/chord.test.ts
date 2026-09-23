@@ -150,6 +150,21 @@ describe('chord diagram rendering', () => {
     assert.ok(svg.includes('fill="#777">barre</text>'));
   });
 
+  it('shows labels as superscripts next to chord names on the staff', () => {
+    const svg = compileGuitarDslToSvg('chord C@barre = x35553\n| C@barre:2 G:2 | 4.d 4.d 4.d 4.d |');
+    const name = svg.match(/<text x="([0-9.]+)" y="33" font-size="15" font-weight="900" fill="#000">C<\/text>/);
+    const label = svg.match(/<text class="chord-label" x="([0-9.]+)" y="([0-9.]+)" font-size="7.5" fill="#777">barre<\/text>/);
+    assert.ok(name && label, 'chord name and superscript label');
+    assert.ok(Number(label![1]) > Number(name![1]), 'label is right of the name');
+    assert.ok(Number(label![2]) < 33, 'label is raised');
+    assert.strictEqual((svg.match(/class="chord-label"/g) || []).length, 1, 'unlabeled G has no label');
+  });
+
+  it('shows labels on the melody staff too', () => {
+    const svg = compileGuitarDslToSvg('chord C@barre = x35553\n| C@barre | 4.d 4.d 4.d 4.d |\nmel: | c4/1 |');
+    assert.strictEqual((svg.match(/class="chord-label"[^>]*>barre</g) || []).length, 1);
+  });
+
   it('makes preview diagrams clickable to open the chord editor', () => {
     const html = compileGuitarDslToHtml('| C |');
     assert.ok(html.includes('class="chord-diagram" data-chord-key="C"'));

@@ -45,6 +45,7 @@ import {
   fmt,
   getRenderContext,
   measureBounds,
+  renderChordName,
   renderFlags,
   renderRestGlyph,
   renderTieArc,
@@ -330,8 +331,9 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
             chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
           }
           chordX = Math.max(lastChordRight + 6, chordX);
-          lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
-          barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+          const chordName = renderChordName(ch, chordX, chordSize);
+          lastChordRight = chordX + chordName.width;
+          barsSvg += chordName.svg;
         });
       }
 
@@ -410,8 +412,9 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
           chordX = chordXAt(columns, bx, actualBarWidth, ch.beat);
         }
         chordX = Math.max(lastChordRight + 6, chordX);
-        lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
-        barsSvg += `<text x="${chordX}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+        const chordName = renderChordName(ch, chordX, chordSize);
+        lastChordRight = chordX + chordName.width;
+        barsSvg += chordName.svg;
       });
     }
 

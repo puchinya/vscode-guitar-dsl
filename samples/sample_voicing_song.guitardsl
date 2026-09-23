@@ -1,0 +1,41 @@
+title: ひだまりのうた - Voicing Song
+artist: GuitarDSL Original
+key: G
+bpm: 88
+memo: 同じコードの押さえ方を @ラベル で使い分けるサンプル曲。Aメロはローポジション、サビはハイポジションで弾く。
+
+# 押さえ方の定義（ラベルなし = 既定の押さえ方）
+chord G        = 320003 fingers:21---3
+chord G@barre  = 355433 fingers:134211 barre:3
+chord C@barre  = x35553 fingers:-13331 barre:3
+chord D@high   = x57775 fingers:-13331 barre:5
+chord Em7@open = 022033 fingers:-12-34
+chord Cadd9    = x32033 fingers:-21-34
+
+[Intro]
+| G     | 4.d 8.d 8.u 8.u 8.d 4.d |
+| Cadd9 | % |
+| G     | % |
+| D@high:2 C@barre:2 | 4.d 4.d 4.d 4.d |
+
+[Aメロ]
+| G        | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |
+| Em7@open | % |
+| Cadd9    | % |
+| D        | 4.d 4.d 2.d |
+mel: | d4/8 e g/4 a/8 g e/4 | a4/8 g e/4 r/2 | e4/8 e g/4 a/8 b c5/4 | b4/2 r/2 |
+lyr: | まどべの ねこ        | あくび          | ゆめみる ごご          | に         |
+
+[サビ]
+# ハイポジションに移動: 五線譜のコード名にもラベルが上付きで表示される
+| C@barre | 4.d 8.d 8.u.a 8.u 8.d 4.d |
+| D@high  | % |
+| G@barre:2 Em7@open:2 | 4.d 4.d 4.d 4.d |
+| C@barre:2 D@high:2   | 4.d 4.d 2.d |
+mel: | e5/4 d/8 c/8 d/4 e | d5/4. c/8 b4/2 | b4/8 a g/4 a/4 b | c5/4 b4 a/2 |
+lyr: | ひかりへと         | あるく           | きみと ぼく        | のうた         |
+
+[Outro]
+| G@barre | 4.d 4.d 4.d 4.d |
+| Cadd9   | 4.d 4.d 4.d 4.d |
+| G       | 1.d |

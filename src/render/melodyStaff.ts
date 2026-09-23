@@ -19,6 +19,7 @@ import {
   renderAccidental,
   renderFlags,
   renderKeySignature,
+  renderChordName,
   renderRestGlyph,
   renderTieArc,
   tripletGroups
@@ -106,8 +107,9 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       let chordX = bx + 8;
       if (chIdx > 0 || ch.beat > 0) chordX = chordXAt(columns, bx, width, ch.beat);
       chordX = Math.max(lastChordRight + 6, chordX);
-      lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
-      out += `<text x="${fmt(chordX)}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+      const chordName = renderChordName(ch, chordX, chordSize);
+      lastChordRight = chordX + chordName.width;
+      out += chordName.svg;
     });
 
     if (!m.melody) {
