@@ -23,6 +23,7 @@ Test baseline images belong with the owning tests, not in Issue evidence.
 ## Rules
 
 - Keep investigation screenshots and raw logs under `.agent-state/`.
+- For changes affecting visual rendering or UI (score slash notation, beams, rests, SVG, webview), generating and providing preview image evidence (SVG/PNG) is **MANDATORY**. Present it in the conversation and attach it to the Issue/PR.
 - Commit only small evidence that is needed for review or future reference.
 - Add a short `README.md` beside committed evidence with OS, scenario, commit,
   command, and result.

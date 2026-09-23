@@ -36,7 +36,7 @@ Use `gh` to inspect PR comments/reviews/threads/checks.
 
 For multiline PR comments and review bodies, use `--body-file` when the `gh` command supports it. The source file must contain real newline characters; `--body` is only for genuinely single-line text, and literal \n must not substitute for an intended Markdown line break.
 
-Review screenshots or other image evidence that materially supports a finding MAY be attached to the owning Issue with `gh --attach`. This workflow uses Issue attachments for images only. Required image evidence must be verified after publication by checking the resulting Issue/comment and confirming the expected image asset or link; missing or partial uploads cannot be reported as PASS.
+Review screenshots or other image evidence that materially supports a finding MAY be attached to the owning Issue with `gh --attach`. For tasks affecting visual rendering or UI, providing rendered preview image evidence is **MANDATORY** in the PR delta, reviewer guidance, and user presentation. This workflow uses Issue attachments for images only. Required image evidence must be verified after publication by checking the resulting Issue/comment and confirming the expected image asset or link; missing or partial uploads cannot be reported as PASS.
 
 Do not attach contracts, logs, text, generic files, or videos; keep those artifacts in the local Issue/PR/evidence workflow.
 
