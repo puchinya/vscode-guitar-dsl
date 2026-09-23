@@ -1,0 +1,23 @@
+title: Voicing Sample
+artist: GuitarDSL Original
+key: C
+bpm: 96
+
+# コードダイアグラムの定義（§7.4）。ラベルなしが既定の押さえ方、@ラベル で別の押さえ方
+chord C       = x32010 fingers:-32-1-
+chord C@barre = x35553 fingers:-13331 barre:3
+chord C@high  = x,x,10,9,8,8 fingers:--4312
+chord G@rock  = 3x0033 fingers:2--34-
+chord Am@5th  = 5,7,7,5,5,5 fingers:134111 barre:5
+
+[Intro]
+| C       | 4.d 4.d 4.d 4.d |
+| C@barre | 4.d 8.d 8.u 4.d 8.d 8.u |
+| C@high:2 G@rock:2 | 4.d 4.d 4.d 4.d |
+| Am@5th | 4.d 4.d 4.d 4.d |
+
+[Verse]
+| F  | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |
+| Bbmaj7 | 4.d 4.d 4.d 4.d |
+| Ebm7 Ab7 | 4.d 4.d 4.d 4.d |
+| G | 1.d |

@@ -202,6 +202,13 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   body[data-display-mode="web"] .web-score-container {
     display: block;
   }
+  .chord-diagram {
+    cursor: pointer;
+  }
+  .chord-diagram:hover > rect:first-child {
+    fill: #0078d4;
+    fill-opacity: 0.08;
+  }
 </style>
 </head>
 <body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}">
@@ -323,6 +330,14 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
           }
         });
       }
+
+      // Clicking a chord diagram opens the chord diagram editor.
+      document.addEventListener('click', (e) => {
+        const diagram = e.target.closest && e.target.closest('.chord-diagram');
+        if (diagram && vscode) {
+          vscode.postMessage({ command: 'editChord', key: diagram.getAttribute('data-chord-key') });
+        }
+      });
 
       updateView();
     })();

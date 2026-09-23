@@ -29,7 +29,66 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(
       commands.includes('guitardsl.exportPdf'),
       'Command guitardsl.exportPdf should be registered'
+    );    assert.ok(
+      commands.includes('guitardsl.editChordDiagram'),
+      'Command guitardsl.editChordDiagram should be registered'
     );
+  });
+
+  test('CodeLens should offer the chord editor on chord definition lines', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['title: Chords', 'chord C@barre = x35553 base:3', 'chord D = nope', '| C@barre |'].join('\n')
+    });
+    const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', doc.uri);
+    assert.ok(lenses, 'CodeLenses should be returned');
+    const chordLenses = lenses.filter(l => l.command?.command === 'guitardsl.editChordDiagram');
+    assert.strictEqual(chordLenses.length, 1, 'Only the valid chord line gets a CodeLens');
+    assert.strictEqual(chordLenses[0].range.start.line, 1);
+    assert.strictEqual(chordLenses[0].command!.arguments![1], 'C@barre');
+  });
+
+  test('Saving from the chord editor inserts, replaces and rejects duplicates', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { applyChordSave } = require('../../chordEditor');
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['title: Save Test', '', '[Intro]', '| C@barre | G |'].join('\n')
+    });
+    const state = { name: 'C', label: 'barre', frets: ['x', 3, 5, 5, 5, 3], windowBase: 3, fingers: [null, '1', '3', '3', '3', '1'], barres: [{ fret: 3, from: 1, to: 5 }] };
+
+    const inserted = await applyChordSave(doc.uri, state, undefined, false);
+    assert.deepStrictEqual(inserted, { ok: true, applied: true, key: 'C@barre', line: 1 });
+    assert.strictEqual(doc.lineAt(1).text, 'chord C@barre = x35553 base:3 fingers:-13331 barre:3');
+    assert.strictEqual(doc.lineAt(2).text, '', 'blank line before the score is kept');
+
+    const duplicate = await applyChordSave(doc.uri, state, undefined, true);
+    assert.deepStrictEqual(duplicate, { ok: false, error: 'duplicate', detail: 'C@barre' });
+
+    const replaced = await applyChordSave(doc.uri, { ...state, frets: ['x', 3, 5, 5, 5, 'x'], fingers: new Array(6).fill(null), barres: [] }, 1, false);
+    assert.strictEqual(replaced.ok && replaced.line, 1);
+    assert.strictEqual(doc.lineAt(1).text, 'chord C@barre = x3555x base:3');
+    assert.strictEqual(doc.lineCount, 5);
+
+    const invalid = await applyChordSave(doc.uri, { ...state, name: 'Hm' }, 1, false);
+    assert.deepStrictEqual(invalid, { ok: false, error: 'name', detail: 'Hm' });
+  });
+
+  test('Edit chord diagram command should open the editor panel', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: ['chord C@barre = x35553 base:3', '| C@barre |'].join('\n')
+    });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('guitardsl.editChordDiagram', doc.uri, 'C@barre');
+    let tabs: vscode.Tab[] = [];
+    let editorTab: vscode.Tab | undefined;
+    for (let i = 0; i < 50 && !editorTab; i++) {
+      tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+      editorTab = tabs.find(t => t.input instanceof vscode.TabInputWebview && t.label.endsWith(': C@barre'));
+      if (!editorTab) await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(editorTab, `Chord editor tab should be open (tabs: ${tabs.map(t => t.label).join(', ')})`);
   });
 
   test('Document symbol provider should provide symbols for guitardsl document', async () => {

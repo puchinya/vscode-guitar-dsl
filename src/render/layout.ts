@@ -1,4 +1,6 @@
 import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore } from '../compiler';
+import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
+import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -104,10 +106,11 @@ export const FOOTER_HEIGHT = 18;
 export const BLOCK_SPACING = 10;
 
 // Chord diagram grid (pt)
-export const DIAGRAM_SCALE = 0.6; // diagram unit box is 50 x 58
-export const DIAGRAM_CELL_WIDTH = 50 * DIAGRAM_SCALE;
+export const DIAGRAM_SCALE = 0.6; // scale of the diagram unit box (chordDiagram.ts)
+export const DIAGRAM_CELL_WIDTH = DIAGRAM_UNIT_WIDTH * DIAGRAM_SCALE;
 export const DIAGRAM_NAME_HEIGHT = 11;
-export const DIAGRAM_CELL_HEIGHT = DIAGRAM_NAME_HEIGHT + 58 * DIAGRAM_SCALE;
+/** Row for `@label` captions; reserved only when a diagram in the grid has a label. */
+export const DIAGRAM_LABEL_HEIGHT = 7;
 export const DIAGRAM_GAP_X = 8;
 export const DIAGRAM_GAP_Y = 6;
 
@@ -142,6 +145,9 @@ export interface DiagramGrid {
   perRow: number;
   rows: number;
   height: number;
+  cellHeight: number;
+  /** Height of the name area above each diagram body (name + optional label row). */
+  headHeight: number;
 }
 
 export interface ScoreLayout {
@@ -174,15 +180,18 @@ export function getHeaderMetrics(titleSize: number): HeaderMetrics {
   return { titleSize, titleBaseline, metaBaseline, ruleY, height: ruleY + BLOCK_SPACING };
 }
 
-export function getDiagramGrid(count: number, width: number): DiagramGrid {
-  if (count === 0) {
-    return { perRow: 0, rows: 0, height: 0 };
+export function getDiagramGrid(diagrams: ResolvedChordDiagram[], width: number): DiagramGrid {
+  if (diagrams.length === 0) {
+    return { perRow: 0, rows: 0, height: 0, cellHeight: 0, headHeight: 0 };
   }
+  const headHeight = DIAGRAM_NAME_HEIGHT + (diagrams.some(d => d.label) ? DIAGRAM_LABEL_HEIGHT : 0);
+  const bodyUnits = DIAGRAM_UNIT_HEIGHT + (diagrams.some(d => hasFingers(d.voicing)) ? DIAGRAM_FINGER_UNIT_HEIGHT : 0);
+  const cellHeight = headHeight + bodyUnits * DIAGRAM_SCALE;
   const perRow = Math.max(1, Math.floor((width + DIAGRAM_GAP_X) / (DIAGRAM_CELL_WIDTH + DIAGRAM_GAP_X)));
-  const rows = Math.ceil(count / perRow);
-  const gridHeight = rows * DIAGRAM_CELL_HEIGHT + (rows - 1) * DIAGRAM_GAP_Y;
+  const rows = Math.ceil(diagrams.length / perRow);
+  const gridHeight = rows * cellHeight + (rows - 1) * DIAGRAM_GAP_Y;
   // grid + space + separator rule + space
-  return { perRow, rows, height: gridHeight + 6 + BLOCK_SPACING };
+  return { perRow, rows, height: gridHeight + 6 + BLOCK_SPACING, cellHeight, headHeight };
 }
 
 /** Splits each manual page into system rows (`measuresPerRow` measures per row, default 4). */
@@ -219,7 +228,7 @@ export function layoutScore(score: ParsedScore, pageSize: PageSize, orientation:
   const systemGap = SYSTEM_UNIT_GAP * systemScale;
 
   const header = getHeaderMetrics(score.style.titleSize ?? DEFAULT_TITLE_SIZE);
-  const diagrams = getDiagramGrid(score.usedChords.length, columnWidth);
+  const diagrams = getDiagramGrid(resolveScoreDiagrams(score), columnWidth);
 
   const pages: LayoutPage[] = [];
   let current: LayoutPage | null = null;

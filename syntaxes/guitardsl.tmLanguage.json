@@ -65,6 +65,49 @@
       "match": "#.*$"
     },
     {
+      "name": "meta.chord-definition.guitardsl",
+      "begin": "^\\s*(chord)\\s+([A-G][b#]?(?:maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(?:/[A-G][b#]?)?)(@[A-Za-z0-9_]+)?\\s*(=)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.chord-definition.guitardsl"
+        },
+        "2": {
+          "name": "entity.name.type.chord.guitardsl"
+        },
+        "3": {
+          "name": "entity.other.attribute-name.chord-label.guitardsl"
+        },
+        "4": {
+          "name": "keyword.operator.assignment.guitardsl"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.guitardsl",
+          "match": "#.*$"
+        },
+        {
+          "match": "\\b(base|fingers|barre)(:)([^\\s#]+)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.chord-option.guitardsl"
+            },
+            "2": {
+              "name": "punctuation.separator.key-value.guitardsl"
+            },
+            "3": {
+              "name": "constant.numeric.chord-option.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "constant.numeric.frets.guitardsl",
+          "match": "(?<=\\s|=)[xXoO0-9,]+(?=\\s|$|#)"
+        }
+      ]
+    },
+    {
       "name": "keyword.other.header.guitardsl",
       "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
@@ -86,7 +129,7 @@
     },
     {
       "name": "entity.name.type.chord.guitardsl",
-      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(:[0-9]+(\\.[0-9]+)?|/(16|8|4|2|1)[.t]?(\\+(16|8|4|2|1)[.t]?)*)?(?![\\w/])"
+      "match": "\\b[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(/[A-G][b#]?)?(@[A-Za-z0-9_]+)?(:[0-9]+(\\.[0-9]+)?|/(16|8|4|2|1)[.t]?(\\+(16|8|4|2|1)[.t]?)*)?(?![\\w/])"
     },
     {
       "name": "keyword.operator.repeat.guitardsl",
