@@ -8,6 +8,7 @@ import { isValidChordName } from '../chordDefinition';
 export interface TranscribedSong {
   title?: string;
   artist?: string;
+  capo?: number;
   key: string;
   bpm: number;
   timeSignature: { numerator: number; denominator: number };
@@ -23,6 +24,7 @@ export interface Measure {
   chords: ChordEvent[];
   rhythm: RhythmEvent[];
   melody?: MelodyEvent[];
+  lyrics?: string;
 }
 
 export interface ChordEvent {
@@ -41,6 +43,7 @@ export interface MelodyEvent {
   pitch: string;
   duration: string;
   tieToNext?: boolean;
+  lyric?: string;
 }
 
 export const MUSIC_IR_JSON_SCHEMA = {
@@ -49,6 +52,7 @@ export const MUSIC_IR_JSON_SCHEMA = {
     title: { type: 'string', description: 'Song title' },
     artist: { type: 'string', description: 'Artist name' },
     key: { type: 'string', description: 'Musical key of the song, e.g. C, Am, G, F#m, Bb' },
+    capo: { type: 'integer', description: 'Recommended capo fret number (0..7) to play with easy open guitar chords, or 0 if no capo' },
     bpm: { type: 'integer', description: 'Tempo in BPM (30..300)' },
     timeSignature: {
       type: 'object',
@@ -69,6 +73,7 @@ export const MUSIC_IR_JSON_SCHEMA = {
             items: {
               type: 'object',
               properties: {
+                lyrics: { type: 'string', description: 'Lyrics sung or spoken in this measure, if any' },
                 chords: {
                   type: 'array',
                   items: {
@@ -100,7 +105,8 @@ export const MUSIC_IR_JSON_SCHEMA = {
                     properties: {
                       pitch: { type: 'string', description: 'Melody pitch in lowercase with octave, e.g. c4, d#4, eb4, or r for rest' },
                       duration: { type: 'string', description: 'Note value duration, e.g. 4, 8, 16, 8t, 4.' },
-                      tieToNext: { type: 'boolean' }
+                      tieToNext: { type: 'boolean' },
+                      lyric: { type: 'string', description: 'Syllable lyric sung on this note, e.g. あ, さ, の, Play, me' }
                     },
                     required: ['pitch', 'duration']
                   }
@@ -287,13 +293,17 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
           if (!noteVal) {
             return { valid: false, error: `Invalid melody duration '${durStr}' in section '${name}', measure ${mIdx + 1}` };
           }
-
-          melodyBeats = fadd(melodyBeats, noteVal.beats);
-          normalizedMelody.push({
+          const melEvent: MelodyEvent = {
             pitch,
             duration: durStr,
             tieToNext: melObj.tieToNext === true
-          });
+          };
+          if (typeof melObj.lyric === 'string' && melObj.lyric.trim().length > 0) {
+            melEvent.lyric = melObj.lyric.trim();
+          }
+
+          melodyBeats = fadd(melodyBeats, noteVal.beats);
+          normalizedMelody.push(melEvent);
         }
 
         if (!feq(melodyBeats, FOUR_BEATS)) {
@@ -311,6 +321,9 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
       if (normalizedMelody) {
         measure.melody = normalizedMelody;
       }
+      if (typeof measObj.lyrics === 'string' && measObj.lyrics.trim().length > 0) {
+        measure.lyrics = measObj.lyrics.trim();
+      }
       normalizedMeasures.push(measure);
     }
 
@@ -327,6 +340,9 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
     sections: normalizedSections
   };
 
+  if (typeof raw.capo === 'number' && Number.isInteger(raw.capo) && raw.capo >= 0 && raw.capo <= 11) {
+    song.capo = raw.capo;
+  }
   if (typeof raw.title === 'string' && raw.title.trim()) {
     song.title = raw.title.trim();
   }

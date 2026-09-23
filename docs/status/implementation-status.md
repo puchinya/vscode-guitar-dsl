@@ -82,8 +82,8 @@
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
   - `tests/unit/chord.test.ts`: `chord` 定義の解析・整形の往復、`@ラベル` 参照と診断、ダイアグラムの解決と描画、コード名の自動判定、プリセット（全ルート・タイプ、自動判定との一致）、エディタのモデル（開始・保存位置・重複）
-  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、コード・リズム・メロディ各小節4拍検証）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
-- **テスト実行結果**: **158 / 158 件 PASS** (0 failures)
+  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
+- **テスト実行結果**: **159 / 159 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`

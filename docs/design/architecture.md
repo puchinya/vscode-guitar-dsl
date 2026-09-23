@@ -189,7 +189,7 @@ VS Codeのエディタコアにおけるリアルタイムな字句ハイライ�
 Gemini API の動画理解機能を介して YouTube 音源から構造化 Music IR を抽出し、決定論的に GuitarDSL へ変換する独立モジュール群。VS Code 拡張機能コア以外（コンパイラ・レンダラ・PDF）からは独立し、Gemini SDK はこのサブシステム内に隠蔽される。
 
 - **`model.ts`**:
-  - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。
+  - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。カポ（`capo`）、小節歌詞（`lyrics`）、およびメロディ音符ごとの音節歌詞（`lyric`）をサポート。
   - Gemini Structured Output 用の JSON Schema（`MUSIC_IR_JSON_SCHEMA`）。
   - 純粋なセマンティックバリデーション（`validateTranscribedSong`）：BPM 30..300、キー・コード・ピッチの構文適合性、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。不正データはシリアライザへ渡さず排除。
 - **`youtube.ts`**:
@@ -197,10 +197,11 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - HTTPS かつ `youtube.com` / `www.youtube.com` / `youtu.be` のみを許可。
 - **`gemini.ts`**:
   - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。
-  - 固定プロンプト、YouTube 動画 URI（`{ type: "video", uri }`）、および Music IR JSON Schema を指定してリクエストを送信。
+  - 固定プロンプト（全セクション・全小節の完全書き起こし、推奨カポ設定、音節歌詞の指定を含む）、YouTube 動画 URI（`{ type: "video", uri }`）、および Music IR JSON Schema を指定してリクエストを送信。
   - レスポンスのテキスト抽出、JSON パース、および `model.ts` によるセマンティック検証を実行。API キーや生レスポンスはログ出力しない。
 - **`serializer.ts`**:
   - バリデーション済み Music IR を決定論的な GuitarDSL テキストへ変換（`serializeSongToGuitarDsl`）。VS Code 非依存。
+  - 前小節と同一パターンの繰り返しにおける `%`（小節リピート）記法や `mel: | % |` の活用、メロディ音符ごとの音節歌詞（`lyr:`）の出力をサポート。
   - 同一 IR から常に同一の文字列を出力。
   - シリアライズ直後に `parseGuitarDsl` を呼び出し、エラー診断が 0 件であることを確認。
 

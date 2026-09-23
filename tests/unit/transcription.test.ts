@@ -381,6 +381,90 @@ describe('transcription - serializer', () => {
     const dsl = serializeSongToGuitarDsl(song);
     assert.ok(dsl.includes('4.d.a.g 4.u.g 4.a 4'));
   });
+
+  it('serializes capo, measure repeat %, melody repeat %, and syllable lyrics', () => {
+    const song: TranscribedSong = {
+      title: 'Players Song',
+      artist: 'YOASOBI',
+      capo: 3,
+      key: 'Eb',
+      bpm: 130,
+      timeSignature: { numerator: 4, denominator: 4 },
+      sections: [
+        {
+          name: 'Verse',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' }
+              ],
+              melody: [
+                { pitch: 'c4', duration: '4', lyric: 'き' },
+                { pitch: 'd4', duration: '4', lyric: 'ょ' },
+                { pitch: 'e4', duration: '4', lyric: 'う' },
+                { pitch: 'g4', duration: '4', lyric: 'は' }
+              ]
+            },
+            {
+              // Exact same chords and rhythm -> | % |
+              // Exact same melody -> mel: | % |
+              chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' }
+              ],
+              melody: [
+                { pitch: 'c4', duration: '4', lyric: 'あ' },
+                { pitch: 'd4', duration: '4', lyric: 'し' },
+                { pitch: 'e4', duration: '4', lyric: 'た' },
+                { pitch: 'g4', duration: '4', lyric: 'も' }
+              ]
+            },
+            {
+              // Different chords, same rhythm -> | F/2 G/2 | % |
+              chords: [{ name: 'F', duration: '2' }, { name: 'G', duration: '2' }],
+              rhythm: [
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' },
+                { duration: '4', direction: 'd' },
+                { duration: '4', direction: 'u' }
+              ],
+              melody: [
+                { pitch: 'a4', duration: '2', lyric: 'ゆ' },
+                { pitch: 'g4', duration: '2', lyric: 'め' }
+              ]
+            },
+            {
+              // Instrumental with measure lyrics, different rhythm
+              chords: [{ name: 'C', duration: '1' }],
+              rhythm: [{ duration: '1', direction: 'd' }],
+              lyrics: 'インスト終了'
+            }
+          ]
+        }
+      ]
+    };
+
+    const dsl = serializeSongToGuitarDsl(song);
+    assert.ok(dsl.includes('capo: 3'));
+    assert.ok(dsl.includes('mel: | c4/4 d4/4 e4/4 g4/4 |'));
+    assert.ok(dsl.includes('lyr: | き ょ う は |'));
+    assert.ok(dsl.includes('| % |'));
+    assert.ok(dsl.includes('mel: | % |'));
+    assert.ok(dsl.includes('lyr: | あ し た も |'));
+    assert.ok(dsl.includes('| F/2 G/2 | % |'));
+    assert.ok(dsl.includes('| C/1 | 1.d l:"インスト終了" |'));
+
+    const parsed = parseGuitarDsl(dsl);
+    const errors = parsed.diagnostics.filter(d => d.severity === 'error');
+    assert.strictEqual(errors.length, 0);
+  });
 });
 
 describe('transcription - YouTube URL validation', () => {

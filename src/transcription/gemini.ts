@@ -8,7 +8,11 @@ import { normalizeYouTubeUrl } from './youtube';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 export const FIXED_TRANSCRIPTION_PROMPT =
-  'Transcribe the guitar chords, rhythm strumming pattern, and main melody line from this YouTube video. ' +
+  'Transcribe the entire guitar chords, rhythm strumming pattern, vocal melody notes, and vocal lyrics from this YouTube video. ' +
+  'IMPORTANT: Transcribe the FULL, COMPLETE song from beginning to end without summarizing or skipping measures. ' +
+  'Cover all sections sequentially (Intro, Verse, Pre-Chorus, Chorus, Bridge, Solo, Outro, etc.) until the video finishes. ' +
+  'Determine the recommended capo position (0..7) to allow playing with easy open guitar chords, and express chords in that play form. ' +
+  'For every vocal melody note, provide pitch, duration, and the syllable (lyric) sung on that note. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
   'sequences within each measure must sum to exactly 4 beats. ' +

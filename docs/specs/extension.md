@@ -120,8 +120,8 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
 - **実行と進捗表示**:
   1. `window.withProgress` により進捗通知を表示。
   2. Gemini API（`@google/genai` の `interactions.create`）へ固定プロンプト、YouTube URL、および JSON Schema（Music IR）を送信。
-  3. 受信したレスポンスの構造バリデーションおよびセマンティックバリデーション（BPM 30..300、4/4 拍子、各小節内合計 4 拍、コード名・音高妥当性）を実施。
-  4. バリデーション済み IR を純粋シリアライザにより決定論的 GuitarDSL テキストへ変換。
+  3. 受信したレスポンスの構造バリデーションおよびセマンティックバリデーション（BPM 30..300、4/4 拍子、各小節内合計 4 拍、コード名・音高妥当性、カポ・歌詞・音節）を実施。
+  4. バリデーション済み IR を純粋シリアライザにより決定論的 GuitarDSL テキストへ変換。推奨カポ設定（`capo:`）、同一パターンの繰り返し（`%` 記号）、およびメロディ音符ごとの音節歌詞（`lyr:`）を活用して出力。
   5. `parseGuitarDsl` により構文検証を実施し、エラー診断が 0 件であることを確認。
   6. 成功時のみ `workspace.openTextDocument({ language: 'guitardsl', content })` を呼び出し、`showTextDocument` で新規エディタとして開く。
   7. 既存ファイルの上書きや自動保存は行わない。
