@@ -462,40 +462,225 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       `;
     }
 
-    // Chord (placed clearly above picking marks: baseline at y = 42)
+    // Chord (placed clearly above picking marks: baseline at y = 32)
     if (m.chord) {
-      barsSvg += `<text x="${bx + 8}" y="42" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
+      barsSvg += `<text x="${bx + 8}" y="32" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
     }
 
-    // Rhythms
-    const rCount = m.rhythms.length;
-    const rStep = (actualBarWidth - 20) / (rCount > 0 ? rCount : 1);
+    // Rhythms with duration calculation, Guitar Pro style slash heads, and beam grouping
     const midY = staveLines[2]; // 3rd line = 86
+    const stemTopY = 60;
 
-    m.rhythms.forEach((r, rIdx) => {
-      const rx = bx + 12 + rIdx * rStep;
-      if (r.isRest) {
-        // Quarter/eighth rest shape
-        barsSvg += `<text x="${rx - 4}" y="${midY + 5}" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">𝄽</text>`;
+    // Helper: calculate beats from duration string
+    function parseDurationToBeats(durationStr: string): number {
+      const clean = durationStr.replace(/^r/, '').toLowerCase();
+      switch (clean) {
+        case '1':
+        case 'w':
+          return 4;
+        case '2':
+        case 'h':
+          return 2;
+        case '4':
+        case 'q':
+          return 1;
+        case '8':
+          return 0.5;
+        case '16':
+          return 0.25;
+        default:
+          return 1;
+      }
+    }
+
+    // Pre-calculate positions and metrics for all rhythm items in this measure
+    interface RenderedRhythm {
+      item: RhythmItem;
+      beats: number;
+      beatOffset: number;
+      rx: number;
+      stemX: number;
+      isWhole: boolean;
+      isHalf: boolean;
+      isQuarterOrShorter: boolean;
+    }
+
+    const rhythmDetails: RenderedRhythm[] = [];
+    const sumBeats = m.rhythms.reduce((acc, r) => acc + parseDurationToBeats(r.duration), 0);
+    const totalBeats = Math.max(4, sumBeats);
+    const padLeft = 14;
+    const padRight = 12;
+    const usableW = actualBarWidth - padLeft - padRight;
+
+    let curBeat = 0;
+    m.rhythms.forEach((r) => {
+      const beats = parseDurationToBeats(r.duration);
+      const cleanDur = r.duration.replace(/^r/, '').toLowerCase();
+      const isWhole = cleanDur === '1' || cleanDur === 'w';
+      const isHalf = cleanDur === '2' || cleanDur === 'h';
+      const isQuarterOrShorter = !isWhole && !isHalf;
+
+      let rx: number;
+      if (m.rhythms.length === 1 && isWhole) {
+        // Center whole note in measure
+        rx = bx + actualBarWidth / 2;
       } else {
-        const opacity = r.ghost ? '0.35' : '1.0';
-        // Slash head centered around midY (86)
-        barsSvg += `<polygon points="${rx-6},${midY+4} ${rx-3},${midY+6} ${rx+6},${midY-3} ${rx+3},${midY-5}" fill="#000" opacity="${opacity}"/>`;
-        // Stem (from y=62 to y=midY-3=83)
-        barsSvg += `<line x1="${rx+4}" y1="62" x2="${rx+4}" y2="${midY-3}" stroke="#000" stroke-width="1.3" opacity="${opacity}"/>`;
+        // Space proportionally to beat offset
+        rx = bx + padLeft + (curBeat / totalBeats) * usableW + (beats / totalBeats) * usableW * 0.2;
+      }
 
-        // Down / Up stroke mark (placed at y=52 to 57, above stem y=62, below chord y=42)
-        const py = 52;
-        if (r.down) {
-          barsSvg += `<path d="M ${rx+1},${py+5} L ${rx+1},${py} L ${rx+7},${py} L ${rx+7},${py+5}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
-        } else if (r.up) {
-          barsSvg += `<path d="M ${rx+1},${py} L ${rx+4},${py+5} L ${rx+7},${py}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
+      const stemX = isWhole ? rx : rx + 6.5;
+
+      rhythmDetails.push({
+        item: r,
+        beats,
+        beatOffset: curBeat,
+        rx,
+        stemX,
+        isWhole,
+        isHalf,
+        isQuarterOrShorter
+      });
+
+      curBeat += beats;
+    });
+
+    // Beam grouping for eighth and sixteenth notes (group by integer beat floor)
+    const beamedIndices = new Set<number>();
+    const beatGroups: Map<number, number[]> = new Map();
+
+    rhythmDetails.forEach((rd, idx) => {
+      if (!rd.item.isRest && rd.beats <= 0.5) {
+        const beatKey = Math.floor(rd.beatOffset);
+        if (!beatGroups.has(beatKey)) {
+          beatGroups.set(beatKey, []);
+        }
+        beatGroups.get(beatKey)!.push(idx);
+      }
+    });
+
+    // Render beams for groups with >= 2 notes
+    beatGroups.forEach((indices) => {
+      if (indices.length >= 2) {
+        indices.forEach(i => beamedIndices.add(i));
+        const first = rhythmDetails[indices[0]];
+        const last = rhythmDetails[indices[indices.length - 1]];
+
+        // Main beam at y = 60
+        barsSvg += `<line x1="${first.stemX}" y1="${stemTopY}" x2="${last.stemX}" y2="${stemTopY}" stroke="#000" stroke-width="3.6" stroke-linecap="butt"/>`;
+
+        // Sub-beam at y = 65 for sixteenth notes
+        // Group consecutive 16th notes
+        let subStart: RenderedRhythm | null = null;
+        let subEnd: RenderedRhythm | null = null;
+
+        for (let i = 0; i < indices.length; i++) {
+          const rd = rhythmDetails[indices[i]];
+          if (rd.beats <= 0.25) {
+            if (!subStart) subStart = rd;
+            subEnd = rd;
+          } else {
+            if (subStart && subEnd) {
+              if (subStart === subEnd) {
+                // Fractional beam (flaglet towards neighbor)
+                const fracX = (i === 0) ? subStart.stemX + 6 : subStart.stemX - 6;
+                barsSvg += `<line x1="${subStart.stemX}" y1="${stemTopY + 5}" x2="${fracX}" y2="${stemTopY + 5}" stroke="#000" stroke-width="2.4" stroke-linecap="butt"/>`;
+              } else {
+                barsSvg += `<line x1="${subStart.stemX}" y1="${stemTopY + 5}" x2="${subEnd.stemX}" y2="${stemTopY + 5}" stroke="#000" stroke-width="2.4" stroke-linecap="butt"/>`;
+              }
+              subStart = null;
+              subEnd = null;
+            }
+          }
+        }
+        if (subStart && subEnd) {
+          if (subStart === subEnd) {
+            const fracX = (subStart === last) ? subStart.stemX - 6 : subStart.stemX + 6;
+            barsSvg += `<line x1="${subStart.stemX}" y1="${stemTopY + 5}" x2="${fracX}" y2="${stemTopY + 5}" stroke="#000" stroke-width="2.4" stroke-linecap="butt"/>`;
+          } else {
+            barsSvg += `<line x1="${subStart.stemX}" y1="${stemTopY + 5}" x2="${subEnd.stemX}" y2="${stemTopY + 5}" stroke="#000" stroke-width="2.4" stroke-linecap="butt"/>`;
+          }
+        }
+      }
+    });
+
+    // Render individual rhythm items
+    rhythmDetails.forEach((rd, rIdx) => {
+      const r = rd.item;
+      const rx = rd.rx;
+      const stemX = rd.stemX;
+      const opacity = r.ghost ? '0.35' : '1.0';
+
+      if (r.isRest) {
+        const cleanDur = r.duration.replace(/^r/, '').toLowerCase();
+        if (cleanDur === '1' || cleanDur === 'w') {
+          // Whole rest: hanging from 4th stave line (index 1: y = 78)
+          barsSvg += `<rect x="${rx - 6}" y="${staveLines[1]}" width="12" height="5" fill="#000"/>`;
+        } else if (cleanDur === '2' || cleanDur === 'h') {
+          // Half rest: sitting on 3rd stave line (index 2: y = 86)
+          barsSvg += `<rect x="${rx - 6}" y="${staveLines[2] - 5}" width="12" height="5" fill="#000"/>`;
+        } else if (cleanDur === '8') {
+          // Eighth rest vector
+          barsSvg += `<g transform="translate(${rx}, ${midY})">
+            <circle cx="-2" cy="-5" r="2.4" fill="#000"/>
+            <path d="M -0.2,-5 C 1.2,-5 2.8,-6.2 3.8,-8.5 L 4.5,-8.5 C 3.2,-3.5 0.5,3.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-1.5 1.5,-4.5 C 0.8,-4.2 0.2,-4.2 -0.2,-4.2 Z" fill="#000"/>
+          </g>`;
+        } else if (cleanDur === '16') {
+          // Sixteenth rest vector
+          barsSvg += `<g transform="translate(${rx}, ${midY})">
+            <circle cx="-2" cy="-8" r="2.2" fill="#000"/>
+            <circle cx="-3" cy="-1" r="2.2" fill="#000"/>
+            <path d="M -0.2,-8 C 1.2,-8 2.5,-9.2 3.5,-11.5 L 4.2,-11.5 C 3.0,-6.5 0.5,2.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-2.5 1.5,-5.5 C 0.8,-5.2 0.2,-5.2 -0.2,-5.2 Z" fill="#000"/>
+            <path d="M -1.2,-1 C 0.2,-1 1.5,-2.2 2.5,-4.5 L 3.2,-4.5 C 2.5,-1.5 1.5,2.5 -0.5,5.5 L -1.5,5.0 C 0,-1.0 0.5,-3.0 0.5,-3.0 Z" fill="#000"/>
+          </g>`;
+        } else {
+          // Quarter rest vector (default)
+          barsSvg += `<g transform="translate(${rx}, ${midY})">
+            <path d="M 1.2,-14.5 C 1.8,-15.5 2.8,-16 4.0,-16 C 5.5,-16 6.8,-14.8 6.8,-13.2 C 6.8,-11.5 5.2,-9.8 3.5,-8.2 L -1.5,-3.5 C -0.8,-3.2 0,-3.2 0.8,-3.2 C 3.2,-3.2 5.2,-1.5 5.2,1.2 C 5.2,3.2 3.8,4.8 1.8,5.8 L -2.5,7.8 C -3.8,8.5 -4.8,9.8 -4.8,11.2 C -4.8,13.2 -3.0,14.8 -0.8,14.8 C 0.5,14.8 1.8,14.2 2.8,13.2 L 3.5,14.2 C 2.2,15.5 0.8,16.2 -0.8,16.2 C -3.8,16.2 -6.2,13.8 -6.2,10.8 C -6.2,8.8 -4.8,7.0 -2.8,6.0 L 1.2,4.0 C 2.5,3.2 3.2,2.2 3.2,1.2 C 3.2,-0.2 2.0,-1.5 0.5,-1.5 C -0.5,-1.5 -1.5,-1.0 -2.5,-0.2 L -3.8,-1.5 L 1.2,-6.2 C -0.5,-7.8 -2.2,-9.5 -2.2,-11.5 C -2.2,-13.8 0,-15.8 2.2,-16 L 1.2,-14.5 Z" fill="#000"/>
+          </g>`;
+        }
+      } else {
+        // Guitar Pro style slash heads
+        if (rd.isWhole) {
+          // Whole note: wide white slash, no stem
+          barsSvg += `<polygon points="${rx - 12},${midY + 7} ${rx},${midY + 7} ${rx + 12},${midY - 7} ${rx},${midY - 7}" fill="#fff"/>`;
+          barsSvg += `<path d="M ${rx - 12},${midY + 7} L ${rx},${midY + 7} L ${rx + 12},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 8.5},${midY + 5.2} L ${rx - 1.5},${midY + 5.2} L ${rx + 8.5},${midY - 5.2} L ${rx + 1.5},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
+        } else if (rd.isHalf) {
+          // Half note: white slash with stem cleanly attached at top-right corner
+          barsSvg += `<line x1="${stemX}" y1="${stemTopY}" x2="${stemX}" y2="${midY - 7}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
+          barsSvg += `<polygon points="${rx - 6.5},${midY + 7} ${rx + 0.5},${midY + 7} ${rx + 7},${midY - 7} ${rx},${midY - 7}" fill="#fff"/>`;
+          barsSvg += `<path d="M ${rx - 6.5},${midY + 7} L ${rx + 0.5},${midY + 7} L ${rx + 7},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 3.8},${midY + 5.2} L ${rx - 0.8},${midY + 5.2} L ${rx + 4.2},${midY - 5.2} L ${rx + 1.2},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
+        } else {
+          // Quarter or shorter: solid black slash with stem
+          barsSvg += `<line x1="${stemX}" y1="${stemTopY}" x2="${stemX}" y2="${midY - 7}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
+          barsSvg += `<polygon points="${rx - 5.5},${midY + 7} ${rx},${midY + 7} ${rx + 6.5},${midY - 7} ${rx + 1},${midY - 7}" fill="#000" opacity="${opacity}"/>`;
+
+          // If not beamed, draw flag for eighth / sixteenth notes
+          if (!beamedIndices.has(rIdx)) {
+            if (rd.beats === 0.5) {
+              // 8th flag
+              barsSvg += `<path d="M ${stemX},${stemTopY} C ${stemX + 4},${stemTopY + 4} ${stemX + 6},${stemTopY + 8} ${stemX + 6},${stemTopY + 13} C ${stemX + 4},${stemTopY + 10} ${stemX + 2},${stemTopY + 8} ${stemX},${stemTopY + 6} Z" fill="#000" opacity="${opacity}"/>`;
+            } else if (rd.beats <= 0.25) {
+              // 16th double flag
+              barsSvg += `<path d="M ${stemX},${stemTopY} C ${stemX + 4},${stemTopY + 4} ${stemX + 6},${stemTopY + 8} ${stemX + 6},${stemTopY + 13} C ${stemX + 4},${stemTopY + 10} ${stemX + 2},${stemTopY + 8} ${stemX},${stemTopY + 6} Z" fill="#000" opacity="${opacity}"/>`;
+              barsSvg += `<path d="M ${stemX},${stemTopY + 5} C ${stemX + 4},${stemTopY + 9} ${stemX + 6},${stemTopY + 13} ${stemX + 6},${stemTopY + 18} C ${stemX + 4},${stemTopY + 15} ${stemX + 2},${stemTopY + 13} ${stemX},${stemTopY + 11} Z" fill="#000" opacity="${opacity}"/>`;
+            }
+          }
         }
 
-        // Accent (placed at y=46 to 51)
-        const ay = 46;
+        // Down / Up stroke mark (placed at y = 47 to 52, above stemTopY = 60, below chord baseline = 32)
+        const py = 47;
+        const markX = rd.isWhole ? rx : stemX;
+        if (r.down) {
+          barsSvg += `<path d="M ${markX - 3},${py + 5} L ${markX - 3},${py} L ${markX + 3},${py} L ${markX + 3},${py + 5}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+        } else if (r.up) {
+          barsSvg += `<path d="M ${markX - 3},${py} L ${markX},${py + 5} L ${markX + 3},${py}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+        }
+
+        // Accent (placed at y = 38 to 44, between chord baseline = 32 and stroke mark = 47)
+        const ay = 38;
         if (r.accent) {
-          barsSvg += `<path d="M ${rx+1},${ay} L ${rx+7},${ay+3} L ${rx+1},${ay+6}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+          barsSvg += `<path d="M ${markX - 3},${ay} L ${markX + 3},${ay + 3} L ${markX - 3},${ay + 6}" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`;
         }
       }
     });
