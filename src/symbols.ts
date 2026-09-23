@@ -60,8 +60,8 @@ export class GuitarDslDocumentSymbolProvider implements vscode.DocumentSymbolPro
         continue;
       }
 
-      // Metadata headers: title, artist, capo, key, original_key, tempo, bpm, memo
-      const headerMatch = text.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo):\s*(.*)$/i);
+      // Metadata headers: title, artist, capo, key, original_key, tempo, bpm, memo, style properties
+      const headerMatch = text.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size|text_size)):\s*(.*)$/i);
       if (headerMatch) {
         const key = headerMatch[1];
         const val = headerMatch[2].trim();

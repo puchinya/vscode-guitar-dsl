@@ -91,6 +91,26 @@ function parseChordToken(tok: string): { name: string; duration?: number } | nul
   };
 }
 
+export interface ScoreStyle {
+  chordSize?: number;
+  lyricSize?: number;
+  titleSize?: number;
+  sectionSize?: number;
+  fontSize?: number;
+}
+
+export type PageSize = 'A4' | 'A3' | 'A5' | 'B4' | 'B5' | 'Letter';
+export type PageOrientation = 'portrait' | 'landscape';
+
+export const PAGE_CONFIG: Record<PageSize, { widthMm: number; heightMm: number; name: string }> = {
+  A4: { widthMm: 210, heightMm: 297, name: 'A4' },
+  A3: { widthMm: 297, heightMm: 420, name: 'A3' },
+  A5: { widthMm: 148, heightMm: 210, name: 'A5' },
+  B4: { widthMm: 250, heightMm: 353, name: 'B4' },
+  B5: { widthMm: 176, heightMm: 250, name: 'B5' },
+  Letter: { widthMm: 215.9, heightMm: 279.4, name: 'Letter' }
+};
+
 export interface ScorePage {
   pageNumber: number;
   measures: MeasureData[];
@@ -103,12 +123,13 @@ export interface ParsedScore {
   originalKey: string;
   bpm: string;
   memo: string;
+  style: ScoreStyle;
   usedChords: string[];
   measures: MeasureData[];
   pages: ScorePage[];
 }
 
-function parseGuitarDsl(dslContent: string): ParsedScore {
+export function parseGuitarDsl(dslContent: string): ParsedScore {
   const lines = dslContent.split(/\r?\n/);
   
   let title = 'Guitar Rhythm Score';
@@ -117,6 +138,7 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
   let originalKey = 'C';
   let bpm = '90';
   let memo = '';
+  const style: ScoreStyle = {};
   
   const measures: MeasureData[] = [];
   const pages: ScorePage[] = [{ pageNumber: 1, measures: [] }];
@@ -138,9 +160,9 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
     }
 
     // Headers
-    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo):\s*(.*)$/i);
+    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i);
     if (headerMatch) {
-      const key = headerMatch[1].toLowerCase();
+      const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
       if (key === 'title') title = val;
       else if (key === 'artist') artist = val;
@@ -148,6 +170,22 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
       else if (key === 'key' || key === 'original_key') originalKey = val;
       else if (key === 'bpm' || key === 'tempo') bpm = val;
       else if (key === 'memo') memo = val;
+      else if (key === 'chord_size') {
+        const n = parseFloat(val);
+        if (!isNaN(n) && n > 0) style.chordSize = n;
+      } else if (key === 'lyric_size') {
+        const n = parseFloat(val);
+        if (!isNaN(n) && n > 0) style.lyricSize = n;
+      } else if (key === 'title_size') {
+        const n = parseFloat(val);
+        if (!isNaN(n) && n > 0) style.titleSize = n;
+      } else if (key === 'section_size') {
+        const n = parseFloat(val);
+        if (!isNaN(n) && n > 0) style.sectionSize = n;
+      } else if (key === 'font_size') {
+        const n = parseFloat(val);
+        if (!isNaN(n) && n > 0) style.fontSize = n;
+      }
       continue;
     }
 
@@ -345,6 +383,7 @@ function parseGuitarDsl(dslContent: string): ParsedScore {
     originalKey,
     bpm,
     memo,
+    style,
     usedChords: Array.from(usedChordsSet),
     measures,
     pages: validPages
@@ -368,43 +407,108 @@ export function compileGuitarDslToHtml(dslContent: string): string {
   const sysHeight = 140;
   const totalPages = score.pages.length;
 
-  let pagesHtml = '';
-  for (const page of score.pages) {
-    let pageSystemsSvg = '';
-    for (let i = 0; i < page.measures.length; i += measuresPerRow) {
-      const rowMeasures = page.measures.slice(i, i + measuresPerRow);
-      const isFirstRowOfScore = (page.pageNumber === 1 && i === 0);
-      pageSystemsSvg += renderSystemRow(rowMeasures, isFirstRowOfScore, barWidth, sysHeight, sysWidth);
+  const spreadGroups: string[] = [];
+  for (let pIdx = 0; pIdx < score.pages.length; pIdx += 2) {
+    const page1 = score.pages[pIdx];
+    const page2 = (pIdx + 1 < score.pages.length) ? score.pages[pIdx + 1] : null;
+
+    let p1Systems = '';
+    for (let i = 0; i < page1.measures.length; i += measuresPerRow) {
+      const rowMeasures = page1.measures.slice(i, i + measuresPerRow);
+      const isFirstRow = (page1.pageNumber === 1 && i === 0);
+      p1Systems += renderSystemRow(rowMeasures, isFirstRow, barWidth, sysHeight, sysWidth, score.style);
+    }
+    const p1Html = `
+      <div class="sheet-page" data-page="${page1.pageNumber}">
+        ${page1.pageNumber === 1 ? `
+          <div class="score-header">
+            <div class="title-area">
+              <h1 style="font-size: ${score.style.titleSize ?? 20}pt;">${escapeXml(title)}</h1>
+              <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
+            </div>
+            <div class="play-info">
+              <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
+              <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+            </div>
+          </div>
+          ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+        ` : `
+          <div class="running-header">
+            <div class="running-title">${escapeXml(title)}</div>
+            <div class="running-page">- ${page1.pageNumber} -</div>
+          </div>
+        `}
+        <div class="score-sheet">
+          ${p1Systems}
+        </div>
+        <div class="page-footer">
+          <span>${page1.pageNumber} / ${totalPages}</span>
+        </div>
+      </div>
+    `;
+
+    let p2Html = '';
+    if (page2) {
+      let p2Systems = '';
+      for (let i = 0; i < page2.measures.length; i += measuresPerRow) {
+        const rowMeasures = page2.measures.slice(i, i + measuresPerRow);
+        p2Systems += renderSystemRow(rowMeasures, false, barWidth, sysHeight, sysWidth, score.style);
+      }
+      p2Html = `
+        <div class="sheet-page" data-page="${page2.pageNumber}">
+          <div class="running-header">
+            <div class="running-title">${escapeXml(title)}</div>
+            <div class="running-page">- ${page2.pageNumber} -</div>
+          </div>
+          <div class="score-sheet">
+            ${p2Systems}
+          </div>
+          <div class="page-footer">
+            <span>${page2.pageNumber} / ${totalPages}</span>
+          </div>
+        </div>
+      `;
     }
 
-    pagesHtml += `
-    <div class="sheet-page" data-page="${page.pageNumber}">
-      ${page.pageNumber === 1 ? `
-        <div class="score-header">
-          <div class="title-area">
-            <h1>${escapeXml(title)}</h1>
-            <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
-          </div>
-          <div class="play-info">
-            <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
-            <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
-          </div>
-        </div>
-        ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
-      ` : `
-        <div class="running-header">
-          <div class="running-title">${escapeXml(title)}</div>
-          <div class="running-page">- ${page.pageNumber} -</div>
-        </div>
-      `}
-      <div class="score-sheet">
-        ${pageSystemsSvg}
+    spreadGroups.push(`
+      <div class="spread-sheet" data-spread="${Math.floor(pIdx / 2) + 1}">
+        ${p1Html}
+        ${p2Html}
       </div>
-      <div class="page-footer">
-        <span>${page.pageNumber} / ${totalPages}</span>
-      </div>
-    </div>`;
+    `);
   }
+  const pagesHtml = spreadGroups.join('\n');
+
+  // Web mode: continuous seamless score
+  let webScoreContent = `
+    <div class="score-header">
+      <div class="title-area">
+        <h1 style="font-size: ${score.style.titleSize ?? 20}pt;">${escapeXml(title)}</h1>
+        <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
+      </div>
+      <div class="play-info">
+        <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
+        <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+      </div>
+    </div>
+    ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+    <div class="score-sheet">
+  `;
+
+  for (let pIdx = 0; pIdx < score.pages.length; pIdx++) {
+    const page = score.pages[pIdx];
+    if (pIdx > 0) {
+      webScoreContent += `<div class="web-page-separator"><span>PAGE BREAK (${page.pageNumber})</span></div>`;
+    }
+    for (let i = 0; i < page.measures.length; i += measuresPerRow) {
+      const rowMeasures = page.measures.slice(i, i + measuresPerRow);
+      const isFirstRow = (pIdx === 0 && i === 0);
+      webScoreContent += renderSystemRow(rowMeasures, isFirstRow, barWidth, sysHeight, sysWidth, score.style);
+    }
+  }
+  webScoreContent += `</div>`;
+
+  const baseFontSize = score.style.fontSize ?? 10;
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -413,10 +517,6 @@ export function compileGuitarDslToHtml(dslContent: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeXml(title)}</title>
 <style>
-  @page {
-    size: A4 portrait;
-    margin: 12mm 14mm 12mm 14mm;
-  }
   * {
     box-sizing: border-box;
     -webkit-print-color-adjust: exact;
@@ -424,9 +524,10 @@ export function compileGuitarDslToHtml(dslContent: string): string {
   }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    font-size: ${baseFontSize}pt;
     color: #111;
     margin: 0;
-    padding: 66px 16px 32px 16px;
+    padding: 66px 16px 36px 16px;
     background: #e9ecef;
     min-height: 100vh;
   }
@@ -488,35 +589,20 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     color: #ffffff;
     font-weight: 600;
   }
-  .nav-btn {
-    background: #333333;
+  .tool-select {
+    background: #1e1e1e;
     color: #eeeeee;
-    border: 1px solid #444444;
-    padding: 4px 12px;
-    font-size: 12px;
-    font-weight: 500;
+    border: 1px solid #3c3c3c;
     border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
     cursor: pointer;
-    transition: all 0.15s ease;
   }
-  .nav-btn:hover:not(:disabled) {
-    background: #444444;
-    color: #ffffff;
-    border-color: #666;
+  .tool-select:focus {
+    outline: 1px solid #007acc;
   }
-  .nav-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-  .page-status {
-    font-size: 13px;
-    font-weight: 600;
-    color: #ffffff;
-    min-width: 65px;
-    text-align: center;
-  }
-  .btn-print {
-    background: #107c41;
+  .btn-pdf {
+    background: #007acc;
     color: #fff;
     border: none;
     padding: 6px 14px;
@@ -529,11 +615,11 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     gap: 6px;
     transition: background 0.15s ease;
   }
-  .btn-print:hover {
-    background: #0b5a2f;
+  .btn-pdf:hover {
+    background: #0062a3;
   }
 
-  /* Sheet Page */
+  /* Sheet Page (Base) */
   .sheet-page {
     background: #ffffff;
     padding: 24px 28px 20px 28px;
@@ -545,41 +631,120 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     position: relative;
   }
 
-  /* Display Modes */
-  /* Single Page Mode (Default) */
-  body[data-display-mode="single"] .sheet-page {
-    display: none;
-    margin: 0 auto;
-  }
-  body[data-display-mode="single"] .sheet-page.active {
+  /* Single Page Mode (Default): Vertical scrolling of pages like Word / PDF viewer */
+  body[data-display-mode="single"] .sheet-pages-wrapper {
     display: block;
   }
+  body[data-display-mode="single"] .spread-sheet {
+    display: contents;
+  }
+  body[data-display-mode="single"] .sheet-page {
+    display: block;
+    margin: 0 auto 28px auto;
+  }
+  body[data-display-mode="single"] .web-score-container {
+    display: none;
+  }
 
-  /* Spread Mode (見開き) */
-  body[data-display-mode="spread"] .pages-wrapper {
+  /* Spread Mode (見開き): 2 pages side-by-side */
+  body[data-display-mode="spread"] .sheet-pages-wrapper {
+    display: block;
+  }
+  body[data-display-mode="spread"] .spread-sheet {
     display: flex;
     flex-direction: row;
     justify-content: center;
     align-items: flex-start;
-    gap: 20px;
+    gap: 24px;
     max-width: 1720px;
-    margin: 0 auto;
+    margin: 0 auto 28px auto;
   }
   body[data-display-mode="spread"] .sheet-page {
-    display: none;
+    display: block;
     flex: 1 1 0;
     max-width: 840px;
     min-width: 380px;
     margin: 0;
   }
-  body[data-display-mode="spread"] .sheet-page.active-spread {
-    display: block;
+  body[data-display-mode="spread"] .web-score-container {
+    display: none;
   }
 
-  /* Web Mode (連続スクロール) */
-  body[data-display-mode="web"] .sheet-page {
+  /* Landscape (横向き・見開き印刷): spread-sheet becomes a single landscape card */
+  body[data-orientation="landscape"] .sheet-pages-wrapper {
     display: block;
-    margin: 0 auto 28px auto;
+  }
+  body[data-orientation="landscape"] .spread-sheet {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 32px;
+    background: #ffffff;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+    border-radius: 2px;
+    padding: 24px 32px 20px 32px;
+    max-width: 1300px;
+    margin: 0 auto 32px auto;
+    position: relative;
+    box-sizing: border-box;
+  }
+  body[data-orientation="landscape"] .spread-sheet::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 24px;
+    bottom: 24px;
+    border-left: 1px dashed #ccc;
+  }
+  body[data-orientation="landscape"] .sheet-page {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    flex: 1 1 0;
+    max-width: calc(50% - 16px);
+    margin: 0;
+  }
+  body[data-orientation="landscape"] .sheet-page.empty-page {
+    visibility: hidden;
+  }
+  body[data-orientation="landscape"] .web-score-container {
+    display: none;
+  }
+
+  /* Web Mode (シームレス連続スクロール) */
+  body[data-display-mode="web"] .sheet-pages-wrapper {
+    display: none;
+  }
+  body[data-display-mode="web"] .web-score-container {
+    display: block;
+    background: #ffffff;
+    padding: 28px 32px 32px 32px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 860px;
+    border-radius: 2px;
+    margin: 0 auto 32px auto;
+  }
+  .web-page-separator {
+    display: flex;
+    align-items: center;
+    margin: 20px 0 16px 0;
+    color: #888;
+    font-size: 8.5pt;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .web-page-separator::before,
+  .web-page-separator::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px dashed #bbb;
+  }
+  .web-page-separator span {
+    padding: 0 12px;
+    font-weight: bold;
+    color: #777;
   }
 
   /* Header (Page 1) */
@@ -592,7 +757,6 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     align-items: flex-end;
   }
   .title-area h1 {
-    font-size: 20pt;
     margin: 0 0 3px 0;
     font-weight: 900;
     letter-spacing: -0.5px;
@@ -675,183 +839,105 @@ export function compileGuitarDslToHtml(dslContent: string): string {
     height: auto;
     display: block;
   }
-
-  /* Print Styles */
-  @media print {
-    body {
-      background: #ffffff !important;
-      padding: 0 !important;
-      margin: 0 !important;
-    }
-    .toolbar-container {
-      display: none !important;
-    }
-    .pages-wrapper {
-      display: block !important;
-      max-width: 100% !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    .sheet-page {
-      display: block !important;
-      box-shadow: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      max-width: 100% !important;
-      width: 100% !important;
-      border-radius: 0 !important;
-      page-break-after: always !important;
-      break-after: page !important;
-    }
-    .sheet-page:last-child {
-      page-break-after: auto !important;
-      break-after: auto !important;
-    }
-    .page-footer {
-      border-top: none !important;
-    }
-  }
 </style>
 </head>
-<body data-display-mode="single">
+<body data-display-mode="single" data-orientation="portrait" data-page-size="A4">
   <div class="toolbar-container">
     <div class="toolbar-left">
       <span class="toolbar-label">表示</span>
       <div class="segmented-control">
-        <button class="tool-btn active" data-mode="single" title="1ページ単位表示（デフォルト）">1ページ</button>
-        <button class="tool-btn" data-mode="spread" title="見開き表示">見開き</button>
-        <button class="tool-btn" data-mode="web" title="Web表示（連続スクロール）">Web</button>
+        <button class="tool-btn active" data-mode="single" title="1ページ単位表示（縦スクロール）">1ページ</button>
+        <button class="tool-btn" data-mode="spread" title="見開き表示（2ページ横並び）">見開き</button>
+        <button class="tool-btn" data-mode="web" title="Web表示（用紙枠なしシームレススクロール）">Web</button>
       </div>
     </div>
 
-    <div class="toolbar-center" id="pagination-controls">
-      <button class="nav-btn" id="prev-page" title="前のページ (←)">&lt; 前へ</button>
-      <span class="page-status" id="page-status">1 / ${totalPages}</span>
-      <button class="nav-btn" id="next-page" title="次のページ (→)">次へ &gt;</button>
+    <div class="toolbar-center">
+      <span class="toolbar-label">用紙</span>
+      <select id="select-page-size" class="tool-select" title="用紙サイズ">
+        <option value="A4" selected>A4 (210×297mm)</option>
+        <option value="A3">A3 (297×420mm)</option>
+        <option value="A5">A5 (148×210mm)</option>
+        <option value="B4">B4 (250×353mm)</option>
+        <option value="B5">B5 (176×250mm)</option>
+        <option value="Letter">Letter (8.5×11")</option>
+      </select>
+      <span class="toolbar-label" style="margin-left: 8px;">向き</span>
+      <div class="segmented-control">
+        <button class="tool-btn active" data-orientation="portrait" title="縦向き">縦</button>
+        <button class="tool-btn" data-orientation="landscape" title="横向き（見開き印刷）">横（見開き）</button>
+      </div>
     </div>
 
     <div class="toolbar-right">
-      <button class="btn-print" onclick="window.print()" title="A4印刷またはPDF出力">A4印刷 / PDF保存</button>
+      <button class="btn-pdf" id="btn-save-pdf" title="選択中の用紙サイズと向きでPDFを保存">📄 PDF保存</button>
     </div>
   </div>
 
-  <div class="pages-wrapper">
+  <div class="sheet-pages-wrapper">
     ${pagesHtml}
+  </div>
+
+  <div class="web-score-container">
+    ${webScoreContent}
   </div>
 
   <script>
     (function() {
       const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
-      const totalPages = ${totalPages};
       let currentMode = 'single';
-      let currentPage = 1;
+      let currentOrientation = 'portrait';
+      let currentPageSize = 'A4';
 
-      // Restore state if available
       if (vscode) {
         const state = vscode.getState();
         if (state) {
           if (state.currentMode && ['single', 'spread', 'web'].includes(state.currentMode)) {
             currentMode = state.currentMode;
           }
-          if (typeof state.currentPage === 'number' && state.currentPage >= 1 && state.currentPage <= totalPages) {
-            currentPage = state.currentPage;
+          if (state.currentOrientation && ['portrait', 'landscape'].includes(state.currentOrientation)) {
+            currentOrientation = state.currentOrientation;
+          }
+          if (state.currentPageSize) {
+            currentPageSize = state.currentPageSize;
           }
         }
       }
 
       function saveState() {
         if (vscode) {
-          vscode.setState({ currentMode, currentPage });
+          vscode.setState({
+            currentMode,
+            currentOrientation,
+            currentPageSize
+          });
         }
       }
 
       const body = document.body;
-      const paginationControls = document.getElementById('pagination-controls');
-      const prevBtn = document.getElementById('prev-page');
-      const nextBtn = document.getElementById('next-page');
-      const pageStatus = document.getElementById('page-status');
-      const modeButtons = document.querySelectorAll('.tool-btn');
-      const pages = document.querySelectorAll('.sheet-page');
+      const modeButtons = document.querySelectorAll('.tool-btn[data-mode]');
+      const orientationButtons = document.querySelectorAll('.tool-btn[data-orientation]');
+      const pageSizeSelect = document.getElementById('select-page-size');
+      const savePdfBtn = document.getElementById('btn-save-pdf');
+
+      if (pageSizeSelect) {
+        pageSizeSelect.value = currentPageSize;
+      }
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
+        body.setAttribute('data-orientation', currentOrientation);
+        body.setAttribute('data-page-size', currentPageSize);
 
         modeButtons.forEach(btn => {
           btn.classList.toggle('active', btn.getAttribute('data-mode') === currentMode);
         });
 
-        pages.forEach(p => {
-          p.classList.remove('active', 'active-spread');
+        orientationButtons.forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-orientation') === currentOrientation);
         });
 
-        if (currentMode === 'web') {
-          paginationControls.style.visibility = 'hidden';
-          pages.forEach(p => p.classList.add('active'));
-          saveState();
-          return;
-        }
-
-        paginationControls.style.visibility = 'visible';
-
-        if (currentMode === 'single') {
-          const el = document.querySelector('.sheet-page[data-page="' + currentPage + '"]');
-          if (el) el.classList.add('active');
-          pageStatus.textContent = currentPage + ' / ' + totalPages;
-          prevBtn.disabled = (currentPage <= 1);
-          nextBtn.disabled = (currentPage >= totalPages);
-        } else if (currentMode === 'spread') {
-          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
-          const p2 = (p1 + 1 <= totalPages) ? p1 + 1 : null;
-
-          const el1 = document.querySelector('.sheet-page[data-page="' + p1 + '"]');
-          if (el1) el1.classList.add('active-spread');
-
-          if (p2) {
-            const el2 = document.querySelector('.sheet-page[data-page="' + p2 + '"]');
-            if (el2) el2.classList.add('active-spread');
-            pageStatus.textContent = p1 + '-' + p2 + ' / ' + totalPages;
-          } else {
-            pageStatus.textContent = p1 + ' / ' + totalPages;
-          }
-
-          prevBtn.disabled = (p1 <= 1);
-          nextBtn.disabled = (p1 + 1 >= totalPages || p2 === null);
-        }
-
         saveState();
-      }
-
-      function prevPage() {
-        if (currentMode === 'single') {
-          if (currentPage > 1) {
-            currentPage--;
-            updateView();
-          }
-        } else if (currentMode === 'spread') {
-          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
-          if (p1 > 2) {
-            currentPage = p1 - 2;
-            updateView();
-          } else if (p1 > 1) {
-            currentPage = 1;
-            updateView();
-          }
-        }
-      }
-
-      function nextPage() {
-        if (currentMode === 'single') {
-          if (currentPage < totalPages) {
-            currentPage++;
-            updateView();
-          }
-        } else if (currentMode === 'spread') {
-          const p1 = (currentPage % 2 === 1) ? currentPage : currentPage - 1;
-          if (p1 + 2 <= totalPages) {
-            currentPage = p1 + 2;
-            updateView();
-          }
-        }
       }
 
       modeButtons.forEach(btn => {
@@ -861,29 +947,319 @@ export function compileGuitarDslToHtml(dslContent: string): string {
         });
       });
 
-      prevBtn.addEventListener('click', prevPage);
-      nextBtn.addEventListener('click', nextPage);
-
-      window.addEventListener('keydown', (e) => {
-        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-          return;
-        }
-        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-          prevPage();
-        } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
-          nextPage();
-        }
+      orientationButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentOrientation = btn.getAttribute('data-orientation');
+          updateView();
+        });
       });
 
-      window.addEventListener('message', event => {
-        if (event.data && event.data.command === 'print') {
-          window.print();
-        }
-      });
+      if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', (e) => {
+          currentPageSize = e.target.value;
+          updateView();
+        });
+      }
+
+      if (savePdfBtn) {
+        savePdfBtn.addEventListener('click', () => {
+          if (vscode) {
+            vscode.postMessage({
+              command: 'savePdf',
+              pageSize: currentPageSize,
+              orientation: currentOrientation
+            });
+          }
+        });
+      }
 
       updateView();
     })();
   </script>
+</body>
+</html>`;
+}
+
+export function compileGuitarDslToPrintHtml(
+  dslContent: string,
+  pageSize: PageSize = 'A4',
+  orientation: PageOrientation = 'portrait'
+): string {
+  const score = parseGuitarDsl(dslContent);
+  const { title, artist, capo, originalKey, bpm } = score;
+
+  let chordSvgs = '';
+  for (const chord of score.usedChords) {
+    const frets = CHORD_LIBRARY[chord] || ['x', 'x', 'o', 2, 3, 2];
+    chordSvgs += renderChordDiagram(chord, frets);
+  }
+
+  const measuresPerRow = 4;
+  const sysWidth = 780;
+  const barWidth = sysWidth / measuresPerRow;
+  const sysHeight = 140;
+  const totalPages = score.pages.length;
+
+  const spreadGroups: string[] = [];
+  if (orientation === 'landscape') {
+    // 2-up Spread print
+    for (let pIdx = 0; pIdx < score.pages.length; pIdx += 2) {
+      const page1 = score.pages[pIdx];
+      const page2 = (pIdx + 1 < score.pages.length) ? score.pages[pIdx + 1] : null;
+
+      let p1Systems = '';
+      for (let i = 0; i < page1.measures.length; i += measuresPerRow) {
+        const rowMeasures = page1.measures.slice(i, i + measuresPerRow);
+        const isFirst = (page1.pageNumber === 1 && i === 0);
+        p1Systems += renderSystemRow(rowMeasures, isFirst, barWidth, sysHeight, sysWidth, score.style);
+      }
+      const p1Html = `
+        <div class="sheet-page" data-page="${page1.pageNumber}">
+          ${page1.pageNumber === 1 ? `
+            <div class="score-header">
+              <div class="title-area">
+                <h1 style="font-size: ${score.style.titleSize ?? 18}pt;">${escapeXml(title)}</h1>
+                <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
+              </div>
+              <div class="play-info">
+                <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
+                <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+              </div>
+            </div>
+            ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+          ` : `
+            <div class="running-header">
+              <div class="running-title">${escapeXml(title)}</div>
+              <div class="running-page">- ${page1.pageNumber} -</div>
+            </div>
+          `}
+          <div class="score-sheet">
+            ${p1Systems}
+          </div>
+          <div class="page-footer">
+            <span>${page1.pageNumber} / ${totalPages}</span>
+          </div>
+        </div>
+      `;
+
+      let p2Html = '';
+      if (page2) {
+        let p2Systems = '';
+        for (let i = 0; i < page2.measures.length; i += measuresPerRow) {
+          const rowMeasures = page2.measures.slice(i, i + measuresPerRow);
+          p2Systems += renderSystemRow(rowMeasures, false, barWidth, sysHeight, sysWidth, score.style);
+        }
+        p2Html = `
+          <div class="sheet-page" data-page="${page2.pageNumber}">
+            <div class="running-header">
+              <div class="running-title">${escapeXml(title)}</div>
+              <div class="running-page">- ${page2.pageNumber} -</div>
+            </div>
+            <div class="score-sheet">
+              ${p2Systems}
+            </div>
+            <div class="page-footer">
+              <span>${page2.pageNumber} / ${totalPages}</span>
+            </div>
+          </div>
+        `;
+      } else {
+        p2Html = `<div class="sheet-page empty-page"></div>`;
+      }
+
+      spreadGroups.push(`
+        <div class="spread-sheet">
+          ${p1Html}
+          ${p2Html}
+        </div>
+      `);
+    }
+  } else {
+    // Portrait: 1 page per sheet
+    for (let pIdx = 0; pIdx < score.pages.length; pIdx++) {
+      const page = score.pages[pIdx];
+      let pageSystems = '';
+      for (let i = 0; i < page.measures.length; i += measuresPerRow) {
+        const rowMeasures = page.measures.slice(i, i + measuresPerRow);
+        const isFirst = (page.pageNumber === 1 && i === 0);
+        pageSystems += renderSystemRow(rowMeasures, isFirst, barWidth, sysHeight, sysWidth, score.style);
+      }
+      spreadGroups.push(`
+        <div class="sheet-page" data-page="${page.pageNumber}">
+          ${page.pageNumber === 1 ? `
+            <div class="score-header">
+              <div class="title-area">
+                <h1 style="font-size: ${score.style.titleSize ?? 20}pt;">${escapeXml(title)}</h1>
+                <div class="meta">${artist ? 'Words & Music: ' + escapeXml(artist) : ''}</div>
+              </div>
+              <div class="play-info">
+                <div>Key: ${escapeXml(originalKey)} ／ BPM: ${escapeXml(bpm)}</div>
+                <div><span class="capo-badge">Capo: ${escapeXml(capo)}</span></div>
+              </div>
+            </div>
+            ${chordSvgs ? `<div class="diagrams-row">${chordSvgs}</div>` : ''}
+          ` : `
+            <div class="running-header">
+              <div class="running-title">${escapeXml(title)}</div>
+              <div class="running-page">- ${page.pageNumber} -</div>
+            </div>
+          `}
+          <div class="score-sheet">
+            ${pageSystems}
+          </div>
+          <div class="page-footer">
+            <span>${page.pageNumber} / ${totalPages}</span>
+          </div>
+        </div>
+      `);
+    }
+  }
+
+  const isLandscape = orientation === 'landscape';
+
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>${escapeXml(title)}</title>
+<style>
+  @page {
+    size: ${pageSize} ${orientation};
+    margin: 8mm 10mm 8mm 10mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    color: #111;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+  ${isLandscape ? `
+  .spread-sheet {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12mm;
+    width: 100%;
+    page-break-after: always;
+    break-after: page;
+  }
+  .spread-sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .sheet-page {
+    flex: 1 1 0;
+    max-width: 48%;
+    box-sizing: border-box;
+  }
+  .sheet-page.empty-page {
+    visibility: hidden;
+  }
+  ` : `
+  .sheet-page {
+    page-break-after: always;
+    break-after: page;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .sheet-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  `}
+  .score-header {
+    border-bottom: 2px solid #000;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .title-area h1 {
+    margin: 0 0 2px 0;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+  }
+  .title-area .meta {
+    font-size: 8.5pt;
+    color: #444;
+  }
+  .play-info {
+    text-align: right;
+    font-size: 8.5pt;
+    line-height: 1.3;
+  }
+  .capo-badge {
+    display: inline-block;
+    background: #000;
+    color: #fff;
+    font-weight: bold;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 8pt;
+  }
+  .running-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #999;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+    font-size: 8.5pt;
+    color: #555;
+  }
+  .running-title {
+    font-weight: bold;
+    color: #222;
+  }
+  .running-page {
+    font-size: 8pt;
+    color: #666;
+  }
+  .page-footer {
+    margin-top: 10px;
+    padding-top: 4px;
+    border-top: 1px solid #ddd;
+    text-align: right;
+    font-size: 7.5pt;
+    color: #888;
+  }
+  .diagrams-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    border-bottom: 1px solid #aaa;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+  }
+  .diagram-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .diagram-name {
+    font-size: 9.5pt;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+  }
+  .system-row {
+    margin-bottom: 6px;
+  }
+  .system-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+</style>
+</head>
+<body>
+  ${spreadGroups.join('\n')}
 </body>
 </html>`;
 }
@@ -913,7 +1289,8 @@ export function compileGuitarDslToSvg(dslContent: string): string {
   let svg = `<svg width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" style="background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;">\n`;
 
   // Header
-  svg += `<text x="${leftMargin}" y="${topMargin + 28}" font-size="22" font-weight="900" fill="#111">${escapeXml(title)}</text>\n`;
+  const titleSize = score.style.titleSize ?? 22;
+  svg += `<text x="${leftMargin}" y="${topMargin + 28}" font-size="${titleSize}" font-weight="900" fill="#111">${escapeXml(title)}</text>\n`;
   if (artist) {
     svg += `<text x="${leftMargin}" y="${topMargin + 46}" font-size="11" fill="#444">Words &amp; Music: ${escapeXml(artist)}</text>\n`;
   }
@@ -949,7 +1326,7 @@ export function compileGuitarDslToSvg(dslContent: string): string {
       const rowMeasures = page.measures.slice(i, i + measuresPerRow);
       const isFirst = (pIdx === 0 && i === 0);
       svg += `<g transform="translate(${leftMargin}, ${currentY})">\n`;
-      svg += renderSystemSvgContent(rowMeasures, isFirst, barWidth, sysHeight, sysWidth);
+      svg += renderSystemSvgContent(rowMeasures, isFirst, barWidth, sysHeight, sysWidth, score.style);
       svg += `</g>\n`;
       currentY += sysHeight;
     }
@@ -1005,16 +1382,20 @@ function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string
     </div>`;
 }
 
-function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
+function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number, style?: ScoreStyle): string {
   return `
     <div class="system-row">
       <svg class="system-svg" viewBox="0 0 ${totalWidth} ${height}" xmlns="http://www.w3.org/2000/svg">
-        ${renderSystemSvgContent(measures, isFirst, barWidth, height, totalWidth)}
+        ${renderSystemSvgContent(measures, isFirst, barWidth, height, totalWidth, style)}
       </svg>
     </div>`;
 }
 
-function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
+function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number, style?: ScoreStyle): string {
+  const chordSize = style?.chordSize ?? 15;
+  const sectionSize = style?.sectionSize ?? 9.5;
+  const lyricSize = style?.lyricSize ?? 10;
+
   const staveY = 70;
   const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
 
@@ -1061,8 +1442,8 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
     // Section Label (placed at the top: y = 2 to 16)
     if (m.sectionName) {
       barsSvg += `
-        <rect x="${bx + 4}" y="2" width="${m.sectionName.length * 9 + 12}" height="14" fill="#fff" stroke="#000" stroke-width="1.2"/>
-        <text x="${bx + 10}" y="13" font-family="Arial, sans-serif" font-size="9.5" font-weight="bold">${escapeXml(m.sectionName)}</text>
+        <rect x="${bx + 4}" y="2" width="${m.sectionName.length * (sectionSize * 0.95) + 12}" height="${sectionSize + 5}" fill="#fff" stroke="#000" stroke-width="1.2"/>
+        <text x="${bx + 10}" y="${sectionSize + 3.5}" font-family="Arial, sans-serif" font-size="${sectionSize}" font-weight="bold">${escapeXml(m.sectionName)}</text>
       `;
     }
 
@@ -1083,8 +1464,8 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
           chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
         }
         chordX = Math.max(lastChordRight + 6, chordX);
-        lastChordRight = chordX + ch.name.length * 9;
-        barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+        lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
+        barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
       });
 
       // Measure Repeat Sign (Simile mark: diagonal slash with two dots)
@@ -1098,7 +1479,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
 
       // Lyric (placed below bottom stave line: baseline y = 120)
       if (m.lyric) {
-        barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+        barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
       }
       return;
     }
@@ -1176,8 +1557,8 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
         }
       }
       chordX = Math.max(lastChordRight + 6, chordX);
-      lastChordRight = chordX + ch.name.length * 9;
-      barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+      lastChordRight = chordX + ch.name.length * (chordSize * 0.6);
+      barsSvg += `<text x="${chordX}" y="33" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
     });
 
     // Beam grouping for eighth and sixteenth notes (group by integer beat floor)
@@ -1322,7 +1703,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, barWi
 
     // Lyric (placed below bottom stave line: baseline y = 120)
     if (m.lyric) {
-      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
     }
   });
 

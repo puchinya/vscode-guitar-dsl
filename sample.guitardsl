@@ -3,6 +3,9 @@ artist: GuitarDSL Original
 capo: 0
 key: C
 bpm: 104
+style_chord_size: 15
+style_lyric_size: 10
+style_title_size: 20
 memo: 軽快な8ビートストローク。全小節で1小節2回のコードチェンジを行い、小節繰り返し記号（%）とシンコペーションを活用。
 
 [Intro]
