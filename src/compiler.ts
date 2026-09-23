@@ -92,10 +92,38 @@ export function compileGuitarDslToHtml(dslContent: string): string {
       continue;
     }
 
-    // Measure line: | C | 4.d 4.d 4.d 4.d l:"..." |
+    // Measure line: | C | 4.d 4.d 4.d 4.d l:"..." | or | C 4.d ... |
     if (line.includes('|')) {
-      const rawBars = line.split('|').map(s => s.trim()).filter(s => s.length > 0);
-      for (const bar of rawBars) {
+      const rawBars = line.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':');
+      
+      const bars: string[] = [];
+      const CHORD_REGEX = /^[A-G][b#]?(maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(\/[A-G][b#]?)?$/;
+      const RHYTHM_REGEX = /^(16|8|4|2|1|w|h|q|r[a-z0-9]*)(\.[a-z]+)*$/;
+
+      let bi = 0;
+      while (bi < rawBars.length) {
+        const cur = rawBars[bi];
+        const next = rawBars[bi + 1];
+        const curTokens = cur.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
+        const isCurOnlyChord = curTokens.length === 1 && CHORD_REGEX.test(curTokens[0]);
+
+        if (isCurOnlyChord && next) {
+          const nextClean = next.replace(/l:\"[^\"]*\"/, '').trim();
+          const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
+          const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
+          const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]));
+
+          if (!nextHasChord && nextHasRhythm) {
+            bars.push(cur + ' ' + next);
+            bi += 2;
+            continue;
+          }
+        }
+        bars.push(cur);
+        bi++;
+      }
+
+      for (const bar of bars) {
         if (bar === ':' || bar === '') continue;
 
         let mLyric = '';
@@ -182,7 +210,7 @@ export function compileGuitarDslToHtml(dslContent: string): string {
   const measuresPerRow = 4;
   const sysWidth = 780;
   const barWidth = sysWidth / measuresPerRow;
-  const sysHeight = 120;
+  const sysHeight = 140;
 
   for (let i = 0; i < measures.length; i += measuresPerRow) {
     const rowMeasures = measures.slice(i, i + measuresPerRow);
@@ -382,25 +410,27 @@ function renderChordDiagram(name: string, frets: (number | 'x' | 'o')[]): string
 }
 
 function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: number, height: number, totalWidth: number): string {
-  const staveY = 55;
+  const staveY = 70;
   const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
 
   let staveSvg = '';
   staveLines.forEach(y => {
     staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
   });
-  staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="25" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+  staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
 
   let clefSvg = '';
   if (isFirst) {
-    // Treble Clef
-    clefSvg += `<path d="M 35,${staveY + 28} C 37,${staveY + 31} 41,${staveY + 31} 42,${staveY + 29} C 43,${staveY + 26} 41,${staveY + 24} 38,${staveY + 24} C 32,${staveY + 24} 29,${staveY + 15} 35,${staveY + 8} C 39,${staveY + 3} 44,${staveY + 7} 42,${staveY + 15} C 40,${staveY + 22} 30,${staveY + 20} 30,${staveY + 13} C 30,${staveY + 9} 33,${staveY + 7} 35,${staveY + 7} C 36,${staveY + 7} 37,${staveY + 8} 36,${staveY + 10} C 35,${staveY + 11} 34,${staveY + 11} 33,${staveY + 13} C 33,${staveY + 16} 38,${staveY + 16} 38,${staveY + 12} C 38,${staveY + 5} 29,${staveY} 36,${staveY - 13} C 39,${staveY - 19} 42,${staveY - 16} 41,${staveY - 10} C 39,${staveY + 3} 38,${staveY + 15} 38,${staveY + 29} C 38,${staveY + 39} 33,${staveY + 42} 29,${staveY + 38} C 27,${staveY + 36} 29,${staveY + 33} 31,${staveY + 34} C 33,${staveY + 35} 35,${staveY + 33} 34,${staveY + 30} Z" fill="#000"/>`;
-    clefSvg += `<text x="50" y="${staveY + 14}" font-family="Arial" font-size="14" font-weight="bold">4</text>`;
-    clefSvg += `<text x="50" y="${staveY + 30}" font-family="Arial" font-size="14" font-weight="bold">4</text>`;
+    // Elegant, standard Treble Clef centered around G-line (staveLines[3] = 94)
+    clefSvg += `<g transform="translate(28, 52) scale(0.537)">
+      <path d="M11.35,45.61q3.72-4.22,7.69-8a45.71,45.71,0,0,1-2.19-12c-.23-7.24.88-14.93,5-21C23,2.79,25-.25,27.17,0,29,.24,30,2.83,30.72,4.32c4.92,10,5.93,20.54.25,31.93a46,46,0,0,1-7.84,10.8l2.38,12.12a8.74,8.74,0,0,1,.87-.14,14.2,14.2,0,0,1,8.56,1.41c5.6,3,9.08,10.57,8.52,16.83-.5,5.5-3,9.3-7.15,12.63a23.92,23.92,0,0,1-4.24,2.78l2.87,14.62a28.07,28.07,0,0,1,.12,3.74c-.35,7.71-6.35,12.16-13.78,11.82-5.72-.36-11.67-4.9-11.7-10.64-.06-11.13,15-10.6,13.9-.42-.32,3-2.51,5.65-7.21,5.82,3.79,6.28,15.51,1.79,16.31-6.44a17.52,17.52,0,0,0-.69-6.24L29.72,93.65a17.7,17.7,0,0,1-3.07.67A23.71,23.71,0,0,1,8.5,88.66a26,26,0,0,1-8-24.34C2,56.69,6.39,51.26,11.35,45.61Zm9.81-9.53C19.09,28.55,19.4,19,24.73,12.76S35.94,15,28.18,27.42a48.8,48.8,0,0,1-7,8.66Zm0,13c-.67.67-1.36,1.34-2.06,2-4,3.85-8,7.52-11,13a20.65,20.65,0,0,0-1.5,17.23c2.4,7.49,14,12.21,22.65,9.94L24.72,67.63a9.82,9.82,0,0,0-7.09,8,8.7,8.7,0,0,0,3.08,7.81,16.74,16.74,0,0,0,1.81,1.36c1.24.82.63,1.41-.53,1.06-3.87-1.3-6.19-3.44-7.43-6.17-3.67-8.08.83-17.08,8.66-19.92L21.16,49.07ZM31.63,90.43,27.09,67.24a9,9,0,0,1,4.53,1,12,12,0,0,1,6.62,8.23c1.2,5.57-1.7,11.72-6.49,13.94l-.12.05Z" fill="#000"/>
+    </g>`;
+    clefSvg += `<text x="58" y="${staveY + 14}" font-family="Arial, sans-serif" font-size="14" font-weight="bold">4</text>`;
+    clefSvg += `<text x="58" y="${staveY + 30}" font-family="Arial, sans-serif" font-size="14" font-weight="bold">4</text>`;
   }
 
   let barsSvg = '';
-  const startX = isFirst ? 65 : 25;
+  const startX = isFirst ? 78 : 25;
   const usableWidth = (totalWidth - 5) - startX;
   const actualBarWidth = usableWidth / measures.length;
 
@@ -425,53 +455,55 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
     }
 
-    // Section Label
+    // Section Label (placed at the top: y = 6 to 22)
     if (m.sectionName) {
       barsSvg += `
-        <rect x="${bx + 4}" y="${staveY - 45}" width="${m.sectionName.length * 9 + 14}" height="18" fill="#fff" stroke="#000" stroke-width="1.2"/>
-        <text x="${bx + 11}" y="${staveY - 32}" font-family="Arial" font-size="10" font-weight="bold">${escapeXml(m.sectionName)}</text>
+        <rect x="${bx + 4}" y="6" width="${m.sectionName.length * 9 + 14}" height="16" fill="#fff" stroke="#000" stroke-width="1.2"/>
+        <text x="${bx + 11}" y="18" font-family="Arial, sans-serif" font-size="10" font-weight="bold">${escapeXml(m.sectionName)}</text>
       `;
     }
 
-    // Chord
+    // Chord (placed clearly above picking marks: baseline at y = 42)
     if (m.chord) {
-      barsSvg += `<text x="${bx + 8}" y="${staveY - 8}" font-family="Arial" font-size="14" font-weight="900">${escapeXml(m.chord)}</text>`;
+      barsSvg += `<text x="${bx + 8}" y="42" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="15" font-weight="900" fill="#000">${escapeXml(m.chord)}</text>`;
     }
 
     // Rhythms
     const rCount = m.rhythms.length;
     const rStep = (actualBarWidth - 20) / (rCount > 0 ? rCount : 1);
-    const midY = staveLines[2]; // 3rd line
+    const midY = staveLines[2]; // 3rd line = 86
 
     m.rhythms.forEach((r, rIdx) => {
       const rx = bx + 12 + rIdx * rStep;
       if (r.isRest) {
-        // Simple quarter/eighth rest shape
-        barsSvg += `<text x="${rx - 4}" y="${midY + 5}" font-family="Arial" font-size="14" font-weight="bold" fill="#333">𝄽</text>`;
+        // Quarter/eighth rest shape
+        barsSvg += `<text x="${rx - 4}" y="${midY + 5}" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">𝄽</text>`;
       } else {
         const opacity = r.ghost ? '0.35' : '1.0';
-        // Slash head
-        barsSvg += `<polygon points="${rx-6},${midY+3} ${rx-3},${midY+5} ${rx+6},${midY-3} ${rx+3},${midY-5}" fill="#000" opacity="${opacity}"/>`;
-        // Stem
-        barsSvg += `<line x1="${rx+4}" y1="${midY-3}" x2="${rx+4}" y2="${midY-24}" stroke="#000" stroke-width="1.3" opacity="${opacity}"/>`;
+        // Slash head centered around midY (86)
+        barsSvg += `<polygon points="${rx-6},${midY+4} ${rx-3},${midY+6} ${rx+6},${midY-3} ${rx+3},${midY-5}" fill="#000" opacity="${opacity}"/>`;
+        // Stem (from y=62 to y=midY-3=83)
+        barsSvg += `<line x1="${rx+4}" y1="62" x2="${rx+4}" y2="${midY-3}" stroke="#000" stroke-width="1.3" opacity="${opacity}"/>`;
 
-        // Down / Up stroke
+        // Down / Up stroke mark (placed at y=52 to 57, above stem y=62, below chord y=42)
+        const py = 52;
         if (r.down) {
-          barsSvg += `<path d="M ${rx+1},${midY-28} L ${rx+1},${midY-33} L ${rx+7},${midY-33} L ${rx+7},${midY-28}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
+          barsSvg += `<path d="M ${rx+1},${py+5} L ${rx+1},${py} L ${rx+7},${py} L ${rx+7},${py+5}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
         } else if (r.up) {
-          barsSvg += `<path d="M ${rx+1},${midY-33} L ${rx+4},${midY-28} L ${rx+7},${midY-33}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
+          barsSvg += `<path d="M ${rx+1},${py} L ${rx+4},${py+5} L ${rx+7},${py}" fill="none" stroke="#000" stroke-width="1.4" opacity="${opacity}"/>`;
         }
 
-        // Accent
+        // Accent (placed at y=46 to 51)
+        const ay = 46;
         if (r.accent) {
-          barsSvg += `<path d="M ${rx+1},${midY-37} L ${rx+7},${midY-35} L ${rx+1},${midY-33}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+          barsSvg += `<path d="M ${rx+1},${ay} L ${rx+7},${ay+3} L ${rx+1},${ay+6}" fill="none" stroke="#000" stroke-width="1.4"/>`;
         }
       }
     });
 
-    // Lyric
+    // Lyric (placed below bottom stave line: baseline y = 120)
     if (m.lyric) {
-      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 16}" font-family="sans-serif" font-size="9" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
+      barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10" text-anchor="middle" fill="#222">${escapeXml(m.lyric)}</text>`;
     }
   });
 
@@ -484,7 +516,6 @@ function renderSystemRow(measures: MeasureData[], isFirst: boolean, barWidth: nu
       </svg>
     </div>`;
 }
-
 function escapeXml(str: string): string {
   return str.replace(/[&<>"']/g, c => {
     switch (c) {
