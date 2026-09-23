@@ -37,6 +37,19 @@ describe('pdf - browser-free export', () => {
     assert.strictEqual(countPages(landscape), 1);
   });
 
+  it('should render scores without artist / title metadata', async () => {
+    for (const input of ['| C | G |', 'title:\nartist:\n| C |', '']) {
+      const pdf = await renderScorePdf(input, 'A4', 'portrait', fonts);
+      assert.strictEqual(pdf.subarray(0, 5).toString('latin1'), '%PDF-');
+      assert.ok(!pdf.toString('latin1').includes('/Author'), 'Author must be omitted when artist is empty');
+    }
+  });
+
+  it('should set Author metadata when artist is given', async () => {
+    const pdf = await renderScorePdf('artist: Someone\n| C |', 'A4', 'portrait', fonts);
+    assert.ok(pdf.toString('latin1').includes('/Author'));
+  });
+
   it('should write the PDF to the target path', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guitardsl-pdf-'));
     try {
