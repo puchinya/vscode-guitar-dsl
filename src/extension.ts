@@ -7,7 +7,6 @@ import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
-import { transcribeWithGemini } from './transcription/gemini';
 import { serializeSongToGuitarDsl } from './transcription/serializer';
 import { isValidYouTubeUrl } from './transcription/youtube';
 import { TranscribePanel } from './transcription/transcribePanel';

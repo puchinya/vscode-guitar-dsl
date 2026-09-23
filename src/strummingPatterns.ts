@@ -217,6 +217,35 @@ export function getPresetById(id: string): StrummingPatternPreset | undefined {
   return STRUMMING_PATTERN_PRESETS.find(p => p.id === id);
 }
 
+/** One stroke of a preset pattern, structurally compatible with the transcription RhythmEvent. */
+export interface PresetStroke {
+  duration: string;
+  direction?: 'd' | 'u';
+  accent?: boolean;
+  ghost?: boolean;
+  tie?: boolean;
+  arpeggio?: boolean;
+}
+
+/**
+ * Splits a preset pattern (e.g. '4.d 8.u.a 1.arp') into strokes: the duration before the first '.',
+ * then the d / u / a / g / t / arp modifiers.
+ */
+export function parsePresetStrokes(pattern: string): PresetStroke[] {
+  return pattern.trim().split(/\s+/).map(token => {
+    const [duration, ...mods] = token.split('.');
+    const stroke: PresetStroke = { duration };
+    for (const mod of mods) {
+      if (mod === 'd' || mod === 'u') stroke.direction = mod;
+      else if (mod === 'a') stroke.accent = true;
+      else if (mod === 'g') stroke.ghost = true;
+      else if (mod === 't') stroke.tie = true;
+      else if (mod === 'arp') stroke.arpeggio = true;
+    }
+    return stroke;
+  });
+}
+
 /**
  * Replaces the rhythm tokens in a single GuitarDSL measure line with newRhythmPattern.
  * Preserves chords, barlines (|:, :|, ||, |]), brackets ([1.], [2.]), special marks, and lyrics (l:"...").

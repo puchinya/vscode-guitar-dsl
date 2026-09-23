@@ -1,7 +1,7 @@
 // Music IR v1 data models, JSON schema and semantic validation for transcription.
 // Pure module independent of VS Code APIs and Gemini SDK.
 
-import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, parseNoteValue, parseRhythmDuration } from '../duration';
+import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, isDyadic, parseNoteValue, parseRhythmDuration } from '../duration';
 import { parseKeySignature } from '../compiler';
 import { isValidChordName } from '../chordDefinition';
 
@@ -38,6 +38,7 @@ export interface RhythmEvent {
   accent?: boolean;
   ghost?: boolean;
   tie?: boolean;
+  arpeggio?: boolean;
 }
 
 export interface MelodyEvent {
@@ -47,13 +48,13 @@ export interface MelodyEvent {
   lyric?: string;
 }
 
+/** Schema of the baseline pass. Chords and rhythm are context only: the refinement passes replace them. */
 export const MUSIC_IR_JSON_SCHEMA = {
   type: 'object',
   properties: {
     title: { type: 'string', description: 'Song title' },
     artist: { type: 'string', description: 'Artist name' },
-    key: { type: 'string', description: 'Musical key of the song, e.g. C, Am, G, F#m, Bb' },
-    capo: { type: 'integer', description: 'Recommended capo fret number (0..7) to play with easy open guitar chords, or 0 if no capo' },
+    key: { type: 'string', description: 'Sounding (concert) key of the song, e.g. C, Am, G, F#m, Bb' },
     bpm: { type: 'integer', description: 'Tempo in BPM (30..300). For upbeat 8-beat rock/pop songs, use the true full-time tempo (e.g. 160-220, where snare hits on beats 2 and 4), not half-time.' },
     timeSignature: {
       type: 'object',
@@ -80,11 +81,8 @@ export const MUSIC_IR_JSON_SCHEMA = {
                   items: {
                     type: 'object',
                     properties: {
-                      name: { type: 'string', description: 'Chord name (e.g. C, Am, G/B)' },
-                      duration: {
-                        type: 'string',
-                        description: 'Note value duration: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). The sum of chord durations in a measure must equal 4 beats. If there is only 1 chord in the measure, its duration MUST be "1".'
-                      }
+                      name: { type: 'string', description: 'Sounding chord name (e.g. C, Am, G/B)' },
+                      duration: { type: 'string', description: 'Note value duration, e.g. 1, 2, 4' }
                     },
                     required: ['name', 'duration']
                   }
@@ -95,10 +93,7 @@ export const MUSIC_IR_JSON_SCHEMA = {
                     type: 'object',
                     properties: {
                       duration: { type: 'string', description: 'Rhythm duration (e.g. 4, 8, 16, 8t, 4+8, r4)' },
-                      direction: { type: 'string', enum: ['d', 'u'] },
-                      accent: { type: 'boolean' },
-                      ghost: { type: 'boolean' },
-                      tie: { type: 'boolean', description: 'True if tied to next stroke (syncopation)' }
+                      direction: { type: 'string', enum: ['d', 'u'] }
                     },
                     required: ['duration']
                   }
@@ -116,8 +111,7 @@ export const MUSIC_IR_JSON_SCHEMA = {
                     required: ['pitch', 'duration']
                   }
                 }
-              },
-              required: ['chords', 'rhythm']
+              }
             }
           }
         },
@@ -132,12 +126,9 @@ export type ValidationResult =
   | { valid: true; song: TranscribedSong }
   | { valid: false; error: string };
 
-export interface ValidationOptions {
-  autoRepair?: boolean;
-}
-
 const FOUR_BEATS = frac(4, 1);
 const MELODY_PITCH_RE = /^(?:r|[a-g][b#]?[0-9])$/;
+export const MAX_CAPO = 12;
 
 function durationPartToString(p: NoteValuePart): string {
   if (p.triplet) return `${p.base}t`;
@@ -162,13 +153,103 @@ function decomposeToBeatsOrTriplets(beats: Fraction): NoteValuePart[] | null {
 }
 
 /**
+ * Converts a positive beat count into a GuitarDSL note value without dots, joined with '+'
+ * (e.g. 1.5 -> "4+8", 4 -> "1"). A triplet remainder of 1/3 or 2/3 beat is appended as "8t" / "4t".
+ * Valid both as a chord duration and as a rhythm duration. Returns null when not representable.
+ */
+export function beatsToDurationString(beats: Fraction): string | null {
+  if (beats.n <= 0) return null;
+  let dyadic = beats;
+  let tripletTerm: string | undefined;
+  if (!isDyadic(beats)) {
+    const whole = frac(Math.floor(beats.n / beats.d));
+    const rem = fsub(beats, whole);
+    if (feq(rem, frac(1, 3))) tripletTerm = '8t';
+    else if (feq(rem, frac(2, 3))) tripletTerm = '4t';
+    else return null;
+    dyadic = whole;
+  }
+  const terms: string[] = [];
+  if (dyadic.n > 0) {
+    const parts = decomposeBeats(dyadic);
+    if (!parts) return null;
+    for (const p of parts) {
+      if (p.dotted) {
+        terms.push(`${p.base}`, `${p.base * 2}`);
+      } else {
+        terms.push(`${p.base}`);
+      }
+    }
+  }
+  if (tripletTerm) terms.push(tripletTerm);
+  return terms.join('+');
+}
+
+/**
+ * Melody-only timing repair: pads a short measure with rests or trims a slight excess so that the
+ * melody sums to exactly 4 beats. Chords and rhythm are never repaired.
+ */
+export function repairMelodyTiming(melody: MelodyEvent[]): MelodyEvent[] {
+  const repaired = melody.map(m => ({ ...m }));
+  let beats = ZERO;
+  for (const m of repaired) {
+    const v = parseNoteValue(m.duration);
+    if (!v) return repaired;
+    beats = fadd(beats, v.beats);
+  }
+  if (fcmp(beats, FOUR_BEATS) < 0) {
+    const parts = decomposeToBeatsOrTriplets(fsub(FOUR_BEATS, beats));
+    if (parts) {
+      for (const p of parts) {
+        repaired.push({ pitch: 'r', duration: durationPartToString(p) });
+      }
+    }
+  } else if (fcmp(beats, FOUR_BEATS) > 0) {
+    let excess = fsub(beats, FOUR_BEATS);
+    while (fcmp(excess, ZERO) > 0 && repaired.length > 0) {
+      const last = repaired[repaired.length - 1];
+      const lastVal = parseNoteValue(last.duration);
+      if (!lastVal) break;
+      if (fcmp(lastVal.beats, excess) <= 0) {
+        repaired.pop();
+        excess = fsub(excess, lastVal.beats);
+      } else {
+        const parts = decomposeToBeatsOrTriplets(fsub(lastVal.beats, excess));
+        if (parts && parts.length > 0) {
+          last.duration = durationPartToString(parts[0]);
+          for (let i = 1; i < parts.length; i++) {
+            repaired.push({ pitch: last.pitch, duration: durationPartToString(parts[i]), tieToNext: last.tieToNext });
+          }
+        }
+        break;
+      }
+    }
+  }
+  return repaired;
+}
+
+type Mode = 'strict' | 'baseline';
+
+/**
  * Validates a parsed JSON payload into a semantically valid TranscribedSong.
  * Rejects invalid meters (non-4/4), out-of-range BPM, invalid chord names/durations,
- * and measures whose durations do not sum to exactly 4 beats.
- * When options.autoRepair is true, automatically pads short melody/rhythm measures with rests
- * or trims slight excesses to ensure exact 4-beat alignment.
+ * and measures whose chord, rhythm or melody durations do not sum to exactly 4 beats.
+ * Nothing is repaired: impossible data is rejected.
  */
-export function validateTranscribedSong(data: unknown, options?: ValidationOptions): ValidationResult {
+export function validateTranscribedSong(data: unknown): ValidationResult {
+  return validateSong(data, 'strict');
+}
+
+/**
+ * Validates the baseline pass. Metadata, section/measure structure, melody and lyrics are checked;
+ * melody timing is repaired with repairMelodyTiming. Baseline chords and rhythm are context only
+ * (the refinement passes replace them), so they are dropped and every measure gets empty arrays.
+ */
+export function validateBaselineSong(data: unknown): ValidationResult {
+  return validateSong(data, 'baseline');
+}
+
+function validateSong(data: unknown, mode: Mode): ValidationResult {
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Transcription data must be an object' };
   }
@@ -208,7 +289,7 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
     }
     const secObj = rawSection as Record<string, unknown>;
 
-    let name = typeof secObj.name === 'string' && secObj.name.trim() ? secObj.name.trim() : `Section ${sIdx + 1}`;
+    const name = typeof secObj.name === 'string' && secObj.name.trim() ? secObj.name.trim() : `Section ${sIdx + 1}`;
 
     if (!Array.isArray(secObj.measures) || secObj.measures.length === 0) {
       return { valid: false, error: `Section '${name}' must contain at least one measure` };
@@ -223,156 +304,20 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
       }
       const measObj = rawMeasure as Record<string, unknown>;
 
-      // Chords: non-empty array
-      if (!Array.isArray(measObj.chords) || measObj.chords.length === 0) {
-        return { valid: false, error: `Measure ${mIdx + 1} in section '${name}' has no chords` };
-      }
-
-      let chordBeats = ZERO;
-      const normalizedChords: ChordEvent[] = [];
-
-      for (let cIdx = 0; cIdx < measObj.chords.length; cIdx++) {
-        const rawChord = measObj.chords[cIdx];
-        if (!rawChord || typeof rawChord !== 'object') {
-          return { valid: false, error: `Chord at index ${cIdx} in section '${name}', measure ${mIdx + 1} is invalid` };
-        }
-        const chordObj = rawChord as Record<string, unknown>;
-        const chordName = typeof chordObj.name === 'string' ? chordObj.name.trim() : '';
-        let chordDur = typeof chordObj.duration === 'string' ? chordObj.duration.trim() : '';
-
-        // If a measure has only 1 chord and the model specified duration "4" (meaning 4 beats),
-        // normalize to note value "1" (whole note = 4 beats) so it is mathematically 4 beats.
-        if (measObj.chords.length === 1 && chordDur === '4') {
-          chordDur = '1';
-        }
-
-        if (!isValidChordName(chordName)) {
-          return { valid: false, error: `Invalid chord name '${chordName}' in section '${name}', measure ${mIdx + 1}` };
-        }
-
-        const noteVal = parseNoteValue(chordDur);
-        if (!noteVal) {
-          return { valid: false, error: `Invalid chord duration '${chordDur}' for chord '${chordName}' in section '${name}', measure ${mIdx + 1}` };
-        }
-
-        chordBeats = fadd(chordBeats, noteVal.beats);
-        normalizedChords.push({ name: chordName, duration: chordDur });
-      }
-
-      if (!feq(chordBeats, FOUR_BEATS) && options?.autoRepair) {
-        if (normalizedChords.length === 1) {
-          normalizedChords[0].duration = '1';
-          chordBeats = FOUR_BEATS;
-        } else if (fcmp(chordBeats, FOUR_BEATS) < 0) {
-          const deficit = fsub(FOUR_BEATS, chordBeats);
-          const lastChord = normalizedChords[normalizedChords.length - 1];
-          const lastVal = parseNoteValue(lastChord.duration);
-          if (lastVal) {
-            const newBeats = fadd(lastVal.beats, deficit);
-            const parts = decomposeToBeatsOrTriplets(newBeats);
-            if (parts && parts.length > 0) {
-              lastChord.duration = durationPartToString(parts[0]);
-              chordBeats = FOUR_BEATS;
-            }
-          }
-        }
-      }
-
-      if (!feq(chordBeats, FOUR_BEATS)) {
-        return {
-          valid: false,
-          error: `Chord durations in section '${name}', measure ${mIdx + 1} total ${fnum(chordBeats)} beats (expected 4)`
-        };
-      }
-
-      // Rhythm: non-empty array
-      if (!Array.isArray(measObj.rhythm) || measObj.rhythm.length === 0) {
-        return { valid: false, error: `Measure ${mIdx + 1} in section '${name}' has no rhythm events` };
-      }
-
-      let rhythmBeats = ZERO;
-      const normalizedRhythm: RhythmEvent[] = [];
-
-      for (let rIdx = 0; rIdx < measObj.rhythm.length; rIdx++) {
-        const rawRhythm = measObj.rhythm[rIdx];
-        if (!rawRhythm || typeof rawRhythm !== 'object') {
-          return { valid: false, error: `Rhythm event at index ${rIdx} in section '${name}', measure ${mIdx + 1} is invalid` };
-        }
-        const rhythmObj = rawRhythm as Record<string, unknown>;
-        const durStr = typeof rhythmObj.duration === 'string' ? rhythmObj.duration.trim() : '';
-
-        const noteVal = parseRhythmDuration(durStr);
-        if (!noteVal) {
-          return { valid: false, error: `Invalid rhythm duration '${durStr}' in section '${name}', measure ${mIdx + 1}` };
-        }
-
-        rhythmBeats = fadd(rhythmBeats, noteVal.beats);
-
-        const event: RhythmEvent = { duration: durStr };
-        if (rhythmObj.direction === 'd' || rhythmObj.direction === 'u') {
-          event.direction = rhythmObj.direction;
-        }
-        if (rhythmObj.accent === true) {
-          event.accent = true;
-        }
-        if (rhythmObj.ghost === true) {
-          event.ghost = true;
-        }
-        if (rhythmObj.tie === true) {
-          event.tie = true;
-        }
-        normalizedRhythm.push(event);
-      }
-
-      if (!feq(rhythmBeats, FOUR_BEATS) && options?.autoRepair) {
-        if (fcmp(rhythmBeats, FOUR_BEATS) < 0) {
-          const deficit = fsub(FOUR_BEATS, rhythmBeats);
-          const parts = decomposeToBeatsOrTriplets(deficit);
-          if (parts && parts.length > 0) {
-            for (const p of parts) {
-              normalizedRhythm.push({
-                duration: durationPartToString(p),
-                direction: 'd'
-              });
-            }
-            rhythmBeats = FOUR_BEATS;
-          }
-        } else {
-          let excess = fsub(rhythmBeats, FOUR_BEATS);
-          while (fcmp(excess, ZERO) > 0 && normalizedRhythm.length > 0) {
-            const last = normalizedRhythm[normalizedRhythm.length - 1];
-            const lastVal = parseRhythmDuration(last.duration);
-            if (!lastVal) break;
-            if (fcmp(lastVal.beats, excess) <= 0) {
-              normalizedRhythm.pop();
-              excess = fsub(excess, lastVal.beats);
-            } else {
-              const newBeats = fsub(lastVal.beats, excess);
-              const parts = decomposeToBeatsOrTriplets(newBeats);
-              if (parts && parts.length > 0) {
-                last.duration = durationPartToString(parts[0]);
-                excess = ZERO;
-              }
-              break;
-            }
-          }
-          if (feq(excess, ZERO)) {
-            rhythmBeats = FOUR_BEATS;
-          }
-        }
-      }
-
-      if (!feq(rhythmBeats, FOUR_BEATS)) {
-        return {
-          valid: false,
-          error: `Rhythm durations in section '${name}', measure ${mIdx + 1} total ${fnum(rhythmBeats)} beats (expected 4)`
-        };
+      let normalizedChords: ChordEvent[] = [];
+      let normalizedRhythm: RhythmEvent[] = [];
+      if (mode === 'strict') {
+        const chords = validateChords(measObj.chords, name, mIdx);
+        if (typeof chords === 'string') return { valid: false, error: chords };
+        normalizedChords = chords;
+        const rhythm = validateRhythm(measObj.rhythm, name, mIdx);
+        if (typeof rhythm === 'string') return { valid: false, error: rhythm };
+        normalizedRhythm = rhythm;
       }
 
       // Melody: optional
       let normalizedMelody: MelodyEvent[] | undefined = undefined;
       if (Array.isArray(measObj.melody) && measObj.melody.length > 0) {
-        let melodyBeats = ZERO;
         normalizedMelody = [];
 
         for (let melIdx = 0; melIdx < measObj.melody.length; melIdx++) {
@@ -387,9 +332,7 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
           if (!MELODY_PITCH_RE.test(pitch)) {
             return { valid: false, error: `Invalid melody pitch '${pitch}' in section '${name}', measure ${mIdx + 1}` };
           }
-
-          const noteVal = parseNoteValue(durStr);
-          if (!noteVal) {
+          if (!parseNoteValue(durStr)) {
             return { valid: false, error: `Invalid melody duration '${durStr}' in section '${name}', measure ${mIdx + 1}` };
           }
           const melEvent: MelodyEvent = {
@@ -400,56 +343,17 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
           if (typeof melObj.lyric === 'string' && melObj.lyric.trim().length > 0) {
             melEvent.lyric = melObj.lyric.trim();
           }
-
-          melodyBeats = fadd(melodyBeats, noteVal.beats);
           normalizedMelody.push(melEvent);
         }
 
-        if (!feq(melodyBeats, FOUR_BEATS) && options?.autoRepair) {
-          if (fcmp(melodyBeats, FOUR_BEATS) < 0) {
-            const deficit = fsub(FOUR_BEATS, melodyBeats);
-            const parts = decomposeToBeatsOrTriplets(deficit);
-            if (parts && parts.length > 0) {
-              for (const p of parts) {
-                normalizedMelody.push({
-                  pitch: 'r',
-                  duration: durationPartToString(p)
-                });
-              }
-              melodyBeats = FOUR_BEATS;
-            }
-          } else {
-            let excess = fsub(melodyBeats, FOUR_BEATS);
-            while (fcmp(excess, ZERO) > 0 && normalizedMelody.length > 0) {
-              const last = normalizedMelody[normalizedMelody.length - 1];
-              const lastVal = parseNoteValue(last.duration);
-              if (!lastVal) break;
-              if (fcmp(lastVal.beats, excess) <= 0) {
-                normalizedMelody.pop();
-                excess = fsub(excess, lastVal.beats);
-              } else {
-                const newBeats = fsub(lastVal.beats, excess);
-                const parts = decomposeToBeatsOrTriplets(newBeats);
-                if (parts && parts.length > 0) {
-                  last.duration = durationPartToString(parts[0]);
-                  for (let i = 1; i < parts.length; i++) {
-                    normalizedMelody.push({
-                      pitch: last.pitch,
-                      duration: durationPartToString(parts[i]),
-                      tieToNext: last.tieToNext
-                    });
-                  }
-                  excess = ZERO;
-                }
-                break;
-              }
-            }
-            if (feq(excess, ZERO)) {
-              melodyBeats = FOUR_BEATS;
-            }
-          }
+        if (mode === 'baseline') {
+          normalizedMelody = repairMelodyTiming(normalizedMelody);
         }
 
+        let melodyBeats = ZERO;
+        for (const m of normalizedMelody) {
+          melodyBeats = fadd(melodyBeats, parseNoteValue(m.duration)!.beats);
+        }
         if (!feq(melodyBeats, FOUR_BEATS)) {
           return {
             valid: false,
@@ -484,7 +388,7 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
     sections: normalizedSections
   };
 
-  if (typeof raw.capo === 'number' && Number.isInteger(raw.capo) && raw.capo >= 0 && raw.capo <= 11) {
+  if (mode === 'strict' && typeof raw.capo === 'number' && Number.isInteger(raw.capo) && raw.capo >= 0 && raw.capo <= MAX_CAPO) {
     song.capo = raw.capo;
   }
   if (typeof raw.title === 'string' && raw.title.trim()) {
@@ -495,4 +399,69 @@ export function validateTranscribedSong(data: unknown, options?: ValidationOptio
   }
 
   return { valid: true, song };
+}
+
+function validateChords(value: unknown, section: string, mIdx: number): ChordEvent[] | string {
+  if (!Array.isArray(value) || value.length === 0) {
+    return `Measure ${mIdx + 1} in section '${section}' has no chords`;
+  }
+  let beats = ZERO;
+  const chords: ChordEvent[] = [];
+  for (let cIdx = 0; cIdx < value.length; cIdx++) {
+    const rawChord = value[cIdx];
+    if (!rawChord || typeof rawChord !== 'object') {
+      return `Chord at index ${cIdx} in section '${section}', measure ${mIdx + 1} is invalid`;
+    }
+    const chordObj = rawChord as Record<string, unknown>;
+    const chordName = typeof chordObj.name === 'string' ? chordObj.name.trim() : '';
+    const chordDur = typeof chordObj.duration === 'string' ? chordObj.duration.trim() : '';
+    if (!isValidChordName(chordName)) {
+      return `Invalid chord name '${chordName}' in section '${section}', measure ${mIdx + 1}`;
+    }
+    const noteVal = parseNoteValue(chordDur);
+    if (!noteVal) {
+      return `Invalid chord duration '${chordDur}' for chord '${chordName}' in section '${section}', measure ${mIdx + 1}`;
+    }
+    beats = fadd(beats, noteVal.beats);
+    chords.push({ name: chordName, duration: chordDur });
+  }
+  if (!feq(beats, FOUR_BEATS)) {
+    return `Chord durations in section '${section}', measure ${mIdx + 1} total ${fnum(beats)} beats (expected 4)`;
+  }
+  return chords;
+}
+
+function validateRhythm(value: unknown, section: string, mIdx: number): RhythmEvent[] | string {
+  if (!Array.isArray(value) || value.length === 0) {
+    return `Measure ${mIdx + 1} in section '${section}' has no rhythm events`;
+  }
+  let beats = ZERO;
+  const rhythm: RhythmEvent[] = [];
+  for (let rIdx = 0; rIdx < value.length; rIdx++) {
+    const rawRhythm = value[rIdx];
+    if (!rawRhythm || typeof rawRhythm !== 'object') {
+      return `Rhythm event at index ${rIdx} in section '${section}', measure ${mIdx + 1} is invalid`;
+    }
+    const rhythmObj = rawRhythm as Record<string, unknown>;
+    const durStr = typeof rhythmObj.duration === 'string' ? rhythmObj.duration.trim() : '';
+    const noteVal = parseRhythmDuration(durStr);
+    if (!noteVal) {
+      return `Invalid rhythm duration '${durStr}' in section '${section}', measure ${mIdx + 1}`;
+    }
+    beats = fadd(beats, noteVal.beats);
+
+    const event: RhythmEvent = { duration: durStr };
+    if (rhythmObj.direction === 'd' || rhythmObj.direction === 'u') {
+      event.direction = rhythmObj.direction;
+    }
+    if (rhythmObj.accent === true) event.accent = true;
+    if (rhythmObj.ghost === true) event.ghost = true;
+    if (rhythmObj.tie === true) event.tie = true;
+    if (rhythmObj.arpeggio === true) event.arpeggio = true;
+    rhythm.push(event);
+  }
+  if (!feq(beats, FOUR_BEATS)) {
+    return `Rhythm durations in section '${section}', measure ${mIdx + 1} total ${fnum(beats)} beats (expected 4)`;
+  }
+  return rhythm;
 }
