@@ -80,7 +80,10 @@ export const MUSIC_IR_JSON_SCHEMA = {
                     type: 'object',
                     properties: {
                       name: { type: 'string', description: 'Chord name (e.g. C, Am, G/B)' },
-                      duration: { type: 'string', description: 'Note value duration (e.g. 1, 2, 4, 8, 2.)' }
+                      duration: {
+                        type: 'string',
+                        description: 'Note value duration: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). The sum of chord durations in a measure must equal 4 beats. If there is only 1 chord in the measure, its duration MUST be "1".'
+                      }
                     },
                     required: ['name', 'duration']
                   }
@@ -205,7 +208,13 @@ export function validateTranscribedSong(data: unknown): ValidationResult {
         }
         const chordObj = rawChord as Record<string, unknown>;
         const chordName = typeof chordObj.name === 'string' ? chordObj.name.trim() : '';
-        const chordDur = typeof chordObj.duration === 'string' ? chordObj.duration.trim() : '';
+        let chordDur = typeof chordObj.duration === 'string' ? chordObj.duration.trim() : '';
+
+        // If a measure has only 1 chord and the model specified duration "4" (meaning 4 beats),
+        // normalize to note value "1" (whole note = 4 beats) so it is mathematically 4 beats.
+        if (measObj.chords.length === 1 && chordDur === '4') {
+          chordDur = '1';
+        }
 
         if (!isValidChordName(chordName)) {
           return { valid: false, error: `Invalid chord name '${chordName}' in section '${name}', measure ${mIdx + 1}` };

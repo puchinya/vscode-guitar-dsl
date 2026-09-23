@@ -12,10 +12,13 @@ export const FIXED_TRANSCRIPTION_PROMPT =
   'IMPORTANT: Transcribe the FULL, COMPLETE song from beginning to end without summarizing or skipping measures. ' +
   'Cover all sections sequentially (Intro, Verse, Pre-Chorus, Chorus, Bridge, Solo, Outro, etc.) until the video finishes. ' +
   'Determine the recommended capo position (0..7) to allow playing with easy open guitar chords, and express chords in that play form. ' +
-  'For every vocal melody note, provide pitch, duration, and the syllable (lyric) sung on that note. ' +
+  'STRICT SYLLABLE-TO-NOTE ALIGNMENT: Every sung syllable must have its own melody note with exact pitch and duration. ' +
+  'For example, if 8 syllables are sung in a measure ("き・ど・う・し・た・きょ・う・に"), output 8 eighth-notes (duration: "8"), each with its exact single syllable in the lyric property. Do NOT lump syllables together or simplify the vocal rhythm. ' +
   'Output the transcription as structured music IR adhering to the provided JSON schema. ' +
   'The time signature must be 4/4. Every measure must have chords and rhythm, and all chord, rhythm, and melody ' +
   'sequences within each measure must sum to exactly 4 beats. ' +
+  'CRITICAL CHORD DURATION RULES: "1" = whole note (lasts full 4-beat measure), "2" = half note (2 beats), "4" = quarter note (1 beat). ' +
+  'If a measure has only 1 chord, its duration MUST be "1". If it has 2 chords, each duration is usually "2". ' +
   'Use standard guitar chord names and standard note values (1, 2, 4, 8, 16, 8t, etc.).';
 
 export interface GeminiClientLike {

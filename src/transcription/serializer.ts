@@ -3,6 +3,7 @@
 
 import { TranscribedSong, RhythmEvent, MelodyEvent } from './model';
 import { parseGuitarDsl } from '../compiler';
+import { tokenizeLyrics } from '../melody';
 
 function formatRhythmToken(r: RhythmEvent): string {
   let tok = r.duration;
@@ -81,8 +82,12 @@ export function serializeSongToGuitarDsl(song: TranscribedSong): string {
       const chordsStr = measure.chords.map(c => `${c.name}/${c.duration}`).join(' ');
       const rhythmStr = measure.rhythm.map(formatRhythmToken).join(' ');
 
-      const sameChords = prevMeasure ? isSameChords(measure.chords, prevMeasure.chords) : false;
-      const sameRhythm = prevMeasure ? isSameRhythm(measure.rhythm, prevMeasure.rhythm) : false;
+      // Never use repeat sign % on the first measure of a section or the first measure of a 4-measure system (row)
+      const isRowStart = mIdx % 4 === 0;
+      const allowRepeat = !isRowStart && prevMeasure !== undefined;
+
+      const sameChords = allowRepeat ? isSameChords(measure.chords, prevMeasure.chords) : false;
+      const sameRhythm = allowRepeat ? isSameRhythm(measure.rhythm, prevMeasure.rhythm) : false;
 
       // Only use measure-level lyrics if there is no melody line (to avoid measureLyricWithMelody warning)
       const hasMeasureLyrics = (!measure.melody || measure.melody.length === 0) && !!measure.lyrics && measure.lyrics.trim().length > 0;
@@ -97,7 +102,7 @@ export function serializeSongToGuitarDsl(song: TranscribedSong): string {
       }
 
       if (measure.melody && measure.melody.length > 0) {
-        const sameMelody = prevMeasure && prevMeasure.melody ? isSameMelody(measure.melody, prevMeasure.melody) : false;
+        const sameMelody = allowRepeat && prevMeasure && prevMeasure.melody ? isSameMelody(measure.melody, prevMeasure.melody) : false;
         if (sameMelody) {
           lines.push('mel: | % |');
         } else {
@@ -105,12 +110,36 @@ export function serializeSongToGuitarDsl(song: TranscribedSong): string {
           lines.push(`mel: | ${melodyStr} |`);
         }
 
-        const hasSyllables = measure.melody.some(m => m.lyric && m.lyric.trim().length > 0);
-        if (hasSyllables) {
-          const sungNotes = measure.melody.filter(n => n.pitch.toLowerCase() !== 'r');
-          const syllables = sungNotes.map(n => n.lyric?.trim() || '_');
-          if (syllables.length > 0) {
-            lines.push(`lyr: | ${syllables.join(' ')} |`);
+        const sungNotes = measure.melody.filter(n => n.pitch.toLowerCase() !== 'r');
+        if (sungNotes.length > 0) {
+          let rawSyllables: string[] = [];
+          const noteSyllables = measure.melody.map(n => n.lyric?.trim()).filter(Boolean);
+          if (noteSyllables.length > 0) {
+            rawSyllables = noteSyllables as string[];
+          } else if (measure.lyrics && measure.lyrics.trim().length > 0) {
+            const lyricItems = tokenizeLyrics(measure.lyrics.trim());
+            rawSyllables = lyricItems
+              .filter(it => it.kind === 'syllable')
+              .map(it => (it as any).text);
+          }
+
+          if (rawSyllables.length > 0) {
+            const targetCount = sungNotes.length;
+            let finalSyllables: string[] = [];
+            if (rawSyllables.length === targetCount) {
+              finalSyllables = rawSyllables;
+            } else if (rawSyllables.length < targetCount) {
+              finalSyllables = [...rawSyllables];
+              while (finalSyllables.length < targetCount) {
+                finalSyllables.push('_');
+              }
+            } else {
+              finalSyllables = rawSyllables.slice(0, targetCount - 1);
+              const excess = rawSyllables.slice(targetCount - 1).join('');
+              finalSyllables.push(`(${excess})`);
+            }
+
+            lines.push(`lyr: ${finalSyllables.join(' ')}`);
           }
         }
       }

@@ -454,10 +454,10 @@ describe('transcription - serializer', () => {
     const dsl = serializeSongToGuitarDsl(song);
     assert.ok(dsl.includes('capo: 3'));
     assert.ok(dsl.includes('mel: | c4/4 d4/4 e4/4 g4/4 |'));
-    assert.ok(dsl.includes('lyr: | き ょ う は |'));
+    assert.ok(dsl.includes('lyr: き ょ う は'));
     assert.ok(dsl.includes('| % |'));
     assert.ok(dsl.includes('mel: | % |'));
-    assert.ok(dsl.includes('lyr: | あ し た も |'));
+    assert.ok(dsl.includes('lyr: あ し た も'));
     assert.ok(dsl.includes('| F/2 G/2 | % |'));
     assert.ok(dsl.includes('| C/1 | 1.d l:"インスト終了" |'));
 
