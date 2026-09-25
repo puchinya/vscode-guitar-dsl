@@ -79,6 +79,25 @@ npm run vscode:prepublish
 - Optionally run `npx @vscode/vsce ls` to ensure package files are resolved correctly.
 - Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
 
+### 5. Audio MIR (Rust/WASM) Gate
+Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts or packaging. Prerequisites: rustup toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` on `PATH`. If Homebrew's `rustc` shadows rustup, put `~/.cargo/bin` first.
+```bash
+cargo fmt --manifest-path wasm/Cargo.toml --check
+cargo test --manifest-path wasm/Cargo.toml
+cargo clippy --manifest-path wasm/Cargo.toml --all-targets -- -D warnings
+cargo check --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown
+npm run build:audio-mir        # wasm-pack --target nodejs -> media/audio-mir-wasm/
+npm run test:audio-mir-wasm    # Node smoke test of the generated WASM (synthetic audio)
+npm run compile
+npm test
+npm run vscode:prepublish      # builds Audio MIR WASM, then compiles TypeScript
+npx @vscode/vsce ls
+```
+- Rust tests use generated audio only. Never commit recorded or copyrighted audio, and never commit reference LAB files unless they are demonstrably redistributable.
+- `vsce ls` must include `out/audioMir/*.js`, `media/audio-mir-wasm/guitardsl_audio_mir.js` and `media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm`. It must exclude `wasm/**` (Rust sources and `wasm/target/`), `tests/**`, `scripts/**` and `media/audio-mir-wasm/*.d.ts`.
+- `media/audio-mir-wasm/` and `wasm/target/` are build output and are git-ignored. `wasm/Cargo.lock` is committed.
+- Optional real-song measurement: `node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>]` reports BPM error, duration-weighted chord root recall and exact recall, chord-change P/R/F1 at ±100 ms, analysis time and peak RSS.
+
 ## Iteration vs. Final Gate
 - During iteration: use focused checks (`npm run test:unit` for logic changes, `npx tsc --noEmit` or `npm run watch`).
 - Final gate: run `npm run compile && npm test` and ensure clean build and passing tests.

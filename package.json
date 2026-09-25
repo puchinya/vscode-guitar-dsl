@@ -56,6 +56,10 @@
         "title": "%command.transcribeYouTube.title%"
       },
       {
+        "command": "guitardsl.transcribeAudio",
+        "title": "%command.transcribeAudio.title%"
+      },
+      {
         "command": "guitardsl.setGeminiApiKey",
         "title": "%command.setGeminiApiKey.title%"
       },
@@ -106,7 +110,9 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build:audio-mir && npm run compile",
+    "build:audio-mir": "wasm-pack build wasm/crates/audio-mir --target nodejs --release --out-dir ../../../media/audio-mir-wasm --out-name guitardsl_audio_mir",
+    "test:audio-mir-wasm": "node --import tsx scripts/test-audio-mir-wasm.mjs",
     "compile": "tsc -p ./",
     "compile:tests": "tsc -p ./tests",
     "compile:all": "npm run compile && npm run compile:tests",

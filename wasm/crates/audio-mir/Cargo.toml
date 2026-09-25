@@ -1,0 +1,20 @@
+[package]
+name = "guitardsl-audio-mir"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Local Audio MIR (chord / beat / strum) analysis for the GuitarDSL VS Code extension"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hound = "3.5"
+rustfft = "6"
+
+# Keep the build offline and reproducible: do not download binaryen for wasm-opt.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

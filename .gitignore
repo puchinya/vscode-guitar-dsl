@@ -50,3 +50,7 @@ Thumbs.db
 # テスト・カバレッジ
 coverage/
 .nyc_output/
+
+# Audio MIR (Rust/WASM) build output
+media/audio-mir-wasm/
+wasm/target/

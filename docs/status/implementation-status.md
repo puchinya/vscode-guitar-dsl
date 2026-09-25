@@ -51,6 +51,8 @@
 | | `guitardsl.transcribeYouTube` (YouTube自動採譜) | ✅ 完了 | コマンドパレットのみ。Gemini API経由でMusic IR取得・バリデーション・DSL生成・新規エディタ表示 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
+| | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
+| **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入）、拍・ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／和声 3 倍音が maj7 と誤認されやすい／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
 | **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
 | **プレビュー画面** | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
@@ -82,19 +84,34 @@
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
   - `tests/unit/chord.test.ts`: `chord` 定義の解析・整形の往復、`@ラベル` 参照と診断、ダイアグラムの解決と描画、コード名の自動判定、プリセット（全ルート・タイプ、自動判定との一致）、エディタのモデル（開始・保存位置・重複）
+  - `tests/unit/audioMir.test.ts`: `AudioMirResultV1` の実行時検証（版・tick・スロット重複・非有限値・コード名/キー名）、アダプタ（1 セクション、コード/リズム 8・12・16 グリッドの各小節ちょうど 4 拍、先頭休符・`r1`・3 連、方向の決定的割り当て、strict 検証をそのまま通過、再パースでエラー 0）、Worker プロトコル（1 回だけ確定・遅延メッセージ無視）、コントローラ（多重起動防止、キャンセル、失敗後の再実行、非 file URI、失敗時にドキュメントを作らない、dispose）
   - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
-- **テスト実行結果**: **159 / 159 件 PASS** (0 failures)
+- **テスト実行結果**: **230 / 230 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.transcribeYouTube`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
   - ドキュメントシンボル
   - メロディ行の診断の発行と修正時のクリア
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）
-- **テスト実行結果**: **7 / 7 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+- **テスト実行結果**: **8 / 8 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+
+### 2.2A Audio MIR (Rust/WASM)
+- **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **53 / 53 件 PASS**。生成した合成音のみを使用し、次の項目を確認している。
+  - WAV 形式の受理と拒否
+  - STFT、HPSS、クロマ
+  - 全コード品質の判別（D/Dmaj7、F#/F#sus4、C#m/C#7、C/Cm、Am/Am7）
+  - 1 スロットのフリッカー抑制と、2 スロット以上の変化の保持
+  - テンポ 120 / 186（半分テンポに落ちない）/ 72（倍テンポに上がらない）
+  - ダウンビートと 8/12/16 グリッド
+  - エンドツーエンド（`| Dmaj7 | C#m7 | F#sus4 F#m |`）と決定性
+- **`cargo fmt --check` / `cargo clippy -D warnings` / `cargo check --target wasm32-unknown-unknown`**: いずれもエラー 0 件
+- **WASM スモークテスト (`npm run test:audio-mir-wasm`)**: **6 / 6 件 PASS**。Node ターゲットの WASM を実際に読み込み、TypeScript 側の検証とアダプタでエラーが 0 件になること、および各エラーコードを確認している。14.7 秒の音源の解析時間は約 0.34 秒（macOS arm64）。
+- **検証済みの環境**: macOS (arm64) のみ。Windows / Linux / リモート / Web は未検証。
+- **実曲での評価**: 未実施（`scripts/evaluate-audio-mir.mjs` で計測できる）。
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)
