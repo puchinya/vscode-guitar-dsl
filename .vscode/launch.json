@@ -12,8 +12,23 @@
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
       ],
+      "stopOnEntry": false,
       "preLaunchTask": "npm: compile",
       "timeout": 30000
+    },
+    {
+      "name": "Run Extension (without debugging)",
+      "type": "extensionHost",
+      "request": "launch",
+      "noDebug": true,
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile"
     },
     {
       "name": "Extension Tests",
