@@ -2,15 +2,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { compileGuitarDslToHtml } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
-import { getBundledFontFiles, writeScorePdf } from './pdf';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
-import { transcribeWithGemini } from './transcription/gemini';
-import { serializeSongToGuitarDsl } from './transcription/serializer';
-import { isValidYouTubeUrl } from './transcription/youtube';
-import { TranscribePanel } from './transcription/transcribePanel';
 import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
@@ -39,6 +34,7 @@ export async function exportScoreToPdf(
   }
 
   try {
+    const { getBundledFontFiles, writeScorePdf } = await import('./pdf');
     const config = vscode.workspace.getConfiguration('guitardsl');
     const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
     await writeScorePdf(targetUri.fsPath, doc.getText(), pageSize, orientation, getBundledFontFiles(extensionRoot), {
@@ -296,6 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const transcribeYouTubeDisposable = vscode.commands.registerCommand('guitardsl.transcribeYouTube', async () => {
+    const { TranscribePanel } = await import('./transcription/transcribePanel');
     TranscribePanel.createOrShow(context.extensionUri, context.secrets, currentLocale);
   });
 

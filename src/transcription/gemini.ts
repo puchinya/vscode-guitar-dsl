@@ -1,7 +1,7 @@
 // Gemini API adapter for YouTube audio transcription.
 // Encapsulates all @google/genai SDK dependencies.
 
-import { GoogleGenAI } from '@google/genai';
+import type { GoogleGenAI } from '@google/genai';
 import { MUSIC_IR_JSON_SCHEMA, TranscribedSong, validateTranscribedSong } from './model';
 import { normalizeYouTubeUrl } from './youtube';
 
@@ -110,7 +110,13 @@ export async function transcribeWithGemini(options: GeminiTranscriptionOptions):
   const canonicalUrl = normalizeYouTubeUrl(options.youtubeUrl);
   const modelName = options.model?.trim() || DEFAULT_GEMINI_MODEL;
 
-  const client: GeminiClientLike = options.client ?? new GoogleGenAI({ apiKey: options.apiKey });
+  let client: GeminiClientLike;
+  if (options.client) {
+    client = options.client;
+  } else {
+    const { GoogleGenAI } = await import('@google/genai');
+    client = new GoogleGenAI({ apiKey: options.apiKey }) as unknown as GeminiClientLike;
+  }
 
   let interaction: any;
   try {
