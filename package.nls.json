@@ -3,6 +3,7 @@
   "command.exportPdf.title": "GuitarDSL: Export PDF / Print",
   "command.editChordDiagram.title": "GuitarDSL: Edit Chord Diagram",
   "command.transcribeYouTube.title": "GuitarDSL: Transcribe from YouTube",
+  "command.transcribeAudio.title": "GuitarDSL: Transcribe Local Audio (Experimental)",
   "command.setGeminiApiKey.title": "GuitarDSL: Set Gemini API Key",
   "command.clearGeminiApiKey.title": "GuitarDSL: Clear Gemini API Key",
   "command.applyStrummingPattern.title": "GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)",

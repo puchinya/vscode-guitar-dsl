@@ -296,6 +296,20 @@ export function activate(context: vscode.ExtensionContext) {
     TranscribePanel.createOrShow(context.extensionUri, context.secrets, currentLocale);
   });
 
+  // Local Audio MIR (experimental): the controller, worker and WASM are loaded on first use.
+  // The controller is disposed with the extension, which terminates any active worker.
+  let audioMirController: Promise<import('./audioMir/controller').AudioMirController> | undefined;
+  const transcribeAudioDisposable = vscode.commands.registerCommand('guitardsl.transcribeAudio', async () => {
+    if (!audioMirController) {
+      audioMirController = import('./audioMir/controller').then(({ createAudioMirController }) => {
+        const controller = createAudioMirController(context.extensionUri, msgs);
+        context.subscriptions.push(controller);
+        return controller;
+      });
+    }
+    await (await audioMirController).run();
+  });
+
   const strummingCodeLensDisposable = vscode.languages.registerCodeLensProvider(
     { language: 'guitardsl' },
     new StrummingCodeLensProvider(currentLocale)
@@ -322,6 +336,7 @@ export function activate(context: vscode.ExtensionContext) {
     setApiKeyDisposable,
     clearApiKeyDisposable,
     transcribeYouTubeDisposable,
+    transcribeAudioDisposable,
     strummingCodeLensDisposable,
     applyStrummingDisposable
   );

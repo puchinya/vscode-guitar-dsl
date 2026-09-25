@@ -1,4 +1,5 @@
 import type { DiagnosticCode } from './compiler';
+import type { AudioMirErrorCode } from './audioMir/model';
 
 export type SupportedLocale = 'ja' | 'en';
 
@@ -38,6 +39,16 @@ export interface Messages {
   msgYouTubeUrlPlaceholder: string;
   msgInvalidYouTubeUrl: string;
   msgTranscribingProgress: string;
+
+  // Local Audio MIR transcription messages
+  audioMirDialogTitle: string;
+  audioMirWavFilter: string;
+  audioMirProgress: string;
+  audioMirBusy: string;
+  audioMirUnsupportedEnvironment: string;
+  audioMirFileTooLarge: string;
+  audioMirInvalidResult: string;
+  audioMirErrors: Record<AudioMirErrorCode, string>;
 }
 
 export const MESSAGES_JA: Messages = {
@@ -72,7 +83,27 @@ export const MESSAGES_JA: Messages = {
   msgPromptYouTubeUrl: '採譜するYouTube動画のURLを入力してください',
   msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
   msgInvalidYouTubeUrl: '有効なYouTube動画のURL（https://...）を入力してください。',
-  msgTranscribingProgress: 'GeminiでYouTube音源を自動採譜中...'
+  msgTranscribingProgress: 'GeminiでYouTube音源を自動採譜中...',
+
+  audioMirDialogTitle: '採譜するWAVファイルを選択（実験的）',
+  audioMirWavFilter: 'WAV音声',
+  audioMirProgress: 'ローカル音源を解析中（実験的）...',
+  audioMirBusy: 'ローカル音源の採譜はすでに実行中です。',
+  audioMirUnsupportedEnvironment: 'ローカル音源の採譜はローカルファイル（デスクトップ版 VS Code）のみ対応しています。',
+  audioMirFileTooLarge: 'WAVファイルが大きすぎます（上限 128 MiB）。',
+  audioMirInvalidResult: '解析結果を楽譜に変換できませんでした。',
+  audioMirErrors: {
+    INVALID_WAV: 'WAVファイルを読み取れませんでした（破損または途中で切れています）。',
+    UNSUPPORTED_FORMAT: '非対応のWAV形式です。非圧縮の整数PCM（16/24 bit）のみ対応しています。',
+    UNSUPPORTED_SAMPLE_RATE: '非対応のサンプルレートです。44.1 kHz または 48 kHz のみ対応しています。',
+    UNSUPPORTED_CHANNELS: '非対応のチャンネル数です。モノラルまたはステレオのみ対応しています。',
+    UNSUPPORTED_BIT_DEPTH: '非対応のビット深度です。16 bit または 24 bit のみ対応しています。',
+    AUDIO_TOO_LONG: '音源が長すぎます（上限 15 分 / 128 MiB）。',
+    NO_STABLE_BEAT: '安定した拍を検出できませんでした。',
+    NO_COMPLETE_MEASURE: '完全な4/4小節を検出できませんでした。',
+    ANALYSIS_FAILED: '音源の解析に失敗しました。',
+    AUDIO_MIR_RUNTIME_MISSING: '解析エンジン（WASM）が見つかりません。拡張機能を再インストールしてください。'
+  }
 };
 
 export const MESSAGES_EN: Messages = {
@@ -107,7 +138,27 @@ export const MESSAGES_EN: Messages = {
   msgPromptYouTubeUrl: 'Enter the YouTube video URL to transcribe',
   msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
   msgInvalidYouTubeUrl: 'Please enter a valid YouTube video URL (https://...).',
-  msgTranscribingProgress: 'Transcribing YouTube audio with Gemini...'
+  msgTranscribingProgress: 'Transcribing YouTube audio with Gemini...',
+
+  audioMirDialogTitle: 'Select a WAV file to transcribe (experimental)',
+  audioMirWavFilter: 'WAV audio',
+  audioMirProgress: 'Analyzing local audio (experimental)...',
+  audioMirBusy: 'Local audio transcription is already running.',
+  audioMirUnsupportedEnvironment: 'Local audio transcription supports local files in desktop VS Code only.',
+  audioMirFileTooLarge: 'The WAV file is too large (limit: 128 MiB).',
+  audioMirInvalidResult: 'The analysis result could not be converted into a score.',
+  audioMirErrors: {
+    INVALID_WAV: 'The WAV file could not be read (corrupted or truncated).',
+    UNSUPPORTED_FORMAT: 'Unsupported WAV format. Only uncompressed integer PCM (16/24-bit) is supported.',
+    UNSUPPORTED_SAMPLE_RATE: 'Unsupported sample rate. Only 44.1 kHz and 48 kHz are supported.',
+    UNSUPPORTED_CHANNELS: 'Unsupported channel count. Only mono and stereo are supported.',
+    UNSUPPORTED_BIT_DEPTH: 'Unsupported bit depth. Only 16-bit and 24-bit are supported.',
+    AUDIO_TOO_LONG: 'The audio is too long (limit: 15 minutes / 128 MiB).',
+    NO_STABLE_BEAT: 'No stable beat could be detected.',
+    NO_COMPLETE_MEASURE: 'No complete 4/4 measure could be detected.',
+    ANALYSIS_FAILED: 'Audio analysis failed.',
+    AUDIO_MIR_RUNTIME_MISSING: 'The analysis engine (WASM) is missing. Please reinstall the extension.'
+  }
 };
 
 export function resolveLocale(vscodeLang?: string): SupportedLocale {

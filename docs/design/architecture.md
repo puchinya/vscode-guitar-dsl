@@ -205,6 +205,41 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - 同一 IR から常に同一の文字列を出力。
   - シリアライズ直後に `parseGuitarDsl` を呼び出し、エラー診断が 0 件であることを確認。
 
+### 2.9 ローカル Audio MIR サブシステム（実験的）(`wasm/crates/audio-mir/`, `src/audioMir/`)
+ローカルの PCM WAV からコード進行とストローク位置を推定する。仕様は spec §3.8 を参照。Gemini 採譜（§2.8）とはコードを共有せず、共有するのは Music IR（`TranscribedSong`）、`validateTranscribedSong`、`serializeSongToGuitarDsl` だけである。
+
+- **Rust/WASM コア**（Cargo ワークスペース `wasm/`、クレート `wasm/crates/audio-mir/`）:
+  - 依存は `wasm-bindgen`、`serde`/`serde_json`、`hound`、`rustfft` に限る。
+  - `wasm-pack --target nodejs` でビルドし、生成物（CommonJS グルーと `.wasm`）を `media/audio-mir-wasm/` に出力する。この生成物はコミットせず、VSIX には同梱する。
+  - JS へ公開するのは `analyze_wav(bytes) -> Result<String, JsValue>` だけである。戻り値は `AudioMirResultV1` の JSON で、失敗時は安定したエラーコード文字列を返す。
+  - 処理は次の順に進む。
+    - `wav.rs`: `hound` で逐次デコードする。PCM 全体の複製は保持しない。
+    - `stft.rs`: 2 系統の有界ローリング STFT を使う。和声用は 8192/1024、リズム用は 2048/512 で、窓は Hann。
+    - `hpss.rs`: 中央値フィルタによるソフトマスクで、和声成分と打撃成分を分ける。
+    - `chroma.rs`: メインクロマとベースクロマを計算する。
+    - `tempo.rs`: オンセット包絡の自己相関とビート DP でテンポと拍を求め、4/4 のダウンビート位相を決める。
+    - `chord.rs`: `ChordClassifier` trait とその実装 `TemplateChordClassifier` で候補を出し、16 分スロット単位の Viterbi で平滑化する。
+    - `rhythm.rs`: アタックを検出し、8/12/16 グリッドを DP で選択して量子化する。
+    - `key.rs`: Krumhansl-Schmuckler でキーを推定する。推定値はメタデータ専用で、コード推定には使わない。
+    - `pipeline.rs`: 以上をつないで結果を組み立てる。
+  - 保持するのは時系列の特徴量（クロマ、オンセット、低域エネルギー）だけで、スペクトログラム全体は保持しない。
+  - クロマとベースクロマを受け取る `ChordClassifier` trait が、将来の学習済みモデルへの差し替え境界になる。
+  - 乱数は使わず、同じ入力からは同じ結果を返す。NaN や Infinity を含む結果は `ANALYSIS_FAILED` として扱う。
+- **TypeScript 境界** (`src/audioMir/`):
+  - `model.ts` / `validate.ts`: `AudioMirResultV1` の型と、信頼できない JSON を実行時に構造検証する処理。
+  - `adapter.ts`: `AudioMirResultV1` を `TranscribedSong` に変換する純粋関数。
+    - コード長は隣り合う `tick16` の差から求める。
+    - リズム長は隣り合うアタックの間隔から求める。先頭の空きは休符にし、アタックがない小節は `r1` にする。
+    - 8/16 グリッドは `duration.ts` で分解し、12 グリッドは `8t` を単位に分解する。
+    - どの小節も検証の前にちょうど 4 拍になるよう組み立て、`autoRepair` は使わない。
+  - `worker.ts`: `worker_threads` のエントリ。WAV を読み込み、WASM を `require` して `analyze_wav` を呼ぶ。
+  - `workerClient.ts`: 親スレッドと Worker 間のプロトコル。`{type:'success', resultJson}` または `{type:'error', code}` をやり取りする。
+  - `controller.ts`: VS Code UI を担当する `AudioMirController`。
+    - 状態は `idle`、`running(worker)`、`disposed` の 3 つで、同時に扱うジョブは 1 つだけ。
+    - キャンセル時と dispose 時は Worker を即座に終了させ、その後に届いたメッセージは無視する。
+    - 出力チャンネルを所有し、`context.subscriptions` に登録して拡張の終了時に破棄する。
+  - `vscode` を import するのは `controller.ts` だけである。
+
 ---
 
 ## 3. データフローとメッセージング (Data & Event Flow)

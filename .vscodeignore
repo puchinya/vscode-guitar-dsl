@@ -14,6 +14,12 @@ scripts/**
 **/*.ts
 **/*.map
 
+# Rust/WASM sources and Cargo output (only the generated media/audio-mir-wasm runtime ships)
+wasm/**
+media/audio-mir-wasm/.gitignore
+media/audio-mir-wasm/package.json
+media/audio-mir-wasm/README.md
+
 # Documentation for developers / agents
 docs/**
 docs_only_human/**

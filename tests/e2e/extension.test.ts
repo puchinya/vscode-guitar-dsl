@@ -38,6 +38,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       'Command guitardsl.transcribeYouTube should be registered'
     );
     assert.ok(
+      commands.includes('guitardsl.transcribeAudio'),
+      'Command guitardsl.transcribeAudio should be registered'
+    );
+    assert.ok(
       commands.includes('guitardsl.setGeminiApiKey'),
       'Command guitardsl.setGeminiApiKey should be registered'
     );
