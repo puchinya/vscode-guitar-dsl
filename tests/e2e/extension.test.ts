@@ -45,6 +45,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       commands.includes('guitardsl.clearGeminiApiKey'),
       'Command guitardsl.clearGeminiApiKey should be registered'
     );
+    assert.ok(
+      commands.includes('guitardsl.applyStrummingPattern'),
+      'Command guitardsl.applyStrummingPattern should be registered'
+    );
   });
 
   test('CodeLens should offer the chord editor on chord definition lines', async () => {
@@ -167,5 +171,17 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const cleared = await waitFor(d => d.length === 0);
     assert.strictEqual(cleared.length, 0, 'Diagnostics should be cleared after fixing the note');
   });
+
+  test('Transcribe YouTube command should lazily open transcribe panel', async () => {
+    await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+    let transcribeTab: vscode.Tab | undefined;
+    for (let i = 0; i < 50 && !transcribeTab; i++) {
+      const tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+      transcribeTab = tabs.find(t => t.input instanceof vscode.TabInputWebview && (t.label.includes('採譜') || t.label.includes('Transcribe')));
+      if (!transcribeTab) await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(transcribeTab, 'Transcribe webview tab should be open');
+  });
 });
+
 
