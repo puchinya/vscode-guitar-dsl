@@ -255,6 +255,25 @@ describe('beginnerMode - custom definitions', () => {
   });
 });
 
+describe('beginnerMode - unused definition warnings', () => {
+  it('BEG-31 does not warn about an unreferenced labeled definition of a substituted name', () => {
+    const src = 'chord F@alt = 133211\n| F | C |\n';
+    const p = plan(src, 'forbid', 0);
+    assert.deepStrictEqual(finalChords(p.text), ['Fmaj7', 'C']);
+    assert.deepStrictEqual(p.unusedDefinitions, []);
+    assert.deepStrictEqual(p.warnings, []);
+  });
+
+  it('BEG-32 warns only about definition keys the source chords resolved to', () => {
+    // F@alt is used (kept, labeled); the unlabeled F definition is used and dropped by the substitution.
+    const src = 'chord F = 133211 barre:1\nchord F@alt = xx3211\nchord G@x = 320003\n| F | F@alt | C |\n';
+    const p = plan(src, 'forbid', 0);
+    assert.deepStrictEqual(finalChords(p.text), ['Fmaj7', 'F@alt', 'C']);
+    assert.deepStrictEqual(p.unusedDefinitions, ['F']);
+    assert.deepStrictEqual(p.warnings, ['unusedChordDefinitions']);
+  });
+});
+
 describe('beginnerMode - labeled chords', () => {
   const src = 'chord C@x = x35553\n| C@x | Am7 |\n';
 

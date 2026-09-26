@@ -104,7 +104,7 @@ export type BeginnerTransformPlan =
       candidate: BeginnerCandidate;
       recommendedCapo?: number;
       warnings: CapoTransformWarning[];
-      /** Definition keys used by the source that the final DSL no longer references (never deleted). */
+      /** Definition keys the source chords resolved to that no final chord resolves to (never deleted). */
       unusedDefinitions: string[];
     }
   | { ok: false; code: BeginnerFailureCode; detail?: string };
@@ -147,6 +147,23 @@ export const SLASH_BASS_DROP_PENALTY = 1;
 
 const EPSILON = 1e-9;
 
+/** The `chord` definition a key resolves to (renderer precedence); undefined when none applies. */
+function definitionFor(name: string, label: string | undefined, definitions: readonly ChordDefinition[]): ChordDefinition | undefined {
+  const find = (key: string) => definitions.find(d => chordKey(d.name, d.label) === key);
+  return find(chordKey(name, label)) ?? (label !== undefined ? find(name) : undefined);
+}
+
+/** Keys of the definitions the written chords of a score actually resolve to. */
+function usedDefinitionKeys(keys: readonly string[], definitions: readonly ChordDefinition[]): Set<string> {
+  const used = new Set<string>();
+  for (const key of new Set(keys)) {
+    const { name, label } = splitChordKey(key);
+    const d = definitionFor(name, label, definitions);
+    if (d) used.add(chordKey(d.name, d.label));
+  }
+  return used;
+}
+
 /**
  * The voicing the final score draws for a key (same precedence as the renderer, docs/specs
  * guitardsl-syntax §7.3): the key's `chord` definition (a labeled key falls back to the unlabeled
@@ -154,8 +171,7 @@ const EPSILON = 1e-9;
  * (the capo playability semantics). Undefined when none is known.
  */
 function drawnVoicing(name: string, label: string | undefined, definitions: readonly ChordDefinition[]): ChordVoicing | undefined {
-  const find = (key: string) => definitions.find(d => chordKey(d.name, d.label) === key);
-  const own = find(chordKey(name, label)) ?? (label !== undefined ? find(name) : undefined);
+  const own = definitionFor(name, label, definitions);
   if (own) return own;
   const direct = getDefaultVoicing(name);
   if (direct) return direct;
@@ -376,11 +392,10 @@ export function planBeginnerTransform(
     }
   }
 
-  const sourceNames = new Set(writtenChordSequence(source).map(k => splitChordKey(k).name));
-  const finalNames = new Set(actual.map(k => splitChordKey(k).name));
-  const unusedDefinitions = source.chordDefinitions
-    .filter(d => sourceNames.has(d.name) && !finalNames.has(d.name))
-    .map(d => chordKey(d.name, d.label));
+  // Only definitions the source chords actually used and the final chords no longer use.
+  const sourceUsed = usedDefinitionKeys(writtenChordSequence(source), source.chordDefinitions);
+  const finalUsed = usedDefinitionKeys(actual, final.chordDefinitions);
+  const unusedDefinitions = Array.from(sourceUsed).filter(k => !finalUsed.has(k));
   return {
     ok: true,
     sourceCapo,
