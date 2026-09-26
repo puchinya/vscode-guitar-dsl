@@ -124,8 +124,8 @@ describe('render - annotation lanes (T017, T049, T050)', () => {
     // Lanes come in the documented order: rehearsal mark above tempo above text above ottava.
     const pos = (s: string) => svg.indexOf(s);
     assert.ok(pos('annotation-mark') < pos('annotation-tempo') && pos('annotation-tempo') < pos('annotation-text'));
-    // The notation is shifted below the lanes.
-    assert.ok(svg.includes(`<g transform="translate(0, ${g.annotationTop})">`));
+    // The notation is shifted below the lanes (and up by the header lift of the melody staff).
+    assert.ok(svg.includes(`<g transform="translate(0, ${g.annotationTop - g.lift})">`));
   });
 
   it('keeps rhythm-only systems without events at the original height', () => {
@@ -336,7 +336,7 @@ describe('render - PR #69 review delta (dynamics collision, bend direction)', ()
 
 describe('render - annotation lanes close to the staff', () => {
   const geometry = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry;
-  const staffBottom = (g: ReturnType<typeof geometry>) => g.annotationTop + g.rhythmOffset + MELODY_STAVE_BOTTOM;
+  const staffBottom = (g: ReturnType<typeof geometry>) => g.annotationTop - g.lift + g.rhythmOffset + MELODY_STAVE_BOTTOM;
 
   it('puts dynamics right under the rhythm staff without growing the system', () => {
     const g = geometry(`@dynamic: mf\n${bar}`);
@@ -399,6 +399,84 @@ describe('render - grace notes skip rests (spec §12.2.1)', () => {
     for (const dsl of ['| C |\nmel: | c5/16{grace} r/1 |', '| C | 4 4 4 c4/16{grace} r4 |']) {
       const svg = svgOf(dsl);
       assert.strictEqual(graceX(svg).length, 1, dsl);
+    }
+  });
+});
+
+describe('render - melody staff header lift (Issue #70)', () => {
+  const geometry = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry;
+  // Chord names sit on y = 33 (+ lift) with a 15 unit font; the melody staff top line is y = 70.
+  const headerBottom = (g: ReturnType<typeof geometry>) => 33 + 15 * 0.25 + g.lift;
+  const melody = (notes: string) => `| C | 4 4 4 4 |\nmel: | ${notes} |`;
+
+  it('moves the header of a plain melody staff close to the staff and shortens the system', () => {
+    const g = geometry(melody('c5/4 d e f'));
+    assert.ok(g.lift >= 16, `lift ${g.lift}`);
+    assert.ok(70 - headerBottom(g) >= 8);
+    assert.strictEqual(g.unitHeight, g.contentHeight + g.annotationTop + g.annotationBottom);
+    const svg = svgOf(melody('c5/4 d e f'));
+    assert.ok(svg.includes(`<g class="melody-header" transform="translate(0, ${g.lift})">`));
+    assert.ok(svg.includes(`<g transform="translate(0, ${-g.lift})">`), 'content drawn higher by the lift');
+  });
+
+  it('keeps rhythm-only systems unchanged', () => {
+    const g = geometry('| C | 4 4 4 4 |');
+    assert.strictEqual(g.lift, 0);
+    assert.strictEqual(g.unitHeight, SYSTEM_UNIT_HEIGHT);
+    assert.ok(!svgOf('| C | 4 4 4 4 |').includes('melody-header'));
+  });
+
+  it('keeps 8 units between the header and the highest ink below it', () => {
+    const plain = geometry(melody('c5/4 d e f')).lift;
+    const cases: [string, string, number][] = [
+      ['high note', 'a6/4 g e c', 102 - 19 * 4 - 5],
+      ['bend', 'c5/4{bend:2} d e f', Math.min(Math.max(46, 82 - 22), 72) - 9],
+      ['hammer-on above stems down', 'c6/8{hammer} d6 e6 d6 c6/2', 102 - 12 * 4 - 32],
+      ['tuplet', 'c5/8{5:4} d e f g c5/2', 0],
+      ['fermata', 'c5/4 d e f/4{fermata}', 0],
+      ['beam with stems up', 'a4/8 b4 c5 d5 a4/2', 0]
+    ];
+    for (const [label, notes, inkTop] of cases) {
+      const g = geometry(melody(notes));
+      assert.ok(g.lift <= plain, `${label}: lift ${g.lift} vs plain ${plain}`);
+      // With no lift the header stays where it always was (a very high note may reach it, as before Issue #70).
+      if (inkTop > 0 && g.lift > 0) assert.ok(inkTop - headerBottom(g) >= 8 - 1e-9, `${label}: ink ${inkTop}, header bottom ${headerBottom(g)}`);
+    }
+    assert.strictEqual(geometry(melody('a6/4 g e c')).lift, 0);
+    assert.ok(geometry(melody('c5/8{5:4} d e f g c5/2')).lift < plain);
+    assert.ok(geometry(melody('c5/4 d e f/4{fermata}')).lift < plain);
+  });
+
+  it('draws the rendered tuplet number, fermata and bend label below the lifted chord names', () => {
+    let checked = 0;
+    for (const notes of ['c5/8{5:4} d e f g c5/2', 'c5/4 d e f/4{fermata}', 'c5/4{bend:2} d e f', 'a4/8 b4 c5 d5 a4/2']) {
+      const g = geometry(melody(notes));
+      const svg = svgOf(melody(notes));
+      if (g.lift === 0) continue;
+      const content = svg.slice(svg.indexOf(`<g transform="translate(0, ${-g.lift})">`));
+      const tops = [
+        ...[...content.matchAll(/class="tuplet-number" x="[\d.-]+" y="([\d.-]+)"/g)].map(m => Number(m[1]) - 6),
+        ...[...content.matchAll(/class="technique-fermata"><path d="M [\d.-]+,([\d.-]+)/g)].map(m => Number(m[1]) - 6),
+        ...[...content.matchAll(/class="technique-bend">[\s\S]*?<text x="[\d.-]+" y="([\d.-]+)"/g)].map(m => Number(m[1]) - 6)
+      ];
+      assert.ok(tops.length > 0 || notes.startsWith('a4/8'), notes);
+      checked++;
+      for (const t of tops) assert.ok(t - headerBottom(g) >= 8 - 1e-9, `${notes}: mark top ${t}, header bottom ${headerBottom(g)}`);
+    }
+    assert.ok(checked >= 3, 'most cases keep a lift and are checked');
+  });
+
+  it('moves the section label, volta bracket and special mark together with the chord names', () => {
+    const dsl = '[Verse]\n|: C | 4 4 4 4 | [1.] G Fine | 4 4 4 4 :|\nmel: | c5/4 d e f | g4/1 |';
+    const svg = svgOf(dsl);
+    const at = svg.indexOf('class="melody-header"');
+    assert.ok(at > 0);
+    const beforeHeader = svg.slice(0, at);
+    const inHeader = svg.slice(at);
+    // Header items only appear inside the lifted header group, never among the staff drawing before it.
+    for (const text of ['>Verse</text>', '>C</text>', '>1.</text>', '>Fine</text>']) {
+      assert.ok(inHeader.includes(text), `${text} in the lifted header`);
+      assert.ok(!beforeHeader.slice(beforeHeader.lastIndexOf('<g class="system"')).includes(text), `${text} not outside it`);
     }
   });
 });
