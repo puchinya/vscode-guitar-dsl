@@ -13,7 +13,21 @@ import { Worker } from 'node:worker_threads';
 const TOLERANCE = 0.1;
 const PITCH = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4, 'E#': 5, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11, 'B#': 0 };
 const SUFFIX_QUALITY = { '': 'maj', m: 'min', '7': '7', maj7: 'maj7', m7: 'min7', sus2: 'sus2', sus4: 'sus4', dim: 'dim', aug: 'aug' };
-const HARTE_QUALITY = { maj: 'maj', min: 'min', '7': '7', maj7: 'maj7', min7: 'min7', sus2: 'sus2', sus4: 'sus4', dim: 'dim', aug: 'aug' };
+/**
+ * Harte shorthand -> Audio MIR quality, MIREX-style reduction: extensions fold into the
+ * seventh level (9/11/13 -> 7, maj9 -> maj7, min9/min11 -> min7), sixths into the triad,
+ * dim7 into dim. hdim7, minmaj7 and interval lists stay unsupported (root recall only).
+ */
+const HARTE_QUALITY = {
+  maj: 'maj', maj6: 'maj', min: 'min', min6: 'min', '7': '7', '9': '7', '11': '7', '13': '7',
+  maj7: 'maj7', maj9: 'maj7', maj11: 'maj7', maj13: 'maj7', min7: 'min7', min9: 'min7', min11: 'min7', min13: 'min7',
+  sus2: 'sus2', sus4: 'sus4', dim: 'dim', dim7: 'dim', aug: 'aug'
+};
+/** Major/minor class of a quality or Harte shorthand (null for sus, power chords, unknown). */
+const TRIAD_CLASS = {
+  maj: 'maj', maj7: 'maj', '7': 'maj', aug: 'maj', '6': 'maj', '9': 'maj', maj9: 'maj', '11': 'maj', '13': 'maj', maj6: 'maj',
+  min: 'min', min7: 'min', dim: 'min', dim7: 'min', hdim7: 'min', min6: 'min', min9: 'min', minmaj7: 'min', min11: 'min'
+};
 
 function usage() {
   console.error('usage: node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>] [--json]');
@@ -32,13 +46,14 @@ export function parseChord(label) {
   }
   const root = PITCH[harte[1]];
   const rest = harte[2];
-  const quality = clean.includes(':')
-    ? (rest === '' ? 'maj' : HARTE_QUALITY[rest.replace(/^\((.*)\)$/, '$1')] ?? null)
-    : (SUFFIX_QUALITY[rest] ?? null);
-  return { root: root ?? null, quality };
+  // Harte: drop added/omitted degrees "(...)"; a bare interval list "(1,5)" has no shorthand.
+  const shorthand = clean.includes(':') ? (rest === '' ? 'maj' : rest.replace(/\(.*\)$/, '')) : null;
+  const quality = shorthand !== null ? (HARTE_QUALITY[shorthand] ?? null) : (SUFFIX_QUALITY[rest] ?? null);
+  const triad = TRIAD_CLASS[shorthand ?? quality] ?? null;
+  return { root: root ?? null, quality, triad };
 }
 
-function parseLab(text) {
+export function parseLab(text) {
   return text
     .split(/\r?\n/)
     .map(l => l.trim())
@@ -104,6 +119,10 @@ export function evaluate(result, reference) {
   let rootHit = 0;
   let exactTotal = 0;
   let exactHit = 0;
+  let majminTotal = 0;
+  let majminHit = 0;
+  /** Reference quality -> estimated quality -> seconds (root-matched overlaps only). */
+  const confusion = {};
   for (const ref of reference) {
     const r = parseChord(ref.label);
     if (!r || r.root === null) {
@@ -113,6 +132,9 @@ export function evaluate(result, reference) {
     rootTotal += len;
     if (r.quality) {
       exactTotal += len;
+    }
+    if (r.triad) {
+      majminTotal += len;
     }
     for (const p of pred) {
       const ov = overlap(ref, p);
@@ -125,6 +147,12 @@ export function evaluate(result, reference) {
         if (r.quality && e.quality === r.quality) {
           exactHit += ov;
         }
+        if (r.triad && e.triad === r.triad) {
+          majminHit += ov;
+        }
+        const refQ = r.quality ?? 'other';
+        confusion[refQ] ??= {};
+        confusion[refQ][e.quality] = (confusion[refQ][e.quality] ?? 0) + ov;
       }
     }
   }
@@ -137,12 +165,93 @@ export function evaluate(result, reference) {
   return {
     rootRecall: rootTotal ? rootHit / rootTotal : 0,
     exactSupportedRecall: exactTotal ? exactHit / exactTotal : 0,
+    majminRecall: majminTotal ? majminHit / majminTotal : 0,
+    totals: { rootTotal, rootHit, exactTotal, exactHit, majminTotal, majminHit },
+    confusion,
     change: { precision, recall, f1, reference: refChanges.length, estimated: estChanges.length, matched: hits }
   };
 }
 
-function analyzeInWorker(wavPath) {
-  const modulePath = join(dirname(fileURLToPath(import.meta.url)), '..', 'media', 'audio-mir-wasm', 'guitardsl_audio_mir.js');
+/** Aggregates `evaluate()` results over many excerpts (duration-weighted). */
+export function createAccumulator() {
+  const totals = { rootTotal: 0, rootHit: 0, exactTotal: 0, exactHit: 0, majminTotal: 0, majminHit: 0 };
+  const change = { reference: 0, estimated: 0, matched: 0 };
+  const confusion = {};
+  const failures = {};
+  const bpmErrors = [];
+  let excerpts = 0;
+  return {
+    add(metrics, bpmError) {
+      excerpts++;
+      for (const k of Object.keys(totals)) {
+        totals[k] += metrics.totals[k];
+      }
+      change.reference += metrics.change.reference;
+      change.estimated += metrics.change.estimated;
+      change.matched += metrics.change.matched;
+      for (const [ref, row] of Object.entries(metrics.confusion)) {
+        confusion[ref] ??= {};
+        for (const [est, sec] of Object.entries(row)) {
+          confusion[ref][est] = (confusion[ref][est] ?? 0) + sec;
+        }
+      }
+      if (bpmError !== undefined) {
+        bpmErrors.push(bpmError);
+      }
+    },
+    /** A failed excerpt still counts: its whole reference duration is missed. */
+    addFailure(code, reference) {
+      excerpts++;
+      failures[code] = (failures[code] ?? 0) + 1;
+      const empty = evaluate({ measures: [] }, reference);
+      for (const k of Object.keys(totals)) {
+        totals[k] += empty.totals[k];
+      }
+      change.reference += empty.change.reference;
+    },
+    summary() {
+      const ratio = (a, b) => (b ? a / b : 0);
+      const precision = ratio(change.matched, change.estimated);
+      const recall = ratio(change.matched, change.reference);
+      const sorted = [...bpmErrors].sort((a, b) => a - b);
+      return {
+        excerpts,
+        failures,
+        rootRecall: ratio(totals.rootHit, totals.rootTotal),
+        exactSupportedRecall: ratio(totals.exactHit, totals.exactTotal),
+        majminRecall: ratio(totals.majminHit, totals.majminTotal),
+        change: { precision, recall, f1: precision + recall ? (2 * precision * recall) / (precision + recall) : 0 },
+        bpmMedianAbsError: sorted.length ? sorted[sorted.length >> 1] : undefined,
+        confusion
+      };
+    }
+  };
+}
+
+/** Human-readable summary lines shared by the set evaluators. */
+export function formatSummary(summary, { confusion = true } = {}) {
+  const pct = v => `${(v * 100).toFixed(1)}%`;
+  const lines = [
+    `chord root recall         ${pct(summary.rootRecall)}`,
+    `exact chord recall        ${pct(summary.exactSupportedRecall)} (supported qualities)`,
+    `maj/min recall            ${pct(summary.majminRecall)}`,
+    `chord change (+-100 ms)   P ${pct(summary.change.precision)} R ${pct(summary.change.recall)} F1 ${pct(summary.change.f1)}`
+  ];
+  if (summary.bpmMedianAbsError !== undefined) {
+    lines.push(`tempo median abs error    ${summary.bpmMedianAbsError.toFixed(2)} BPM`);
+  }
+  if (confusion) {
+    lines.push('quality confusion (reference -> estimate, seconds, root-matched):');
+    for (const [refQ, row] of Object.entries(summary.confusion).sort()) {
+      const cells = Object.entries(row).sort((a, b) => b[1] - a[1]).map(([q, sec]) => `${q} ${sec.toFixed(0)}`).join(', ');
+      lines.push(`  ${refQ.padEnd(6)} -> ${cells}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export function analyzeInWorker(wavPath, modulePathOverride) {
+  const modulePath = modulePathOverride ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'media', 'audio-mir-wasm', 'guitardsl_audio_mir.js');
   const source = `
     const { parentPort, workerData } = require('node:worker_threads');
     const fs = require('node:fs');
@@ -204,6 +313,7 @@ async function main() {
   console.log(`key / measures            ${report.key} / ${report.measures}`);
   console.log(`chord root recall         ${pct(metrics.rootRecall)} (duration-weighted)`);
   console.log(`exact chord recall        ${pct(metrics.exactSupportedRecall)} (supported qualities, duration-weighted)`);
+  console.log(`maj/min recall            ${pct(metrics.majminRecall)} (duration-weighted)`);
   console.log(`chord change (+-100 ms)   P ${pct(metrics.change.precision)} R ${pct(metrics.change.recall)} F1 ${pct(metrics.change.f1)} (${metrics.change.matched}/${metrics.change.reference} ref, ${metrics.change.estimated} est)`);
 }
 

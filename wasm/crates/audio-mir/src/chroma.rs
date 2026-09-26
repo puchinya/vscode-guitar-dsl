@@ -1,5 +1,9 @@
 //! Main (65..4200 Hz) and bass (41..330 Hz) 12-bin chroma from a harmonic magnitude
 //! spectrum. These vectors are the replacement seam for a future learned classifier.
+//!
+//! The spectrum is first mapped to semitones (MIDI 28..108). Overtones are then peeled
+//! greedily from low to high pitch before folding into pitch classes, so the 3rd harmonic
+//! of a chord's third is not mistaken for its major seventh.
 
 use crate::stft::{bin_at_or_above, bin_at_or_below, bin_frequency};
 
@@ -13,17 +17,62 @@ pub const BASS_LO_HZ: f32 = 41.0;
 pub const BASS_HI_HZ: f32 = 330.0;
 const SIGMA_SEMITONES: f32 = 0.25;
 const MIN_WEIGHT: f32 = 1e-4;
+/// Semitone spectrum range: E1 (41.2 Hz) .. C8 (4186 Hz).
+const MIDI_LO: i32 = 28;
+const MIDI_HI: i32 = 108;
+const N_PITCHES: usize = (MIDI_HI - MIDI_LO + 1) as usize;
+/// `(harmonic number, semitones above the fundamental)` peeled for every pitch.
+const OVERTONES: [(i32, usize); 5] = [(2, 12), (3, 19), (4, 24), (5, 28), (6, 31)];
 
 pub type Chroma = [f32; 12];
 
+/// Overtone peeling: each selected harmonic `h` of pitch `p` is assumed to carry
+/// `alpha * gamma^(h-1) * s[p]` and is subtracted from the pitch it lands on.
+/// `alpha = 0` reproduces the plain (#50 baseline) chroma.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChromaParams {
+    pub overtone_alpha: f32,
+    pub overtone_gamma: f32,
+    /// Harmonics peeled, as a bit set: bit `h - 2` for harmonic `h` in 2..=6
+    /// (default [`HARMONICS_3_6`]).
+    pub peel_mask: u8,
+}
+
+/// Peel harmonics 3 and 6 only: the two harmonics that land on a different pitch class
+/// (a fifth above). Octave harmonics (2, 4) carry the same pitch class, so peeling them
+/// only weakens that class (typically the root doubled by the bass). Harmonic 5 (a major
+/// third) also removes genuine chord thirds under a loud bass.
+pub const HARMONICS_3_6: u8 = 0b1_0010;
+
+impl ChromaParams {
+    pub const BASELINE: ChromaParams = ChromaParams {
+        overtone_alpha: 0.0,
+        overtone_gamma: 0.0,
+        peel_mask: 0,
+    };
+}
+
+impl Default for ChromaParams {
+    fn default() -> Self {
+        ChromaParams {
+            overtone_alpha: 0.6,
+            overtone_gamma: 0.7,
+            peel_mask: HARMONICS_3_6,
+        }
+    }
+}
+
 struct BinWeights {
     bin: usize,
+    /// `(pitch index, weight)` into the semitone spectrum.
     weights: Vec<(usize, f32)>,
 }
 
 pub struct ChromaMapper {
-    main: Vec<BinWeights>,
-    bass: Vec<BinWeights>,
+    bins: Vec<BinWeights>,
+    main: (usize, usize),
+    bass: (usize, usize),
+    peel: [f32; OVERTONES.len()],
 }
 
 /// Fractional MIDI pitch of a frequency.
@@ -31,29 +80,31 @@ pub fn midi_pitch(hz: f32) -> f32 {
     69.0 + 12.0 * (hz / 440.0).log2()
 }
 
-fn pitch_class_weights(hz: f32) -> Vec<(usize, f32)> {
-    let midi = midi_pitch(hz);
-    let mut out = Vec::new();
-    for pc in 0..12 {
-        let r = (midi - pc as f32).rem_euclid(12.0);
-        let d = r.min(12.0 - r);
-        let w = (-0.5 * (d / SIGMA_SEMITONES).powi(2)).exp();
-        if w >= MIN_WEIGHT {
-            out.push((pc, w));
-        }
-    }
-    out
+fn midi_hz(midi: i32) -> f32 {
+    440.0 * 2f32.powf((midi - 69) as f32 / 12.0)
 }
 
-fn band(lo_hz: f32, hi_hz: f32, n_fft: usize, sample_rate: u32) -> Vec<BinWeights> {
-    let lo = bin_at_or_above(lo_hz, n_fft, sample_rate).max(1);
-    let hi = bin_at_or_below(hi_hz, n_fft, sample_rate);
-    (lo..=hi)
-        .map(|bin| BinWeights {
-            bin,
-            weights: pitch_class_weights(bin_frequency(bin, n_fft, sample_rate)),
+fn pitch_weights(hz: f32) -> Vec<(usize, f32)> {
+    let midi = midi_pitch(hz);
+    (MIDI_LO..=MIDI_HI)
+        .filter_map(|p| {
+            let d = midi - p as f32;
+            let w = (-0.5 * (d / SIGMA_SEMITONES).powi(2)).exp();
+            (w >= MIN_WEIGHT).then_some(((p - MIDI_LO) as usize, w))
         })
         .collect()
+}
+
+/// Inclusive pitch-index range whose center frequencies lie within `[lo_hz, hi_hz]`.
+fn pitch_range(lo_hz: f32, hi_hz: f32) -> (usize, usize) {
+    let lo = (MIDI_LO..=MIDI_HI)
+        .find(|&p| midi_hz(p) >= lo_hz)
+        .unwrap_or(MIDI_LO);
+    let hi = (MIDI_LO..=MIDI_HI)
+        .rev()
+        .find(|&p| midi_hz(p) <= hi_hz)
+        .unwrap_or(MIDI_HI);
+    ((lo - MIDI_LO) as usize, (hi - MIDI_LO) as usize)
 }
 
 /// L2-normalizes in place when the norm is non-zero.
@@ -76,43 +127,72 @@ pub fn cosine(a: &Chroma, b: &Chroma) -> f32 {
 }
 
 impl ChromaMapper {
-    pub fn new(n_fft: usize, sample_rate: u32) -> Self {
+    pub fn new(n_fft: usize, sample_rate: u32, params: ChromaParams) -> Self {
+        let lo = bin_at_or_above(BASS_LO_HZ.min(MAIN_LO_HZ), n_fft, sample_rate).max(1);
+        let hi = bin_at_or_below(MAIN_HI_HZ.max(BASS_HI_HZ), n_fft, sample_rate);
+        let bins = (lo..=hi)
+            .map(|bin| BinWeights {
+                bin,
+                weights: pitch_weights(bin_frequency(bin, n_fft, sample_rate)),
+            })
+            .filter(|b| !b.weights.is_empty())
+            .collect();
+        let mut peel = [0.0f32; OVERTONES.len()];
+        for (k, &(h, _)) in OVERTONES.iter().enumerate() {
+            if params.peel_mask & (1 << (h - 2)) != 0 {
+                peel[k] = params.overtone_alpha * params.overtone_gamma.powi(h - 1);
+            }
+        }
         ChromaMapper {
-            main: band(MAIN_LO_HZ, MAIN_HI_HZ, n_fft, sample_rate),
-            bass: band(BASS_LO_HZ, BASS_HI_HZ, n_fft, sample_rate),
+            bins,
+            main: pitch_range(MAIN_LO_HZ, MAIN_HI_HZ),
+            bass: pitch_range(BASS_LO_HZ, BASS_HI_HZ),
+            peel,
         }
     }
 
     /// Highest bin the mapper reads (inclusive).
     pub fn max_bin(&self) -> usize {
-        self.main
-            .iter()
-            .chain(self.bass.iter())
-            .map(|b| b.bin)
-            .max()
-            .unwrap_or(0)
+        self.bins.iter().map(|b| b.bin).max().unwrap_or(0)
     }
 
     /// Lowest bin the mapper reads.
     pub fn min_bin(&self) -> usize {
-        self.main
-            .iter()
-            .chain(self.bass.iter())
-            .map(|b| b.bin)
-            .min()
-            .unwrap_or(0)
+        self.bins.iter().map(|b| b.bin).min().unwrap_or(0)
     }
 
-    fn accumulate(bins: &[BinWeights], mag: &[f32]) -> Chroma {
-        let mut c = [0.0f32; 12];
-        for b in bins {
+    /// Semitone spectrum after greedy low-to-high overtone peeling.
+    fn semitones(&self, mag: &[f32]) -> [f32; N_PITCHES] {
+        let mut s = [0.0f32; N_PITCHES];
+        for b in &self.bins {
             let m = mag.get(b.bin).copied().unwrap_or(0.0);
             if m == 0.0 {
                 continue;
             }
-            for &(pc, w) in &b.weights {
-                c[pc] += m * w;
+            for &(p, w) in &b.weights {
+                s[p] += m * w;
             }
+        }
+        if self.peel.iter().any(|&c| c > 0.0) {
+            for p in 0..N_PITCHES {
+                let base = s[p];
+                if base <= 0.0 {
+                    continue;
+                }
+                for (k, &(_, offset)) in OVERTONES.iter().enumerate() {
+                    if let Some(v) = s.get_mut(p + offset) {
+                        *v = (*v - self.peel[k] * base).max(0.0);
+                    }
+                }
+            }
+        }
+        s
+    }
+
+    fn fold(s: &[f32; N_PITCHES], (lo, hi): (usize, usize)) -> Chroma {
+        let mut c = [0.0f32; 12];
+        for (p, &v) in s.iter().enumerate().take(hi + 1).skip(lo) {
+            c[(p + MIDI_LO as usize) % 12] += v;
         }
         l2_normalize(&mut c);
         c
@@ -120,10 +200,8 @@ impl ChromaMapper {
 
     /// Returns `(main, bass)` chroma, each independently L2-normalized.
     pub fn compute(&self, harmonic_mag: &[f32]) -> (Chroma, Chroma) {
-        (
-            Self::accumulate(&self.main, harmonic_mag),
-            Self::accumulate(&self.bass, harmonic_mag),
-        )
+        let s = self.semitones(harmonic_mag);
+        (Self::fold(&s, self.main), Self::fold(&s, self.bass))
     }
 }
 

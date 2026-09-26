@@ -216,14 +216,25 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
     - `wav.rs`: `hound` で逐次デコードする。PCM 全体の複製は保持しない。
     - `stft.rs`: 2 系統の有界ローリング STFT を使う。和声用は 8192/1024、リズム用は 2048/512 で、窓は Hann。
     - `hpss.rs`: 中央値フィルタによるソフトマスクで、和声成分と打撃成分を分ける。
-    - `chroma.rs`: メインクロマとベースクロマを計算する。
+    - `chroma.rs`: 和声成分を半音スペクトル（MIDI 28〜108）に写し、倍音の差し引き（下記）をしてからメインクロマ（65〜4200 Hz）とベースクロマ（41〜330 Hz）に畳み込む。
     - `tempo.rs`: オンセット包絡の自己相関とビート DP でテンポと拍を求め、4/4 のダウンビート位相を決める。
-    - `chord.rs`: `ChordClassifier` trait とその実装 `TemplateChordClassifier` で候補を出し、16 分スロット単位の Viterbi で平滑化する。
+    - `chord.rs`: `ChordClassifier` trait とその実装 `TemplateChordClassifier`（7th ゲート付き、下記）で候補を出し、16 分スロット単位の Viterbi で平滑化する。
     - `rhythm.rs`: アタックを検出し、8/12/16 グリッドを DP で選択して量子化する。
     - `key.rs`: Krumhansl-Schmuckler でキーを推定する。推定値はメタデータ専用で、コード推定には使わない。
     - `pipeline.rs`: 以上をつないで結果を組み立てる。
   - 保持するのは時系列の特徴量（クロマ、オンセット、低域エネルギー）だけで、スペクトログラム全体は保持しない。
   - クロマとベースクロマを受け取る `ChordClassifier` trait が、将来の学習済みモデルへの差し替え境界になる。
+  - **倍音の差し引きと 7th ゲート（#52）:** 3度音の3倍音が長7度に重なり、三和音が maj7/7 と誤認される問題への対策。どちらも音響的な処理で、キーの事前知識は使わない。
+    - 倍音の差し引き: 半音スペクトルで低い音から順に、各音 `p` の第 3 倍音（+19 半音）と第 6 倍音（+31 半音）から、それぞれ `α·γ^(h−1)·s[p]` を差し引く（0 未満は 0）。どちらも別の音名（5 度）に乗る倍音である。
+      - 第 2・第 4 倍音（オクターブ）は同じ音名なので、差し引いても、ベースと重なるルート音などが弱まるだけになる。
+      - 第 5 倍音（長 3 度）は、ベースが大きいバンド曲で本物の 3 度まで削る。
+      - そのため、この 3 つは対象にしない（調整で確認済み）。
+    - 7th ゲート: 7 / maj7 / m7 候補は、7度成分が三和音構成音の平均の θ 倍未満なら、スコアから `λ·max(0, 1 − 比/θ)` を引く。
+    - 値は `ChromaParams::default()` と `SeventhGate::default()` に固定し、`peel_mask = {3,6}, α = 0.6, γ = 0.7, θ = 0.6, λ = 0.3` とする。
+      - GuitarSet の演奏者 00〜02（伴奏）と合成マルチ楽器セットの調整用データで決めた。
+      - 演奏者 03〜05 と合成セットの報告用データで判定した。結果は Issue #52 / PR にある。
+    - `AnalysisParams::BASELINE` で #50 の挙動（α = 0、ゲート無効）を再現でき、評価の比較に使う。
+  - 評価用ツール（`scripts/evaluate-audio-mir-*.mjs`、`scripts/generate-audio-mir-synth-set.mjs`、`scripts/render-audio-mir-synth-set.swift`、`examples/tune_harmony.rs`）は開発時のローカル専用で、VSIX にもリポジトリにもデータを含めない。
   - 乱数は使わず、同じ入力からは同じ結果を返す。NaN や Infinity を含む結果は `ANALYSIS_FAILED` として扱う。
 - **TypeScript 境界** (`src/audioMir/`):
   - `model.ts` / `validate.ts`: `AudioMirResultV1` の型と、信頼できない JSON を実行時に構造検証する処理。

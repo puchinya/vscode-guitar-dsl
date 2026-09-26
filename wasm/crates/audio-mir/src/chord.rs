@@ -128,9 +128,38 @@ pub trait ChordClassifier {
     }
 }
 
+/// Seventh evidence gate: a 7 / maj7 / m7 candidate loses up to `lambda` when its
+/// seventh is weaker than `theta` times the mean of its triad tones
+/// (penalty `lambda * max(0, 1 - ratio / theta)`). Purely acoustic; no key prior.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeventhGate {
+    pub theta: f32,
+    pub lambda: f32,
+}
+
+impl SeventhGate {
+    /// Disabled gate (#50 baseline behavior).
+    pub const OFF: SeventhGate = SeventhGate {
+        theta: 0.0,
+        lambda: 0.0,
+    };
+}
+
+impl Default for SeventhGate {
+    fn default() -> Self {
+        SeventhGate {
+            theta: 0.6,
+            lambda: 0.3,
+        }
+    }
+}
+
 pub struct TemplateChordClassifier {
     templates: Vec<Chroma>,
     members: Vec<[bool; 12]>,
+    /// `(seventh pitch class, triad pitch classes)` for seventh-quality states.
+    sevenths: Vec<Option<(usize, [usize; 3])>>,
+    gate: SeventhGate,
 }
 
 impl Default for TemplateChordClassifier {
@@ -141,10 +170,22 @@ impl Default for TemplateChordClassifier {
 
 impl TemplateChordClassifier {
     pub fn new() -> Self {
+        Self::with_gate(SeventhGate::default())
+    }
+
+    pub fn with_gate(gate: SeventhGate) -> Self {
         let mut templates = Vec::with_capacity(NUM_STATES);
         let mut members = Vec::with_capacity(NUM_STATES);
+        let mut sevenths = Vec::with_capacity(NUM_STATES);
         for root in 0..12 {
             for &q in QUALITIES.iter() {
+                let comps = q.components();
+                sevenths.push(if comps.len() == 4 {
+                    let pc = |i: usize| (root + comps[i].0) % 12;
+                    Some((pc(3), [pc(0), pc(1), pc(2)]))
+                } else {
+                    None
+                });
                 let mut t = [0.0f32; 12];
                 let mut m = [false; 12];
                 for &(interval, w) in q.components() {
@@ -160,7 +201,27 @@ impl TemplateChordClassifier {
                 members.push(m);
             }
         }
-        TemplateChordClassifier { templates, members }
+        TemplateChordClassifier {
+            templates,
+            members,
+            sevenths,
+            gate,
+        }
+    }
+
+    fn seventh_penalty(&self, state: usize, chroma: &Chroma) -> f32 {
+        let Some((seventh, triad)) = self.sevenths[state] else {
+            return 0.0;
+        };
+        if self.gate.lambda <= 0.0 || self.gate.theta <= 0.0 {
+            return 0.0;
+        }
+        let triad_mean = triad.iter().map(|&p| chroma[p]).sum::<f32>() / 3.0;
+        if triad_mean <= 0.0 {
+            return 0.0;
+        }
+        let ratio = chroma[seventh] / triad_mean;
+        self.gate.lambda * (1.0 - ratio / self.gate.theta).max(0.0)
     }
 }
 
@@ -174,7 +235,7 @@ impl ChordClassifier for TemplateChordClassifier {
                 .map(|p| chroma[p])
                 .sum();
             let bass = bass_chroma[state_root(state)];
-            *score = cos - 0.15 * leak + 0.10 * bass;
+            *score = cos - 0.15 * leak + 0.10 * bass - self.seventh_penalty(state, chroma);
         }
         out
     }
@@ -365,7 +426,7 @@ pub fn event_confidence(top_margin: &[f32]) -> f64 {
 mod tests {
     use super::*;
     use crate::chroma::l2_normalize;
-    use crate::pipeline::extract_features;
+    use crate::pipeline::{extract_features_with, AnalysisParams};
     use crate::synth::{midi_hz, render, wav_bytes, Voice};
 
     fn ideal(root: usize, q: Quality) -> SlotFeature {
@@ -389,6 +450,17 @@ mod tests {
 
     /// Chroma of a synthetic harmonic mixture rendered to audio and analyzed.
     fn audio_feature(root: usize, q: Quality) -> SlotFeature {
+        audio_feature_with(root, q, 2, 1.0, &AnalysisParams::default())
+    }
+
+    /// Chord rendered with `harmonics` partials (amplitude h^-rolloff) and analyzed with `params`.
+    fn audio_feature_with(
+        root: usize,
+        q: Quality,
+        harmonics: usize,
+        rolloff: f64,
+        params: &AnalysisParams,
+    ) -> SlotFeature {
         let mut voices: Vec<Voice> = q
             .components()
             .iter()
@@ -398,15 +470,16 @@ mod tests {
                 if m < 65 {
                     m += 12;
                 }
-                // Fundamental + octave only: a "clean" fixture. Upper partials such as the
-                // 3rd harmonic of the third (= major seventh) are a known template limitation.
-                Voice::sustained(midi_hz(m), 0.2, 2)
+                Voice::sustained(midi_hz(m), 0.2, harmonics).bright(rolloff)
             })
             .collect();
         // Bass in octave 3: below ~100 Hz one 8192-point bin (5.4 Hz) exceeds a semitone.
-        voices.push(Voice::sustained(midi_hz(48 + root as i32), 0.5, 2));
+        voices.push(
+            Voice::sustained(midi_hz(48 + root as i32), 0.5, harmonics.min(3)).bright(rolloff),
+        );
         let sr = 44_100;
-        let feats = extract_features(&wav_bytes(&[render(&voices, 1.5, sr)], sr, 16)).unwrap();
+        let bytes = wav_bytes(&[render(&voices, 1.5, sr)], sr, 16);
+        let feats = extract_features_with(&bytes, params).unwrap();
         let n = feats.harmony.len();
         let mut c = [0.0f32; 12];
         let mut b = [0.0f32; 12];
@@ -419,6 +492,74 @@ mod tests {
         l2_normalize(&mut c);
         l2_normalize(&mut b);
         SlotFeature { chroma: c, bass: b }
+    }
+
+    fn top_with(f: &SlotFeature, params: &AnalysisParams) -> String {
+        TemplateChordClassifier::with_gate(params.seventh_gate).classify(&f.chroma, &f.bass)[0]
+            .name()
+    }
+
+    /// Errors of `params` over 4 roots x 9 qualities rendered with 6 partials of
+    /// amplitude h^-rolloff (0.5 is bright, 1.0 is darker).
+    fn harmonic_rich_errors(rolloff: f64, params: &AnalysisParams) -> Vec<String> {
+        let mut errors = Vec::new();
+        for root in [pc("C"), pc("D"), pc("F#"), pc("A")] {
+            for &q in QUALITIES.iter() {
+                let expected = chord_name(state_of(root, q));
+                let got = top_with(&audio_feature_with(root, q, 6, rolloff, params), params);
+                if got != expected {
+                    errors.push(format!("{expected}>{got}"));
+                }
+            }
+        }
+        errors
+    }
+
+    /// The 3rd harmonic of a chord's third lands on its major seventh. The #50 baseline
+    /// mislabels harmonic-rich triads; overtone peeling and the seventh gate must cut the
+    /// errors in every timbre while real seventh chords stay detected.
+    #[test]
+    fn harmonic_rich_triads_are_not_mislabeled_as_sevenths() {
+        for rolloff in [0.5, 0.8, 1.0] {
+            let baseline = harmonic_rich_errors(rolloff, &AnalysisParams::BASELINE);
+            let shipped = harmonic_rich_errors(rolloff, &AnalysisParams::default());
+            eprintln!("rolloff {rolloff}: baseline {baseline:?} shipped {shipped:?}");
+            assert!(
+                !baseline.is_empty(),
+                "rolloff {rolloff}: fixture must reproduce the baseline failure"
+            );
+            assert!(
+                shipped.len() * 2 <= baseline.len() && shipped.len() <= 1,
+                "rolloff {rolloff}: baseline {baseline:?} shipped {shipped:?}"
+            );
+            // Genuine four-note seventh chords must never be lost.
+            assert!(
+                shipped.iter().all(|e| !e.contains("7>")),
+                "rolloff {rolloff}: seventh chord lost {shipped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn seventh_gate_only_penalizes_weak_sevenths() {
+        let clf = TemplateChordClassifier::with_gate(SeventhGate {
+            theta: 0.5,
+            lambda: 0.2,
+        });
+        let off = TemplateChordClassifier::with_gate(SeventhGate::OFF);
+        let full = ideal(pc("D"), Quality::Maj7);
+        let dmaj7 = state_of(pc("D"), Quality::Maj7);
+        assert_eq!(
+            clf.score_all(&full.chroma, &full.bass)[dmaj7],
+            off.score_all(&full.chroma, &full.bass)[dmaj7]
+        );
+        let mut weak = ideal(pc("D"), Quality::Major);
+        weak.chroma[pc("C#")] = 0.1;
+        let gated = clf.score_all(&weak.chroma, &weak.bass);
+        let ungated = off.score_all(&weak.chroma, &weak.bass);
+        assert!(gated[dmaj7] < ungated[dmaj7]);
+        let d = state_of(pc("D"), Quality::Major);
+        assert_eq!(gated[d], ungated[d]);
     }
 
     #[test]
