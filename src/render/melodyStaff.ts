@@ -203,7 +203,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       const expanded = expandParts(note.parts, offset);
       expanded.forEach((h, i) => {
         const x = columns.xAt(h.offset) ?? bx + width / 2;
-        if (i === 0) placeGraces(x);
+        // Grace notes lean on the next sounding note; a rest keeps them pending (spec §12.2.1).
+        if (i === 0 && !note.isRest) placeGraces(x);
         const pos = note.pitch ? writtenStaffPosition(note.pitch, ottava) : 4;
         const stemUp = pos < 4;
         // Beamed stems are recomputed later; only an unbeamed 16th keeps this extension.

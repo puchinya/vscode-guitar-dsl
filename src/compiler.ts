@@ -1156,7 +1156,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         }
         if (tech.grace) {
           const rest = seq.slice(i + 1).filter(s => s.measure === measure);
-          if (!rest.some(s => !s.n.techniques?.grace)) report(loc.line, loc.startCol, loc.endCol, 'danglingGrace');
+          if (!rest.some(s => !s.n.isRest && !s.n.techniques?.grace)) report(loc.line, loc.startCol, loc.endCol, 'danglingGrace');
         }
         if (tech.slurStart) {
           if (openSlurSeen) report(loc.line, loc.startCol, loc.endCol, 'nestedSlur');

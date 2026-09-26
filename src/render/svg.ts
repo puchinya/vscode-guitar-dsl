@@ -482,10 +482,10 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       });
     }
 
-    // Inline grace notes: scaled heads left of the next timed head (end of the measure when none follows).
+    // Inline grace notes: scaled heads left of the next sounding head (end of the measure when none follows).
     graces.forEach(g => {
       if (!g.item.pitch) return;
-      const target = heads.find(h => h.itemIndex > g.itemIndex);
+      const target = heads.find(h => h.itemIndex > g.itemIndex && !h.item.isRest);
       const targetX = target ? (columns.xAt(target.offset) ?? bx + actualBarWidth / 2) : bx + actualBarWidth - 6;
       const run = graces.filter(o => o.itemIndex > g.itemIndex && (!target || o.itemIndex < target.itemIndex)).length;
       const gx = targetX - 12 - run * 9;

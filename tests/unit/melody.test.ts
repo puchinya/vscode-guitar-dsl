@@ -259,6 +259,12 @@ describe('melody - techniques and grace notes', () => {
     assert.deepStrictEqual(codes('| C |\nmel: | c5/1 d5/8{grace} |'), ['danglingGrace']);
     assert.deepStrictEqual(codes('| C | c4/8{grace} 4 4 4 4 |'), []);
     assert.deepStrictEqual(codes('| C | 4 4 4 4 c4/8{grace} |'), ['danglingGrace']);
+    // A rest is not the note a grace note leans on (spec §12.2.1): grace → rest → note is fine,
+    // grace → rest → end of the measure dangles.
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/16{grace} r/4 d5/4 e5/4 f5/4 |'), []);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/16{grace} r/1 |'), ['danglingGrace']);
+    assert.deepStrictEqual(codes('| C | c4/16{grace} r4 d4/4 4 4 |'), []);
+    assert.deepStrictEqual(codes('| C | 4 4 4 c4/16{grace} r4 |'), ['danglingGrace']);
   });
 
   it('connects to the next sounding non-grace note and warns without a target (T027)', () => {

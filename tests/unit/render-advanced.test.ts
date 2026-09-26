@@ -376,3 +376,29 @@ describe('render - annotation lanes close to the staff', () => {
     assert.ok(high.annotationTop > free.annotationTop, 'a note above the chord names limits the overlap');
   });
 });
+
+describe('render - grace notes skip rests (spec §12.2.1)', () => {
+  const graceX = (svg: string) => [...svg.matchAll(/class="technique-grace" transform="translate\(([\d.-]+),/g)].map(m => Number(m[1]));
+  const headX = (svg: string) => [...svg.matchAll(/<ellipse class="notehead" cx="([\d.-]+)"/g)].map(m => Number(m[1])).filter(x => x !== 0); // cx 0: the scaled grace head
+
+  it('draws a melody grace note left of the note after a rest, not left of the rest', () => {
+    const svg = svgOf('| C |\nmel: | c5/16{grace} r/4 d5/4 e5/4 f5/4 |');
+    const [gx] = graceX(svg);
+    const d5 = headX(svg)[0];
+    assert.ok(d5 - gx > 0 && d5 - gx <= 14, `grace at ${gx}, d5 at ${d5}`);
+  });
+
+  it('draws an inline grace note left of the head after a rest', () => {
+    const svg = svgOf('| C | c4/16{grace} r4 d4/4 4 4 |');
+    const [gx] = graceX(svg);
+    const d4 = headX(svg)[0];
+    assert.ok(d4 - gx > 0 && d4 - gx <= 14, `grace at ${gx}, d4 at ${d4}`);
+  });
+
+  it('draws a grace note followed only by rests at the end of the measure', () => {
+    for (const dsl of ['| C |\nmel: | c5/16{grace} r/1 |', '| C | 4 4 4 c4/16{grace} r4 |']) {
+      const svg = svgOf(dsl);
+      assert.strictEqual(graceX(svg).length, 1, dsl);
+    }
+  });
+});

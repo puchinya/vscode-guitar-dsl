@@ -3,7 +3,7 @@
 
 import { MeasureData, ParsedScore, RhythmItem, rhythmItemBeats } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, partBeats, parseRhythmDuration } from '../duration';
-import { MelodyNote, Pitch, isGrace } from '../melody';
+import { Pitch, isGrace } from '../melody';
 import { TimeSignature, measureBeats, structuralChange } from '../scoreEvents';
 import { SYSTEM_UNIT_WIDTH, estimateTextWidth } from './layout';
 
@@ -279,22 +279,6 @@ export function rhythmHeads(m: MeasureData): { heads: RhythmHead[]; graces: { it
     offset = fadd(offset, rhythmItemBeats(item));
   });
   return { heads, graces };
-}
-
-/** Grace notes of a note sequence grouped with the index of the timed note they precede (-1 = none follows). */
-export function graceRuns<T extends { techniques?: MelodyNote['techniques'] }>(items: readonly T[]): Map<number, number[]> {
-  const runs = new Map<number, number[]>();
-  let pending: number[] = [];
-  items.forEach((item, i) => {
-    if (item.techniques?.grace) {
-      pending.push(i);
-    } else if (pending.length > 0) {
-      runs.set(i, pending);
-      pending = [];
-    }
-  });
-  if (pending.length > 0) runs.set(-1, pending);
-  return runs;
 }
 
 /** Rest glyph centred on (x, midY); `staveLines` are the five line y positions (top to bottom). */
