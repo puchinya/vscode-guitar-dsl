@@ -2,8 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
-import { DYNAMICS_LANE_HEIGHT } from '../../src/render/annotations';
-import { SYSTEM_UNIT_HEIGHT, estimateTextWidth, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
+import { MELODY_STAVE_BOTTOM, SYSTEM_UNIT_HEIGHT, estimateTextWidth, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
 import { getRenderContext, staffPosition, writtenStaffPosition } from '../../src/render/notation';
 import { renderContinuousSvg, renderScoreSheets } from '../../src/render/svg';
 import { renderBend } from '../../src/render/technique';
@@ -114,7 +113,7 @@ describe('render - annotation lanes (T017, T049, T050)', () => {
     const rows = splitIntoRows(score)[0];
     const g = rows[0].geometry;
     assert.deepStrictEqual(Array.from(g.lanes.keys()), ['mark', 'tempo', 'text', 'ottava']);
-    assert.ok(g.annotationTop > 0 && g.annotationBottom > 0);
+    assert.ok(g.annotationTop > 0 && g.dynamicsBaseline > 0);
     assert.strictEqual(g.unitHeight, g.contentHeight + g.annotationTop + g.annotationBottom);
     const svg = renderContinuousSvg(score);
     for (const cls of ['annotation-mark', 'annotation-tempo', 'annotation-tempo-text', 'annotation-text', 'annotation-dynamic', 'annotation-ottava']) {
@@ -304,7 +303,8 @@ describe('render - PR #69 review delta (dynamics collision, bend direction)', ()
   it('places several dynamics before one measure left to right without overlap (D004, D005)', () => {
     const score = parseGuitarDsl(`@dynamic: p\n@dynamic: sfz\n${bar}`);
     const g = splitIntoRows(score)[0][0].geometry;
-    assert.strictEqual(g.annotationBottom, DYNAMICS_LANE_HEIGHT);
+    // Both share one baseline in the free space under the staff; the system does not grow for them.
+    assert.strictEqual(g.annotationBottom, 0);
     const dyn = [...renderContinuousSvg(score).matchAll(/class="annotation-dynamic" x="([\d.-]+)"[^>]*>([^<]*)</g)];
     assert.deepStrictEqual(dyn.map(m => m[2]), ['p', 'sfz']);
     const [x1, x2] = dyn.map(m => Number(m[1]));
@@ -331,5 +331,48 @@ describe('render - PR #69 review delta (dynamics collision, bend direction)', ()
     assert.ok(clampedTip <= 40);
     const [[, , tip]] = bends(renderBend(0, 50, 20, 2));
     assert.strictEqual(tip, 20);
+  });
+});
+
+describe('render - annotation lanes close to the staff', () => {
+  const geometry = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry;
+  const staffBottom = (g: ReturnType<typeof geometry>) => g.annotationTop + g.rhythmOffset + MELODY_STAVE_BOTTOM;
+
+  it('puts dynamics right under the rhythm staff without growing the system', () => {
+    const g = geometry(`@dynamic: mf\n${bar}`);
+    assert.strictEqual(g.annotationBottom, 0);
+    assert.strictEqual(g.unitHeight, SYSTEM_UNIT_HEIGHT);
+    const gap = g.dynamicsBaseline - staffBottom(g);
+    assert.ok(gap >= 12 && gap <= 18, `baseline ${gap} below the staff`);
+    const svg = svgOf(`@dynamic: mf\n${bar}`);
+    assert.ok(svg.includes(`class="annotation-dynamic" x="`) && svg.includes(`y="${g.dynamicsBaseline}"`));
+  });
+
+  it('puts dynamics under the rhythm staff of a melody system', () => {
+    const g = geometry(`@dynamic: mf\n${bar}\nmel: | c5/1 |\nlyr: | la |`);
+    assert.strictEqual(g.kind, 'melody');
+    const gap = g.dynamicsBaseline - staffBottom(g);
+    assert.ok(gap >= 12 && gap <= 18);
+    assert.ok(g.dynamicsBaseline + 4 <= g.unitHeight);
+  });
+
+  it('keeps dynamics below a measure lyric and low inline notes, growing the system only as needed', () => {
+    const lyric = geometry(`@dynamic: mf\n| C | 4 4 4 4 l:"words" |`);
+    assert.ok(lyric.dynamicsBaseline - staffBottom(lyric) >= 18 + 12, 'below the lyric line (staff + 18)');
+    assert.strictEqual(lyric.unitHeight, SYSTEM_UNIT_HEIGHT + lyric.annotationBottom);
+    const low = geometry(`@dynamic: mf\n| C | e3/8{hammer} f3/8 g3/4 a3/4 b3/4 |`);
+    const e3 = MELODY_STAVE_BOTTOM + 6 * 4;
+    assert.ok(low.dynamicsBaseline - low.annotationTop > e3 + 34, 'below the hammer-on arc of e3');
+    assert.ok(low.annotationBottom > 0);
+  });
+
+  it('overlaps the top lanes with the free space above the chord names only', () => {
+    const free = geometry(`@text: x\n${bar}`);
+    assert.ok(free.annotationTop < 14 && free.annotationTop >= 0, `annotationTop ${free.annotationTop}`);
+    assert.strictEqual(free.lanes.get('text'), 0);
+    const section = geometry(`[Verse]\n@text: x\n${bar}`);
+    assert.strictEqual(section.annotationTop, 14);
+    const high = geometry(`@text: x\n${bar}\nmel: | a7/1 |`);
+    assert.ok(high.annotationTop > free.annotationTop, 'a note above the chord names limits the overlap');
   });
 });

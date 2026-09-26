@@ -62,7 +62,7 @@ function spanIntervals(staffs: StaffSpans[], flag: 'palmMute' | 'letRing', rowEn
 /** Annotation lanes of `row` (above the content) and its dynamics lane (below). */
 export function renderRowLanes(row: SystemRow, ctx: RenderContext, spans: RowSpanCollector): string {
   const geometry = row.geometry;
-  if (geometry.annotationTop === 0 && geometry.annotationBottom === 0) return '';
+  if (geometry.lanes.size === 0 && geometry.dynamicsBaseline === 0) return '';
   const measures = row.measures;
   const annotations = rowAnnotations(measures, ctx.score, geometry.kind === 'rhythm', geometry.kind !== 'leadSheet');
   const rowEnd = ctx.totalWidth - 5;
@@ -139,13 +139,13 @@ export function renderRowLanes(row: SystemRow, ctx: RenderContext, spans: RowSpa
     }
   }
 
-  if (geometry.annotationBottom > 0) {
-    const y = geometry.annotationTop + geometry.contentHeight;
+  if (geometry.dynamicsBaseline > 0) {
+    const baseline = geometry.dynamicsBaseline;
     let dynamicRight = -Infinity;
     for (const d of annotations.dynamics) {
       const { bx } = measureBounds(ctx, measures.length, d.measure);
       const x = Math.max(bx + 8, dynamicRight + 8);
-      out += `<text class="annotation-dynamic" x="${fmt(x)}" y="${fmt(y + 13)}" font-size="12" font-weight="bold" font-style="italic" fill="#000">${escapeXml(d.text)}</text>`;
+      out += `<text class="annotation-dynamic" x="${fmt(x)}" y="${fmt(baseline)}" font-size="12" font-weight="bold" font-style="italic" fill="#000">${escapeXml(d.text)}</text>`;
       dynamicRight = x + estimateTextWidth(d.text, 12, true);
     }
   }

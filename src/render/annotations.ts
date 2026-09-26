@@ -21,8 +21,6 @@ export const LANE_HEIGHT: Record<AnnotationLane, number> = {
   techniqueMarks: 14
 };
 
-/** Height of the dynamics lane below the system content. */
-export const DYNAMICS_LANE_HEIGHT = 18;
 
 export type TopAnnotation =
   | { lane: 'mark'; measure: number; text: string }
