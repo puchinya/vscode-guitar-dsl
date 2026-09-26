@@ -284,7 +284,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
   3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。
   4. 変換後のテキストを解析し直し、エラー診断・カポ値の不一致・コード配置列の不一致（元の列を対応表で写したものと比べる）があれば `transformedParseError`。
-- **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。プレビューと PDF はこの関数の結果だけを使う。
+- **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。通常のカポ一時変更（`PreviewCapoController`）の有効 DSL はこの関数で作る。プレビューと PDF の最終的な有効 DSL は §2.11 の `resolvePreviewEffectiveDsl` が選ぶ（初心者モードが有効ならそちらを優先）。
 - **`buildCapoPreviewUiModel(source, target?, warning?)`**: プレビューのカポバー用の計算済みモデル（候補は `inferCapoForDsl`）。`previewHtml.ts` はこれを描画するだけで推論しない。
 - **`PreviewCapoController`**（`src/previewCapo.ts`、ホスト側）: `PreviewCapoState { documentUri, targetCapo }` を保持する（永続化しない）。`setTarget` は変換可能なときだけ状態を設定し（元のカポと同じなら解除）、`onDidChange` で再描画させる。`resolve(doc)` は毎回最新のテキストから有効 DSL を計算し、変換できなくなっていれば状態を解除して警告を出す。`switchDocument` は別ドキュメントなら解除する。`effectiveDslProbe` に最後のプレビュー入力・PDF 入力を記録する（E2E テストで同一性を確認するため）。
 - **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection`（id `capo`）と `BeginnerSection`（id `beginner`、§2.11）。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
