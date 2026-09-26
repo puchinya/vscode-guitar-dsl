@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use guitardsl_audio_mir::chord::SeventhGate;
 use guitardsl_audio_mir::chroma::{ChromaParams, PITCH_NAMES};
 use guitardsl_audio_mir::pipeline::{
-    analyze_features, extract_features_with, AnalysisParams, Features,
+    analyze_features, extract_features_with, AnalysisParams, BeatTracker, Features,
 };
 use guitardsl_audio_mir::result::AudioMirResultV1;
 use serde_json::Value;
@@ -359,9 +359,11 @@ fn main() {
             cp.overtone_gamma,
             started.elapsed().as_secs_f64()
         );
+        // Harmony tuning keeps the classic beat tracker (the #52 selection protocol).
         let params = AnalysisParams {
             chroma: *cp,
             seventh_gate: SeventhGate::OFF,
+            beat_tracker: BeatTracker::Classic,
         };
         let features: Vec<(Option<Features>, &Excerpt)> = excerpts
             .iter()

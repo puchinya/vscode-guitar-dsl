@@ -70,4 +70,19 @@ describe('audioMir evaluators', () => {
       bpm: 96
     });
   });
+
+  it('reports tempo Acc1 and Acc2 with a 4% tolerance', async () => {
+    const { lab } = await load();
+    const acc = lab.createAccumulator();
+    const metrics = lab.evaluate({ measures: [] }, []);
+    acc.add(metrics, { estimate: 121, reference: 120 }); // Acc1
+    acc.add(metrics, { estimate: 61, reference: 120 }); // half time: Acc2 only
+    acc.add(metrics, { estimate: 130, reference: 120 }); // 8.3% off: neither
+    acc.add(metrics, { estimate: 356, reference: 120 }); // 3x within 4%: Acc2 only
+    const s = acc.summary();
+    assert.strictEqual(s.tempoAcc1, 1 / 4);
+    assert.strictEqual(s.tempoAcc2, 3 / 4);
+    assert.strictEqual(s.bpmMedianAbsError, 59); // upper median of [1, 10, 59, 236]
+    assert.strictEqual(lab.createAccumulator().summary().tempoAcc1, undefined);
+  });
 });

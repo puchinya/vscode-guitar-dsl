@@ -1,9 +1,14 @@
 // Deterministic multi-instrument evaluation set for Audio MIR (local only, never committed).
 //
-//   node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1]
+//   node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1] [--profile default|pulse]
 //
 // --count must be a multiple of BALANCE_UNIT (instruments x splits x band/no band) so that
 // every instrument has exactly half of its songs with bass + drums in each split.
+//
+// `--profile pulse` (#56) generates drumless songs (no bass, no drums) in which every beat is
+// struck (PULSE_PATTERNS), for tempo / beat evaluation where the quarter-note pulse must be
+// present in the audio; --count must then be a multiple of PULSE_BALANCE_UNIT. The default
+// profile's output does not depend on this option.
 //
 // Writes <out>/<id>.json (note events per part, rendered by
 // scripts/render-audio-mir-synth-set.swift), <out>/<id>.lab (exact chord reference in
@@ -40,6 +45,14 @@ const PATTERNS = {
   sixteenths: [0, 2, 3, 6, 8, 10, 11, 14],
   halves: [0, 8]
 };
+/** Pulse-profile patterns: every beat (16th positions 0, 4, 8, 12) is struck. */
+const PULSE_PATTERNS = {
+  quarters: [0, 4, 8, 12],
+  eighths: [0, 2, 4, 6, 8, 10, 12, 14],
+  strum: [0, 2, 4, 6, 8, 10, 11, 12, 14]
+};
+/** Songs per balanced pulse block: 6 instruments x 2 splits. */
+export const PULSE_BALANCE_UNIT = INSTRUMENTS.length * 2;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -85,18 +98,20 @@ function voicing(rand, root, quality) {
   return [...new Set(notes)].sort((a, b) => a - b);
 }
 
-export function generateSong(index, seed) {
+export function generateSong(index, seed, profile = 'default') {
+  const pulse = profile === 'pulse';
   const rand = mulberry32(seed * 100003 + index);
   const instrument = INSTRUMENTS[index % INSTRUMENTS.length];
   // Instruments cycle per song and splits alternate per cycle (see meta.split); bass + drums
   // go to exactly half of every instrument in every split: cycles {0,1} band, {2,3} no band, ...
   const cycle = Math.floor(index / INSTRUMENTS.length);
-  const band = Math.floor(cycle / 2) % 2 === 0;
+  const band = !pulse && Math.floor(cycle / 2) % 2 === 0;
   const bpm = Math.round(70 + rand() * 90);
   const beat = 60 / bpm;
   const bar = 4 * beat;
   const tonic = Math.floor(rand() * 12);
-  const pattern = instrument.sustained ? 'halves' : pick(rand, Object.keys(PATTERNS));
+  const patterns = pulse ? PULSE_PATTERNS : PATTERNS;
+  const pattern = pulse ? pick(rand, Object.keys(PULSE_PATTERNS)) : instrument.sustained ? 'halves' : pick(rand, Object.keys(PATTERNS));
   const bars = 16;
   const lead = bar; // one bar of drums (or silence) before the first chord
   const chords = [];
@@ -131,7 +146,7 @@ export function generateSong(index, seed) {
     const notes = voicing(rand, c.root, c.quality);
     const hits = [];
     for (let pos = c.start; pos < c.start + c.len; pos++) {
-      if (PATTERNS[pattern].includes(pos % 16)) {
+      if (patterns[pattern].includes(pos % 16)) {
         hits.push(pos);
       }
     }
@@ -179,7 +194,7 @@ export function generateSong(index, seed) {
     lab: lab.join('\n') + '\n',
     // Instruments cycle per song; alternate the split per cycle so every instrument is in both.
     meta: {
-      id, instrument: instrument.name, band, bpm, pattern,
+      id, instrument: instrument.name, band, bpm, pattern, ...(pulse ? { profile } : {}),
       split: Math.floor(index / INSTRUMENTS.length) % 2 === 0 ? 'tune' : 'report'
     }
   };
@@ -187,30 +202,37 @@ export function generateSong(index, seed) {
 
 function main() {
   const args = process.argv.slice(2);
-  const out = args.find((a, i) => !a.startsWith('--') && !['--count', '--seed'].includes(args[i - 1]));
+  const out = args.find((a, i) => !a.startsWith('--') && !['--count', '--seed', '--profile'].includes(args[i - 1]));
   if (!out) {
-    console.error('usage: node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1]');
+    console.error('usage: node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1] [--profile default|pulse]');
     process.exit(2);
   }
+  const profileAt = args.indexOf('--profile');
+  const profile = profileAt >= 0 ? args[profileAt + 1] : 'default';
+  if (!['default', 'pulse'].includes(profile)) {
+    console.error(`--profile must be default or pulse (got ${profile})`);
+    process.exit(2);
+  }
+  const unit = profile === 'pulse' ? PULSE_BALANCE_UNIT : BALANCE_UNIT;
   const opt = name => {
     const i = args.indexOf(name);
     return i >= 0 ? Number(args[i + 1]) : undefined;
   };
   const count = opt('--count') ?? 72;
-  if (!Number.isInteger(count) || count <= 0 || count % BALANCE_UNIT !== 0) {
-    console.error(`--count must be a positive multiple of ${BALANCE_UNIT} (got ${count}) so bass + drums go to exactly half of each instrument in each split`);
+  if (!Number.isInteger(count) || count <= 0 || count % unit !== 0) {
+    console.error(`--count must be a positive multiple of ${unit} (got ${count}) so every instrument is balanced across splits${profile === 'pulse' ? '' : ' and bass + drums go to exactly half of each instrument in each split'}`);
     process.exit(2);
   }
   const seed = opt('--seed') ?? 1;
   mkdirSync(out, { recursive: true });
   const meta = [];
   for (let i = 0; i < count; i++) {
-    const song = generateSong(i, seed);
+    const song = generateSong(i, seed, profile);
     writeFileSync(join(out, `${song.spec.id}.json`), JSON.stringify(song.spec));
     writeFileSync(join(out, `${song.spec.id}.lab`), song.lab);
     meta.push(song.meta);
   }
-  writeFileSync(join(out, 'meta.json'), JSON.stringify({ seed, count, songs: meta }, null, 2));
+  writeFileSync(join(out, 'meta.json'), JSON.stringify({ seed, count, ...(profile === 'pulse' ? { profile } : {}), songs: meta }, null, 2));
   console.log(`wrote ${count} songs to ${out}`);
 }
 

@@ -94,8 +94,23 @@ npm run vscode:prepublish      # builds Audio MIR WASM, then compiles TypeScript
 npx @vscode/vsce ls
 ```
 - Rust tests use generated audio only. Never commit recorded or copyrighted audio, and never commit reference LAB files unless they are demonstrably redistributable.
-- `vsce ls` must include `out/audioMir/*.js`, `media/audio-mir-wasm/guitardsl_audio_mir.js` and `media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm`. It must exclude `wasm/**` (Rust sources and `wasm/target/`), `tests/**`, `scripts/**` and `media/audio-mir-wasm/*.d.ts`.
+- `vsce ls` must include `out/audioMir/*.js` (including `worker.js` and `inferWorker.js`), `media/audio-mir-wasm/guitardsl_audio_mir.js`, `media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm` (with the embedded Beat This! model) and `THIRD_PARTY_NOTICES.md`. It must exclude `wasm/**` (Rust sources and `wasm/target/`), `tests/**`, `scripts/**` and `media/audio-mir-wasm/*.d.ts`.
 - `media/audio-mir-wasm/` and `wasm/target/` are build output and are git-ignored. `wasm/Cargo.lock` is committed.
+- The wasm32 build enables `simd128` through `wasm/.cargo/config.toml`; run `cargo` and `wasm-pack` from the repository root or `wasm/` so the config applies.
+- Beat This! model (#56): `wasm/crates/audio-mir/models/beat_this_small0.onnx` is committed. Re-export only when the upstream checkpoint or export changes; follow `models/README.md` (`scripts/export-beat-this-onnx.py`, which also regenerates `tests/fixtures/beat_this_reference.json`) and check that the printed SHA-256 matches the README. The Rust tests pin mel parity with torchaudio (at 22,050 Hz, and against soxr for 44.1 and 48 kHz input), logit parity with PyTorch, and that `Classic` reproduces the #52 output (`tests/fixtures/classic_song_*.json`).
+- Beat and tempo evaluation (required when a change touches `mel.rs`, `beat_nn.rs`, `tempo.rs`, the model or the beat post-processing). Local data only:
+  ```bash
+  cargo run --release --manifest-path wasm/Cargo.toml --example eval_beats -- --labset <synth dir> --split all --guitarset <GuitarSet dir> --players 03,04,05
+  ```
+  It reports tempo Acc1 (within 4%), Acc2 (also ×1/3, ×1/2, ×2, ×3), median absolute error and beat F-measure (±70 ms, beats before 5 s discarded) for `Classic` and the shipped `Neural` path (Beat This!, falling back to `Classic` when it finds fewer than 8 beats) per group. The released Beat This! models were trained on GuitarSet comping, so GuitarSet rows are reference only.
+  - Drumless acceptance uses the **pulse set**, where every beat is struck (the default set's no-band songs mostly strike every second beat, so their quarter-note tempo is absent from the audio):
+    ```bash
+    node scripts/generate-audio-mir-synth-set.mjs <pulse dir> --count 60 --seed 2 --profile pulse
+    <tmp>/render <pulse dir>
+    cargo run --release --manifest-path wasm/Cargo.toml --example eval_beats -- --labset <pulse dir> --split all
+    ```
+  - The default set (`--count 72 --seed 1`) checks `synth/band` and the no-band no-regression (Acc2, beat F). The chord evaluators below also print tempo Acc1 / Acc2, and the labset evaluator adds a per-band summary.
+- End-to-end timing through the real worker orchestration (analysis worker + parallel inference workers): `npm run build:audio-mir && npm run compile && node scripts/benchmark-audio-mir-job.mjs [--seconds 300]`. It prints wall time and peak RSS. Measure on an otherwise idle machine.
 - Optional real-song measurement: `node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>]` reports BPM error, duration-weighted chord root / exact / maj-min recall, chord-change P/R/F1 at ±100 ms, analysis time and peak RSS.
 - Harmony evaluation datasets are local only and never committed. They are required when a change touches chroma, classifier or decoding parameters:
   - **GuitarSet** (Zenodo 3371780: `annotation/` + `audio_mono-mic/`): `node scripts/evaluate-audio-mir-guitarset.mjs <dir> --players 03,04,05` (report split). Reference chords are the JAMS *performed* annotation. Labels are reduced MIREX-style (approved rule, Issue #52): added degrees and the bass are ignored; 9/11/13 → 7, maj9/11/13 → maj7, min9/11/13 → m7, sixths → triad, dim7 → dim; hdim7, minmaj7 and interval-only chords count toward root recall only. maj/min recall follows mir_eval `majmin` (dim, hdim7, aug and sus are excluded). `tune_harmony` uses the same reduction.

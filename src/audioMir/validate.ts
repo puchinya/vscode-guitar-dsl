@@ -1,7 +1,7 @@
 // Runtime structural validation of untrusted AudioMirResultV1 JSON coming out of WASM.
 // Pure module independent of VS Code APIs.
 
-import { AUDIO_MIR_CHORD_SUFFIXES, AUDIO_MIR_PITCH_NAMES, AudioMirResultV1 } from './model';
+import { AUDIO_MIR_BEAT_TRACKERS, AUDIO_MIR_CHORD_SUFFIXES, AUDIO_MIR_PITCH_NAMES, AudioMirResultV1 } from './model';
 
 export type AudioMirValidation =
   | { valid: true; result: AudioMirResultV1 }
@@ -168,7 +168,13 @@ export function validateAudioMirResult(data: unknown): AudioMirValidation {
         durationSeconds
       },
       trim: { startSeconds: startTrim, endSeconds: endTrim },
-      tempo: { bpm, confidence: unit(tempo.confidence, 'tempo.confidence') },
+      tempo: {
+        bpm,
+        confidence: unit(tempo.confidence, 'tempo.confidence'),
+        ...(tempo.tracker === undefined
+          ? {}
+          : { tracker: oneOf(tempo.tracker, AUDIO_MIR_BEAT_TRACKERS, 'tempo.tracker') })
+      },
       key: { name: key.name as string, confidence: unit(key.confidence, 'key.confidence') },
       measures
     };

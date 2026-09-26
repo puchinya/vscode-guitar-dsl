@@ -86,7 +86,7 @@ async function main() {
     }
     const result = JSON.parse(outcome.json);
     audioSeconds += result.source.durationSeconds;
-    acc.add(evaluate(result, ref.chords), ref.bpm !== undefined ? Math.abs(result.tempo.bpm - ref.bpm) : undefined);
+    acc.add(evaluate(result, ref.chords), ref.bpm !== undefined ? { estimate: result.tempo.bpm, reference: ref.bpm } : undefined);
   }
   const report = { subset, players: players ?? 'all', audioSeconds: Math.round(audioSeconds), analysisMs: Math.round(analysisMs), ...acc.summary() };
   if (asJson) {

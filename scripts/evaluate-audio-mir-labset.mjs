@@ -29,26 +29,30 @@ async function main() {
 
   const overall = createAccumulator();
   const perInstrument = {};
+  const perBand = {};
   for (const song of songs) {
     const reference = parseLab(readFileSync(join(dir, `${song.id}.lab`), 'utf-8'));
-    const group = (perInstrument[song.instrument] ??= createAccumulator());
+    const groups = [
+      overall,
+      (perInstrument[song.instrument] ??= createAccumulator()),
+      (perBand[song.band ? 'band' : 'no band'] ??= createAccumulator())
+    ];
     const outcome = await analyzeInWorker(join(dir, `${song.id}.wav`), wasm);
     if (!outcome.ok) {
-      overall.addFailure(outcome.code, reference);
-      group.addFailure(outcome.code, reference);
+      groups.forEach(g => g.addFailure(outcome.code, reference));
       continue;
     }
     const result = JSON.parse(outcome.json);
     const metrics = evaluate(result, reference);
-    const bpmError = song.bpm !== undefined ? Math.abs(result.tempo.bpm - song.bpm) : undefined;
-    overall.add(metrics, bpmError);
-    group.add(metrics, bpmError);
+    const tempo = song.bpm !== undefined ? { estimate: result.tempo.bpm, reference: song.bpm } : undefined;
+    groups.forEach(g => g.add(metrics, tempo));
   }
 
   const report = {
     split,
     overall: overall.summary(),
-    instruments: Object.fromEntries(Object.entries(perInstrument).sort().map(([k, a]) => [k, a.summary()]))
+    instruments: Object.fromEntries(Object.entries(perInstrument).sort().map(([k, a]) => [k, a.summary()])),
+    bands: Object.fromEntries(Object.entries(perBand).sort().map(([k, a]) => [k, a.summary()]))
   };
   if (args.includes('--json')) {
     console.log(JSON.stringify(report, null, 2));
@@ -57,6 +61,11 @@ async function main() {
   const pct = v => `${(v * 100).toFixed(1)}%`;
   console.log(`songs ${report.overall.excerpts} (${split}), failures ${JSON.stringify(report.overall.failures)}`);
   console.log(formatSummary(report.overall));
+  const tempoCell = s => (s.tempoAcc1 === undefined ? '     -' : pct(s.tempoAcc1).padStart(6));
+  console.log('per band (bass + drums):   root    exact   maj/min  change-F1  tempo-Acc1  failures');
+  for (const [name, s] of Object.entries(report.bands)) {
+    console.log(`  ${name.padEnd(22)}  ${pct(s.rootRecall).padStart(6)}  ${pct(s.exactSupportedRecall).padStart(6)}  ${pct(s.majminRecall).padStart(6)}   ${pct(s.change.f1).padStart(6)}      ${tempoCell(s)}    ${JSON.stringify(s.failures)}`);
+  }
   console.log('per instrument:            root    exact   maj/min  change-F1  failures');
   for (const [name, s] of Object.entries(report.instruments)) {
     console.log(`  ${name.padEnd(22)}  ${pct(s.rootRecall).padStart(6)}  ${pct(s.exactSupportedRecall).padStart(6)}  ${pct(s.majminRecall).padStart(6)}   ${pct(s.change.f1).padStart(6)}    ${JSON.stringify(s.failures)}`);

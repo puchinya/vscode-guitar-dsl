@@ -19,6 +19,9 @@ pub const LOCAL_WINDOW: usize = 129;
 pub struct BeatTrack {
     /// Beat positions as rhythm-frame indices.
     pub beats: Vec<usize>,
+    /// Exact beat times in seconds when the tracker is finer than the rhythm frames
+    /// (Beat This!); `None` means the rhythm-frame centers are the beat times.
+    pub seconds: Option<Vec<f64>>,
     pub bpm: f64,
     pub confidence: f64,
 }
@@ -254,6 +257,7 @@ pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
     let c = cands.swap_remove(chosen);
     Ok(BeatTrack {
         beats: c.beats,
+        seconds: None,
         bpm: c.bpm,
         confidence,
     })

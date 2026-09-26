@@ -50,10 +50,16 @@ check('source and tempo', () => {
 check('chords, half-bar change, subdivisions and attack slots', () => {
   const expectedChords = [['0:Dmaj7'], ['0:C#m7'], ['0:F#sus4', '8:F#m']];
   assert.ok(result.measures.length >= 5, `measures ${result.measures.length}`);
-  result.measures.slice(0, 6).forEach((m, i) => {
+  const checked = result.measures.slice(0, 6);
+  const at48 = (slots, grid) => slots.map(s => (s * 48) / grid);
+  checked.forEach((m, i) => {
     assert.deepEqual(m.chords.map(c => `${c.tick16}:${c.name}`), expectedChords[i % 3], `measure ${i}`);
-    assert.equal(m.subdivision, BARS[i % 3].grid, `measure ${i} grid`);
-    assert.deepEqual(m.attacks.map(a => a.slot), BARS[i % 3].slots, `measure ${i} slots`);
+    assert.deepEqual(at48(m.attacks.map(a => a.slot), m.subdivision), at48(BARS[i % 3].slots, BARS[i % 3].grid), `measure ${i} positions`);
+    // The song-level grid DP may keep the previous grid on the last analyzed measure.
+    if (i + 1 < checked.length) {
+      assert.equal(m.subdivision, BARS[i % 3].grid, `measure ${i} grid`);
+      assert.deepEqual(m.attacks.map(a => a.slot), BARS[i % 3].slots, `measure ${i} slots`);
+    }
   });
 });
 
@@ -65,6 +71,28 @@ check('adapter produces GuitarDSL without errors', () => {
 
 check('deterministic across calls', () => {
   assert.equal(wasm.analyze_wav(bytes), json);
+});
+
+check('staged API (chunks inferred by separate models, out of order) matches analyze_wav', () => {
+  const analysis = new wasm.Analysis(bytes);
+  const chunks = Array.from({ length: analysis.chunkCount() }, (_, i) => analysis.chunk(i));
+  analysis.releaseInput();
+  analysis.extract(bytes);
+  const logits = new Array(chunks.length);
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    const model = new wasm.BeatModel(chunks[i].length / 128);
+    logits[i] = model.infer(chunks[i]);
+    model.free();
+  }
+  const all = new Float32Array(logits.reduce((n, l) => n + l.length, 0));
+  let offset = 0;
+  for (const l of logits) {
+    all.set(l, offset);
+    offset += l.length;
+  }
+  assert.equal(analysis.finish(all), json);
+  assert.throws(() => analysis.finish(all.subarray(1)), e => e === 'ANALYSIS_FAILED');
+  analysis.free();
 });
 
 check('stable machine error codes are thrown', () => {

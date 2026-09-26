@@ -1,9 +1,12 @@
 //! End-to-end synthetic pipeline tests (generated audio only).
 
+use crate::beat_nn::BeatModel;
 use crate::chroma::PITCH_NAMES;
 use crate::error::MirError;
-use crate::pipeline::analyze;
+use crate::mel::N_MELS;
+use crate::pipeline::{analyze, analyze_to_json, analyze_with, AnalysisParams, BeatTracker};
 use crate::synth::{add_clicks, click_track, midi_hz, render, wav_bytes, Voice};
+use crate::Analysis;
 
 const SR: u32 = 44_100;
 const BPM: f32 = 120.0;
@@ -121,7 +124,6 @@ fn render_song() -> Vec<u8> {
 fn synthetic_song_end_to_end() {
     let bytes = render_song();
     let result = analyze(&bytes).expect("analysis succeeds");
-
     assert_eq!(result.version, 1);
     assert_eq!(result.source.sample_rate, SR);
     assert!(
@@ -164,13 +166,29 @@ fn synthetic_song_end_to_end() {
             .map(|c| (c.tick16, c.name.as_str()))
             .collect();
         assert_eq!(got, expected_chords[m % 3], "measure {m} chords");
-        assert_eq!(
-            measure.subdivision,
-            expected_grids[m % 3],
-            "measure {m} grid"
-        );
+        // Attack positions in 48ths of a measure do not depend on the chosen grid.
+        let at48 = |slots: &[u8], grid: u8| -> Vec<u32> {
+            slots
+                .iter()
+                .map(|&s| u32::from(s) * 48 / u32::from(grid))
+                .collect()
+        };
         let slots: Vec<u8> = measure.attacks.iter().map(|a| a.slot).collect();
-        assert_eq!(slots, expected_slots[m % 3], "measure {m} attack slots");
+        assert_eq!(
+            at48(&slots, measure.subdivision),
+            at48(expected_slots[m % 3], expected_grids[m % 3]),
+            "measure {m} attack positions"
+        );
+        // The song-level grid DP may keep the previous grid on the last analyzed measure
+        // when both grids fit its attacks (switch-cost boundary effect).
+        if m + 1 < n {
+            assert_eq!(
+                measure.subdivision,
+                expected_grids[m % 3],
+                "measure {m} grid"
+            );
+            assert_eq!(slots, expected_slots[m % 3], "measure {m} attack slots");
+        }
         for c in &measure.chords {
             assert!((0.0..=1.0).contains(&c.confidence));
         }
@@ -194,4 +212,157 @@ fn silence_has_no_stable_beat() {
 #[test]
 fn invalid_bytes_are_rejected_not_panicking() {
     assert_eq!(analyze(b"garbage").err(), Some(MirError::InvalidWav));
+}
+
+fn classic(params: AnalysisParams) -> AnalysisParams {
+    AnalysisParams {
+        beat_tracker: BeatTracker::Classic,
+        ..params
+    }
+}
+
+#[test]
+fn classic_tracker_reproduces_issue_52_output() {
+    // Golden JSON produced by the #52 build (main @ 86dc629) for the same song.
+    let bytes = render_song();
+    // Identical apart from the `tempo.tracker` field added by #56.
+    let without_tracker = |params: &AnalysisParams| {
+        let result = analyze_with(&bytes, params).unwrap();
+        assert_eq!(result.tempo.tracker, "classic");
+        let mut v: serde_json::Value = serde_json::from_str(&result.to_json().unwrap()).unwrap();
+        v["tempo"].as_object_mut().unwrap().remove("tracker");
+        v
+    };
+    let golden = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
+    assert_eq!(
+        without_tracker(&AnalysisParams::BASELINE),
+        golden(include_str!("../tests/fixtures/classic_song_baseline.json"))
+    );
+    assert_eq!(
+        without_tracker(&classic(AnalysisParams::default())),
+        golden(include_str!("../tests/fixtures/classic_song_52.json"))
+    );
+}
+
+/// Runs the staged API the extension uses (chunks inferred by separate model instances,
+/// completed out of order) and returns the result JSON.
+fn staged_json(bytes: &[u8]) -> Result<String, MirError> {
+    let mut analysis = Analysis::from_bytes(bytes)?;
+    let count = analysis.chunk_count();
+    let chunks: Vec<Vec<f32>> = (0..count)
+        .map(|i| analysis.chunk_at(i))
+        .collect::<Result<_, _>>()?;
+    analysis.release_input();
+    analysis.extract_with(bytes)?;
+    let mut logits = vec![Vec::new(); count];
+    for i in (0..count).rev() {
+        let model = BeatModel::new(chunks[i].len() / N_MELS)?;
+        logits[i] = model.infer(&chunks[i])?;
+    }
+    analysis.finish_with(&logits.concat())
+}
+
+#[test]
+fn staged_api_matches_single_call_analysis() {
+    let bytes = render_song();
+    assert_eq!(
+        staged_json(&bytes).unwrap(),
+        analyze_to_json(&bytes).unwrap()
+    );
+}
+
+#[test]
+fn staged_api_matches_single_call_across_several_chunks() {
+    // 70 s of drumless strumming: three chunks, the last one shifted to the end.
+    let bytes = drumless_song(100.0, 70.0);
+    let analysis = Analysis::from_bytes(&bytes).unwrap();
+    assert_eq!(analysis.chunk_count(), 3);
+    assert_eq!(
+        staged_json(&bytes).unwrap(),
+        analyze_to_json(&bytes).unwrap()
+    );
+}
+
+#[test]
+fn finish_rejects_malformed_logits() {
+    let bytes = render_song();
+    let mut analysis = Analysis::from_bytes(&bytes).unwrap();
+    assert_eq!(
+        analysis.finish_with(&[]).err(),
+        Some(MirError::AnalysisFailed),
+        "finish before extract"
+    );
+    analysis.extract_with(&bytes).unwrap();
+    let frames: usize = (0..analysis.chunk_count())
+        .map(|i| analysis.chunk_at(i).unwrap().len() / N_MELS)
+        .sum();
+    let mut logits = vec![0.0f32; frames];
+    assert_eq!(
+        analysis.finish_with(&logits[1..]).err(),
+        Some(MirError::AnalysisFailed)
+    );
+    logits[3] = f32::NAN;
+    assert_eq!(
+        analysis.finish_with(&logits).err(),
+        Some(MirError::AnalysisFailed)
+    );
+    // All-negative logits have no beats at all: the classic tracker takes over.
+    let silent = vec![-5.0f32; frames];
+    let fallback: serde_json::Value =
+        serde_json::from_str(&analysis.finish_with(&silent).unwrap()).unwrap();
+    assert_eq!(fallback["tempo"]["tracker"], "classic");
+    let neural: serde_json::Value =
+        serde_json::from_str(&analyze_to_json(&bytes).unwrap()).unwrap();
+    assert_eq!(neural["tempo"]["tracker"], "neural");
+}
+
+/// Solo strumming without percussion: down-strums on every beat (bright, louder) and
+/// quieter up-strums on the off-beat eighths of a different voicing; the chord changes
+/// every bar (C - Am - F - G).
+fn drumless_song(bpm: f32, seconds: f32) -> Vec<u8> {
+    let beat = 60.0 / bpm;
+    let bar = 4.0 * beat;
+    let lead = 0.4f32;
+    let chords: [&[i32]; 4] = [
+        &[48, 55, 60, 64],
+        &[45, 52, 57, 60],
+        &[41, 48, 53, 57],
+        &[43, 50, 55, 59],
+    ];
+    let mut voices = Vec::new();
+    let bars = ((seconds - lead - 0.5) / bar) as usize;
+    for b in 0..bars {
+        let s = lead + b as f32 * bar;
+        let e = s + bar;
+        let downs: Vec<f32> = (0..4).map(|k| s + k as f32 * beat).collect();
+        let ups: Vec<f32> = (0..4).map(|k| s + (k as f32 + 0.5) * beat).collect();
+        for &m in chords[b % 4] {
+            voices.push(
+                Voice::sustained(midi_hz(m), 0.08, 4)
+                    .bright(0.8)
+                    .span(s, e)
+                    .strummed(downs.clone(), 0.25),
+            );
+            voices.push(
+                Voice::sustained(midi_hz(m + 12), 0.03, 3)
+                    .span(s, e)
+                    .strummed(ups.clone(), 0.15),
+            );
+        }
+    }
+    wav_bytes(&[render(&voices, seconds, SR)], SR, 16)
+}
+
+#[test]
+fn drumless_strumming_is_tracked_at_the_played_tempo() {
+    for bpm in [90.0f32, 150.0] {
+        let bytes = drumless_song(bpm, 16.0);
+        let result = analyze(&bytes).expect("analysis succeeds");
+        let rel = result.tempo.bpm / f64::from(bpm) - 1.0;
+        assert!(
+            rel.abs() <= 0.03,
+            "{bpm} BPM tracked as {:.2}",
+            result.tempo.bpm
+        );
+    }
 }
