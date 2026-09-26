@@ -48,6 +48,7 @@
 | **コマンド** | `guitardsl.showPreview` (プレビュー表示) | ✅ 完了 | エディタタイトルバー・コンテキストメニュー対応 |
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
+| | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレット、プレビューのカポバー「編集…」。セクション方式の楽譜設定エディタ（現在はカポ / 弾きやすさのみ） |
 | | `guitardsl.transcribeYouTube` (YouTube自動採譜) | ✅ 完了 | コマンドパレットのみ。Gemini API経由でMusic IR取得・バリデーション・DSL生成・新規エディタ表示 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
@@ -55,11 +56,14 @@
 | **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入。倍音の差し引き {3,5,6} と 7th ゲートで maj7/7 への偏りを抑制）、拍は学習済みモデル Beat This! small（ONNX を tract で推論、最大 2 Worker で並列。拍が得られなければ従来方式に切り替え）、ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／ギター以外のドラム無し音源（ピアノ・ストリングス・パッド）では倍・半分テンポの選択を誤りやすい（#59）／5 分の曲の解析に約 45 秒・ピーク約 1.5 GB（M1）／ファンク・ジャズ等のテンションの多い和音のルート精度が低い／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
 | **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
-| **プレビュー画面** | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
+| **カポ推論・弾きやすさ** | `src/capo.ts`（汎用推論 API、弾きやすさ、ソースを保つカポ変換、有効 DSL） | ✅ 完了 | 純粋モジュール（VS Code・採譜に非依存）。候補 0〜12、推奨は最高スコア・同点は小さいカポ。ラベル付きコード・定義との衝突は変換不可。採譜への組み込みは未実施 |
+| **楽譜設定エディタ** | Webview（カポ候補一覧、推奨、コード対応、警告、DSLに適用） | ✅ 完了 | 適用は最新テキストから再計算し 1 回の元に戻せる編集。Webview 内のクリック操作は自動テストの対象外 |
+| **プレビュー画面** | カポの一時変更（カポバー） | ✅ 完了 | DSL を変えずにプレビューと PDF を同じ有効 DSL で描画。切り替え・クローズ・変換不可で解除 |
+| | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
 | | 表示モード（1ページ / 見開き / Web） | ✅ 完了 | シート SVG の縦並び・横並び、連続 SVG |
 | | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
-| **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。macOS で確認済み、Windows / Linux は未検証 |
+| **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | メロディ・歌詞・長さ・拍数・表示設定の問題を日英メッセージで表示 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
@@ -84,21 +88,23 @@
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
   - `tests/unit/chord.test.ts`: `chord` 定義の解析・整形の往復、`@ラベル` 参照と診断、ダイアグラムの解決と描画、コード名の自動判定、プリセット（全ルート・タイプ、自動判定との一致）、エディタのモデル（開始・保存位置・重複）
+  - `tests/unit/capo.test.ts`: 汎用推論（0〜12 の候補、出現回数の重み、同点時の小さいカポ、不正カポの拒否）、移調と `NOTE_NAMES` の綴り、弾きやすさの計算式と段階の境界、ソース変換（カポ差分、ヘッダー挿入、カポ 0、`capo:` の行末コメント保持、CRLF・コメント・メロディ・歌詞・繰り返しのバイト保持、長さ指定の保持、ラベル付きコード・定義衝突の拒否、再解析）、有効 DSL のドリフトなし、DSL 上の候補（適用できないカポを変更不可にし推奨しない）、カポバーの描画、コードトークンとヘッダーのソース位置（歌詞が前にある同名コード）
   - `tests/unit/audioMirEvaluator.test.ts`: 評価スクリプトの Harte 表記の語彙縮約、時間加重の各一致率、GuitarSet JAMS（演奏側コード・テンポ）の読み取り、テンポ Acc1/Acc2
   - `tests/unit/audioMir.test.ts`: `AudioMirResultV1` の実行時検証（版・tick・スロット重複・非有限値・コード名/キー名）、アダプタ（1 セクション、コード/リズム 8・12・16 グリッドの各小節ちょうど 4 拍、先頭休符・`r1`・3 連、方向の決定的割り当て、strict 検証をそのまま通過、再パースでエラー 0）、Worker プロトコル（1 回だけ確定・遅延メッセージ無視）、推論プール（並列数の上限、完了順に依存しない集約、キャンセルで全 Worker 終了、推論 Worker の失敗・不正メッセージ）、`tempo.tracker` の検証、コントローラ（多重起動防止、キャンセル、失敗後の再実行、非 file URI、失敗時にドキュメントを作らない、dispose）
   - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
-- **テスト実行結果**: **246 / 246 件 PASS** (0 failures)
+- **テスト実行結果**: **279 / 279 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
   - ドキュメントシンボル
   - メロディ行の診断の発行と修正時のクリア
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）
-- **テスト実行結果**: **8 / 8 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+  - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
+- **テスト実行結果**: **15 / 15 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:

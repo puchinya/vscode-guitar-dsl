@@ -7,21 +7,31 @@ import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChord
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
 import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
+import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } from './previewCapo';
+import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyCapoTransform } from './scoreSettingsEditor';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
+
+export interface ExportPdfOptions {
+  /** Effective DSL to render instead of `doc.getText()` (the Preview capo override, spec extension §4.4). */
+  dslContentOverride?: string;
+  /** Output file; when given, the save dialog is skipped. */
+  targetUri?: vscode.Uri;
+}
 
 export async function exportScoreToPdf(
   doc: vscode.TextDocument,
   extensionRoot: string,
   pageSize: PageSize = 'A4',
   orientation: PageOrientation = 'portrait',
-  locale?: string
+  locale?: string,
+  options?: ExportPdfOptions
 ): Promise<void> {
   const currentLocale = resolveLocale(locale ?? vscode.env.language);
   const msgs = getMessages(currentLocale);
 
   const defaultFileName = doc.fileName.replace(/\.(guitardsl|gdsl)$/i, '') + '.pdf';
-  const targetUri = await vscode.window.showSaveDialog({
+  const targetUri = options?.targetUri ?? await vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(defaultFileName),
     filters: {
       'PDF Documents': ['pdf']
@@ -37,17 +47,20 @@ export async function exportScoreToPdf(
     const { getBundledFontFiles, writeScorePdf } = await import('./pdf');
     const config = vscode.workspace.getConfiguration('guitardsl');
     const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
-    await writeScorePdf(targetUri.fsPath, doc.getText(), pageSize, orientation, getBundledFontFiles(extensionRoot), {
+    const dslContent = options?.dslContentOverride ?? doc.getText();
+    effectiveDslProbe.pdfInput = dslContent;
+    await writeScorePdf(targetUri.fsPath, dslContent, pageSize, orientation, getBundledFontFiles(extensionRoot), {
       expandPageBreakRepeats
     });
 
-    const action = await vscode.window.showInformationMessage(
+    void vscode.window.showInformationMessage(
       msgs.msgPdfSaved(path.basename(targetUri.fsPath)),
       msgs.msgOpenFile
-    );
-    if (action === msgs.msgOpenFile) {
-      vscode.env.openExternal(targetUri);
-    }
+    ).then(action => {
+      if (action === msgs.msgOpenFile) {
+        vscode.env.openExternal(targetUri);
+      }
+    });
   } catch (err: any) {
     vscode.window.showErrorMessage(msgs.msgPdfFailed(err.message || err));
   }
@@ -146,18 +159,26 @@ export function activate(context: vscode.ExtensionContext) {
   // Paper size / orientation of the preview; the webview requests changes via 'layoutChanged'.
   let previewPageSize: PageSize = 'A4';
   let previewOrientation: PageOrientation = 'portrait';
+  // Transient Preview capo override; its effective DSL feeds both the Preview and PDF export.
+  const previewCapo = new PreviewCapoController(() => msgs);
+  setPreviewCapoController(previewCapo);
+  context.subscriptions.push({ dispose: () => setPreviewCapoController(undefined) });
 
   const updateWebview = (doc: vscode.TextDocument) => {
     if (currentPanel && isGuitarDslDocument(doc)) {
+      previewCapo.switchDocument(doc);
       lastActiveGuitarDslDoc = doc;
       const webview = currentPanel.webview;
       const config = vscode.workspace.getConfiguration('guitardsl');
       const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
-      const htmlContent = compileGuitarDslToHtml(doc.getText(), {
+      const effective = previewCapo.resolve(doc);
+      effectiveDslProbe.previewInput = effective.text;
+      const htmlContent = compileGuitarDslToHtml(effective.text, {
         locale: currentLocale,
         pageSize: previewPageSize,
         orientation: previewOrientation,
         expandPageBreakRepeats,
+        capo: effective.capo,
         fontUris: {
           regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
           bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
@@ -197,13 +218,27 @@ export function activate(context: vscode.ExtensionContext) {
           if (message.command === 'savePdf') {
             const activeDoc = lastActiveGuitarDslDoc || (await resolveGuitarDslDocument(undefined, undefined));
             if (activeDoc) {
-              await exportScoreToPdf(activeDoc, context.extensionPath, pageSize, orientation, currentLocale);
+              await exportScoreToPdf(activeDoc, context.extensionPath, pageSize, orientation, currentLocale, {
+                dslContentOverride: previewCapo.effectiveText(activeDoc)
+              });
             } else {
               vscode.window.showWarningMessage(msgs.msgDocNotFound);
             }
           } else if (message.command === 'editChord') {
             if (lastActiveGuitarDslDoc && typeof message.key === 'string') {
               await vscode.commands.executeCommand(EDIT_CHORD_COMMAND, lastActiveGuitarDslDoc.uri, message.key);
+            }
+          } else if (message.command === 'capoChanged') {
+            if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
+              previewCapo.setTarget(lastActiveGuitarDslDoc, message.capo);
+            }
+          } else if (message.command === 'applyCapo') {
+            if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
+              await applyPreviewCapo(lastActiveGuitarDslDoc, message.capo);
+            }
+          } else if (message.command === 'editCapo') {
+            if (lastActiveGuitarDslDoc) {
+              await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, lastActiveGuitarDslDoc.uri);
             }
           } else if (message.command === 'layoutChanged') {
             previewPageSize = pageSize;
@@ -219,6 +254,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.onDidDispose(() => {
         currentPanel = undefined;
+        previewCapo.clear();
       }, null, context.subscriptions);
     }
 
@@ -233,6 +269,31 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }, null, context.subscriptions);
 
+  previewCapo.onDidChange = doc => updateWebview(doc);
+
+  vscode.workspace.onDidCloseTextDocument((doc) => {
+    if (previewCapo.getState()?.documentUri === doc.uri.toString()) {
+      previewCapo.clear();
+    }
+  }, null, context.subscriptions);
+
+  /** Preview "Apply to DSL": fresh transform of the current source, one WorkspaceEdit, then no override. */
+  const applyPreviewCapo = async (doc: vscode.TextDocument, capo: number) => {
+    const result = await applyCapoTransform(doc.uri, capo);
+    if (result.ok) {
+      previewCapo.clear();
+      vscode.window.showInformationMessage(msgs.msgCapoApplied(capo));
+      if (result.unusedDefinitions.length > 0) {
+        vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
+      }
+    } else {
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected : msgs.capoFailures[result.code];
+      vscode.window.showWarningMessage(msgs.msgCapoApplyFailed(reason));
+    }
+    const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
+    updateWebview(fresh);
+  };
+
   vscode.window.onDidChangeActiveTextEditor((editor) => {
     if (editor && isGuitarDslDocument(editor.document)) {
       lastActiveGuitarDslDoc = editor.document;
@@ -242,14 +303,33 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }, null, context.subscriptions);
 
-  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (uri?: vscode.Uri) => {
+  // `targetUri` (optional) exports without the save dialog, e.g. for automation.
+  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (uri?: vscode.Uri, targetUri?: vscode.Uri) => {
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
-    await exportScoreToPdf(doc, context.extensionPath, previewPageSize, previewOrientation, currentLocale);
+    // The same effective DSL as the Preview: the override applies only to the previewed document.
+    await exportScoreToPdf(doc, context.extensionPath, previewPageSize, previewOrientation, currentLocale, {
+      dslContentOverride: previewCapo.effectiveText(doc),
+      targetUri: targetUri instanceof vscode.Uri ? targetUri : undefined
+    });
   });
+
+  // Score settings editor (generic); `editCapo` opens it on the capo / playability section.
+  const openScoreSettings = async (uri: vscode.Uri | undefined, section: string) => {
+    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!doc) {
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
+      return;
+    }
+    ScoreSettingsEditorPanel.show(context.extensionUri, doc, currentLocale, section);
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand(EDIT_SCORE_SETTINGS_COMMAND, (uri?: vscode.Uri) => openScoreSettings(uri, 'capo')),
+    vscode.commands.registerCommand(EDIT_CAPO_COMMAND, (uri?: vscode.Uri) => openScoreSettings(uri, 'capo'))
+  );
 
   const symbolDisposable = vscode.languages.registerDocumentSymbolProvider(
     { language: 'guitardsl' },

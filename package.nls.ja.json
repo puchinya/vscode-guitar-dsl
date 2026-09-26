@@ -2,6 +2,8 @@
   "command.showPreview.title": "GuitarDSL: プレビューを横に開く",
   "command.exportPdf.title": "GuitarDSL: PDF出力 / 印刷",
   "command.editChordDiagram.title": "GuitarDSL: コードダイアグラムを編集",
+  "command.editScoreSettings.title": "GuitarDSL: 楽譜設定を編集",
+  "command.editCapo.title": "GuitarDSL: カポ / 弾きやすさを編集",
   "command.transcribeYouTube.title": "GuitarDSL: YouTubeから採譜",
   "command.transcribeAudio.title": "GuitarDSL: ローカル音源から採譜（実験的）",
   "command.setGeminiApiKey.title": "GuitarDSL: Gemini API キーを設定",

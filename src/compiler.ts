@@ -29,6 +29,26 @@ export interface ChordPlacement {
   label?: string;
 }
 
+/** Source location of one chord token in a measure line (spec §7.1). */
+export interface ChordTokenSpan {
+  /** 0-based line index. */
+  line: number;
+  /** Column range [startCol, endCol) of the chord name only (no `@label` or length suffix). */
+  startCol: number;
+  endCol: number;
+  name: string;
+  label?: string;
+}
+
+/** Source location of one header line; the value range excludes the `key:` prefix. */
+export interface HeaderLine {
+  /** Lower-case header key as written (e.g. 'capo', 'original_key', 'style_chord_size'). */
+  key: string;
+  line: number;
+  valueStart: number;
+  valueEnd: number;
+}
+
 export interface MeasureData {
   chord: string;
   chords: ChordPlacement[];
@@ -184,6 +204,22 @@ export interface ParsedScore {
   measuresPerRow: number;
   expandPageBreakRepeats: boolean;
   diagnostics: ScoreDiagnostic[];
+  /** Chord tokens written in measure lines, in source order (repeats `%` add none). */
+  chordTokens?: ChordTokenSpan[];
+  /** Header lines in source order. */
+  headerLines?: HeaderLine[];
+  /** First line of the body (section, measure, melody, lyric or page break); undefined when none. */
+  firstBodyLine?: number;
+}
+
+/** Column of `tok` in `rawLine` at or after `from`, delimited like a measure token; -1 when absent. */
+function locateToken(rawLine: string, tok: string, from: number): number {
+  for (let at = rawLine.indexOf(tok, from); at >= 0; at = rawLine.indexOf(tok, at + 1)) {
+    const before = at === 0 ? '' : rawLine[at - 1];
+    const after = rawLine[at + tok.length] ?? '';
+    if ((before === '' || /[\s|:]/.test(before)) && (after === '' || /[\s|:\]]/.test(after))) return at;
+  }
+  return -1;
 }
 
 const WHOLE_MEASURE = frac(4);
@@ -221,6 +257,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const usedChordsSet = new Set<string>();
   const chordDefinitions: ChordDefinition[] = [];
   const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
+  const chordTokens: ChordTokenSpan[] = [];
+  const headerLines: HeaderLine[] = [];
+  let firstBodyLine: number | undefined;
+  const markBody = (lineIdx: number) => {
+    if (firstBodyLine === undefined) firstBodyLine = lineIdx;
+  };
 
   // Index of the first measure that has not received a melody yet (§12.3).
   let melodyCursor = 0;
@@ -239,6 +281,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Page break: --- or pagebreak
     if (/^---+$/.test(line) || /^pagebreak$/i.test(line)) {
+      markBody(lineIdx);
       if (pages[currentPageIndex].measures.length > 0) {
         currentPageIndex++;
         pages.push({ pageNumber: currentPageIndex + 1, measures: [] });
@@ -269,9 +312,14 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
+      // Value range without a trailing comment (whitespace + `#`, spec §2.3).
+      const inlineComment = headerMatch[2].search(/\s+#/);
+      const rawValue = inlineComment >= 0 ? headerMatch[2].slice(0, inlineComment) : headerMatch[2];
+      const valueStart = lineEnd - headerMatch[2].length;
+      headerLines.push({ key: headerMatch[1].toLowerCase(), line: lineIdx, valueStart, valueEnd: valueStart + rawValue.length });
       if (key === 'title') title = val;
       else if (key === 'artist') artist = val;
-      else if (key === 'capo') capo = val;
+      else if (key === 'capo') capo = rawValue.trim();
       else if (key === 'key' || key === 'original_key') originalKey = val;
       else if (key === 'bpm' || key === 'tempo') bpm = val;
       else if (key === 'memo') memo = val;
@@ -313,6 +361,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     // Section label [Intro], [Aメロ] etc
     const secMatch = line.match(/^\[([^\]]+)\]$/);
     if (secMatch) {
+      markBody(lineIdx);
       currentSection = secMatch[1];
       melodyCursor = measures.length;
       lastMelodyGroup = null;
@@ -322,6 +371,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     // Melody line: mel: | e4/8 d c | ... |
     const melMatch = rawLine.match(/^(\s*mel:)(.*)$/i);
     if (melMatch) {
+      markBody(lineIdx);
       lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx);
       continue;
     }
@@ -329,6 +379,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     // Syllable lyric line: lyr: あさの ひかりを | ...
     const lyrMatch = rawLine.match(/^(\s*lyr:)(.*)$/i);
     if (lyrMatch) {
+      markBody(lineIdx);
       if (!lastMelodyGroup) {
         report(lineIdx, lineStart, lineEnd, 'lyricsWithoutMelody');
       } else {
@@ -339,6 +390,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Measure line: | C | 4.d 4.d 4.d 4.d l:"..." | or | C 4.d ... |
     if (line.includes('|')) {
+      markBody(lineIdx);
       parseMeasureLine(rawLine, lineIdx);
     }
   }
@@ -494,6 +546,14 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           });
           const key = chordKey(parsedChord.name, parsedChord.label);
           usedChordsSet.add(key);
+          const spanCol = locateToken(rawLine, tok, tokCol);
+          if (spanCol >= 0) {
+            const span: ChordTokenSpan = { line: lineIdx, startCol: spanCol, endCol: spanCol + parsedChord.name.length, name: parsedChord.name };
+            if (parsedChord.label !== undefined) span.label = parsedChord.label;
+            chordTokens.push(span);
+            // Continue after the adopted position: an earlier match (e.g. inside l:"...") must not be reused.
+            searchPos = Math.max(searchPos, spanCol + tok.length);
+          }
           if (parsedChord.label !== undefined) {
             chordUses.push({ key, line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
           }
@@ -769,7 +829,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     showRhythm,
     measuresPerRow,
     expandPageBreakRepeats,
-    diagnostics
+    diagnostics,
+    chordTokens,
+    headerLines,
+    firstBodyLine
   };
 }
 

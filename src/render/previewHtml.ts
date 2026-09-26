@@ -1,5 +1,6 @@
+import type { CapoPreviewUiModel } from '../capo';
 import { parseGuitarDsl } from '../compiler';
-import { resolveLocale, getMessages } from '../i18n';
+import { Messages, resolveLocale, getMessages } from '../i18n';
 import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
 
@@ -15,6 +16,8 @@ export interface CompileHtmlOptions {
   /** Webview URIs of the bundled Noto Sans JP fonts. When omitted, the preview falls back to installed fonts. */
   fontUris?: ScoreFontUris;
   expandPageBreakRepeats?: boolean;
+  /** Precomputed capo / playability state; when present the capo bar is shown (never printed). */
+  capo?: CapoPreviewUiModel;
 }
 
 const PX_PER_PT = 96 / 72;
@@ -37,6 +40,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const continuousSvg = renderContinuousSvg(score, pageSize);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
+  const capoBar = options?.capo ? renderCapoBar(options.capo, msgs) : '';
   const continuousMaxWidthPx = Math.round(getSheetSize(pageSize, 'portrait').width * PX_PER_PT);
 
   const fontFaces = options?.fontUris ? `
@@ -208,13 +212,70 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   .chord-diagram {
     cursor: pointer;
   }
+
+  /* Capo / playability bar (toolbar UI only: not part of the SVG / PDF) */
+  body.has-capo-bar {
+    padding-top: 102px;
+  }
+  .capo-bar {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    height: 36px;
+    background: #2d2d30;
+    border-bottom: 1px solid #3c3c3c;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    z-index: 999;
+    color: #eeeeee;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  .capo-badge {
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-weight: bold;
+    background: #3c3c3c;
+  }
+  .capo-badge[data-level="veryEasy"], .capo-badge[data-level="easy"] { background: #2e7d32; }
+  .capo-badge[data-level="moderate"] { background: #8d6e00; }
+  .capo-badge[data-level="hard"], .capo-badge[data-level="veryHard"] { background: #b71c1c; }
+  .capo-note {
+    color: #f0c674;
+  }
+  .capo-warning {
+    color: #ff8a80;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .capo-btn {
+    background: #3c3c3c;
+    color: #eeeeee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .capo-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .capo-btn.primary:not(:disabled) {
+    background: #007acc;
+    border-color: #007acc;
+  }
   .chord-diagram:hover > rect:first-child {
     fill: #0078d4;
     fill-opacity: 0.08;
   }
 </style>
 </head>
-<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}">
+<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"${capoBar ? ' class="has-capo-bar"' : ''}>
   <div class="toolbar-container">
     <div class="toolbar-left">
       <span class="toolbar-label">${escapeXml(msgs.uiView)}</span>
@@ -246,6 +307,8 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
       <button class="btn-pdf" id="btn-save-pdf" title="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
     </div>
   </div>
+
+  ${capoBar}
 
   <div class="sheet-pages-wrapper">
     ${spreadGroups.join('\n')}
@@ -334,6 +397,26 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
         });
       }
 
+      // Capo bar: intents only; the extension host computes and re-renders.
+      const capoSelect = document.getElementById('select-capo');
+      if (capoSelect && vscode) {
+        capoSelect.addEventListener('change', (e) => {
+          vscode.postMessage({ command: 'capoChanged', capo: Number(e.target.value) });
+        });
+      }
+      const applyCapoBtn = document.getElementById('btn-apply-capo');
+      if (applyCapoBtn && vscode) {
+        applyCapoBtn.addEventListener('click', () => {
+          vscode.postMessage({ command: 'applyCapo', capo: Number(capoSelect ? capoSelect.value : NaN) });
+        });
+      }
+      const editCapoBtn = document.getElementById('btn-edit-capo');
+      if (editCapoBtn && vscode) {
+        editCapoBtn.addEventListener('click', () => {
+          vscode.postMessage({ command: 'editCapo' });
+        });
+      }
+
       // Clicking a chord diagram opens the chord diagram editor.
       document.addEventListener('click', (e) => {
         const diagram = e.target.closest && e.target.closest('.chord-diagram');
@@ -347,4 +430,34 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   </script>
 </body>
 </html>`;
+}
+
+function renderCapoBar(model: CapoPreviewUiModel, msgs: Messages): string {
+  const options = model.candidates.map(c => {
+    const parts = [`${msgs.uiCapo} ${c.capo}`];
+    if (c.score !== undefined) parts.push(`${c.score}`);
+    if (c.recommended) parts.push(`★ ${msgs.uiRecommended}`);
+    if (!c.supported) parts.push('—');
+    const attrs = [`value="${c.capo}"`];
+    if (c.capo === model.targetCapo) attrs.push('selected');
+    if (!c.supported) attrs.push('disabled');
+    return `<option ${attrs.join(' ')}>${escapeXml(parts.join(' · '))}</option>`;
+  }).join('');
+  const recommended = model.candidates.find(c => c.recommended);
+  const play = model.currentPlayability;
+  const badge = play
+    ? `<span class="capo-badge" id="capo-playability" data-level="${play.level}" data-score="${play.score}">${escapeXml(`${msgs.playabilityLevels[play.level]} ${play.score}/100`)}</span>`
+    : `<span class="capo-badge" id="capo-playability">${escapeXml(msgs.uiPlayabilityUnavailable)}</span>`;
+  const disabled = model.sourceCapo === null ? ' disabled' : '';
+  return `<div class="capo-bar" id="capo-bar" data-source-capo="${model.sourceCapo ?? ''}" data-target-capo="${model.targetCapo}">
+    <span class="toolbar-label">${escapeXml(msgs.uiCapo)}</span>
+    <select id="select-capo" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${disabled}>${options}</select>
+    <span class="toolbar-label">${escapeXml(msgs.uiPlayability)}</span>
+    ${badge}
+    ${recommended ? `<span class="toolbar-label">★ ${escapeXml(msgs.uiRecommended)}: ${escapeXml(`${msgs.uiCapo} ${recommended.capo}`)}</span>` : ''}
+    ${model.overridden ? `<span class="capo-note">${escapeXml(msgs.uiCapoPreviewOnly)}</span>` : ''}
+    <button class="capo-btn primary" id="btn-apply-capo" title="${escapeXml(msgs.uiApplyToDslTitle)}"${model.canApply ? '' : ' disabled'}>${escapeXml(msgs.uiApplyToDsl)}</button>
+    <button class="capo-btn" id="btn-edit-capo" title="${escapeXml(msgs.uiEditCapoTitle)}">${escapeXml(msgs.uiEditCapo)}</button>
+    ${model.warning ? `<span class="capo-warning" id="capo-warning">${escapeXml(model.warning)}</span>` : ''}
+  </div>`;
 }
