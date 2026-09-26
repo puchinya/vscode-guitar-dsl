@@ -210,7 +210,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 - **Rust/WASM コア**（Cargo ワークスペース `wasm/`、クレート `wasm/crates/audio-mir/`）:
   - 依存は `wasm-bindgen`、`serde`/`serde_json`、`hound`、`rustfft`、`tract-onnx`（版を固定。wasm32 のビルドに `getrandom-js` 機能が必要）に限る。
-  - `wasm-pack --target nodejs` でビルドし、生成物（CommonJS グルーと `.wasm`）を `media/audio-mir-wasm/` に出力する。この生成物はコミットせず、VSIX には同梱する。wasm32 は `wasm/.cargo/config.toml` で `simd128` を有効にする（tract の WASM カーネルの前提）。
+  - `wasm-pack --target nodejs` でビルドし、生成物（CommonJS グルーと `.wasm`）を `media/audio-mir-wasm/` に出力する。この生成物はコミットせず、VSIX には同梱する。wasm32 は `wasm/.cargo/config.toml` で `simd128` を有効にする（tract の WASM カーネルの前提）。Cargo はこの設定を実行ディレクトリとその親からしか探さないため、wasm32 のビルドとチェックは `wasm/` の中（wasm-pack はクレートのディレクトリ）で実行する。
   - JS へ公開する API は次の 2 系統で、どちらも同じ JSON を返す（テストで固定）。失敗時は安定したエラーコード文字列を投げる。
     - `analyze_wav(bytes) -> Result<String, JsValue>`: 全段を 1 つのインスタンスで順に実行する。評価スクリプトとスモークテストが使う。
     - 段階的 API（拡張が使う、#56）: `new Analysis(bytes)` がモデル入力（log-mel）だけを計算し、`chunkCount()` / `chunk(i)` でチャンクを渡す。`BeatModel(frames).infer(chunk)` がチャンクごとのロジットを返す。`analysis.extract(bytes)` が残りの特徴量を抽出し、`analysis.finish(logits)` が全チャンクのロジットを順に連結したものから結果 JSON を組み立てる。

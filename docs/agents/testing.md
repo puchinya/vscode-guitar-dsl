@@ -85,7 +85,7 @@ Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts o
 cargo fmt --manifest-path wasm/Cargo.toml --check
 cargo test --manifest-path wasm/Cargo.toml
 cargo clippy --manifest-path wasm/Cargo.toml --all-targets -- -D warnings
-cargo check --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown
+(cd wasm && cargo check --target wasm32-unknown-unknown)   # from wasm/ so wasm/.cargo/config.toml applies
 npm run build:audio-mir        # wasm-pack --target nodejs -> media/audio-mir-wasm/
 npm run test:audio-mir-wasm    # Node smoke test of the generated WASM (synthetic audio)
 npm run compile
@@ -96,7 +96,7 @@ npx @vscode/vsce ls
 - Rust tests use generated audio only. Never commit recorded or copyrighted audio, and never commit reference LAB files unless they are demonstrably redistributable.
 - `vsce ls` must include `out/audioMir/*.js` (including `worker.js` and `inferWorker.js`), `media/audio-mir-wasm/guitardsl_audio_mir.js`, `media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm` (with the embedded Beat This! model) and `THIRD_PARTY_NOTICES.md`. It must exclude `wasm/**` (Rust sources and `wasm/target/`), `tests/**`, `scripts/**` and `media/audio-mir-wasm/*.d.ts`.
 - `media/audio-mir-wasm/` and `wasm/target/` are build output and are git-ignored. `wasm/Cargo.lock` is committed.
-- The wasm32 build enables `simd128` through `wasm/.cargo/config.toml`; run `cargo` and `wasm-pack` from the repository root or `wasm/` so the config applies.
+- The wasm32 build enables `simd128` through `wasm/.cargo/config.toml`. Cargo reads `.cargo/config.toml` from the current directory and its parents, not from the `--manifest-path` location, so wasm32 `cargo` commands must run inside `wasm/`. Running them from the repository root with `--manifest-path` silently builds without SIMD. `npm run build:audio-mir` is correct because wasm-pack starts cargo in the crate directory. To confirm the shipped build: `wasm-objdump -d media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm | grep -c v128` must be non-zero. Native commands (`test`, `clippy`, `fmt`) are unaffected.
 - Beat This! model (#56): `wasm/crates/audio-mir/models/beat_this_small0.onnx` is committed. Re-export only when the upstream checkpoint or export changes; follow `models/README.md` (`scripts/export-beat-this-onnx.py`, which also regenerates `tests/fixtures/beat_this_reference.json`) and check that the printed SHA-256 matches the README. The Rust tests pin mel parity with torchaudio (at 22,050 Hz, and against soxr for 44.1 and 48 kHz input), logit parity with PyTorch, and that `Classic` reproduces the #52 output (`tests/fixtures/classic_song_*.json`).
 - Beat and tempo evaluation (required when a change touches `mel.rs`, `beat_nn.rs`, `tempo.rs`, the model or the beat post-processing). Local data only:
   ```bash
