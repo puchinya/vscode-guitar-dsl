@@ -20,6 +20,8 @@ pub struct Voice {
     pub end: f32,
     pub attacks: Vec<f32>,
     pub decay: f32,
+    /// Partial `h` has amplitude `h^-rolloff` (1.0 = 1/h; smaller is brighter).
+    pub rolloff: f64,
 }
 
 impl Voice {
@@ -32,7 +34,13 @@ impl Voice {
             end: f32::INFINITY,
             attacks: Vec::new(),
             decay: 1.0,
+            rolloff: 1.0,
         }
+    }
+
+    pub fn bright(mut self, rolloff: f64) -> Self {
+        self.rolloff = rolloff;
+        self
     }
 
     pub fn span(mut self, start: f32, end: f32) -> Self {
@@ -109,7 +117,8 @@ pub fn render(voices: &[Voice], seconds: f32, sample_rate: u32) -> Vec<f32> {
             let t64 = i as f64 / f64::from(sample_rate);
             let mut s = 0.0f64;
             for h in 1..=v.harmonics {
-                s += (std::f64::consts::TAU * f64::from(v.freq) * h as f64 * t64).sin() / h as f64;
+                s += (std::f64::consts::TAU * f64::from(v.freq) * h as f64 * t64).sin()
+                    / (h as f64).powf(v.rolloff);
             }
             *sample += v.amp * env * s as f32;
         }

@@ -4,9 +4,9 @@
 use rustfft::FftPlanner;
 
 use crate::chord::{
-    chord_name, decode_chords, event_confidence, SlotFeature, TemplateChordClassifier,
+    chord_name, decode_chords, event_confidence, SeventhGate, SlotFeature, TemplateChordClassifier,
 };
-use crate::chroma::{l2_normalize, Chroma, ChromaMapper};
+use crate::chroma::{l2_normalize, Chroma, ChromaMapper, ChromaParams};
 use crate::error::{MirError, MirResult};
 use crate::hpss::{HpssFrame, StreamingHpss, HPSS_WIDTH};
 use crate::key::estimate_key;
@@ -116,15 +116,34 @@ impl Extractor {
     }
 }
 
+/// Tunable harmony parameters. `Default` is the shipped configuration; `BASELINE`
+/// reproduces the #50 template baseline for evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AnalysisParams {
+    pub chroma: ChromaParams,
+    pub seventh_gate: SeventhGate,
+}
+
+impl AnalysisParams {
+    pub const BASELINE: AnalysisParams = AnalysisParams {
+        chroma: ChromaParams::BASELINE,
+        seventh_gate: SeventhGate::OFF,
+    };
+}
+
 /// Single sequential pass over the WAV producing the retained features.
 pub fn extract_features(bytes: &[u8]) -> MirResult<Features> {
+    extract_features_with(bytes, &AnalysisParams::default())
+}
+
+pub fn extract_features_with(bytes: &[u8], params: &AnalysisParams) -> MirResult<Features> {
     let stream = open_wav(bytes)?;
     let info = stream.info();
     let sr = info.sample_rate;
 
     // One planner per invocation; each size is planned once and reused for all frames.
     let mut planner = FftPlanner::<f32>::new();
-    let mapper = ChromaMapper::new(HARMONY_FFT, sr);
+    let mapper = ChromaMapper::new(HARMONY_FFT, sr, params.chroma);
     let h_lo = mapper.min_bin();
     let h_hi = mapper.max_bin() + 1;
     let mut h_stft = RollingStft::new(&mut planner, HARMONY_FFT, HARMONY_HOP, h_hi + HPSS_WIDTH);
@@ -233,7 +252,20 @@ fn slot_features(measures: &[MeasureBeats], harmony: &[HarmonyFrame]) -> Vec<Slo
 }
 
 pub fn analyze(bytes: &[u8]) -> MirResult<AudioMirResultV1> {
-    let feats = extract_features(bytes)?;
+    analyze_with(bytes, &AnalysisParams::default())
+}
+
+pub fn analyze_with(bytes: &[u8], params: &AnalysisParams) -> MirResult<AudioMirResultV1> {
+    let feats = extract_features_with(bytes, params)?;
+    analyze_features(&feats, params.seventh_gate)
+}
+
+/// Decoding stage over already extracted features (lets tuning reuse one extraction
+/// for several classifier settings).
+pub fn analyze_features(
+    feats: &Features,
+    seventh_gate: SeventhGate,
+) -> MirResult<AudioMirResultV1> {
     let info = feats.info;
 
     let onset = robust_normalize(&smooth3(&feats.percussive_flux));
@@ -255,7 +287,7 @@ pub fn analyze(bytes: &[u8]) -> MirResult<AudioMirResultV1> {
     }
 
     let slots = slot_features(&measures, &feats.harmony);
-    let decoding = decode_chords(&TemplateChordClassifier::new(), &slots);
+    let decoding = decode_chords(&TemplateChordClassifier::with_gate(seventh_gate), &slots);
 
     let attacks = detect_attacks(&feats.harmonic_flux, |t| feats.rhythm_time(t));
     let per_measure = assign_to_measures(&measures, &attacks);

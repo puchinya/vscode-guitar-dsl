@@ -51,6 +51,27 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Agent workflow state (scripts/agent/* write Issue-scoped mirrors, logs, self-review)
+.agent-state/
+
 # Audio MIR (Rust/WASM) build output
 media/audio-mir-wasm/
 wasm/target/
+# alternate CARGO_TARGET_DIRs (e.g. a separate target for tests while tuning runs)
+wasm/target-*/
+**/*.rs.bk
+# SwiftPM / compiled helper binaries (scripts/render-audio-mir-synth-set.swift)
+.build/
+scripts/render-audio-mir-synth-set
+
+# Audio MIR evaluation data is local-only (datasets live on Google Drive, never in the repo)
+*.wav
+*.wave
+*.aif
+*.aiff
+*.caf
+*.mp3
+*.m4a
+*.flac
+*.jams
+*.lab
