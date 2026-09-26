@@ -106,7 +106,16 @@ npx @vscode/vsce ls
     node scripts/evaluate-audio-mir-labset.mjs <dir> --split report
     ```
   - Compare against the previous build with `--wasm <other build>/guitardsl_audio_mir.js`.
-  - Tuning uses only the tune splits: `cargo run --release --manifest-path wasm/Cargo.toml --example tune_harmony -- --guitarset <dir> --players 00,01,02 --labset <synth dir> --split tune`.
+  - Tuning uses only the tune splits:
+    ```bash
+    cargo run --release --manifest-path wasm/Cargo.toml --example tune_harmony -- --guitarset <dir> --players 00,01,02 --labset <synth dir> --split tune
+    ```
+    The default grid is the search that selected the shipped parameters:
+    - peel masks 18 = {3,6}, 26 = {3,5,6}, 23 = {2,3,4,6}, 31 = {2..6};
+    - α ∈ {0.6, 0.8, 1.0, 1.2}, γ ∈ {0.7, 0.85, 1.0};
+    - θ ∈ {0.6, 0.8}, λ ∈ {0.2, 0.3}.
+
+    The `SELECTED` line applies the fixed selection rule: the best overall exact recall among candidates that keep overall root recall and stay within −1.0 pt per group, with ties going to higher root recall. `AnalysisParams::BASELINE` reproduces the #50 pipeline exactly.
 
 ## Iteration vs. Final Gate
 - During iteration: use focused checks (`npm run test:unit` for logic changes, `npx tsc --noEmit` or `npm run watch`).

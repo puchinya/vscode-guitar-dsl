@@ -23,6 +23,9 @@ describe('audioMir evaluators', () => {
       ['B:dim7(11)/4', { root: 11, quality: 'dim', triad: 'min' }],
       ['C:(1,5)/1', { root: 0, quality: null, triad: null }],
       ['F:minmaj7/1', { root: 5, quality: null, triad: 'min' }],
+      ['C:maj11/1', { root: 0, quality: 'maj7', triad: 'maj' }],
+      ['D:maj13(*5)/1', { root: 2, quality: 'maj7', triad: 'maj' }],
+      ['G:min13/1', { root: 7, quality: 'min7', triad: 'min' }],
       ['E:sus4', { root: 4, quality: 'sus4', triad: null }],
       ['A:min/b3', { root: 9, quality: 'min', triad: 'min' }]
     ];

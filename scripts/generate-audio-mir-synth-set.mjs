@@ -13,7 +13,7 @@ const QUALITY = {
   '': [0, 4, 7], m: [0, 3, 7], '7': [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10],
   sus2: [0, 2, 7], sus4: [0, 5, 7], dim: [0, 3, 6], aug: [0, 4, 8]
 };
-/** GM programs for the chord part. Sustained instruments always get a band for the beat. */
+/** GM programs for the chord part. */
 export const INSTRUMENTS = [
   { name: 'piano', program: 0, sustained: false },
   { name: 'epiano', program: 4, sustained: false },
@@ -83,7 +83,10 @@ function voicing(rand, root, quality) {
 export function generateSong(index, seed) {
   const rand = mulberry32(seed * 100003 + index);
   const instrument = INSTRUMENTS[index % INSTRUMENTS.length];
-  const band = instrument.sustained || rand() < 0.5;
+  // Instruments cycle per song and splits alternate per cycle (see meta.split); bass + drums
+  // go to exactly half of every instrument in every split: cycles {0,1} band, {2,3} no band, ...
+  const cycle = Math.floor(index / INSTRUMENTS.length);
+  const band = Math.floor(cycle / 2) % 2 === 0;
   const bpm = Math.round(70 + rand() * 90);
   const beat = 60 / bpm;
   const bar = 4 * beat;

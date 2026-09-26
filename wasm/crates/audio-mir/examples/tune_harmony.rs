@@ -308,16 +308,21 @@ fn main() {
             |v| v.split(',').filter_map(|x| x.parse().ok()).collect(),
         )
     };
+    // Defaults are the grid that selected the shipped parameters (Issue #52); keep them in
+    // sync with `docs/agents/testing.md` so the selection is reproducible.
     let (alphas, gammas) = (
-        list("--alphas", &[0.4, 0.6, 0.8, 1.0, 1.2]),
-        list("--gammas", &[0.5, 0.6, 0.7, 0.85]),
+        list("--alphas", &[0.6, 0.8, 1.0, 1.2]),
+        list("--gammas", &[0.7, 0.85, 1.0]),
     );
     let (thetas, lambdas) = (
-        list("--thetas", &[0.4, 0.6, 0.8]),
-        list("--lambdas", &[0.2, 0.3, 0.4]),
+        list("--thetas", &[0.6, 0.8]),
+        list("--lambdas", &[0.2, 0.3]),
     );
     // Peel sets as bit masks (bit h-2 = harmonic h): 7 = {2,3,4}, 23 = {2,3,4,6}, 31 = {2..6}.
-    let masks: Vec<u8> = list("--masks", &[23.0]).iter().map(|&m| m as u8).collect();
+    let masks: Vec<u8> = list("--masks", &[18.0, 26.0, 23.0, 31.0])
+        .iter()
+        .map(|&m| m as u8)
+        .collect();
     let mut chroma_grid = vec![ChromaParams::BASELINE];
     for &peel_mask in &masks {
         for &overtone_alpha in &alphas {
@@ -340,7 +345,18 @@ fn main() {
         .collect();
 
     let mut rows: Vec<Row> = Vec::new();
-    for cp in &chroma_grid {
+    let started = std::time::Instant::now();
+    for (ci, cp) in chroma_grid.iter().enumerate() {
+        // Progress on stderr: extraction per chroma setting dominates the run time.
+        eprintln!(
+            "[{}/{}] mask {:#07b} alpha {:.2} gamma {:.2} ({:.0} s elapsed)",
+            ci + 1,
+            chroma_grid.len(),
+            cp.peel_mask,
+            cp.overtone_alpha,
+            cp.overtone_gamma,
+            started.elapsed().as_secs_f64()
+        );
         let params = AnalysisParams {
             chroma: *cp,
             seventh_gate: SeventhGate::OFF,
@@ -416,6 +432,12 @@ fn main() {
             .total_cmp(&a.overall.exact())
             .then(b.overall.root().total_cmp(&a.overall.root()))
     });
+    // Selection rule: best overall exact recall among candidates that keep overall root
+    // recall and stay within the per-group tolerance; ties go to higher root recall.
+    match ranked.first() {
+        Some(r) => println!("SELECTED  {}", describe(r)),
+        None => println!("SELECTED  none (no candidate within tolerance)"),
+    }
     println!(
         "--- top 10 within per-group tolerance ({GROUP_TOLERANCE} pt) by overall exact recall ---"
     );

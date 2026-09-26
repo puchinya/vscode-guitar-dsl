@@ -25,8 +25,8 @@ const HARTE_QUALITY = {
 };
 /** Major/minor class of a quality or Harte shorthand (null for sus, power chords, unknown). */
 const TRIAD_CLASS = {
-  maj: 'maj', maj7: 'maj', '7': 'maj', aug: 'maj', '6': 'maj', '9': 'maj', maj9: 'maj', '11': 'maj', '13': 'maj', maj6: 'maj',
-  min: 'min', min7: 'min', dim: 'min', dim7: 'min', hdim7: 'min', min6: 'min', min9: 'min', minmaj7: 'min', min11: 'min'
+  maj: 'maj', maj6: 'maj', maj7: 'maj', maj9: 'maj', maj11: 'maj', maj13: 'maj', '6': 'maj', '7': 'maj', '9': 'maj', '11': 'maj', '13': 'maj', aug: 'maj',
+  min: 'min', min6: 'min', min7: 'min', min9: 'min', min11: 'min', min13: 'min', minmaj7: 'min', dim: 'min', dim7: 'min', hdim7: 'min'
 };
 
 function usage() {

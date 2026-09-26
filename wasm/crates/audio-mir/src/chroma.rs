@@ -34,15 +34,15 @@ pub struct ChromaParams {
     pub overtone_alpha: f32,
     pub overtone_gamma: f32,
     /// Harmonics peeled, as a bit set: bit `h - 2` for harmonic `h` in 2..=6
-    /// (default [`HARMONICS_3_6`]).
+    /// (default [`HARMONICS_3_5_6`]).
     pub peel_mask: u8,
 }
 
-/// Peel harmonics 3 and 6 only: the two harmonics that land on a different pitch class
-/// (a fifth above). Octave harmonics (2, 4) carry the same pitch class, so peeling them
-/// only weakens that class (typically the root doubled by the bass). Harmonic 5 (a major
-/// third) also removes genuine chord thirds under a loud bass.
-pub const HARMONICS_3_6: u8 = 0b1_0010;
+/// Peel harmonics 3, 5 and 6: the harmonics that land on a different pitch class (a
+/// fifth or a major third above). Octave harmonics (2, 4) carry the same pitch class,
+/// so peeling them only weakens that class (typically the root doubled by the bass).
+/// Selected by `examples/tune_harmony.rs` on the tune splits (Issue #52).
+pub const HARMONICS_3_5_6: u8 = 0b1_1010;
 
 impl ChromaParams {
     pub const BASELINE: ChromaParams = ChromaParams {
@@ -57,22 +57,39 @@ impl Default for ChromaParams {
         ChromaParams {
             overtone_alpha: 0.6,
             overtone_gamma: 0.7,
-            peel_mask: HARMONICS_3_6,
+            peel_mask: HARMONICS_3_5_6,
         }
     }
 }
 
 struct BinWeights {
     bin: usize,
-    /// `(pitch index, weight)` into the semitone spectrum.
+    /// `(pitch index, weight)` into the semitone spectrum, or `(pitch class, weight)` in
+    /// the #50 direct fold.
     weights: Vec<(usize, f32)>,
 }
 
+enum Folding {
+    /// #50 behavior, used when peeling is disabled: each band's bins fold directly into
+    /// pitch classes (bands selected by bin frequency).
+    Direct {
+        main: Vec<BinWeights>,
+        bass: Vec<BinWeights>,
+    },
+    /// Semitone spectrum -> overtone peeling -> fold (bands selected by pitch center).
+    Peeled {
+        bins: Vec<BinWeights>,
+        main: (usize, usize),
+        bass: (usize, usize),
+        peel: [f32; OVERTONES.len()],
+    },
+}
+
 pub struct ChromaMapper {
-    bins: Vec<BinWeights>,
-    main: (usize, usize),
-    bass: (usize, usize),
-    peel: [f32; OVERTONES.len()],
+    folding: Folding,
+    /// Bin range read from the spectrum; identical to #50 in both modes.
+    read_lo: usize,
+    read_hi: usize,
 }
 
 /// Fractional MIDI pitch of a frequency.
@@ -82,6 +99,33 @@ pub fn midi_pitch(hz: f32) -> f32 {
 
 fn midi_hz(midi: i32) -> f32 {
     440.0 * 2f32.powf((midi - 69) as f32 / 12.0)
+}
+
+/// #50 pitch-class weights: Gaussian on the circular distance to the pitch class.
+fn pitch_class_weights(hz: f32) -> Vec<(usize, f32)> {
+    let midi = midi_pitch(hz);
+    let mut out = Vec::new();
+    for pc in 0..12 {
+        let r = (midi - pc as f32).rem_euclid(12.0);
+        let d = r.min(12.0 - r);
+        let w = (-0.5 * (d / SIGMA_SEMITONES).powi(2)).exp();
+        if w >= MIN_WEIGHT {
+            out.push((pc, w));
+        }
+    }
+    out
+}
+
+/// #50 band: bins whose frequency lies within `[lo_hz, hi_hz]`.
+fn direct_band(lo_hz: f32, hi_hz: f32, n_fft: usize, sample_rate: u32) -> Vec<BinWeights> {
+    let lo = bin_at_or_above(lo_hz, n_fft, sample_rate).max(1);
+    let hi = bin_at_or_below(hi_hz, n_fft, sample_rate);
+    (lo..=hi)
+        .map(|bin| BinWeights {
+            bin,
+            weights: pitch_class_weights(bin_frequency(bin, n_fft, sample_rate)),
+        })
+        .collect()
 }
 
 fn pitch_weights(hz: f32) -> Vec<(usize, f32)> {
@@ -128,43 +172,85 @@ pub fn cosine(a: &Chroma, b: &Chroma) -> f32 {
 
 impl ChromaMapper {
     pub fn new(n_fft: usize, sample_rate: u32, params: ChromaParams) -> Self {
-        let lo = bin_at_or_above(BASS_LO_HZ.min(MAIN_LO_HZ), n_fft, sample_rate).max(1);
-        let hi = bin_at_or_below(MAIN_HI_HZ.max(BASS_HI_HZ), n_fft, sample_rate);
-        let bins = (lo..=hi)
-            .map(|bin| BinWeights {
-                bin,
-                weights: pitch_weights(bin_frequency(bin, n_fft, sample_rate)),
-            })
-            .filter(|b| !b.weights.is_empty())
-            .collect();
+        let main_band = direct_band(MAIN_LO_HZ, MAIN_HI_HZ, n_fft, sample_rate);
+        let bass_band = direct_band(BASS_LO_HZ, BASS_HI_HZ, n_fft, sample_rate);
+        let read_lo = main_band
+            .iter()
+            .chain(bass_band.iter())
+            .map(|b| b.bin)
+            .min()
+            .unwrap_or(0);
+        let read_hi = main_band
+            .iter()
+            .chain(bass_band.iter())
+            .map(|b| b.bin)
+            .max()
+            .unwrap_or(0);
         let mut peel = [0.0f32; OVERTONES.len()];
         for (k, &(h, _)) in OVERTONES.iter().enumerate() {
             if params.peel_mask & (1 << (h - 2)) != 0 {
                 peel[k] = params.overtone_alpha * params.overtone_gamma.powi(h - 1);
             }
         }
+        let folding = if peel.iter().all(|&c| c <= 0.0) {
+            Folding::Direct {
+                main: main_band,
+                bass: bass_band,
+            }
+        } else {
+            Folding::Peeled {
+                bins: (read_lo..=read_hi)
+                    .map(|bin| BinWeights {
+                        bin,
+                        weights: pitch_weights(bin_frequency(bin, n_fft, sample_rate)),
+                    })
+                    .filter(|b| !b.weights.is_empty())
+                    .collect(),
+                main: pitch_range(MAIN_LO_HZ, MAIN_HI_HZ),
+                bass: pitch_range(BASS_LO_HZ, BASS_HI_HZ),
+                peel,
+            }
+        };
         ChromaMapper {
-            bins,
-            main: pitch_range(MAIN_LO_HZ, MAIN_HI_HZ),
-            bass: pitch_range(BASS_LO_HZ, BASS_HI_HZ),
-            peel,
+            folding,
+            read_lo,
+            read_hi,
         }
     }
 
     /// Highest bin the mapper reads (inclusive).
     pub fn max_bin(&self) -> usize {
-        self.bins.iter().map(|b| b.bin).max().unwrap_or(0)
+        self.read_hi
     }
 
     /// Lowest bin the mapper reads.
     pub fn min_bin(&self) -> usize {
-        self.bins.iter().map(|b| b.bin).min().unwrap_or(0)
+        self.read_lo
+    }
+
+    fn accumulate(bins: &[BinWeights], mag: &[f32]) -> Chroma {
+        let mut c = [0.0f32; 12];
+        for b in bins {
+            let m = mag.get(b.bin).copied().unwrap_or(0.0);
+            if m == 0.0 {
+                continue;
+            }
+            for &(pc, w) in &b.weights {
+                c[pc] += m * w;
+            }
+        }
+        l2_normalize(&mut c);
+        c
     }
 
     /// Semitone spectrum after greedy low-to-high overtone peeling.
-    fn semitones(&self, mag: &[f32]) -> [f32; N_PITCHES] {
+    fn semitones(
+        bins: &[BinWeights],
+        peel: &[f32; OVERTONES.len()],
+        mag: &[f32],
+    ) -> [f32; N_PITCHES] {
         let mut s = [0.0f32; N_PITCHES];
-        for b in &self.bins {
+        for b in bins {
             let m = mag.get(b.bin).copied().unwrap_or(0.0);
             if m == 0.0 {
                 continue;
@@ -173,16 +259,14 @@ impl ChromaMapper {
                 s[p] += m * w;
             }
         }
-        if self.peel.iter().any(|&c| c > 0.0) {
-            for p in 0..N_PITCHES {
-                let base = s[p];
-                if base <= 0.0 {
-                    continue;
-                }
-                for (k, &(_, offset)) in OVERTONES.iter().enumerate() {
-                    if let Some(v) = s.get_mut(p + offset) {
-                        *v = (*v - self.peel[k] * base).max(0.0);
-                    }
+        for p in 0..N_PITCHES {
+            let base = s[p];
+            if base <= 0.0 {
+                continue;
+            }
+            for (k, &(_, offset)) in OVERTONES.iter().enumerate() {
+                if let Some(v) = s.get_mut(p + offset) {
+                    *v = (*v - peel[k] * base).max(0.0);
                 }
             }
         }
@@ -200,8 +284,21 @@ impl ChromaMapper {
 
     /// Returns `(main, bass)` chroma, each independently L2-normalized.
     pub fn compute(&self, harmonic_mag: &[f32]) -> (Chroma, Chroma) {
-        let s = self.semitones(harmonic_mag);
-        (Self::fold(&s, self.main), Self::fold(&s, self.bass))
+        match &self.folding {
+            Folding::Direct { main, bass } => (
+                Self::accumulate(main, harmonic_mag),
+                Self::accumulate(bass, harmonic_mag),
+            ),
+            Folding::Peeled {
+                bins,
+                main,
+                bass,
+                peel,
+            } => {
+                let s = Self::semitones(bins, peel, harmonic_mag);
+                (Self::fold(&s, *main), Self::fold(&s, *bass))
+            }
+        }
     }
 }
 
@@ -286,6 +383,83 @@ mod tests {
         let (main, bass) = mean_chroma(&voices, 2.0);
         assert_eq!(PITCH_NAMES[argmax(&bass)], "E");
         assert_ne!(PITCH_NAMES[argmax(&main)], "E");
+    }
+
+    /// Verbatim copy of the #50 (PR #51) mapper, frozen as the reference for
+    /// `ChromaParams::BASELINE`.
+    mod pr51 {
+        use super::super::{l2_normalize, midi_pitch, Chroma};
+        use crate::stft::{bin_at_or_above, bin_at_or_below, bin_frequency};
+
+        pub struct BinWeights {
+            pub bin: usize,
+            pub weights: Vec<(usize, f32)>,
+        }
+
+        fn pitch_class_weights(hz: f32) -> Vec<(usize, f32)> {
+            let midi = midi_pitch(hz);
+            let mut out = Vec::new();
+            for pc in 0..12 {
+                let r = (midi - pc as f32).rem_euclid(12.0);
+                let d = r.min(12.0 - r);
+                let w = (-0.5 * (d / 0.25f32).powi(2)).exp();
+                if w >= 1e-4 {
+                    out.push((pc, w));
+                }
+            }
+            out
+        }
+
+        pub fn band(lo_hz: f32, hi_hz: f32, n_fft: usize, sample_rate: u32) -> Vec<BinWeights> {
+            let lo = bin_at_or_above(lo_hz, n_fft, sample_rate).max(1);
+            let hi = bin_at_or_below(hi_hz, n_fft, sample_rate);
+            (lo..=hi)
+                .map(|bin| BinWeights {
+                    bin,
+                    weights: pitch_class_weights(bin_frequency(bin, n_fft, sample_rate)),
+                })
+                .collect()
+        }
+
+        pub fn accumulate(bins: &[BinWeights], mag: &[f32]) -> Chroma {
+            let mut c = [0.0f32; 12];
+            for b in bins {
+                let m = mag.get(b.bin).copied().unwrap_or(0.0);
+                if m == 0.0 {
+                    continue;
+                }
+                for &(pc, w) in &b.weights {
+                    c[pc] += m * w;
+                }
+            }
+            l2_normalize(&mut c);
+            c
+        }
+    }
+
+    #[test]
+    fn baseline_params_reproduce_the_pr51_mapper_exactly() {
+        for sr in [44_100u32, 48_000] {
+            let n = crate::stft::HARMONY_FFT;
+            let mapper = ChromaMapper::new(n, sr, ChromaParams::BASELINE);
+            let main = pr51::band(MAIN_LO_HZ, MAIN_HI_HZ, n, sr);
+            let bass = pr51::band(BASS_LO_HZ, BASS_HI_HZ, n, sr);
+            let lo = main.iter().chain(bass.iter()).map(|b| b.bin).min().unwrap();
+            let hi = main.iter().chain(bass.iter()).map(|b| b.bin).max().unwrap();
+            assert_eq!((mapper.min_bin(), mapper.max_bin()), (lo, hi));
+            let mut seed = 0x9E37_79B9u32;
+            for _ in 0..20 {
+                let mag: Vec<f32> = (0..=hi + 20)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        (seed >> 8) as f32 / (1u32 << 24) as f32
+                    })
+                    .collect();
+                let (m, b) = mapper.compute(&mag);
+                assert_eq!(m, pr51::accumulate(&main, &mag));
+                assert_eq!(b, pr51::accumulate(&bass, &mag));
+            }
+        }
     }
 
     #[test]

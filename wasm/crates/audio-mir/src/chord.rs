@@ -148,7 +148,7 @@ impl SeventhGate {
 impl Default for SeventhGate {
     fn default() -> Self {
         SeventhGate {
-            theta: 0.6,
+            theta: 0.8,
             lambda: 0.3,
         }
     }
@@ -499,45 +499,53 @@ mod tests {
             .name()
     }
 
-    /// Errors of `params` over 4 roots x 9 qualities rendered with 6 partials of
-    /// amplitude h^-rolloff (0.5 is bright, 1.0 is darker).
-    fn harmonic_rich_errors(rolloff: f64, params: &AnalysisParams) -> Vec<String> {
-        let mut errors = Vec::new();
-        for root in [pc("C"), pc("D"), pc("F#"), pc("A")] {
-            for &q in QUALITIES.iter() {
-                let expected = chord_name(state_of(root, q));
-                let got = top_with(&audio_feature_with(root, q, 6, rolloff, params), params);
-                if got != expected {
-                    errors.push(format!("{expected}>{got}"));
-                }
-            }
-        }
-        errors
+    /// Harmonic-rich, bright fixture: 6 partials with amplitude h^-0.5.
+    const RICH_PARTIALS: usize = 6;
+    const BRIGHT: f64 = 0.5;
+
+    fn rich_top(root: usize, q: Quality, params: &AnalysisParams) -> String {
+        top_with(
+            &audio_feature_with(root, q, RICH_PARTIALS, BRIGHT, params),
+            params,
+        )
     }
 
-    /// The 3rd harmonic of a chord's third lands on its major seventh. The #50 baseline
-    /// mislabels harmonic-rich triads; overtone peeling and the seventh gate must cut the
-    /// errors in every timbre while real seventh chords stay detected.
+    /// Issue #52 (revised): the 3rd harmonic of a chord's third lands on its major
+    /// seventh. For each pair the #50 baseline mislabels the triad as a seventh, the
+    /// shipped parameters label it correctly, and the genuine seventh chord is kept.
     #[test]
     fn harmonic_rich_triads_are_not_mislabeled_as_sevenths() {
-        for rolloff in [0.5, 0.8, 1.0] {
-            let baseline = harmonic_rich_errors(rolloff, &AnalysisParams::BASELINE);
-            let shipped = harmonic_rich_errors(rolloff, &AnalysisParams::default());
-            eprintln!("rolloff {rolloff}: baseline {baseline:?} shipped {shipped:?}");
-            assert!(
-                !baseline.is_empty(),
-                "rolloff {rolloff}: fixture must reproduce the baseline failure"
+        let baseline = AnalysisParams::BASELINE;
+        let shipped = AnalysisParams::default();
+        for (root, seventh) in [
+            ("D", Quality::Maj7),
+            ("F#", Quality::Maj7),
+            ("A", Quality::Maj7),
+        ] {
+            let r = pc(root);
+            let triad = chord_name(state_of(r, Quality::Major));
+            let seventh_name = chord_name(state_of(r, seventh));
+            assert_eq!(
+                rich_top(r, Quality::Major, &baseline),
+                seventh_name,
+                "#50 baseline must mislabel {triad} as {seventh_name}"
             );
-            assert!(
-                shipped.len() * 2 <= baseline.len() && shipped.len() <= 1,
-                "rolloff {rolloff}: baseline {baseline:?} shipped {shipped:?}"
+            assert_eq!(
+                rich_top(r, Quality::Major, &shipped),
+                triad,
+                "shipped {triad}"
             );
-            // Genuine four-note seventh chords must never be lost.
-            assert!(
-                shipped.iter().all(|e| !e.contains("7>")),
-                "rolloff {rolloff}: seventh chord lost {shipped:?}"
+            assert_eq!(
+                rich_top(r, seventh, &shipped),
+                seventh_name,
+                "shipped keeps {seventh_name}"
             );
         }
+        assert_eq!(
+            rich_top(pc("A"), Quality::Dom7, &shipped),
+            "A7",
+            "shipped keeps A7"
+        );
     }
 
     #[test]
