@@ -61,7 +61,7 @@ export class GuitarDslDocumentSymbolProvider implements vscode.DocumentSymbolPro
       }
 
       // Metadata headers: title, artist, capo, key, original_key, tempo, bpm, memo, style properties
-      const headerMatch = text.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size|text_size)):\s*(.*)$/i);
+      const headerMatch = text.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|time|time_signature|meter|feel|pickup|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size|text_size)):\s*(.*)$/i);
       if (headerMatch) {
         const key = headerMatch[1];
         const val = headerMatch[2].trim();
@@ -73,6 +73,26 @@ export class GuitarDslDocumentSymbolProvider implements vscode.DocumentSymbolPro
           line.range
         );
         metadataSymbols.push(propSymbol);
+        continue;
+      }
+
+      // Score event: @key: D, @tempo: 132, @time: 7/8 ... (label keeps the name and the value without a comment)
+      const eventMatch = text.match(/^@([A-Za-z_]+)\s*:\s*(.*)$/);
+      if (eventMatch) {
+        const comment = eventMatch[2].search(/\s+#/);
+        const value = (comment >= 0 ? eventMatch[2].slice(0, comment) : eventMatch[2]).trim();
+        const eventSymbol = new vscode.DocumentSymbol(
+          `@${eventMatch[1].toLowerCase()}: ${value}`,
+          '',
+          vscode.SymbolKind.Event,
+          line.range,
+          line.range
+        );
+        if (currentSectionSymbol) {
+          currentSectionSymbol.children.push(eventSymbol);
+        } else {
+          symbols.push(eventSymbol);
+        }
         continue;
       }
 

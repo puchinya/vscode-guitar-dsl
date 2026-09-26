@@ -201,3 +201,85 @@ describe('compiler - key signature and display headers', () => {
     }
   });
 });
+
+describe('melody - techniques and grace notes', () => {
+  const mel = (cells: string, header = '') => parseGuitarDsl(`${header}| C |\nmel: | ${cells} |`);
+
+  it('parses every technique into a structured model (T024)', () => {
+    const score = mel('c5/8{hammer} d{pull} e{slide} f{gliss} g/8{vibrato,staccato} a{tenuto,fermata} b{breath} c6{bend:1.5}');
+    assert.deepStrictEqual(score.diagnostics, []);
+    const t = score.measures[0].melody!.map(n => n.techniques);
+    assert.deepStrictEqual(t, [
+      { connection: 'hammer' }, { connection: 'pull' }, { connection: 'slide' }, { connection: 'gliss' },
+      { vibrato: true, staccato: true }, { tenuto: true, fermata: true }, { breath: true }, { bend: 1.5 }
+    ]);
+    const more = mel('c5/16{grace} d5/4{slur-start,pm} e{let-ring} f{slur-end} g');
+    assert.deepStrictEqual(more.diagnostics, []);
+    assert.deepStrictEqual(more.measures[0].melody!.map(n => n.techniques), [
+      { grace: true }, { slurStart: true, palmMute: true }, { letRing: true }, { slurEnd: true }, undefined
+    ]);
+    // Tuplet ratio and technique block together, then a tie.
+    const both = mel('c5/8{5:4}{staccato} d e f g~ g/2');
+    assert.deepStrictEqual(both.diagnostics, []);
+    const first = both.measures[0].melody![0];
+    assert.deepStrictEqual(first.parts[0].tuplet, { actual: 5, normal: 4 });
+    assert.deepStrictEqual(first.techniques, { staccato: true });
+    assert.strictEqual(both.measures[0].melody![4].tieToNext, true);
+  });
+
+  it('rejects unknown, duplicated and incompatible techniques', () => {
+    for (const bad of ['c5/1{tapping}', 'c5/1{hammer,hammer}', 'c5/1{hammer,pull}', 'c5/1{slur-start,slur-end}', 'c5/1{bend:5}', 'c5/1{bend:0.7}']) {
+      assert.deepStrictEqual(codes(`| C |\nmel: | ${bad} |`), ['invalidTechnique'], bad);
+    }
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/1{} |'), ['invalidLength']);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/8{9:9} d e f g h |').slice(0, 1), ['invalidTuplet']);
+  });
+
+  it('allows only fermata / breath on rests and pitch techniques on pitched notes (T025)', () => {
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/2 r/2{bend:2} |'), ['techniqueRequiresPitch', 'beatCountMismatch']);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/2 r/4{fermata} r/4{breath} |'), []);
+    assert.deepStrictEqual(codes('| C | 4.d.bend 4 4 4 |'), ['techniqueRequiresPitch']);
+    assert.deepStrictEqual(codes('| C | 4.hammer 4 4 4 |'), ['techniqueRequiresPitch']);
+    assert.deepStrictEqual(codes('| C | r4.pm 4 4 4 |'), ['techniqueRequiresPitch']);
+    assert.deepStrictEqual(codes('| C | r4.fermata 4 4 4.breath |'), []);
+    const slashes = parseGuitarDsl('| C | 4.d.pm 4.lr 4.stacc.ten 4.fermata.vib.breath |').measures[0].rhythms.map(r => r.techniques);
+    assert.deepStrictEqual(slashes, [{ palmMute: true }, { letRing: true }, { staccato: true, tenuto: true }, { fermata: true, vibrato: true, breath: true }]);
+  });
+
+  it('gives grace notes zero beats and no syllable (T026)', () => {
+    const score = parseGuitarDsl('| C |\nmel: | c5/16{grace} d5/4 e f g |\nlyr: あ い う え');
+    assert.deepStrictEqual(score.diagnostics, []);
+    const notes = score.measures[0].melody!;
+    assert.strictEqual(notes[0].beats.n, 0);
+    assert.strictEqual(notes[0].parts[0].base, 16);
+    assert.deepStrictEqual(notes[0].syllables, []);
+    assert.strictEqual(notes[1].syllables[0]?.text, 'あ');
+    // A grace note does not change the inherited length.
+    assert.strictEqual(parseGuitarDsl('| C |\nmel: | c5/4 d/16{grace} e f g |').diagnostics.length, 0);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/1 d5/8{grace} |'), ['danglingGrace']);
+    assert.deepStrictEqual(codes('| C | c4/8{grace} 4 4 4 4 |'), []);
+    assert.deepStrictEqual(codes('| C | 4 4 4 4 c4/8{grace} |'), ['danglingGrace']);
+    // A rest is not the note a grace note leans on (spec §12.2.1): grace → rest → note is fine,
+    // grace → rest → end of the measure dangles.
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/16{grace} r/4 d5/4 e5/4 f5/4 |'), []);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/16{grace} r/1 |'), ['danglingGrace']);
+    assert.deepStrictEqual(codes('| C | c4/16{grace} r4 d4/4 4 4 |'), []);
+    assert.deepStrictEqual(codes('| C | 4 4 4 c4/16{grace} r4 |'), ['danglingGrace']);
+  });
+
+  it('connects to the next sounding non-grace note and warns without a target (T027)', () => {
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/4{hammer} r/4 d5/16{grace} e5/2 |'), []);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/2 d5/2{pull} |'), ['danglingTechnique']);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/2 d5/2{slide} |\n| C |\nmel: | e5/1 |'), []);
+    // Inline notes: an unpitched slash is not a target.
+    assert.deepStrictEqual(codes('| C | c4/4{hammer} 4 4 4 |'), ['danglingTechnique']);
+    assert.deepStrictEqual(codes('| C | c4/4{hammer} d4/4 4 4 |'), []);
+  });
+
+  it('validates slurs (T030)', () => {
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/4{slur-start} d e f{slur-end} |'), []);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/4 d e f{slur-end} |'), ['unmatchedSlurEnd']);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/4{slur-start} d{slur-start} e f{slur-end} |'), ['nestedSlur']);
+    assert.deepStrictEqual(codes('| C |\nmel: | c5/4{slur-start} d e f |'), ['unclosedSlur']);
+  });
+});

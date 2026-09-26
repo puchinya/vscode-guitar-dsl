@@ -546,3 +546,167 @@ suite('Beginner Mode (Issue #65)', () => {
     assert.strictEqual(doc.getText(), SOURCE);
   });
 });
+
+suite('Advanced notation / sounding transposition (Issue #68)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewCapo = () => require('../../previewCapo');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewBeginner = () => require('../../previewBeginner');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const beginnerMode = () => require('../../beginnerMode');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const scoreSettings = () => require('../../scoreSettingsEditor');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const i18n = () => require('../../i18n');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('os');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('path');
+
+  const SOURCE = ['title: Transpose Test', 'capo: 0', 'key: C', '', '| C | F |', 'mel: | c5/1 | a4/1 |', ''].join('\n');
+
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitFor(check: () => boolean, message: string): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+      if (check()) return;
+      await sleep(100);
+    }
+    assert.fail(message);
+  }
+  const probe = () => previewCapo().effectiveDslProbe;
+  async function replaceAll(doc: vscode.TextDocument, text: string): Promise<void> {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text);
+    assert.ok(await vscode.workspace.applyEdit(edit));
+  }
+  function sectionContext(doc: vscode.TextDocument, statuses: string[]) {
+    return {
+      doc,
+      messages: i18n().getMessages('en'),
+      editorMessages: i18n().getScoreSettingsEditorMessages('en'),
+      refresh: () => undefined,
+      status: (text: string) => { statuses.push(text); }
+    };
+  }
+  function tmpPdf(name: string): vscode.Uri {
+    return vscode.Uri.file(nodePath.join(os.tmpdir(), `guitardsl-e2e-${process.pid}-transpose-${name}.pdf`));
+  }
+
+  suiteSetup(async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    if (ext && !ext.isActive) await ext.activate();
+  });
+
+  test('TR-E2E-01 apply recomputes from the latest source, not from the previous model (T042)', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    const statuses: string[] = [];
+    const ctx = sectionContext(doc, statuses);
+    const section = new (scoreSettings().TransposeSection)();
+    await section.onMessage(ctx, { command: 'setSemitones', semitones: 2 });
+    const model = section.buildModel(ctx);
+    assert.strictEqual(model.targetKey, 'D');
+    assert.deepStrictEqual(model.mapping, [['C', 'D'], ['F', 'G']]);
+    assert.ok(model.canApply);
+    // The document changes after the model was shown; apply must use the new text.
+    await replaceAll(doc, SOURCE.replace('| C | F |', '| C | F | G |').replace('| a4/1 |', '| a4/1 | b4/1 |'));
+    await section.onMessage(ctx, { command: 'apply', text: 'stale webview text', model });
+    assert.strictEqual(doc.getText(), ['title: Transpose Test', 'capo: 0', 'key: D', '', '| D | G | A |', 'mel: | d5/1 | b4/1 | c#5/1 |', ''].join('\n'));
+    assert.ok(statuses[statuses.length - 1].includes('+2'));
+    assert.strictEqual(section.buildModel(ctx).semitones, 0, 'the selection resets after apply');
+  });
+
+  test('TR-E2E-02 transpose + explicit capo is one WorkspaceEdit and one undo (T043)', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    const version = doc.version;
+    const result = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'explicit', capo: 2 } });
+    assert.ok(result.ok && result.changed);
+    assert.strictEqual(doc.getText(), SOURCE.replace('capo: 0', 'capo: 2').replace('key: C', 'key: D').replace('mel: | c5/1 | a4/1 |', 'mel: | d5/1 | b4/1 |'));
+    assert.strictEqual(doc.version, version + 1, 'a single edit');
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), SOURCE, 'one undo restores the exact original');
+
+    // A failing plan never edits the document.
+    await replaceAll(doc, 'chord C@x = x32010\n| C@x |\n');
+    const failed = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 1, capoMode: { kind: 'keep' } });
+    assert.ok(!failed.ok && failed.code === 'labeledChordVariant');
+    assert.strictEqual(doc.getText(), 'chord C@x = x32010\n| C@x |\n');
+  });
+
+  test('TR-E2E-03 Score Settings exposes Capo, Beginner and Transpose sections side by side (T044)', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+    const panel = (scoreSettings().ScoreSettingsEditorPanel as any).current;
+    assert.ok(panel, 'panel open');
+    assert.deepStrictEqual(panel.sections.map((s: any) => s.id), ['capo', 'beginner', 'transpose']);
+    const ctx = sectionContext(doc, []);
+    const [, beginnerSection, transposeSection] = panel.sections;
+    await transposeSection.onMessage(ctx, { command: 'setSemitones', semitones: 5 });
+    await transposeSection.onMessage(ctx, { command: 'setCapoMode', mode: 'recommended' });
+    await beginnerSection.onMessage(ctx, { command: 'setPolicy', policy: 'allow' });
+    assert.strictEqual(beginnerSection.buildModel(ctx).barrePolicy, 'allow');
+    assert.strictEqual(transposeSection.buildModel(ctx).semitones, 5, 'sections keep their own state');
+    assert.strictEqual(transposeSection.buildModel(ctx).capoMode, 'recommended');
+    const titles = panel.sections.map((s: any) => s.title(i18n().getScoreSettingsEditorMessages('ja')));
+    assert.deepStrictEqual(titles, ['カポ / 弾きやすさ', '初心者モード', '移調']);
+    panel.panel.dispose();
+  });
+
+  test('TR-E2E-04 Preview / PDF re-resolve from the transposed source, including Beginner Mode (T045)', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    probe().previewInput = undefined;
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => probe().previewInput === doc.getText(), 'preview renders the source');
+
+    const beginner = previewBeginner().getPreviewBeginnerController();
+    assert.ok(beginner.enable(doc));
+    const result = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: -2, capoMode: { kind: 'keep' } });
+    assert.ok(result.ok && result.changed);
+    const transposed = doc.getText();
+    assert.ok(transposed.includes('key: Bb') && transposed.includes('| Bb | Eb |'));
+    const expected = beginnerMode().planBeginnerTransform(transposed, { barrePolicy: 'forbid' });
+    const expectedInput = expected.ok ? expected.text : transposed;
+    await waitFor(() => probe().previewInput === expectedInput, 'Beginner Mode re-resolves from the new source');
+    const target = tmpPdf('after');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.strictEqual(probe().pdfInput, probe().previewInput, 'PDF uses the same effective DSL');
+    assert.ok(!probe().pdfInput.includes('key: C\n'), 'no stale pre-transform source');
+    fs.unlinkSync(target.fsPath);
+    beginner.disable(doc);
+    await waitFor(() => probe().previewInput === transposed, 'without Beginner Mode the preview shows the source');
+  });
+
+  test('TR-E2E-06 the outline lists score events as Event symbols next to the existing symbols (T047)', async () => {
+    const content = ['title: Outline', 'time: 6/8', '@tempo: 132', '| C |', '[Verse]', '@key: D  # modulate', '@mark: B', '| D |', '@time: 7/8(2+2+3)', '| D |', ''].join('\n');
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
+    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', doc.uri);
+    assert.ok(symbols);
+    const flat = (list: vscode.DocumentSymbol[]): vscode.DocumentSymbol[] => list.flatMap(s => [s, ...flat(s.children)]);
+    const events = flat(symbols).filter(s => s.kind === vscode.SymbolKind.Event).map(s => s.name);
+    assert.deepStrictEqual(events, ['@tempo: 132', '@key: D', '@mark: B', '@time: 7/8(2+2+3)']);
+    const verse = symbols.find(s => s.name === 'Verse');
+    assert.ok(verse && verse.kind === vscode.SymbolKind.Namespace);
+    assert.deepStrictEqual(verse.children.filter(c => c.kind === vscode.SymbolKind.Event).map(c => c.name), ['@key: D', '@mark: B', '@time: 7/8(2+2+3)']);
+    const metadata = symbols.find(s => s.name === 'Metadata');
+    assert.ok(metadata && metadata.children.some(c => c.name === 'time' && c.detail === '6/8'));
+  });
+
+  test('TR-E2E-05 the advanced notation sample exports to PDF (T048)', async () => {
+    const sample = nodePath.join(__dirname, '../../../samples/sample_advanced_notation.guitardsl');
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(sample));
+    await vscode.window.showTextDocument(doc);
+    const target = tmpPdf('advanced');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0, 'PDF written');
+    assert.strictEqual(probe().pdfInput, doc.getText());
+    fs.unlinkSync(target.fsPath);
+    const diagnostics = vscode.languages.getDiagnostics(doc.uri).filter(d => d.severity === vscode.DiagnosticSeverity.Error);
+    assert.deepStrictEqual(diagnostics, []);
+  });
+});

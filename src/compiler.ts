@@ -1,12 +1,58 @@
 // GuitarDSL compiler front-end: parses DSL text into the score AST (ParsedScore).
 // Rendering (SVG / HTML / PDF) lives in src/render and src/pdf.ts.
 
-import { Fraction, ZERO, fadd, feq, fnum, frac, parseBeats, parseNoteValue, parseRhythmDuration } from './duration';
-import { MelodyNote, MelodyTokenState, Pitch, parseMelodyToken, takesSyllable, tokenizeLyrics } from './melody';
+import {
+  Fraction,
+  NoteValuePart,
+  ZERO,
+  decomposeBeats,
+  fadd,
+  feq,
+  fnum,
+  formatNoteValuePart,
+  frac,
+  fsub,
+  parseBeats,
+  parseNoteValue,
+  parseRhythmDuration,
+  parseRhythmDurationDetailed,
+  tupletGroups
+} from './duration';
+import {
+  MelodyNote,
+  MelodyTokenState,
+  NoteTechniques,
+  Pitch,
+  isGrace,
+  parseMelodyToken,
+  pitchTextLength,
+  takesSyllable,
+  tokenizeLyrics
+} from './melody';
 import { CHORD_LABEL_PATTERN, CHORD_NAME_PATTERN, ChordDefinition, chordKey, isChordDefinitionLine, parseChordDefinition } from './chordDefinition';
+import {
+  DEFAULT_FEEL,
+  DEFAULT_TIME_SIGNATURE,
+  Feel,
+  ResolvedMeasureContext,
+  ScoreEvent,
+  TimeSignature,
+  applyScoreEvent,
+  initialContext,
+  measureBeats,
+  DIRECTIVE_NAMES,
+  parseBpm,
+  parseDirective,
+  parseFeel,
+  parseKeySignature,
+  parseTimeSignature,
+  sameTimeSignature
+} from './scoreEvents';
 
-export type { MelodyNote, Pitch, Syllable } from './melody';
+export type { MelodyNote, NoteTechniques, Pitch, Syllable } from './melody';
 export type { ChordDefinition } from './chordDefinition';
+export type { Feel, Ottava, ResolvedMeasureContext, ScoreEvent, TimeSignature } from './scoreEvents';
+export { parseKeySignature } from './scoreEvents';
 
 export interface RhythmItem {
   duration: string; // '4', '8', '16', '2', '1', 'w', 'h', 'q', '8t', '4+8', 'r...'
@@ -19,6 +65,21 @@ export interface RhythmItem {
   arpeggio?: boolean;
   pitch?: Pitch;
   inlineLyric?: string;
+  /** Inline note `{...}` block, or slash modifiers `.pm .lr .stacc .ten .fermata .vib .breath`. */
+  techniques?: NoteTechniques;
+}
+
+/** Source location of a pitch (`c#4`, octave included when written) in a `mel:` note or an inline note. */
+export interface PitchTokenSpan {
+  line: number;
+  startCol: number;
+  endCol: number;
+  pitch: Pitch;
+  kind: 'melody' | 'inline';
+  /** The octave digit is written (otherwise it is inherited from the previous note of `sequence`). */
+  explicitOctave: boolean;
+  /** Notes sharing octave inheritance: one `mel:` line, or one bar of a measure line. */
+  sequence: number;
 }
 
 export interface ChordPlacement {
@@ -65,6 +126,15 @@ export interface MeasureData {
   lyric: string;
   /** Melody assigned by a `mel:` line; undefined when the measure has no melody. */
   melody?: MelodyNote[];
+  /** Global zero-based measure index. */
+  measureIndex: number;
+  /** Musical context in effect for this measure (after `eventsBefore`). */
+  context: ResolvedMeasureContext;
+  /** Score events applied immediately before this measure, in source order. */
+  eventsBefore: ScoreEvent[];
+  /** Expected length in quarter beats (the pickup length for a pickup measure). */
+  expectedBeats: Fraction;
+  isPickup?: boolean;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning';
@@ -84,7 +154,23 @@ export type DiagnosticCode =
   | 'invalidMeasuresPerRow'
   | 'invalidChordDefinition'
   | 'duplicateChordDefinition'
-  | 'unknownChordVariant';
+  | 'unknownChordVariant'
+  | 'invalidTimeSignature'
+  | 'invalidBeatGrouping'
+  | 'invalidFeel'
+  | 'invalidPickup'
+  | 'invalidScoreEvent'
+  | 'orphanScoreEvent'
+  | 'measureRepeatMeterMismatch'
+  | 'invalidTuplet'
+  | 'incompleteTupletGroup'
+  | 'invalidTechnique'
+  | 'techniqueRequiresPitch'
+  | 'danglingTechnique'
+  | 'danglingGrace'
+  | 'nestedSlur'
+  | 'unmatchedSlurEnd'
+  | 'unclosedSlur';
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -112,7 +198,23 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   invalidMeasuresPerRow: 'warning',
   invalidChordDefinition: 'error',
   duplicateChordDefinition: 'warning',
-  unknownChordVariant: 'warning'
+  unknownChordVariant: 'warning',
+  invalidTimeSignature: 'error',
+  invalidBeatGrouping: 'error',
+  invalidFeel: 'error',
+  invalidPickup: 'error',
+  invalidScoreEvent: 'error',
+  orphanScoreEvent: 'warning',
+  measureRepeatMeterMismatch: 'error',
+  invalidTuplet: 'error',
+  incompleteTupletGroup: 'warning',
+  invalidTechnique: 'error',
+  techniqueRequiresPitch: 'error',
+  danglingTechnique: 'warning',
+  danglingGrace: 'warning',
+  nestedSlur: 'warning',
+  unmatchedSlurEnd: 'warning',
+  unclosedSlur: 'warning'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -126,8 +228,58 @@ function rhythmBeatsFraction(durationStr: string): Fraction {
   return value ? value.beats : frac(1);
 }
 
+/** Rhythmic length of a rhythm item; grace notes take no time. */
+export function rhythmItemBeats(item: RhythmItem): Fraction {
+  return item.techniques?.grace ? ZERO : rhythmBeatsFraction(item.duration);
+}
+
+/** Default slashes of a measure without rhythm tokens (spec §8.6): legacy 4/4 pattern, else one per beat unit. */
+export function defaultRhythms(ts: TimeSignature = DEFAULT_TIME_SIGNATURE, length: Fraction = measureBeats(ts)): RhythmItem[] {
+  const slash = (duration: string, down: boolean): RhythmItem => ({ duration, isRest: false, down, up: false, ghost: false, accent: false, tie: false });
+  if (sameTimeSignature(ts, DEFAULT_TIME_SIGNATURE) && feq(length, frac(4))) {
+    return [slash('4', true), slash('4', false), slash('4', true), slash('4', false)];
+  }
+  const unit = frac(4, ts.denominator);
+  const count = frac(length.n * unit.d, length.d * unit.n);
+  if (count.d === 1) {
+    const groupStarts = new Set<number>();
+    let acc = 0;
+    for (const g of ts.groups) {
+      groupStarts.add(acc);
+      acc += g;
+    }
+    return Array.from({ length: count.n }, (_, i) => slash(String(ts.denominator), groupStarts.has(i)));
+  }
+  const parts = decomposeBeats(length) ?? [];
+  return parts.map((p, i) => slash(p.dotted ? `${p.base}+${p.base * 2}` : formatNoteValuePart(p), i === 0));
+}
+
+/**
+ * Connection target of `items[i]` (hammer / pull / slide / gliss): the next item that is neither a rest nor
+ * a grace note, or -1. Shared by the diagnostics and the renderers so both agree.
+ */
+export function nextConnectionTarget<T extends { isRest: boolean; techniques?: NoteTechniques }>(items: readonly T[], i: number): number {
+  for (let j = i + 1; j < items.length; j++) {
+    if (!items[j].isRest && !items[j].techniques?.grace) return j;
+  }
+  return -1;
+}
+
+/** Slash / rest technique modifiers (spec §8.4) and the technique they set. */
+const RHYTHM_TECHNIQUE_MODIFIERS: Record<string, keyof NoteTechniques> = {
+  pm: 'palmMute',
+  lr: 'letRing',
+  stacc: 'staccato',
+  ten: 'tenuto',
+  fermata: 'fermata',
+  vib: 'vibrato',
+  breath: 'breath'
+};
+/** Techniques that need a pitch; as slash modifiers they are rejected (`techniqueRequiresPitch`). */
+const PITCHED_ONLY_TECHNIQUES: readonly string[] = ['hammer', 'pull', 'slide', 'gliss', 'bend', 'grace', 'slur-start', 'slur-end'];
+
 // Optional `@label` selects a diagram variant (§7.4). Length: ':' = beat count (legacy), '/' followed by a digit = note value.
-const CHORD_TOKEN_RE = new RegExp(`^(${CHORD_NAME_PATTERN})(?:@(${CHORD_LABEL_PATTERN}))?(?::([0-9][0-9.]*)|\\/([0-9][0-9.t+]*))?$`);
+const CHORD_TOKEN_RE = new RegExp(`^(${CHORD_NAME_PATTERN})(?:@(${CHORD_LABEL_PATTERN}))?(?::([0-9][0-9.]*)|\\/([0-9][0-9.t+{}:]*))?$`);
 
 interface ParsedChordToken {
   name: string;
@@ -149,23 +301,6 @@ function parseChordToken(tok: string): ParsedChordToken | null {
     return value ? { ...base, duration: value.beats } : { ...base, invalidLength: true };
   }
   return base;
-}
-
-const MAJOR_KEY_SIGNATURES: Record<string, number> = {
-  C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7,
-  F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6, Cb: -7
-};
-const MINOR_KEY_SIGNATURES: Record<string, number> = {
-  A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, 'G#': 5, 'D#': 6, 'A#': 7,
-  D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6, Ab: -7
-};
-
-/** Number of sharps (positive) or flats (negative) for a `key:` value, or null when it cannot be parsed. */
-export function parseKeySignature(key: string): number | null {
-  const m = key.trim().match(/^([A-G][b#]?)(m)?$/);
-  if (!m) return null;
-  const table = m[2] ? MINOR_KEY_SIGNATURES : MAJOR_KEY_SIGNATURES;
-  return table[m[1]] ?? null;
 }
 
 export const DEFAULT_MEASURES_PER_ROW = 4;
@@ -208,8 +343,18 @@ export interface ParsedScore {
   chordTokens?: ChordTokenSpan[];
   /** Header lines in source order. */
   headerLines?: HeaderLine[];
-  /** First line of the body (section, measure, melody, lyric or page break); undefined when none. */
+  /** First line of the body (section, measure, melody, lyric, score event or page break); undefined when none. */
   firstBodyLine?: number;
+  /** Initial time signature (`time:`, default 4/4). */
+  timeSignature: TimeSignature;
+  /** Initial feel (`feel:`, default straight). */
+  feel: Feel;
+  /** Pickup length in quarter beats (`pickup:`); undefined when none or invalid. */
+  pickup?: Fraction;
+  /** Valid score events in source order (orphans after the last measure included). */
+  events: ScoreEvent[];
+  /** Pitches of `mel:` notes and inline notes, in source order. */
+  pitchTokens?: PitchTokenSpan[];
 }
 
 /** Column of `tok` in `rawLine` at or after `from`, delimited like a measure token; -1 when absent. */
@@ -221,8 +366,6 @@ function locateToken(rawLine: string, tok: string, from: number): number {
   }
   return -1;
 }
-
-const WHOLE_MEASURE = frac(4);
 
 /** A `mel:` line: the notes it produced (in order) and the note index range of each cell. */
 interface MelodyGroup {
@@ -263,6 +406,31 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const markBody = (lineIdx: number) => {
     if (firstBodyLine === undefined) firstBodyLine = lineIdx;
   };
+
+  let timeSignature: TimeSignature = DEFAULT_TIME_SIGNATURE;
+  let feel: Feel = DEFAULT_FEEL;
+  let pickup: { value: Fraction; line: number; startCol: number; endCol: number } | undefined;
+  let pickupBeats: Fraction | undefined;
+  const events: ScoreEvent[] = [];
+  const pitchTokens: PitchTokenSpan[] = [];
+  let pitchSequence = 0;
+
+  // Checks that need the resolved measure context run after all lines are read (see resolveMeasures).
+  interface LengthCheck { measureIdx: number; line: number; startCol: number; endCol: number; beats: Fraction; heads: { part: NoteValuePart }[] }
+  const lengthChecks: LengthCheck[] = [];
+  const defaultRhythmMeasures = new Set<MeasureData>();
+  const equalSplitChords = new Set<MeasureData>();
+  const repeatChecks: { measureIdx: number; line: number; startCol: number; endCol: number }[] = [];
+  interface NoteLocation { line: number; startCol: number; endCol: number }
+  const melodyLocations = new WeakMap<MelodyNote, NoteLocation>();
+  const inlineLocations = new WeakMap<RhythmItem, NoteLocation>();
+  const newMeasure = (fields: Omit<MeasureData, 'measureIndex' | 'context' | 'eventsBefore' | 'expectedBeats'>): MeasureData => ({
+    ...fields,
+    measureIndex: measures.length,
+    context: initialContext({ key: originalKey, bpm, timeSignature, feel }),
+    eventsBefore: [],
+    expectedBeats: frac(4)
+  });
 
   // Index of the first measure that has not received a melody yet (§12.3).
   let melodyCursor = 0;
@@ -307,8 +475,31 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       continue;
     }
 
+    // Score event: @key: D, @tempo: 132, ... (spec §16). Applies before the next measure.
+    const directiveMatch = rawLine.match(/^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/);
+    if (directiveMatch) {
+      markBody(lineIdx);
+      const name = directiveMatch[2].toLowerCase();
+      const nameStart = directiveMatch[1].length - 1;
+      const bodyStart = directiveMatch[1].length + directiveMatch[2].length + directiveMatch[3].length;
+      const body = directiveMatch[4];
+      const comment = body.search(/\s+#/);
+      const rawValue = comment >= 0 ? body.slice(0, comment) : body;
+      const valueStart = bodyStart + (rawValue.length - rawValue.trimStart().length);
+      const valueEnd = bodyStart + rawValue.trimEnd().length;
+      const parsed = parseDirective(name, rawValue);
+      if (parsed.ok) {
+        events.push({ ...parsed.payload, directive: `@${name}`, line: lineIdx, valueStart, valueEnd, beforeMeasure: measures.length });
+      } else if (!DIRECTIVE_NAMES.includes(name)) {
+        report(lineIdx, nameStart, bodyStart, 'invalidScoreEvent', { directive: `@${name}`, value: rawValue.trim() });
+      } else {
+        report(lineIdx, valueStart, valueEnd, parsed.code, { directive: `@${name}`, value: rawValue.trim() });
+      }
+      continue;
+    }
+
     // Headers
-    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i);
+    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i);
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
@@ -323,6 +514,19 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       else if (key === 'key' || key === 'original_key') originalKey = val;
       else if (key === 'bpm' || key === 'tempo') bpm = val;
       else if (key === 'memo') memo = val;
+      else if (key === 'time' || key === 'time_signature' || key === 'meter') {
+        const ts = parseTimeSignature(rawValue);
+        if (ts.ok) timeSignature = ts.value;
+        else report(lineIdx, valueStart, valueStart + rawValue.length, ts.code, { directive: headerMatch[1], value: rawValue.trim() });
+      } else if (key === 'feel') {
+        const f = parseFeel(rawValue);
+        if (f) feel = f;
+        else report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidFeel', { directive: headerMatch[1], value: rawValue.trim() });
+      } else if (key === 'pickup') {
+        const v = parseNoteValue(rawValue.trim());
+        if (v) pickup = { value: v.beats, line: lineIdx, startCol: valueStart, endCol: valueStart + rawValue.length };
+        else report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidPickup', { value: rawValue.trim() });
+      }
       else if (key.startsWith('expand_page')) {
         const v = val.toLowerCase();
         if (['false', 'off', 'no', '0'].includes(v)) expandPageBreakRepeats = false;
@@ -399,8 +603,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
 
     const bars: string[] = [];
-    const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+]*)?$`);
-    const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)t?(?:\+(?:16|8|4|2|1)t?)*|w|h|q)|r[a-z0-9]*)(\.[a-z]+)*$/;
+    const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+{}:]*)?$`);
+    const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?(?:\+(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?)*|w|h|q)|r[a-z0-9]*)(\.[a-z][a-z0-9:\-]*)*$/;
+    const NOTE_TOKEN_REGEX = /^[a-g][#b]?[0-9]?(?:\/|:|$|~|\{)/;
     let searchPos = 0;
 
     let bi = 0;
@@ -414,7 +619,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         const nextClean = next.replace(/l:\"[^\"]*\"/, '').trim();
         const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
         const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
-        const isNoteToken = (t: string) => /^[a-g][#b]?[0-9]?(?:\/|:|$|~)/.test(t);
+        const isNoteToken = (t: string) => NOTE_TOKEN_REGEX.test(t);
         const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]) || t === '%' || isNoteToken(t));
 
         if (!nextHasChord && nextHasRhythm) {
@@ -495,8 +700,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       let mSpecialMark: string | undefined = undefined;
       const inlineMelodyState: MelodyTokenState = {
         octave: 4,
-        length: { parts: [{ base: 8, dotted: false, triplet: false }], beats: frac(1, 2) }
+        length: { parts: [{ base: 8, dotted: false }], beats: frac(1, 2) }
       };
+      const barSequence = pitchSequence++;
+      let repeatTokenCol = -1;
+      let multiChordEqualSplit = false;
 
       for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
         const tok = tokens[tokIdx];
@@ -508,6 +716,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
         if (tok === '%') {
           isMeasureRepeat = true;
+          repeatTokenCol = tokCol;
           continue;
         }
 
@@ -558,12 +767,19 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             chordUses.push({ key, line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
           }
         } else if (RHYTHM_REGEX.test(tok)) {
-          // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, 8t.d, 4+8.d, etc.
+          // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, 8t.d, 8{5:4}.d, 4+8.d, 4.pm, etc.
           const parts = tok.split('.');
           const dur = parts[0];
           const isRest = dur.startsWith('r');
+          const durationValue = parseRhythmDurationDetailed(dur);
+          if (durationValue === 'invalidTuplet') {
+            report(lineIdx, tokCol, tokCol + tok.length, 'invalidTuplet', { token: tok });
+            continue;
+          }
           let down = false, up = false, ghost = false, accent = false, tie = false, arpeggio = false;
           let inlineL: string | undefined = undefined;
+          const techniques: NoteTechniques = {};
+          let techniqueError: 'invalidTechnique' | 'techniqueRequiresPitch' | undefined;
 
           for (let i = 1; i < parts.length; i++) {
             const mod = parts[i];
@@ -573,9 +789,17 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             else if (mod === 'a' || mod === 'accent') accent = true;
             else if (mod === 't' || mod === 'tie') tie = true;
             else if (mod === 'arp' || mod === 'arpeggio') arpeggio = true;
+            else if (RHYTHM_TECHNIQUE_MODIFIERS[mod]) {
+              const key = RHYTHM_TECHNIQUE_MODIFIERS[mod];
+              if (isRest && key !== 'fermata' && key !== 'breath') techniqueError = 'techniqueRequiresPitch';
+              else (techniques as Record<string, unknown>)[key] = true;
+            } else if (PITCHED_ONLY_TECHNIQUES.includes(mod.replace(/:.*$/, ''))) {
+              techniqueError = 'techniqueRequiresPitch';
+            }
           }
+          if (techniqueError) report(lineIdx, tokCol, tokCol + tok.length, techniqueError, { token: tok });
 
-          rhythms.push({
+          const item: RhythmItem = {
             duration: dur,
             isRest,
             down,
@@ -585,19 +809,21 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             tie,
             arpeggio: arpeggio || undefined,
             inlineLyric: inlineL
-          });
+          };
+          if (Object.keys(techniques).length > 0) item.techniques = techniques;
+          rhythms.push(item);
           runningBeat = fadd(runningBeat, rhythmBeatsFraction(dur));
-        } else if (/^[a-g][#b]?[0-9]?(?:\/|:|$|~)/.test(tok)) {
-          // Inline arpeggio / melody note token (e.g. c3/8, e4, g4/4, f#4:0.5)
+        } else if (NOTE_TOKEN_REGEX.test(tok)) {
+          // Inline arpeggio / melody note token (e.g. c3/8, e4, g4/4, f#4:0.5, a4/8{hammer})
           const parsed = parseMelodyToken(tok, inlineMelodyState);
           if (typeof parsed !== 'string') {
             const baseParts = parsed.parts;
             const primaryBase = baseParts[0]?.base ?? 8;
             let durStr = String(primaryBase);
-            if (baseParts[0]?.triplet) durStr += 't';
+            if (baseParts[0]?.tuplet) durStr = formatNoteValuePart(baseParts[0]);
             else if (baseParts[0]?.dotted) durStr = `${primaryBase}+${primaryBase * 2}`;
 
-            rhythms.push({
+            const item: RhythmItem = {
               duration: durStr,
               isRest: parsed.isRest,
               down: false,
@@ -606,17 +832,36 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               accent: false,
               tie: parsed.tieToNext,
               pitch: parsed.pitch
-            });
+            };
+            if (parsed.techniques) item.techniques = parsed.techniques;
+            rhythms.push(item);
+            inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
+            if (parsed.pitch) {
+              const len = pitchTextLength(tok);
+              pitchTokens.push({
+                line: lineIdx,
+                startCol: tokCol,
+                endCol: tokCol + len,
+                pitch: parsed.pitch,
+                kind: 'inline',
+                explicitOctave: /[0-9]$/.test(tok.slice(0, len)),
+                sequence: barSequence
+              });
+            }
             runningBeat = fadd(runningBeat, parsed.beats);
           } else {
-            report(lineIdx, tokCol, tokCol + tok.length, parsed as any);
+            report(lineIdx, tokCol, tokCol + tok.length, parsed, { token: tok });
           }
         }
       }
 
-      if (!isMeasureRepeat && rhythms.length > 0 && !feq(runningBeat, WHOLE_MEASURE)) {
+      if (!isMeasureRepeat && rhythms.length > 0) {
         const col = firstTokenCol >= 0 ? firstTokenCol : 0;
-        report(lineIdx, col, searchPos, 'beatCountMismatch', { beats: formatBeats(runningBeat) });
+        const heads = rhythms.filter(r => !r.techniques?.grace).flatMap(r => (parseRhythmDuration(r.duration)?.parts ?? []).map(part => ({ part })));
+        lengthChecks.push({ measureIdx: measures.length, line: lineIdx, startCol: col, endCol: searchPos, beats: runningBeat, heads });
+      }
+      if (isMeasureRepeat && repeatTokenCol >= 0) {
+        repeatChecks.push({ measureIdx: measures.length, line: lineIdx, startCol: repeatTokenCol, endCol: repeatTokenCol + 1 });
       }
 
       let barChords: ChordPlacement[] = [];
@@ -634,8 +879,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               return placement(c, fnum(b));
             });
           } else {
+            // Positions are fixed once the measure length is known (resolveMeasures).
             const step = 4.0 / rawChords.length;
             barChords = rawChords.map((c, idx) => placement(c, idx * step));
+            multiChordEqualSplit = true;
           }
         } else {
           barChords = rawChords.map(c => placement(c, c.accumBeatAtToken));
@@ -650,7 +897,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         barChords.forEach(c => usedChordsSet.add(chordKey(c.name, c.label)));
       }
 
-      const mData: MeasureData = {
+      const mData: MeasureData = newMeasure({
         chord: barChords.length > 0 ? barChords[0].name : '',
         chords: barChords,
         isMeasureRepeat,
@@ -661,14 +908,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         bracket: mBracket,
         specialMark: mSpecialMark,
         sectionName: currentSection,
-        rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : [
-          { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
-          { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false },
-          { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
-          { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false }
-        ]),
+        rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
         lyric: mLyric
-      };
+      });
+      if (!isMeasureRepeat && rhythms.length === 0) defaultRhythmMeasures.add(mData);
+      if (multiChordEqualSplit) equalSplitChords.add(mData);
       measures.push(mData);
       pages[currentPageIndex].measures.push(mData);
       currentSection = ''; // consume section for the first bar
@@ -682,6 +926,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number): MelodyGroup {
     const group: MelodyGroup = { notes: [], cellRanges: [], verseCount: 0 };
     const state: MelodyTokenState = {};
+    const sequence = pitchSequence++;
 
     // Split the body into cells at '|', keeping source columns.
     const cells: { text: string; col: number }[] = [];
@@ -710,6 +955,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       let notes: MelodyNote[] = [];
 
       if (cell.text.trim() === '%') {
+        repeatChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: trimmedEnd });
         const prevMelody = measureIdx > 0 ? measures[measureIdx - 1].melody : undefined;
         if (!prevMelody) {
           report(lineIdx, trimmedCol, trimmedEnd, 'melodyRepeatWithoutPrevious');
@@ -729,6 +975,19 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             continue;
           }
           notes.push(parsed);
+          melodyLocations.set(parsed, { line: lineIdx, startCol: col, endCol: col + m[0].length });
+          if (parsed.pitch) {
+            const len = pitchTextLength(m[0]);
+            pitchTokens.push({
+              line: lineIdx,
+              startCol: col,
+              endCol: col + len,
+              pitch: parsed.pitch,
+              kind: 'melody',
+              explicitOctave: /[0-9]$/.test(m[0].slice(0, len)),
+              sequence
+            });
+          }
         }
       }
 
@@ -745,8 +1004,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         report(lineIdx, trimmedCol, trimmedEnd, 'measureLyricWithMelody');
       }
       const total = notes.reduce((acc, n) => fadd(acc, n.beats), ZERO);
-      if (notes.length > 0 && !feq(total, WHOLE_MEASURE)) {
-        report(lineIdx, trimmedCol, Math.min(trimmedEnd, cellEnd), 'beatCountMismatch', { beats: formatBeats(total) });
+      // A `%` cell copies an already checked measure (a meter mismatch is reported by resolveMeasures).
+      if (notes.length > 0 && cell.text.trim() !== '%') {
+        const heads = notes.filter(n => !isGrace(n)).flatMap(n => n.parts.map(part => ({ part })));
+        lengthChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: Math.min(trimmedEnd, cellEnd), beats: total, heads });
       }
     }
     return group;
@@ -808,6 +1069,114 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
   }
 
+  resolveMeasures();
+  validateConnections();
+
+  /** Applies score events, resolves each measure's context and runs the length / meter checks. */
+  function resolveMeasures() {
+    const initialBpm = parseBpm(bpm);
+    const initialLength = measureBeats(timeSignature);
+    let validPickup: Fraction | undefined;
+    if (pickup) {
+      if (pickup.value.n > 0 && fsub(initialLength, pickup.value).n > 0) validPickup = pickup.value;
+      else report(pickup.line, pickup.startCol, pickup.endCol, 'invalidPickup', { value: formatBeats(pickup.value) });
+    }
+    pickupBeats = validPickup;
+
+    const byMeasure = new Map<number, ScoreEvent[]>();
+    for (const ev of events) {
+      if (ev.beforeMeasure >= measures.length) {
+        report(ev.line, ev.valueStart, ev.valueEnd, 'orphanScoreEvent', { directive: ev.directive });
+        continue;
+      }
+      const list = byMeasure.get(ev.beforeMeasure) ?? [];
+      list.push(ev);
+      byMeasure.set(ev.beforeMeasure, list);
+    }
+
+    let ctx = initialContext({ key: originalKey, bpm, timeSignature, feel });
+    measures.forEach((m, i) => {
+      const before = byMeasure.get(i) ?? [];
+      for (const ev of before) ctx = applyScoreEvent(ctx, ev, initialBpm);
+      m.measureIndex = i;
+      m.context = ctx;
+      m.eventsBefore = before;
+      const full = measureBeats(ctx.timeSignature);
+      if (i === 0 && validPickup) {
+        m.expectedBeats = validPickup;
+        m.isPickup = true;
+      } else {
+        m.expectedBeats = full;
+      }
+      if (defaultRhythmMeasures.has(m)) m.rhythms = defaultRhythms(ctx.timeSignature, m.expectedBeats);
+      if (equalSplitChords.has(m)) {
+        const step = fnum(m.expectedBeats) / m.chords.length;
+        m.chords = m.chords.map((c, idx) => ({ ...c, beat: idx * step }));
+      }
+    });
+
+    const last = measures.length - 1;
+    for (const check of lengthChecks) {
+      const m = measures[check.measureIdx];
+      if (!m) continue;
+      const completesPickup = validPickup !== undefined && check.measureIdx === last && last > 0
+        && sameTimeSignature(m.context.timeSignature, timeSignature) && feq(check.beats, fsub(initialLength, validPickup));
+      if (!feq(check.beats, m.expectedBeats) && !completesPickup) {
+        report(check.line, check.startCol, check.endCol, 'beatCountMismatch', { beats: formatBeats(check.beats), expected: formatBeats(m.expectedBeats) });
+      }
+      if (tupletGroups(check.heads).some(g => !g.complete)) {
+        report(check.line, check.startCol, check.endCol, 'incompleteTupletGroup');
+      }
+    }
+    for (const check of repeatChecks) {
+      const m = measures[check.measureIdx];
+      const prev = measures[check.measureIdx - 1];
+      if (m && prev && !sameTimeSignature(m.context.timeSignature, prev.context.timeSignature)) {
+        report(check.line, check.startCol, check.endCol, 'measureRepeatMeterMismatch');
+      }
+    }
+  }
+
+  /** Connection targets, slurs and grace notes (spec §12.2.1) over the melody and the inline-note sequences. */
+  function validateConnections() {
+    const melody = measures.flatMap(m => (m.melody ?? []).map(n => ({ n, loc: melodyLocations.get(n), measure: m })));
+    const inline = measures.flatMap(m => (m.isMeasureRepeat ? [] : m.rhythms).map(r => ({ n: r, loc: inlineLocations.get(r), measure: m })));
+    const check = <T extends { isRest: boolean; techniques?: NoteTechniques; pitch?: Pitch }>(seq: { n: T; loc?: NoteLocation; measure: MeasureData }[]) => {
+      const items = seq.map(s => s.n);
+      let openSlur: NoteLocation | undefined;
+      let openSlurSeen = false;
+      seq.forEach(({ n, loc, measure }, i) => {
+        const tech = n.techniques;
+        if (!tech || !loc) return;
+        if (tech.connection) {
+          const target = nextConnectionTarget(items, i);
+          if (target < 0 || !items[target].pitch) {
+            report(loc.line, loc.startCol, loc.endCol, 'danglingTechnique', { technique: tech.connection });
+          }
+        }
+        if (tech.grace) {
+          const rest = seq.slice(i + 1).filter(s => s.measure === measure);
+          if (!rest.some(s => !s.n.isRest && !s.n.techniques?.grace)) report(loc.line, loc.startCol, loc.endCol, 'danglingGrace');
+        }
+        if (tech.slurStart) {
+          if (openSlurSeen) report(loc.line, loc.startCol, loc.endCol, 'nestedSlur');
+          else {
+            openSlur = loc;
+            openSlurSeen = true;
+          }
+        }
+        if (tech.slurEnd) {
+          if (!openSlurSeen) report(loc.line, loc.startCol, loc.endCol, 'unmatchedSlurEnd');
+          openSlur = undefined;
+          openSlurSeen = false;
+        }
+      });
+      if (openSlur) report(openSlur.line, openSlur.startCol, openSlur.endCol, 'unclosedSlur');
+    };
+    check(melody);
+    check(inline);
+  }
+
   const validPages = pages.filter((p, idx) => p.measures.length > 0 || idx === 0);
   validPages.forEach((p, idx) => {
     p.pageNumber = idx + 1;
@@ -832,7 +1201,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     diagnostics,
     chordTokens,
     headerLines,
-    firstBodyLine
+    firstBodyLine,
+    timeSignature,
+    feel,
+    pickup: pickupBeats,
+    events,
+    pitchTokens
   };
 }
 
@@ -859,12 +1233,7 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
         ...r,
         pitch: r.pitch ? { ...r.pitch } : undefined
       }))
-    : [
-        { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
-        { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false },
-        { duration: '4', isRest: false, down: true, up: false, ghost: false, accent: false, tie: false },
-        { duration: '4', isRest: false, down: false, up: false, ghost: false, accent: false, tie: false }
-      ];
+    : defaultRhythms(measure.context.timeSignature, measure.expectedBeats);
 
   const chords = measure.chords && measure.chords.length > 0
     ? measure.chords.map(c => ({ ...c }))

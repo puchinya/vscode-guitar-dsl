@@ -1,9 +1,10 @@
 // Shared music-notation helpers for the rhythm staff (svg.ts) and the melody staff (melodyStaff.ts).
 // All coordinates are system unit coordinates (see layout.ts).
 
-import { MeasureData, ParsedScore } from '../compiler';
-import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, isDyadic, partBeats, parseRhythmDuration } from '../duration';
-import { Pitch } from '../melody';
+import { MeasureData, ParsedScore, RhythmItem, rhythmItemBeats } from '../compiler';
+import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, partBeats, parseRhythmDuration } from '../duration';
+import { Pitch, isGrace } from '../melody';
+import { TimeSignature, measureBeats, structuralChange } from '../scoreEvents';
 import { SYSTEM_UNIT_WIDTH, estimateTextWidth } from './layout';
 
 export function escapeXml(str: string): string {
@@ -43,25 +44,129 @@ export function fmt(n: number, digits = 2): string {
 
 /** First barline x of a system without a key signature. */
 export const BASE_START_X = 78;
+/** x where the key signature (and its cancellation naturals) starts, right after the clef. */
+const PREFIX_X = 54;
+/** Room for a one-digit time signature (always reserved, as before meter changes existed). */
+const TIME_SIGNATURE_RESERVE = BASE_START_X - PREFIX_X;
+const WIDE_TIME_SIGNATURE_RESERVE = TIME_SIGNATURE_RESERVE + 8;
 const KEY_ACCIDENTAL_SPACING = 7;
 const KEY_SIGNATURE_PADDING = 6;
 const MEASURE_PAD = 14;
 
 export interface RenderContext {
   score: ParsedScore;
-  /** Key signature drawn on melody staves (0 when the score has no melody). */
-  keySignature: number;
-  keySignatureWidth: number;
-  /** First barline x, shared by all systems so that barlines line up. */
+  /** Melody staves draw key signatures (and their width is reserved on every system). */
+  hasMelody: boolean;
+  /** First barline x, shared by all systems so that barlines line up (maximum prefix of any system start). */
   startX: number;
   totalWidth: number;
 }
 
+/** What a system draws right after the clef. */
+export interface SystemPrefix {
+  /** Key signature of the system's first measure (0 when the score has no melody). */
+  keySignature: number;
+  /** Key signature cancelled by naturals first (a structural `@key` change), or null. */
+  cancelFrom: number | null;
+  /** Width of naturals + key signature (0 when neither is drawn). */
+  keyWidth: number;
+  /** Time signature to draw (first system and systems starting a meter change), or null. */
+  timeSignature: TimeSignature | null;
+  /** New key at a structural `@key` change; rhythm-only systems show it as `Key: X` text. */
+  keyText: string | null;
+}
+
+function cancelCount(from: number, to: number): number {
+  if (from === 0) return 0;
+  if (to === 0 || Math.sign(from) !== Math.sign(to)) return Math.abs(from);
+  return Math.max(0, Math.abs(from) - Math.abs(to));
+}
+
+function keyWidth(accidentals: number): number {
+  return accidentals > 0 ? accidentals * KEY_ACCIDENTAL_SPACING + KEY_SIGNATURE_PADDING : 0;
+}
+
+function timeSignatureReserve(ts: TimeSignature | null): number {
+  return ts && (ts.numerator >= 10 || ts.denominator >= 10) ? WIDE_TIME_SIGNATURE_RESERVE : TIME_SIGNATURE_RESERVE;
+}
+
+function prefixFor(score: ParsedScore, hasMelody: boolean, index: number, isFirstSystem: boolean): SystemPrefix {
+  const m = score.measures[index];
+  const prev = index > 0 ? score.measures[index - 1].context : undefined;
+  const change = structuralChange(prev, m);
+  const keySignature = hasMelody ? (m.context.keySignature ?? 0) : 0;
+  const cancelFrom = hasMelody && change.key && prev ? (prev.keySignature ?? 0) : null;
+  const cancelled = cancelFrom !== null ? cancelCount(cancelFrom, keySignature) : 0;
+  return {
+    keySignature,
+    cancelFrom: cancelled > 0 ? cancelFrom : null,
+    keyWidth: keyWidth(cancelled + Math.abs(keySignature)),
+    timeSignature: isFirstSystem || change.time ? m.context.timeSignature : null,
+    keyText: change.key ? m.context.key : null
+  };
+}
+
+/** Prefix of the system starting with `first` (a measure of the score, or a repeat-expanded copy of one). */
+export function systemPrefix(ctx: RenderContext, first: MeasureData | undefined, isFirstSystem: boolean): SystemPrefix {
+  if (!first || !ctx.score.measures[first.measureIndex]) {
+    return { keySignature: 0, cancelFrom: null, keyWidth: 0, timeSignature: null, keyText: null };
+  }
+  return prefixFor(ctx.score, ctx.hasMelody, first.measureIndex, isFirstSystem);
+}
+
 export function getRenderContext(score: ParsedScore): RenderContext {
   const hasMelody = score.measures.some(m => m.melody !== undefined);
-  const keySignature = hasMelody ? (score.keySignature ?? 0) : 0;
-  const keySignatureWidth = keySignature !== 0 ? Math.abs(keySignature) * KEY_ACCIDENTAL_SPACING + KEY_SIGNATURE_PADDING : 0;
-  return { score, keySignature, keySignatureWidth, startX: BASE_START_X + keySignatureWidth, totalWidth: SYSTEM_UNIT_WIDTH };
+  // Every measure may start a system (wrap, page break, structural break), so reserve the widest prefix.
+  let widest = TIME_SIGNATURE_RESERVE + (hasMelody ? keyWidth(Math.abs(score.keySignature ?? 0)) : 0);
+  score.measures.forEach((_, i) => {
+    const prefix = prefixFor(score, hasMelody, i, i === 0);
+    widest = Math.max(widest, prefix.keyWidth + timeSignatureReserve(prefix.timeSignature));
+    if (i > 0) {
+      const wrapped = prefixFor(score, hasMelody, i, false);
+      widest = Math.max(widest, wrapped.keyWidth + TIME_SIGNATURE_RESERVE);
+    }
+  });
+  return { score, hasMelody, startX: PREFIX_X + widest, totalWidth: SYSTEM_UNIT_WIDTH };
+}
+
+/** Naturals cancelling `prefix.cancelFrom`, then the key signature; returns the SVG. */
+export function renderSystemKeySignature(prefix: SystemPrefix, staveBottom: number): string {
+  let out = '';
+  let x = PREFIX_X;
+  if (prefix.cancelFrom !== null) {
+    const from = prefix.cancelFrom;
+    const count = cancelCount(from, prefix.keySignature);
+    const positions = from > 0 ? SHARP_POSITIONS : FLAT_POSITIONS;
+    // The cancelled accidentals are the last `count` of the previous signature.
+    const start = Math.abs(from) - count;
+    for (let i = 0; i < count; i++) {
+      out += `<g class="key-cancel">${renderAccidental(0, x + i * KEY_ACCIDENTAL_SPACING + 3, staveBottom - positions[start + i] * 4)}</g>`;
+    }
+    x += count * KEY_ACCIDENTAL_SPACING;
+  }
+  if (prefix.keySignature !== 0) out += renderKeySignature(prefix.keySignature, x, staveBottom);
+  return out;
+}
+
+/** Stacked time signature digits (first system / meter change). One-digit values keep the original left-aligned layout. */
+export function renderTimeSignature(prefix: SystemPrefix, staveTop: number): string {
+  const ts = prefix.timeSignature;
+  if (!ts) return '';
+  const tx = PREFIX_X + 4 + prefix.keyWidth;
+  const num = String(ts.numerator);
+  const den = String(ts.denominator);
+  if (num.length === 1 && den.length === 1) {
+    return `<text class="time-signature" x="${tx}" y="${staveTop + 14}" font-size="14" font-weight="bold">${num}</text>`
+      + `<text class="time-signature" x="${tx}" y="${staveTop + 30}" font-size="14" font-weight="bold">${den}</text>`;
+  }
+  const cx = tx + (WIDE_TIME_SIGNATURE_RESERVE - 12) / 2;
+  return `<text class="time-signature" x="${fmt(cx)}" y="${staveTop + 14}" font-size="14" font-weight="bold" text-anchor="middle">${num}</text>`
+    + `<text class="time-signature" x="${fmt(cx)}" y="${staveTop + 30}" font-size="14" font-weight="bold" text-anchor="middle">${den}</text>`;
+}
+
+/** Length of a measure's bar in quarter beats (its time signature, not the pickup length). */
+export function barBeats(m: MeasureData): number {
+  return fnum(measureBeats(m.context.timeSignature));
 }
 
 export function measureBounds(ctx: RenderContext, count: number, idx: number): { bx: number; width: number } {
@@ -79,7 +184,7 @@ export interface ExpandedHead {
   isFirstPart: boolean;
 }
 
-const FALLBACK_PART: NoteValuePart = { base: 4, dotted: false, triplet: false };
+const FALLBACK_PART: NoteValuePart = { base: 4, dotted: false };
 
 export function expandParts(parts: NoteValuePart[], start: Fraction): ExpandedHead[] {
   const heads: ExpandedHead[] = [];
@@ -116,6 +221,7 @@ export function computeMeasureColumns(m: MeasureData, bx: number, width: number,
   if (includeRhythm && !m.isMeasureRepeat) {
     let offset = ZERO;
     for (const r of m.rhythms) {
+      if (r.techniques?.grace) continue;
       for (const head of expandParts(rhythmParts(r.duration), offset)) {
         onsets.set(key(head.offset), head.offset);
         offset = fadd(head.offset, head.beats);
@@ -125,6 +231,7 @@ export function computeMeasureColumns(m: MeasureData, bx: number, width: number,
   if (m.melody) {
     let offset = ZERO;
     for (const note of m.melody) {
+      if (isGrace(note)) continue;
       for (const head of expandParts(note.parts, offset)) {
         onsets.set(key(head.offset), head.offset);
         offset = fadd(head.offset, head.beats);
@@ -144,38 +251,34 @@ export function computeMeasureColumns(m: MeasureData, bx: number, width: number,
   return { xAt: (offset: Fraction) => xs.get(key(offset)), columns };
 }
 
-/** x for a chord placed at `beat`: the matching column, or proportional when no note starts there. */
-export function chordXAt(columns: MeasureColumns, bx: number, width: number, beat: number): number {
+/** x for a chord placed at `beat`: the matching column, or proportional to `measureLength` quarter beats. */
+export function chordXAt(columns: MeasureColumns, bx: number, width: number, beat: number, measureLength: number): number {
   const match = columns.columns.find(c => Math.abs(c.beat - beat) < 0.05);
   if (match) return Math.max(bx + 8, match.x - 4);
-  return Math.max(bx + 8, bx + MEASURE_PAD + (beat / 4.0) * (width - 2 * MEASURE_PAD));
+  return Math.max(bx + 8, bx + MEASURE_PAD + (beat / measureLength) * (width - 2 * MEASURE_PAD));
 }
 
-/**
- * Groups consecutive triplet heads; a group closes when its accumulated length is a plain
- * (non-triplet) value, e.g. three 8t = 1 beat, three 4t = 2 beats.
- */
-export function tripletGroups<T extends { part: NoteValuePart; beats: Fraction }>(heads: T[]): T[][] {
-  const groups: T[][] = [];
-  let current: T[] = [];
-  let total = ZERO;
-  for (const h of heads) {
-    if (!h.part.triplet) {
-      if (current.length > 0) groups.push(current);
-      current = [];
-      total = ZERO;
-      continue;
+/** Rhythm heads (slash / inline note / rest) of a measure with their onsets; grace items are returned separately. */
+export interface RhythmHead extends ExpandedHead {
+  item: RhythmItem;
+  itemIndex: number;
+}
+
+export function rhythmHeads(m: MeasureData): { heads: RhythmHead[]; graces: { item: RhythmItem; itemIndex: number }[] } {
+  const heads: RhythmHead[] = [];
+  const graces: { item: RhythmItem; itemIndex: number }[] = [];
+  let offset = ZERO;
+  m.rhythms.forEach((item, itemIndex) => {
+    if (item.techniques?.grace) {
+      graces.push({ item, itemIndex });
+      return;
     }
-    current.push(h);
-    total = fadd(total, h.beats);
-    if (isDyadic(total)) {
-      groups.push(current);
-      current = [];
-      total = ZERO;
+    for (const head of expandParts(rhythmParts(item.duration), offset)) {
+      heads.push({ ...head, item, itemIndex });
     }
-  }
-  if (current.length > 0) groups.push(current);
-  return groups;
+    offset = fadd(offset, rhythmItemBeats(item));
+  });
+  return { heads, graces };
 }
 
 /** Rest glyph centred on (x, midY); `staveLines` are the five line y positions (top to bottom). */
@@ -320,4 +423,9 @@ export function renderNotehead(base: NoteBase, x: number, y: number): string {
     return `<path class="notehead" d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
   }
   return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
+}
+
+/** Written staff position under an ottava: 8va draws one octave lower, 8vb one octave higher (pitch data unchanged). */
+export function writtenStaffPosition(p: Pitch, ottava: 'none' | '8va' | '8vb'): number {
+  return staffPosition(p) + (ottava === '8va' ? -7 : ottava === '8vb' ? 7 : 0);
 }

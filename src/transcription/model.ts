@@ -1,7 +1,7 @@
 // Music IR v1 data models, JSON schema and semantic validation for transcription.
 // Pure module independent of VS Code APIs and Gemini SDK.
 
-import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, parseNoteValue, parseRhythmDuration } from '../duration';
+import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, TRIPLET, parseNoteValue, parseRhythmDuration } from '../duration';
 import { parseKeySignature } from '../compiler';
 import { isValidChordName } from '../chordDefinition';
 
@@ -140,7 +140,7 @@ const FOUR_BEATS = frac(4, 1);
 const MELODY_PITCH_RE = /^(?:r|[a-g][b#]?[0-9])$/;
 
 function durationPartToString(p: NoteValuePart): string {
-  if (p.triplet) return `${p.base}t`;
+  if (p.tuplet) return `${p.base}t`;
   if (p.dotted) return `${p.base}.`;
   return `${p.base}`;
 }
@@ -153,9 +153,9 @@ function decomposeToBeatsOrTriplets(beats: Fraction): NoteValuePart[] | null {
   if (beats.d === 3 && beats.n > 0) {
     const res: NoteValuePart[] = [];
     let remN = beats.n;
-    while (remN >= 4) { res.push({ base: 2, dotted: false, triplet: true }); remN -= 4; }
-    while (remN >= 2) { res.push({ base: 4, dotted: false, triplet: true }); remN -= 2; }
-    while (remN >= 1) { res.push({ base: 8, dotted: false, triplet: true }); remN -= 1; }
+    while (remN >= 4) { res.push({ base: 2, dotted: false, tuplet: TRIPLET }); remN -= 4; }
+    while (remN >= 2) { res.push({ base: 4, dotted: false, tuplet: TRIPLET }); remN -= 2; }
+    while (remN >= 1) { res.push({ base: 8, dotted: false, tuplet: TRIPLET }); remN -= 1; }
     return res;
   }
   return null;

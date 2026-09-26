@@ -2,6 +2,7 @@ import type { DiagnosticCode } from './compiler';
 import type { AudioMirErrorCode } from './audioMir/model';
 import type { BeginnerFailureCode } from './beginnerMode';
 import type { CapoTransformFailureCode, PlayabilityLevel } from './capo';
+import type { TransposeFailureCode } from './transpose';
 
 export type SupportedLocale = 'ja' | 'en';
 
@@ -67,6 +68,12 @@ export interface Messages {
   msgBeginnerReset: (reason: string) => string;
   msgBeginnerApplied: (capo: number, substitutions: number) => string;
   msgBeginnerApplyFailed: (reason: string) => string;
+
+  // Sounding transposition (score settings editor)
+  transposeFailure: (code: TransposeFailureCode, detail?: string) => string;
+  msgTransposeApplied: (semitones: number, key: string) => string;
+  msgTransposeApplyFailed: (reason: string) => string;
+  msgNoCapoRecommendation: string;
 
   // YouTube transcription messages
   msgPromptApiKey: string;
@@ -164,6 +171,19 @@ export const MESSAGES_JA: Messages = {
   msgBeginnerReset: (reason: string) => `初心者モードを解除しました: ${reason}`,
   msgBeginnerApplied: (capo: number, substitutions: number) => `初心者モードの変換（カポ ${capo}、置き換え ${substitutions} 種類）をDSLに適用しました。`,
   msgBeginnerApplyFailed: (reason: string) => `初心者モードの変換を適用できません: ${reason}`,
+  transposeFailure: (code, detail) => {
+    const own: Partial<Record<TransposeFailureCode, string>> = {
+      invalidSemitones: '移調量は -11〜+11 の整数で指定してください',
+      untransposableKey: 'キーを移調できません',
+      pitchOutOfRange: '移調後の音高がオクターブ 0〜9 の範囲を超えます',
+      labeledChordVariant: 'ラベル付きのコード（C@label）があるため移調できません'
+    };
+    const text = own[code] ?? MESSAGES_JA.capoFailures[code as CapoTransformFailureCode] ?? code;
+    return detail ? `${text}（${detail}）` : text;
+  },
+  msgTransposeApplied: (semitones: number, key: string) => `${semitones > 0 ? '+' : ''}${semitones} 半音移調しました（キー ${key}）`,
+  msgTransposeApplyFailed: (reason: string) => `移調を適用できません: ${reason}`,
+  msgNoCapoRecommendation: 'コードがないため推奨カポを決められません。カポはそのままにします。',
 
   msgPromptApiKey: 'Gemini API キーを入力してください',
   msgApiKeySaved: 'Gemini API キーを保存しました。',
@@ -270,6 +290,19 @@ export const MESSAGES_EN: Messages = {
   msgBeginnerReset: (reason: string) => `Beginner mode was turned off: ${reason}`,
   msgBeginnerApplied: (capo: number, substitutions: number) => `Applied the beginner mode transform (capo ${capo}, ${substitutions} substituted chord(s)) to the DSL.`,
   msgBeginnerApplyFailed: (reason: string) => `Cannot apply the beginner mode transform: ${reason}`,
+  transposeFailure: (code, detail) => {
+    const own: Partial<Record<TransposeFailureCode, string>> = {
+      invalidSemitones: 'The shift must be an integer from -11 to +11',
+      untransposableKey: 'The key cannot be transposed',
+      pitchOutOfRange: 'A transposed pitch would leave octaves 0-9',
+      labeledChordVariant: 'Labeled chords (C@label) prevent transposition'
+    };
+    const text = own[code] ?? MESSAGES_EN.capoFailures[code as CapoTransformFailureCode] ?? code;
+    return detail ? `${text} (${detail})` : text;
+  },
+  msgTransposeApplied: (semitones: number, key: string) => `Transposed by ${semitones > 0 ? '+' : ''}${semitones} semitones (key ${key})`,
+  msgTransposeApplyFailed: (reason: string) => `Cannot apply the transposition: ${reason}`,
+  msgNoCapoRecommendation: 'No chords to recommend a capo from; the capo is kept.',
 
   msgPromptApiKey: 'Enter your Gemini API key',
   msgApiKeySaved: 'Gemini API key has been saved.',
@@ -350,14 +383,30 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   tooManyMelodyMeasures: () => 'メロディを割り当てる小節がありません（mel: のセル数が小節数を超えています）',
   melodyRepeatWithoutPrevious: () => '% で繰り返す直前の小節にメロディがありません',
   lyricsWithoutMelody: () => 'lyr: の前に対応する mel: 行がありません',
-  beatCountMismatch: a => `小節の長さが4拍ではありません（${a.beats}拍）`,
+  beatCountMismatch: a => `小節の長さが${a.expected ?? 4}拍ではありません（${a.beats}拍）`,
   syllableCountMismatch: a => `歌詞の音節数（${a.syllables}）と歌う音符の数（${a.notes}）が一致しません`,
   lyricBarMismatch: () => '歌詞の | の位置がメロディの小節区切りと一致しません',
   measureLyricWithMelody: () => 'メロディのある小節の l:"..." は表示されません（lyr: を使ってください）',
   invalidMeasuresPerRow: a => `measures_per_row は 1〜8 の整数で指定してください: ${a.value}`,
   invalidChordDefinition: a => `コード定義が不正です（${CHORD_DEF_REASON_JA[a.reason] ?? a.reason}）: ${a.detail}`,
   duplicateChordDefinition: a => `コード ${a.chord} は既に定義されています（最初の定義が使われます）`,
-  unknownChordVariant: a => `コード ${a.chord} の定義がありません（ラベルなしのダイアグラムで表示します）`
+  unknownChordVariant: a => `コード ${a.chord} の定義がありません（ラベルなしのダイアグラムで表示します）`,
+  invalidTimeSignature: a => `拍子が不正です: ${a.value}（分子 1〜32 / 分母 1・2・4・8・16、例: 7/8(2+2+3)）`,
+  invalidBeatGrouping: a => `拍のグループが不正です: ${a.value}（各グループは分子より小さい正の整数で、合計が分子と等しいこと）`,
+  invalidFeel: a => `フィールが不正です: ${a.value}（straight / swing / shuffle）`,
+  invalidPickup: a => `弱起の長さが不正です: ${a.value}（0 より長く、最初の拍子の1小節より短い音価）`,
+  invalidScoreEvent: a => `スコアイベントが不正です: ${a.directive}: ${a.value ?? ''}`,
+  orphanScoreEvent: a => `${a.directive} の後に小節がないため、このイベントは使われません`,
+  measureRepeatMeterMismatch: () => '拍子の異なる小節は % で繰り返せません',
+  invalidTuplet: a => `連符の比が不正です: ${a.token}（{実数:通常数} は 2〜16 の異なる整数）`,
+  incompleteTupletGroup: () => '連符のグループが小節内で完結していません',
+  invalidTechnique: a => `奏法の指定が不正です: ${a.token}`,
+  techniqueRequiresPitch: a => `この奏法は音高のある音符にだけ付けられます: ${a.token}`,
+  danglingTechnique: a => `${a.technique} の接続先の音符がありません`,
+  danglingGrace: () => '装飾音符の後に拍を持つ音符がありません',
+  nestedSlur: () => 'スラーの中で slur-start が重なっています（入れ子にできません）',
+  unmatchedSlurEnd: () => '対応する slur-start のない slur-end です',
+  unclosedSlur: () => 'slur-start に対応する slur-end がありません'
 };
 
 const DIAGNOSTICS_EN: DiagnosticTemplates = {
@@ -368,14 +417,30 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   tooManyMelodyMeasures: () => 'No measure left for this melody cell (the mel: line has more cells than measures)',
   melodyRepeatWithoutPrevious: () => 'The measure before % has no melody to repeat',
   lyricsWithoutMelody: () => 'lyr: line has no preceding mel: line',
-  beatCountMismatch: a => `Measure length is not 4 beats (${a.beats} beats)`,
+  beatCountMismatch: a => `Measure length is not ${a.expected ?? 4} beats (${a.beats} beats)`,
   syllableCountMismatch: a => `Syllable count (${a.syllables}) does not match the sung notes (${a.notes})`,
   lyricBarMismatch: () => 'The | positions in the lyrics do not match the melody measures',
   measureLyricWithMelody: () => 'l:"..." is not shown in a measure with a melody (use lyr:)',
   invalidMeasuresPerRow: a => `measures_per_row must be an integer from 1 to 8: ${a.value}`,
   invalidChordDefinition: a => `Invalid chord definition (${CHORD_DEF_REASON_EN[a.reason] ?? a.reason}): ${a.detail}`,
   duplicateChordDefinition: a => `Chord ${a.chord} is already defined (the first definition is used)`,
-  unknownChordVariant: a => `Chord ${a.chord} is not defined (the unlabeled diagram is shown)`
+  unknownChordVariant: a => `Chord ${a.chord} is not defined (the unlabeled diagram is shown)`,
+  invalidTimeSignature: a => `Invalid time signature: ${a.value} (numerator 1-32 / denominator 1, 2, 4, 8, 16, e.g. 7/8(2+2+3))`,
+  invalidBeatGrouping: a => `Invalid beat grouping: ${a.value} (each group is a positive integer smaller than the numerator, summing to it)`,
+  invalidFeel: a => `Invalid feel: ${a.value} (straight / swing / shuffle)`,
+  invalidPickup: a => `Invalid pickup length: ${a.value} (a note value longer than 0 and shorter than one measure of the initial meter)`,
+  invalidScoreEvent: a => `Invalid score event: ${a.directive}: ${a.value ?? ''}`,
+  orphanScoreEvent: a => `No measure follows ${a.directive}, so this event is not used`,
+  measureRepeatMeterMismatch: () => 'A measure with a different time signature cannot be repeated with %',
+  invalidTuplet: a => `Invalid tuplet ratio: ${a.token} ({actual:normal} must be two different integers from 2 to 16)`,
+  incompleteTupletGroup: () => 'A tuplet group is not complete within the measure',
+  invalidTechnique: a => `Invalid technique: ${a.token}`,
+  techniqueRequiresPitch: a => `This technique needs a pitched note: ${a.token}`,
+  danglingTechnique: a => `No target note follows ${a.technique}`,
+  danglingGrace: () => 'No timed note follows this grace note',
+  nestedSlur: () => 'slur-start inside an open slur (slurs cannot be nested)',
+  unmatchedSlurEnd: () => 'slur-end without a matching slur-start',
+  unclosedSlur: () => 'slur-start without a matching slur-end'
 };
 
 export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {
@@ -541,6 +606,16 @@ export interface ScoreSettingsEditorMessages {
   selectable: string;
   notSelectable: string;
   beginnerNote: string;
+  sectionTranspose: string;
+  transposeNote: string;
+  semitones: string;
+  currentKey: string;
+  targetKey: string;
+  capoPolicy: string;
+  capoKeep: string;
+  capoRecommended: string;
+  capoExplicit: string;
+  targetCapo: string;
 }
 
 const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
@@ -579,7 +654,17 @@ const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
   substituted: '置き換え',
   selectable: '選択可',
   notSelectable: '選択不可',
-  beginnerNote: '鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードを提案します。設定はDSLに保存されません。'
+  beginnerNote: '鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードを提案します。設定はDSLに保存されません。',
+  sectionTranspose: '移調',
+  transposeNote: '曲全体の鳴る音（キー・コード・メロディ）を移調し、DSLを書き換えます。カポはそのまま・推奨・指定から選べます。',
+  semitones: '移調量（半音）',
+  currentKey: '現在のキー',
+  targetKey: '移調後のキー',
+  capoPolicy: '移調後のカポ',
+  capoKeep: 'そのまま',
+  capoRecommended: '推奨',
+  capoExplicit: '指定',
+  targetCapo: '変更後のカポ'
 };
 
 const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
@@ -618,7 +703,17 @@ const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
   substituted: 'Substituted',
   selectable: 'Selectable',
   notSelectable: 'Not selectable',
-  beginnerNote: 'Suggests an easy capo position and simpler chords while the capo keeps the sounding harmony. Settings are not saved in the DSL.'
+  beginnerNote: 'Suggests an easy capo position and simpler chords while the capo keeps the sounding harmony. Settings are not saved in the DSL.',
+  sectionTranspose: 'Transpose',
+  transposeNote: 'Transposes the sounding music (keys, chords, melody) of the whole song and rewrites the DSL. The capo can be kept, recommended or chosen.',
+  semitones: 'Shift (semitones)',
+  currentKey: 'Current key',
+  targetKey: 'Target key',
+  capoPolicy: 'Capo after transposing',
+  capoKeep: 'Keep',
+  capoRecommended: 'Recommended',
+  capoExplicit: 'Choose',
+  targetCapo: 'Capo after the change'
 };
 
 export function getScoreSettingsEditorMessages(locale: SupportedLocale): ScoreSettingsEditorMessages {

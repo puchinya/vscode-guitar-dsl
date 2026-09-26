@@ -1,7 +1,9 @@
 import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
+import { structuralChange } from '../scoreEvents';
+import { AnnotationLane, laneLayout, rowAnnotations } from './annotations';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
-import { staffPosition } from './notation';
+import { writtenStaffPosition } from './notation';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -51,11 +53,14 @@ const MELODY_NO_LYRIC_BOTTOM = MELODY_STAVE_BOTTOM + 22;
 // The rhythm drawing starts at its accent row (y = 38) and ends at the system height (140).
 const RHYTHM_BLOCK_TOP = 36;
 const LEAD_SHEET_BOTTOM_PADDING = 6;
+// Upper limit of the melody technique marks (melodyStaff.ts MARK_CEILING).
+const MELODY_MARK_CEILING = 42;
 
 export type SystemKind = 'rhythm' | 'melody' | 'leadSheet';
 
 export interface SystemGeometry {
   kind: SystemKind;
+  /** Total height including the annotation lanes above and the dynamics lane below. */
   unitHeight: number;
   verseCount: number;
   /** Baseline of verse 1 of the syllable lyrics (melody systems). */
@@ -63,19 +68,122 @@ export interface SystemGeometry {
   lyricLineHeight: number;
   /** Vertical translation of the rhythm drawing (melody systems with the rhythm staff). */
   rhythmOffset: number;
+  /** Height of the annotation lanes; the notation content is drawn translated down by this. */
+  annotationTop: number;
+  /** Top y of each present lane (system units, 0 = system top). */
+  lanes: Map<AnnotationLane, number>;
+  /** Height the dynamics add below the content (0 when they fit in the space under the lowest staff). */
+  annotationBottom: number;
+  /** Baseline of the dynamics (system units, 0 = system top); 0 when the row has no dynamics. */
+  dynamicsBaseline: number;
+  /** Height of the notation content (unitHeight without the lanes). */
+  contentHeight: number;
+}
+
+type GeometryScore = Pick<ParsedScore, 'showRhythm' | 'style'> & Partial<Pick<ParsedScore, 'measures' | 'feel'>>;
+
+// Dynamics sit this far below the lowest ink of the content (baseline), like engraved dynamics under a staff.
+const DYNAMICS_BASELINE_GAP = 15;
+const DYNAMICS_DESCENT = 4;
+// Space kept between the dynamics and the next system.
+const DYNAMICS_CLEARANCE = 6;
+// Chord names are drawn on this baseline (notation.ts renderChordName).
+const CHORD_BASELINE = 33;
+// Space kept between the lowest annotation lane and the ink below it.
+const LANE_CLEARANCE = 8;
+const MAX_LANE_OVERLAP = 14;
+
+/** Content layout facts that decide how close the annotation lanes may come. */
+interface ContentInk {
+  /** Lowest ink of the content (content units), below which the dynamics go. */
+  bottom: number;
+  /** Highest ink of the content (content units) the top lanes must stay above. */
+  top: number;
+}
+
+/**
+ * Lowest ink of a rhythm staff (lines y = 70..102): measure lyrics, inline notes below the staff,
+ * their articulations and the connection arcs that hang below them (svg.ts).
+ */
+function rhythmStaffInkBottom(measures: MeasureData[]): number {
+  let bottom = MELODY_STAVE_BOTTOM;
+  const hasArcs = measures.some(m => m.rhythms.some(r => r.pitch && (r.techniques?.connection || r.techniques?.slurStart || r.techniques?.slurEnd)));
+  for (const m of measures) {
+    if (!m.melody && m.lyric) bottom = Math.max(bottom, MELODY_STAVE_BOTTOM + 22);
+    for (const r of m.rhythms) {
+      if (!r.pitch || r.isRest) continue;
+      const y = MELODY_STAVE_BOTTOM - writtenStaffPosition(r.pitch, m.context?.ottava ?? 'none') * 4;
+      let b = y + 5;
+      if (r.techniques?.staccato || r.techniques?.tenuto) b = y + 16;
+      if (hasArcs) b = Math.max(b, y + 34);
+      bottom = Math.max(bottom, b);
+    }
+  }
+  return bottom;
+}
+
+/**
+ * Highest ink of the top of the content: section labels, volta brackets and special marks use
+ * y = 2..27, chord names sit on y = 33, high notes (and their bends) may rise above them.
+ */
+function contentInkTop(measures: MeasureData[], score: GeometryScore, melodyTop: number): number {
+  if (measures.some(m => m.sectionName || m.bracket || m.specialMark)) return 0;
+  const chordSize = score.style.chordSize ?? 15;
+  const hasLabel = measures.some(m => m.chords.some(c => c.label));
+  let top = CHORD_BASELINE - chordSize * 0.8 - (hasLabel ? 4 : 0);
+  for (const m of measures) {
+    for (const r of m.rhythms) {
+      if (!r.pitch || r.isRest) continue;
+      const y = MELODY_STAVE_BOTTOM - writtenStaffPosition(r.pitch, m.context?.ottava ?? 'none') * 4;
+      top = Math.min(top, y - 5);
+    }
+  }
+  return Math.min(top, melodyTop);
+}
+
+/**
+ * Adds the annotation lanes of the row to a content-only geometry. The top lanes may overlap the
+ * free space above the chord names; the dynamics use the free space under the lowest staff and
+ * only extend the system when that space is too small.
+ */
+function withLanes(measures: MeasureData[], score: GeometryScore, base: Omit<SystemGeometry, 'annotationTop' | 'lanes' | 'annotationBottom' | 'dynamicsBaseline' | 'contentHeight'>, ink: ContentInk): SystemGeometry {
+  const annotations = rowAnnotations(measures, { measures: score.measures ?? [], feel: score.feel }, base.kind === 'rhythm', base.kind !== 'leadSheet');
+  const { positions, height } = laneLayout(annotations.lanes);
+  const overlap = Math.max(0, Math.min(height, MAX_LANE_OVERLAP, Math.floor(ink.top - LANE_CLEARANCE)));
+  const annotationTop = height - overlap;
+  let bottom = 0;
+  let dynamicsBaseline = 0;
+  if (annotations.dynamics.length > 0) {
+    const baseline = ink.bottom + DYNAMICS_BASELINE_GAP;
+    bottom = Math.max(0, baseline + DYNAMICS_DESCENT + DYNAMICS_CLEARANCE - base.unitHeight);
+    dynamicsBaseline = annotationTop + baseline;
+  }
+  return {
+    ...base,
+    unitHeight: base.unitHeight + annotationTop + bottom,
+    annotationTop,
+    lanes: positions,
+    annotationBottom: bottom,
+    dynamicsBaseline,
+    contentHeight: base.unitHeight
+  };
 }
 
 export function lyricLineHeight(lyricSize: number): number {
   return Math.round(lyricSize * 1.5 * 100) / 100;
 }
 
-/** Height and vertical layout of one system; rhythm-only systems keep the original 140 unit height. */
-export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedScore, 'showRhythm' | 'style'>): SystemGeometry {
+/**
+ * Height and vertical layout of one system; rhythm-only systems keep the original 140 unit content height.
+ * Annotation lanes (score events, technique spans) add to the height (spec §11).
+ */
+export function getSystemGeometry(measures: MeasureData[], score: GeometryScore): SystemGeometry {
   const hasMelody = measures.some(m => m.melody !== undefined);
   const lyricSize = score.style.lyricSize ?? 10;
   const lineHeight = lyricLineHeight(lyricSize);
   if (!hasMelody) {
-    return { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+    return withLanes(measures, score, { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 },
+      { bottom: rhythmStaffInkBottom(measures), top: contentInkTop(measures, score, Infinity) });
   }
   let verseCount = 0;
   for (const m of measures) {
@@ -90,16 +198,23 @@ export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedSco
   }
   // Dynamically compute the lowest visual point among all melody notes in this system (low noteheads, stems, ties, ledger lines)
   let maxMelodyBottom = MELODY_STAVE_BOTTOM; // bottom staff line (y = 102)
+  let melodyTop = Infinity;
   for (const m of measures) {
     for (const n of m.melody ?? []) {
       if (!n.isRest && n.pitch) {
-        const pos = staffPosition(n.pitch);
+        const pos = writtenStaffPosition(n.pitch, m.context?.ottava ?? 'none');
         const y = MELODY_STAVE_BOTTOM - pos * 4;
+        // High notes and their bend (arrow + amount label) may rise above the chord names.
+        melodyTop = Math.min(melodyTop, y - 5, n.techniques?.bend ? Math.min(Math.max(MELODY_MARK_CEILING + 4, y - 22), y - 10) - 9 : Infinity);
         let bottom = y + 5; // notehead bottom
         if (pos <= 3) {
-          // Stems up: tie arc hangs below notehead
-          if (n.tieToNext || n.tiedFromPrev) {
+          // Stems up: tie / connection / slur arcs and articulations hang below the notehead
+          const tech = n.techniques;
+          if (n.tieToNext || n.tiedFromPrev || tech?.connection || tech?.slurStart || tech?.slurEnd) {
             bottom = Math.max(bottom, y + 18);
+          }
+          if (tech?.staccato || tech?.tenuto) {
+            bottom = Math.max(bottom, y + 12);
           }
         } else {
           // Stems down: stem reaches downwards
@@ -118,11 +233,15 @@ export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedSco
   const melodyBottom = verseCount > 0
     ? lyricBaseline + (verseCount - 1) * lineHeight + MELODY_BLOCK_BOTTOM_PADDING
     : MELODY_NO_LYRIC_BOTTOM;
+  const top = contentInkTop(measures, score, melodyTop);
   if (leadSheet) {
-    return { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+    const inkBottom = verseCount > 0 ? lyricBaseline + (verseCount - 1) * lineHeight + 3 : maxMelodyBottom;
+    return withLanes(measures, score, { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 },
+      { bottom: inkBottom, top });
   }
   const rhythmOffset = melodyBottom - RHYTHM_BLOCK_TOP;
-  return { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset };
+  return withLanes(measures, score, { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset },
+    { bottom: rhythmOffset + rhythmStaffInkBottom(measures), top });
 }
 
 // Header / running header / footer metrics (pt)
@@ -221,20 +340,31 @@ export function getDiagramGrid(diagrams: ResolvedChordDiagram[], width: number):
   return { perRow, rows, height: gridHeight + 6 + BLOCK_SPACING, cellHeight, headHeight };
 }
 
-/** Splits each manual page into system rows (`measuresPerRow` measures per row, default 4). */
+/**
+ * Splits each manual page into system rows: at most `measuresPerRow` measures (default 4), and a new row
+ * before every measure with a structural change (a changed `@key` / `@time`, spec §11). A structural
+ * break is not a page break; pagination may still move the row to the next page.
+ */
 export function splitIntoRows(score: ParsedScore): SystemRow[][] {
   const perRow = score.measuresPerRow || MEASURES_PER_ROW;
   return score.pages.map((page, pIdx) => {
-    const rows: SystemRow[] = [];
-    for (let i = 0; i < page.measures.length; i += perRow) {
-      const measures = page.measures.slice(i, i + perRow);
-      rows.push({
-        measures,
-        isFirstSystem: pIdx === 0 && i === 0,
-        geometry: getSystemGeometry(measures, score)
-      });
+    const groups: MeasureData[][] = [];
+    let current: MeasureData[] = [];
+    for (const m of page.measures) {
+      const prev = m.measureIndex > 0 ? score.measures[m.measureIndex - 1]?.context : undefined;
+      const change = m.context ? structuralChange(prev, m) : { key: false, time: false };
+      if (current.length > 0 && (current.length >= perRow || change.key || change.time)) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(m);
     }
-    return rows;
+    if (current.length > 0) groups.push(current);
+    return groups.map((measures, i) => ({
+      measures,
+      isFirstSystem: pIdx === 0 && i === 0,
+      geometry: getSystemGeometry(measures, score)
+    }));
   });
 }
 
