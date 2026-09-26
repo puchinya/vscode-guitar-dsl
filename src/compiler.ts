@@ -312,10 +312,14 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
-      headerLines.push({ key: headerMatch[1].toLowerCase(), line: lineIdx, valueStart: lineEnd - headerMatch[2].length, valueEnd: lineEnd });
+      // Value range without a trailing comment (whitespace + `#`, spec §2.3).
+      const inlineComment = headerMatch[2].search(/\s+#/);
+      const rawValue = inlineComment >= 0 ? headerMatch[2].slice(0, inlineComment) : headerMatch[2];
+      const valueStart = lineEnd - headerMatch[2].length;
+      headerLines.push({ key: headerMatch[1].toLowerCase(), line: lineIdx, valueStart, valueEnd: valueStart + rawValue.length });
       if (key === 'title') title = val;
       else if (key === 'artist') artist = val;
-      else if (key === 'capo') capo = val;
+      else if (key === 'capo') capo = rawValue.trim();
       else if (key === 'key' || key === 'original_key') originalKey = val;
       else if (key === 'bpm' || key === 'tempo') bpm = val;
       else if (key === 'memo') memo = val;

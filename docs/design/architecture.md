@@ -109,7 +109,7 @@ flowchart TD
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
   - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
-  - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。採用した位置の直後から次のトークンを探すので、同じ小節の同名コード（`| l:"C" C C |`）はそれぞれ別の範囲になる。
+  - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。採用した位置の直後から次のトークンを探すので、同じ小節の同名コード（`| l:"C" C C |`）はそれぞれ別の範囲になる。
 - **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 3連）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
 - **パーサー (`parseGuitarDsl`)**:
   - `mel:` / `lyr:` 行は小節行より先に判定する。メロディは「未割り当て小節カーソル」で小節へ割り当て、セクション見出し・改ページでカーソルを末尾へ進める。`lyr:` は直前の `mel:` 行が割り当てた音符列に番ごとに音節を割り当てる。
@@ -279,7 +279,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
 - **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、ファイルの定義を `currentVoicings` にする）、`inferCapoFromDsl(text)`。
 - **DSL 上の候補 `inferCapoForDsl(text)`**: 汎用推論の各候補について、元のカポ以外は `planCapoTransform` まで実行し、失敗したら（定義の衝突・ラベル付きコード・構文エラー等）その候補を変更不可（`reason` = 失敗コード）にする。推奨はこの変更可能な候補から選び直す。楽譜設定エディタとプレビューのカポバーはこの結果だけを表示するため、適用できないカポは選択肢に出ない。汎用の `inferCapo` はテキストを見ないので、この検証を含まない。
-- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分と `capo:` の値だけを置き換える（行末コード・コメント・空白・長さ指定などはバイト単位で保持）。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
+- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
   1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
   2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
   3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。

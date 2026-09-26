@@ -239,6 +239,17 @@ describe('capo - GuitarDSL source transformation', () => {
     assert.strictEqual(planText('| l:"B B" B B |\n', 2), 'capo: 2\n| l:"B B" A A |\n');
   });
 
+  it('CAPO inline comment preservation: only the capo value changes', () => {
+    assert.strictEqual(
+      planText('capo: 0 # standard position\nkey: B\n| B |\n', 2),
+      'capo: 2 # standard position\nkey: B\n| A |\n'
+    );
+    assert.strictEqual(planText('capo: 0 # 通常位置\r\nkey: B\r\n| B |\r\n', 2), 'capo: 2 # 通常位置\r\nkey: B\r\n| A |\r\n');
+    assert.strictEqual(parseGuitarDsl('capo: 3   # comment').capo, '3');
+    assert.strictEqual(inferCapoFromDsl('capo: 0 # c\n| B |\n').candidates.length, 13);
+    assert.strictEqual(buildCapoPreviewUiModel('capo: 0 # c\n| B |\n', 2).sourceCapo, 0);
+  });
+
   it('CAPO-12 every successful transform reparses without errors', () => {
     const dsl = 'key: G\n| G | Em | C | D7 |\n| Am7 G/B | Cadd9 | Dsus4 | G |\n';
     for (let target = 0; target <= 12; target++) {
