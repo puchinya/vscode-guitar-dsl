@@ -1,3 +1,4 @@
+import type { BeginnerPreviewUiModel } from '../beginnerMode';
 import type { CapoPreviewUiModel } from '../capo';
 import { parseGuitarDsl } from '../compiler';
 import { Messages, resolveLocale, getMessages } from '../i18n';
@@ -18,6 +19,8 @@ export interface CompileHtmlOptions {
   expandPageBreakRepeats?: boolean;
   /** Precomputed capo / playability state; when present the capo bar is shown (never printed). */
   capo?: CapoPreviewUiModel;
+  /** Beginner Mode controls in the capo bar (spec extension §4.5); omitted = off. */
+  beginner?: BeginnerPreviewUiModel;
 }
 
 const PX_PER_PT = 96 / 72;
@@ -40,7 +43,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const continuousSvg = renderContinuousSvg(score, pageSize);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
-  const capoBar = options?.capo ? renderCapoBar(options.capo, msgs) : '';
+  const capoBar = options?.capo ? renderCapoBar(options.capo, msgs, options.beginner) : '';
   const continuousMaxWidthPx = Math.round(getSheetSize(pageSize, 'portrait').width * PX_PER_PT);
 
   const fontFaces = options?.fontUris ? `
@@ -261,6 +264,11 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     font-size: 12px;
     cursor: pointer;
   }
+  .beginner-toggle[aria-pressed="true"] {
+    background: #2e7d32;
+    color: #fff;
+    border-color: #2e7d32;
+  }
   .capo-btn:disabled {
     opacity: 0.4;
     cursor: default;
@@ -410,6 +418,18 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
           vscode.postMessage({ command: 'applyCapo', capo: Number(capoSelect ? capoSelect.value : NaN) });
         });
       }
+      const beginnerBtn = document.getElementById('btn-beginner');
+      if (beginnerBtn && vscode) {
+        beginnerBtn.addEventListener('click', () => {
+          vscode.postMessage({ command: 'beginnerToggled', enabled: beginnerBtn.getAttribute('aria-pressed') !== 'true' });
+        });
+      }
+      const barreSelect = document.getElementById('select-barre');
+      if (barreSelect && vscode) {
+        barreSelect.addEventListener('change', (e) => {
+          vscode.postMessage({ command: 'barrePolicyChanged', policy: e.target.value });
+        });
+      }
       const editCapoBtn = document.getElementById('btn-edit-capo');
       if (editCapoBtn && vscode) {
         editCapoBtn.addEventListener('click', () => {
@@ -432,7 +452,26 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
 </html>`;
 }
 
-function renderCapoBar(model: CapoPreviewUiModel, msgs: Messages): string {
+/** Beginner Mode toggle and barre policy (shown before the capo buttons). */
+function renderBeginnerControls(beginner: BeginnerPreviewUiModel | undefined, msgs: Messages, disabled: string): string {
+  const active = beginner?.active === true;
+  const toggle = `<button class="capo-btn beginner-toggle" id="btn-beginner" aria-pressed="${active}" title="${escapeXml(msgs.uiBeginnerModeTitle)}"${disabled}>${escapeXml(`${msgs.uiBeginnerMode}: ${active ? msgs.uiBeginnerOn : msgs.uiBeginnerOff}`)}</button>`;
+  if (!active || !beginner) return toggle;
+  const policy = (value: string, label: string) => `<option value="${value}"${beginner.barrePolicy === value ? ' selected' : ''}>${escapeXml(label)}</option>`;
+  return `${toggle}
+    <span class="toolbar-label">${escapeXml(msgs.uiBarreChords)}</span>
+    <select id="select-barre" class="tool-select" title="${escapeXml(msgs.uiBarreTitle)}">${policy('allow', msgs.uiBarreAllow)}${policy('forbid', msgs.uiBarreForbid)}</select>`;
+}
+
+/** Beginner Mode notes (auto capo, substitution summary), shown after the capo buttons. */
+function renderBeginnerNotes(beginner: BeginnerPreviewUiModel | undefined, msgs: Messages): string {
+  if (!beginner?.active) return '';
+  const subs = beginner.substitutions.map(([from, to]) => `${from} → ${to}`).join(', ');
+  return `${beginner.autoCapo ? `<span class="capo-note" id="beginner-auto">${escapeXml(`${msgs.uiCapo}: ${msgs.uiBeginnerAuto}`)}</span>` : ''}
+    ${subs ? `<span class="capo-note" id="beginner-substitutions">${escapeXml(`${msgs.uiBeginnerSubstitutions}: ${subs}`)}</span>` : ''}`;
+}
+
+function renderCapoBar(model: CapoPreviewUiModel, msgs: Messages, beginner?: BeginnerPreviewUiModel): string {
   const options = model.candidates.map(c => {
     const parts = [`${msgs.uiCapo} ${c.capo}`];
     if (c.score !== undefined) parts.push(`${c.score}`);
@@ -449,15 +488,17 @@ function renderCapoBar(model: CapoPreviewUiModel, msgs: Messages): string {
     ? `<span class="capo-badge" id="capo-playability" data-level="${play.level}" data-score="${play.score}">${escapeXml(`${msgs.playabilityLevels[play.level]} ${play.score}/100`)}</span>`
     : `<span class="capo-badge" id="capo-playability">${escapeXml(msgs.uiPlayabilityUnavailable)}</span>`;
   const disabled = model.sourceCapo === null ? ' disabled' : '';
-  return `<div class="capo-bar" id="capo-bar" data-source-capo="${model.sourceCapo ?? ''}" data-target-capo="${model.targetCapo}">
+  return `<div class="capo-bar" id="capo-bar" data-source-capo="${model.sourceCapo ?? ''}" data-target-capo="${model.targetCapo}" data-beginner="${beginner?.active === true}">
     <span class="toolbar-label">${escapeXml(msgs.uiCapo)}</span>
     <select id="select-capo" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${disabled}>${options}</select>
     <span class="toolbar-label">${escapeXml(msgs.uiPlayability)}</span>
     ${badge}
     ${recommended ? `<span class="toolbar-label">★ ${escapeXml(msgs.uiRecommended)}: ${escapeXml(`${msgs.uiCapo} ${recommended.capo}`)}</span>` : ''}
     ${model.overridden ? `<span class="capo-note">${escapeXml(msgs.uiCapoPreviewOnly)}</span>` : ''}
+    ${renderBeginnerControls(beginner, msgs, disabled)}
     <button class="capo-btn primary" id="btn-apply-capo" title="${escapeXml(msgs.uiApplyToDslTitle)}"${model.canApply ? '' : ' disabled'}>${escapeXml(msgs.uiApplyToDsl)}</button>
     <button class="capo-btn" id="btn-edit-capo" title="${escapeXml(msgs.uiEditCapoTitle)}">${escapeXml(msgs.uiEditCapo)}</button>
+    ${renderBeginnerNotes(beginner, msgs)}
     ${model.warning ? `<span class="capo-warning" id="capo-warning">${escapeXml(model.warning)}</span>` : ''}
   </div>`;
 }

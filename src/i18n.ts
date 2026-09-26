@@ -1,5 +1,6 @@
 import type { DiagnosticCode } from './compiler';
 import type { AudioMirErrorCode } from './audioMir/model';
+import type { BeginnerFailureCode } from './beginnerMode';
 import type { CapoTransformFailureCode, PlayabilityLevel } from './capo';
 
 export type SupportedLocale = 'ja' | 'en';
@@ -50,6 +51,22 @@ export interface Messages {
   msgCapoApplyFailed: (reason: string) => string;
   msgCapoEditRejected: string;
   msgCapoUnusedDefinitions: (keys: string) => string;
+
+  // Beginner Mode (preview capo bar, score settings editor, host notifications)
+  uiBeginnerMode: string;
+  uiBeginnerModeTitle: string;
+  uiBeginnerOn: string;
+  uiBeginnerOff: string;
+  uiBarreChords: string;
+  uiBarreAllow: string;
+  uiBarreForbid: string;
+  uiBarreTitle: string;
+  uiBeginnerAuto: string;
+  uiBeginnerSubstitutions: string;
+  beginnerFailure: (code: BeginnerFailureCode, detail?: string) => string;
+  msgBeginnerReset: (reason: string) => string;
+  msgBeginnerApplied: (capo: number, substitutions: number) => string;
+  msgBeginnerApplyFailed: (reason: string) => string;
 
   // YouTube transcription messages
   msgPromptApiKey: string;
@@ -128,6 +145,25 @@ export const MESSAGES_JA: Messages = {
   msgCapoApplyFailed: (reason: string) => `カポを適用できません: ${reason}`,
   msgCapoEditRejected: 'エディタが変更を受け付けませんでした',
   msgCapoUnusedDefinitions: (keys: string) => `次のコード定義は使われなくなる可能性があります（削除はしません）: ${keys}`,
+
+  uiBeginnerMode: '初心者モード',
+  uiBeginnerModeTitle: '弾きやすいカポ位置と簡単なコードへの置き換えをプレビューとPDFに反映（DSLは変更しません）',
+  uiBeginnerOn: 'ON',
+  uiBeginnerOff: 'OFF',
+  uiBarreChords: 'バレーコード',
+  uiBarreAllow: '許可する',
+  uiBarreForbid: '使用しない',
+  uiBarreTitle: '「使用しない」ではセーハのある押さえ方を一切使いません',
+  uiBeginnerAuto: '自動',
+  uiBeginnerSubstitutions: '置き換え',
+  beginnerFailure: (code, detail) => {
+    if (code === 'noPlayableAlternative') return `条件を満たす押さえ方がないコードがあります${detail ? `（${detail}）` : ''}`;
+    if (code === 'noRecommendation') return '初心者モードで使えるカポ位置がありません';
+    return MESSAGES_JA.capoFailures[code];
+  },
+  msgBeginnerReset: (reason: string) => `初心者モードを解除しました: ${reason}`,
+  msgBeginnerApplied: (capo: number, substitutions: number) => `初心者モードの変換（カポ ${capo}、置き換え ${substitutions} 種類）をDSLに適用しました。`,
+  msgBeginnerApplyFailed: (reason: string) => `初心者モードの変換を適用できません: ${reason}`,
 
   msgPromptApiKey: 'Gemini API キーを入力してください',
   msgApiKeySaved: 'Gemini API キーを保存しました。',
@@ -215,6 +251,25 @@ export const MESSAGES_EN: Messages = {
   msgCapoApplyFailed: (reason: string) => `Cannot apply capo: ${reason}`,
   msgCapoEditRejected: 'the editor rejected the change',
   msgCapoUnusedDefinitions: (keys: string) => `These chord definitions may become unused (they are not deleted): ${keys}`,
+
+  uiBeginnerMode: 'Beginner mode',
+  uiBeginnerModeTitle: 'Show the preview and PDF with an easy capo position and simpler chords (the DSL is not changed)',
+  uiBeginnerOn: 'ON',
+  uiBeginnerOff: 'OFF',
+  uiBarreChords: 'Barre chords',
+  uiBarreAllow: 'Allow',
+  uiBarreForbid: 'Do not use',
+  uiBarreTitle: '"Do not use" never uses a shape with a barre',
+  uiBeginnerAuto: 'Auto',
+  uiBeginnerSubstitutions: 'Substitutions',
+  beginnerFailure: (code, detail) => {
+    if (code === 'noPlayableAlternative') return `a chord has no shape that meets the conditions${detail ? ` (${detail})` : ''}`;
+    if (code === 'noRecommendation') return 'no capo position is available in beginner mode';
+    return MESSAGES_EN.capoFailures[code];
+  },
+  msgBeginnerReset: (reason: string) => `Beginner mode was turned off: ${reason}`,
+  msgBeginnerApplied: (capo: number, substitutions: number) => `Applied the beginner mode transform (capo ${capo}, ${substitutions} substituted chord(s)) to the DSL.`,
+  msgBeginnerApplyFailed: (reason: string) => `Cannot apply the beginner mode transform: ${reason}`,
 
   msgPromptApiKey: 'Enter your Gemini API key',
   msgApiKeySaved: 'Gemini API key has been saved.',
@@ -452,6 +507,7 @@ export function getChordEditorMessages(locale: SupportedLocale): ChordEditorMess
 export interface ScoreSettingsEditorMessages {
   panelTitle: string;
   sectionCapo: string;
+  sectionBeginner: string;
   currentCapo: string;
   selectedCapo: string;
   colCapo: string;
@@ -470,11 +526,27 @@ export interface ScoreSettingsEditorMessages {
   unresolvedChords: string;
   apply: string;
   close: string;
+  barreChords: string;
+  barreAllow: string;
+  barreForbid: string;
+  capo: string;
+  capoAuto: string;
+  recommendedCapo: string;
+  currentPlayability: string;
+  targetPlayability: string;
+  colSource: string;
+  colCapoChord: string;
+  colTarget: string;
+  substituted: string;
+  selectable: string;
+  notSelectable: string;
+  beginnerNote: string;
 }
 
 const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
   panelTitle: '楽譜設定',
   sectionCapo: 'カポ / 弾きやすさ',
+  sectionBeginner: '初心者モード',
   currentCapo: '現在のカポ',
   selectedCapo: '選択中のカポ',
   colCapo: 'カポ',
@@ -492,12 +564,28 @@ const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
   noChords: 'コードがないため弾きやすさを評価できません。',
   unresolvedChords: '押さえ方が不明なコード',
   apply: 'DSLに適用',
-  close: '閉じる'
+  close: '閉じる',
+  barreChords: 'バレーコード',
+  barreAllow: '許可する',
+  barreForbid: '使用しない',
+  capo: 'カポ',
+  capoAuto: '自動',
+  recommendedCapo: '推奨カポ',
+  currentPlayability: '現在の弾きやすさ',
+  targetPlayability: '変更後の弾きやすさ',
+  colSource: '元',
+  colCapoChord: 'カポ変更後',
+  colTarget: '最終',
+  substituted: '置き換え',
+  selectable: '選択可',
+  notSelectable: '選択不可',
+  beginnerNote: '鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードを提案します。設定はDSLに保存されません。'
 };
 
 const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
   panelTitle: 'Score Settings',
   sectionCapo: 'Capo / Playability',
+  sectionBeginner: 'Beginner Mode',
   currentCapo: 'Current capo',
   selectedCapo: 'Selected capo',
   colCapo: 'Capo',
@@ -515,7 +603,22 @@ const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
   noChords: 'No chords, so playability is not available.',
   unresolvedChords: 'Chords without a known shape',
   apply: 'Apply to DSL',
-  close: 'Close'
+  close: 'Close',
+  barreChords: 'Barre chords',
+  barreAllow: 'Allow',
+  barreForbid: 'Do not use',
+  capo: 'Capo',
+  capoAuto: 'Auto',
+  recommendedCapo: 'Recommended capo',
+  currentPlayability: 'Current playability',
+  targetPlayability: 'Playability after the change',
+  colSource: 'Source',
+  colCapoChord: 'After capo',
+  colTarget: 'Final',
+  substituted: 'Substituted',
+  selectable: 'Selectable',
+  notSelectable: 'Not selectable',
+  beginnerNote: 'Suggests an easy capo position and simpler chords while the capo keeps the sounding harmony. Settings are not saved in the DSL.'
 };
 
 export function getScoreSettingsEditorMessages(locale: SupportedLocale): ScoreSettingsEditorMessages {

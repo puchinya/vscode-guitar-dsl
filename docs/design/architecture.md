@@ -92,8 +92,8 @@ flowchart TD
   - 同梱フォントを Webview で読み込むため、`localResourceRoots` に `media/fonts` を指定し、`asWebviewUri` で得た URI を `compileGuitarDslToHtml` に渡す。
 - **PDFエクスポート制御 (`exportScoreToPdf`)**:
   - 保存ダイアログで保存先を選択させ（`options.targetUri` があれば省略）、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
-  - 描画する DSL は `options.dslContentOverride ?? doc.getText()`。プレビューの PDF 保存と `guitardsl.exportPdf` はどちらも `PreviewCapoController.effectiveText(doc)`（§2.10）を渡すため、プレビューと同じ有効 DSL が使われる。
-- **プレビューのカポ一時変更**: `PreviewCapoController`（§2.10）を 1 つ持つ。`updateWebview` は `resolve(doc)` の有効 DSL とカポ UI モデルを `compileGuitarDslToHtml` に渡す。Webview からの `capoChanged` / `applyCapo` / `editCapo` を受け、プレビュー破棄・対象ドキュメントのクローズ・別ドキュメントへの切り替えで状態を解除する。
+  - 描画する DSL は `options.dslContentOverride ?? doc.getText()`。プレビューの PDF 保存と `guitardsl.exportPdf` はどちらも `resolvePreviewEffectiveDsl(doc, beginner, capo).text`（§2.11）を渡すため、プレビューと同じ有効 DSL が使われる。
+- **プレビューのカポ一時変更・初心者モード**: `PreviewCapoController`（§2.10）と `PreviewBeginnerController`（§2.11）を 1 つずつ持つ。`updateWebview` は `resolvePreviewEffectiveDsl(doc, beginner, capo)`（初心者モードが有効ならそれを優先）の有効 DSL・カポ UI モデル・初心者モード UI モデルを `compileGuitarDslToHtml` に渡す。Webview からの `capoChanged` / `applyCapo` / `editCapo` / `beginnerToggled` / `barrePolicyChanged` を受け（初心者モード中の `capoChanged` / `applyCapo` は初心者モードへ振り分ける）、プレビュー破棄・対象ドキュメントのクローズ・別ドキュメントへの切り替えで両方の状態を解除する。
 - **診断 (`DiagnosticCollection('guitardsl')`)**:
   - GuitarDSL 文書の open / change 時に `parseGuitarDsl` を実行し、`ParsedScore.diagnostics` を `vscode.Diagnostic` に変換して発行する（プレビューの有無に依存しない）。close 時にクリアする。
   - 文言は `i18n.ts` の `formatDiagnostic(code, args, locale)` で生成する。コンパイラは文言を持たない。
@@ -279,15 +279,15 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
 - **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、ファイルの定義を `currentVoicings` にする）、`inferCapoFromDsl(text)`。
 - **DSL 上の候補 `inferCapoForDsl(text)`**: 汎用推論の各候補について、元のカポ以外は `planCapoTransform` まで実行し、失敗したら（定義の衝突・ラベル付きコード・構文エラー等）その候補を変更不可（`reason` = 失敗コード）にする。推奨はこの変更可能な候補から選び直す。楽譜設定エディタとプレビューのカポバーはこの結果だけを表示するため、適用できないカポは選択肢に出ない。汎用の `inferCapo` はテキストを見ないので、この検証を含まない。
-- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
+- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分（共通ヘルパー `replaceChordTokenNames(text, tokens, targetName)`。初心者モードと共用）と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
   1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
   2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
   3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。
   4. 変換後のテキストを解析し直し、エラー診断・カポ値の不一致・コード配置列の不一致（元の列を対応表で写したものと比べる）があれば `transformedParseError`。
-- **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。プレビューと PDF はこの関数の結果だけを使う。
+- **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。通常のカポ一時変更（`PreviewCapoController`）の有効 DSL はこの関数で作る。プレビューと PDF の最終的な有効 DSL は §2.11 の `resolvePreviewEffectiveDsl` が選ぶ（初心者モードが有効ならそちらを優先）。
 - **`buildCapoPreviewUiModel(source, target?, warning?)`**: プレビューのカポバー用の計算済みモデル（候補は `inferCapoForDsl`）。`previewHtml.ts` はこれを描画するだけで推論しない。
 - **`PreviewCapoController`**（`src/previewCapo.ts`、ホスト側）: `PreviewCapoState { documentUri, targetCapo }` を保持する（永続化しない）。`setTarget` は変換可能なときだけ状態を設定し（元のカポと同じなら解除）、`onDidChange` で再描画させる。`resolve(doc)` は毎回最新のテキストから有効 DSL を計算し、変換できなくなっていれば状態を解除して警告を出す。`switchDocument` は別ドキュメントなら解除する。`effectiveDslProbe` に最後のプレビュー入力・PDF 入力を記録する（E2E テストで同一性を確認するため）。
-- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection` のみ。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
+- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection`（id `capo`）と `BeginnerSection`（id `beginner`、§2.11）。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
 - **適用 `applyCapoTransform(uri, targetCapo)`**: `openTextDocument` で開き直した最新のテキストから `planCapoTransform` をやり直し、変わった範囲（共通の前後を除いた部分）を 1 つの `WorkspaceEdit` で置き換える（元に戻す 1 回で戻る）。エディタとプレビューの「DSLに適用」で共用する。
 - **メッセージ**:
 
@@ -299,6 +299,31 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 | エディタ → Ext | `ready` / `showSection { section }` / `close` | 初期化、セクション切り替え、閉じる |
 | エディタ → Ext | `select { section: 'capo', capo }` / `apply { section: 'capo', capo }` | 候補の選択、適用 |
 | Ext → エディタ | `load { sections, active, model }` / `status { text, error }` | セクション一覧と計算済みモデル、適用結果 |
+
+### 2.11 初心者モード (`src/beginnerMode.ts`, `src/previewBeginner.ts`, `BeginnerSection`)
+
+公開の振る舞いは `docs/specs/extension.md` §4.5 / §4B.4。DSL の構文・設定・コマンドは増やさない。
+
+**依存方向**: `compiler` / `chordDefinition` / `chordDetect` / `chordPresets` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
+
+- **カポ候補**: `inferBeginnerModeForDsl(text, barrePolicy)` はカポ 0〜12 ごとに `planCapoTransform(text, capo)` を実行し、失敗したカポはその失敗コードで不可にする（初心者モード独自の移調はしない）。元のカポでは `resolveEffectiveDsl` と同じく元のテキストそのものを中間 DSL にする（`capo:` 行を挿入しない）。中間 DSL を解析し、異なるコードキーごとに代替を選ぶ。
+- **押さえ方（ユーザー決定, Issue #65）**: 変換はコード名しか書き換えず `chord` 定義を追加しないため、評価する押さえ方は**最終の楽譜に描画されるもの 1 つ**に限る。キーの `chord` 定義（ラベル付きキーはラベルなし定義にフォールバック。renderer の `resolveChordDiagram` と同じ優先順位）→ `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing`（カポの弾きやすさと同じ）。どれもなければ候補にしない。`forbid` ではその押さえ方の `barres.length > 0` を除外する（絶対条件）。`getPresetVoicings` の他の押さえ方は描画されないので評価しない。
+- **代替**: そのまま（ペナルティ 0）、`BEGINNER_SUBSTITUTION_RULES`（宣言順）、`forbid` かつそのままのコードが使えない長三和音／`m` に限り `BEGINNER_BARRE_FALLBACK_RULES`（`maj7` / `m7`、2）。分数コードはベースを残す／省く（1）の組み合わせで、ペナルティは加算。ラベル付きコードはそのままのみ。置き換え先と同名のラベルなし `chord` 定義があれば除外（衝突）。選択は `chordCost + ペナルティ` 最小、同点はペナルティ、そのまま、宣言順。
+- **カポの評価**: `physicalSongCost` = 出現回数で重み付けした `chordCost` の平均 + `0.25 × max(0, 最終コードの種類 − 4)` + `0.15 × カポ`。`optimizationCost` = `physicalSongCost` + 重み付きペナルティ平均。表示する弾きやすさは `easeScore(physicalSongCost)` / `levelForScore`（ペナルティを含まない）。推奨は `optimizationCost` 最小、同点は置き換えた出現回数、置き換えたコードの種類、小さいカポの順（浮動小数の比較は 1e-9 の許容差）。`capo.ts` の計算式・推論結果は変えない。
+- **変換 `planBeginnerTransform(text, { barrePolicy, targetCapo? })`**: 常に渡された元のテキストから計算する（自動なら推奨カポを再計算）。中間 DSL の `chordTokens` のコード名部分だけを `replaceChordTokenNames` で置き換え、解析し直してエラー診断なし・目標カポ・期待したコード配置列・（`forbid` なら）描画される押さえ方にセーハなし、を確認する。失敗コードは `CapoTransformFailureCode` に `noPlayableAlternative`（`detail` = コードキー）と `noRecommendation` を加えたもの。元のコードが実際に解決していた定義キー（renderer と同じ優先順位）のうち、最終のコードがどれも解決しなくなったものを `unusedDefinitions` にする（警告のみ、削除しない。参照されていないラベル付き定義などは含めない）。
+- **`PreviewBeginnerController`**（`src/previewBeginner.ts`、ホスト側）: `PreviewBeginnerState { documentUri, barrePolicy, targetCapo? }`（永続化しない）。`enable` は `PreviewCapoController` の一時変更を解除して `forbid`・自動で開始、`disable` は解除のみ（カポの一時変更は戻さない）、`setBarrePolicy` は自動に戻す、`setTargetCapo` は固定。`resolve(doc)` は毎回最新のテキストから計算し、失敗したら状態を解除して警告（`currentNotice()` でカポバーにも表示）。`switchDocument` / プレビューの破棄 / ドキュメントを閉じるで解除する。
+- **有効 DSL の一本化 `resolvePreviewEffectiveDsl(doc, beginner, capo)`**: 初心者モードが有効ならその結果、そうでなければ `PreviewCapoController.resolve`。プレビュー描画・プレビューの PDF 保存・`guitardsl.exportPdf` はすべてこの関数を通すため、入力は同一の文字列になる。
+- **プレビューのカポバー**: `buildBeginnerPreviewUiModel` がカポバー用のモデル（候補のスコアは初心者モードの評価）と `BeginnerPreviewUiModel { active, barrePolicy, autoCapo, substitutions }` を作り、`previewHtml.ts` は描画するだけ。既存のカポ選択・`DSLに適用` はホストが初心者モードの有無で振り分ける。
+- **楽譜設定エディタ `BeginnerSection`**（id `beginner`）: ホストが `barrePolicy`（初期 `forbid`）と固定カポ（初期は自動）を保持し、モデルを計算して送る。`media/scoreSettingsEditor.js` の `beginner` レンダラーは表示と操作の通知だけを行う。
+- **適用 `applyBeginnerTransform(uri, options)`**: 開き直した最新のテキストから `planBeginnerTransform` をやり直し、`applyCapoTransform` と共通の差分置換で 1 つの `WorkspaceEdit` として適用する（元に戻す 1 回で戻る）。失敗時はドキュメントを変更しない。
+- **メッセージ**:
+
+| 方向 | メッセージ | 内容 |
+|---|---|---|
+| プレビュー → Ext | `beginnerToggled { enabled }` | `enable` / `disable` |
+| プレビュー → Ext | `barrePolicyChanged { policy }` | `setBarrePolicy`（自動に戻す） |
+| プレビュー → Ext | `capoChanged { capo }` / `applyCapo { capo }` | 初心者モード中は `setTargetCapo` / `applyBeginnerTransform`（`capo` は無視し、ホストの状態を使う） |
+| エディタ → Ext | `setPolicy { section: 'beginner', policy }` / `select { section: 'beginner', capo: number \| 'auto' }` / `apply { section: 'beginner' }` | 設定の変更、適用（Webview からテキストや対応表は送らない） |
 
 
 ---
@@ -321,8 +346,8 @@ sequenceDiagram
     User->>Editor: DSLテキスト編集
     Editor->>Ext: onDidChangeTextDocument イベント
     Ext->>Ext: プレビュー対象ドキュメントか確認
-    Ext->>Ext: PreviewCapoController.resolve(doc) → 有効 DSL + カポ UI モデル
-    Ext->>Html: compileGuitarDslToHtml(effectiveDsl, { locale, pageSize, orientation, fontUris, capo })
+    Ext->>Ext: resolvePreviewEffectiveDsl(doc, beginner, capo) → 有効 DSL + カポ / 初心者モード UI モデル（初心者モード優先）
+    Ext->>Html: compileGuitarDslToHtml(effectiveDsl, { locale, pageSize, orientation, fontUris, capo, beginner })
     Html->>Comp: parseGuitarDsl()
     Html->>Svg: renderScoreSheets() / renderContinuousSvg()
     Html-->>Ext: HTML 文字列 (ツールバー + シート SVG)
@@ -350,7 +375,7 @@ sequenceDiagram
     WV->>Ext: postMessage({ command: 'savePdf', pageSize, orientation })
     Ext->>Dialog: showSaveDialog (保存先パスの選択)
     Dialog-->>Ext: targetUri
-    Ext->>Ext: PreviewCapoController.effectiveText(doc)（プレビューと同じ有効 DSL）
+    Ext->>Ext: resolvePreviewEffectiveDsl(doc, beginner, capo).text（プレビューと同じ有効 DSL）
     Ext->>Pdf: writeScorePdf(path, effectiveDsl, pageSize, orientation, bundledFonts)
     Pdf->>Svg: renderScoreSheets()
     Pdf->>Pdf: pdfkit + svg-to-pdfkit でページ描画・フォントサブセット埋め込み

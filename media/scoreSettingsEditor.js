@@ -86,6 +86,77 @@
         if (m.error) right.appendChild(el('p', { class: 'error', id: 'capo-error', text: m.error }));
       }
       return root;
+    },
+
+    beginner(m) {
+      const root = el('div', { class: 'layout' });
+      const left = el('div', { class: 'col' });
+      const right = el('div', { class: 'col' });
+      root.appendChild(left);
+      root.appendChild(right);
+      left.appendChild(el('p', { class: 'note', text: L.beginnerNote }));
+
+      const barre = el('select', { id: 'beginner-barre' }, [
+        el('option', { value: 'allow', text: L.barreAllow }),
+        el('option', { value: 'forbid', text: L.barreForbid })
+      ]);
+      barre.value = m.barrePolicy;
+      barre.addEventListener('change', () => send('setPolicy', { section: 'beginner', policy: barre.value }));
+      const capo = el('select', { id: 'beginner-capo' }, [el('option', { value: 'auto', text: L.capoAuto })]);
+      m.candidates.forEach(c => {
+        const opt = el('option', { value: String(c.capo), text: String(c.capo) + (c.supported ? '' : ' —') });
+        if (!c.supported) opt.disabled = true;
+        capo.appendChild(opt);
+      });
+      capo.value = m.selectedCapo === null ? 'auto' : String(m.selectedCapo);
+      capo.addEventListener('change', () => send('select', { section: 'beginner', capo: capo.value }));
+      const fmt = p => (p ? p.levelLabel + ' ' + p.score + '/100' : '—');
+      const summary = el('div', { class: 'summary' });
+      summary.appendChild(el('label', {}, [L.barreChords + ': ', barre]));
+      summary.appendChild(el('label', {}, [L.capo + ': ', capo]));
+      left.appendChild(summary);
+      const facts = el('div', { class: 'summary' });
+      facts.appendChild(el('span', {}, [L.recommendedCapo + ': ', el('b', { id: 'beginner-recommended', text: m.recommendedCapo === undefined ? '—' : String(m.recommendedCapo) })]));
+      facts.appendChild(el('span', {}, [L.currentPlayability + ': ', el('b', { text: fmt(m.currentPlayability) })]));
+      facts.appendChild(el('span', {}, [L.targetPlayability + ': ', el('b', { id: 'beginner-target-playability', text: fmt(m.targetPlayability) })]));
+      left.appendChild(facts);
+
+      const table = el('table', { id: 'beginner-candidates' });
+      table.appendChild(el('tr', {}, [L.colCapo, L.colScore, L.colLevel, L.colStatus].map(h => el('th', { text: h }))));
+      m.candidates.forEach(c => {
+        const capoCell = el('td', { text: String(c.capo) });
+        if (c.capo === m.sourceCapo) capoCell.appendChild(el('span', { class: 'badge', text: L.current }));
+        if (c.recommended) capoCell.appendChild(el('span', { class: 'badge', text: '★ ' + L.recommended }));
+        const row = el('tr', {
+          class: 'candidate' + (c.capo === m.targetCapo ? ' selected' : '') + (c.supported ? '' : ' unsupported'),
+          'data-capo': String(c.capo)
+        }, [
+          capoCell,
+          el('td', { text: c.score === undefined ? '—' : String(c.score) }),
+          el('td', { text: c.levelLabel || '—' }),
+          el('td', { class: 'reason', text: c.supported ? L.selectable : L.notSelectable + (c.reason ? ' (' + c.reason + ')' : '') })
+        ]);
+        if (c.supported) row.addEventListener('click', () => send('select', { section: 'beginner', capo: c.capo }));
+        table.appendChild(row);
+      });
+      left.appendChild(table);
+      if (m.noChords) left.appendChild(el('p', { class: 'warn', text: L.noChords }));
+
+      right.appendChild(el('h2', { text: L.mapping }));
+      const mapTable = el('table', { class: 'mapping', id: 'beginner-mapping' });
+      mapTable.appendChild(el('tr', {}, [L.colSource, '', L.colCapoChord, '', L.colTarget, ''].map(h => el('th', { text: h }))));
+      m.mapping.forEach(r => mapTable.appendChild(el('tr', { class: r.substituted ? 'substituted' : '' }, [
+        el('td', { text: r.source }), el('td', { text: '→' }), el('td', { text: r.capoChord }), el('td', { text: '→' }),
+        el('td', { text: r.target }),
+        el('td', {}, r.substituted ? [el('span', { class: 'badge sub', text: L.substituted })] : [])
+      ])));
+      right.appendChild(mapTable);
+      if (m.warnings.length > 0 || m.error) {
+        right.appendChild(el('h2', { text: L.warnings }));
+        m.warnings.forEach(w => right.appendChild(el('p', { class: 'warn', text: w })));
+        if (m.error) right.appendChild(el('p', { class: 'error', id: 'beginner-error', text: m.error }));
+      }
+      return root;
     }
   };
 
@@ -106,6 +177,7 @@
 
   applyBtn.addEventListener('click', () => {
     if (active === 'capo' && model) send('apply', { section: 'capo', capo: model.selectedCapo });
+    else if (active === 'beginner' && model) send('apply', { section: 'beginner' });
   });
   closeBtn.addEventListener('click', () => send('close'));
 

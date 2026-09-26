@@ -35,6 +35,11 @@ export function renderScoreSettingsEditorHtml(m: ScoreSettingsEditorMessages, sc
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { border: 1px solid var(--vscode-panel-border, #555); border-radius: 3px; padding: 1px 6px; font-family: var(--vscode-editor-font-family); }
   .mapping td { font-family: var(--vscode-editor-font-family); }
+  .mapping tr.substituted td { font-weight: 600; color: var(--vscode-editorWarning-foreground, #cca700); }
+  .badge.sub { background: var(--vscode-editorWarning-foreground, #cca700); color: var(--vscode-editor-background); }
+  td.reason { white-space: normal; }
+  .note { color: var(--vscode-descriptionForeground); margin: 0 0 8px; }
+  select { font: inherit; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border, #555); padding: 2px 4px; }
   .warn { color: var(--vscode-editorWarning-foreground, #cca700); }
   .error { color: var(--vscode-errorForeground); min-height: 1.2em; }
   .status { margin-top: 8px; min-height: 1.2em; color: var(--vscode-descriptionForeground); }

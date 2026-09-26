@@ -5,7 +5,7 @@
 import { NOTE_NAMES, parseChordName } from './chordDetect';
 import { ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { getDefaultVoicing } from './chordPresets';
-import { ParsedScore, parseGuitarDsl } from './compiler';
+import { ChordTokenSpan, ParsedScore, parseGuitarDsl } from './compiler';
 
 export const MIN_CAPO = 0;
 export const MAX_CAPO = 12;
@@ -325,6 +325,37 @@ function joinSourceLines(src: SourceLines): string {
   return src.lines.map((line, i) => line + src.eols[i]).join('');
 }
 
+/**
+ * Replaces the chord-name span of every token whose target name differs (right to left within a
+ * line); every other byte is kept. Fails when a span no longer holds its token name.
+ * Shared by the capo and Beginner Mode transforms.
+ */
+export function replaceChordTokenNames(
+  text: string,
+  tokens: readonly ChordTokenSpan[],
+  targetName: (tok: ChordTokenSpan) => string
+): { ok: true; text: string } | { ok: false; detail: string } {
+  const src = splitSourceLines(text);
+  const byLine = new Map<number, ChordTokenSpan[]>();
+  for (const tok of tokens) {
+    if (targetName(tok) === tok.name) continue;
+    if (src.lines[tok.line]?.slice(tok.startCol, tok.endCol) !== tok.name) {
+      return { ok: false, detail: `line ${tok.line + 1}: chord ${tok.name} not found` };
+    }
+    const list = byLine.get(tok.line) ?? [];
+    list.push(tok);
+    byLine.set(tok.line, list);
+  }
+  for (const [line, list] of byLine) {
+    let lineText = src.lines[line];
+    for (const tok of [...list].sort((a, b) => b.startCol - a.startCol)) {
+      lineText = lineText.slice(0, tok.startCol) + targetName(tok) + lineText.slice(tok.endCol);
+    }
+    src.lines[line] = lineText;
+  }
+  return { ok: true, text: joinSourceLines(src) };
+}
+
 const CAPO_INSERT_BEFORE = new Set(['key', 'original_key', 'bpm', 'tempo']);
 
 function writtenChordSequence(score: ParsedScore): string[] {
@@ -372,26 +403,12 @@ export function planCapoTransform(dslText: string, targetCapo: number): CapoTran
     }
   }
 
-  // Splice chord names (right to left within a line) and the capo value.
-  const src = splitSourceLines(dslText);
-  const byLine = new Map<number, typeof tokens>();
-  for (const tok of tokens) {
-    const target = nameMap.get(tok.name) as string;
-    if (target === tok.name) continue;
-    if (src.lines[tok.line]?.slice(tok.startCol, tok.endCol) !== tok.name) {
-      return { ok: false, code: 'transformedParseError', detail: `line ${tok.line + 1}: chord ${tok.name} not found` };
-    }
-    const list = byLine.get(tok.line) ?? [];
-    list.push(tok);
-    byLine.set(tok.line, list);
+  // Splice chord names, then the capo value.
+  const spliced = replaceChordTokenNames(dslText, tokens, tok => nameMap.get(tok.name) as string);
+  if (!spliced.ok) {
+    return { ok: false, code: 'transformedParseError', detail: spliced.detail };
   }
-  for (const [line, list] of byLine) {
-    let text = src.lines[line];
-    for (const tok of [...list].sort((a, b) => b.startCol - a.startCol)) {
-      text = text.slice(0, tok.startCol) + nameMap.get(tok.name) + text.slice(tok.endCol);
-    }
-    src.lines[line] = text;
-  }
+  const src = splitSourceLines(spliced.text);
 
   const capoHeaders = (score.headerLines ?? []).filter(h => h.key === 'capo');
   if (capoHeaders.length > 0) {
