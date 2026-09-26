@@ -92,8 +92,8 @@ flowchart TD
   - 同梱フォントを Webview で読み込むため、`localResourceRoots` に `media/fonts` を指定し、`asWebviewUri` で得た URI を `compileGuitarDslToHtml` に渡す。
 - **PDFエクスポート制御 (`exportScoreToPdf`)**:
   - 保存ダイアログで保存先を選択させ（`options.targetUri` があれば省略）、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
-  - 描画する DSL は `options.dslContentOverride ?? doc.getText()`。プレビューの PDF 保存と `guitardsl.exportPdf` はどちらも `PreviewCapoController.effectiveText(doc)`（§2.10）を渡すため、プレビューと同じ有効 DSL が使われる。
-- **プレビューのカポ一時変更**: `PreviewCapoController`（§2.10）を 1 つ持つ。`updateWebview` は `resolve(doc)` の有効 DSL とカポ UI モデルを `compileGuitarDslToHtml` に渡す。Webview からの `capoChanged` / `applyCapo` / `editCapo` を受け、プレビュー破棄・対象ドキュメントのクローズ・別ドキュメントへの切り替えで状態を解除する。
+  - 描画する DSL は `options.dslContentOverride ?? doc.getText()`。プレビューの PDF 保存と `guitardsl.exportPdf` はどちらも `resolvePreviewEffectiveDsl(doc, beginner, capo).text`（§2.11）を渡すため、プレビューと同じ有効 DSL が使われる。
+- **プレビューのカポ一時変更・初心者モード**: `PreviewCapoController`（§2.10）と `PreviewBeginnerController`（§2.11）を 1 つずつ持つ。`updateWebview` は `resolvePreviewEffectiveDsl(doc, beginner, capo)`（初心者モードが有効ならそれを優先）の有効 DSL・カポ UI モデル・初心者モード UI モデルを `compileGuitarDslToHtml` に渡す。Webview からの `capoChanged` / `applyCapo` / `editCapo` / `beginnerToggled` / `barrePolicyChanged` を受け（初心者モード中の `capoChanged` / `applyCapo` は初心者モードへ振り分ける）、プレビュー破棄・対象ドキュメントのクローズ・別ドキュメントへの切り替えで両方の状態を解除する。
 - **診断 (`DiagnosticCollection('guitardsl')`)**:
   - GuitarDSL 文書の open / change 時に `parseGuitarDsl` を実行し、`ParsedScore.diagnostics` を `vscode.Diagnostic` に変換して発行する（プレビューの有無に依存しない）。close 時にクリアする。
   - 文言は `i18n.ts` の `formatDiagnostic(code, args, locale)` で生成する。コンパイラは文言を持たない。
@@ -287,7 +287,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。プレビューと PDF はこの関数の結果だけを使う。
 - **`buildCapoPreviewUiModel(source, target?, warning?)`**: プレビューのカポバー用の計算済みモデル（候補は `inferCapoForDsl`）。`previewHtml.ts` はこれを描画するだけで推論しない。
 - **`PreviewCapoController`**（`src/previewCapo.ts`、ホスト側）: `PreviewCapoState { documentUri, targetCapo }` を保持する（永続化しない）。`setTarget` は変換可能なときだけ状態を設定し（元のカポと同じなら解除）、`onDidChange` で再描画させる。`resolve(doc)` は毎回最新のテキストから有効 DSL を計算し、変換できなくなっていれば状態を解除して警告を出す。`switchDocument` は別ドキュメントなら解除する。`effectiveDslProbe` に最後のプレビュー入力・PDF 入力を記録する（E2E テストで同一性を確認するため）。
-- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection` のみ。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
+- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection`（id `capo`）と `BeginnerSection`（id `beginner`、§2.11）。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
 - **適用 `applyCapoTransform(uri, targetCapo)`**: `openTextDocument` で開き直した最新のテキストから `planCapoTransform` をやり直し、変わった範囲（共通の前後を除いた部分）を 1 つの `WorkspaceEdit` で置き換える（元に戻す 1 回で戻る）。エディタとプレビューの「DSLに適用」で共用する。
 - **メッセージ**:
 
@@ -346,8 +346,8 @@ sequenceDiagram
     User->>Editor: DSLテキスト編集
     Editor->>Ext: onDidChangeTextDocument イベント
     Ext->>Ext: プレビュー対象ドキュメントか確認
-    Ext->>Ext: PreviewCapoController.resolve(doc) → 有効 DSL + カポ UI モデル
-    Ext->>Html: compileGuitarDslToHtml(effectiveDsl, { locale, pageSize, orientation, fontUris, capo })
+    Ext->>Ext: resolvePreviewEffectiveDsl(doc, beginner, capo) → 有効 DSL + カポ / 初心者モード UI モデル（初心者モード優先）
+    Ext->>Html: compileGuitarDslToHtml(effectiveDsl, { locale, pageSize, orientation, fontUris, capo, beginner })
     Html->>Comp: parseGuitarDsl()
     Html->>Svg: renderScoreSheets() / renderContinuousSvg()
     Html-->>Ext: HTML 文字列 (ツールバー + シート SVG)
@@ -375,7 +375,7 @@ sequenceDiagram
     WV->>Ext: postMessage({ command: 'savePdf', pageSize, orientation })
     Ext->>Dialog: showSaveDialog (保存先パスの選択)
     Dialog-->>Ext: targetUri
-    Ext->>Ext: PreviewCapoController.effectiveText(doc)（プレビューと同じ有効 DSL）
+    Ext->>Ext: resolvePreviewEffectiveDsl(doc, beginner, capo).text（プレビューと同じ有効 DSL）
     Ext->>Pdf: writeScorePdf(path, effectiveDsl, pageSize, orientation, bundledFonts)
     Pdf->>Svg: renderScoreSheets()
     Pdf->>Pdf: pdfkit + svg-to-pdfkit でページ描画・フォントサブセット埋め込み
