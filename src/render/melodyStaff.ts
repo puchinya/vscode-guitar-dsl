@@ -236,6 +236,9 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
     if (pendingGraces.length > 0) placeGraces(bEnd - 6);
   });
 
+  // The header is drawn before the notes (as before), so notes stay on top of the section label box.
+  const lift = opts.geometry.lift;
+  out += lift > 0 ? `<g class="melody-header" transform="translate(0, ${fmt(lift)})">${header}</g>` : header;
   out += renderBeams(heads);
   out += renderHeads(heads);
   out += renderGraceNotes(graces);
@@ -245,8 +248,6 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   out += renderConnections(heads, graces, ctx);
   collectSpans(heads, measures, ctx, opts.spans);
   out += renderSyllables(heads, opts.geometry, lyricSize);
-  const lift = opts.geometry.lift;
-  out += lift > 0 ? `<g class="melody-header" transform="translate(0, ${fmt(lift)})">${header}</g>` : header;
   return out;
 }
 
