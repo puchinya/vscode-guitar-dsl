@@ -107,6 +107,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   const leadSheet = opts.geometry.kind === 'leadSheet';
 
   let out = '';
+  // Section label, chord names, volta brackets and special marks: moved down together by the header lift.
+  let header = '';
   STAVE_LINES.forEach(y => {
     out += `<line x1="25" y1="${y}" x2="${ctx.totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
   });
@@ -128,8 +130,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
     out += renderBarline(m, bx, bEnd);
 
     if (m.sectionName) {
-      out += `<rect x="${fmt(bx + 4)}" y="2" width="${fmt(m.sectionName.length * (sectionSize * 0.95) + 12)}" height="${fmt(sectionSize + 5)}" fill="#fff" stroke="#000" stroke-width="1.2"/>`;
-      out += `<text x="${fmt(bx + 10)}" y="${fmt(sectionSize + 3.5)}" font-size="${sectionSize}" font-weight="bold">${escapeXml(m.sectionName)}</text>`;
+      header += `<rect x="${fmt(bx + 4)}" y="2" width="${fmt(m.sectionName.length * (sectionSize * 0.95) + 12)}" height="${fmt(sectionSize + 5)}" fill="#fff" stroke="#000" stroke-width="1.2"/>`;
+      header += `<text x="${fmt(bx + 10)}" y="${fmt(sectionSize + 3.5)}" font-size="${sectionSize}" font-weight="bold">${escapeXml(m.sectionName)}</text>`;
     }
 
     const chords = m.chords.length > 0 ? m.chords : (m.chord ? [{ name: m.chord, beat: 0 }] : []);
@@ -140,18 +142,18 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       chordX = Math.max(lastChordRight + 6, chordX);
       const chordName = renderChordName(ch, chordX, chordSize);
       lastChordRight = chordX + chordName.width;
-      out += chordName.svg;
+      header += chordName.svg;
     });
 
     // Volta Bracket ([1.], [2.], etc.)
     if (m.bracket) {
       const bracketY = 16;
       const hookH = 7;
-      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY + hookH)}" x2="${fmt(bx)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
-      out += `<line x1="${fmt(bx)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
-      out += `<text x="${fmt(bx + 4)}" y="${fmt(bracketY + 9)}" font-size="9" font-weight="bold" fill="#000">${escapeXml(m.bracket)}</text>`;
+      header += `<line x1="${fmt(bx)}" y1="${fmt(bracketY + hookH)}" x2="${fmt(bx)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      header += `<line x1="${fmt(bx)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY)}" stroke="#000" stroke-width="1.2"/>`;
+      header += `<text x="${fmt(bx + 4)}" y="${fmt(bracketY + 9)}" font-size="9" font-weight="bold" fill="#000">${escapeXml(m.bracket)}</text>`;
       if (m.repeatEnd) {
-        out += `<line x1="${fmt(bEnd)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY + hookH)}" stroke="#000" stroke-width="1.2"/>`;
+        header += `<line x1="${fmt(bEnd)}" y1="${fmt(bracketY)}" x2="${fmt(bEnd)}" y2="${fmt(bracketY + hookH)}" stroke="#000" stroke-width="1.2"/>`;
       }
     }
 
@@ -166,7 +168,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       else if (m.specialMark === 'to_coda') markText = 'to Coda';
       else if (m.specialMark === 'segno') markText = '𝄋 Segno';
       if (markText) {
-        out += `<text x="${fmt(bEnd - 4)}" y="${fmt(markY)}" font-size="9.5" font-style="italic" font-weight="bold" text-anchor="end" fill="#000">${markText}</text>`;
+        header += `<text x="${fmt(bEnd - 4)}" y="${fmt(markY)}" font-size="9.5" font-style="italic" font-weight="bold" text-anchor="end" fill="#000">${markText}</text>`;
       }
     }
 
@@ -243,6 +245,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   out += renderConnections(heads, graces, ctx);
   collectSpans(heads, measures, ctx, opts.spans);
   out += renderSyllables(heads, opts.geometry, lyricSize);
+  const lift = opts.geometry.lift;
+  out += lift > 0 ? `<g class="melody-header" transform="translate(0, ${fmt(lift)})">${header}</g>` : header;
   return out;
 }
 
