@@ -341,3 +341,208 @@ suite('Capo / playability (Issue #62)', () => {
     await waitFor(() => controller.getState() === undefined, 'closing the preview resets the override');
   });
 });
+
+suite('Beginner Mode (Issue #65)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewCapo = () => require('../../previewCapo');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewBeginner = () => require('../../previewBeginner');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const beginnerMode = () => require('../../beginnerMode');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const scoreSettings = () => require('../../scoreSettingsEditor');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const i18n = () => require('../../i18n');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('os');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('path');
+
+  const SOURCE = ['title: Beginner Test', 'key: C', '', '[Intro]', '| F | C | G | Am |', ''].join('\n');
+  const FORBID_AT_0 = SOURCE.replace('| F |', '| Fmaj7 |');
+
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitFor(check: () => boolean, message: string): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+      if (check()) return;
+      await sleep(100);
+    }
+    assert.fail(message);
+  }
+  const probe = () => previewCapo().effectiveDslProbe;
+  const beginner = () => previewBeginner().getPreviewBeginnerController();
+  const capo = () => previewCapo().getPreviewCapoController();
+  async function openPreviewed(content: string): Promise<vscode.TextDocument> {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    probe().previewInput = undefined;
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => probe().previewInput === doc.getText(), 'preview should render the source');
+    return doc;
+  }
+  function tmpPdf(name: string): vscode.Uri {
+    return vscode.Uri.file(nodePath.join(os.tmpdir(), `guitardsl-e2e-${process.pid}-beginner-${name}.pdf`));
+  }
+  async function exportPdf(doc: vscode.TextDocument, name: string): Promise<string> {
+    const target = tmpPdf(name);
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0, 'PDF written');
+    fs.unlinkSync(target.fsPath);
+    return probe().pdfInput;
+  }
+  async function replaceAll(doc: vscode.TextDocument, text: string): Promise<void> {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text);
+    assert.ok(await vscode.workspace.applyEdit(edit));
+  }
+
+  suiteSetup(async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    if (ext && !ext.isActive) await ext.activate();
+  });
+
+  test('BEG-E2E-01 ON clears the capo override and uses forbid + auto; Preview and PDF are identical; OFF shows the source', async () => {
+    const doc = await openPreviewed(SOURCE);
+    assert.ok(capo().setTarget(doc, 2));
+    assert.ok(beginner().enable(doc));
+    assert.strictEqual(capo().getState(), undefined, 'the capo override is cleared');
+    assert.deepStrictEqual(beginner().getState(), { documentUri: doc.uri.toString(), barrePolicy: 'forbid' });
+    const expected = beginnerMode().planBeginnerTransform(SOURCE, { barrePolicy: 'forbid' });
+    assert.ok(expected.ok);
+    assert.strictEqual(expected.text, FORBID_AT_0);
+    assert.strictEqual(probe().previewInput, expected.text);
+    assert.strictEqual(await exportPdf(doc, 'on'), probe().previewInput, 'Beginner Mode PDF input equals the preview input');
+    assert.strictEqual(doc.getText(), SOURCE, 'the document is not mutated');
+
+    beginner().disable(doc);
+    assert.strictEqual(beginner().getState(), undefined);
+    assert.strictEqual(capo().getState(), undefined, 'the previous capo override is not restored');
+    assert.strictEqual(probe().previewInput, SOURCE);
+    assert.strictEqual(await exportPdf(doc, 'off'), SOURCE, 'inactive: the existing capo behavior (source text)');
+
+    // Repeated ON/OFF does not drift.
+    for (let i = 0; i < 3; i++) {
+      assert.ok(beginner().enable(doc));
+      assert.strictEqual(probe().previewInput, FORBID_AT_0);
+      beginner().disable(doc);
+      assert.strictEqual(probe().previewInput, SOURCE);
+    }
+  });
+
+  test('BEG-E2E-02 manual capo fixes the target; a policy change returns to auto', async () => {
+    const doc = await openPreviewed(SOURCE);
+    assert.ok(beginner().enable(doc));
+    assert.ok(beginner().setTargetCapo(doc, 5));
+    assert.strictEqual(beginner().getState().targetCapo, 5);
+    const at5 = beginnerMode().planBeginnerTransform(SOURCE, { barrePolicy: 'forbid', targetCapo: 5 });
+    assert.ok(at5.ok);
+    assert.strictEqual(probe().previewInput, at5.text);
+    assert.strictEqual(capo().getState(), undefined, 'the capo selector drives Beginner Mode, not the capo override');
+
+    assert.ok(beginner().setBarrePolicy(doc, 'allow'));
+    assert.deepStrictEqual(beginner().getState(), { documentUri: doc.uri.toString(), barrePolicy: 'allow' });
+    const auto = beginnerMode().planBeginnerTransform(SOURCE, { barrePolicy: 'allow' });
+    assert.ok(auto.ok && auto.autoCapo);
+    assert.strictEqual(probe().previewInput, auto.text);
+    assert.strictEqual(await exportPdf(doc, 'allow'), probe().previewInput);
+    beginner().disable(doc);
+  });
+
+  test('BEG-E2E-03 source edits recompute; an unsolvable edit clears the state with a warning and no stale PDF', async () => {
+    const doc = await openPreviewed(SOURCE);
+    assert.ok(beginner().enable(doc));
+    assert.ok(beginner().setTargetCapo(doc, 0));
+    await replaceAll(doc, SOURCE.replace('| G |', '| Cmaj9 |'));
+    await waitFor(() => probe().previewInput?.includes('| Fmaj7 | C | Cmaj7 | Am |') === true, 'preview follows the edited source');
+    assert.strictEqual(beginner().getState().targetCapo, 0);
+
+    const unsolvable = doc.getText().replace('| Am |', '| Bm |');
+    await replaceAll(doc, unsolvable);
+    await waitFor(() => probe().previewInput === unsolvable, 'the source is rendered');
+    assert.strictEqual(beginner().getState(), undefined);
+    assert.ok(beginner().currentNotice(), 'a warning is kept for the capo bar');
+    assert.strictEqual(await exportPdf(doc, 'cleared'), unsolvable, 'no stale transformed PDF');
+  });
+
+  test('BEG-E2E-04 switching documents, closing the document and closing the preview clear the state', async () => {
+    const doc = await openPreviewed(SOURCE);
+    assert.ok(beginner().enable(doc));
+    const other = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| G |\n' });
+    await vscode.window.showTextDocument(other, vscode.ViewColumn.One);
+    await waitFor(() => beginner().getState() === undefined, 'switching documents clears Beginner Mode');
+    assert.strictEqual(await exportPdf(doc, 'switched'), SOURCE);
+
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    assert.ok(beginner().enable(doc));
+    const previewTab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input instanceof vscode.TabInputWebview && t.label.includes('GuitarDSL'));
+    assert.ok(previewTab, 'preview tab');
+    await vscode.window.tabGroups.close(previewTab!);
+    await waitFor(() => beginner().getState() === undefined, 'closing the preview clears Beginner Mode');
+
+    const closing = await openPreviewed(SOURCE);
+    assert.ok(beginner().enable(closing));
+    await vscode.window.showTextDocument(closing, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    await waitFor(() => beginner().getState() === undefined, 'closing the document clears Beginner Mode');
+  });
+
+  test('BEG-E2E-05 apply recomputes from the latest source in one WorkspaceEdit and one undo restores it', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+    const edited = SOURCE.replace('| G |', '| G | F |');
+    await replaceAll(doc, edited);
+    const versionBefore = doc.version;
+    const result = await scoreSettings().applyBeginnerTransform(doc.uri, { barrePolicy: 'forbid', targetCapo: 0 });
+    assert.ok(result.ok && result.changed);
+    assert.strictEqual(doc.getText(), edited.replace(/\| F \|/g, '| Fmaj7 |'), 'computed from the latest source');
+    assert.strictEqual(doc.version, versionBefore + 1, 'a single edit');
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), edited, 'one undo restores the whole DSL');
+
+    await replaceAll(doc, '| Bm |\n');
+    const none = await scoreSettings().applyBeginnerTransform(doc.uri, { barrePolicy: 'forbid', targetCapo: 0 });
+    assert.ok(!none.ok && none.code === 'noPlayableAlternative');
+    assert.strictEqual(doc.getText(), '| Bm |\n', 'a failed apply does not modify the source');
+  });
+
+  test('BEG-E2E-06 the Score Settings beginner section model shows the mapping and applies its own selection', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    const section = new (scoreSettings().BeginnerSection)();
+    let refreshed = 0;
+    const statuses: string[] = [];
+    const ctx = {
+      doc,
+      messages: i18n().getMessages('ja'),
+      editorMessages: i18n().getScoreSettingsEditorMessages('ja'),
+      refresh: () => { refreshed++; },
+      status: (text: string) => { statuses.push(text); }
+    };
+    assert.strictEqual(section.id, 'beginner');
+    const model = section.buildModel(ctx);
+    assert.strictEqual(model.barrePolicy, 'forbid');
+    assert.strictEqual(model.selectedCapo, null);
+    assert.strictEqual(model.candidates.length, 13);
+    assert.deepStrictEqual(model.mapping.find((r: any) => r.source === 'F'), { source: 'F', capoChord: 'F', target: 'Fmaj7', substituted: true });
+    assert.ok(model.canApply);
+
+    await section.onMessage(ctx, { command: 'setPolicy', policy: 'allow' });
+    assert.strictEqual(section.buildModel(ctx).barrePolicy, 'allow');
+    await section.onMessage(ctx, { command: 'select', capo: 0 });
+    assert.strictEqual(section.buildModel(ctx).selectedCapo, 0);
+    assert.strictEqual(section.buildModel(ctx).canApply, false, 'allow at capo 0 keeps the source');
+    await section.onMessage(ctx, { command: 'setPolicy', policy: 'forbid' });
+    assert.strictEqual(section.buildModel(ctx).selectedCapo, null, 'a policy change returns to auto');
+    await section.onMessage(ctx, { command: 'select', capo: 0 });
+    // The webview sends only the intent; the host applies its own selection to the latest source.
+    await section.onMessage(ctx, { command: 'apply', text: 'stale webview text' });
+    assert.strictEqual(doc.getText(), FORBID_AT_0);
+    assert.ok(statuses.length > 0 && refreshed > 0);
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), SOURCE);
+  });
+});

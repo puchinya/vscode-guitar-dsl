@@ -1,9 +1,10 @@
 // Score settings editor panel (webview): a generic, section-based editor for score-wide settings.
 // Each section computes its model from the document's current source and applies changes through
-// one undoable WorkspaceEdit; the webview only reports intents. Capo / playability is the first section.
+// one undoable WorkspaceEdit; the webview only reports intents. Sections: capo / playability, Beginner Mode.
 
 import * as vscode from 'vscode';
-import { MAX_CAPO, MIN_CAPO, inferCapoForDsl, isValidCapo, parseCapoValue, planCapoTransform } from './capo';
+import { BarrePolicy, BeginnerFailureCode, BeginnerModeOptions, inferBeginnerModeForDsl, isBarrePolicy, planBeginnerTransform, sourcePlayability } from './beginnerMode';
+import { MAX_CAPO, MIN_CAPO, PlayabilityResult, inferCapoForDsl, isValidCapo, parseCapoValue, planCapoTransform } from './capo';
 import { chordKey } from './chordDefinition';
 import { parseGuitarDsl } from './compiler';
 import { Messages, ScoreSettingsEditorMessages, SupportedLocale, getMessages, getScoreSettingsEditorMessages } from './i18n';
@@ -28,21 +29,45 @@ export async function applyCapoTransform(uri: vscode.Uri, targetCapo: number): P
   if (plan.text === text) {
     return { ok: true, changed: false, targetCapo, unusedDefinitions: plan.unusedDefinitions };
   }
-  // Replace only the changed middle so cursors / folding elsewhere are kept; still one edit.
+  const applied = await replaceDocumentText(doc, text, plan.text);
+  return applied
+    ? { ok: true, changed: true, targetCapo, unusedDefinitions: plan.unusedDefinitions }
+    : { ok: false, code: 'editRejected' };
+}
+
+/** Replaces only the changed middle so cursors / folding elsewhere are kept; still one edit. */
+async function replaceDocumentText(doc: vscode.TextDocument, text: string, next: string): Promise<boolean> {
   let start = 0;
-  while (start < text.length && start < plan.text.length && text[start] === plan.text[start]) start++;
+  while (start < text.length && start < next.length && text[start] === next[start]) start++;
   let endOld = text.length;
-  let endNew = plan.text.length;
-  while (endOld > start && endNew > start && text[endOld - 1] === plan.text[endNew - 1]) {
+  let endNew = next.length;
+  while (endOld > start && endNew > start && text[endOld - 1] === next[endNew - 1]) {
     endOld--;
     endNew--;
   }
   const edit = new vscode.WorkspaceEdit();
-  edit.replace(uri, new vscode.Range(doc.positionAt(start), doc.positionAt(endOld)), plan.text.slice(start, endNew));
-  const applied = await vscode.workspace.applyEdit(edit);
-  return applied
-    ? { ok: true, changed: true, targetCapo, unusedDefinitions: plan.unusedDefinitions }
-    : { ok: false, code: 'editRejected' };
+  edit.replace(doc.uri, new vscode.Range(doc.positionAt(start), doc.positionAt(endOld)), next.slice(start, endNew));
+  return vscode.workspace.applyEdit(edit);
+}
+
+export type BeginnerApplyResult =
+  | { ok: true; changed: boolean; targetCapo: number; substitutions: number; unusedDefinitions: string[] }
+  | { ok: false; code: BeginnerFailureCode | 'editRejected'; detail?: string };
+
+/**
+ * Applies the Beginner Mode transform to the document at `uri`: re-reads the current source,
+ * recomputes the plan from it with `options` (never from webview-provided text) and applies one
+ * undoable WorkspaceEdit (capo value and chord names together).
+ */
+export async function applyBeginnerTransform(uri: vscode.Uri, options: BeginnerModeOptions): Promise<BeginnerApplyResult> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const text = doc.getText();
+  const plan = planBeginnerTransform(text, options);
+  if (!plan.ok) return plan;
+  const done = { targetCapo: plan.targetCapo, substitutions: plan.candidate.uniqueSubstitutions, unusedDefinitions: plan.unusedDefinitions };
+  if (plan.text === text) return { ok: true, changed: false, ...done };
+  const applied = await replaceDocumentText(doc, text, plan.text);
+  return applied ? { ok: true, changed: true, ...done } : { ok: false, code: 'editRejected' };
 }
 
 /** Context handed to a section: the document's current state plus panel callbacks. */
@@ -167,13 +192,113 @@ export class CapoSection implements ScoreSettingsSection {
   }
 }
 
+export interface BeginnerSectionModel {
+  sourceCapo: number | null;
+  barrePolicy: BarrePolicy;
+  /** Null = auto. */
+  selectedCapo: number | null;
+  targetCapo?: number;
+  recommendedCapo?: number;
+  currentPlayability?: { score: number; levelLabel: string };
+  targetPlayability?: { score: number; levelLabel: string };
+  candidates: {
+    capo: number;
+    supported: boolean;
+    score?: number;
+    levelLabel?: string;
+    recommended: boolean;
+    reason?: string;
+  }[];
+  mapping: { source: string; capoChord: string; target: string; substituted: boolean }[];
+  warnings: string[];
+  noChords: boolean;
+  canApply: boolean;
+  error?: string;
+}
+
+export class BeginnerSection implements ScoreSettingsSection {
+  readonly id = 'beginner';
+  private barrePolicy: BarrePolicy = 'forbid';
+  /** Undefined = auto. */
+  private selected: number | undefined;
+
+  title(m: ScoreSettingsEditorMessages): string {
+    return m.sectionBeginner;
+  }
+
+  reset(): void {
+    this.barrePolicy = 'forbid';
+    this.selected = undefined;
+  }
+
+  buildModel(ctx: ScoreSettingsSectionContext): BeginnerSectionModel {
+    const m = ctx.messages;
+    const text = ctx.doc.getText();
+    const score = parseGuitarDsl(text);
+    const playability = (p: PlayabilityResult | undefined) => (p ? { score: p.score, levelLabel: m.playabilityLevels[p.level] } : undefined);
+    const inference = inferBeginnerModeForDsl(text, this.barrePolicy);
+    const plan = planBeginnerTransform(text, { barrePolicy: this.barrePolicy, targetCapo: this.selected }, inference);
+    const candidate = plan.ok ? plan.candidate : undefined;
+    return {
+      sourceCapo: parseCapoValue(score.capo),
+      barrePolicy: this.barrePolicy,
+      selectedCapo: this.selected ?? null,
+      targetCapo: plan.ok ? plan.targetCapo : this.selected,
+      recommendedCapo: inference.recommendedCapo,
+      currentPlayability: playability(sourcePlayability(text)),
+      targetPlayability: playability(candidate?.playability),
+      candidates: inference.candidates.map(c => ({
+        capo: c.capo,
+        supported: c.supported,
+        score: c.playability?.score,
+        levelLabel: c.playability ? m.playabilityLevels[c.playability.level] : undefined,
+        recommended: c.capo === inference.recommendedCapo,
+        reason: c.reason ? m.beginnerFailure(c.reason, c.detail) : undefined
+      })),
+      mapping: (candidate?.mapping ?? []).map(({ source, capoChord, target, substituted }) => ({ source, capoChord, target, substituted })),
+      warnings: plan.ok && plan.unusedDefinitions.length > 0 ? [m.msgCapoUnusedDefinitions(plan.unusedDefinitions.join(', '))] : [],
+      noChords: score.measures.every(ms => ms.chords.length === 0),
+      canApply: plan.ok && plan.text !== text,
+      error: plan.ok ? undefined : m.beginnerFailure(plan.code, plan.detail)
+    };
+  }
+
+  async onMessage(ctx: ScoreSettingsSectionContext, msg: any): Promise<void> {
+    if (msg.command === 'setPolicy') {
+      if (!isBarrePolicy(msg.policy)) return;
+      this.barrePolicy = msg.policy;
+      this.selected = undefined;
+      ctx.refresh();
+    } else if (msg.command === 'select') {
+      if (msg.capo === 'auto') {
+        this.selected = undefined;
+      } else if (isValidCapo(Number(msg.capo))) {
+        this.selected = Number(msg.capo);
+      } else {
+        return;
+      }
+      ctx.refresh();
+    } else if (msg.command === 'apply') {
+      const result = await applyBeginnerTransform(ctx.doc.uri, { barrePolicy: this.barrePolicy, targetCapo: this.selected });
+      if (result.ok) {
+        this.selected = undefined;
+        ctx.status(ctx.messages.msgBeginnerApplied(result.targetCapo, result.substitutions));
+      } else {
+        const reason = result.code === 'editRejected' ? ctx.messages.msgCapoEditRejected : ctx.messages.beginnerFailure(result.code, result.detail);
+        ctx.status(ctx.messages.msgBeginnerApplyFailed(reason), true);
+      }
+      ctx.refresh();
+    }
+  }
+}
+
 export class ScoreSettingsEditorPanel {
   private static current: ScoreSettingsEditorPanel | undefined;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly m: ScoreSettingsEditorMessages;
   private readonly messages: Messages;
-  private readonly sections: ScoreSettingsSection[] = [new CapoSection()];
+  private readonly sections: ScoreSettingsSection[] = [new CapoSection(), new BeginnerSection()];
   private readonly disposables: vscode.Disposable[] = [];
   private doc!: vscode.TextDocument;
   private activeSection = 'capo';

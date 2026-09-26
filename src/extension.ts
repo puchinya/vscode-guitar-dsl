@@ -8,12 +8,14 @@ import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, 
 import { parseGuitarDsl } from './compiler';
 import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
 import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } from './previewCapo';
-import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyCapoTransform } from './scoreSettingsEditor';
+import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
+import { isBarrePolicy } from './beginnerMode';
+import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
 export interface ExportPdfOptions {
-  /** Effective DSL to render instead of `doc.getText()` (the Preview capo override, spec extension §4.4). */
+  /** Effective DSL to render instead of `doc.getText()` (Preview Beginner Mode / capo override, spec extension §4.4, §4.5). */
   dslContentOverride?: string;
   /** Output file; when given, the save dialog is skipped. */
   targetUri?: vscode.Uri;
@@ -163,15 +165,21 @@ export function activate(context: vscode.ExtensionContext) {
   const previewCapo = new PreviewCapoController(() => msgs);
   setPreviewCapoController(previewCapo);
   context.subscriptions.push({ dispose: () => setPreviewCapoController(undefined) });
+  // Transient Preview Beginner Mode; while active it takes precedence over the capo override.
+  const previewBeginner = new PreviewBeginnerController(() => msgs, previewCapo);
+  setPreviewBeginnerController(previewBeginner);
+  context.subscriptions.push({ dispose: () => setPreviewBeginnerController(undefined) });
+  const effectiveText = (doc: vscode.TextDocument) => resolvePreviewEffectiveDsl(doc, previewBeginner, previewCapo).text;
 
   const updateWebview = (doc: vscode.TextDocument) => {
     if (currentPanel && isGuitarDslDocument(doc)) {
       previewCapo.switchDocument(doc);
+      previewBeginner.switchDocument(doc);
       lastActiveGuitarDslDoc = doc;
       const webview = currentPanel.webview;
       const config = vscode.workspace.getConfiguration('guitardsl');
       const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
-      const effective = previewCapo.resolve(doc);
+      const effective = resolvePreviewEffectiveDsl(doc, previewBeginner, previewCapo);
       effectiveDslProbe.previewInput = effective.text;
       const htmlContent = compileGuitarDslToHtml(effective.text, {
         locale: currentLocale,
@@ -179,6 +187,7 @@ export function activate(context: vscode.ExtensionContext) {
         orientation: previewOrientation,
         expandPageBreakRepeats,
         capo: effective.capo,
+        beginner: effective.beginner,
         fontUris: {
           regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
           bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
@@ -219,7 +228,7 @@ export function activate(context: vscode.ExtensionContext) {
             const activeDoc = lastActiveGuitarDslDoc || (await resolveGuitarDslDocument(undefined, undefined));
             if (activeDoc) {
               await exportScoreToPdf(activeDoc, context.extensionPath, pageSize, orientation, currentLocale, {
-                dslContentOverride: previewCapo.effectiveText(activeDoc)
+                dslContentOverride: effectiveText(activeDoc)
               });
             } else {
               vscode.window.showWarningMessage(msgs.msgDocNotFound);
@@ -230,11 +239,30 @@ export function activate(context: vscode.ExtensionContext) {
             }
           } else if (message.command === 'capoChanged') {
             if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
-              previewCapo.setTarget(lastActiveGuitarDslDoc, message.capo);
+              if (previewBeginner.isActive(lastActiveGuitarDslDoc)) {
+                previewBeginner.setTargetCapo(lastActiveGuitarDslDoc, message.capo);
+              } else {
+                previewBeginner.clear();
+                previewCapo.setTarget(lastActiveGuitarDslDoc, message.capo);
+              }
             }
           } else if (message.command === 'applyCapo') {
-            if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
+            if (lastActiveGuitarDslDoc && previewBeginner.isActive(lastActiveGuitarDslDoc)) {
+              await applyPreviewBeginner(lastActiveGuitarDslDoc);
+            } else if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
               await applyPreviewCapo(lastActiveGuitarDslDoc, message.capo);
+            }
+          } else if (message.command === 'beginnerToggled') {
+            if (lastActiveGuitarDslDoc && typeof message.enabled === 'boolean') {
+              if (message.enabled) {
+                previewBeginner.enable(lastActiveGuitarDslDoc);
+              } else {
+                previewBeginner.disable(lastActiveGuitarDslDoc);
+              }
+            }
+          } else if (message.command === 'barrePolicyChanged') {
+            if (lastActiveGuitarDslDoc && isBarrePolicy(message.policy)) {
+              previewBeginner.setBarrePolicy(lastActiveGuitarDslDoc, message.policy);
             }
           } else if (message.command === 'editCapo') {
             if (lastActiveGuitarDslDoc) {
@@ -255,6 +283,7 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.onDidDispose(() => {
         currentPanel = undefined;
         previewCapo.clear();
+        previewBeginner.clear();
       }, null, context.subscriptions);
     }
 
@@ -270,10 +299,14 @@ export function activate(context: vscode.ExtensionContext) {
   }, null, context.subscriptions);
 
   previewCapo.onDidChange = doc => updateWebview(doc);
+  previewBeginner.onDidChange = doc => updateWebview(doc);
 
   vscode.workspace.onDidCloseTextDocument((doc) => {
     if (previewCapo.getState()?.documentUri === doc.uri.toString()) {
       previewCapo.clear();
+    }
+    if (previewBeginner.getState()?.documentUri === doc.uri.toString()) {
+      previewBeginner.clear();
     }
   }, null, context.subscriptions);
 
@@ -289,6 +322,25 @@ export function activate(context: vscode.ExtensionContext) {
     } else {
       const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected : msgs.capoFailures[result.code];
       vscode.window.showWarningMessage(msgs.msgCapoApplyFailed(reason));
+    }
+    const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
+    updateWebview(fresh);
+  };
+
+  /** Preview "Apply to DSL" in Beginner Mode: fresh plan from the current source and the current selection. */
+  const applyPreviewBeginner = async (doc: vscode.TextDocument) => {
+    const state = previewBeginner.getState();
+    if (!state) return;
+    const result = await applyBeginnerTransform(doc.uri, { barrePolicy: state.barrePolicy, targetCapo: state.targetCapo });
+    if (result.ok) {
+      previewBeginner.clear();
+      vscode.window.showInformationMessage(msgs.msgBeginnerApplied(result.targetCapo, result.substitutions));
+      if (result.unusedDefinitions.length > 0) {
+        vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
+      }
+    } else {
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected : msgs.beginnerFailure(result.code, result.detail);
+      vscode.window.showWarningMessage(msgs.msgBeginnerApplyFailed(reason));
     }
     const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
     updateWebview(fresh);
@@ -312,7 +364,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     // The same effective DSL as the Preview: the override applies only to the previewed document.
     await exportScoreToPdf(doc, context.extensionPath, previewPageSize, previewOrientation, currentLocale, {
-      dslContentOverride: previewCapo.effectiveText(doc),
+      dslContentOverride: effectiveText(doc),
       targetUri: targetUri instanceof vscode.Uri ? targetUri : undefined
     });
   });

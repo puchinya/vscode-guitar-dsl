@@ -279,7 +279,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
 - **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、ファイルの定義を `currentVoicings` にする）、`inferCapoFromDsl(text)`。
 - **DSL 上の候補 `inferCapoForDsl(text)`**: 汎用推論の各候補について、元のカポ以外は `planCapoTransform` まで実行し、失敗したら（定義の衝突・ラベル付きコード・構文エラー等）その候補を変更不可（`reason` = 失敗コード）にする。推奨はこの変更可能な候補から選び直す。楽譜設定エディタとプレビューのカポバーはこの結果だけを表示するため、適用できないカポは選択肢に出ない。汎用の `inferCapo` はテキストを見ないので、この検証を含まない。
-- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
+- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分（共通ヘルパー `replaceChordTokenNames(text, tokens, targetName)`。初心者モードと共用）と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
   1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
   2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
   3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。
@@ -299,6 +299,31 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 | エディタ → Ext | `ready` / `showSection { section }` / `close` | 初期化、セクション切り替え、閉じる |
 | エディタ → Ext | `select { section: 'capo', capo }` / `apply { section: 'capo', capo }` | 候補の選択、適用 |
 | Ext → エディタ | `load { sections, active, model }` / `status { text, error }` | セクション一覧と計算済みモデル、適用結果 |
+
+### 2.11 初心者モード (`src/beginnerMode.ts`, `src/previewBeginner.ts`, `BeginnerSection`)
+
+公開の振る舞いは `docs/specs/extension.md` §4.5 / §4B.4。DSL の構文・設定・コマンドは増やさない。
+
+**依存方向**: `compiler` / `chordDefinition` / `chordDetect` / `chordPresets` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
+
+- **カポ候補**: `inferBeginnerModeForDsl(text, barrePolicy)` はカポ 0〜12 ごとに `planCapoTransform(text, capo)` を実行し、失敗したカポはその失敗コードで不可にする（初心者モード独自の移調はしない）。元のカポでは `resolveEffectiveDsl` と同じく元のテキストそのものを中間 DSL にする（`capo:` 行を挿入しない）。中間 DSL を解析し、異なるコードキーごとに代替を選ぶ。
+- **押さえ方（ユーザー決定, Issue #65）**: 変換はコード名しか書き換えず `chord` 定義を追加しないため、評価する押さえ方は**最終の楽譜に描画されるもの 1 つ**に限る。キーの `chord` 定義（ラベル付きキーはラベルなし定義にフォールバック。renderer の `resolveChordDiagram` と同じ優先順位）→ `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing`（カポの弾きやすさと同じ）。どれもなければ候補にしない。`forbid` ではその押さえ方の `barres.length > 0` を除外する（絶対条件）。`getPresetVoicings` の他の押さえ方は描画されないので評価しない。
+- **代替**: そのまま（ペナルティ 0）、`BEGINNER_SUBSTITUTION_RULES`（宣言順）、`forbid` かつそのままのコードが使えない長三和音／`m` に限り `BEGINNER_BARRE_FALLBACK_RULES`（`maj7` / `m7`、2）。分数コードはベースを残す／省く（1）の組み合わせで、ペナルティは加算。ラベル付きコードはそのままのみ。置き換え先と同名のラベルなし `chord` 定義があれば除外（衝突）。選択は `chordCost + ペナルティ` 最小、同点はペナルティ、そのまま、宣言順。
+- **カポの評価**: `physicalSongCost` = 出現回数で重み付けした `chordCost` の平均 + `0.25 × max(0, 最終コードの種類 − 4)` + `0.15 × カポ`。`optimizationCost` = `physicalSongCost` + 重み付きペナルティ平均。表示する弾きやすさは `easeScore(physicalSongCost)` / `levelForScore`（ペナルティを含まない）。推奨は `optimizationCost` 最小、同点は置き換えた出現回数、置き換えたコードの種類、小さいカポの順（浮動小数の比較は 1e-9 の許容差）。`capo.ts` の計算式・推論結果は変えない。
+- **変換 `planBeginnerTransform(text, { barrePolicy, targetCapo? })`**: 常に渡された元のテキストから計算する（自動なら推奨カポを再計算）。中間 DSL の `chordTokens` のコード名部分だけを `replaceChordTokenNames` で置き換え、解析し直してエラー診断なし・目標カポ・期待したコード配置列・（`forbid` なら）描画される押さえ方にセーハなし、を確認する。失敗コードは `CapoTransformFailureCode` に `noPlayableAlternative`（`detail` = コードキー）と `noRecommendation` を加えたもの。元で使われていて最終で使われなくなる定義は `unusedDefinitions`（警告のみ、削除しない）。
+- **`PreviewBeginnerController`**（`src/previewBeginner.ts`、ホスト側）: `PreviewBeginnerState { documentUri, barrePolicy, targetCapo? }`（永続化しない）。`enable` は `PreviewCapoController` の一時変更を解除して `forbid`・自動で開始、`disable` は解除のみ（カポの一時変更は戻さない）、`setBarrePolicy` は自動に戻す、`setTargetCapo` は固定。`resolve(doc)` は毎回最新のテキストから計算し、失敗したら状態を解除して警告（`currentNotice()` でカポバーにも表示）。`switchDocument` / プレビューの破棄 / ドキュメントを閉じるで解除する。
+- **有効 DSL の一本化 `resolvePreviewEffectiveDsl(doc, beginner, capo)`**: 初心者モードが有効ならその結果、そうでなければ `PreviewCapoController.resolve`。プレビュー描画・プレビューの PDF 保存・`guitardsl.exportPdf` はすべてこの関数を通すため、入力は同一の文字列になる。
+- **プレビューのカポバー**: `buildBeginnerPreviewUiModel` がカポバー用のモデル（候補のスコアは初心者モードの評価）と `BeginnerPreviewUiModel { active, barrePolicy, autoCapo, substitutions }` を作り、`previewHtml.ts` は描画するだけ。既存のカポ選択・`DSLに適用` はホストが初心者モードの有無で振り分ける。
+- **楽譜設定エディタ `BeginnerSection`**（id `beginner`）: ホストが `barrePolicy`（初期 `forbid`）と固定カポ（初期は自動）を保持し、モデルを計算して送る。`media/scoreSettingsEditor.js` の `beginner` レンダラーは表示と操作の通知だけを行う。
+- **適用 `applyBeginnerTransform(uri, options)`**: 開き直した最新のテキストから `planBeginnerTransform` をやり直し、`applyCapoTransform` と共通の差分置換で 1 つの `WorkspaceEdit` として適用する（元に戻す 1 回で戻る）。失敗時はドキュメントを変更しない。
+- **メッセージ**:
+
+| 方向 | メッセージ | 内容 |
+|---|---|---|
+| プレビュー → Ext | `beginnerToggled { enabled }` | `enable` / `disable` |
+| プレビュー → Ext | `barrePolicyChanged { policy }` | `setBarrePolicy`（自動に戻す） |
+| プレビュー → Ext | `capoChanged { capo }` / `applyCapo { capo }` | 初心者モード中は `setTargetCapo` / `applyBeginnerTransform`（`capo` は無視し、ホストの状態を使う） |
+| エディタ → Ext | `setPolicy { section: 'beginner', policy }` / `select { section: 'beginner', capo: number \| 'auto' }` / `apply { section: 'beginner' }` | 設定の変更、適用（Webview からテキストや対応表は送らない） |
 
 
 ---
