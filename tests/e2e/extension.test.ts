@@ -189,3 +189,155 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 });
 
 
+
+suite('Capo / playability (Issue #62)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewCapo = () => require('../../previewCapo');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const scoreSettings = () => require('../../scoreSettingsEditor');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('os');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('path');
+
+  const SOURCE = ['title: Capo Test', 'key: B', '', '[Intro]', '| B | E | F#m7 | E/G# |', ''].join('\n');
+  const AT_CAPO_2 = ['title: Capo Test', 'capo: 2', 'key: B', '', '[Intro]', '| A | D | Em7 | D/F# |', ''].join('\n');
+
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitFor(check: () => boolean, message: string): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+      if (check()) return;
+      await sleep(100);
+    }
+    assert.fail(message);
+  }
+  async function openPreviewed(content: string): Promise<vscode.TextDocument> {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    previewCapo().effectiveDslProbe.previewInput = undefined;
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => previewCapo().effectiveDslProbe.previewInput === doc.getText(), 'preview should render the source');
+    return doc;
+  }
+  function tmpPdf(name: string): vscode.Uri {
+    return vscode.Uri.file(nodePath.join(os.tmpdir(), `guitardsl-e2e-${process.pid}-${name}.pdf`));
+  }
+  async function replaceAll(doc: vscode.TextDocument, text: string): Promise<void> {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text);
+    assert.ok(await vscode.workspace.applyEdit(edit));
+  }
+
+  suiteSetup(async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    if (ext && !ext.isActive) await ext.activate();
+  });
+
+  test('E2E-01 capo and score settings commands are registered', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('guitardsl.editCapo'));
+    assert.ok(commands.includes('guitardsl.editScoreSettings'));
+  });
+
+  test('E2E-02 opening the score settings editor does not mutate the source', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    const version = doc.version;
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    let tab: vscode.Tab | undefined;
+    await waitFor(() => {
+      tab = vscode.window.tabGroups.all.flatMap(g => g.tabs)
+        .find(t => t.input instanceof vscode.TabInputWebview && /^(Score Settings|楽譜設定)/.test(t.label));
+      return tab !== undefined;
+    }, 'score settings editor tab should open');
+    await sleep(300);
+    assert.strictEqual(doc.getText(), SOURCE);
+    assert.strictEqual(doc.version, version);
+  });
+
+  test('EDITOR-01 apply recomputes from the latest source', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| B |\n' });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    await replaceAll(doc, '| B | E |\n');
+    const result = await scoreSettings().applyCapoTransform(doc.uri, 2);
+    assert.ok(result.ok && result.changed);
+    assert.strictEqual(doc.getText(), 'capo: 2\n| A | D |\n');
+  });
+
+  test('EDITOR-02 a single undo restores the previous DSL', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await vscode.window.showTextDocument(doc);
+    const result = await scoreSettings().applyCapoTransform(doc.uri, 2);
+    assert.ok(result.ok);
+    assert.strictEqual(doc.getText(), AT_CAPO_2);
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), SOURCE);
+  });
+
+  test('PREVIEW-01/02 transient override without drift; PDF-01/02/03 PDF uses the same effective DSL', async () => {
+    const doc = await openPreviewed(SOURCE);
+    const controller = previewCapo().getPreviewCapoController();
+    const probe = previewCapo().effectiveDslProbe;
+
+    for (const target of [2, 5, 1]) assert.ok(controller.setTarget(doc, target));
+    assert.strictEqual(doc.getText(), SOURCE, 'PREVIEW-01 the document is not mutated');
+    assert.strictEqual(probe.previewInput, ['title: Capo Test', 'capo: 1', 'key: B', '', '[Intro]', '| Bb | Eb | Fm7 | Eb/G |', ''].join('\n'), 'PREVIEW-02 computed from source');
+
+    assert.ok(controller.setTarget(doc, 2));
+    assert.strictEqual(probe.previewInput, AT_CAPO_2);
+    const target = tmpPdf('override');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.strictEqual(probe.pdfInput, probe.previewInput, 'PDF-01 identical effective DSL');
+    assert.ok(probe.pdfInput.includes('capo: 2') && probe.pdfInput.includes('key: B') && probe.pdfInput.includes('| A |'), 'PDF-02');
+    assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0, 'PDF-03 file written');
+    fs.unlinkSync(target.fsPath);
+    assert.strictEqual(doc.getText(), SOURCE);
+  });
+
+  test('PREVIEW-03 source edits recompute the override; PREVIEW-04 unsupported source clears it', async () => {
+    const doc = await openPreviewed(SOURCE);
+    const controller = previewCapo().getPreviewCapoController();
+    const probe = previewCapo().effectiveDslProbe;
+    assert.ok(controller.setTarget(doc, 2));
+
+    await replaceAll(doc, SOURCE.replace('| B | E |', '| B | C# |'));
+    await waitFor(() => probe.previewInput?.includes('| A | B |') === true, 'PREVIEW-03 transformed preview follows the source');
+    assert.deepStrictEqual(controller.getState(), { documentUri: doc.uri.toString(), targetCapo: 2 });
+
+    const unsupported = 'chord C@special = x35553\n' + doc.getText().replace('| B |', '| C@special |');
+    await replaceAll(doc, unsupported);
+    await waitFor(() => probe.previewInput === unsupported, 'PREVIEW-04 source is rendered');
+    assert.strictEqual(controller.getState(), undefined);
+    assert.ok(controller.resolve(doc).capo.warning, 'a warning is shown in the capo bar');
+
+    const target = tmpPdf('invalidated');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.strictEqual(probe.pdfInput, unsupported, 'no stale transformed PDF');
+    fs.unlinkSync(target.fsPath);
+  });
+
+  test('PDF-04 without an override the PDF input is exactly doc.getText(); state resets on switch and close', async () => {
+    const doc = await openPreviewed(SOURCE);
+    const controller = previewCapo().getPreviewCapoController();
+    const probe = previewCapo().effectiveDslProbe;
+    const target = tmpPdf('plain');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.strictEqual(probe.pdfInput, doc.getText());
+    fs.unlinkSync(target.fsPath);
+
+    assert.ok(controller.setTarget(doc, 3));
+    const other = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| G |\n' });
+    await vscode.window.showTextDocument(other, vscode.ViewColumn.One);
+    await waitFor(() => controller.getState() === undefined, 'switching documents resets the override');
+
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    assert.ok(controller.setTarget(doc, 3));
+    const previewTab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input instanceof vscode.TabInputWebview && t.label.includes('GuitarDSL'));
+    assert.ok(previewTab, 'preview tab');
+    await vscode.window.tabGroups.close(previewTab!);
+    await waitFor(() => controller.getState() === undefined, 'closing the preview resets the override');
+  });
+});

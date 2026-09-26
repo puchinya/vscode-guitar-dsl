@@ -2,6 +2,8 @@
   "command.showPreview.title": "GuitarDSL: Open Preview to the Side",
   "command.exportPdf.title": "GuitarDSL: Export PDF / Print",
   "command.editChordDiagram.title": "GuitarDSL: Edit Chord Diagram",
+  "command.editScoreSettings.title": "GuitarDSL: Edit Score Settings",
+  "command.editCapo.title": "GuitarDSL: Edit Capo / Playability",
   "command.transcribeYouTube.title": "GuitarDSL: Transcribe from YouTube",
   "command.transcribeAudio.title": "GuitarDSL: Transcribe Local Audio (Experimental)",
   "command.setGeminiApiKey.title": "GuitarDSL: Set Gemini API Key",

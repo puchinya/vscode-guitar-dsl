@@ -52,6 +52,14 @@
         "title": "%command.editChordDiagram.title%"
       },
       {
+        "command": "guitardsl.editScoreSettings",
+        "title": "%command.editScoreSettings.title%"
+      },
+      {
+        "command": "guitardsl.editCapo",
+        "title": "%command.editCapo.title%"
+      },
+      {
         "command": "guitardsl.transcribeYouTube",
         "title": "%command.transcribeYouTube.title%"
       },

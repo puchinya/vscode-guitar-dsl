@@ -1,5 +1,6 @@
 import type { DiagnosticCode } from './compiler';
 import type { AudioMirErrorCode } from './audioMir/model';
+import type { CapoTransformFailureCode, PlayabilityLevel } from './capo';
 
 export type SupportedLocale = 'ja' | 'en';
 
@@ -30,6 +31,25 @@ export interface Messages {
   uiLandscapeTitle: string;
   uiSavePdf: string;
   uiSavePdfTitle: string;
+
+  // Capo / playability (preview toolbar, score settings editor, host notifications)
+  uiCapo: string;
+  uiCapoTitle: string;
+  uiPlayability: string;
+  uiPlayabilityUnavailable: string;
+  uiRecommended: string;
+  uiCapoPreviewOnly: string;
+  uiApplyToDsl: string;
+  uiApplyToDslTitle: string;
+  uiEditCapo: string;
+  uiEditCapoTitle: string;
+  playabilityLevels: Record<PlayabilityLevel, string>;
+  capoFailures: Record<CapoTransformFailureCode, string>;
+  msgCapoOverrideReset: (reason: string) => string;
+  msgCapoApplied: (capo: number) => string;
+  msgCapoApplyFailed: (reason: string) => string;
+  msgCapoEditRejected: string;
+  msgCapoUnusedDefinitions: (keys: string) => string;
 
   // YouTube transcription messages
   msgPromptApiKey: string;
@@ -76,6 +96,38 @@ export const MESSAGES_JA: Messages = {
   uiLandscapeTitle: '横向き（見開き印刷）',
   uiSavePdf: '📄 PDF保存',
   uiSavePdfTitle: '選択中の用紙サイズと向きでPDFを保存',
+
+  uiCapo: 'カポ',
+  uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
+  uiPlayability: '弾きやすさ',
+  uiPlayabilityUnavailable: '評価できません',
+  uiRecommended: '推奨',
+  uiCapoPreviewOnly: 'プレビューのみ',
+  uiApplyToDsl: 'DSLに適用',
+  uiApplyToDslTitle: '選択中のカポ位置とコード名をDSLに書き込みます（元に戻す可能）',
+  uiEditCapo: '編集…',
+  uiEditCapoTitle: 'カポ / 弾きやすさの編集パネルを開く',
+  playabilityLevels: {
+    veryEasy: 'とても簡単',
+    easy: '簡単',
+    moderate: '普通',
+    hard: '難しい',
+    veryHard: 'とても難しい'
+  },
+  capoFailures: {
+    sourceParseError: 'DSLにエラーがあります',
+    invalidSourceCapo: 'capo: の値が 0〜12 の整数ではありません',
+    invalidTargetCapo: 'カポ位置は 0〜12 の整数で指定してください',
+    untransposableChord: '移調できないコード名があります',
+    labeledChordVariant: 'ラベル付きコード（C@label など）はカポを変更できません',
+    customDefinitionCollision: '変換後のコード名がファイル内のコード定義と衝突します',
+    transformedParseError: '変換後のDSLを正しく解析できません'
+  },
+  msgCapoOverrideReset: (reason: string) => `プレビューのカポ変更を解除しました: ${reason}`,
+  msgCapoApplied: (capo: number) => `カポ ${capo} をDSLに適用しました。`,
+  msgCapoApplyFailed: (reason: string) => `カポを適用できません: ${reason}`,
+  msgCapoEditRejected: 'エディタが変更を受け付けませんでした',
+  msgCapoUnusedDefinitions: (keys: string) => `次のコード定義は使われなくなる可能性があります（削除はしません）: ${keys}`,
 
   msgPromptApiKey: 'Gemini API キーを入力してください',
   msgApiKeySaved: 'Gemini API キーを保存しました。',
@@ -131,6 +183,38 @@ export const MESSAGES_EN: Messages = {
   uiLandscapeTitle: 'Landscape orientation (2-up spread)',
   uiSavePdf: '📄 Save PDF',
   uiSavePdfTitle: 'Save score as PDF with selected paper size and orientation',
+
+  uiCapo: 'Capo',
+  uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',
+  uiPlayability: 'Playability',
+  uiPlayabilityUnavailable: 'Not available',
+  uiRecommended: 'Recommended',
+  uiCapoPreviewOnly: 'Preview only',
+  uiApplyToDsl: 'Apply to DSL',
+  uiApplyToDslTitle: 'Write the selected capo and chord names to the DSL (undoable)',
+  uiEditCapo: 'Edit…',
+  uiEditCapoTitle: 'Open the capo / playability editor',
+  playabilityLevels: {
+    veryEasy: 'Very easy',
+    easy: 'Easy',
+    moderate: 'Moderate',
+    hard: 'Hard',
+    veryHard: 'Very hard'
+  },
+  capoFailures: {
+    sourceParseError: 'the DSL has errors',
+    invalidSourceCapo: 'the capo: value is not an integer from 0 to 12',
+    invalidTargetCapo: 'the capo must be an integer from 0 to 12',
+    untransposableChord: 'a chord name cannot be transposed',
+    labeledChordVariant: 'labeled chords (such as C@label) cannot change capo',
+    customDefinitionCollision: 'a transposed chord name collides with a chord definition in the file',
+    transformedParseError: 'the transposed DSL could not be parsed'
+  },
+  msgCapoOverrideReset: (reason: string) => `Preview capo change was cleared: ${reason}`,
+  msgCapoApplied: (capo: number) => `Applied capo ${capo} to the DSL.`,
+  msgCapoApplyFailed: (reason: string) => `Cannot apply capo: ${reason}`,
+  msgCapoEditRejected: 'the editor rejected the change',
+  msgCapoUnusedDefinitions: (keys: string) => `These chord definitions may become unused (they are not deleted): ${keys}`,
 
   msgPromptApiKey: 'Enter your Gemini API key',
   msgApiKeySaved: 'Gemini API key has been saved.',
@@ -362,4 +446,78 @@ export const CHORD_EDITOR_EN: ChordEditorMessages = {
 
 export function getChordEditorMessages(locale: SupportedLocale): ChordEditorMessages {
   return locale === 'ja' ? CHORD_EDITOR_JA : CHORD_EDITOR_EN;
+}
+
+/** Score settings editor (generic, section-based webview; capo / playability is the first section). */
+export interface ScoreSettingsEditorMessages {
+  panelTitle: string;
+  sectionCapo: string;
+  currentCapo: string;
+  selectedCapo: string;
+  colCapo: string;
+  colScore: string;
+  colLevel: string;
+  colStatus: string;
+  supported: string;
+  unsupported: string;
+  current: string;
+  recommended: string;
+  currentVocabulary: string;
+  targetVocabulary: string;
+  mapping: string;
+  warnings: string;
+  noChords: string;
+  unresolvedChords: string;
+  apply: string;
+  close: string;
+}
+
+const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
+  panelTitle: '楽譜設定',
+  sectionCapo: 'カポ / 弾きやすさ',
+  currentCapo: '現在のカポ',
+  selectedCapo: '選択中のカポ',
+  colCapo: 'カポ',
+  colScore: 'スコア',
+  colLevel: '弾きやすさ',
+  colStatus: '状態',
+  supported: '変更可',
+  unsupported: '変更不可',
+  current: '現在',
+  recommended: '推奨',
+  currentVocabulary: '現在のコード',
+  targetVocabulary: '変更後のコード',
+  mapping: 'コードの対応',
+  warnings: '警告',
+  noChords: 'コードがないため弾きやすさを評価できません。',
+  unresolvedChords: '押さえ方が不明なコード',
+  apply: 'DSLに適用',
+  close: '閉じる'
+};
+
+const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
+  panelTitle: 'Score Settings',
+  sectionCapo: 'Capo / Playability',
+  currentCapo: 'Current capo',
+  selectedCapo: 'Selected capo',
+  colCapo: 'Capo',
+  colScore: 'Score',
+  colLevel: 'Playability',
+  colStatus: 'Status',
+  supported: 'Supported',
+  unsupported: 'Unsupported',
+  current: 'Current',
+  recommended: 'Recommended',
+  currentVocabulary: 'Current chords',
+  targetVocabulary: 'Target chords',
+  mapping: 'Chord mapping',
+  warnings: 'Warnings',
+  noChords: 'No chords, so playability is not available.',
+  unresolvedChords: 'Chords without a known shape',
+  apply: 'Apply to DSL',
+  close: 'Close'
+};
+
+export function getScoreSettingsEditorMessages(locale: SupportedLocale): ScoreSettingsEditorMessages {
+  return locale === 'ja' ? SCORE_SETTINGS_JA : SCORE_SETTINGS_EN;
 }

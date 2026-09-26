@@ -91,7 +91,9 @@ flowchart TD
   - 用紙サイズ・向き（初期値 `A4` / 縦）を拡張機能ホスト側で保持する。Webview からの `layoutChanged` メッセージ（値は `isPageSize` / `isPageOrientation` で検証）で更新し、再描画する。Webview 側は表示モードのみを `vscode.setState` で保持する。
   - 同梱フォントを Webview で読み込むため、`localResourceRoots` に `media/fonts` を指定し、`asWebviewUri` で得た URI を `compileGuitarDslToHtml` に渡す。
 - **PDFエクスポート制御 (`exportScoreToPdf`)**:
-  - 保存ダイアログで保存先を選択させ、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
+  - 保存ダイアログで保存先を選択させ（`options.targetUri` があれば省略）、`writeScorePdf`（`src/pdf.ts`）を呼び出す。外部プロセスは起動しない。
+  - 描画する DSL は `options.dslContentOverride ?? doc.getText()`。プレビューの PDF 保存と `guitardsl.exportPdf` はどちらも `PreviewCapoController.effectiveText(doc)`（§2.10）を渡すため、プレビューと同じ有効 DSL が使われる。
+- **プレビューのカポ一時変更**: `PreviewCapoController`（§2.10）を 1 つ持つ。`updateWebview` は `resolve(doc)` の有効 DSL とカポ UI モデルを `compileGuitarDslToHtml` に渡す。Webview からの `capoChanged` / `applyCapo` / `editCapo` を受け、プレビュー破棄・対象ドキュメントのクローズ・別ドキュメントへの切り替えで状態を解除する。
 - **診断 (`DiagnosticCollection('guitardsl')`)**:
   - GuitarDSL 文書の open / change 時に `parseGuitarDsl` を実行し、`ParsedScore.diagnostics` を `vscode.Diagnostic` に変換して発行する（プレビューの有無に依存しない）。close 時にクリアする。
   - 文言は `i18n.ts` の `formatDiagnostic(code, args, locale)` で生成する。コンパイラは文言を持たない。
@@ -107,6 +109,7 @@ flowchart TD
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
   - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
+  - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。
 - **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 3連）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
 - **パーサー (`parseGuitarDsl`)**:
   - `mel:` / `lyr:` 行は小節行より先に判定する。メロディは「未割り当て小節カーソル」で小節へ割り当て、セクション見出し・改ページでカーソルを末尾へ進める。`lyr:` は直前の `mel:` 行が割り当てた音符列に番ごとに音節を割り当てる。
@@ -262,6 +265,41 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
     - 出力チャンネルを所有し、`context.subscriptions` に登録して拡張の終了時に破棄する。
   - `vscode` を import するのは `controller.ts` だけである。
 
+### 2.10 カポ推論・弾きやすさ・カポ変更 (`src/capo.ts`, `src/previewCapo.ts`, `src/scoreSettingsEditor.ts`)
+
+**依存方向**: `chordDetect` / `chordPresets` / `chordDefinition` / `compiler` → `src/capo.ts` → 楽譜設定エディタ・プレビュー・（将来の）採譜など。`src/capo.ts` は VS Code・Webview・`src/transcription/`・`src/audioMir/` に依存しない純粋なモジュールで、単体テストの対象。
+
+- **汎用推論 API**（GuitarDSL のテキストを必要としない）:
+  - `inferCapo({ sourceCapo, chords: [{ name, count? }], currentVoicings? })`: カポ 0〜12 の全候補（`capo`、`supported`、`playability`、書かれたコード名の対応 `chordMap`、不可の理由 `reason`）と推奨カポを返す。推奨は変更可能な候補のうちスコア最大、同点は小さいカポ。推奨するだけで適用はしない。`sourceCapo` が 0〜12 の整数でなければ `RangeError`（正規化しない）。
+  - `evaluatePlayability(input, targetCapo)`、`transposeChordName(name, semitones)`（ルートとスラッシュのベースを `NOTE_NAMES` の綴りで移調し、サフィックスはそのまま）。
+  - 書かれたコードの移調量は `-(targetCapo - sourceCapo)` 半音。`name@label` の出現はカポが変わる候補では `labeledChordVariant` で不可。
+- **弾きやすさの計算式**（この 1 か所だけに実装し、推論・エディタ・プレビューで共用）:
+  - コードのコスト = `0.5 × 押弦数 + 2.5 × セーハ数 + 0.75 × max(0, 幅 − 2) + 0.25 × max(0, 最低フレット − 3) + (開放弦なしなら 1.5) + (分数コードなら 1)`。幅・最低フレットは 1 以上のフレットで計算する（なければ 0）。押さえ方が不明なら 10。
+  - 押さえ方: `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → 不明。元のカポの評価に限り `currentVoicings`（ファイルの `chord` 定義）を優先する。ほかのカポでは変換したカスタム押さえ方を作らない。
+  - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
+- **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、ファイルの定義を `currentVoicings` にする）、`inferCapoFromDsl(text)`。
+- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分と `capo:` の値だけを置き換える（行末コード・コメント・空白・長さ指定などはバイト単位で保持）。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
+  1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
+  2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
+  3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。
+  4. 変換後のテキストを解析し直し、エラー診断・カポ値の不一致・コード配置列の不一致（元の列を対応表で写したものと比べる）があれば `transformedParseError`。
+- **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。プレビューと PDF はこの関数の結果だけを使う。
+- **`buildCapoPreviewUiModel(source, target?, warning?)`**: プレビューのカポバー用の計算済みモデル。`previewHtml.ts` はこれを描画するだけで推論しない。
+- **`PreviewCapoController`**（`src/previewCapo.ts`、ホスト側）: `PreviewCapoState { documentUri, targetCapo }` を保持する（永続化しない）。`setTarget` は変換可能なときだけ状態を設定し（元のカポと同じなら解除）、`onDidChange` で再描画させる。`resolve(doc)` は毎回最新のテキストから有効 DSL を計算し、変換できなくなっていれば状態を解除して警告を出す。`switchDocument` は別ドキュメントなら解除する。`effectiveDslProbe` に最後のプレビュー入力・PDF 入力を記録する（E2E テストで同一性を確認するため）。
+- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection` のみ。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
+- **適用 `applyCapoTransform(uri, targetCapo)`**: `openTextDocument` で開き直した最新のテキストから `planCapoTransform` をやり直し、変わった範囲（共通の前後を除いた部分）を 1 つの `WorkspaceEdit` で置き換える（元に戻す 1 回で戻る）。エディタとプレビューの「DSLに適用」で共用する。
+- **メッセージ**:
+
+| 方向 | メッセージ | 内容 |
+|---|---|---|
+| プレビュー → Ext | `capoChanged { capo }` | 一時変更の目標。Ext は `setTarget` して再描画 |
+| プレビュー → Ext | `applyCapo { capo }` | `applyCapoTransform` 後に一時変更を解除して再描画 |
+| プレビュー → Ext | `editCapo` | `guitardsl.editCapo` を実行 |
+| エディタ → Ext | `ready` / `showSection { section }` / `close` | 初期化、セクション切り替え、閉じる |
+| エディタ → Ext | `select { section: 'capo', capo }` / `apply { section: 'capo', capo }` | 候補の選択、適用 |
+| Ext → エディタ | `load { sections, active, model }` / `status { text, error }` | セクション一覧と計算済みモデル、適用結果 |
+
+
 ---
 
 ## 3. データフローとメッセージング (Data & Event Flow)
@@ -282,7 +320,8 @@ sequenceDiagram
     User->>Editor: DSLテキスト編集
     Editor->>Ext: onDidChangeTextDocument イベント
     Ext->>Ext: プレビュー対象ドキュメントか確認
-    Ext->>Html: compileGuitarDslToHtml(dsl, { locale, pageSize, orientation, fontUris })
+    Ext->>Ext: PreviewCapoController.resolve(doc) → 有効 DSL + カポ UI モデル
+    Ext->>Html: compileGuitarDslToHtml(effectiveDsl, { locale, pageSize, orientation, fontUris, capo })
     Html->>Comp: parseGuitarDsl()
     Html->>Svg: renderScoreSheets() / renderContinuousSvg()
     Html-->>Ext: HTML 文字列 (ツールバー + シート SVG)
@@ -310,7 +349,8 @@ sequenceDiagram
     WV->>Ext: postMessage({ command: 'savePdf', pageSize, orientation })
     Ext->>Dialog: showSaveDialog (保存先パスの選択)
     Dialog-->>Ext: targetUri
-    Ext->>Pdf: writeScorePdf(path, dsl, pageSize, orientation, bundledFonts)
+    Ext->>Ext: PreviewCapoController.effectiveText(doc)（プレビューと同じ有効 DSL）
+    Ext->>Pdf: writeScorePdf(path, effectiveDsl, pageSize, orientation, bundledFonts)
     Pdf->>Svg: renderScoreSheets()
     Pdf->>Pdf: pdfkit + svg-to-pdfkit でページ描画・フォントサブセット埋め込み
     Pdf->>FS: 一時ファイルへ書き出し → rename
@@ -403,6 +443,7 @@ sequenceDiagram
 
 ### 4.3 プレビューと PDF の同一性
 - プレビューと PDF はどちらも `renderScoreSheets()` の出力を用い、フォントも同梱 Noto Sans JP に統一する。
+- 入力の DSL も同一にする: どちらも `resolveEffectiveDsl`（§2.10）で得た有効 DSL を使い、PDF 側に独自のカポ処理は持たない。カポバー（弾きやすさ表示を含む）は HTML ツールバーなので PDF には出ない。
 - 旧来のブラウザ印刷用 HTML（`@page` CSS）は廃止した。
 
 ---
