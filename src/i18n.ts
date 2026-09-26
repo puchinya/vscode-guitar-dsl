@@ -2,6 +2,7 @@ import type { DiagnosticCode } from './compiler';
 import type { AudioMirErrorCode } from './audioMir/model';
 import type { BeginnerFailureCode } from './beginnerMode';
 import type { CapoTransformFailureCode, PlayabilityLevel } from './capo';
+import type { TransposeFailureCode } from './transpose';
 
 export type SupportedLocale = 'ja' | 'en';
 
@@ -67,6 +68,12 @@ export interface Messages {
   msgBeginnerReset: (reason: string) => string;
   msgBeginnerApplied: (capo: number, substitutions: number) => string;
   msgBeginnerApplyFailed: (reason: string) => string;
+
+  // Sounding transposition (score settings editor)
+  transposeFailure: (code: TransposeFailureCode, detail?: string) => string;
+  msgTransposeApplied: (semitones: number, key: string) => string;
+  msgTransposeApplyFailed: (reason: string) => string;
+  msgNoCapoRecommendation: string;
 
   // YouTube transcription messages
   msgPromptApiKey: string;
@@ -164,6 +171,19 @@ export const MESSAGES_JA: Messages = {
   msgBeginnerReset: (reason: string) => `初心者モードを解除しました: ${reason}`,
   msgBeginnerApplied: (capo: number, substitutions: number) => `初心者モードの変換（カポ ${capo}、置き換え ${substitutions} 種類）をDSLに適用しました。`,
   msgBeginnerApplyFailed: (reason: string) => `初心者モードの変換を適用できません: ${reason}`,
+  transposeFailure: (code, detail) => {
+    const own: Partial<Record<TransposeFailureCode, string>> = {
+      invalidSemitones: '移調量は -11〜+11 の整数で指定してください',
+      untransposableKey: 'キーを移調できません',
+      pitchOutOfRange: '移調後の音高がオクターブ 0〜9 の範囲を超えます',
+      labeledChordVariant: 'ラベル付きのコード（C@label）があるため移調できません'
+    };
+    const text = own[code] ?? MESSAGES_JA.capoFailures[code as CapoTransformFailureCode] ?? code;
+    return detail ? `${text}（${detail}）` : text;
+  },
+  msgTransposeApplied: (semitones: number, key: string) => `${semitones > 0 ? '+' : ''}${semitones} 半音移調しました（キー ${key}）`,
+  msgTransposeApplyFailed: (reason: string) => `移調を適用できません: ${reason}`,
+  msgNoCapoRecommendation: 'コードがないため推奨カポを決められません。カポはそのままにします。',
 
   msgPromptApiKey: 'Gemini API キーを入力してください',
   msgApiKeySaved: 'Gemini API キーを保存しました。',
@@ -270,6 +290,19 @@ export const MESSAGES_EN: Messages = {
   msgBeginnerReset: (reason: string) => `Beginner mode was turned off: ${reason}`,
   msgBeginnerApplied: (capo: number, substitutions: number) => `Applied the beginner mode transform (capo ${capo}, ${substitutions} substituted chord(s)) to the DSL.`,
   msgBeginnerApplyFailed: (reason: string) => `Cannot apply the beginner mode transform: ${reason}`,
+  transposeFailure: (code, detail) => {
+    const own: Partial<Record<TransposeFailureCode, string>> = {
+      invalidSemitones: 'The shift must be an integer from -11 to +11',
+      untransposableKey: 'The key cannot be transposed',
+      pitchOutOfRange: 'A transposed pitch would leave octaves 0-9',
+      labeledChordVariant: 'Labeled chords (C@label) prevent transposition'
+    };
+    const text = own[code] ?? MESSAGES_EN.capoFailures[code as CapoTransformFailureCode] ?? code;
+    return detail ? `${text} (${detail})` : text;
+  },
+  msgTransposeApplied: (semitones: number, key: string) => `Transposed by ${semitones > 0 ? '+' : ''}${semitones} semitones (key ${key})`,
+  msgTransposeApplyFailed: (reason: string) => `Cannot apply the transposition: ${reason}`,
+  msgNoCapoRecommendation: 'No chords to recommend a capo from; the capo is kept.',
 
   msgPromptApiKey: 'Enter your Gemini API key',
   msgApiKeySaved: 'Gemini API key has been saved.',
@@ -573,6 +606,16 @@ export interface ScoreSettingsEditorMessages {
   selectable: string;
   notSelectable: string;
   beginnerNote: string;
+  sectionTranspose: string;
+  transposeNote: string;
+  semitones: string;
+  currentKey: string;
+  targetKey: string;
+  capoPolicy: string;
+  capoKeep: string;
+  capoRecommended: string;
+  capoExplicit: string;
+  targetCapo: string;
 }
 
 const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
@@ -611,7 +654,17 @@ const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
   substituted: '置き換え',
   selectable: '選択可',
   notSelectable: '選択不可',
-  beginnerNote: '鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードを提案します。設定はDSLに保存されません。'
+  beginnerNote: '鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードを提案します。設定はDSLに保存されません。',
+  sectionTranspose: '移調',
+  transposeNote: '曲全体の鳴る音（キー・コード・メロディ）を移調し、DSLを書き換えます。カポはそのまま・推奨・指定から選べます。',
+  semitones: '移調量（半音）',
+  currentKey: '現在のキー',
+  targetKey: '移調後のキー',
+  capoPolicy: '移調後のカポ',
+  capoKeep: 'そのまま',
+  capoRecommended: '推奨',
+  capoExplicit: '指定',
+  targetCapo: '変更後のカポ'
 };
 
 const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
@@ -650,7 +703,17 @@ const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
   substituted: 'Substituted',
   selectable: 'Selectable',
   notSelectable: 'Not selectable',
-  beginnerNote: 'Suggests an easy capo position and simpler chords while the capo keeps the sounding harmony. Settings are not saved in the DSL.'
+  beginnerNote: 'Suggests an easy capo position and simpler chords while the capo keeps the sounding harmony. Settings are not saved in the DSL.',
+  sectionTranspose: 'Transpose',
+  transposeNote: 'Transposes the sounding music (keys, chords, melody) of the whole song and rewrites the DSL. The capo can be kept, recommended or chosen.',
+  semitones: 'Shift (semitones)',
+  currentKey: 'Current key',
+  targetKey: 'Target key',
+  capoPolicy: 'Capo after transposing',
+  capoKeep: 'Keep',
+  capoRecommended: 'Recommended',
+  capoExplicit: 'Choose',
+  targetCapo: 'Capo after the change'
 };
 
 export function getScoreSettingsEditorMessages(locale: SupportedLocale): ScoreSettingsEditorMessages {

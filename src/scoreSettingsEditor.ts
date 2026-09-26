@@ -1,6 +1,7 @@
 // Score settings editor panel (webview): a generic, section-based editor for score-wide settings.
 // Each section computes its model from the document's current source and applies changes through
-// one undoable WorkspaceEdit; the webview only reports intents. Sections: capo / playability, Beginner Mode.
+// one undoable WorkspaceEdit; the webview only reports intents. Sections: capo / playability, Beginner Mode,
+// sounding transposition.
 
 import * as vscode from 'vscode';
 import { BarrePolicy, BeginnerFailureCode, BeginnerModeOptions, inferBeginnerModeForDsl, isBarrePolicy, planBeginnerTransform, sourcePlayability } from './beginnerMode';
@@ -9,6 +10,7 @@ import { chordKey } from './chordDefinition';
 import { parseGuitarDsl } from './compiler';
 import { Messages, ScoreSettingsEditorMessages, SupportedLocale, getMessages, getScoreSettingsEditorMessages } from './i18n';
 import { renderScoreSettingsEditorHtml } from './render/scoreSettingsEditorHtml';
+import { CapoMode, MAX_SEMITONES, MIN_SEMITONES, TransposeFailureCode, isValidSemitones, planTransposeWithCapo, transposeKeyName } from './transpose';
 
 export const EDIT_SCORE_SETTINGS_COMMAND = 'guitardsl.editScoreSettings';
 export const EDIT_CAPO_COMMAND = 'guitardsl.editCapo';
@@ -65,6 +67,31 @@ export async function applyBeginnerTransform(uri: vscode.Uri, options: BeginnerM
   const plan = planBeginnerTransform(text, options);
   if (!plan.ok) return plan;
   const done = { targetCapo: plan.targetCapo, substitutions: plan.candidate.uniqueSubstitutions, unusedDefinitions: plan.unusedDefinitions };
+  if (plan.text === text) return { ok: true, changed: false, ...done };
+  const applied = await replaceDocumentText(doc, text, plan.text);
+  return applied ? { ok: true, changed: true, ...done } : { ok: false, code: 'editRejected' };
+}
+
+export interface TransposeRequest {
+  semitones: number;
+  capoMode: CapoMode;
+}
+
+export type TransposeApplyResult =
+  | { ok: true; changed: boolean; targetKey: string; targetCapo: number | null; warnings: string[]; unusedDefinitions: string[] }
+  | { ok: false; code: TransposeFailureCode | 'editRejected'; detail?: string };
+
+/**
+ * Applies a sounding transposition (+ capo choice) to the document at `uri`: re-reads the current source,
+ * recomputes the whole plan from it (never from webview-provided text or a previous model) and applies one
+ * undoable WorkspaceEdit. Nothing is edited when any stage fails.
+ */
+export async function applyTransposeTransform(uri: vscode.Uri, request: TransposeRequest): Promise<TransposeApplyResult> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const text = doc.getText();
+  const plan = planTransposeWithCapo(text, request.semitones, request.capoMode);
+  if (!plan.ok) return { ok: false, code: plan.code, detail: plan.detail };
+  const done = { targetKey: plan.targetKey, targetCapo: plan.targetCapo, warnings: plan.warnings, unusedDefinitions: plan.unusedDefinitions };
   if (plan.text === text) return { ok: true, changed: false, ...done };
   const applied = await replaceDocumentText(doc, text, plan.text);
   return applied ? { ok: true, changed: true, ...done } : { ok: false, code: 'editRejected' };
@@ -292,13 +319,122 @@ export class BeginnerSection implements ScoreSettingsSection {
   }
 }
 
+export interface TransposeSectionModel {
+  semitones: number;
+  semitoneRange: [number, number];
+  sourceKey: string;
+  /** Null when the transposed key cannot be computed (unparseable `key:`). */
+  targetKey: string | null;
+  /** Target-key choices synchronized with the shift; null when the initial key cannot be parsed. */
+  keyOptions: { semitones: number; key: string }[] | null;
+  sourceCapo: number | null;
+  capoMode: CapoMode['kind'];
+  explicitCapo: number;
+  targetCapo: number | null;
+  mapping: [string, string][];
+  warnings: string[];
+  canApply: boolean;
+  error?: string;
+}
+
+export class TransposeSection implements ScoreSettingsSection {
+  readonly id = 'transpose';
+  private semitones = 0;
+  private capoMode: CapoMode['kind'] = 'keep';
+  private explicitCapo: number | undefined;
+
+  title(m: ScoreSettingsEditorMessages): string {
+    return m.sectionTranspose;
+  }
+
+  reset(): void {
+    this.semitones = 0;
+    this.capoMode = 'keep';
+    this.explicitCapo = undefined;
+  }
+
+  request(sourceCapo: number | null): TransposeRequest {
+    const capoMode: CapoMode = this.capoMode === 'explicit'
+      ? { kind: 'explicit', capo: this.explicitCapo ?? sourceCapo ?? 0 }
+      : { kind: this.capoMode };
+    return { semitones: this.semitones, capoMode };
+  }
+
+  buildModel(ctx: ScoreSettingsSectionContext): TransposeSectionModel {
+    const m = ctx.messages;
+    const text = ctx.doc.getText();
+    const score = parseGuitarDsl(text);
+    const sourceCapo = parseCapoValue(score.capo);
+    const sourceKey = score.originalKey;
+    const parseable = transposeKeyName(sourceKey, 0) !== null;
+    const keyOptions = parseable
+      ? Array.from({ length: MAX_SEMITONES - MIN_SEMITONES + 1 }, (_, i) => MIN_SEMITONES + i)
+          .map(n => ({ semitones: n, key: transposeKeyName(sourceKey, n) as string }))
+      : null;
+    const plan = planTransposeWithCapo(text, this.semitones, this.request(sourceCapo).capoMode);
+    const vocabulary = Array.from(new Set(score.measures.flatMap(ms => ms.chords.map(c => chordKey(c.name, c.label)))));
+    const warnings: string[] = [];
+    if (plan.ok) {
+      if (plan.unusedDefinitions.length > 0) warnings.push(m.msgCapoUnusedDefinitions(plan.unusedDefinitions.join(', ')));
+      if (plan.warnings.includes('noCapoRecommendation')) warnings.push(m.msgNoCapoRecommendation);
+    }
+    return {
+      semitones: this.semitones,
+      semitoneRange: [MIN_SEMITONES, MAX_SEMITONES],
+      sourceKey,
+      targetKey: plan.ok ? plan.targetKey : transposeKeyName(sourceKey, this.semitones),
+      keyOptions,
+      sourceCapo,
+      capoMode: this.capoMode,
+      explicitCapo: this.explicitCapo ?? sourceCapo ?? 0,
+      targetCapo: plan.ok ? plan.targetCapo : null,
+      mapping: plan.ok ? vocabulary.filter(k => plan.chordMap.has(k)).map(k => [k, plan.chordMap.get(k) as string] as [string, string]) : [],
+      warnings,
+      canApply: plan.ok && plan.text !== text,
+      error: plan.ok ? undefined : m.transposeFailure(plan.code, plan.detail)
+    };
+  }
+
+  async onMessage(ctx: ScoreSettingsSectionContext, msg: any): Promise<void> {
+    if (msg.command === 'setSemitones') {
+      const n = Number(msg.semitones);
+      if (!isValidSemitones(n)) return;
+      this.semitones = n;
+      ctx.refresh();
+    } else if (msg.command === 'setCapoMode') {
+      if (msg.mode === 'keep' || msg.mode === 'recommended') {
+        this.capoMode = msg.mode;
+      } else if (msg.mode === 'explicit' && isValidCapo(Number(msg.capo))) {
+        this.capoMode = 'explicit';
+        this.explicitCapo = Number(msg.capo);
+      } else {
+        return;
+      }
+      ctx.refresh();
+    } else if (msg.command === 'apply') {
+      // The request comes from the host state; the plan is recomputed from the latest document text.
+      const request = this.request(parseCapoValue(parseGuitarDsl(ctx.doc.getText()).capo));
+      const result = await applyTransposeTransform(ctx.doc.uri, request);
+      if (result.ok) {
+        const shift = this.semitones;
+        this.reset();
+        ctx.status(ctx.messages.msgTransposeApplied(shift, result.targetKey));
+      } else {
+        const reason = result.code === 'editRejected' ? ctx.messages.msgCapoEditRejected : ctx.messages.transposeFailure(result.code, result.detail);
+        ctx.status(ctx.messages.msgTransposeApplyFailed(reason), true);
+      }
+      ctx.refresh();
+    }
+  }
+}
+
 export class ScoreSettingsEditorPanel {
   private static current: ScoreSettingsEditorPanel | undefined;
 
   private readonly panel: vscode.WebviewPanel;
   private readonly m: ScoreSettingsEditorMessages;
   private readonly messages: Messages;
-  private readonly sections: ScoreSettingsSection[] = [new CapoSection(), new BeginnerSection()];
+  private readonly sections: ScoreSettingsSection[] = [new CapoSection(), new BeginnerSection(), new TransposeSection()];
   private readonly disposables: vscode.Disposable[] = [];
   private doc!: vscode.TextDocument;
   private activeSection = 'capo';

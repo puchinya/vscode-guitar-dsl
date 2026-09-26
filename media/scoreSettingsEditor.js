@@ -157,6 +157,69 @@
         if (m.error) right.appendChild(el('p', { class: 'error', id: 'beginner-error', text: m.error }));
       }
       return root;
+    },
+
+    transpose(m) {
+      const root = el('div', { class: 'layout' });
+      const left = el('div', { class: 'col' });
+      const right = el('div', { class: 'col' });
+      root.appendChild(left);
+      root.appendChild(right);
+      left.appendChild(el('p', { class: 'note', text: L.transposeNote }));
+
+      const shift = el('select', { id: 'transpose-semitones' });
+      for (let n = m.semitoneRange[0]; n <= m.semitoneRange[1]; n++) {
+        shift.appendChild(el('option', { value: String(n), text: (n > 0 ? '+' : '') + n }));
+      }
+      shift.value = String(m.semitones);
+      shift.addEventListener('change', () => send('setSemitones', { section: 'transpose', semitones: Number(shift.value) }));
+      const controls = el('div', { class: 'summary' });
+      controls.appendChild(el('label', {}, [L.semitones + ': ', shift]));
+      if (m.keyOptions) {
+        // The target key selects the shift (both stay synchronized through the host model).
+        const key = el('select', { id: 'transpose-key' });
+        m.keyOptions.forEach(o => key.appendChild(el('option', { value: String(o.semitones), text: o.key + ' (' + (o.semitones > 0 ? '+' : '') + o.semitones + ')' })));
+        key.value = String(m.semitones);
+        key.addEventListener('change', () => send('setSemitones', { section: 'transpose', semitones: Number(key.value) }));
+        controls.appendChild(el('label', {}, [L.targetKey + ': ', key]));
+      }
+      left.appendChild(controls);
+
+      const capo = el('select', { id: 'transpose-capo-mode' }, [
+        el('option', { value: 'keep', text: L.capoKeep }),
+        el('option', { value: 'recommended', text: L.capoRecommended }),
+        el('option', { value: 'explicit', text: L.capoExplicit })
+      ]);
+      capo.value = m.capoMode;
+      const explicit = el('select', { id: 'transpose-capo' });
+      for (let c = 0; c <= 12; c++) explicit.appendChild(el('option', { value: String(c), text: String(c) }));
+      explicit.value = String(m.explicitCapo);
+      explicit.disabled = m.capoMode !== 'explicit';
+      const sendCapo = () => send('setCapoMode', { section: 'transpose', mode: capo.value, capo: Number(explicit.value) });
+      capo.addEventListener('change', sendCapo);
+      explicit.addEventListener('change', sendCapo);
+      const capoRow = el('div', { class: 'summary' });
+      capoRow.appendChild(el('label', {}, [L.capoPolicy + ': ', capo]));
+      capoRow.appendChild(el('label', {}, [L.capo + ': ', explicit]));
+      left.appendChild(capoRow);
+
+      const facts = el('div', { class: 'summary' });
+      facts.appendChild(el('span', {}, [L.currentKey + ': ', el('b', { text: m.sourceKey })]));
+      facts.appendChild(el('span', {}, [L.targetKey + ': ', el('b', { id: 'transpose-target-key', text: m.targetKey === null ? '—' : m.targetKey })]));
+      facts.appendChild(el('span', {}, [L.currentCapo + ': ', el('b', { text: m.sourceCapo === null ? '—' : String(m.sourceCapo) })]));
+      facts.appendChild(el('span', {}, [L.targetCapo + ': ', el('b', { id: 'transpose-target-capo', text: m.targetCapo === null ? '—' : String(m.targetCapo) })]));
+      left.appendChild(facts);
+
+      right.appendChild(el('h2', { text: L.mapping }));
+      const mapTable = el('table', { class: 'mapping', id: 'transpose-mapping' });
+      m.mapping.forEach(([from, to]) => mapTable.appendChild(el('tr', {}, [el('td', { text: from }), el('td', { text: '→' }), el('td', { text: to })])));
+      right.appendChild(mapTable);
+      if (m.warnings.length > 0 || m.error) {
+        right.appendChild(el('h2', { text: L.warnings }));
+        m.warnings.forEach(w => right.appendChild(el('p', { class: 'warn', text: w })));
+        if (m.error) right.appendChild(el('p', { class: 'error', id: 'transpose-error', text: m.error }));
+      }
+      return root;
     }
   };
 
@@ -178,6 +241,7 @@
   applyBtn.addEventListener('click', () => {
     if (active === 'capo' && model) send('apply', { section: 'capo', capo: model.selectedCapo });
     else if (active === 'beginner' && model) send('apply', { section: 'beginner' });
+    else if (active === 'transpose' && model) send('apply', { section: 'transpose' });
   });
   closeBtn.addEventListener('click', () => send('close'));
 
