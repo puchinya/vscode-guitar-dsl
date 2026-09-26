@@ -14,19 +14,25 @@ const TOLERANCE = 0.1;
 const PITCH = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4, 'E#': 5, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11, 'B#': 0 };
 const SUFFIX_QUALITY = { '': 'maj', m: 'min', '7': '7', maj7: 'maj7', m7: 'min7', sus2: 'sus2', sus4: 'sus4', dim: 'dim', aug: 'aug' };
 /**
- * Harte shorthand -> Audio MIR quality, MIREX-style reduction: extensions fold into the
- * seventh level (9/11/13 -> 7, maj9 -> maj7, min9/min11 -> min7), sixths into the triad,
- * dim7 into dim. hdim7, minmaj7 and interval lists stay unsupported (root recall only).
+ * Harte shorthand -> Audio MIR quality, MIREX-style reduction (approved evaluation rule,
+ * Issue #52): extensions fold into the seventh level (9/11/13 -> 7, maj9/11/13 -> maj7,
+ * min9/11/13 -> min7), sixths into the triad, dim7 into dim. hdim7, minmaj7 and interval
+ * lists stay unsupported (root recall only). Keep in sync with examples/tune_harmony.rs.
  */
 const HARTE_QUALITY = {
   maj: 'maj', maj6: 'maj', min: 'min', min6: 'min', '7': '7', '9': '7', '11': '7', '13': '7',
   maj7: 'maj7', maj9: 'maj7', maj11: 'maj7', maj13: 'maj7', min7: 'min7', min9: 'min7', min11: 'min7', min13: 'min7',
   sus2: 'sus2', sus4: 'sus4', dim: 'dim', dim7: 'dim', aug: 'aug'
 };
-/** Major/minor class of a quality or Harte shorthand (null for sus, power chords, unknown). */
+/**
+ * Major/minor class of a quality or Harte shorthand, following mir_eval `majmin`: only
+ * labels that reduce to a major or minor triad count; dim, hdim7, aug, sus and power
+ * chords are excluded (null). Approved evaluation rule, Issue #52.
+ */
 const TRIAD_CLASS = {
-  maj: 'maj', maj6: 'maj', maj7: 'maj', maj9: 'maj', maj11: 'maj', maj13: 'maj', '6': 'maj', '7': 'maj', '9': 'maj', '11': 'maj', '13': 'maj', aug: 'maj',
-  min: 'min', min6: 'min', min7: 'min', min9: 'min', min11: 'min', min13: 'min', minmaj7: 'min', dim: 'min', dim7: 'min', hdim7: 'min'
+  maj: 'maj', maj6: 'maj', '6': 'maj', '7': 'maj', '9': 'maj', '11': 'maj', '13': 'maj',
+  maj7: 'maj', maj9: 'maj', maj11: 'maj', maj13: 'maj',
+  min: 'min', min6: 'min', min7: 'min', min9: 'min', min11: 'min', min13: 'min', minmaj7: 'min'
 };
 
 function usage() {

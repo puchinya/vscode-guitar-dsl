@@ -58,8 +58,10 @@ fn pitch_class(name: &str) -> Option<usize> {
 }
 
 /// Harte label -> (root, quality in the Audio MIR vocabulary or None), with the same
-/// MIREX-style reduction as `scripts/evaluate-audio-mir.mjs`: added/omitted degrees and
-/// bass are ignored, 9/11/13 -> 7, maj9 -> maj7, min9/min11 -> m7, 6ths -> triad, dim7 -> dim.
+/// MIREX-style reduction as `scripts/evaluate-audio-mir.mjs` (approved evaluation rule,
+/// Issue #52): added/omitted degrees and bass are ignored, 9/11/13 -> 7,
+/// maj9/11/13 -> maj7, min9/11/13 -> m7, 6ths -> triad, dim7 -> dim; hdim7, minmaj7 and
+/// interval lists are unsupported (root only).
 fn parse_harte(label: &str) -> (Option<usize>, Option<&'static str>) {
     if label == "N" || label == "X" {
         return (None, None);

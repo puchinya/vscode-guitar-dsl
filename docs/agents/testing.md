@@ -98,7 +98,7 @@ npx @vscode/vsce ls
 - `media/audio-mir-wasm/` and `wasm/target/` are build output and are git-ignored. `wasm/Cargo.lock` is committed.
 - Optional real-song measurement: `node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>]` reports BPM error, duration-weighted chord root / exact / maj-min recall, chord-change P/R/F1 at ±100 ms, analysis time and peak RSS.
 - Harmony evaluation datasets are local only and never committed. They are required when a change touches chroma, classifier or decoding parameters:
-  - **GuitarSet** (Zenodo 3371780: `annotation/` + `audio_mono-mic/`): `node scripts/evaluate-audio-mir-guitarset.mjs <dir> --players 03,04,05` (report split). Reference chords are the JAMS *performed* annotation, reduced MIREX-style to the 9-quality vocabulary.
+  - **GuitarSet** (Zenodo 3371780: `annotation/` + `audio_mono-mic/`): `node scripts/evaluate-audio-mir-guitarset.mjs <dir> --players 03,04,05` (report split). Reference chords are the JAMS *performed* annotation. Labels are reduced MIREX-style (approved rule, Issue #52): added degrees and the bass are ignored; 9/11/13 → 7, maj9/11/13 → maj7, min9/11/13 → m7, sixths → triad, dim7 → dim; hdim7, minmaj7 and interval-only chords count toward root recall only. maj/min recall follows mir_eval `majmin` (dim, hdim7, aug and sus are excluded). `tune_harmony` uses the same reduction.
   - **Synthetic multi-instrument set** (macOS GM sound bank):
     ```bash
     node scripts/generate-audio-mir-synth-set.mjs <dir> --count 72 --seed 1
