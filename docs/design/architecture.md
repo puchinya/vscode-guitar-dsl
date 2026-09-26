@@ -109,8 +109,10 @@ flowchart TD
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
   - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
+  - `originalKey` / `bpm` / `keySignature` は**冒頭の**メタデータ（最後に見たイベントではない）。冒頭の拍子 `timeSignature`、フィール `feel`、弱起 `pickup?`、スコアイベント列 `events` を持つ（§2.12）。
+  - `MeasureData` は `measureIndex`（全体での 0 始まり）、解決済みのコンテキスト `context: ResolvedMeasureContext`、その小節の直前に適用されるイベント `eventsBefore`、期待する長さ `expectedBeats`、`isPickup?` を持つ。描画はこれだけを参照し、DSL のイベント行を読み直さない。
   - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。採用した位置の直後から次のトークンを探すので、同じ小節の同名コード（`| l:"C" C C |`）はそれぞれ別の範囲になる。
-- **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 3連）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
+- **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 連符比）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
 - **パーサー (`parseGuitarDsl`)**:
   - `mel:` / `lyr:` 行は小節行より先に判定する。メロディは「未割り当て小節カーソル」で小節へ割り当て、セクション見出し・改ページでカーソルを末尾へ進める。`lyr:` は直前の `mel:` 行が割り当てた音符列に番ごとに音節を割り当てる。
   - 構文上の問題は例外にせず `diagnostics` に積み、該当トークンを捨てて処理を継続する（§5）。
@@ -265,6 +267,46 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
     - 出力チャンネルを所有し、`context.subscriptions` に登録して拡張の終了時に破棄する。
   - `vscode` を import するのは `controller.ts` だけである。
 
+### 2.12 スコアイベントと小節コンテキスト (`src/scoreEvents.ts`)
+
+公開の振る舞いは `docs/specs/guitardsl-syntax.md` §16。`src/scoreEvents.ts` は VS Code・Webview に依存しない純粋モジュールで、イベント・コンテキストの型と解決処理を持つ。構文（行の認識・列範囲）はパーサーが持つ。
+
+- **型**: `TimeSignature { numerator, denominator: 1|2|4|8|16, groups }`、`Feel`、`Ottava`、`ResolvedMeasureContext { key, keySignature, tempoBpm, timeSignature, feel, ottava }`。`ScoreEvent` は判別共用体（`keyChange` / `tempoChange` / `tempoMark`（`ritardando` / `accelerando` / `aTempo` / `tempoPrimo`）/ `timeSignatureChange` / `feelChange` / `dynamic` / `rehearsalMark` / `text` / `ottavaChange`）で、どれもソース行・値の列範囲・適用先 `beforeMeasure`（全体の小節インデックス）を持つ。ParsedScore にイベントごとの任意項目を増やす方式は採らない。
+- **値の解析**: `parseTimeSignature`（範囲・グループ検証、省略時のグループ `defaultBeatGroups`）、`measureBeats(ts)` = `分子 × 4 / 分母`（有理数）、`beamGroupBoundaries(ts)`、テンポ・フィール・強弱・オッターヴァの正規化 `parseDirective(name, value)`。失敗は理由コード付きで返し、例外にしない。
+- **3 段階の状態**: 冒頭メタデータ（ヘッダー）＋ 記述順のイベント列 → `applyScoreEvent(context, event, initial)` で順に適用 → 各 `MeasureData.context` に保存。持続するもの（調・数値テンポ・拍子・フィール・オッターヴァ）だけがコンテキストを変え、注記（強弱・マーク・テキスト・文字のテンポ記号）は `eventsBefore` として小節に付く。`tempo primo` は冒頭の BPM が正しい数値ならその値に戻す。
+- **パーサーでの流れ**: `@` 行は `pendingEvents` に積み、`beforeMeasure = 現在の小節数`。小節・メロディの長さの検証は**全行の走査後**（コンテキストの確定後）にまとめて行う（`time:` ヘッダーが本文より後にあってもよいため）。後処理で、各小節の直前のイベントを適用してコンテキスト・期待長さを決め、弱起（最初の小節・最後の補完）、`%` の拍子の境界（`measureRepeatMeterMismatch`）、既定リズム（拍子に応じた生成）、均等割りの複数コード位置を決める。最後の小節より後のイベントは `orphanScoreEvent`。
+- **ソース位置**: イベント値の列範囲（`ScoreEvent.valueStart/valueEnd`）、音高の列範囲 `pitchTokens: PitchTokenSpan[]`（`mel:` の音符と小節内の音高付き音符。音名＋臨時記号＋オクターブの部分）。実音移調（§2.14）が使う。
+- **段の分割（構造的な段区切り）**: `splitIntoRows` が、値の変わる `@key` / `@time` を持つ小節の前で段を区切る（段頭なら何もしない）。改ページではなく、自動改ページはその後に通常どおり行う。`measuresPerRow` はそれ以外の上限。描画ループに「最初の小節だけ特別扱い」を散らさない。
+- **段頭の幅の不変条件**: `RenderContext.startX`（全段共通の第1小節線）は、すべての段頭のうち最大の幅（調号・打ち消しのナチュラル・表示する拍子記号）から決める。段ごとに第1小節線を動かさない。拍子記号は第1段と `@time` で始まる段だけに描く。調号は段の最初の小節のコンテキストの調号、`@key` で始まる段は前の小節の調号の打ち消しを先に描く。メロディのない段は調号の代わりに `Key: X` を注記欄に描く。
+- **注記欄（annotation lanes）**: `SystemGeometry` に `lanes`（上の欄: `mark` / `tempo` / `text` / `ottava` / `technique` の順、必要なものだけ）と `annotationTop`・`annotationBottom`（強弱欄）を持つ。段の内容は `annotationTop` だけ下へ平行移動し、`unitHeight` に上下の欄の高さを含める。これによりページ分割（残り高さの計算）が注記を含めた高さで行われ、隣の段と重ならない。欄の中の文字列は小節ごとの x に置き、前の要素の右端より左に来ないようにずらす。
+- **拍子と横位置**: `chordXAt`・既定の均等割り・リードシートの拍スラッシュ・連桁のまとまりは小節の `context.timeSignature` を使い、4 拍を仮定しない。フィールは拍数・横位置の計算に影響しない。
+- **採譜・Audio MIR との境界**: YouTube 採譜・Audio MIR は新しい記法を推定しない（従来の範囲の DSL を出力する）。出力された DSL はこの仕組みでそのまま解析・描画される。`NoteValuePart` の連符表現の型移行だけは両モジュールにも機械的に反映する（出力 DSL・挙動は不変、Issue #68 で承認）。
+
+### 2.13 連符と奏法 (`src/duration.ts`, `src/melody.ts`, `src/render/technique.ts`)
+
+- **連符**: `NoteValuePart.tuplet?: { actual, normal }` の 1 つの表現だけを持つ（`t` は `{3, 2}` に解析する）。拍数は `基本音価 × normal / actual` の有理数。描画は `tupletGroups`（同じ比率の連続、小節内、`normal` 個分の基本音価で完結）で括弧と `actual` の数字を描く。完結しない連続は `incompleteTupletGroup` 警告（パーサーが同じ関数で判定）。
+- **奏法モデル**: `NoteTechniques { connection?: 'hammer'|'pull'|'slide'|'gliss', bend?, vibrato?, staccato?, tenuto?, fermata?, breath?, grace?, slurStart?, slurEnd?, palmMute?, letRing? }`。未検証の文字列配列は持たない。`parseTechniqueBlock` が名前・重複・両立しない組み合わせ・`bend` の量を検証する。`MelodyNote.techniques` と `RhythmItem.techniques`（小節内の音高付き音符の `{...}`、スラッシュの `.pm` 等の修飾子）が同じ型を使う。
+- **装飾音符**: `grace` の音符は `beats = 0` で、`parts` は符頭・旗の形だけに使う。列（`computeMeasureColumns`）の発音位置に含めず、次の拍を持つ音符の左に縮小して描く。`takesSyllable` は装飾音符を除く。
+- **接続・スラーの検証**: パーサーの後処理で、メロディの並び（全小節の `mel:` 音符）と小節内音符の並びごとに、接続先（次の休符でも装飾音でもない音符）とスラーの対応（入れ子不可）を決め、`danglingTechnique` / `danglingGrace` / `nestedSlur` / `unmatchedSlurEnd` / `unclosedSlur` を報告する。描画は同じ規則で接続先を探す。
+- **段をまたぐ描画**: 接続線・スラー・`P.M.` / `let ring` の範囲・オッターヴァは段ごとに閉じた図形として描く（始点の段は段末まで、終点の段は段頭から）。ページ・段の座標をまたぐ 1 本のパスは作らない。
+- **描画ヘルパー**: `src/render/technique.ts` がアーティキュレーション・接続線・範囲線の SVG 断片を持ち、メロディ譜表とリズム譜表で共用する。
+
+### 2.14 実音移調 (`src/transpose.ts`, `TransposeSection`)
+
+公開の振る舞いは `docs/specs/guitardsl-syntax.md` §4.5、`docs/specs/extension.md` §4B.5。
+
+**依存方向**: `compiler` / `chordDefinition` / `capo`（`transposeChordName`・`planCapoTransform`・`inferCapoForDsl`）→ `src/transpose.ts`（純粋、VS Code 非依存）→ `src/scoreSettingsEditor.ts`。
+
+- **`planSoundingTranspose(text, semitones)`**: AST から DSL を書き戻さず、`headerLines` の `key` / `original_key` の値、`ScoreEvent` の `@key` の値、`chordTokens` のコード名部分（`replaceChordTokenNames` を再利用）、`pitchTokens` の音高部分だけを置き換える（コメント・空白・改行コード・長さ指定・奏法・歌詞・セクションはバイト単位で保持）。1 行の中の置き換えは右から行う。キーはルートを `NOTE_NAMES` の綴りで移調し `m` を残す。音高はオクターブを含む半音数で移調して綴り直し、オクターブが 0〜9 を外れたら `pitchOutOfRange`。コード名は `transposeChordName`。
+  1. 元テキストにエラー診断があれば `sourceParseError`。範囲外の移調量は `invalidSemitones`。
+  2. 移調量が 0 でなく使われているラベル付きコードがあれば `labeledChordVariant`、変わったコード名の変換先と同名の（別のコードを表す）ラベルなし `chord` 定義があれば `customDefinitionCollision`。定義は変更・削除しない。
+  3. 変換後を解析し直し、エラー診断・コード配置列・音高列・キーの不一致があれば `transformedParseError`。
+  4. 使われなくなる定義は `unusedDefinitions`（警告）。
+- **`planTransposeWithCapo(text, semitones, capoMode)`**: 実音移調 → 解析し直し → カポの選択（`keep`: 何もしない / `explicit`: 指定 / `recommended`: 移調後のテキストに `inferCapoForDsl` の `recommendedCapo`、推奨がなければカポそのままで警告 `noCapoRecommendation`）→ `planCapoTransform` → 最終の解析。カポの評価式は複製しない。失敗は型付きで返し、途中の変換結果を成功として返さない。
+- **`TransposeSection`**（id `transpose`）: ホストが移調量とカポ方針を保持し、モデル（現在・移調後のキー、キー候補、現在のカポ、コード対応、警告・エラー）をドキュメントの現在のテキストから計算する。`applyTransposeTransform(uri, request)` は `openTextDocument` の最新テキストから計画をやり直し、`applyCapoTransform` と共通の差分置換で 1 つの `WorkspaceEdit` として適用する（元に戻す 1 回で戻る）。Webview からのテキストや対応表は使わない。
+- **初心者モードとの関係**: 移調は常に `TextDocument.getText()` から計算し、プレビューの一時的な初心者モード・カポ変更の出力を入力にしない。適用後、プレビューの一時状態は通常どおり新しいテキストから再計算される（§2.11）。
+- **メッセージ**: `setSemitones { section: 'transpose', semitones }`、`setCapoMode { section: 'transpose', mode: 'keep' | 'recommended' | 'explicit', capo? }`、`apply { section: 'transpose' }`。
+
 ### 2.10 カポ推論・弾きやすさ・カポ変更 (`src/capo.ts`, `src/previewCapo.ts`, `src/scoreSettingsEditor.ts`)
 
 **依存方向**: `chordDetect` / `chordPresets` / `chordDefinition` / `compiler` → `src/capo.ts` → 楽譜設定エディタ・プレビュー・（将来の）採譜など。`src/capo.ts` は VS Code・Webview・`src/transcription/`・`src/audioMir/` に依存しない純粋なモジュールで、単体テストの対象。
@@ -287,7 +329,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **有効 DSL `resolveEffectiveDsl(source, targetCapo?)`**: 目標なし・目標が元のカポと同じなら元のテキストそのもの、それ以外は `planCapoTransform(source, target).text`。常に元のテキストから計算するため、カポを何度変えても変換が積み重ならない。通常のカポ一時変更（`PreviewCapoController`）の有効 DSL はこの関数で作る。プレビューと PDF の最終的な有効 DSL は §2.11 の `resolvePreviewEffectiveDsl` が選ぶ（初心者モードが有効ならそちらを優先）。
 - **`buildCapoPreviewUiModel(source, target?, warning?)`**: プレビューのカポバー用の計算済みモデル（候補は `inferCapoForDsl`）。`previewHtml.ts` はこれを描画するだけで推論しない。
 - **`PreviewCapoController`**（`src/previewCapo.ts`、ホスト側）: `PreviewCapoState { documentUri, targetCapo }` を保持する（永続化しない）。`setTarget` は変換可能なときだけ状態を設定し（元のカポと同じなら解除）、`onDidChange` で再描画させる。`resolve(doc)` は毎回最新のテキストから有効 DSL を計算し、変換できなくなっていれば状態を解除して警告を出す。`switchDocument` は別ドキュメントなら解除する。`effectiveDslProbe` に最後のプレビュー入力・PDF 入力を記録する（E2E テストで同一性を確認するため）。
-- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection`（id `capo`）と `BeginnerSection`（id `beginner`、§2.11）。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
+- **楽譜設定エディタ `ScoreSettingsEditorPanel`**（`src/scoreSettingsEditor.ts`、`media/scoreSettingsEditor.js`）: シングルトン。`ScoreSettingsSection`（`id`、`title`、`buildModel(ctx)`、`onMessage(ctx, msg)`、`reset()`）の配列を持つセクション方式で、現在は `CapoSection`（id `capo`）、`BeginnerSection`（id `beginner`、§2.11）、`TransposeSection`（id `transpose`、§2.14）。モデルはドキュメントの現在のテキストから計算し、文言はホスト側で解決して JSON で送る。ドキュメントの編集に追従して再送する。
 - **適用 `applyCapoTransform(uri, targetCapo)`**: `openTextDocument` で開き直した最新のテキストから `planCapoTransform` をやり直し、変わった範囲（共通の前後を除いた部分）を 1 つの `WorkspaceEdit` で置き換える（元に戻す 1 回で戻る）。エディタとプレビューの「DSLに適用」で共用する。
 - **メッセージ**:
 
@@ -457,7 +499,8 @@ sequenceDiagram
 
 ### 4.1 ページ分割ロジック
 - **手動改ページ**: パーサーが `pagebreak` で `ScorePage` を分割し、レイアウトは各 `ScorePage` の先頭で新しいページを開始する。
-- **自動改ページ**: `layoutScore()` がページの残り高さ（カラム高さ − ヘッダー / ランニングヘッダー − フッター）を追跡し、次の段が収まらなければ新しいページを開始する。
+- **自動改ページ**: `layoutScore()` がページの残り高さ（カラム高さ − ヘッダー / ランニングヘッダー − フッター）を追跡し、次の段が収まらなければ新しいページを開始する。段の高さは注記欄を含む `SystemGeometry.unitHeight` を使う。
+- **段の分割**: `splitIntoRows()` が手動改ページ内を `measuresPerRow` 以下で段に分け、値の変わる `@key` / `@time` の小節の前でも段を区切る（§2.12）。小節の重複・欠落はない。
 - **ヘッダー描画**: 1ページ目にはタイトル、アーティスト、メタデータ、およびコードダイアグラムを描画し、2ページ目以降はランニングヘッダーを描画する。
 - **ページ番号**: 自動改ページ後の物理ページ番号（`LayoutPage.pageNumber`）を用いる。
 
