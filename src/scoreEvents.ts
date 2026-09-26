@@ -139,15 +139,14 @@ export function formatTimeSignature(ts: TimeSignature): string {
 }
 
 /**
- * Start offsets (quarter beats) of the beam groups of a measure. Groups follow the beat grouping;
- * for an eighth/sixteenth meter whose groups are all single units (e.g. 3/8) the whole measure is one group.
+ * Start offsets (quarter beats) of the beam groups of a measure. `ts.groups` is the sole grouping
+ * authority (spec §16.2): each group spans its count of denominator units, e.g. 3/8 → three groups.
  */
 export function beamGroupStarts(ts: TimeSignature): Fraction[] {
   const unit = frac(4, ts.denominator);
-  const groups = ts.denominator >= 8 && ts.groups.every(g => g === 1) ? [ts.numerator] : ts.groups;
   const starts: Fraction[] = [];
   let acc = 0;
-  for (const g of groups) {
+  for (const g of ts.groups) {
     starts.push(frac(acc * unit.n, unit.d));
     acc += g;
   }

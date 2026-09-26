@@ -51,13 +51,18 @@ export function bendLabel(semitones: number): string {
   return `${whole > 0 ? whole : ''}${halfText}` || '0';
 }
 
+/** Minimum rise of a bend arrow above its notehead. */
+const MIN_BEND_RISE = 10;
+
 /** Upward curved arrow from the right of a notehead at (x, y) to `topY`, with the bend amount above. */
 export function renderBend(x: number, y: number, topY: number, semitones: number): string {
+  // A caller's requested top can fall below a high notehead; the arrow must still point upward.
+  const endY = Math.min(topY, y - MIN_BEND_RISE);
   const sx = x + 6;
   const ex = x + 14;
-  return `<g class="technique-bend"><path d="M ${fmt(sx)},${fmt(y)} Q ${fmt(ex)},${fmt(y)} ${fmt(ex)},${fmt(topY + 4)}" fill="none" stroke="#000" stroke-width="1.1"/>`
-    + `<path d="M ${fmt(ex - 2.6)},${fmt(topY + 5)} L ${fmt(ex)},${fmt(topY)} L ${fmt(ex + 2.6)},${fmt(topY + 5)} Z" fill="#000"/>`
-    + `<text x="${fmt(ex)}" y="${fmt(topY - 2)}" font-size="7" text-anchor="middle" fill="#000">${escapeXml(bendLabel(semitones))}</text></g>`;
+  return `<g class="technique-bend"><path d="M ${fmt(sx)},${fmt(y)} Q ${fmt(ex)},${fmt(y)} ${fmt(ex)},${fmt(endY + 4)}" fill="none" stroke="#000" stroke-width="1.1"/>`
+    + `<path d="M ${fmt(ex - 2.6)},${fmt(endY + 5)} L ${fmt(ex)},${fmt(endY)} L ${fmt(ex + 2.6)},${fmt(endY + 5)} Z" fill="#000"/>`
+    + `<text x="${fmt(ex)}" y="${fmt(endY - 2)}" font-size="7" text-anchor="middle" fill="#000">${escapeXml(bendLabel(semitones))}</text></g>`;
 }
 
 /**

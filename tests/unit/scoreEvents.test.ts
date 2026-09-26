@@ -58,7 +58,7 @@ describe('scoreEvents - time signatures', () => {
     assert.ok(feq(beats('5/16'), frac(5, 4)));
   });
 
-  it('groups beams by beat group (4/4 per beat, 6/8 per dotted quarter, 3/8 per measure)', () => {
+  it('groups beams by beat group (4/4 per beat, 6/8 per dotted quarter, 3/8 per eighth)', () => {
     const ts = (s: string) => {
       const r = parseTimeSignature(s);
       assert.ok(r.ok);
@@ -67,7 +67,8 @@ describe('scoreEvents - time signatures', () => {
     assert.deepStrictEqual([0, 0.5, 1, 3.5].map(o => beamGroupIndex(ts('4/4'), o)), [0, 0, 1, 3]);
     assert.deepStrictEqual([0, 1, 1.5, 2.5].map(o => beamGroupIndex(ts('6/8'), o)), [0, 0, 1, 1]);
     assert.deepStrictEqual([0, 0.5, 1, 1.5, 2].map(o => beamGroupIndex(ts('7/8(2+2+3)'), o)), [0, 0, 1, 1, 2]);
-    assert.deepStrictEqual([0, 0.5, 1].map(o => beamGroupIndex(ts('3/8'), o)), [0, 0, 0]);
+    assert.deepStrictEqual([0, 0.5, 1].map(o => beamGroupIndex(ts('3/8'), o)), [0, 1, 2]);
+    assert.deepStrictEqual([0, 0.5, 1].map(o => beamGroupIndex(ts('3/8(1+1+1)'), o)), [0, 1, 2]);
   });
 });
 

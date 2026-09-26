@@ -2,9 +2,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
-import { SYSTEM_UNIT_HEIGHT, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
+import { DYNAMICS_LANE_HEIGHT } from '../../src/render/annotations';
+import { SYSTEM_UNIT_HEIGHT, estimateTextWidth, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
 import { getRenderContext, staffPosition, writtenStaffPosition } from '../../src/render/notation';
 import { renderContinuousSvg, renderScoreSheets } from '../../src/render/svg';
+import { renderBend } from '../../src/render/technique';
 
 // Unique fragment of the vector natural glyph (src/render/notation.ts).
 const NATURAL = 'x1="-2" y1="-8"';
@@ -291,4 +293,43 @@ describe('render - legacy regression (T002)', () => {
       assert.strictEqual(sha(normalize(svg)), hash);
     });
   }
+});
+
+describe('render - PR #69 review delta (dynamics collision, bend direction)', () => {
+  /** [startY, curveEndY, arrowTipY] of each technique-bend group. */
+  const bends = (svg: string) =>
+    [...svg.matchAll(/class="technique-bend"><path d="M [\d.-]+,([\d.-]+) Q [\d.-]+,[\d.-]+ [\d.-]+,([\d.-]+)"[^>]*\/><path d="M [\d.-]+,[\d.-]+ L [\d.-]+,([\d.-]+)/g)]
+      .map(m => [Number(m[1]), Number(m[2]), Number(m[3])]);
+
+  it('places several dynamics before one measure left to right without overlap (D004, D005)', () => {
+    const score = parseGuitarDsl(`@dynamic: p\n@dynamic: sfz\n${bar}`);
+    const g = splitIntoRows(score)[0][0].geometry;
+    assert.strictEqual(g.annotationBottom, DYNAMICS_LANE_HEIGHT);
+    const dyn = [...renderContinuousSvg(score).matchAll(/class="annotation-dynamic" x="([\d.-]+)"[^>]*>([^<]*)</g)];
+    assert.deepStrictEqual(dyn.map(m => m[2]), ['p', 'sfz']);
+    const [x1, x2] = dyn.map(m => Number(m[1]));
+    assert.ok(x2 >= x1 + estimateTextWidth('p', 12, true) + 8 - 0.01, `sfz at ${x2} overlaps p at ${x1}`);
+  });
+
+  it('keeps the bend arrow above a high melody note (D006)', () => {
+    const svg = svgOf('| C | 4 4 4 4 |\nmel: | f6/4{bend:2} g6/4 a6/2 |');
+    const b = bends(svg);
+    assert.strictEqual(b.length, 1);
+    const [startY, curveEnd, tip] = b[0];
+    assert.ok(curveEnd < startY && tip < startY, `bend points down: start ${startY}, end ${curveEnd}, tip ${tip}`);
+    assert.ok(svg.includes('>full</text>'));
+  });
+
+  it('keeps the bend arrow above a high inline note (D008)', () => {
+    const b = bends(svgOf('| C | f6/4{bend:2} 4 4 4 |'));
+    assert.strictEqual(b.length, 1);
+    assert.ok(b[0][1] < b[0][0] && b[0][2] < b[0][0]);
+  });
+
+  it('enforces a minimum rise in the shared helper and keeps valid endpoints (D007, D008)', () => {
+    const [[, , clampedTip]] = bends(renderBend(0, 50, 80, 2));
+    assert.ok(clampedTip <= 40);
+    const [[, , tip]] = bends(renderBend(0, 50, 20, 2));
+    assert.strictEqual(tip, 20);
+  });
 });

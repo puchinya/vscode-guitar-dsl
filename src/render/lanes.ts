@@ -141,9 +141,12 @@ export function renderRowLanes(row: SystemRow, ctx: RenderContext, spans: RowSpa
 
   if (geometry.annotationBottom > 0) {
     const y = geometry.annotationTop + geometry.contentHeight;
+    let dynamicRight = -Infinity;
     for (const d of annotations.dynamics) {
       const { bx } = measureBounds(ctx, measures.length, d.measure);
-      out += `<text class="annotation-dynamic" x="${fmt(bx + 8)}" y="${fmt(y + 13)}" font-size="12" font-weight="bold" font-style="italic" fill="#000">${escapeXml(d.text)}</text>`;
+      const x = Math.max(bx + 8, dynamicRight + 8);
+      out += `<text class="annotation-dynamic" x="${fmt(x)}" y="${fmt(y + 13)}" font-size="12" font-weight="bold" font-style="italic" fill="#000">${escapeXml(d.text)}</text>`;
+      dynamicRight = x + estimateTextWidth(d.text, 12, true);
     }
   }
   return out;
