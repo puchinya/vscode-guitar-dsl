@@ -1,5 +1,9 @@
 import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl, expandMeasureRepeat } from '../compiler';
-import { Fraction, NoteValuePart, ZERO, fadd, fnum } from '../duration';
+import { Fraction, NoteBase, NoteValuePart, fnum, tupletGroups } from '../duration';
+import { beamGroupIndex } from '../scoreEvents';
+import { RowSpanCollector, connectionLinks, hasRhythmLaneMark, isLetRing, isPalmMute, newRowSpanCollector } from './annotations';
+import { renderRowLanes } from './lanes';
+import { renderBend, renderBreath, renderGliss, renderHammerPull, renderSlide, renderSlur, renderStaccato, renderTenuto } from './technique';
 import { diagramStringX, renderChordDiagramSvg } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
 import {
@@ -39,10 +43,11 @@ import { renderMelodyStaff } from './melodyStaff';
 import {
   FETA_TREBLE_CLEF_PATH,
   RenderContext,
+  SystemPrefix,
+  barBeats,
   chordXAt,
   computeMeasureColumns,
   escapeXml,
-  expandParts,
   fmt,
   getRenderContext,
   measureBounds,
@@ -53,10 +58,12 @@ import {
   renderNotehead,
   renderRestGlyph,
   renderTieArc,
+  renderTimeSignature,
+  rhythmHeads,
   rhythmParts,
-  staffPosition,
-  HEAD_RX,
-  tripletGroups
+  systemPrefix,
+  writtenStaffPosition,
+  HEAD_RX
 } from './notation';
 
 export { escapeXml } from './notation';
@@ -160,21 +167,28 @@ function renderPage(score: ParsedScore, layout: ScoreLayout, page: LayoutPage, t
 
 function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderContext): string {
   const geometry = row.geometry;
+  const prefix = systemPrefix(ctx, row.measures[0], row.isFirstSystem);
+  const spans = newRowSpanCollector();
   let content: string;
   if (geometry.kind === 'rhythm') {
-    content = renderSystemSvgContent(row.measures, row.isFirstSystem, ctx, { drawHeader: true, drawTimeSignature: true });
+    content = renderSystemSvgContent(row.measures, ctx, { drawHeader: true, drawTimeSignature: true, prefix, spans });
   } else {
     // Melody system: melody staff + syllable lyrics on top, then (unless lead sheet) the rhythm staff shifted down.
     content = renderMelodyStaff(row.measures, ctx, {
       isFirstSystem: row.isFirstSystem,
       geometry,
-      includeRhythmColumns: geometry.kind === 'melody'
+      includeRhythmColumns: geometry.kind === 'melody',
+      prefix,
+      spans
     });
     if (geometry.kind === 'melody') {
-      content += `<g transform="translate(0, ${fmt(geometry.rhythmOffset)})">${renderSystemSvgContent(row.measures, row.isFirstSystem, ctx, { drawHeader: false, drawTimeSignature: true })}</g>`;
+      content += `<g transform="translate(0, ${fmt(geometry.rhythmOffset)})">${renderSystemSvgContent(row.measures, ctx, { drawHeader: false, drawTimeSignature: true, prefix, spans })}</g>`;
     }
   }
-  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${content}</g>\n`;
+  // Annotation lanes sit above the notation, which is shifted down by their height (spec §11).
+  const lanes = renderRowLanes(row, ctx, spans);
+  const body = geometry.annotationTop > 0 ? `<g transform="translate(0, ${fmt(geometry.annotationTop)})">${content}</g>` : content;
+  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${body}</g>\n`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {
@@ -271,9 +285,22 @@ interface RhythmStaffOptions {
   drawHeader: boolean;
   /** Omit the time signature (drawn on the melody staff instead). */
   drawTimeSignature: boolean;
+  prefix: SystemPrefix;
+  spans: RowSpanCollector;
 }
 
-function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: RenderContext, opts: RhythmStaffOptions): string {
+/** All rhythm items of the score in order (inline-note connections / slurs / spans across systems). */
+const rhythmSequenceCache = new WeakMap<object, RhythmItem[]>();
+function rhythmSequence(ctx: RenderContext): RhythmItem[] {
+  let seq = rhythmSequenceCache.get(ctx.score);
+  if (!seq) {
+    seq = ctx.score.measures.flatMap(m => (m.isMeasureRepeat ? [] : m.rhythms));
+    rhythmSequenceCache.set(ctx.score, seq);
+  }
+  return seq;
+}
+
+function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opts: RhythmStaffOptions): string {
   const style = ctx.score.style;
   const totalWidth = ctx.totalWidth;
   const chordSize = style?.chordSize ?? 15;
@@ -291,13 +318,14 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
 
   // Treble clef appears at the start of every system row (standard musical notation convention)
   let clefSvg = `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
-  if (isFirst && opts.drawTimeSignature) {
-    const tx = 58 + ctx.keySignatureWidth;
-    clefSvg += `<text x="${tx}" y="${staveY + 14}" font-size="14" font-weight="bold">4</text>`;
-    clefSvg += `<text x="${tx}" y="${staveY + 30}" font-size="14" font-weight="bold">4</text>`;
+  if (opts.drawTimeSignature) {
+    clefSvg += renderTimeSignature(opts.prefix, staveY);
   }
 
   let barsSvg = '';
+  // First heads of inline pitched notes in this row, for connections / slurs drawn after all measures.
+  const inlineAt = new Map<RhythmItem, { x: number; y: number }>();
+  const spanEntries: { x: number; palmMute: boolean; letRing: boolean; item: RhythmItem }[] = [];
 
   measures.forEach((m, idx) => {
     // Align measure barlines consistently across all rows
@@ -377,7 +405,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
         chordsToRender.forEach((ch, chIdx) => {
           let chordX = bx + 8;
           if (chIdx > 0 || ch.beat > 0) {
-            chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / 4.0) * usableW);
+            chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / barBeats(m)) * usableW);
           }
           chordX = Math.max(lastChordRight + 6, chordX);
           const chordName = renderChordName(ch, chordX, chordSize);
@@ -426,33 +454,49 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
 
     const columns = computeMeasureColumns(m, bx, actualBarWidth, true);
     const rhythmDetails: RenderedRhythm[] = [];
+    const ottava = m.context.ottava;
 
-    let curBeat = ZERO;
-    m.rhythms.forEach(r => {
-      for (const head of expandParts(rhythmParts(r.duration), curBeat)) {
-        const isWhole = head.part.base === 1;
-        const isHalf = head.part.base === 2;
-        const rx = columns.xAt(head.offset) ?? bx + actualBarWidth / 2;
-        const pos = r.pitch ? staffPosition(r.pitch) : undefined;
-        const noteY = pos !== undefined ? staveLines[4] - pos * 4 : undefined;
-        const stemX = r.pitch ? rx + HEAD_RX - 0.4 : (isWhole ? rx : rx + 6.5);
-        rhythmDetails.push({
-          item: r,
-          beats: fnum(head.beats),
-          beatFraction: head.beats,
-          part: head.part,
-          beatOffset: fnum(head.offset),
-          rx,
-          stemX,
-          isWhole,
-          isHalf,
-          isQuarterOrShorter: !isWhole && !isHalf,
-          isFirstPart: head.isFirstPart,
-          pos,
-          noteY
-        });
-        curBeat = fadd(head.offset, head.beats);
-      }
+    const { heads, graces } = rhythmHeads(m);
+    for (const head of heads) {
+      const r = head.item;
+      const isWhole = head.part.base === 1;
+      const isHalf = head.part.base === 2;
+      const rx = columns.xAt(head.offset) ?? bx + actualBarWidth / 2;
+      const pos = r.pitch ? writtenStaffPosition(r.pitch, ottava) : undefined;
+      const noteY = pos !== undefined ? staveLines[4] - pos * 4 : undefined;
+      const stemX = r.pitch ? rx + HEAD_RX - 0.4 : (isWhole ? rx : rx + 6.5);
+      rhythmDetails.push({
+        item: r,
+        beats: fnum(head.beats),
+        beatFraction: head.beats,
+        part: head.part,
+        beatOffset: fnum(head.offset),
+        rx,
+        stemX,
+        isWhole,
+        isHalf,
+        isQuarterOrShorter: !isWhole && !isHalf,
+        isFirstPart: head.isFirstPart,
+        pos,
+        noteY
+      });
+    }
+
+    // Inline grace notes: scaled heads left of the next timed head (end of the measure when none follows).
+    graces.forEach(g => {
+      if (!g.item.pitch) return;
+      const target = heads.find(h => h.itemIndex > g.itemIndex);
+      const targetX = target ? (columns.xAt(target.offset) ?? bx + actualBarWidth / 2) : bx + actualBarWidth - 6;
+      const run = graces.filter(o => o.itemIndex > g.itemIndex && (!target || o.itemIndex < target.itemIndex)).length;
+      const gx = targetX - 12 - run * 9;
+      const gy = staveLines[4] - writtenStaffPosition(g.item.pitch, ottava) * 4;
+      const base = (rhythmParts(g.item.duration)[0]?.base ?? 8) as NoteBase;
+      let inner = renderNotehead(base, 0, 0)
+        + `<line x1="${fmt(HEAD_RX - 0.4)}" y1="-1" x2="${fmt(HEAD_RX - 0.4)}" y2="-26" stroke="#000" stroke-width="1.5"/>`
+        + renderFlags(Math.max(8, base) as NoteBase, HEAD_RX - 0.4, -26);
+      if (g.item.pitch.alter !== 0) inner += renderAccidental(g.item.pitch.alter, -10, 0);
+      barsSvg += `<g class="technique-grace" transform="translate(${fmt(gx)}, ${fmt(gy)}) scale(0.62)">${inner}</g>`;
+      inlineAt.set(g.item, { x: gx, y: gy });
     });
 
     // Chords (placed clearly above picking marks: baseline at y = 33)
@@ -465,7 +509,7 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       chordsToRender.forEach((ch, chIdx) => {
         let chordX = bx + 8;
         if (chIdx > 0 || ch.beat > 0) {
-          chordX = chordXAt(columns, bx, actualBarWidth, ch.beat);
+          chordX = chordXAt(columns, bx, actualBarWidth, ch.beat, barBeats(m));
         }
         chordX = Math.max(lastChordRight + 6, chordX);
         const chordName = renderChordName(ch, chordX, chordSize);
@@ -474,13 +518,13 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       });
     }
 
-    // Beam grouping for eighth and sixteenth notes (group by integer beat floor)
+    // Beam grouping for eighth and sixteenth notes (by the beat groups of the measure's time signature)
     const beamedIndices = new Set<number>();
     const beatGroups: Map<number, number[]> = new Map();
 
     rhythmDetails.forEach((rd, idx) => {
       if (!rd.item.isRest && rd.part.base >= 8) {
-        const beatKey = Math.floor(rd.beatOffset + 1e-9);
+        const beatKey = beamGroupIndex(m.context.timeSignature, rd.beatOffset);
         if (!beatGroups.has(beatKey)) {
           beatGroups.set(beatKey, []);
         }
@@ -533,10 +577,10 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       }
     });
 
-    // Triplet numbers: above the stroke marks (y = 47..52), below the chord names
-    for (const group of tripletGroups(rhythmDetails.map(rd => ({ ...rd, beats: rd.beatFraction })))) {
+    // Tuplet numbers (the `actual` count): above the stroke marks (y = 47..52), below the chord names
+    for (const { items: group } of tupletGroups(rhythmDetails)) {
       const cx = (group[0].stemX + group[group.length - 1].stemX) / 2;
-      barsSvg += `<text x="${fmt(cx)}" y="45" font-size="8" font-style="italic" text-anchor="middle" fill="#000">3</text>`;
+      barsSvg += `<text class="tuplet-number" x="${fmt(cx)}" y="45" font-size="8" font-style="italic" text-anchor="middle" fill="#000">${group[0].part.tuplet!.actual}</text>`;
     }
 
     // Render individual rhythm items
@@ -545,6 +589,22 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
       const rx = rd.rx;
       const stemX = rd.stemX;
       const opacity = r.ghost ? '0.35' : '1.0';
+      const tech = r.techniques;
+      if (rd.isFirstPart) {
+        if (!r.isRest) spanEntries.push({ x: rx, palmMute: isPalmMute(r), letRing: isLetRing(r), item: r });
+        if (hasRhythmLaneMark(r)) opts.spans.laneMarks.push({ x: rx, fermata: tech?.fermata === true, vibrato: tech?.vibrato === true });
+        if (tech?.breath) barsSvg += renderBreath(rx + 10, staveLines[0] - 9);
+        if (!r.isRest && (tech?.staccato || tech?.tenuto)) {
+          // Below the slash / notehead (stems always point up on the rhythm staff).
+          const artY = (rd.noteY ?? midY + 4) + 8;
+          if (tech.tenuto) barsSvg += renderTenuto(rx, artY);
+          if (tech.staccato) barsSvg += renderStaccato(rx, tech.tenuto ? artY + 4 : artY);
+        }
+        if (r.pitch && rd.noteY !== undefined) {
+          inlineAt.set(r, { x: rx, y: rd.noteY });
+          if (tech?.bend) barsSvg += renderBend(rx, rd.noteY, Math.max(40, rd.noteY - 22), tech.bend);
+        }
+      }
 
       if (r.isRest) {
         barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines);
@@ -645,10 +705,52 @@ function renderSystemSvgContent(measures: MeasureData[], isFirst: boolean, ctx: 
     }
   });
 
+  barsSvg += renderInlineConnections(inlineAt, ctx);
+  collectRhythmSpans(spanEntries, measures, ctx, opts.spans);
+
   return `
     ${staveSvg}
     ${clefSvg}
     ${barsSvg}`;
+}
+
+/** Connections / slurs between inline pitched notes; pieces crossing a system edge are split (spec §12.2.1). */
+function renderInlineConnections(inlineAt: Map<RhythmItem, { x: number; y: number }>, ctx: RenderContext): string {
+  if (inlineAt.size === 0) return '';
+  const seq = rhythmSequence(ctx);
+  let out = '';
+  for (const link of connectionLinks(seq)) {
+    const from = inlineAt.get(seq[link.from]);
+    const to = inlineAt.get(seq[link.to]);
+    if (!from && !to) continue;
+    const x1 = from ? from.x + 6 : ctx.startX - 4;
+    const x2 = to ? to.x - 6 : ctx.totalWidth - 8;
+    const y1 = from ? from.y : to!.y;
+    const y2 = to ? to.y : from!.y;
+    // Stems point up on the rhythm staff, so arcs go below the noteheads.
+    const arcY = Math.max(y1, y2) + 6;
+    if (link.kind === 'hammer' || link.kind === 'pull') out += renderHammerPull(link.kind, x1, x2, arcY, true);
+    else if (link.kind === 'slur') out += renderSlur(x1, x2, arcY, true);
+    else if (link.kind === 'slide') out += renderSlide(x1 + 1, y1, x2 - 1, y2);
+    else out += renderGliss(x1 + 1, y1, x2 - 1, y2);
+  }
+  return out;
+}
+
+/** P.M. / let ring flags of the rhythm heads of this row, with the items just outside the row. */
+function collectRhythmSpans(entries: { x: number; palmMute: boolean; letRing: boolean; item: RhythmItem }[], measures: MeasureData[], ctx: RenderContext, spans: RowSpanCollector): void {
+  if (entries.length === 0) return;
+  const seq = rhythmSequence(ctx).filter(r => !r.isRest && !r.techniques?.grace);
+  const firstIdx = seq.indexOf(entries[0].item);
+  const lastIdx = seq.indexOf(entries[entries.length - 1].item);
+  const inRow = (r: RhythmItem) => measures.some(m => m.rhythms.includes(r));
+  const prev = firstIdx > 0 && !inRow(seq[firstIdx - 1]) ? seq[firstIdx - 1] : undefined;
+  const next = lastIdx >= 0 && lastIdx + 1 < seq.length && !inRow(seq[lastIdx + 1]) ? seq[lastIdx + 1] : undefined;
+  spans.staffs.push({
+    entries: entries.map(({ x, palmMute, letRing }) => ({ x, palmMute, letRing })),
+    before: { palmMute: prev ? isPalmMute(prev) : false, letRing: prev ? isLetRing(prev) : false },
+    after: { palmMute: next ? isPalmMute(next) : false, letRing: next ? isLetRing(next) : false }
+  });
 }
 
 function renderSectionLabel(name: string, bx: number, sectionSize: number): string {

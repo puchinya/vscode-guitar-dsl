@@ -1,7 +1,9 @@
 import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
+import { structuralChange } from '../scoreEvents';
+import { AnnotationLane, DYNAMICS_LANE_HEIGHT, laneLayout, rowAnnotations } from './annotations';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
-import { staffPosition } from './notation';
+import { writtenStaffPosition } from './notation';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -56,6 +58,7 @@ export type SystemKind = 'rhythm' | 'melody' | 'leadSheet';
 
 export interface SystemGeometry {
   kind: SystemKind;
+  /** Total height including the annotation lanes above and the dynamics lane below. */
   unitHeight: number;
   verseCount: number;
   /** Baseline of verse 1 of the syllable lyrics (melody systems). */
@@ -63,19 +66,47 @@ export interface SystemGeometry {
   lyricLineHeight: number;
   /** Vertical translation of the rhythm drawing (melody systems with the rhythm staff). */
   rhythmOffset: number;
+  /** Height of the annotation lanes; the notation content is drawn translated down by this. */
+  annotationTop: number;
+  /** Top y of each present lane (system units, 0 = system top). */
+  lanes: Map<AnnotationLane, number>;
+  /** Height of the dynamics lane below the content (0 when the row has no dynamics). */
+  annotationBottom: number;
+  /** Height of the notation content (unitHeight without the lanes). */
+  contentHeight: number;
+}
+
+type GeometryScore = Pick<ParsedScore, 'showRhythm' | 'style'> & Partial<Pick<ParsedScore, 'measures' | 'feel'>>;
+
+/** Adds the annotation lanes of the row to a content-only geometry. */
+function withLanes(measures: MeasureData[], score: GeometryScore, base: Omit<SystemGeometry, 'annotationTop' | 'lanes' | 'annotationBottom' | 'contentHeight'>): SystemGeometry {
+  const annotations = rowAnnotations(measures, { measures: score.measures ?? [], feel: score.feel }, base.kind === 'rhythm', base.kind !== 'leadSheet');
+  const { positions, height } = laneLayout(annotations.lanes);
+  const bottom = annotations.dynamics.length > 0 ? DYNAMICS_LANE_HEIGHT : 0;
+  return {
+    ...base,
+    unitHeight: base.unitHeight + height + bottom,
+    annotationTop: height,
+    lanes: positions,
+    annotationBottom: bottom,
+    contentHeight: base.unitHeight
+  };
 }
 
 export function lyricLineHeight(lyricSize: number): number {
   return Math.round(lyricSize * 1.5 * 100) / 100;
 }
 
-/** Height and vertical layout of one system; rhythm-only systems keep the original 140 unit height. */
-export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedScore, 'showRhythm' | 'style'>): SystemGeometry {
+/**
+ * Height and vertical layout of one system; rhythm-only systems keep the original 140 unit content height.
+ * Annotation lanes (score events, technique spans) add to the height (spec §11).
+ */
+export function getSystemGeometry(measures: MeasureData[], score: GeometryScore): SystemGeometry {
   const hasMelody = measures.some(m => m.melody !== undefined);
   const lyricSize = score.style.lyricSize ?? 10;
   const lineHeight = lyricLineHeight(lyricSize);
   if (!hasMelody) {
-    return { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+    return withLanes(measures, score, { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 });
   }
   let verseCount = 0;
   for (const m of measures) {
@@ -93,13 +124,17 @@ export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedSco
   for (const m of measures) {
     for (const n of m.melody ?? []) {
       if (!n.isRest && n.pitch) {
-        const pos = staffPosition(n.pitch);
+        const pos = writtenStaffPosition(n.pitch, m.context?.ottava ?? 'none');
         const y = MELODY_STAVE_BOTTOM - pos * 4;
         let bottom = y + 5; // notehead bottom
         if (pos <= 3) {
-          // Stems up: tie arc hangs below notehead
-          if (n.tieToNext || n.tiedFromPrev) {
+          // Stems up: tie / connection / slur arcs and articulations hang below the notehead
+          const tech = n.techniques;
+          if (n.tieToNext || n.tiedFromPrev || tech?.connection || tech?.slurStart || tech?.slurEnd) {
             bottom = Math.max(bottom, y + 18);
+          }
+          if (tech?.staccato || tech?.tenuto) {
+            bottom = Math.max(bottom, y + 12);
           }
         } else {
           // Stems down: stem reaches downwards
@@ -119,10 +154,10 @@ export function getSystemGeometry(measures: MeasureData[], score: Pick<ParsedSco
     ? lyricBaseline + (verseCount - 1) * lineHeight + MELODY_BLOCK_BOTTOM_PADDING
     : MELODY_NO_LYRIC_BOTTOM;
   if (leadSheet) {
-    return { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 };
+    return withLanes(measures, score, { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 });
   }
   const rhythmOffset = melodyBottom - RHYTHM_BLOCK_TOP;
-  return { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset };
+  return withLanes(measures, score, { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset });
 }
 
 // Header / running header / footer metrics (pt)
@@ -221,20 +256,31 @@ export function getDiagramGrid(diagrams: ResolvedChordDiagram[], width: number):
   return { perRow, rows, height: gridHeight + 6 + BLOCK_SPACING, cellHeight, headHeight };
 }
 
-/** Splits each manual page into system rows (`measuresPerRow` measures per row, default 4). */
+/**
+ * Splits each manual page into system rows: at most `measuresPerRow` measures (default 4), and a new row
+ * before every measure with a structural change (a changed `@key` / `@time`, spec §11). A structural
+ * break is not a page break; pagination may still move the row to the next page.
+ */
 export function splitIntoRows(score: ParsedScore): SystemRow[][] {
   const perRow = score.measuresPerRow || MEASURES_PER_ROW;
   return score.pages.map((page, pIdx) => {
-    const rows: SystemRow[] = [];
-    for (let i = 0; i < page.measures.length; i += perRow) {
-      const measures = page.measures.slice(i, i + perRow);
-      rows.push({
-        measures,
-        isFirstSystem: pIdx === 0 && i === 0,
-        geometry: getSystemGeometry(measures, score)
-      });
+    const groups: MeasureData[][] = [];
+    let current: MeasureData[] = [];
+    for (const m of page.measures) {
+      const prev = m.measureIndex > 0 ? score.measures[m.measureIndex - 1]?.context : undefined;
+      const change = m.context ? structuralChange(prev, m) : { key: false, time: false };
+      if (current.length > 0 && (current.length >= perRow || change.key || change.time)) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(m);
     }
-    return rows;
+    if (current.length > 0) groups.push(current);
+    return groups.map((measures, i) => ({
+      measures,
+      isFirstSystem: pIdx === 0 && i === 0,
+      geometry: getSystemGeometry(measures, score)
+    }));
   });
 }
 

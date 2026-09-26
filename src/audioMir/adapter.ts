@@ -11,7 +11,7 @@ import { AudioMirMeasureV1, AudioMirResultV1, AudioMirSubdivision } from './mode
 export const AUDIO_MIR_SECTION_NAME = 'Analysis';
 
 function partToString(p: NoteValuePart): string {
-  return `${p.base}${p.dotted ? '.' : ''}${p.triplet ? 't' : ''}`;
+  return `${p.base}${p.dotted ? '.' : ''}${p.tuplet ? 't' : ''}`;
 }
 
 /** Note value (dots allowed) for `sixteenths` 16th notes, e.g. 6 -> `4.`, 5 -> `4+16`. */

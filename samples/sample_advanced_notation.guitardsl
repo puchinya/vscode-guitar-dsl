@@ -1,0 +1,64 @@
+title: Advanced Notation Demo
+artist: GuitarDSL Sample
+capo: 0
+key: C
+bpm: 96
+time: 4/4
+feel: shuffle
+pickup: 4
+
+# Score events (@...) apply before the next measure; see docs/specs/guitardsl-syntax.md §16.
+# Pickup: the first measure is one beat long.
+@mark: A
+@dynamic: mp
+| G | 4.u |
+mel: | g4/4 |
+
+[Verse]
+# Hammer-on / pull-off, staccato / tenuto; palm mute and let ring on the rhythm staff.
+| C  | 8.d 8.u 8.d 8.u 4.d.pm 4.d.pm |
+| Am | 4.d.lr 4.lr 4.lr 4.lr |
+mel: | c5/8{hammer} d e{pull} d c/4{staccato} e/4{tenuto} | a4/8{5:4} b c5 d e r/4 c5/4{fermata} |
+
+@tempo: 108
+@feel: straight
+@text: Palm mute lightly
+| F | 8.d.pm 8.u.pm 8.d.pm 8.u.pm 4.d 4.u |
+| G | 4.d 4.d 4.d 4.d.fermata |
+mel: | f4/16{grace} g4/4{slide} c5/4 d5/4{bend:2,vibrato} r/4{breath} | g4/4{slur-start} a b c5/4{slur-end} |
+
+@tempo: rit.
+@dynamic: f
+| C | 1.d.arp |
+mel: | c5/1 |
+
+# Modulation to D (new system, cancellation + new key signature).
+@key: D
+@tempo: a tempo
+@mark: B
+| D | 4.d 4.u 4.d 4.u |
+| A | 4.d 4.u 4.d 4.u |
+mel: | f#4/4 a d5 f#5 | e5/2 c#5/2 |
+
+# Meter change to 6/8 with swing feel and 8va (sounding pitches, drawn an octave lower).
+@time: 6/8
+@feel: swing
+@ottava: 8va
+| Bm | 8.d 8.u 8.d 8.d 8.u 8.d |
+| G  | 8.d 8.u 8.d 8.d 8.u 8.d |
+mel: | d6/8 c#6 b5 a5/4. | g5/4. f#5/4. |
+
+@ottava: off
+@time: 7/8(2+2+3)
+@tempo: accel.
+| Em | 8.d 8.u 8.d 8.u 8.d 8.u 8.d |
+@tempo: tempo primo
+@dynamic: ff
+| A | 8.d 8.u 8.d 8.u 8.d 8.u 8.d |
+mel: | e5/8 f# g a b c#6 d6 | e6/4. r/8 a5/4. |
+
+@time: 4/4
+@mark: Coda
+| D | 4.d 4.u 4.d 4.u |
+| D | 1.d.fermata |]
+mel: | d5/4 f# a d6 | d6/1{fermata} |
