@@ -53,7 +53,8 @@
   - メタデータキー `time:` `time_signature:` `meter:` `feel:` `pickup:` はほかのメタデータキーと同じスコープ
   - スコアイベント行: `@key:` `@tempo:` `@bpm:` `@time:` `@meter:` `@feel:` `@dynamic:` `@mark:` `@text:` `@ottava:` (`keyword.control.directive.guitardsl`)、その値 (`string.unquoted.directive-value.guitardsl`)
   - 連符比 `{5:4}` (`constant.numeric.tuplet.guitardsl`)、奏法ブロック `{hammer,bend:2}` (`entity.other.attribute-name.technique.guitardsl`)
-  - リズムの奏法修飾子 `.pm` `.lr` `.stacc` `.ten` `.fermata` `.vib` `.breath` `.arp` (`keyword.operator.rhythm.guitardsl`)
+  - リズムの奏法修飾子 `.pm` `.lr` `.stacc` `.ten` `.fermata` `.vib` `.breath` `.arp` はリズムトークンの一部として同じスコープ（`constant.numeric.rhythm.guitardsl`）。リズムトークン・音符に含まれる連符比は内側で `constant.numeric.tuplet.guitardsl` とする
+  - 不明なスコアイベント名 `@foo:` (`invalid.illegal.directive.guitardsl`)
 
 ---
 

@@ -682,6 +682,21 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     await waitFor(() => probe().previewInput === transposed, 'without Beginner Mode the preview shows the source');
   });
 
+  test('TR-E2E-06 the outline lists score events as Event symbols next to the existing symbols (T047)', async () => {
+    const content = ['title: Outline', 'time: 6/8', '@tempo: 132', '| C |', '[Verse]', '@key: D  # modulate', '@mark: B', '| D |', '@time: 7/8(2+2+3)', '| D |', ''].join('\n');
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
+    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', doc.uri);
+    assert.ok(symbols);
+    const flat = (list: vscode.DocumentSymbol[]): vscode.DocumentSymbol[] => list.flatMap(s => [s, ...flat(s.children)]);
+    const events = flat(symbols).filter(s => s.kind === vscode.SymbolKind.Event).map(s => s.name);
+    assert.deepStrictEqual(events, ['@tempo: 132', '@key: D', '@mark: B', '@time: 7/8(2+2+3)']);
+    const verse = symbols.find(s => s.name === 'Verse');
+    assert.ok(verse && verse.kind === vscode.SymbolKind.Namespace);
+    assert.deepStrictEqual(verse.children.filter(c => c.kind === vscode.SymbolKind.Event).map(c => c.name), ['@key: D', '@mark: B', '@time: 7/8(2+2+3)']);
+    const metadata = symbols.find(s => s.name === 'Metadata');
+    assert.ok(metadata && metadata.children.some(c => c.name === 'time' && c.detail === '6/8'));
+  });
+
   test('TR-E2E-05 the advanced notation sample exports to PDF (T048)', async () => {
     const sample = nodePath.join(__dirname, '../../../samples/sample_advanced_notation.guitardsl');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(sample));

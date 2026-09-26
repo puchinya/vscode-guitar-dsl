@@ -4,6 +4,33 @@
   "scopeName": "source.guitardsl",
   "patterns": [
     {
+      "name": "meta.directive.guitardsl",
+      "begin": "^\\s*(@(?i:key|tempo|bpm|time|meter|feel|dynamic|mark|text|ottava))\\s*(:)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.guitardsl"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.guitardsl"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.guitardsl",
+          "match": "(?<=\\s)#.*$"
+        },
+        {
+          "name": "string.unquoted.directive-value.guitardsl",
+          "match": "[^\\s#](?:.*?[^\\s])??(?=\\s+#|\\s*$)"
+        }
+      ]
+    },
+    {
+      "name": "invalid.illegal.directive.guitardsl",
+      "match": "^\\s*@[A-Za-z_]+\\s*:"
+    },
+    {
       "name": "meta.melody.guitardsl",
       "begin": "^\\s*(mel:)",
       "beginCaptures": {
@@ -23,11 +50,39 @@
         },
         {
           "name": "constant.other.note.guitardsl",
-          "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)[.t]?(?:\\+(?:16|8|4|2|1)[.t]?)*|:[0-9]+(?:\\.[0-9]+)?)?~?(?![^\\s|])"
+          "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{|~|[\\s|]|$)",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
         },
         {
           "name": "constant.other.rest.guitardsl",
-          "match": "(?<![^\\s|])r(?:/(?:16|8|4|2|1)[.t]?(?:\\+(?:16|8|4|2|1)[.t]?)*|:[0-9]+(?:\\.[0-9]+)?)?(?![^\\s|])"
+          "match": "(?<![^\\s|])r(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{|[\\s|]|$)",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "entity.other.attribute-name.technique.guitardsl",
+          "match": "\\{[A-Za-z][^{}]*\\}"
+        },
+        {
+          "name": "constant.other.note.guitardsl",
+          "match": "(?<=[0-9a-g}])~(?=[\\s|]|$)"
         },
         {
           "name": "invalid.illegal.note.guitardsl",
@@ -109,7 +164,7 @@
     },
     {
       "name": "keyword.other.header.guitardsl",
-      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
+      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
     {
       "name": "keyword.operator.repeat.bracket.guitardsl",
@@ -144,8 +199,40 @@
       "match": "%"
     },
     {
+      "name": "constant.other.note.guitardsl",
+      "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{)",
+      "captures": {
+        "0": {
+          "patterns": [
+            {
+              "name": "constant.numeric.tuplet.guitardsl",
+              "match": "\\{[0-9]+:[0-9]+\\}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "entity.other.attribute-name.technique.guitardsl",
+      "match": "\\{[A-Za-z][^{}]*\\}"
+    },
+    {
+      "name": "constant.numeric.tuplet.guitardsl",
+      "match": "\\{[0-9]+:[0-9]+\\}"
+    },
+    {
       "name": "constant.numeric.rhythm.guitardsl",
-      "match": "\\b(r?(16|8|4|2|1)t?(\\+(16|8|4|2|1)t?)*|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*\\b"
+      "match": "\\b(r?(16|8|4|2|1)(t|\\{[0-9]+:[0-9]+\\})?(\\+(16|8|4|2|1)(t|\\{[0-9]+:[0-9]+\\})?)*|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*(?![\\w{])",
+      "captures": {
+        "0": {
+          "patterns": [
+            {
+              "name": "constant.numeric.tuplet.guitardsl",
+              "match": "\\{[0-9]+:[0-9]+\\}"
+            }
+          ]
+        }
+      }
     }
   ]
 }

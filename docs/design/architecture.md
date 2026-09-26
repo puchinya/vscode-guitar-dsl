@@ -297,7 +297,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 **依存方向**: `compiler` / `chordDefinition` / `capo`（`transposeChordName`・`planCapoTransform`・`inferCapoForDsl`）→ `src/transpose.ts`（純粋、VS Code 非依存）→ `src/scoreSettingsEditor.ts`。
 
-- **`planSoundingTranspose(text, semitones)`**: AST から DSL を書き戻さず、`headerLines` の `key` / `original_key` の値、`ScoreEvent` の `@key` の値、`chordTokens` のコード名部分（`replaceChordTokenNames` を再利用）、`pitchTokens` の音高部分だけを置き換える（コメント・空白・改行コード・長さ指定・奏法・歌詞・セクションはバイト単位で保持）。1 行の中の置き換えは右から行う。キーはルートを `NOTE_NAMES` の綴りで移調し `m` を残す。音高はオクターブを含む半音数で移調して綴り直し、オクターブが 0〜9 を外れたら `pitchOutOfRange`。コード名は `transposeChordName`。
+- **`planSoundingTranspose(text, semitones)`**: AST から DSL を書き戻さず、`headerLines` の `key` / `original_key` の値、`ScoreEvent` の `@key` の値、`chordTokens` のコード名部分（`replaceChordTokenNames` を再利用）、`pitchTokens` の音高部分だけを置き換える（コメント・空白・改行コード・長さ指定・奏法・歌詞・セクションはバイト単位で保持）。1 行の中の置き換えは右から行う。`key:` ヘッダーがなければ（既定の C）移調後のキーの `key:` 行を挿入する（カポ行の挿入と同じ考え方）。検証時のキー比較は行末コメントを除いた値で行う（ヘッダーの行末コメントの解析は Issue #64 の範囲のため、パーサーは変えない）。キーはルートを `NOTE_NAMES` の綴りで移調し `m` を残す。音高はオクターブを含む半音数で移調して綴り直し、オクターブが 0〜9 を外れたら `pitchOutOfRange`。コード名は `transposeChordName`。
   1. 元テキストにエラー診断があれば `sourceParseError`。範囲外の移調量は `invalidSemitones`。
   2. 移調量が 0 でなく使われているラベル付きコードがあれば `labeledChordVariant`、変わったコード名の変換先と同名の（別のコードを表す）ラベルなし `chord` 定義があれば `customDefinitionCollision`。定義は変更・削除しない。
   3. 変換後を解析し直し、エラー診断・コード配置列・音高列・キーの不一致があれば `transformedParseError`。
