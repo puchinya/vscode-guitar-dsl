@@ -491,7 +491,6 @@ suite('Beginner Mode (Issue #65)', () => {
   test('BEG-E2E-05 apply recomputes from the latest source in one WorkspaceEdit and one undo restores it', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await vscode.window.showTextDocument(doc);
-    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
     const edited = SOURCE.replace('| G |', '| G | F |');
     await replaceAll(doc, edited);
     const versionBefore = doc.version;
@@ -542,6 +541,7 @@ suite('Beginner Mode (Issue #65)', () => {
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text' });
     assert.strictEqual(doc.getText(), FORBID_AT_0);
     assert.ok(statuses.length > 0 && refreshed > 0);
+    await vscode.window.showTextDocument(doc);
     await vscode.commands.executeCommand('undo');
     assert.strictEqual(doc.getText(), SOURCE);
   });
