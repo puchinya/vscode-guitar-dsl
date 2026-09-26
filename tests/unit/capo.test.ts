@@ -6,6 +6,7 @@ import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
 import {
   UNKNOWN_CHORD_COST,
   buildCapoPreviewUiModel,
+  inferCapoForDsl,
   chordCost,
   easeScore,
   evaluatePlayability,
@@ -233,6 +234,11 @@ describe('capo - GuitarDSL source transformation', () => {
     assert.ok(plan.text.includes('chord B = x24442'));
   });
 
+  it('transforms each chord when l:"..." precedes chords with the same text (lyric unchanged)', () => {
+    assert.strictEqual(planText('| l:"C" C C |\n', 2), 'capo: 2\n| l:"C" Bb Bb |\n');
+    assert.strictEqual(planText('| l:"B B" B B |\n', 2), 'capo: 2\n| l:"B B" A A |\n');
+  });
+
   it('CAPO-12 every successful transform reparses without errors', () => {
     const dsl = 'key: G\n| G | Em | C | D7 |\n| Am7 G/B | Cadd9 | Dsus4 | G |\n';
     for (let target = 0; target <= 12; target++) {
@@ -265,6 +271,32 @@ describe('capo - GuitarDSL source transformation', () => {
   });
 });
 
+describe('capo - DSL-backed candidates', () => {
+  it('marks candidates that planCapoTransform rejects as unsupported and never recommends them', () => {
+    const dsl = 'chord A = x02220\n| B |\n';
+    const r = inferCapoForDsl(dsl)!;
+    assert.strictEqual(r.candidates[2].supported, false);
+    assert.strictEqual(r.candidates[2].reason, 'customDefinitionCollision');
+    assert.ok(r.candidates[0].supported, 'the source capo stays supported');
+    assert.notStrictEqual(r.recommendedCapo, 2);
+    for (const c of r.candidates) {
+      assert.strictEqual(c.supported, c.capo === 0 || planCapoTransform(dsl, c.capo).ok, `capo ${c.capo}`);
+    }
+    const ui = buildCapoPreviewUiModel(dsl, undefined);
+    assert.strictEqual(ui.candidates[2].supported, false);
+    assert.ok(!compileGuitarDslToHtml(dsl, { capo: ui }).includes('<option value="2">'));
+    assert.ok(compileGuitarDslToHtml(dsl, { capo: ui }).includes('<option value="2" disabled>'));
+  });
+
+  it('reports labeled variants per candidate and keeps the source capo selectable', () => {
+    const r = inferCapoForDsl('chord C@x = x35553\n| C@x |\n')!;
+    assert.ok(r.candidates[0].supported);
+    assert.ok(r.candidates.slice(1).every(c => !c.supported && c.reason === 'labeledChordVariant'));
+    assert.strictEqual(r.recommendedCapo, 0);
+    assert.strictEqual(inferCapoForDsl('capo: 13\n| C |\n'), null);
+  });
+});
+
 describe('compiler - chord token source spans', () => {
   it('records the chord-name span of every written chord token', () => {
     const dsl = '| l:"Am" Am:2 G@x/2 | % |\n|: C/E 4 4 4 4 :|';
@@ -276,6 +308,19 @@ describe('compiler - chord token source spans', () => {
     assert.strictEqual(spans[1].label, 'x');
     assert.ok(spans[0].startCol > lines[0].indexOf('Am:2') - 1);
     assert.strictEqual(score.firstBodyLine, 0);
+  });
+
+  it('records distinct spans when l:"..." precedes chords with the same text', () => {
+    for (const line of ['| l:"C" C C |', '| l:"B B" B B |']) {
+      const spans = parseGuitarDsl(line).chordTokens!;
+      assert.strictEqual(spans.length, 2, line);
+      assert.notStrictEqual(spans[0].startCol, spans[1].startCol, line);
+      const lyricEnd = line.indexOf('" ') + 1;
+      for (const s of spans) {
+        assert.strictEqual(line.slice(s.startCol, s.endCol), s.name);
+        assert.ok(s.startCol > lyricEnd, `${line}: span inside the lyric`);
+      }
+    }
   });
 
   it('records header value ranges', () => {

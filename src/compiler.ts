@@ -547,6 +547,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             const span: ChordTokenSpan = { line: lineIdx, startCol: spanCol, endCol: spanCol + parsedChord.name.length, name: parsedChord.name };
             if (parsedChord.label !== undefined) span.label = parsedChord.label;
             chordTokens.push(span);
+            // Continue after the adopted position: an earlier match (e.g. inside l:"...") must not be reused.
+            searchPos = Math.max(searchPos, spanCol + tok.length);
           }
           if (parsedChord.label !== undefined) {
             chordUses.push({ key, line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });

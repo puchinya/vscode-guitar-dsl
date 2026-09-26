@@ -3,7 +3,7 @@
 // one undoable WorkspaceEdit; the webview only reports intents. Capo / playability is the first section.
 
 import * as vscode from 'vscode';
-import { MAX_CAPO, MIN_CAPO, buildCapoInferenceInputFromScore, inferCapo, isValidCapo, parseCapoValue, planCapoTransform } from './capo';
+import { MAX_CAPO, MIN_CAPO, inferCapoForDsl, isValidCapo, parseCapoValue, planCapoTransform } from './capo';
 import { chordKey } from './chordDefinition';
 import { parseGuitarDsl } from './compiler';
 import { Messages, ScoreSettingsEditorMessages, SupportedLocale, getMessages, getScoreSettingsEditorMessages } from './i18n';
@@ -116,10 +116,10 @@ export class CapoSection implements ScoreSettingsSection {
       noChords: currentVocabulary.length === 0,
       canApply: false
     };
-    if (sourceCapo === null) {
+    const inference = sourceCapo === null ? null : inferCapoForDsl(text, score);
+    if (sourceCapo === null || inference === null) {
       return { ...empty, error: m.capoFailures.invalidSourceCapo };
     }
-    const inference = inferCapo(buildCapoInferenceInputFromScore(score));
     const selected = this.selected ?? sourceCapo;
     const candidate = inference.candidates[selected];
     const plan = planCapoTransform(text, selected);

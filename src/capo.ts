@@ -480,6 +480,57 @@ export function resolveEffectiveDsl(sourceDsl: string, targetCapo: number | unde
 }
 
 // ---------------------------------------------------------------------------
+// DSL-backed candidates (generic inference + per-capo transform check)
+// ---------------------------------------------------------------------------
+
+export interface DslCapoCandidate {
+  capo: number;
+  /** True only when the capo can actually be applied to this source (the source capo always can). */
+  supported: boolean;
+  playability?: PlayabilityResult;
+  chordMap: ReadonlyMap<string, string>;
+  reason?: CapoTransformFailureCode;
+}
+
+export interface DslCapoInferenceResult {
+  sourceCapo: number;
+  candidates: readonly DslCapoCandidate[];
+  /** Highest score among supported candidates, lower capo on a tie. */
+  recommendedCapo?: number;
+}
+
+/**
+ * Candidates for a GuitarDSL source whose supported flag also reflects planCapoTransform()
+ * (labeled variants, custom-definition collisions, parse errors), so UIs never offer a capo
+ * that cannot be applied. Null when the source `capo:` value is invalid.
+ */
+export function inferCapoForDsl(dslText: string, score: ParsedScore = parseGuitarDsl(dslText)): DslCapoInferenceResult | null {
+  const sourceCapo = parseCapoValue(score.capo);
+  if (sourceCapo === null) return null;
+  const inference = inferCapo(buildCapoInferenceInputFromScore(score));
+  let recommendedCapo: number | undefined;
+  let best = -1;
+  const candidates = inference.candidates.map(c => {
+    let supported = c.supported;
+    let reason: CapoTransformFailureCode | undefined = c.reason;
+    if (supported && c.capo !== sourceCapo) {
+      const plan = planCapoTransform(dslText, c.capo);
+      if (!plan.ok) {
+        supported = false;
+        reason = plan.code;
+      }
+    }
+    const score = c.playability?.score;
+    if (supported && score !== undefined && score > best) {
+      best = score;
+      recommendedCapo = c.capo;
+    }
+    return { capo: c.capo, supported, playability: c.playability, chordMap: c.chordMap, reason };
+  });
+  return { sourceCapo, candidates, recommendedCapo };
+}
+
+// ---------------------------------------------------------------------------
 // Preview UI model (precomputed here; the preview HTML renders it without any inference)
 // ---------------------------------------------------------------------------
 
@@ -507,13 +558,12 @@ export interface CapoPreviewUiModel {
  * The caller must pass a target that resolveEffectiveDsl() accepted.
  */
 export function buildCapoPreviewUiModel(sourceDsl: string, targetCapo: number | undefined, warning?: string): CapoPreviewUiModel {
-  const score = parseGuitarDsl(sourceDsl);
-  const sourceCapo = parseCapoValue(score.capo);
-  if (sourceCapo === null) {
+  const inference = inferCapoForDsl(sourceDsl);
+  if (inference === null) {
     return { sourceCapo: null, targetCapo: 0, candidates: [], overridden: false, canApply: false, warning };
   }
+  const sourceCapo = inference.sourceCapo;
   const target = targetCapo ?? sourceCapo;
-  const inference = inferCapo(buildCapoInferenceInputFromScore(score));
   const candidates = inference.candidates.map(c => ({
     capo: c.capo,
     supported: c.supported,
