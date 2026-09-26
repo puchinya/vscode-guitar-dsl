@@ -45,7 +45,7 @@ function describeResult(fileName: string, result: AudioMirResultV1, elapsedMs: n
   const r = (v: number, d = 2) => v.toFixed(d);
   const lines = [
     `[${fileName}] ${result.source.sampleRate} Hz / ${result.source.channels} ch / ${result.source.bitsPerSample}-bit, ${r(result.source.durationSeconds)} s, analysis ${elapsedMs} ms`,
-    `  tempo ${r(result.tempo.bpm)} BPM (confidence ${r(result.tempo.confidence)}), key ${result.key.name} (confidence ${r(result.key.confidence)})`,
+    `  tempo ${r(result.tempo.bpm)} BPM (confidence ${r(result.tempo.confidence)}, tracker ${result.tempo.tracker ?? 'unknown'}), key ${result.key.name} (confidence ${r(result.key.confidence)})`,
     `  trimmed start ${r(result.trim.startSeconds)} s, end ${r(result.trim.endSeconds)} s, ${result.measures.length} measure(s)`
   ];
   for (const m of result.measures) {
@@ -186,6 +186,7 @@ export class AudioMirController implements vscode.Disposable {
 export function createAudioMirController(extensionUri: vscode.Uri, messages: Messages): AudioMirController {
   const output = vscode.window.createOutputChannel(AUDIO_MIR_OUTPUT_CHANNEL);
   const workerScript = vscode.Uri.joinPath(extensionUri, 'out', 'audioMir', 'worker.js').fsPath;
+  const inferWorkerScript = vscode.Uri.joinPath(extensionUri, 'out', 'audioMir', 'inferWorker.js').fsPath;
   const wasmModulePath = vscode.Uri.joinPath(extensionUri, 'media', 'audio-mir-wasm', 'guitardsl_audio_mir.js').fsPath;
 
   const ui: AudioMirUi = {
@@ -225,11 +226,13 @@ export function createAudioMirController(extensionUri: vscode.Uri, messages: Mes
     startJob: fsPath => {
       // Loaded lazily so activation does not pay for worker_threads.
       const { Worker } = require('worker_threads') as typeof import('worker_threads');
-      const { startAudioMirJob } = require('./workerClient') as typeof import('./workerClient');
-      return startAudioMirJob(request => new Worker(workerScript, { workerData: request }), {
-        filePath: fsPath,
-        wasmModulePath
-      });
+      const os = require('os') as typeof import('os');
+      const { inferenceWorkerCount, startAudioMirJob } = require('./workerClient') as typeof import('./workerClient');
+      return startAudioMirJob(
+        spec => new Worker(spec.kind === 'analysis' ? workerScript : inferWorkerScript, { workerData: spec.data }),
+        { filePath: fsPath, wasmModulePath },
+        { inferenceWorkers: inferenceWorkerCount(os.availableParallelism()) }
+      );
     },
     now: () => Date.now()
   });

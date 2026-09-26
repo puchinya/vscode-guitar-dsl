@@ -7,7 +7,14 @@ import { AUDIO_MIR_SECTION_NAME, adaptAudioMirResult, convertAudioMirToGuitarDsl
 import { AudioMirController, AudioMirControllerDeps, AudioMirUi } from '../../src/audioMir/controller';
 import { AudioMirMeasureV1, AudioMirResultV1 } from '../../src/audioMir/model';
 import { validateAudioMirResult } from '../../src/audioMir/validate';
-import { AudioMirJob, AudioMirJobOutcome, AudioMirWorkerLike, startAudioMirJob } from '../../src/audioMir/workerClient';
+import {
+  AudioMirJob,
+  AudioMirJobOutcome,
+  AudioMirWorkerLike,
+  AudioMirWorkerSpec,
+  inferenceWorkerCount,
+  startAudioMirJob
+} from '../../src/audioMir/workerClient';
 
 function measure(index: number, overrides: Partial<AudioMirMeasureV1> = {}): AudioMirMeasureV1 {
   return {
@@ -57,6 +64,15 @@ describe('audioMir validate', () => {
     }
   });
 
+  it('keeps the reported beat tracker', () => {
+    for (const tracker of ['neural', 'classic'] as const) {
+      const r = clone(result());
+      r.tempo.tracker = tracker;
+      const v = validateAudioMirResult(r);
+      assert.ok(v.valid && v.result.tempo.tracker === tracker);
+    }
+  });
+
   const rejections: [string, (r: any) => void][] = [
     ['wrong version', r => { r.version = 2; }],
     ['empty measures', r => { r.measures = []; }],
@@ -76,7 +92,8 @@ describe('audioMir validate', () => {
     ['unsupported subdivision', r => { r.measures[0].subdivision = 6; }],
     ['non-increasing measure index', r => { r.measures.push({ ...r.measures[0] }); }],
     ['non-positive measure duration', r => { r.measures[0].endSeconds = r.measures[0].startSeconds; }],
-    ['unsupported sample rate', r => { r.source.sampleRate = 22050; }]
+    ['unsupported sample rate', r => { r.source.sampleRate = 22050; }],
+    ['unknown beat tracker', r => { r.tempo.tracker = 'madmom'; }]
   ];
   for (const [name, mutate] of rejections) {
     it(`rejects ${name}`, () => {
@@ -209,6 +226,10 @@ describe('audioMir adapter', () => {
 
 class FakeWorker implements AudioMirWorkerLike {
   terminateCalls = 0;
+  posted: unknown[] = [];
+  postMessage(value: unknown) {
+    this.posted.push(value);
+  }
   private listeners: Record<string, ((v: any) => void)[]> = {};
   on(event: string, listener: (v: any) => void) {
     (this.listeners[event] ??= []).push(listener);
@@ -250,6 +271,119 @@ describe('audioMir workerClient', () => {
     const j3 = startAudioMirJob(() => w3, { filePath: 'a', wasmModulePath: 'm' });
     w3.emit('message', { type: 'error', code: 'NO_STABLE_BEAT' });
     assert.deepStrictEqual(await j3.promise, { type: 'error', code: 'NO_STABLE_BEAT' });
+  });
+});
+
+/** Spawns fake workers per spec and exposes them for the pool tests. */
+function pool() {
+  const analysis = new FakeWorker();
+  const infer: FakeWorker[] = [];
+  const factory = (spec: AudioMirWorkerSpec) => {
+    if (spec.kind === 'analysis') {
+      return analysis;
+    }
+    const w = new FakeWorker();
+    infer.push(w);
+    return w;
+  };
+  return { analysis, infer, factory };
+}
+
+const chunk = (value: number, frames = 2) => new Float32Array(frames * 128).fill(value);
+const lastTask = (w: FakeWorker) => w.posted[w.posted.length - 1] as { type: string; index: number; chunk: Float32Array };
+
+describe('audioMir inference pool', () => {
+  it('bounds the pool size by cores and chunk count', () => {
+    assert.strictEqual(inferenceWorkerCount(1), 1);
+    assert.strictEqual(inferenceWorkerCount(2), 1);
+    assert.strictEqual(inferenceWorkerCount(3), 2);
+    assert.strictEqual(inferenceWorkerCount(16), 2);
+    assert.strictEqual(inferenceWorkerCount(NaN), 1);
+
+    const p = pool();
+    startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' }, { inferenceWorkers: 4 });
+    p.analysis.emit('message', { type: 'chunks', chunks: [chunk(1), chunk(2)] });
+    assert.strictEqual(p.infer.length, 2);
+  });
+
+  it('aggregates logits by chunk index regardless of completion order', async () => {
+    const p = pool();
+    const job = startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' }, { inferenceWorkers: 2 });
+    p.analysis.emit('message', { type: 'chunks', chunks: [0, 1, 2, 3, 4].map(v => chunk(v)) });
+    assert.strictEqual(p.infer.length, 2);
+    assert.deepStrictEqual(p.infer.map(w => lastTask(w).index), [0, 1]);
+    assert.strictEqual(lastTask(p.infer[0]).chunk[0], 0);
+    // Worker 1 finishes first and takes chunk 2; worker 0 then takes 3; worker 1 takes 4.
+    const reply = (w: FakeWorker, index: number) =>
+      w.emit('message', { type: 'logits', index, logits: new Float32Array([index * 10, index * 10 + 1]) });
+    reply(p.infer[1], 1);
+    assert.strictEqual(lastTask(p.infer[1]).index, 2);
+    reply(p.infer[0], 0);
+    assert.strictEqual(lastTask(p.infer[0]).index, 3);
+    reply(p.infer[1], 2);
+    assert.strictEqual(lastTask(p.infer[1]).index, 4);
+    reply(p.infer[1], 4);
+    assert.strictEqual(p.analysis.posted.length, 0);
+    reply(p.infer[0], 3);
+    const input = p.analysis.posted[0] as { type: string; logits: Float32Array };
+    assert.strictEqual(input.type, 'logits');
+    assert.deepStrictEqual(Array.from(input.logits), [0, 1, 10, 11, 20, 21, 30, 31, 40, 41]);
+    // The pool is released once every chunk is done; its exits are expected.
+    assert.deepStrictEqual(p.infer.map(w => w.terminateCalls), [1, 1]);
+    p.infer[0].emit('exit', 1);
+    p.analysis.emit('message', { type: 'success', resultJson: '{"ok":1}' });
+    assert.deepStrictEqual(await job.promise, { type: 'success', resultJson: '{"ok":1}' });
+    assert.strictEqual(p.analysis.terminateCalls, 1);
+  });
+
+  it('sends empty logits straight back when there are no chunks', () => {
+    const p = pool();
+    startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' }, { inferenceWorkers: 4 });
+    p.analysis.emit('message', { type: 'chunks', chunks: [] });
+    assert.strictEqual(p.infer.length, 0);
+    assert.strictEqual((p.analysis.posted[0] as { logits: Float32Array }).logits.length, 0);
+  });
+
+  it('cancellation terminates the analysis worker and every inference worker', async () => {
+    const p = pool();
+    const job = startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' }, { inferenceWorkers: 3 });
+    p.analysis.emit('message', { type: 'chunks', chunks: [chunk(0), chunk(1), chunk(2)] });
+    job.terminate();
+    assert.deepStrictEqual(await job.promise, { type: 'cancelled' });
+    assert.strictEqual(p.analysis.terminateCalls, 1);
+    assert.deepStrictEqual(p.infer.map(w => w.terminateCalls), [1, 1, 1]);
+    p.infer[0].emit('message', { type: 'logits', index: 0, logits: new Float32Array(2) });
+    assert.strictEqual(p.analysis.posted.length, 0);
+  });
+
+  for (const [name, fail] of [
+    ['an inference error code', (w: FakeWorker) => w.emit('message', { type: 'error', code: 'ANALYSIS_FAILED' })],
+    ['an inference worker crash', (w: FakeWorker) => w.emit('error', new Error('boom'))],
+    ['an early inference worker exit', (w: FakeWorker) => w.emit('exit', 1)],
+    ['a malformed inference message', (w: FakeWorker) => w.emit('message', { type: 'logits', index: 7, logits: new Float32Array(2) })],
+    ['a duplicate chunk index', (w: FakeWorker) => {
+      w.emit('message', { type: 'logits', index: 0, logits: new Float32Array(2) });
+      w.emit('message', { type: 'logits', index: 0, logits: new Float32Array(2) });
+    }]
+  ] as const) {
+    it(`fails once with ANALYSIS_FAILED on ${name} and stops every worker`, async () => {
+      const p = pool();
+      const job = startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' }, { inferenceWorkers: 2 });
+      p.analysis.emit('message', { type: 'chunks', chunks: [chunk(0), chunk(1), chunk(2)] });
+      fail(p.infer[0]);
+      assert.deepStrictEqual(await job.promise, { type: 'error', code: 'ANALYSIS_FAILED' });
+      assert.strictEqual(p.analysis.terminateCalls, 1);
+      assert.deepStrictEqual(p.infer.map(w => w.terminateCalls), [1, 1]);
+      assert.strictEqual(p.analysis.posted.length, 0);
+    });
+  }
+
+  it('rejects a malformed chunks message', async () => {
+    const p = pool();
+    const job = startAudioMirJob(p.factory, { filePath: 'a', wasmModulePath: 'm' });
+    p.analysis.emit('message', { type: 'chunks', chunks: [[1, 2, 3]] });
+    assert.deepStrictEqual(await job.promise, { type: 'error', code: 'ANALYSIS_FAILED' });
+    assert.strictEqual(p.infer.length, 0);
   });
 });
 

@@ -36,6 +36,8 @@ pub struct TrimInfo {
 pub struct TempoInfo {
     pub bpm: f64,
     pub confidence: f64,
+    /// Beat tracker that produced the grid: `"neural"` (Beat This!) or `"classic"` (#56).
+    pub tracker: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

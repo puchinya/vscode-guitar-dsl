@@ -209,20 +209,24 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 ローカルの PCM WAV からコード進行とストローク位置を推定する。仕様は spec §3.8 を参照。Gemini 採譜（§2.8）とはコードを共有せず、共有するのは Music IR（`TranscribedSong`）、`validateTranscribedSong`、`serializeSongToGuitarDsl` だけである。
 
 - **Rust/WASM コア**（Cargo ワークスペース `wasm/`、クレート `wasm/crates/audio-mir/`）:
-  - 依存は `wasm-bindgen`、`serde`/`serde_json`、`hound`、`rustfft` に限る。
-  - `wasm-pack --target nodejs` でビルドし、生成物（CommonJS グルーと `.wasm`）を `media/audio-mir-wasm/` に出力する。この生成物はコミットせず、VSIX には同梱する。
-  - JS へ公開するのは `analyze_wav(bytes) -> Result<String, JsValue>` だけである。戻り値は `AudioMirResultV1` の JSON で、失敗時は安定したエラーコード文字列を返す。
+  - 依存は `wasm-bindgen`、`serde`/`serde_json`、`hound`、`rustfft`、`tract-onnx`（版を固定。wasm32 のビルドに `getrandom-js` 機能が必要）に限る。
+  - `wasm-pack --target nodejs` でビルドし、生成物（CommonJS グルーと `.wasm`）を `media/audio-mir-wasm/` に出力する。この生成物はコミットせず、VSIX には同梱する。wasm32 は `wasm/.cargo/config.toml` で `simd128` を有効にする（tract の WASM カーネルの前提）。Cargo はこの設定を実行ディレクトリとその親からしか探さないため、wasm32 のビルドとチェックは `wasm/` の中（wasm-pack はクレートのディレクトリ）で実行する。
+  - JS へ公開する API は次の 2 系統で、どちらも同じ JSON を返す（テストで固定）。失敗時は安定したエラーコード文字列を投げる。
+    - `analyze_wav(bytes) -> Result<String, JsValue>`: 全段を 1 つのインスタンスで順に実行する。評価スクリプトとスモークテストが使う。
+    - 段階的 API（拡張が使う、#56）: `new Analysis(bytes)` がモデル入力（log-mel）だけを計算し、`chunkCount()` / `chunk(i)` でチャンクを渡す。`BeatModel(frames).infer(chunk)` がチャンクごとのロジットを返す。`analysis.extract(bytes)` が残りの特徴量を抽出し、`analysis.finish(logits)` が全チャンクのロジットを順に連結したものから結果 JSON を組み立てる。
   - 処理は次の順に進む。
     - `wav.rs`: `hound` で逐次デコードする。PCM 全体の複製は保持しない。
     - `stft.rs`: 2 系統の有界ローリング STFT を使う。和声用は 8192/1024、リズム用は 2048/512 で、窓は Hann。
     - `hpss.rs`: 中央値フィルタによるソフトマスクで、和声成分と打撃成分を分ける。
     - `chroma.rs`: 和声成分を半音スペクトル（MIDI 28〜108）に写し、倍音の差し引き（下記）をしてからメインクロマ（65〜4200 Hz）とベースクロマ（41〜330 Hz）に畳み込む。
-    - `tempo.rs`: オンセット包絡の自己相関とビート DP でテンポと拍を求め、4/4 のダウンビート位相を決める。
+    - `mel.rs`（#56）: Beat This! の入力を作る。22,050 Hz への決定的なポリフェーズ窓付き sinc リサンプリング（Kaiser、soxr 既定と同じ遷移帯域）と、upstream `LogMelSpect` と同じ log-mel（Hann 1024 / hop 441、中心化・反射パディング、`frame_length` 正規化、Slaney 128 バンド 30〜11,000 Hz、`ln(1+1000x)`、50 fps）。
+    - `beat_nn.rs`（#56）: 下記の Beat This! によるビート追跡。
+    - `tempo.rs`: `Classic` のビート追跡（オンセット包絡の自己相関とビート DP、#50/#52）と、4/4 のダウンビート位相の決定。
     - `chord.rs`: `ChordClassifier` trait とその実装 `TemplateChordClassifier`（7th ゲート付き、下記）で候補を出し、16 分スロット単位の Viterbi で平滑化する。
     - `rhythm.rs`: アタックを検出し、8/12/16 グリッドを DP で選択して量子化する。
     - `key.rs`: Krumhansl-Schmuckler でキーを推定する。推定値はメタデータ専用で、コード推定には使わない。
     - `pipeline.rs`: 以上をつないで結果を組み立てる。
-  - 保持するのは時系列の特徴量（クロマ、オンセット、低域エネルギー）だけで、スペクトログラム全体は保持しない。
+  - 保持するのは時系列の特徴量（クロマ、オンセット、低域エネルギー）と、Beat This! の入力の log-mel（128 値 / 20 ms、15 分の上限で約 23 MB、チャンク化した後に解放）だけで、それ以外のスペクトログラムは保持しない。
   - クロマとベースクロマを受け取る `ChordClassifier` trait が、将来の学習済みモデルへの差し替え境界になる。
   - **倍音の差し引きと 7th ゲート（#52）:** 3度音の3倍音が長7度に重なり、三和音が maj7/7 と誤認される問題への対策。どちらも音響的な処理で、キーの事前知識は使わない。
     - 倍音の差し引き: 半音スペクトルで低い音から順に、各音 `p` の第 3・第 5・第 6 倍音（+19・+28・+31 半音。いずれも別の音名に乗る倍音）から `α·γ^(h−1)·s[p]` を差し引く（0 未満は 0）。第 2・第 4 倍音（オクターブ）は同じ音名なので、差し引いてもベースと重なるルート音などを弱めるだけになり、対象にしない。
@@ -231,7 +235,13 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
       - GuitarSet の演奏者 00〜02（伴奏）と合成マルチ楽器セットの調整用データで、`examples/tune_harmony.rs` の既定の探索範囲と選定規則（testing.md §5）によって決めた。
       - 演奏者 03〜05 と合成セットの報告用データで判定した。比較対象は実際の #50 ビルドで、結果は Issue #52 と PR #57 にある。
     - `AnalysisParams::BASELINE`（倍音の差し引き無し、ゲート無効）では、クロマを #50 と同じ直接の畳み込み（周波数ビン → 音名）で計算し、#50 のパイプラインを厳密に再現する（テストで固定）。
-  - 評価用ツール（`scripts/evaluate-audio-mir-*.mjs`、`scripts/generate-audio-mir-synth-set.mjs`、`scripts/render-audio-mir-synth-set.swift`、`examples/tune_harmony.rs`）は開発時のローカル専用で、VSIX にもリポジトリにもデータを含めない。
+  - **Beat This! によるビート追跡（#56）:** `AnalysisParams.beat_tracker` が `Neural`（既定）と `Classic` を切り替える。`AnalysisParams::BASELINE` は `Classic` で、#50 のパイプラインを厳密に再現する。`Classic` の出力は #52 と完全に一致する（テストで固定）。
+    - モデルは Beat This!（Foscarin ほか、ISMIR 2024、MIT）の `small0` を ONNX（opset 17、fp32、時間軸は可変）に書き出したもので、`models/beat_this_small0.onnx` としてコミットし、`include_bytes!` で `.wasm` に埋め込む。出典、SHA-256、再現手順は `models/README.md`、書き出しは `scripts/export-beat-this-onnx.py`（開発専用）。
+    - tract は時間軸が可変のままでは型を決められないため、`BeatModel::new(frames)` がチャンク長ごとに入力形状を固定してから最適化する。
+    - チャンク化と集約は upstream の `split_piece` / `aggregate_prediction` と同じ（1500 フレーム、境界 6 フレーム、`keep_first`、最後のチャンクは曲末に合わせてずらす。1 チャンクに満たない曲は短いチャンク 1 つ）。
+    - 後処理は upstream の `postp_minimal`（±3 フレームの極大かつロジット > 0、隣接ピークを平均で統合）。拍間隔の中央値の ±10% に入る拍間隔を安定区間とし、テンポはその平均から求め（拍時刻は 20 ms の格子に乗るため、中央値だけでは量子化される）、確信度はその割合とする。Beat This! の拍が 8 未満（立ち上がりのない持続音など）なら `Classic` の拍に切り替え、両方で得られないときだけ `NO_STABLE_BEAT` とする。使った方式は結果の `tempo.tracker`（`"neural"` / `"classic"`）に入れ、診断ログに出す。非有限のロジットは `ANALYSIS_FAILED`。
+    - 小節の境界にはモデルの拍時刻をそのまま使い、ダウンビート位相（`downbeat_phase`、打撃オンセットと低域）には最も近い rhythm フレームを使う。モデルのダウンビート出力は使わない。
+  - 評価用ツール（`scripts/evaluate-audio-mir-*.mjs`、`scripts/generate-audio-mir-synth-set.mjs`、`scripts/render-audio-mir-synth-set.swift`、`scripts/benchmark-audio-mir-job.mjs`、`scripts/export-beat-this-onnx.py`、`examples/tune_harmony.rs`、`examples/eval_beats.rs`）は開発時のローカル専用で、VSIX にもリポジトリにもデータを含めない。
   - 乱数は使わず、同じ入力からは同じ結果を返す。NaN や Infinity を含む結果は `ANALYSIS_FAILED` として扱う。
 - **TypeScript 境界** (`src/audioMir/`):
   - `model.ts` / `validate.ts`: `AudioMirResultV1` の型と、信頼できない JSON を実行時に構造検証する処理。
@@ -240,8 +250,12 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
     - リズム長は隣り合うアタックの間隔から求める。先頭の空きは休符にし、アタックがない小節は `r1` にする。
     - 8/16 グリッドは `duration.ts` で分解し、12 グリッドは `8t` を単位に分解する。
     - どの小節も検証の前にちょうど 4 拍になるよう組み立て、`autoRepair` は使わない。
-  - `worker.ts`: `worker_threads` のエントリ。WAV を読み込み、WASM を `require` して `analyze_wav` を呼ぶ。
-  - `workerClient.ts`: 親スレッドと Worker 間のプロトコル。`{type:'success', resultJson}` または `{type:'error', code}` をやり取りする。
+  - `worker.ts`: 解析 Worker（`worker_threads`）のエントリ。WAV を読み込み、WASM を `require` して `Analysis` を作り、チャンクを親に渡す（転送）。推論が進む間に `extract` を実行し、親から返るロジットで `finish` する。
+  - `inferWorker.ts`（#56）: 推論 Worker のエントリ。WASM を読み込み、チャンク長ごとに `BeatModel` を 1 回だけ作り、`{type:'infer', index, chunk}` に `{type:'logits', index, logits}` で答える。
+  - `workerClient.ts`: 親スレッドと Worker 間のプロトコル。1 ジョブは解析 Worker 1 つと推論 Worker のプールで構成する。
+    - プールの大きさは `clamp(availableParallelism − 1, 1, 2)` で、チャンク数を超えない（推論 Worker 1 つでピーク約 500 MB を使うため、メモリを優先して上限を 2 とする）。チャンクは共有キューからインデックス順に配り、ロジットはインデックスで集約する（完了順に依存しない）。
+    - 親スレッドはメッセージの中継と `ArrayBuffer` の転送だけを行い、DSP や推論はしない。
+    - ジョブは 1 回だけ確定する（`{type:'success', resultJson}`、`{type:'error', code}`、`cancelled`）。キャンセルや dispose では全 Worker を終了させる。どの Worker のエラー、終了、不正なメッセージでも `ANALYSIS_FAILED` で確定し、残りを終了させる。確定後のメッセージは無視する。
   - `controller.ts`: VS Code UI を担当する `AudioMirController`。
     - 状態は `idle`、`running(worker)`、`disposed` の 3 つで、同時に扱うジョブは 1 つだけ。
     - キャンセル時と dispose 時は Worker を即座に終了させ、その後に届いたメッセージは無視する。

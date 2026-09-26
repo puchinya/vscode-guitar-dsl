@@ -3,6 +3,8 @@
 
 use rustfft::FftPlanner;
 
+use crate::beat_nn;
+
 use crate::chord::{
     chord_name, decode_chords, event_confidence, SeventhGate, SlotFeature, TemplateChordClassifier,
 };
@@ -10,6 +12,7 @@ use crate::chroma::{l2_normalize, Chroma, ChromaMapper, ChromaParams};
 use crate::error::{MirError, MirResult};
 use crate::hpss::{HpssFrame, StreamingHpss, HPSS_WIDTH};
 use crate::key::estimate_key;
+use crate::mel::{ModelInput, MODEL_FPS, N_MELS};
 use crate::result::{
     AttackResult, AudioMirResultV1, ChordResult, KeyInfo, MeasureResult, SourceInfo, TempoInfo,
     TrimInfo,
@@ -21,7 +24,9 @@ use crate::stft::{
     bin_at_or_above, bin_at_or_below, frame_center_seconds, RollingStft, HARMONY_FFT, HARMONY_HOP,
     RHYTHM_FFT, RHYTHM_HOP,
 };
-use crate::tempo::{downbeat_phase, normalize_max, robust_normalize, smooth3, track_beats};
+use crate::tempo::{
+    downbeat_phase, normalize_max, robust_normalize, smooth3, track_beats, BeatTrack,
+};
 use crate::wav::{open_wav, WavInfo};
 
 const RHYTHM_LO_HZ: f32 = 40.0;
@@ -50,11 +55,26 @@ pub struct Features {
     /// Summed full-spectrum magnitude in 40..150 Hz per rhythm frame (downbeat).
     pub low_band: Vec<f32>,
     pub rhythm_fps: f64,
+    /// Beat This! input log-mel frames, row-major `[frames][128]` at 50 fps; present only
+    /// for `BeatTracker::Neural` (#56). About 23 MB for the 15-minute maximum.
+    pub model_mel: Option<Vec<f32>>,
 }
 
 impl Features {
     pub fn rhythm_time(&self, frame: usize) -> f64 {
         frame_center_seconds(frame, RHYTHM_FFT, RHYTHM_HOP, self.info.sample_rate)
+    }
+
+    /// Rhythm frame whose center is nearest to `seconds`.
+    pub fn rhythm_frame_at(&self, seconds: f64) -> usize {
+        let sr = f64::from(self.info.sample_rate);
+        let k = ((seconds * sr - (RHYTHM_FFT / 2) as f64) / RHYTHM_HOP as f64).round();
+        (k.max(0.0) as usize).min(self.percussive_flux.len().saturating_sub(1))
+    }
+
+    /// Number of Beat This! input frames (0 without model input).
+    pub fn model_frames(&self) -> usize {
+        self.model_mel.as_ref().map_or(0, |m| m.len() / N_MELS)
     }
 }
 
@@ -116,24 +136,46 @@ impl Extractor {
     }
 }
 
-/// Tunable harmony parameters. `Default` is the shipped configuration; `BASELINE`
-/// reproduces the #50 template baseline for evaluation.
+/// Beat tracking method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BeatTracker {
+    /// Beat This! `small0` (#56), the shipped tracker.
+    #[default]
+    Neural,
+    /// Onset autocorrelation + DP beat path (#50 / #52), kept for evaluation.
+    Classic,
+}
+
+/// Tunable analysis parameters. `Default` is the shipped configuration; `BASELINE`
+/// reproduces the #50 pipeline (template chroma, no gate, classic beat tracking).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct AnalysisParams {
     pub chroma: ChromaParams,
     pub seventh_gate: SeventhGate,
+    pub beat_tracker: BeatTracker,
 }
 
 impl AnalysisParams {
     pub const BASELINE: AnalysisParams = AnalysisParams {
         chroma: ChromaParams::BASELINE,
         seventh_gate: SeventhGate::OFF,
+        beat_tracker: BeatTracker::Classic,
     };
 }
 
 /// Single sequential pass over the WAV producing the retained features.
 pub fn extract_features(bytes: &[u8]) -> MirResult<Features> {
     extract_features_with(bytes, &AnalysisParams::default())
+}
+
+/// Beat This! input only: one WAV pass producing the log-mel frames (row-major
+/// `[frames][128]`). Lets the staged API start inference before the other features exist.
+pub fn extract_model_input(bytes: &[u8]) -> MirResult<Vec<f32>> {
+    let stream = open_wav(bytes)?;
+    let mut planner = FftPlanner::<f32>::new();
+    let mut input = ModelInput::new(&mut planner, stream.info().sample_rate);
+    stream.for_each_mono(|x| input.push(x))?;
+    Ok(input.finish())
 }
 
 pub fn extract_features_with(bytes: &[u8], params: &AnalysisParams) -> MirResult<Features> {
@@ -153,6 +195,9 @@ pub fn extract_features_with(bytes: &[u8], params: &AnalysisParams) -> MirResult
     let r_hi = bin_at_or_below(RHYTHM_HI_HZ, RHYTHM_FFT, sr) + 1;
     let mut r_stft = RollingStft::new(&mut planner, RHYTHM_FFT, RHYTHM_HOP, r_hi + HPSS_WIDTH);
     let mut r_hpss = StreamingHpss::new(r_lo, r_hi);
+
+    let mut model_input =
+        (params.beat_tracker == BeatTracker::Neural).then(|| ModelInput::new(&mut planner, sr));
 
     let mut ex = Extractor {
         sample_rate: sr,
@@ -177,6 +222,9 @@ pub fn extract_features_with(bytes: &[u8], params: &AnalysisParams) -> MirResult
     };
 
     stream.for_each_mono(|x| {
+        if let Some(m) = &mut model_input {
+            m.push(x);
+        }
         if let Some(mag) = h_stft.push(x) {
             if let Some(fr) = h_hpss.push(mag) {
                 ex.on_harmony(fr);
@@ -203,6 +251,7 @@ pub fn extract_features_with(bytes: &[u8], params: &AnalysisParams) -> MirResult
         harmonic_flux: ex.harmonic_flux,
         low_band: ex.low_band,
         rhythm_fps: f64::from(sr) / RHYTHM_HOP as f64,
+        model_mel: model_input.map(ModelInput::finish),
     })
 }
 
@@ -261,18 +310,57 @@ pub fn analyze_with(bytes: &[u8], params: &AnalysisParams) -> MirResult<AudioMir
 }
 
 /// Decoding stage over already extracted features (lets tuning reuse one extraction
-/// for several classifier settings).
+/// for several classifier settings). Beats come from Beat This! when the features carry
+/// model input, otherwise from the classic tracker.
 pub fn analyze_features(
     feats: &Features,
+    seventh_gate: SeventhGate,
+) -> MirResult<AudioMirResultV1> {
+    let beats = match &feats.model_mel {
+        Some(mel) => neural_or_classic_beats(feats, &beat_nn::infer_piece(mel)?)?,
+        None => classic_beats(feats)?,
+    };
+    decode(feats, &beats, seventh_gate)
+}
+
+/// Beat This! beats, or the classic tracker's when the model finds too few beats (e.g.
+/// sustained audio without attacks), so audio that #52 could analyze still is.
+pub fn neural_or_classic_beats(feats: &Features, logits: &[f32]) -> MirResult<BeatTrack> {
+    match neural_beats(feats, logits) {
+        Err(MirError::NoStableBeat) => classic_beats(feats),
+        other => other,
+    }
+}
+
+/// #50 / #52 tracker over the percussive onset envelope.
+pub fn classic_beats(feats: &Features) -> MirResult<BeatTrack> {
+    let onset = robust_normalize(&smooth3(&feats.percussive_flux));
+    track_beats(&onset, feats.rhythm_fps)
+}
+
+/// Beat track from whole-piece Beat This! logits (50 fps).
+pub fn neural_beats(feats: &Features, logits: &[f32]) -> MirResult<BeatTrack> {
+    debug_assert_eq!(MODEL_FPS, 50.0);
+    let times = beat_nn::beat_times(logits);
+    beat_nn::beat_track(&times, |t| feats.rhythm_frame_at(t))
+}
+
+/// Measures, chords, rhythm and key over a given beat track. The downbeat phase still
+/// uses the percussive onset envelope and the low band.
+pub fn decode(
+    feats: &Features,
+    beats: &BeatTrack,
     seventh_gate: SeventhGate,
 ) -> MirResult<AudioMirResultV1> {
     let info = feats.info;
 
     let onset = robust_normalize(&smooth3(&feats.percussive_flux));
-    let beats = track_beats(&onset, feats.rhythm_fps)?;
     let low = normalize_max(&feats.low_band);
     let phase = downbeat_phase(&beats.beats, &low, &onset);
-    let beat_times: Vec<f64> = beats.beats.iter().map(|&f| feats.rhythm_time(f)).collect();
+    let beat_times: Vec<f64> = match &beats.seconds {
+        Some(seconds) => seconds.clone(),
+        None => beats.beats.iter().map(|&f| feats.rhythm_time(f)).collect(),
+    };
 
     let mut measures: Vec<MeasureBeats> = Vec::new();
     let mut i = phase;
@@ -346,6 +434,12 @@ pub fn analyze_features(
         tempo: TempoInfo {
             bpm: beats.bpm,
             confidence: beats.confidence,
+            // Only Beat This! reports exact beat times (see `BeatTrack::seconds`).
+            tracker: if beats.seconds.is_some() {
+                "neural"
+            } else {
+                "classic"
+            },
         },
         key: KeyInfo {
             name: key_name,

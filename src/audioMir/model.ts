@@ -41,6 +41,8 @@ export interface AudioMirResultV1 {
   tempo: {
     bpm: number;
     confidence: number;
+    /** Beat tracker that produced the grid (#56); absent only in pre-#56 results. */
+    tracker?: AudioMirBeatTracker;
   };
   key: {
     name: string;
@@ -78,3 +80,7 @@ export const AUDIO_MIR_MAX_FILE_BYTES = 128 * 1024 * 1024;
 /** Canonical pitch-class spellings used by Audio MIR chord and key names. */
 export const AUDIO_MIR_PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
 export const AUDIO_MIR_CHORD_SUFFIXES = ['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', 'dim', 'aug'] as const;
+
+/** Beat trackers reported in `tempo.tracker`: Beat This!, or the classic fallback. */
+export const AUDIO_MIR_BEAT_TRACKERS = ['neural', 'classic'] as const;
+export type AudioMirBeatTracker = (typeof AUDIO_MIR_BEAT_TRACKERS)[number];

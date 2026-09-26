@@ -178,6 +178,9 @@ export function evaluate(result, reference) {
   };
 }
 
+/** Relative tempo tolerance of Acc1 / Acc2 (Acc2 also accepts x1/3, x1/2, x2, x3). */
+export const TEMPO_TOLERANCE = 0.04;
+
 /** Aggregates `evaluate()` results over many excerpts (duration-weighted). */
 export function createAccumulator() {
   const totals = { rootTotal: 0, rootHit: 0, exactTotal: 0, exactHit: 0, majminTotal: 0, majminHit: 0 };
@@ -185,9 +188,11 @@ export function createAccumulator() {
   const confusion = {};
   const failures = {};
   const bpmErrors = [];
+  const tempoHits = { acc1: 0, acc2: 0 };
   let excerpts = 0;
   return {
-    add(metrics, bpmError) {
+    /** `tempo` is `{ estimate, reference }` (BPM) when the reference tempo is known. */
+    add(metrics, tempo) {
       excerpts++;
       for (const k of Object.keys(totals)) {
         totals[k] += metrics.totals[k];
@@ -201,8 +206,11 @@ export function createAccumulator() {
           confusion[ref][est] = (confusion[ref][est] ?? 0) + sec;
         }
       }
-      if (bpmError !== undefined) {
-        bpmErrors.push(bpmError);
+      if (tempo !== undefined) {
+        const within = m => Math.abs(tempo.estimate / (tempo.reference * m) - 1) <= TEMPO_TOLERANCE;
+        bpmErrors.push(Math.abs(tempo.estimate - tempo.reference));
+        tempoHits.acc1 += within(1) ? 1 : 0;
+        tempoHits.acc2 += [1 / 3, 1 / 2, 1, 2, 3].some(within) ? 1 : 0;
       }
     },
     /** A failed excerpt still counts: its whole reference duration is missed. */
@@ -228,6 +236,8 @@ export function createAccumulator() {
         majminRecall: ratio(totals.majminHit, totals.majminTotal),
         change: { precision, recall, f1: precision + recall ? (2 * precision * recall) / (precision + recall) : 0 },
         bpmMedianAbsError: sorted.length ? sorted[sorted.length >> 1] : undefined,
+        tempoAcc1: sorted.length ? tempoHits.acc1 / sorted.length : undefined,
+        tempoAcc2: sorted.length ? tempoHits.acc2 / sorted.length : undefined,
         confusion
       };
     }
@@ -245,6 +255,7 @@ export function formatSummary(summary, { confusion = true } = {}) {
   ];
   if (summary.bpmMedianAbsError !== undefined) {
     lines.push(`tempo median abs error    ${summary.bpmMedianAbsError.toFixed(2)} BPM`);
+    lines.push(`tempo Acc1 / Acc2 (4%)    ${pct(summary.tempoAcc1)} / ${pct(summary.tempoAcc2)}`);
   }
   if (confusion) {
     lines.push('quality confusion (reference -> estimate, seconds, root-matched):');

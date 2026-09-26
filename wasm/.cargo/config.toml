@@ -1,0 +1,4 @@
+# The Node / Electron WASM runtimes the extension targets support SIMD; tract's wasm
+# kernels need `simd128` (about 3.7x faster Beat This! inference, #56).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
