@@ -87,7 +87,7 @@
   - `tests/unit/audioMirEvaluator.test.ts`: 評価スクリプトの Harte 表記の語彙縮約、時間加重の各一致率、GuitarSet JAMS（演奏側コード・テンポ）の読み取り、テンポ Acc1/Acc2
   - `tests/unit/audioMir.test.ts`: `AudioMirResultV1` の実行時検証（版・tick・スロット重複・非有限値・コード名/キー名）、アダプタ（1 セクション、コード/リズム 8・12・16 グリッドの各小節ちょうど 4 拍、先頭休符・`r1`・3 連、方向の決定的割り当て、strict 検証をそのまま通過、再パースでエラー 0）、Worker プロトコル（1 回だけ確定・遅延メッセージ無視）、推論プール（並列数の上限、完了順に依存しない集約、キャンセルで全 Worker 終了、推論 Worker の失敗・不正メッセージ）、`tempo.tracker` の検証、コントローラ（多重起動防止、キャンセル、失敗後の再実行、非 file URI、失敗時にドキュメントを作らない、dispose）
   - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
-- **テスト実行結果**: **233 / 233 件 PASS** (0 failures)
+- **テスト実行結果**: **246 / 246 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
