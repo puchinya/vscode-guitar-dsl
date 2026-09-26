@@ -1,6 +1,9 @@
 // Deterministic multi-instrument evaluation set for Audio MIR (local only, never committed).
 //
-//   node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 60] [--seed 1]
+//   node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1]
+//
+// --count must be a multiple of BALANCE_UNIT (instruments x splits x band/no band) so that
+// every instrument has exactly half of its songs with bass + drums in each split.
 //
 // Writes <out>/<id>.json (note events per part, rendered by
 // scripts/render-audio-mir-synth-set.swift), <out>/<id>.lab (exact chord reference in
@@ -22,6 +25,8 @@ export const INSTRUMENTS = [
   { name: 'pad', program: 89, sustained: true },
   { name: 'guitar', program: 25, sustained: false }
 ];
+/** Songs per balanced block: 6 instruments x 2 splits x 2 (with / without bass + drums). */
+export const BALANCE_UNIT = INSTRUMENTS.length * 2 * 2;
 /** Diatonic degrees `(semitones from tonic, qualities)` of a major key. */
 const DEGREES = [
   [0, ['', 'maj7', 'sus2']], [2, ['m', 'm7']], [4, ['m', 'm7']], [5, ['', 'maj7']],
@@ -184,14 +189,18 @@ function main() {
   const args = process.argv.slice(2);
   const out = args.find((a, i) => !a.startsWith('--') && !['--count', '--seed'].includes(args[i - 1]));
   if (!out) {
-    console.error('usage: node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 60] [--seed 1]');
+    console.error('usage: node scripts/generate-audio-mir-synth-set.mjs <out dir> [--count 72] [--seed 1]');
     process.exit(2);
   }
   const opt = name => {
     const i = args.indexOf(name);
     return i >= 0 ? Number(args[i + 1]) : undefined;
   };
-  const count = opt('--count') ?? 60;
+  const count = opt('--count') ?? 72;
+  if (!Number.isInteger(count) || count <= 0 || count % BALANCE_UNIT !== 0) {
+    console.error(`--count must be a positive multiple of ${BALANCE_UNIT} (got ${count}) so bass + drums go to exactly half of each instrument in each split`);
+    process.exit(2);
+  }
   const seed = opt('--seed') ?? 1;
   mkdirSync(out, { recursive: true });
   const meta = [];
