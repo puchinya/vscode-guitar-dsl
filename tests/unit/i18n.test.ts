@@ -68,4 +68,22 @@ describe('i18n - getMessages', () => {
     assert.ok(formatDiagnostic('upperCaseNoteName', args, 'ja').includes('E4/8'));
     assert.ok(formatDiagnostic('beatCountMismatch', args, 'en').includes('3 beats'));
   });
+
+  it('formats the let fragment and note-group diagnostics in Japanese and English (Issue #72)', () => {
+    const newCodes: DiagnosticCode[] = [
+      'invalidLetDefinition', 'duplicateVariable', 'unknownVariable', 'cyclicVariableReference',
+      'invalidVariableValue', 'variableContextMismatch', 'invalidNoteGroup', 'unsupportedNoteGroupTechnique'
+    ];
+    const args = { token: '[c4,e4]/4{hammer}', name: 'riff', reason: 'percent', context: 'melody' };
+    for (const code of newCodes) {
+      const ja = formatDiagnostic(code, args, 'ja');
+      const en = formatDiagnostic(code, args, 'en');
+      assert.ok(ja.trim().length > 0 && en.trim().length > 0, code);
+      assert.notStrictEqual(ja, en, code);
+      assert.ok(!/undefined/.test(ja) && !/undefined/.test(en), code);
+    }
+    assert.ok(formatDiagnostic('unknownVariable', args, 'en').includes('$riff'));
+    assert.ok(formatDiagnostic('invalidVariableValue', args, 'ja').includes('%'));
+    assert.ok(formatDiagnostic('variableContextMismatch', { name: 'p', context: 'measure' }, 'ja').includes('小節行'));
+  });
 });

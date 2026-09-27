@@ -2,16 +2,18 @@
 // and syllable lyrics (docs/specs/guitardsl-syntax.md §12–§16). Drawn in system unit coordinates above the
 // rhythm staff.
 
-import { MeasureData } from '../compiler';
+import { MeasureData, Pitch, eventPitches } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, tupletGroups } from '../duration';
 import { MelodyNote, isGrace } from '../melody';
 import { beamGroupIndex } from '../scoreEvents';
 import { RowSpanCollector, connectionLinks, isLetRing, isPalmMute } from './annotations';
 import { MELODY_STAVE_BOTTOM, MELODY_STAVE_TOP, SystemGeometry, estimateTextWidth } from './layout';
 import {
+  ACCIDENTAL_COLUMN_WIDTH,
   FLAG_16_STEM_EXTENSION,
   FETA_TREBLE_CLEF_PATH,
   HEAD_RX,
+  accidentalColumns,
   RenderContext,
   SystemPrefix,
   barBeats,
@@ -20,7 +22,10 @@ import {
   escapeXml,
   expandParts,
   fmt,
+  groupHeadOffsets,
+  groupStemUp,
   keyAlter,
+  ledgerLinePositions,
   measureBounds,
   renderAccidental,
   renderChordName,
@@ -60,6 +65,14 @@ function yOf(pos: number): number {
   return MELODY_STAVE_BOTTOM - pos * 4;
 }
 
+/** One member of a note group head: staff position, y and x offset from the head's x (seconds). */
+interface GroupMember {
+  pitch: Pitch;
+  pos: number;
+  y: number;
+  dx: number;
+}
+
 interface Head {
   measureIdx: number;
   note: MelodyNote;
@@ -67,8 +80,14 @@ interface Head {
   beats: Fraction;
   offset: number;
   x: number;
+  /** Staff position of the head (for a note group, of the member at the stem's origin). */
   pos: number;
   y: number;
+  /** Highest / lowest notehead y (equal to `y` except for a note group). */
+  yTop: number;
+  yBottom: number;
+  /** Note group members sorted from low to high; undefined for single notes and rests. */
+  members?: GroupMember[];
   isFirstPart: boolean;
   isLastPart: boolean;
   stemUp: boolean;
@@ -118,7 +137,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   out += renderTimeSignature(opts.prefix, MELODY_STAVE_TOP);
 
   const heads: Head[] = [];
-  const graces: { note: MelodyNote; x: number; y: number; pos: number; part: NoteValuePart }[] = [];
+  const graces: GraceHead[] = [];
 
   measures.forEach((m, idx) => {
     const { bx, width } = measureBounds(ctx, measures.length, idx);
@@ -192,8 +211,12 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
     const pendingGraces: MelodyNote[] = [];
     const placeGraces = (targetX: number) => {
       pendingGraces.forEach((g, k) => {
-        const pos = g.pitch ? writtenStaffPosition(g.pitch, ottava) : 4;
-        graces.push({ note: g, x: targetX - 12 - (pendingGraces.length - 1 - k) * GRACE_SPACING, y: yOf(pos), pos, part: g.parts[0] ?? { base: 8, dotted: false } });
+        const positions = eventPitches(g).map(p => writtenStaffPosition(p, ottava)).sort((a, b) => a - b);
+        // A grace note group is anchored at its lowest head.
+        const pos = positions.length > 0 ? positions[0] : 4;
+        const grace: GraceHead = { note: g, x: targetX - 12 - (pendingGraces.length - 1 - k) * GRACE_SPACING, y: yOf(pos), pos, part: g.parts[0] ?? { base: 8, dotted: false } };
+        if (positions.length > 1) grace.positions = positions;
+        graces.push(grace);
       });
       pendingGraces.length = 0;
     };
@@ -207,8 +230,16 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
         const x = columns.xAt(h.offset) ?? bx + width / 2;
         // Grace notes lean on the next sounding note; a rest keeps them pending (spec §12.2.1).
         if (i === 0 && !note.isRest) placeGraces(x);
-        const pos = note.pitch ? writtenStaffPosition(note.pitch, ottava) : 4;
-        const stemUp = pos < 4;
+        const members = groupMembers(note, ottava);
+        const pos = members ? 0 : note.pitch ? writtenStaffPosition(note.pitch, ottava) : 4;
+        const stemUp = members ? groupStemUp(members.map(mb => mb.pos)) : pos < 4;
+        const headPos = members ? (stemUp ? members[0].pos : members[members.length - 1].pos) : pos;
+        const yTop = members ? members[members.length - 1].y : note.isRest ? MID_Y : yOf(pos);
+        const yBottom = members ? members[0].y : yTop;
+        if (members) {
+          const offsets = groupHeadOffsets(members.map(mb => mb.pos), stemUp);
+          members.forEach((mb, k) => (mb.dx = offsets[k]));
+        }
         // Beamed stems are recomputed later; only an unbeamed 16th keeps this extension.
         const stemLength = STEM_LENGTH + (h.part.base >= 16 ? FLAG_16_STEM_EXTENSION : 0);
         heads.push({
@@ -218,13 +249,16 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
           beats: h.beats,
           offset: fnum(h.offset),
           x,
-          pos,
-          y: note.isRest ? MID_Y : yOf(pos),
+          pos: headPos,
+          y: note.isRest ? MID_Y : yOf(headPos),
+          yTop,
+          yBottom,
+          members,
           isFirstPart: h.isFirstPart,
           isLastPart: i === expanded.length - 1,
           stemUp,
           stemX: stemUp ? x + HEAD_RX - 0.4 : x - HEAD_RX + 0.4,
-          stemEndY: stemUp ? yOf(pos) - stemLength : yOf(pos) + stemLength,
+          stemEndY: stemUp ? yTop - stemLength : yBottom + stemLength,
           beamed: false,
           beamGroup: `${idx}:${beamGroupIndex(ts, fnum(h.offset))}`,
           keySignature: m.context.keySignature ?? 0
@@ -249,6 +283,28 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   collectSpans(heads, measures, ctx, opts.spans);
   out += renderSyllables(heads, opts.geometry, lyricSize);
   return out;
+}
+
+interface GraceHead {
+  note: MelodyNote;
+  x: number;
+  y: number;
+  pos: number;
+  part: NoteValuePart;
+  /** Sorted staff positions of a grace note group. */
+  positions?: number[];
+}
+
+/** Members of a note group sorted from low to high (x offsets are set once the stem direction is known). */
+function groupMembers(note: MelodyNote, ottava: 'none' | '8va' | '8vb'): GroupMember[] | undefined {
+  const pitches = eventPitches(note);
+  if (pitches.length < 2) return undefined;
+  return pitches
+    .map(pitch => {
+      const pos = writtenStaffPosition(pitch, ottava);
+      return { pitch, pos, y: yOf(pos), dx: 0 };
+    })
+    .sort((a, b) => a.pos - b.pos);
 }
 
 function renderBarline(m: MeasureData, bx: number, bEnd: number): string {
@@ -292,8 +348,8 @@ function renderBeams(heads: Head[]): string {
     const avg = group.reduce((acc, h) => acc + h.pos, 0) / group.length;
     const up = avg < 4;
     const beamY = up
-      ? Math.min(...group.map(h => h.y)) - STEM_LENGTH
-      : Math.max(...group.map(h => h.y)) + STEM_LENGTH;
+      ? Math.min(...group.map(h => h.yTop)) - STEM_LENGTH
+      : Math.max(...group.map(h => h.yBottom)) + STEM_LENGTH;
     for (const h of group) {
       h.beamed = true;
       h.stemUp = up;
@@ -344,6 +400,10 @@ function renderHeads(heads: Head[]): string {
       if (h.part.dotted) out += `<circle cx="${fmt(h.x + 8)}" cy="${MID_Y - 4}" r="1.6" fill="#000"/>`;
       continue;
     }
+    if (h.members) {
+      out += renderGroupHead(h, h.members, state);
+      continue;
+    }
 
     const pitch = h.note.pitch!;
     const k = `${pitch.step}${pitch.octave}`;
@@ -379,6 +439,46 @@ function renderHeads(heads: Head[]): string {
   return out;
 }
 
+/** A note group head: ledger lines once, accidental columns, displaced seconds, dots and one shared stem. */
+function renderGroupHead(h: Head, members: GroupMember[], state: Map<string, number>): string {
+  let out = '';
+  const xs = members.map(m => h.x + m.dx);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  for (const p of ledgerLinePositions(members.map(m => m.pos))) {
+    out += `<line x1="${fmt(left - 8)}" y1="${fmt(yOf(p))}" x2="${fmt(right + 8)}" y2="${fmt(yOf(p))}" stroke="#000" stroke-width="1"/>`;
+  }
+
+  if (h.isFirstPart) {
+    // Each member follows the key signature / measure state on its own (spec §18.3).
+    const accidentals: { y: number; alter: -1 | 0 | 1 }[] = [];
+    for (const m of members) {
+      const k = `${m.pitch.step}${m.pitch.octave}`;
+      const expected = state.has(k) ? state.get(k)! : keyAlter(h.keySignature, m.pitch.step);
+      if (m.pitch.alter !== expected) accidentals.push({ y: m.y, alter: m.pitch.alter });
+      state.set(k, m.pitch.alter);
+    }
+    const cols = accidentalColumns(accidentals);
+    accidentals.forEach((a, i) => {
+      out += renderAccidental(a.alter, left - 11 - cols[i] * ACCIDENTAL_COLUMN_WIDTH, a.y);
+    });
+  }
+
+  members.forEach((m, i) => (out += renderNotehead(h.part.base, xs[i], m.y)));
+
+  if (h.part.dotted) {
+    const dotYs = new Set(members.map(m => (m.pos % 2 === 0 ? m.y - 4 : m.y)));
+    dotYs.forEach(dotY => (out += `<circle cx="${fmt(right + 8.5)}" cy="${fmt(dotY)}" r="1.6" fill="#000"/>`));
+  }
+
+  if (h.part.base >= 2) {
+    const headEdge = h.stemUp ? h.yBottom - 1 : h.yTop + 1;
+    out += `<line x1="${fmt(h.stemX)}" y1="${fmt(headEdge)}" x2="${fmt(h.stemX)}" y2="${fmt(h.stemEndY)}" stroke="#000" stroke-width="1.35"/>`;
+    if (!h.beamed) out += renderFlags(h.part.base as NoteBase, h.stemX, h.stemEndY, !h.stemUp);
+  }
+  return out;
+}
+
 function renderLedgerLines(x: number, pos: number, half = 8): string {
   let out = '';
   for (let p = -2; p >= pos; p -= 2) {
@@ -391,9 +491,13 @@ function renderLedgerLines(x: number, pos: number, half = 8): string {
 }
 
 /** Grace notes: scaled notehead, stem up, flag and accidental (no beat, spec §12.2.1). */
-function renderGraceNotes(graces: { note: MelodyNote; x: number; y: number; pos: number; part: NoteValuePart }[]): string {
+function renderGraceNotes(graces: GraceHead[]): string {
   let out = '';
   for (const g of graces) {
+    if (g.positions) {
+      out += renderGraceGroup(g, g.positions);
+      continue;
+    }
     if (!g.note.pitch) continue;
     out += renderLedgerLines(g.x, g.pos, 6);
     const stemTop = -STEM_LENGTH;
@@ -406,10 +510,45 @@ function renderGraceNotes(graces: { note: MelodyNote; x: number; y: number; pos:
   return out;
 }
 
+/** A grace note group: all members scaled around the lowest head, one stem up. */
+function renderGraceGroup(g: GraceHead, positions: number[]): string {
+  let out = '';
+  for (const p of ledgerLinePositions(positions)) {
+    out += `<line x1="${fmt(g.x - 6)}" y1="${fmt(yOf(p))}" x2="${fmt(g.x + 6)}" y2="${fmt(yOf(p))}" stroke="#000" stroke-width="1"/>`;
+  }
+  const dys = positions.map(p => (yOf(p) - g.y) / GRACE_SCALE);
+  const offsets = groupHeadOffsets(positions, true);
+  const stemTop = dys[dys.length - 1] - STEM_LENGTH;
+  let inner = positions.map((_, i) => renderNotehead(g.part.base, offsets[i], dys[i])).join('')
+    + `<line x1="${fmt(HEAD_RX - 0.4)}" y1="-1" x2="${fmt(HEAD_RX - 0.4)}" y2="${fmt(stemTop)}" stroke="#000" stroke-width="1.5"/>`
+    + renderFlags(Math.max(8, g.part.base) as NoteBase, HEAD_RX - 0.4, stemTop);
+  const pitches = eventPitches(g.note)
+    .map(pitch => ({ pitch, pos: staffPosition(pitch) }))
+    .sort((a, b) => a.pos - b.pos);
+  const accidentals = pitches.map((p, i) => ({ y: dys[i], alter: p.pitch.alter })).filter(a => a.alter !== 0);
+  const cols = accidentalColumns(accidentals);
+  accidentals.forEach((a, i) => (inner += renderAccidental(a.alter, -10 - cols[i] * ACCIDENTAL_COLUMN_WIDTH, a.y)));
+  out += `<g class="technique-grace" transform="translate(${fmt(g.x)}, ${fmt(g.y)}) scale(${GRACE_SCALE})">${inner}</g>`;
+  return out;
+}
+
 function renderTies(heads: Head[], ctx: RenderContext): string {
   let out = '';
   const sounding = heads.filter(h => !h.note.isRest);
   sounding.forEach((h, i) => {
+    if (h.members) {
+      // Compound group length: one tie per member; the lower half bends down, the upper half up.
+      if (h.isLastPart) return;
+      const next = sounding[i + 1];
+      const n = h.members.length;
+      h.members.forEach((m, k) => {
+        const below = k * 2 + 1 === n ? h.stemUp : k * 2 + 1 < n;
+        const tieY = below ? m.y + 6 : m.y - 6;
+        const x1 = h.x + Math.max(0, m.dx) + 6;
+        out += renderTieArc(x1, next ? next.x + Math.min(0, next.members?.[k]?.dx ?? 0) - 6 : ctx.totalWidth - 8, tieY, below);
+      });
+      return;
+    }
     const below = h.stemUp;
     const tieY = below ? h.y + 6 : h.y - 6;
     // A note that continues a tie from the previous system starts with a half arc.
@@ -440,7 +579,7 @@ function renderTuplets(heads: Head[]): string {
     for (const { items: group } of tupletGroups(list)) {
       const x1 = group[0].x - 4;
       const x2 = group[group.length - 1].x + 4;
-      const top = Math.min(...group.map(h => Math.min(h.y, h.part.base >= 2 && !h.note.isRest ? h.stemEndY : h.y))) - 6;
+      const top = Math.min(...group.map(h => Math.min(h.yTop, h.part.base >= 2 && !h.note.isRest ? h.stemEndY : h.yTop))) - 6;
       const cx = (x1 + x2) / 2;
       const allBeamed = group.every(h => h.beamed);
       const label = String(group[0].part.tuplet!.actual);
@@ -455,7 +594,7 @@ function renderTuplets(heads: Head[]): string {
 
 /** Top of the drawn note (notehead or stem end) for marks placed above it. */
 function noteTop(h: Head): number {
-  return h.part.base >= 2 && h.stemUp ? Math.min(h.y - 5, h.stemEndY) : h.y - 5;
+  return h.part.base >= 2 && h.stemUp ? Math.min(h.yTop - 5, h.stemEndY) : h.yTop - 5;
 }
 
 /** Articulations on the first head of each note (staccato, tenuto, fermata, breath, vibrato, bend). */
@@ -466,7 +605,7 @@ function renderArticulations(heads: Head[]): string {
     if (!tech || !h.isFirstPart) continue;
     if (!h.note.isRest) {
       // Staccato / tenuto on the notehead side opposite the stem.
-      const artY = h.stemUp ? h.y + 8 : h.y - 8;
+      const artY = h.stemUp ? h.yBottom + 8 : h.yTop - 8;
       if (tech.staccato) out += renderStaccato(h.x, tech.tenuto ? artY + (h.stemUp ? 4 : -4) : artY);
       if (tech.tenuto) out += renderTenuto(h.x, artY);
     }
@@ -474,7 +613,7 @@ function renderArticulations(heads: Head[]): string {
     if (tech.fermata) {
       // No room between the chord names and a very high note: use the inverted fermata below it.
       const roomAbove = noteTop(h) - 4 >= MARK_CEILING + 8;
-      out += roomAbove || h.note.isRest ? renderFermata(h.x, aboveY) : renderFermata(h.x, (h.stemUp ? h.y : Math.max(h.y, h.stemEndY)) + 8, true);
+      out += roomAbove || h.note.isRest ? renderFermata(h.x, aboveY) : renderFermata(h.x, (h.stemUp ? h.yBottom : Math.max(h.yBottom, h.stemEndY)) + 8, true);
     }
     if (tech.vibrato) out += renderVibrato(h.x - 4, h.x + 14, Math.max(MARK_CEILING, aboveY - (tech.fermata ? 10 : 2)));
     if (tech.breath) out += renderBreath(h.x + 11, STAVE_LINES[0] - 9);
@@ -487,7 +626,7 @@ function renderArticulations(heads: Head[]): string {
  * Hammer-on / pull-off / slide / gliss and slurs. Links come from the whole melody so a connection crossing
  * a system is drawn as an outgoing piece (to the system end) and an incoming piece (from the system start).
  */
-function renderConnections(heads: Head[], graces: { note: MelodyNote; x: number; y: number }[], ctx: RenderContext): string {
+function renderConnections(heads: Head[], graces: GraceHead[], ctx: RenderContext): string {
   const seq = melodySequence(ctx);
   const at = new Map<MelodyNote, { x: number; y: number; stemUp: boolean }>();
   for (const h of heads) {
@@ -498,6 +637,8 @@ function renderConnections(heads: Head[], graces: { note: MelodyNote; x: number;
   const rowEnd = ctx.totalWidth - 8;
   let out = '';
   for (const link of connectionLinks(seq)) {
+    // A note group is never a connection end (the parser rejects it, spec §18.2).
+    if (eventPitches(seq[link.from]).length > 1 || eventPitches(seq[link.to]).length > 1) continue;
     const from = at.get(seq[link.from]);
     const to = at.get(seq[link.to]);
     if (!from && !to) continue;

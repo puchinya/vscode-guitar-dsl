@@ -36,3 +36,50 @@ describe('grammar - advanced notation (T046)', () => {
     for (const tok of ['c5/8{5:4}', 'e5/4', 'f#4/8t']) assert.ok(note.test(tok), tok);
   });
 });
+
+describe('grammar - let fragments and note groups (Issue #72)', () => {
+  const letRule = byName('meta.let.guitardsl')[0];
+  const melody = byName('meta.melody.guitardsl')[0].patterns;
+
+  it('highlights a let declaration keyword, name and assignment', () => {
+    const begin = new RegExp(letRule.begin);
+    const m = 'let riff = e4/8 g a g'.match(begin)!;
+    assert.deepStrictEqual([m[1], m[2], m[3]], ['let', 'riff', '=']);
+    assert.strictEqual(letRule.beginCaptures['1'].name, 'storage.type.let.guitardsl');
+    assert.strictEqual(letRule.beginCaptures['2'].name, 'variable.other.definition.guitardsl');
+    assert.strictEqual(letRule.beginCaptures['3'].name, 'keyword.operator.assignment.guitardsl');
+    assert.ok(!begin.test('lettuce = 4.d') && !begin.test('| let | 4.d |'));
+    const comment = new RegExp(letRule.patterns.find((p: any) => p.name === 'comment.line.number-sign.guitardsl').match);
+    assert.strictEqual('let riff = f#4/8 g  # intro'.match(comment)![0], '# intro');
+    assert.ok(!comment.test('let riff = f#4/8'));
+  });
+
+  it('highlights $name references in definitions, measure lines and mel: lines', () => {
+    const inLet = new RegExp(letRule.patterns.find((p: any) => p.name === 'variable.other.reference.guitardsl').match, 'g');
+    assert.deepStrictEqual('let v = $downUp $motif'.match(inLet), ['$downUp', '$motif']);
+    const top = new RegExp(byName('variable.other.reference.guitardsl')[0].match, 'g');
+    assert.deepStrictEqual('| C | $groove |'.match(top), ['$groove']);
+    const inMel = new RegExp(melody.find((p: any) => p.name === 'variable.other.reference.guitardsl').match, 'g');
+    assert.deepStrictEqual('mel: | c5/4 $riff b |'.match(inMel), ['$riff']);
+  });
+
+  it('highlights note groups and keeps [Intro] a section', () => {
+    const rules = [byName('meta.note-group.guitardsl')[0], melody.find((p: any) => p.name === 'meta.note-group.guitardsl'), letRule.patterns.find((p: any) => p.name === 'meta.note-group.guitardsl')];
+    for (const rule of rules) {
+      const re = new RegExp(rule.match);
+      const m = '[c4,eb4,g4]/8{5:4}{staccato}'.match(re)!;
+      assert.deepStrictEqual([m[1], m[2], m[3], m[4], m[5]], ['[', 'c4,eb4,g4', ']', '/8{5:4}', '{staccato}']);
+      assert.ok(re.test('[c4,e4]:1.5'));
+      for (const bad of ['[Intro]', '[1.]', '[c4]/4', '[c4,e4]', '[Aメロ]']) assert.ok(!re.test(bad), bad);
+      assert.strictEqual(rule.captures['2'].patterns[0].name, 'punctuation.separator.note-group.guitardsl');
+      assert.strictEqual(rule.captures['2'].patterns[1].name, 'constant.other.note.guitardsl');
+      assert.strictEqual(rule.captures['4'].name, 'constant.numeric.duration.guitardsl');
+      assert.strictEqual(rule.captures['5'].name, 'entity.other.attribute-name.technique.guitardsl');
+    }
+    const section = new RegExp(byName('entity.name.section.guitardsl')[0].match);
+    assert.ok(section.test('[Intro]'));
+    // The group rule comes first at the same position, but never matches a section label.
+    const order = grammar.patterns.map((p: any) => p.name);
+    assert.ok(order.indexOf('meta.note-group.guitardsl') < order.indexOf('entity.name.section.guitardsl'));
+  });
+});

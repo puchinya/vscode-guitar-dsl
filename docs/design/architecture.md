@@ -108,6 +108,7 @@ flowchart TD
   - `MeasureData`: 1小節分のデータ（小節内コード配列 `chords`、反復記号 `repeatStart` / `repeatEnd` / `isMeasureRepeat`、リズム配列 `rhythms`、歌詞 `lyric`、セクション名 `sectionName` 等）。
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
+  - 音高の数（0 / 1 / 複数）の不変条件（`RhythmItem`・`MelodyNote` 共通）: 休符・スラッシュは `pitch` も `pitches` も未定義、単音は `pitch` のみ、同時複数音（§2.15）は `pitch` 未定義で `pitches.length >= 2`。音高を扱う新しい処理は `eventPitches(event)`（`src/compiler.ts`）で 0〜複数の音高を得て、`.pitch` だけを仮定しない。
   - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
   - `originalKey` / `bpm` / `keySignature` は**冒頭の**メタデータ（最後に見たイベントではない）。冒頭の拍子 `timeSignature`、フィール `feel`、弱起 `pickup?`、スコアイベント列 `events` を持つ（§2.12）。
   - `MeasureData` は `measureIndex`（全体での 0 始まり）、解決済みのコンテキスト `context: ResolvedMeasureContext`、その小節の直前に適用されるイベント `eventsBefore`、期待する長さ `expectedBeats`、`isPickup?` を持つ。描画はこれだけを参照し、DSL のイベント行を読み直さない。
@@ -366,6 +367,20 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **`TransposeSection`**（id `transpose`）: ホストが移調量とカポ方針を保持し、モデル（現在・移調後のキー、キー候補、現在のカポ、コード対応、警告・エラー）をドキュメントの現在のテキストから計算する。`applyTransposeTransform(uri, request)` は `openTextDocument` の最新テキストから計画をやり直し、`applyCapoTransform` と共通の差分置換で 1 つの `WorkspaceEdit` として適用する（元に戻す 1 回で戻る）。Webview からのテキストや対応表は使わない。
 - **初心者モードとの関係**: 移調は常に `TextDocument.getText()` から計算し、プレビューの一時的な初心者モード・カポ変更の出力を入力にしない。適用後、プレビューの一時状態は通常どおり新しいテキストから再計算される（§2.11）。
 - **メッセージ**: `setSemitones { section: 'transpose', semitones }`、`setCapoMode { section: 'transpose', mode: 'keep' | 'recommended' | 'explicit', capo? }`、`apply { section: 'transpose' }`。
+
+### 2.15 再利用フラグメントと同時複数音 (`let` / `$name` / `[...]`)
+
+公開の振る舞いは `docs/specs/guitardsl-syntax.md` §17・§18。
+
+- **同時複数音のモデル**: 1つの `MelodyNote` / `RhythmItem`（1つの発音位置・1つの `parts` / `beats`）に `pitches: Pitch[]` を持たせる。構成音ごとの音符には分けない（拍数・発音位置・歌詞・連桁が1つの音符として働く）。`parseNoteGroupToken`（`src/melody.ts`）が構成音・共通の長さ・奏法を検証し、単音の継承状態 `MelodyTokenState` は読まず・変えない。奏法は許可されたフラグのみ（接続・`bend`・スラー・タイは `unsupportedNoteGroupTechnique`）。
+- **`let` の処理（`parseGuitarDsl` 内、1回の呼び出しの中だけの状態）**:
+  1. 事前走査: 全行から `let` 行を集め（行末コメントは空白 + `#` 以降）、名前・行・右辺のトークンと列を記録する。重複は先勝ち。
+  2. 定義の解析: 右辺の各トークンを、リズム（小節行のみ）・音符 / 同時複数音（両方）・`mel:` の休符（`mel:` のみ）・参照の要素に解析する。単音は定義ごとの新しい継承状態で解析する。定義の音高の `pitchTokens` はここで1回だけ積む。
+  3. 解決: 参照を白・灰・黒の深さ優先探索で解決し（未定義・循環を検出、結果をメモ化）、使える文脈（小節行 / `mel:`）を要素の共通部分として求める。続けて定義の境界（接続・タイ・スラー・装飾音符が定義内で完結すること）を検証する。失敗した定義は「無効」として記録し、参照は何も展開しない。
+  4. 本走査: `let` 行は読み飛ばす（小節・`firstBodyLine`・メロディの割り当て位置・セクション・ページ・イベントに影響しない）。小節行・`mel:` のセルで `$name` に出会うと、解決済みの要素を複製（新しいオブジェクト）してその位置に入れる。複製は位置表（`melodyLocations` / `inlineLocations`）に参照の列範囲で登録するので、長さ・歌詞・接続・装飾音符の検証と診断は展開後の並びを使う。呼び出し側の継承状態は読まず・変えない。テキストの書き換え（マクロ展開）は行わない。
+- **ソース位置と実音移調の不変条件**: `PitchTokenSpan.kind` は `melody` / `inline` / `fragment`（`let` 定義の単音。定義ごとの `sequence` で `mel:` と同じ継承、オクターブ 4 の既定なし）/ `group`（同時複数音の構成音。常にオクターブを書き、`sequence` の継承状態を読まず・変えない）。展開された参照は `pitchTokens` を積まないので、`planSoundingTranspose` は定義の音高を参照の数に関係なく1回だけ書き換え、使われない定義も書き換える。解析し直した結果の音高列の比較は展開後の並びで行う。
+- **描画**: `melodyStaff.ts` の `Head` は構成音の位置の配列を持ち、`pos` は符幹側の外側の音。符幹の向きは第3線から最も遠い構成音（同距離は下向き）。2度の符頭の左右ずらし・臨時記号の列・加線の範囲は `notation.ts` の純粋ヘルパーで求め、メロディ譜表と小節行（`svg.ts`）で共用する。複合音価の各部分に全構成音のタイを描く。小節行の同時複数音は、上向きなら共通の連桁（y = 60）に加わり、下向きなら連桁に加わらず下向きの旗で描く。単音・スラッシュの出力は変えない。
+- **レイアウト**: `melodyInkTop`・メロディの下端の見積もり・`rhythmStaffInkBottom`・`contentInkTop` は `eventPitches` で全構成音を見る（上端は最も高い音・臨時記号・外側の音から伸ばした符幹、下端は最も低い音・下向きの符幹）。Issue #70 の見出しの持ち上げ（`lift`）の規則は変えない。
 
 ---
 

@@ -49,6 +49,46 @@
           "match": "%"
         },
         {
+          "name": "meta.note-group.guitardsl",
+          "match": "(?<![^\\s|])(\\[)([a-g][#b]?[0-9](?:,[a-g][#b]?[0-9])+)(\\])((?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?))(\\{[A-Za-z][^{}]*\\})?(?=[\\s|]|$)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.note-group.begin.guitardsl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "name": "punctuation.separator.note-group.guitardsl",
+                  "match": ","
+                },
+                {
+                  "name": "constant.other.note.guitardsl",
+                  "match": "[a-g][#b]?[0-9]"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.definition.note-group.end.guitardsl"
+            },
+            "4": {
+              "name": "constant.numeric.duration.guitardsl",
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            },
+            "5": {
+              "name": "entity.other.attribute-name.technique.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "variable.other.reference.guitardsl",
+          "match": "(?<![^\\s|])\\$[A-Za-z_][A-Za-z0-9_]*(?=[\\s|]|$)"
+        },
+        {
           "name": "constant.other.note.guitardsl",
           "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{|~|[\\s|]|$)",
           "captures": {
@@ -116,6 +156,118 @@
       ]
     },
     {
+      "name": "meta.let.guitardsl",
+      "begin": "^\\s*(let)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.let.guitardsl"
+        },
+        "2": {
+          "name": "variable.other.definition.guitardsl"
+        },
+        "3": {
+          "name": "keyword.operator.assignment.guitardsl"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.guitardsl",
+          "match": "(?<=\\s)#.*$"
+        },
+        {
+          "name": "variable.other.reference.guitardsl",
+          "match": "(?<![^\\s|])\\$[A-Za-z_][A-Za-z0-9_]*(?=[\\s|]|$)"
+        },
+        {
+          "name": "meta.note-group.guitardsl",
+          "match": "(?<![^\\s|])(\\[)([a-g][#b]?[0-9](?:,[a-g][#b]?[0-9])+)(\\])((?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?))(\\{[A-Za-z][^{}]*\\})?(?=[\\s|]|$)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.note-group.begin.guitardsl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "name": "punctuation.separator.note-group.guitardsl",
+                  "match": ","
+                },
+                {
+                  "name": "constant.other.note.guitardsl",
+                  "match": "[a-g][#b]?[0-9]"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.definition.note-group.end.guitardsl"
+            },
+            "4": {
+              "name": "constant.numeric.duration.guitardsl",
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            },
+            "5": {
+              "name": "entity.other.attribute-name.technique.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "constant.other.note.guitardsl",
+          "match": "(?<![^\\s|])[a-g][#b]?[0-9]?(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{|~|[\\s|]|$)",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "constant.other.rest.guitardsl",
+          "match": "(?<![^\\s|])r(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\{|[\\s|]|$)",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "entity.other.attribute-name.technique.guitardsl",
+          "match": "\\{[A-Za-z][^{}]*\\}"
+        },
+        {
+          "name": "constant.other.note.guitardsl",
+          "match": "(?<=[0-9a-g}])~(?=\\s|$)"
+        },
+        {
+          "name": "constant.numeric.rhythm.guitardsl",
+          "match": "\\b(r?(16|8|4|2|1)(t|\\{[0-9]+:[0-9]+\\})?(\\+(16|8|4|2|1)(t|\\{[0-9]+:[0-9]+\\})?)*|w|h|q|r[a-z0-9]*)(\\.[a-z]+)*(?![\\w{])",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "comment.line.number-sign.guitardsl",
       "match": "#.*$"
     },
@@ -165,6 +317,46 @@
     {
       "name": "keyword.other.header.guitardsl",
       "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
+    },
+    {
+      "name": "meta.note-group.guitardsl",
+      "match": "(?<![^\\s|])(\\[)([a-g][#b]?[0-9](?:,[a-g][#b]?[0-9])+)(\\])((?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?))(\\{[A-Za-z][^{}]*\\})?(?=[\\s|]|$)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.note-group.begin.guitardsl"
+        },
+        "2": {
+          "patterns": [
+            {
+              "name": "punctuation.separator.note-group.guitardsl",
+              "match": ","
+            },
+            {
+              "name": "constant.other.note.guitardsl",
+              "match": "[a-g][#b]?[0-9]"
+            }
+          ]
+        },
+        "3": {
+          "name": "punctuation.definition.note-group.end.guitardsl"
+        },
+        "4": {
+          "name": "constant.numeric.duration.guitardsl",
+          "patterns": [
+            {
+              "name": "constant.numeric.tuplet.guitardsl",
+              "match": "\\{[0-9]+:[0-9]+\\}"
+            }
+          ]
+        },
+        "5": {
+          "name": "entity.other.attribute-name.technique.guitardsl"
+        }
+      }
+    },
+    {
+      "name": "variable.other.reference.guitardsl",
+      "match": "(?<![^\\s|])\\$[A-Za-z_][A-Za-z0-9_]*(?=[\\s|]|$)"
     },
     {
       "name": "keyword.operator.repeat.bracket.guitardsl",

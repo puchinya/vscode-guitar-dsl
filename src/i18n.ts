@@ -372,6 +372,29 @@ const CHORD_DEF_REASON_EN: Record<string, string> = {
   span: 'the fretted notes do not fit in the 5-fret window'
 };
 
+const VARIABLE_VALUE_REASON_JA: Record<string, string> = {
+  percent: '% は let の中では使えません',
+  token: '解釈できないトークン',
+  noContext: '小節行と mel: の両方で使えない要素の組み合わせ',
+  openTie: '最後の音符のタイの続く先がありません',
+  danglingConnection: '接続先の音符が定義の中にありません',
+  danglingGrace: '装飾音符の後に拍を持つ音符が定義の中にありません',
+  openSlur: 'slur-start が定義の中で閉じられていません',
+  unmatchedSlurEnd: '対応する slur-start のない slur-end',
+  nestedSlur: 'スラーの入れ子'
+};
+const VARIABLE_VALUE_REASON_EN: Record<string, string> = {
+  percent: '% cannot be used in let',
+  token: 'unrecognized token',
+  noContext: 'no line type accepts all of its items',
+  openTie: 'the last note is tied to nothing',
+  danglingConnection: 'the connection target is not inside the definition',
+  danglingGrace: 'no timed note follows the grace note inside the definition',
+  openSlur: 'slur-start is not closed inside the definition',
+  unmatchedSlurEnd: 'slur-end without a matching slur-start',
+  nestedSlur: 'nested slur'
+};
+
 type DiagnosticArgs = Record<string, string | number>;
 type DiagnosticTemplates = Record<DiagnosticCode, (a: DiagnosticArgs) => string>;
 
@@ -379,7 +402,7 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   upperCaseNoteName: a => `メロディの音名は小文字で書いてください: ${a.token}`,
   invalidMelodyNote: a => `メロディの音符として解釈できません: ${a.token}`,
   invalidLength: a => `長さの指定が不正です: ${a.token}（\`/\` の後は音価 1・2・4・8・16 と . t +、\`:\` の後は拍数）`,
-  missingInitialOctaveOrLength: a => `mel: 行の最初の音符にはオクターブと長さが必要です: ${a.token}`,
+  missingInitialOctaveOrLength: a => `mel: 行・let 定義の最初の音符にはオクターブと長さが必要です: ${a.token}`,
   tooManyMelodyMeasures: () => 'メロディを割り当てる小節がありません（mel: のセル数が小節数を超えています）',
   melodyRepeatWithoutPrevious: () => '% で繰り返す直前の小節にメロディがありません',
   lyricsWithoutMelody: () => 'lyr: の前に対応する mel: 行がありません',
@@ -406,14 +429,22 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   danglingGrace: () => '装飾音符の後に拍を持つ音符がありません',
   nestedSlur: () => 'スラーの中で slur-start が重なっています（入れ子にできません）',
   unmatchedSlurEnd: () => '対応する slur-start のない slur-end です',
-  unclosedSlur: () => 'slur-start に対応する slur-end がありません'
+  unclosedSlur: () => 'slur-start に対応する slur-end がありません',
+  invalidLetDefinition: a => `let 定義の書式が不正です（let 名前 = 値、型注釈は書けません）: ${a.token}`,
+  duplicateVariable: a => `${a.name} は既に定義されています（最初の定義が使われます）`,
+  unknownVariable: a => `$${a.name} は定義されていません`,
+  cyclicVariableReference: a => `$${a.name} の参照が循環しています`,
+  invalidVariableValue: a => `let ${a.name} の値が不正です（${VARIABLE_VALUE_REASON_JA[a.reason] ?? a.reason}）: ${a.token}`,
+  variableContextMismatch: a => `$${a.name} は${a.context === 'melody' ? ' mel: 行' : '小節行'}では使えません`,
+  invalidNoteGroup: a => `同時複数音が不正です（[音名オクターブ,…] に2音以上、重複なし、空白なし、共通の長さが必須）: ${a.token}`,
+  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`
 };
 
 const DIAGNOSTICS_EN: DiagnosticTemplates = {
   upperCaseNoteName: a => `Melody note names must be lowercase: ${a.token}`,
   invalidMelodyNote: a => `Not a valid melody note: ${a.token}`,
   invalidLength: a => `Invalid length: ${a.token} (after \`/\` use a note value 1, 2, 4, 8, 16 with . t +; after \`:\` use a beat count)`,
-  missingInitialOctaveOrLength: a => `The first note of a mel: line needs an octave and a length: ${a.token}`,
+  missingInitialOctaveOrLength: a => `The first note of a mel: line or a let definition needs an octave and a length: ${a.token}`,
   tooManyMelodyMeasures: () => 'No measure left for this melody cell (the mel: line has more cells than measures)',
   melodyRepeatWithoutPrevious: () => 'The measure before % has no melody to repeat',
   lyricsWithoutMelody: () => 'lyr: line has no preceding mel: line',
@@ -440,7 +471,15 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   danglingGrace: () => 'No timed note follows this grace note',
   nestedSlur: () => 'slur-start inside an open slur (slurs cannot be nested)',
   unmatchedSlurEnd: () => 'slur-end without a matching slur-start',
-  unclosedSlur: () => 'slur-start without a matching slur-end'
+  unclosedSlur: () => 'slur-start without a matching slur-end',
+  invalidLetDefinition: a => `Invalid let definition (let name = value; type annotations are not allowed): ${a.token}`,
+  duplicateVariable: a => `${a.name} is already defined (the first definition is used)`,
+  unknownVariable: a => `$${a.name} is not defined`,
+  cyclicVariableReference: a => `$${a.name} refers to itself through a cycle`,
+  invalidVariableValue: a => `Invalid value for let ${a.name} (${VARIABLE_VALUE_REASON_EN[a.reason] ?? a.reason}): ${a.token}`,
+  variableContextMismatch: a => `$${a.name} cannot be used in ${a.context === 'melody' ? 'a mel: line' : 'a measure line'}`,
+  invalidNoteGroup: a => `Invalid note group ([pitch+octave,...] with two or more distinct pitches, no spaces and a shared length): ${a.token}`,
+  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`
 };
 
 export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {

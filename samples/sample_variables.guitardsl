@@ -1,0 +1,27 @@
+title: ほしぞらリフ - let Sample
+artist: GuitarDSL Original
+key: C
+bpm: 100
+memo: let でリズム・メロディのフラグメントに名前を付けて再利用するサンプル。[c4,e4,g4]/4 は同時複数音（和音）。
+
+# Reusable fragments (spec §17). Definitions may come before or after their use.
+let basic8 = 8.d 8.u 4.d 8.d 8.u 4.d
+let downUp = 8.d 8.u
+let riff = e4/8 g a g          # note-only: works in measure cells and mel: cells
+let picking = 8.d c4/8 e g 8.u # rhythm + notes: measure cells only
+let verse = $downUp $riff $downUp
+let hit = [c4,e4,g4]/4         # simultaneous note group (spec §18)
+
+[Intro]
+| C | $basic8 |
+| G | $verse |
+| Am | $picking 4.d 8.d |
+| F | $hit $hit 2.d |
+
+[Aメロ]
+| C | $basic8 |
+| G | $basic8 |
+| C | $basic8 |
+| G | $basic8 |
+mel: | $riff e4/2 | d4/4 $riff r/4 | $hit $hit [d4,f4,a4]/2 | [b3,d4,g4]/2. r/4 |
+lyr: よ ぞ ら の ほ | し の う た を | ひ と つ | ね |
