@@ -789,10 +789,14 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   };
 
   let continuableLine = false;
-  // `:|` needs a `|:` since the score start or the previous `:|`; volta endings share their section's start.
+  // `:|` needs a `|:` since the score start or the previous `:|` (D4). Consecutive volta endings share one
+  // `|:` (D5): after a `:|` that closed an ending, the very next measure must start the next ending (a bracket,
+  // same section and page) for the shared start to stay usable; any other measure ends the sharing.
   let repeatOpen = false;
   let voltaSinceEnd = false;
-  let lastEndInVolta = false;
+  let awaitingNextEnding = false;
+  let sharedStartOpen = false;
+  let endingPage = -1;
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const rawLine = lines[lineIdx];
     const line = rawLine.trim();
@@ -1278,17 +1282,23 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       if (rStart) {
         repeatOpen = true;
         voltaSinceEnd = false;
-        lastEndInVolta = false;
+        sharedStartOpen = false;
+        awaitingNextEnding = false;
+      } else if (awaitingNextEnding) {
+        sharedStartOpen = mBracket !== undefined && !currentSection && currentPageIndex === endingPage;
+        awaitingNextEnding = false;
       }
       if (mBracket !== undefined) voltaSinceEnd = true;
       if (rEnd) {
-        if (!repeatOpen && !(lastEndInVolta && voltaSinceEnd)) {
+        if (!repeatOpen && !sharedStartOpen) {
           const endCol = rawLine.indexOf(':|', Math.max(firstTokenCol, 0));
           const col = endCol >= 0 ? endCol : Math.max(firstTokenCol, 0);
           report(lineIdx, col, endCol >= 0 ? endCol + 2 : rawLine.trimEnd().length, 'repeatEndWithoutStart');
         }
-        lastEndInVolta = voltaSinceEnd;
+        awaitingNextEnding = voltaSinceEnd;
+        endingPage = currentPageIndex;
         repeatOpen = false;
+        sharedStartOpen = false;
         voltaSinceEnd = false;
       }
       if (isMeasureRepeat && repeatTokenCol >= 0) {

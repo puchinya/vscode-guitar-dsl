@@ -286,6 +286,16 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
     assert.deepStrictEqual(codes('| C | G :|'), ['warning:repeatEndWithoutStart:1']);
     assert.deepStrictEqual(codes('|: C | G :|\n|: F | C :|'), []);
     assert.deepStrictEqual(codes('|: C | [1.] G :| [2.] F :| [3.] Am ||'), []);
+    // D5: only consecutive volta endings share the start.
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|'), []);
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|\n| [3.] Am ||'), []);
+    assert.deepStrictEqual(codes('|: C | [1.] G | D :|\n| [2.] F | G :|\n| [3.] Am ||'), [], 'multi-measure endings stay one sequence');
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3']);
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| Dm |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:4']);
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n|: Am | Dm :|'), [], 'a new independent repeat');
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n|: Am | Dm :|\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3'], 'no stale sharing leaks past an independent repeat');
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n[Next]\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3'], 'a section boundary ends the sequence');
+    assert.deepStrictEqual(codes('|: C | [1.] G :|\n---\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3'], 'a page break ends the sequence');
     assert.deepStrictEqual(codes('|: C :|'), []);
   });
 });
