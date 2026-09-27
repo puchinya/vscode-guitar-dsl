@@ -299,7 +299,7 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
 
   it('removing the existing-target reuse prohibition from the instructions fails', async () => {
     const { INSTRUCTIONS_PATH } = await load();
-    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Never reuse an active, visible, last-active, or other open GuitarDSL document as the output target unless the user explicitly asked to edit that document; you may only read it for reference\. /, ''))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Never reuse an active, visible, last-active, or other open GuitarDSL document as the output target unless the user explicitly asked to edit that document\. /, ''))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
     has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/During new-song creation, do not use target-less validate\/analyze calls[^.]*\. /, ''))), 'target-less validate');
   });
 
@@ -323,6 +323,13 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
   it('removing the same-new-target wording from the analyze or apply description fails', async () => {
     has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' Analyze the already-created new target explicitly (its path); do not search for another open score.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the new-target binding');
     has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(' For new-song creation, this target must be the same new document used by validation/analyze.', ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the new-target binding');
+  });
+
+  it('instructions: reverting to unrequested reference reads of existing scores fails; the explicit exception is required', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    const errors = await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('unless the user explicitly asked to edit that document. Do not read an existing GuitarDSL document unless the user explicitly asked to use that specific document as a reference or template.', 'unless the user explicitly asked to edit that document; you may only read it for reference.')));
+    has(errors, `${INSTRUCTIONS_PATH}: must not permit unrequested reference reads of existing scores`);
+    has(errors, `${INSTRUCTIONS_PATH}: must read an existing GuitarDSL document only when the user named it as a reference or template`);
   });
 
   it('T-resource-1 the Skill links both supporting resources with Markdown relative links', async () => {
@@ -365,7 +372,7 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
   describe('minimal-intent planning (review amendment 3)', () => {
     const guideCases: [string, string, string][] = [
       ['1 subdivision: auto default', 'Use `mode: intent` with `subdivision: auto` (the default).', 'Use `mode: intent`.'],
-      ['2 family optional by default', 'are optional hard constraints, not defaults.', 'can be set.'],
+      ['2 family optional by default', 'Optional constraints / preferences are not defaults.', 'Constraints can be set.'],
       ['3 no preset browsing', 'Do not browse presets family by family', 'You may browse presets'],
       ['4 candidate abundance -> engine selection', 'Many compatible candidates is normal, not a problem. Let the deterministic engine choose.', 'Pick a candidate.'],
       ['5 finale headroom', 'Keep dynamic headroom for the finale.', 'Make choruses strong.'],
@@ -386,7 +393,7 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
 
     it('8 instructions: removing the minimal-intent wording fails', async () => {
       const { INSTRUCTIONS_PATH } = await load();
-      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Keep the intent broad\. Prefer `subdivision: auto` and omit optional hard constraints \([^)]*\) unless the user asked for them\. /, ''))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep`);
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Keep the intent broad\. Prefer `subdivision: auto` and omit optional constraints \/ preferences unless the user asked for them: [^.]*\. /, ''))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep`);
       has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('preserve headroom for the finale rather than making every chorus maximal', 'make every chorus strong'))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep /\\bheadroom for the finale\\b/i`);
     });
 
@@ -394,8 +401,20 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
       has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' For a general arrangement/new-song request, call whole-score analysis once; do not request sectionIndex+family merely to browse presets; use that form only when a family is specifically needed.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the minimal-intent guidance');
     });
 
+    it('preferredPresetId reverted to a hard constraint fails (guide, instructions, apply description)', async () => {
+      const { ACCOMPANIMENT_GUIDE, INSTRUCTIONS_PATH } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/Optional constraints \/ preferences are not defaults\. [^\n]*?\(it favors one preset\)\./, '`family`, `syncopationKinds`, `difficulty` and `preferredPresetId` are optional hard constraints, not defaults.'))), `${ACCOMPANIMENT_GUIDE}: preferredPresetId is a soft preference, not a hard constraint`);
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/omit optional constraints \/ preferences unless the user asked for them: [^.]*\./, 'omit optional hard constraints (`family`, `syncopationKinds`, `difficulty`, `preferredPresetId`) unless the user asked for them.'))), `${INSTRUCTIONS_PATH}: preferredPresetId is a soft preference, not a hard constraint`);
+      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/omit optional constraints \/ preferences not requested by the user \([^)]*\)/, 'omit optional hard constraints (family, syncopationKinds, difficulty, preferredPresetId) not requested by the user'))), 'preferredPresetId is a soft preference, not a hard constraint');
+    });
+
+    it('guide: dropping the soft-preference distinction fails', async () => {
+      const { ACCOMPANIMENT_GUIDE } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(' `preferredPresetId` is only a soft preference (it favors one preset).', ''))), `${ACCOMPANIMENT_GUIDE}: minimal-intent planning policy must keep`);
+    });
+
     it('10 apply description: removing the optional-hard-constraint guidance fails', async () => {
-      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/ For general intent plans, prefer subdivision auto and omit optional hard constraints \([^)]*\) not requested by the user; the extension selects the canonical preset\./, ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the minimal-intent guidance');
+      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/ For general intent plans, prefer subdivision auto and omit optional constraints \/ preferences not requested by the user \([^)]*\); the extension selects the canonical preset\./, ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the minimal-intent guidance');
     });
   });
 

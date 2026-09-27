@@ -76,17 +76,26 @@ export const NO_SAMPLE_FALLBACK_MARKERS = Object.freeze({
 export const MINIMAL_INTENT_SECTION = '## Keep intent plans minimal';
 export const MINIMAL_INTENT_MARKERS = Object.freeze({
   [ACCOMPANIMENT_GUIDE]: [
-    /`subdivision: auto`/, /\boptional hard constraints, not defaults\b/i, /\bdo not browse presets family by family\b/i,
+    /`subdivision: auto`/, /\boptional constraints \/ preferences are not defaults\b/i, /`preferredPresetId` is only a soft preference\b/i,
+    /\bdo not browse presets family by family\b/i,
     /\bmany compatible candidates is normal\b/i, /\blet the deterministic engine choose\b/i, /\bheadroom for the finale\b/i,
     /\bdo not add `transitions` at every boundary\b/i, /\bone primary candidate and at most one fallback\b/i,
     /\bretry once with minimal intent\b/i, /\bnever relax a constraint the user asked for\b/i
   ],
-  [INSTRUCTIONS_PATH]: [/\bkeep the intent broad\b/i, /`subdivision: auto`/, /\bomit optional hard constraints\b/i, /\bdo not browse family preset lists\b/i, /\bheadroom for the finale\b/i]
+  [INSTRUCTIONS_PATH]: [/\bkeep the intent broad\b/i, /`subdivision: auto`/, /\bomit optional constraints \/ preferences\b/i, /\bsoft preference `preferredPresetId`/i, /\bdo not browse family preset lists\b/i, /\bheadroom for the finale\b/i]
 });
 export const MINIMAL_INTENT_TOOL_MARKERS = Object.freeze({
   guitardsl_analyze_accompaniment: [/\bcall whole-score analysis once\b/, /\bdo not request sectionIndex\+family merely to browse presets\b/],
-  guitardsl_apply_accompaniment: [/\bprefer subdivision auto\b/, /\bomit optional hard constraints\b/]
+  guitardsl_apply_accompaniment: [/\bprefer subdivision auto\b/, /\bomit optional constraints \/ preferences\b/, /\bsoft preference: preferredPresetId\b/]
 });
+
+/** True when a sentence calls `preferredPresetId` a hard constraint without naming it a soft preference (it only lowers the selection cost). */
+export function misclassifiesPreferredPreset(text) {
+  return text.split(/(?<=[.;])\s+|\n/).some(sentence => /preferredPresetId/.test(sentence) && /\bhard constraints?\b/i.test(sentence) && !/\bsoft preference\b/i.test(sentence));
+}
+/** New/create reads no existing score unless the user named it as a reference or template (spec §8.2). */
+export const REFERENCE_SCOPE_REQUIRED = /\bdo not read an existing GuitarDSL document unless the user explicitly asked to use that specific document as a reference or template\b/i;
+export const REFERENCE_SCOPE_FORBIDDEN = /\byou may (only )?read it for reference\b/i;
 
 /** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
 export const ISOLATED_SOURCES = Object.freeze(['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']);
@@ -320,6 +329,20 @@ export function checkAiSync(root) {
       if (!pattern.test(description)) errors.push(`package.json: languageModelTools "${name}" modelDescription must keep the minimal-intent guidance ${pattern}`);
     }
   }
+
+  // 11b. preferredPresetId is a soft preference, never classified as a hard constraint; existing scores are read only on request.
+  const classified = {
+    [ACCOMPANIMENT_GUIDE]: read(ACCOMPANIMENT_GUIDE)?.toString('utf8') ?? '',
+    [INSTRUCTIONS_PATH]: read(INSTRUCTIONS_PATH)?.toString('utf8') ?? '',
+    [SKILL_PATH]: read(SKILL_PATH)?.toString('utf8') ?? '',
+    'package.json languageModelTools "guitardsl_apply_accompaniment"': String(actual.get('guitardsl_apply_accompaniment')?.modelDescription ?? '')
+  };
+  for (const [label, text] of Object.entries(classified)) {
+    if (misclassifiesPreferredPreset(text)) errors.push(`${label}: preferredPresetId is a soft preference, not a hard constraint`);
+  }
+  const instructionsText = classified[INSTRUCTIONS_PATH];
+  if (!REFERENCE_SCOPE_REQUIRED.test(instructionsText)) errors.push(`${INSTRUCTIONS_PATH}: must read an existing GuitarDSL document only when the user named it as a reference or template`);
+  if (REFERENCE_SCOPE_FORBIDDEN.test(instructionsText)) errors.push(`${INSTRUCTIONS_PATH}: must not permit unrequested reference reads of existing scores (${REFERENCE_SCOPE_FORBIDDEN})`);
 
   // 12. The accompaniment engine and the tool adapter import no excluded integration.
   for (const rel of ISOLATED_SOURCES) {
