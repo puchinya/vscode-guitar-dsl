@@ -71,6 +71,8 @@ Dependency direction is:
 specs -> design -> code -> status
 ```
 
+User Help (`docs/help/` → generated `media/help/`) is derived from `docs/specs/` and `package.json`; it is never an authority. For any user-facing feature, command, setting, or GuitarDSL syntax addition/change/removal, assess Help impact: update/review the Help pages and refresh the reviewed section digest in `docs/help/help-manifest.json` (a refresh is required even when the wording needs no change). `npm run check:help` is the mechanical gate; see `docs/help/README.md`.
+
 Do not change a spec to match a bug. Do not use status to decide desired behavior or architecture. If implementation exposes a missing/contradictory contract or a material architecture decision, return to the Issue requirements/design gate before deciding it in code.
 
 Start document lookup at `docs/README.md`, then one category README, then only the relevant document sections/symbols.

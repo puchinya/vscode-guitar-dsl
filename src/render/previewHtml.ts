@@ -163,6 +163,26 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   .btn-pdf:hover {
     background: #0062a3;
   }
+  .btn-help {
+    background: transparent;
+    color: #007acc;
+    border: 1px solid #007acc;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-help:hover {
+    background: rgba(0, 122, 204, 0.1);
+  }
+  .btn-help:focus-visible, .btn-pdf:focus-visible {
+    outline: 2px solid #0062a3;
+    outline-offset: 2px;
+  }
 
   .sheet-svg, .continuous-svg {
     display: block;
@@ -312,6 +332,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     </div>
 
     <div class="toolbar-right">
+      <button class="btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span> ${escapeXml(msgs.uiHelp)}</button>
       <button class="btn-pdf" id="btn-save-pdf" title="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
     </div>
   </div>
@@ -402,6 +423,14 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
               orientation: currentOrientation
             });
           }
+        });
+      }
+
+      // Help: intent only; the extension host opens the packaged Help (guitardsl.openHelp).
+      const helpBtn = document.getElementById('btn-help');
+      if (helpBtn && vscode) {
+        helpBtn.addEventListener('click', () => {
+          vscode.postMessage({ command: 'openHelp' });
         });
       }
 

@@ -7,6 +7,7 @@ import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChord
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
 import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
+import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
@@ -268,6 +269,8 @@ export function activate(context: vscode.ExtensionContext) {
             if (lastActiveGuitarDslDoc) {
               await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, lastActiveGuitarDslDoc.uri);
             }
+          } else if (message.command === 'openHelp') {
+            await vscode.commands.executeCommand(OPEN_HELP_COMMAND);
           } else if (message.command === 'layoutChanged') {
             previewPageSize = pageSize;
             previewOrientation = orientation;
@@ -459,6 +462,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  // Help needs no GuitarDSL document; the locale is resolved at invocation.
+  const openHelpDisposable = vscode.commands.registerCommand(OPEN_HELP_COMMAND, () =>
+    openGuitarDslHelp(context.extensionUri, vscode.env.language)
+  );
+
   context.subscriptions.push(
     previewDisposable,
     printDisposable,
@@ -470,7 +478,8 @@ export function activate(context: vscode.ExtensionContext) {
     transcribeYouTubeDisposable,
     transcribeAudioDisposable,
     strummingCodeLensDisposable,
-    applyStrummingDisposable
+    applyStrummingDisposable,
+    openHelpDisposable
   );
 }
 

@@ -9,6 +9,7 @@ vscode-guitar-dsl の永続ドキュメントは、答える質問ごとに責�
 | 現在の実装状況、機能対応状況、検証状態 | [`status/README.md`](status/README.md) |
 | 拡張機能実装時の技術ルール・検証コマンド | [`agents/`](agents/) |
 | Issue phase workflow | [`agent-workflow/`](agent-workflow/) |
+| 組み込みヘルプの編集元（仕様から派生したユーザー向け文書。規範ではない） | [`help/README.md`](help/README.md) |
 
 通常はこのREADMEからcategory READMEを選び、そこから対象文書を1～少数だけ読む。
 全spec/design/statusを最初から横断してはならない。

@@ -53,6 +53,36 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       commands.includes('guitardsl.applyStrummingPattern'),
       'Command guitardsl.applyStrummingPattern should be registered'
     );
+    assert.ok(commands.includes('guitardsl.openHelp'), 'Command guitardsl.openHelp should be registered');
+  });
+
+  test('Every contributed command is registered (T016)', async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    assert.ok(ext);
+    const registered = new Set(await vscode.commands.getCommands(true));
+    for (const c of ext.packageJSON.contributes.commands as { command: string }[]) {
+      assert.ok(registered.has(c.command), `${c.command} should be registered`);
+    }
+  });
+
+  test('guitardsl.openHelp opens Help without a GuitarDSL document and changes no document (T017)', async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    const guitarDocs = () => vscode.workspace.textDocuments.filter(d => d.languageId === 'guitardsl');
+    const before = guitarDocs().map(d => d.uri.toString());
+    const dirtyBefore = vscode.workspace.textDocuments.filter(d => d.isDirty).length;
+
+    await vscode.commands.executeCommand('guitardsl.openHelp');
+    await vscode.commands.executeCommand('guitardsl.openHelp');
+
+    assert.deepStrictEqual(guitarDocs().map(d => d.uri.toString()), before, 'no GuitarDSL document is opened or created');
+    assert.strictEqual(vscode.workspace.textDocuments.filter(d => d.isDirty).length, dirtyBefore, 'no document is modified');
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    for (const locale of ['ja', 'en']) {
+      const uri = vscode.Uri.joinPath(ext!.extensionUri, 'media', 'help', `guitardsl-help.${locale}.md`);
+      const stat = await vscode.workspace.fs.stat(uri);
+      assert.ok(stat.size > 0, `packaged Help ${locale} exists`);
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
   test('CodeLens should offer the chord editor on chord definition lines', async () => {
