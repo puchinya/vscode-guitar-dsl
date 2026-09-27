@@ -808,12 +808,19 @@ suite('AI integration: language model tools (Issue #80)', () => {
       applyBeginner: scoreSettings().applyBeginnerTransform,
       applyTranspose: scoreSettings().applyTransposeTransform,
       guard,
+      confirmations: new (aiTools().ConfirmedTargets)(),
       ...overrides
     });
     return { tools, guard };
   }
-  async function call(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
+  /** Invokes without prepareInvocation (no confirmation). */
+  async function invokeOnly(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
     return parse((await tool.invoke({ input, toolInvocationToken: undefined }, token)) as vscode.LanguageModelToolResult);
+  }
+  /** Like VS Code: prepareInvocation (confirmation) first, then invoke. */
+  async function call(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
+    await tool.prepareInvocation?.({ input }, never);
+    return invokeOnly(tool, input, token);
   }
   const invokeRegistered = async (name: string, input: object) =>
     parse(await vscode.lm.invokeTool(name, { input, toolInvocationToken: undefined }, never));
@@ -1033,6 +1040,47 @@ suite('AI integration: language model tools (Issue #80)', () => {
     await sleep(200);
     assert.strictEqual(applyCalls, 0);
     assert.strictEqual(doc.getText(), CAPO_SOURCE);
+  });
+
+  test('B-1 the edit is applied only to the confirmed document; otherwise targetChanged / targetNotConfirmed without edits', async () => {
+    const { tools } = makeTools();
+    const docA = await openUntitled(CAPO_SOURCE);
+    await tools.guitardsl_apply_capo.prepareInvocation({ input: { targetCapo: 2 } }, never);
+    const docB = await openUntitled(CAPO_SOURCE);
+    const changed = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    assert.strictEqual(changed.ok, false);
+    assert.strictEqual(changed.code, 'targetChanged');
+    assert.strictEqual(docA.getText(), CAPO_SOURCE);
+    assert.strictEqual(docB.getText(), CAPO_SOURCE);
+
+    const unconfirmed = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    assert.strictEqual(unconfirmed.code, 'targetNotConfirmed', 'the record was consumed by the previous invoke');
+    assert.strictEqual(docB.getText(), CAPO_SOURCE);
+
+    const confirmed = await call(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    assert.strictEqual(confirmed.ok, true);
+    assert.strictEqual(confirmed.document.uri, docB.uri.toString());
+    assert.strictEqual(docB.getText(), CAPO_AT_2);
+    assert.strictEqual(docA.getText(), CAPO_SOURCE);
+
+    // An explicit absolute path fixes the target by input, so no confirmation record is required.
+    const file = writeFixture('explicit.guitardsl', CAPO_SOURCE);
+    const explicit = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2, path: file });
+    assert.strictEqual(explicit.ok, true);
+    assert.strictEqual((await vscode.workspace.openTextDocument(vscode.Uri.file(file))).getText(), CAPO_AT_2);
+  });
+
+  test('B-1 vscode.lm.invokeTool runs prepareInvocation before invoke for a registered mutation tool', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    const outcome = await Promise.race([
+      invokeRegistered('guitardsl_apply_capo', { targetCapo: 2 }),
+      sleep(5000).then(() => 'timeout')
+    ]);
+    assert.notStrictEqual(outcome, 'timeout', 'invokeTool should not wait for interactive confirmation outside a chat request');
+    const result = outcome as any;
+    assert.notStrictEqual(result.code, 'targetNotConfirmed', 'VS Code must call prepareInvocation first');
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    assert.strictEqual(doc.getText(), CAPO_AT_2);
   });
 
   test('R012 repeated calls recompute from the latest source', async () => {

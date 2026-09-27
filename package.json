@@ -167,7 +167,7 @@
         "toolReferenceName": "guitardslValidate",
         "displayName": "%languageModelTools.validate.displayName%",
         "userDescription": "%languageModelTools.validate.userDescription%",
-        "modelDescription": "Validate a GuitarDSL (.guitardsl/.gdsl) score with the extension's own parser and return its diagnostics as JSON (valid, errorCount, warningCount, diagnostics with 1-based line/startColumn/endColumn). Read-only. Call it after creating or materially editing GuitarDSL. Omit path to use the active GuitarDSL document.",
+        "modelDescription": "Validate a GuitarDSL (.guitardsl/.gdsl) score with the extension's own parser and return its diagnostics as JSON (valid, errorCount, warningCount, diagnostics with 1-based line/startColumn/endColumn). Read-only. Call it after creating or materially editing GuitarDSL. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order).",
         "canBeReferencedInPrompt": true,
         "icon": "$(check)",
         "tags": [
@@ -178,7 +178,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute file path of the GuitarDSL document. Omit to use the active GuitarDSL document."
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
             }
           }
         }
@@ -188,7 +188,7 @@
         "toolReferenceName": "guitardslPlayability",
         "displayName": "%languageModelTools.playability.displayName%",
         "userDescription": "%languageModelTools.playability.userDescription%",
-        "modelDescription": "Analyze capo playability of a GuitarDSL score with the extension's deterministic capo inference: returns sourceCapo, currentPlayability, recommendedCapo and one candidate per capo 0..12 (supported, score, level, reason). Read-only. Use it instead of estimating chord difficulty yourself.",
+        "modelDescription": "Analyze capo playability of a GuitarDSL score with the extension's deterministic capo inference: returns sourceCapo, currentPlayability, recommendedCapo and one candidate per capo 0..12 (supported, score, level, reason). Read-only. Use it instead of estimating chord difficulty yourself. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order).",
         "canBeReferencedInPrompt": true,
         "icon": "$(graph)",
         "tags": [
@@ -199,7 +199,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute file path of the GuitarDSL document. Omit to use the active GuitarDSL document."
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
             }
           }
         }
@@ -209,7 +209,7 @@
         "toolReferenceName": "guitardslApplyCapo",
         "displayName": "%languageModelTools.applyCapo.displayName%",
         "userDescription": "%languageModelTools.applyCapo.userDescription%",
-        "modelDescription": "Change the capo of a GuitarDSL score to targetCapo (0..12) while keeping the sounding harmony; the extension rewrites the capo header and chord names from the latest source in one undoable edit. Returns an operation summary and postValidationPassed, never the whole score. Fails without editing when a chord cannot be moved.",
+        "modelDescription": "Change the capo of a GuitarDSL score to targetCapo (0..12) while keeping the sounding harmony; the extension rewrites the capo header and chord names from the latest source in one undoable edit. Returns an operation summary and postValidationPassed, never the whole score. Fails without editing when a chord cannot be moved. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order); the edit is applied only to the document named in the user's confirmation, otherwise it fails with targetChanged. Pass an absolute path when the user refers to a specific file.",
         "canBeReferencedInPrompt": true,
         "icon": "$(symbol-operator)",
         "tags": [
@@ -220,7 +220,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute file path of the GuitarDSL document. Omit to use the active GuitarDSL document."
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
             },
             "targetCapo": {
               "type": "integer",
@@ -239,7 +239,7 @@
         "toolReferenceName": "guitardslApplyBeginner",
         "displayName": "%languageModelTools.applyBeginner.displayName%",
         "userDescription": "%languageModelTools.applyBeginner.userDescription%",
-        "modelDescription": "Apply Beginner Mode to a GuitarDSL score: the extension chooses an easy capo and simpler chord voicings that keep the sounding harmony, and rewrites the latest source in one undoable edit. barrePolicy allow/forbid controls barre chords; omit targetCapo for the automatic recommendation. Returns an operation summary and postValidationPassed.",
+        "modelDescription": "Apply Beginner Mode to a GuitarDSL score: the extension chooses an easy capo and simpler chord voicings that keep the sounding harmony, and rewrites the latest source in one undoable edit. barrePolicy allow/forbid controls barre chords; omit targetCapo for the automatic recommendation. Returns an operation summary and postValidationPassed. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order); the edit is applied only to the document named in the user's confirmation, otherwise it fails with targetChanged. Pass an absolute path when the user refers to a specific file.",
         "canBeReferencedInPrompt": true,
         "icon": "$(mortar-board)",
         "tags": [
@@ -250,7 +250,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute file path of the GuitarDSL document. Omit to use the active GuitarDSL document."
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
             },
             "barrePolicy": {
               "type": "string",
@@ -277,7 +277,7 @@
         "toolReferenceName": "guitardslTranspose",
         "displayName": "%languageModelTools.transpose.displayName%",
         "userDescription": "%languageModelTools.transpose.userDescription%",
-        "modelDescription": "Transpose the sounding music (key, chords, melody) of a GuitarDSL score by semitones (-11..11) and choose the capo afterwards: keep the current capo, use the recommended capo, or an explicit capo (capo is required only for capoMode explicit). The extension rewrites the latest source in one undoable edit and returns an operation summary and postValidationPassed.",
+        "modelDescription": "Transpose the sounding music (key, chords, melody) of a GuitarDSL score by semitones (-11..11) and choose the capo afterwards: keep the current capo, use the recommended capo, or an explicit capo (capo is required only for capoMode explicit). The extension rewrites the latest source in one undoable edit and returns an operation summary and postValidationPassed. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order); the edit is applied only to the document named in the user's confirmation, otherwise it fails with targetChanged. Pass an absolute path when the user refers to a specific file.",
         "canBeReferencedInPrompt": true,
         "icon": "$(arrow-swap)",
         "tags": [
@@ -288,7 +288,7 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute file path of the GuitarDSL document. Omit to use the active GuitarDSL document."
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
             },
             "semitones": {
               "type": "integer",

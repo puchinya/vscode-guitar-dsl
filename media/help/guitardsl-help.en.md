@@ -137,7 +137,7 @@ On VS Code 1.109 or later, you can work with GuitarDSL from VS Code's built-in A
   - `#guitardslApplyBeginner` applies Beginner Mode.
   - `#guitardslTranspose` transposes the sounding music.
 - **Tools that change the file** ask you to confirm the file and the operation first. They use the same calculation as **Apply to DSL** in the preview and write one undoable edit. If a change cannot be applied, the file is left unchanged. Changes to the same file run one at a time.
-- The target is the active GuitarDSL file. A file path can also be given.
+- Without a file path, the target is chosen the same way as for commands: the active editor, then visible editors, then the last used or any open GuitarDSL file. If the target changes after you confirm (for example, you switch to another file), nothing is changed and the call fails.
 
 ### Score Events and Advanced Notation
 

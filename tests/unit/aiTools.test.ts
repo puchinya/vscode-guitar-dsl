@@ -62,3 +62,35 @@ describe('AI tools adapter (Issue #80)', () => {
     }
   });
 });
+
+describe('ConfirmedTargets (Issue #80 review B-1)', () => {
+  const { ConfirmedTargets, confirmationKey } = require('../../src/ai/tools') as typeof import('../../src/ai/tools');
+
+  it('records FIFO per key and consumes on take', () => {
+    const c = new ConfirmedTargets();
+    c.record('k', 'a');
+    c.record('k', 'b');
+    assert.strictEqual(c.take('k'), 'a');
+    assert.strictEqual(c.take('k'), 'b');
+    assert.strictEqual(c.take('k'), undefined);
+    assert.strictEqual(c.size, 0);
+  });
+
+  it('keeps at most maxKeys keys, dropping the oldest', () => {
+    const c = new ConfirmedTargets(2);
+    c.record('k1', 'a');
+    c.record('k2', 'b');
+    c.record('k3', 'c');
+    assert.strictEqual(c.size, 2);
+    assert.strictEqual(c.take('k1'), undefined);
+    assert.strictEqual(c.take('k3'), 'c');
+  });
+
+  it('keys depend on tool name and input values, not on property order', () => {
+    const a = confirmationKey('guitardsl_apply_transpose', { semitones: 2, capoMode: 'keep' } as any);
+    const b = confirmationKey('guitardsl_apply_transpose', { capoMode: 'keep', semitones: 2 } as any);
+    assert.strictEqual(a, b);
+    assert.notStrictEqual(a, confirmationKey('guitardsl_apply_capo', { semitones: 2, capoMode: 'keep' } as any));
+    assert.notStrictEqual(a, confirmationKey('guitardsl_apply_transpose', { semitones: 3, capoMode: 'keep' } as any));
+  });
+});

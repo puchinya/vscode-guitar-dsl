@@ -58,7 +58,40 @@ export class MutationGuard {
   }
 }
 
-/** Dependencies of the tools; tests replace the apply helpers and the guard. */
+/**
+ * Binds a mutation's confirmation to its edit (spec extension §8.6). VS Code shares only the input between
+ * prepareInvocation and invoke, so the URI resolved for the confirmation text is recorded per tool name +
+ * canonical input (FIFO) and taken by invoke. In memory only; the oldest keys are dropped beyond the limit.
+ */
+export class ConfirmedTargets {
+  private readonly entries = new Map<string, string[]>();
+  constructor(private readonly maxKeys = 64) {}
+  record(key: string, uri: string): void {
+    const list = this.entries.get(key) ?? [];
+    this.entries.delete(key);
+    this.entries.set(key, [...list, uri]);
+    while (this.entries.size > this.maxKeys) this.entries.delete(this.entries.keys().next().value as string);
+  }
+  take(key: string): string | undefined {
+    const list = this.entries.get(key);
+    if (!list) return undefined;
+    const [first, ...rest] = list;
+    if (rest.length) this.entries.set(key, rest);
+    else this.entries.delete(key);
+    return first;
+  }
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+/** Key of one confirmation: tool name + the flat input with sorted keys. */
+export function confirmationKey(toolName: string, input: DocumentToolInput): string {
+  const record = input as unknown as Record<string, unknown>;
+  return `${toolName}\u0000${JSON.stringify(record, Object.keys(record).sort())}`;
+}
+
+/** Dependencies of the tools; tests replace the apply helpers, the guard and the confirmation record. */
 export interface AiToolDeps {
   locale: SupportedLocale;
   getLastDoc: () => vscode.TextDocument | undefined;
@@ -66,6 +99,7 @@ export interface AiToolDeps {
   applyBeginner: typeof applyBeginnerTransform;
   applyTranspose: typeof applyTransposeTransform;
   guard: MutationGuard;
+  confirmations: ConfirmedTargets;
 }
 
 export interface GuitarDslAiTools {
@@ -154,30 +188,56 @@ async function resolveTarget(input: DocumentToolInput, deps: AiToolDeps): Promis
 }
 
 /**
- * Side-effect-free label of the document a call will target, for confirmation text: the `path` file
- * name, or the name of the document the command resolution order currently yields (no document is opened).
+ * The document a call will target, for confirmation text, without opening or changing anything: the
+ * `path` file, or the document the command resolution order currently yields (`uri` undefined if none).
  */
-async function targetLabel(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<string> {
-  if (typeof input.path === 'string' && input.path) return path.basename(input.path);
+async function previewTarget(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<{ label: string; uri?: string }> {
+  if (typeof input.path === 'string' && input.path) return { label: path.basename(input.path), uri: vscode.Uri.file(input.path).toString() };
   const doc = await resolveGuitarDslDocument(undefined, deps.getLastDoc());
-  return doc ? path.basename(doc.fileName) : msgs.activeDocument;
+  return doc ? { label: path.basename(doc.fileName), uri: doc.uri.toString() } : { label: msgs.activeDocument };
+}
+
+async function targetLabel(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<string> {
+  return (await previewTarget(input, deps, msgs)).label;
+}
+
+/**
+ * prepareInvocation of a mutation tool: records the target it names in the confirmation (valid input only;
+ * invalid input fails in invoke without editing, so there is nothing to confirm). Changes no document or UI.
+ */
+async function prepareMutation(
+  deps: AiToolDeps,
+  msgs: AiToolMessages,
+  toolName: string,
+  input: DocumentToolInput,
+  problem: string | undefined,
+  progress: (doc: string) => string,
+  confirm: (doc: string) => vscode.LanguageModelToolConfirmationMessages
+): Promise<vscode.PreparedToolInvocation> {
+  const target = await previewTarget(input, deps, msgs);
+  if (problem) return { invocationMessage: progress(target.label) };
+  if (target.uri) deps.confirmations.record(confirmationKey(toolName, input), target.uri);
+  return { invocationMessage: progress(target.label), confirmationMessages: confirm(target.label) };
 }
 
 type ApplyOutcome = { ok: true } & Payload | { ok: false; code: string; detail?: string };
 
 /**
- * Shared mutation flow (spec extension §8.6): input check -> cancellation -> resolution -> guard ->
- * cancellation -> existing apply helper (fresh source, one WorkspaceEdit) -> post-parse. The guard is
- * always released; nothing continues after the call returns.
+ * Shared mutation flow (spec extension §8.6): take the confirmation record -> input check -> cancellation ->
+ * resolution -> confirmed-target match (path omitted) -> guard -> cancellation -> existing apply helper
+ * (fresh source, one WorkspaceEdit) -> post-parse. The guard is always released; nothing continues after
+ * the call returns.
  */
 async function runMutation(
   deps: AiToolDeps,
+  toolName: string,
   operation: string,
   input: DocumentToolInput,
   problem: string | undefined,
   token: vscode.CancellationToken,
   apply: (uri: vscode.Uri) => Thenable<ApplyOutcome> | Promise<ApplyOutcome>
 ): Promise<vscode.LanguageModelToolResult> {
+  const confirmed = deps.confirmations.take(confirmationKey(toolName, input));
   if (problem) return failure('invalidInput', problem, { operation });
   if (token.isCancellationRequested) return failure('cancelled', undefined, { operation });
   const target = await resolveTarget(input, deps);
@@ -185,6 +245,14 @@ async function runMutation(
   const uri = target.doc.uri;
   const key = uri.toString();
   const document = documentInfo(target.doc);
+  if (input.path === undefined) {
+    if (confirmed === undefined) {
+      return failure('targetNotConfirmed', 'no confirmed target for this call; nothing was edited', { operation, document });
+    }
+    if (confirmed !== key) {
+      return failure('targetChanged', `the confirmed document (${confirmed}) is no longer the resolved target; nothing was edited. Pass an absolute path to target a file explicitly`, { operation, document });
+    }
+  }
   if (!deps.guard.tryAcquire(key)) {
     return failure('documentBusy', 'another GuitarDSL mutation is running on this document; retry after it finishes', { operation, document });
   }
@@ -270,53 +338,46 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
     },
 
     [APPLY_CAPO_TOOL]: {
-      async prepareInvocation(options) {
+      prepareInvocation(options) {
         const input = inputOf(options);
-        const doc = await targetLabel(input, deps, msgs);
-        // Invalid input fails in invoke without editing, so there is nothing to confirm.
-        if (capoInputProblem(input)) return { invocationMessage: msgs.capoProgress(doc) };
-        return {
-          invocationMessage: msgs.capoProgress(doc),
-          confirmationMessages: { title: msgs.capoTitle, message: msgs.capoConfirm(doc, input.targetCapo) }
-        };
+        return prepareMutation(deps, msgs, APPLY_CAPO_TOOL, input, capoInputProblem(input), msgs.capoProgress, doc => ({
+          title: msgs.capoTitle,
+          message: msgs.capoConfirm(doc, input.targetCapo)
+        }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, 'applyCapo', input, capoInputProblem(input), token, uri => deps.applyCapo(uri, input.targetCapo));
+        return runMutation(deps, APPLY_CAPO_TOOL, 'applyCapo', input, capoInputProblem(input), token, uri => deps.applyCapo(uri, input.targetCapo));
       }
     },
 
     [APPLY_BEGINNER_TOOL]: {
-      async prepareInvocation(options) {
+      prepareInvocation(options) {
         const input = inputOf(options);
-        const doc = await targetLabel(input, deps, msgs);
-        if (beginnerInputProblem(input)) return { invocationMessage: msgs.beginnerProgress(doc) };
-        return {
-          invocationMessage: msgs.beginnerProgress(doc),
-          confirmationMessages: { title: msgs.beginnerTitle, message: msgs.beginnerConfirm(doc, input.barrePolicy, input.targetCapo) }
-        };
+        return prepareMutation(deps, msgs, APPLY_BEGINNER_TOOL, input, beginnerInputProblem(input), msgs.beginnerProgress, doc => ({
+          title: msgs.beginnerTitle,
+          message: msgs.beginnerConfirm(doc, input.barrePolicy, input.targetCapo)
+        }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, 'applyBeginnerMode', input, beginnerInputProblem(input), token, uri =>
+        return runMutation(deps, APPLY_BEGINNER_TOOL, 'applyBeginnerMode', input, beginnerInputProblem(input), token, uri =>
           deps.applyBeginner(uri, { barrePolicy: input.barrePolicy, targetCapo: input.targetCapo })
         );
       }
     },
 
     [APPLY_TRANSPOSE_TOOL]: {
-      async prepareInvocation(options) {
+      prepareInvocation(options) {
         const input = inputOf(options);
-        const doc = await targetLabel(input, deps, msgs);
-        if (transposeInputProblem(input)) return { invocationMessage: msgs.transposeProgress(doc) };
-        return {
-          invocationMessage: msgs.transposeProgress(doc),
-          confirmationMessages: { title: msgs.transposeTitle, message: msgs.transposeConfirm(doc, input.semitones, capoLabel(input)) }
-        };
+        return prepareMutation(deps, msgs, APPLY_TRANSPOSE_TOOL, input, transposeInputProblem(input), msgs.transposeProgress, doc => ({
+          title: msgs.transposeTitle,
+          message: msgs.transposeConfirm(doc, input.semitones, capoLabel(input))
+        }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, 'applyTranspose', input, transposeInputProblem(input), token, uri =>
+        return runMutation(deps, APPLY_TRANSPOSE_TOOL, 'applyTranspose', input, transposeInputProblem(input), token, uri =>
           deps.applyTranspose(uri, { semitones: input.semitones, capoMode: toCapoMode(input) })
         );
       }
@@ -324,8 +385,9 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
   };
 }
 
-/** The guard shared by the registered tools. */
+/** The guard and confirmation record shared by the registered tools. */
 export const aiMutationGuard = new MutationGuard();
+export const aiConfirmedTargets = new ConfirmedTargets();
 
 /**
  * Registers the five tools (spec extension §8.3). Every Disposable goes to `context.subscriptions`;
@@ -342,7 +404,8 @@ export function registerGuitarDslAiTools(
     applyCapo: applyCapoTransform,
     applyBeginner: applyBeginnerTransform,
     applyTranspose: applyTransposeTransform,
-    guard: aiMutationGuard
+    guard: aiMutationGuard,
+    confirmations: aiConfirmedTargets
   });
   for (const [name, tool] of Object.entries(tools) as [string, vscode.LanguageModelTool<unknown>][]) {
     context.subscriptions.push(vscode.lm.registerTool(name, tool));
