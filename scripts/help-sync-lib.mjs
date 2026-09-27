@@ -73,6 +73,109 @@ export function sectionDigest(section) {
 
 const isNonEmptyString = v => typeof v === 'string' && v.trim() !== '';
 
+// Every heading of an authored Help page declares the spec sections its prose explains,
+// on the line right after the heading: <!-- help-sources: syntax:17 extension:3 -->
+// Markers are stripped from the generated output.
+export const TOPIC_MARKER = /^<!-- help-sources:(.*)-->[ \t]*$/;
+const MARKER_REF = /^([A-Za-z][A-Za-z0-9_-]*):(\d+[A-Z]?)$/;
+
+/** Headings of one authored page with the source refs declared by their markers. */
+export function extractPageTopics(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const topics = [];
+  const errors = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    if (inFence) continue;
+    const marker = TOPIC_MARKER.exec(line);
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (marker && !/^#{1,6}\s/.test(lines[i - 1] ?? '')) {
+      errors.push(`line ${i + 1}: help-sources marker must directly follow a heading`);
+    }
+    if (!heading) continue;
+    const next = TOPIC_MARKER.exec(lines[i + 1] ?? '');
+    if (!next) {
+      errors.push(`heading "${heading[2]}" (line ${i + 1}) has no <!-- help-sources: ... --> marker on the next line`);
+      continue;
+    }
+    const refs = [];
+    for (const token of next[1].trim().split(/\s+/).filter(Boolean)) {
+      const m = MARKER_REF.exec(token);
+      if (m) refs.push({ source: m[1], section: m[2] });
+      else errors.push(`heading "${heading[2]}" (line ${i + 2}): malformed help-sources entry "${token}" (expected source:section)`);
+    }
+    if (refs.length === 0 && next[1].trim() === '') errors.push(`heading "${heading[2]}" (line ${i + 2}): help-sources marker lists no spec section`);
+    topics.push({ heading: heading[2], line: i + 1, refs });
+  }
+  return { topics, errors };
+}
+
+/**
+ * Topic ownership: every heading's prose must be owned by covered spec sections, every covered
+ * section must be claimed on its Help page, and both locales must claim the same sections.
+ * A removed or excluded section therefore cannot leave orphaned Help prose behind.
+ */
+function validateTopics(manifest, pageFiles) {
+  const errors = [];
+  const covered = new Map(); // "source:section" -> helpPage
+  for (const c of manifest.coverage) {
+    if (c && isNonEmptyString(c.source) && isNonEmptyString(c.section)) covered.set(`${c.source}:${c.section}`, c.helpPage);
+  }
+  const excluded = new Set(manifest.excludedSections.filter(e => e && isNonEmptyString(e.source)).map(e => `${e.source}:${e.section}`));
+  const claimedByPage = {}; // `${locale}/${page}` -> Set(ref)
+  for (const page of manifest.pages) {
+    if (!page || !isNonEmptyString(page.id)) continue;
+    for (const locale of LOCALES) {
+      const key = `${locale}/${page.id}`;
+      const text = pageFiles[key];
+      if (text === undefined) continue;
+      const file = `docs/help/${key}.md`;
+      const { topics, errors: topicErrors } = extractPageTopics(text);
+      topicErrors.forEach(e => errors.push(`${file}: ${e}`));
+      const claimed = new Set();
+      for (const t of topics) {
+        for (const r of t.refs) {
+          const ref = `${r.source}:${r.section}`;
+          claimed.add(ref);
+          if (!covered.has(ref)) {
+            const why = excluded.has(ref) ? 'is excluded from Help' : 'is not covered by the manifest (removed or renumbered?)';
+            errors.push(`${file}: heading "${t.heading}" explains ${r.source} §${r.section}, which ${why}: remove or rewrite this obsolete Help prose`);
+          }
+        }
+      }
+      claimedByPage[key] = claimed;
+    }
+  }
+  for (const [ref, helpPage] of covered) {
+    for (const locale of LOCALES) {
+      const claimed = claimedByPage[`${locale}/${helpPage}`];
+      if (claimed && !claimed.has(ref)) {
+        const [src, sec] = ref.split(':');
+        errors.push(`docs/help/${locale}/${helpPage}.md: no heading claims ${src} §${sec} (add "${ref}" to the help-sources marker of the heading that explains it)`);
+      }
+    }
+  }
+  for (const page of manifest.pages) {
+    if (!page || !isNonEmptyString(page.id)) continue;
+    const ja = claimedByPage[`ja/${page.id}`];
+    const en = claimedByPage[`en/${page.id}`];
+    if (!ja || !en) continue;
+    const onlyJa = [...ja].filter(r => !en.has(r)).sort();
+    const onlyEn = [...en].filter(r => !ja.has(r)).sort();
+    if (onlyJa.length || onlyEn.length) {
+      errors.push(`page "${page.id}": ja and en claim different spec sections (only ja: ${onlyJa.join(' ') || '-'}; only en: ${onlyEn.join(' ') || '-'})`);
+    }
+  }
+  return errors;
+}
+
+/** True when `pages` is structurally usable for rendering. */
+export function pagesAreRenderable(manifest) {
+  return Array.isArray(manifest?.pages) && manifest.pages.every(p => p && isNonEmptyString(p.id));
+}
+
 /**
  * Validate manifest shape, references, coverage completeness and digests.
  * `specTexts` maps source id -> markdown text (undefined when the file is missing).
@@ -187,6 +290,7 @@ export function validateManifest(manifest, specTexts, pageFiles) {
       }
     }
   }
+  errors.push(...validateTopics(manifest, pageFiles));
   return errors;
 }
 
@@ -312,7 +416,13 @@ export function renderHelp({ manifest, locale, pageFiles, pkg, nls }) {
   const inv = extractPackageInventory(pkg);
   const parts = [GENERATED_HEADER];
   for (const page of manifest.pages) {
-    const text = (pageFiles[`${locale}/${page.id}`] ?? '').replace(/\r\n?/g, '\n').trim();
+    if (!page || !isNonEmptyString(page.id)) continue;
+    const text = (pageFiles[`${locale}/${page.id}`] ?? '')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .filter(line => !TOPIC_MARKER.test(line))
+      .join('\n')
+      .trim();
     parts.push(text);
   }
   const commandRows = inv.commands.map(c => `| ${cell(localize(c.title, locale, nls))} | \`${c.id}\` |`);
@@ -350,7 +460,8 @@ export function runAllChecks(inputs) {
   const extensionSpec = inputs.specTexts.extension;
   if (extensionSpec === undefined) errors.push('manifest.sources.extension: the extension spec source is required for command/setting parity');
   else errors.push(...checkParity(inputs.pkg, inputs.nls, extensionSpec));
-  if (Array.isArray(inputs.manifest?.pages)) errors.push(...checkGenerated(renderAll(inputs), inputs.generatedFiles));
+  // Only compare generated output when the manifest can be rendered; structural errors are already reported.
+  if (pagesAreRenderable(inputs.manifest)) errors.push(...checkGenerated(renderAll(inputs), inputs.generatedFiles));
   return errors;
 }
 

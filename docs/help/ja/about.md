@@ -1,6 +1,8 @@
 # GuitarDSL ヘルプ
+<!-- help-sources: extension:1 -->
 
 ## GuitarDSL とは
+<!-- help-sources: syntax:1 extension:1 -->
 
 **GuitarDSL** は、ストローク譜やリードシートなどのギター譜をテキストで書くための言語です。コード・ストロークパターン（ダウン／アップ）・メロディ・歌詞をテキストで書くと、拡張機能 **GuitarDSL Previewer** が五線・リズムスラッシュ・ピッキング記号・コード名・コードダイアグラム付きの楽譜として表示します。
 
@@ -9,6 +11,7 @@
 - `#` 以降はコメントです
 
 ## 使い始める
+<!-- help-sources: syntax:3 syntax:15 extension:3 extension:4 -->
 
 1. `song.guitardsl` などの名前でファイルを作ります。
 2. 短い楽譜を書きます。
@@ -27,6 +30,7 @@
 4. PDF を保存します。プレビューのツールバーの **📄 PDF保存** を押すか、**GuitarDSL: PDF出力 / 印刷** を実行します。
 
 ## 問題の表示場所
+<!-- help-sources: extension:5A -->
 
 楽譜のエラーと警告は、エディタの波線と **問題** パネルに表示されます。
 
@@ -36,6 +40,7 @@
 詳しくは下の **トラブルシューティング** を参照してください。
 
 ## ヘルプをもう一度開く
+<!-- help-sources: extension:3 extension:6 -->
 
 - コマンドパレット: **GuitarDSL: ヘルプを開く**
 - 楽譜プレビューのツールバーにある **?** ヘルプボタン

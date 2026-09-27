@@ -64,6 +64,9 @@ const NLS = {
   ja: { 'command.alpha.title': 'アルファ', 'command.beta.title': 'ベータ', 'config.gamma.description': 'ガンマ' }
 };
 
+const ABOUT_JA = '# ヘルプ\n<!-- help-sources: syntax:1 extension:3 -->\n\n概要\n\n## エディタ\n<!-- help-sources: extension:4A -->\n\n本文';
+const ABOUT_EN = '# Help\r\n<!-- help-sources: syntax:1 extension:3 -->\r\n\r\nAbout\r\n\r\n## Editor\r\n<!-- help-sources: extension:4A -->\r\n\r\nBody';
+
 async function fixture() {
   const lib = await load();
   const specTexts: Record<string, string | undefined> = { syntax: SYNTAX, extension: EXTENSION };
@@ -80,8 +83,8 @@ async function fixture() {
     excludedSections: [{ source: 'extension', section: '5A', reason: 'Not user-facing in this fixture.' }]
   };
   const pageFiles: Record<string, string | undefined> = {
-    'ja/about': '# ヘルプ\n\n概要', 'ja/language': '## 言語\n\n本文',
-    'en/about': '# Help\r\n\r\nAbout', 'en/language': '## Language\n\nBody'
+    'ja/about': ABOUT_JA, 'ja/language': '## 言語\n<!-- help-sources: syntax:2 -->\n\n本文',
+    'en/about': ABOUT_EN, 'en/language': '## Language\n<!-- help-sources: syntax:2 -->\n\nBody'
   };
   const inputs: any = { manifest, pkg: PKG, nls: NLS, specTexts, pageFiles, generatedFiles: {}, loadErrors: [] };
   inputs.generatedFiles = lib.renderAll(inputs);
@@ -170,6 +173,89 @@ describe('Help sync: manifest and section coverage', () => {
     const errors = lib.validateManifest(manifest, removed, pageFiles);
     hasError(errors, 'syntax §2 does not exist');
     hasError(errors, 'syntax §3', 'not covered');
+  });
+});
+
+describe('Help sync: topic ownership (feature removal)', () => {
+  it('A removed spec section whose Help prose is left behind fails (orphaned topic)', async () => {
+    const { lib, manifest, specTexts, pageFiles } = await fixture();
+    // Feature removed from the spec and from the manifest, but the Help prose is kept.
+    const removedSpec = { ...specTexts, syntax: SYNTAX.slice(0, SYNTAX.indexOf('## 2. Chords')) };
+    const removedManifest = structuredClone(manifest);
+    removedManifest.coverage = removedManifest.coverage.filter((c: any) => !(c.source === 'syntax' && c.section === '2'));
+    const errors = lib.validateManifest(removedManifest, removedSpec, pageFiles);
+    hasError(errors, 'docs/help/ja/language.md', 'syntax §2', 'obsolete Help prose');
+    hasError(errors, 'docs/help/en/language.md', 'syntax §2', 'obsolete Help prose');
+    // Deleting only the marker does not help: the heading is then unowned.
+    const unmarked = { ...pageFiles, 'en/language': '## Language\n\nBody', 'ja/language': '## 言語\n\n本文' };
+    hasError(lib.validateManifest(removedManifest, removedSpec, unmarked), 'docs/help/en/language.md', 'heading "Language"', 'no <!-- help-sources');
+    // Removing the obsolete prose (and its heading) passes.
+    const cleaned = { ...pageFiles, 'en/language': '## Language\n<!-- help-sources: syntax:1 -->\n\nOther', 'ja/language': '## 言語\n<!-- help-sources: syntax:1 -->\n\n他' };
+    assert.deepStrictEqual(lib.validateManifest(removedManifest, removedSpec, cleaned), []);
+  });
+
+  it('the real repository fails when syntax §18 (note groups) is removed but its Help prose stays', async () => {
+    const lib = await load();
+    const inputs = lib.loadRepoInputs(ROOT);
+    const spec: string = inputs.specTexts.syntax;
+    inputs.specTexts.syntax = spec.slice(0, spec.indexOf('## 18.'));
+    inputs.manifest.coverage = inputs.manifest.coverage.filter((c: any) => !(c.source === 'syntax' && c.section === '18'));
+    const errors = lib.runAllChecks(inputs);
+    for (const locale of ['ja', 'en']) {
+      hasError(errors, `docs/help/${locale}/language.md`, 'syntax §18', 'obsolete Help prose');
+      hasError(errors, `docs/help/${locale}/troubleshooting.md`, 'syntax §18', 'obsolete Help prose');
+    }
+  });
+
+  it('markers referencing excluded sections, unclaimed coverage, locale mismatch and stray markers fail', async () => {
+    const { lib, manifest, specTexts, pageFiles } = await fixture();
+    const excludedRef = { ...pageFiles, 'en/language': '## Language\n<!-- help-sources: syntax:2 extension:5A -->\n\nBody' };
+    const errors = lib.validateManifest(manifest, specTexts, excludedRef);
+    hasError(errors, 'extension §5A', 'is excluded from Help');
+    hasError(errors, 'page "language": ja and en claim different spec sections', 'only en: extension:5A');
+
+    const unclaimed = { ...pageFiles, 'ja/about': ABOUT_JA.replace('extension:4A', 'syntax:1') };
+    hasError(lib.validateManifest(manifest, specTexts, unclaimed), 'docs/help/ja/about.md', 'no heading claims extension §4A');
+
+    const stray = { ...pageFiles, 'en/language': '## Language\n<!-- help-sources: syntax:2 -->\n\nBody\n<!-- help-sources: syntax:2 -->' };
+    hasError(lib.validateManifest(manifest, specTexts, stray), 'docs/help/en/language.md', 'must directly follow a heading');
+
+    const malformed = { ...pageFiles, 'en/language': '## Language\n<!-- help-sources: syntax -->\n\nBody' };
+    hasError(lib.validateManifest(manifest, specTexts, malformed), 'malformed help-sources entry "syntax"');
+  });
+
+  it('headings inside code fences need no marker, and markers never reach the generated output', async () => {
+    const { lib, inputs } = await fixture();
+    const fenced = { ...inputs.pageFiles, 'en/language': '## Language\n<!-- help-sources: syntax:2 -->\n\n```text\n# not a heading\n```' };
+    assert.deepStrictEqual(lib.validateManifest(inputs.manifest, inputs.specTexts, fenced), []);
+    for (const text of Object.values(lib.renderAll(inputs)) as string[]) assert.ok(!text.includes('help-sources'));
+  });
+});
+
+describe('Help sync: malformed manifests through runAllChecks', () => {
+  const cases: [string, (m: any) => void, string][] = [
+    ['pages: [null]', m => { m.pages = [null]; }, 'manifest.pages[0]'],
+    ['pages entry without id', m => { m.pages = [{ id: 'about' }, {}]; }, 'manifest.pages[1]'],
+    ['coverage: [null]', m => { m.coverage = [null]; }, 'manifest.coverage[0]'],
+    ['excludedSections: [null]', m => { m.excludedSections = [null]; }, 'manifest.excludedSections[0]'],
+    ['sources is an array', m => { m.sources = []; }, 'manifest.sources'],
+    ['pages missing', m => { delete m.pages; }, 'manifest.pages']
+  ];
+  for (const [name, mutate, expected] of cases) {
+    it(`T001: ${name} yields diagnostics instead of an exception`, async () => {
+      const { lib, inputs } = await fixture();
+      mutate(inputs.manifest);
+      let errors: string[] = [];
+      assert.doesNotThrow(() => { errors = lib.runAllChecks(inputs); });
+      assert.ok(errors.length > 0);
+      hasError(errors, expected);
+    });
+  }
+
+  it('T001: a non-object manifest yields a diagnostic', async () => {
+    const { lib, inputs } = await fixture();
+    inputs.manifest = null;
+    hasError(lib.runAllChecks(inputs), 'manifest: must be a JSON object');
   });
 });
 
