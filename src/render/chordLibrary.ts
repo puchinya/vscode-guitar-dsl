@@ -1,5 +1,5 @@
-import { ChordDefinition, ChordVoicing, chordKey, splitChordKey } from '../chordDefinition';
-import { getDefaultVoicing } from '../chordPresets';
+import { ChordDefinition, ChordVoicing, splitChordKey } from '../chordDefinition';
+import { resolveChordVoicing } from '../chordVoicingResolver';
 
 export interface ResolvedChordDiagram {
   /** `name` or `name@label`. */
@@ -13,20 +13,13 @@ export interface ResolvedChordDiagram {
 const FALLBACK_VOICING: ChordVoicing = { frets: ['x', 'x', 0, 2, 3, 2], barres: [] };
 
 /**
- * Diagram for a key (spec §7.4): the file's definition of that key; for an unlabeled name or an
- * undefined label, the unlabeled definition, then the preset library, then the fallback shape.
+ * Diagram for a key (spec §7.3): the shared semantic resolution (definition, preset, slash upper
+ * chord), then the renderer-only fallback shape.
  */
 export function resolveChordDiagram(key: string, definitions: ChordDefinition[]): ResolvedChordDiagram {
+  const resolved = resolveChordVoicing(key, definitions);
+  if (resolved) return resolved;
   const { name, label } = splitChordKey(key);
-  const find = (k: string) => definitions.find(d => chordKey(d.name, d.label) === k);
-  const own = find(key) ?? (label !== undefined ? find(name) : undefined);
-  if (own) {
-    return { key, name, label, voicing: own, source: 'definition' };
-  }
-  const library = getDefaultVoicing(name);
-  if (library) {
-    return { key, name, label, voicing: library, source: 'library' };
-  }
   return { key, name, label, voicing: FALLBACK_VOICING, source: 'fallback' };
 }
 

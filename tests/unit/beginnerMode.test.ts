@@ -8,7 +8,7 @@ import {
   inferBeginnerModeForDsl,
   planBeginnerTransform
 } from '../../src/beginnerMode';
-import { inferCapoForDsl, planCapoTransform } from '../../src/capo';
+import { chordCost, inferCapoForDsl, planCapoTransform } from '../../src/capo';
 import { parseChordName } from '../../src/chordDetect';
 import { getDefaultVoicing } from '../../src/chordPresets';
 import { parseGuitarDsl } from '../../src/compiler';
@@ -170,6 +170,27 @@ describe('beginnerMode - slash chords', () => {
     const f = plan('| F/A |\n', 'forbid', 0).candidate.choices[0];
     assert.strictEqual(f.target, 'Fmaj7/A');
     assert.strictEqual(f.penalty, 2);
+  });
+
+  it('BEG-12b evaluates an unchanged slash chord with the same voicing the renderer draws', () => {
+    // F/A has no dedicated preset: the renderer and Beginner Mode both use the F default (a barre).
+    const drawn = resolveChordDiagram('F/A', []);
+    assert.strictEqual(drawn.source, 'library');
+    assert.deepStrictEqual(drawn.voicing, getDefaultVoicing('F'));
+    const allow = plan('| F/A |\n', 'allow', 0).candidate.choices[0];
+    assert.strictEqual(allow.target, 'F/A');
+    assert.strictEqual(allow.physicalCost, chordCost(drawn.voicing, true));
+    // forbid never keeps the unchanged F/A: its drawn shape is the F barre, not the bar-free placeholder.
+    const forbid = plan('| F/A |\n', 'forbid', 0);
+    assert.notStrictEqual(forbid.candidate.choices[0].target, 'F/A');
+    assert.ok(drawnDiagrams(forbid.text).every(d => d.voicing.barres.length === 0));
+    // A dedicated slash preset and a custom definition keep their precedence.
+    const gb = plan('| G/B |\n', 'allow', 0).candidate.choices[0];
+    assert.strictEqual(gb.target, 'G/B');
+    assert.strictEqual(gb.physicalCost, chordCost(getDefaultVoicing('G/B'), true));
+    const own = plan('chord F/A = x03211\n| F/A |\n', 'forbid', 0).candidate.choices[0];
+    assert.strictEqual(own.target, 'F/A');
+    assert.strictEqual(own.physicalCost, chordCost(parseGuitarDsl('chord F/A = x03211').chordDefinitions[0], true));
   });
 
   it('BEG-13 drops the bass when that is cheaper overall and records penalty 1', () => {

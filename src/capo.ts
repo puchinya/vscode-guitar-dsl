@@ -4,7 +4,7 @@
 
 import { NOTE_NAMES, parseChordName } from './chordDetect';
 import { ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chordDefinition';
-import { getDefaultVoicing } from './chordPresets';
+import { resolveApplicableChordDefinition, resolveDefaultChordVoicing } from './chordVoicingResolver';
 import { ChordTokenSpan, ParsedScore, parseGuitarDsl } from './compiler';
 
 export const MIN_CAPO = 0;
@@ -121,14 +121,6 @@ export function easeScore(difficultyCost: number): number {
   return Math.round(Math.min(100, Math.max(0, 100 - 10 * difficultyCost)));
 }
 
-/** Standard voicing: preset for the name, else the upper chord of a slash chord. */
-function standardVoicing(name: string): ChordVoicing | undefined {
-  const direct = getDefaultVoicing(name);
-  if (direct) return direct;
-  const slash = name.indexOf('/');
-  return slash > 0 ? getDefaultVoicing(name.slice(0, slash)) : undefined;
-}
-
 function isSlashName(name: string): boolean {
   return parseChordName(name)?.bass !== undefined;
 }
@@ -179,7 +171,7 @@ function evaluateCandidate(input: CapoInferenceInput, targetCapo: number): CapoC
   for (const { name, weight } of chords) {
     const target = chordMap.get(name) as string;
     const targetName = splitChordKey(target).name;
-    const voicing = (delta === 0 ? input.currentVoicings?.get(name) : undefined) ?? standardVoicing(targetName);
+    const voicing = (delta === 0 ? input.currentVoicings?.get(name) : undefined) ?? resolveDefaultChordVoicing(targetName);
     if (!voicing) unresolved.add(target);
     totalCost += weight * chordCost(voicing, isSlashName(targetName));
     totalWeight += weight;
@@ -252,9 +244,7 @@ export function buildCapoInferenceInputFromScore(score: ParsedScore): CapoInfere
   }
   const currentVoicings = new Map<string, ChordVoicing>();
   for (const key of counts.keys()) {
-    const { name } = splitChordKey(key);
-    const own = score.chordDefinitions.find(d => chordKey(d.name, d.label) === key)
-      ?? score.chordDefinitions.find(d => d.label === undefined && d.name === name);
+    const own = resolveApplicableChordDefinition(key, score.chordDefinitions);
     if (own) currentVoicings.set(key, own);
   }
   return {
