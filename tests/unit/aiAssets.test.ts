@@ -265,7 +265,7 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
     has(await gateAfter(root => edit(root, SKILL_PATH, t => t.slice(0, t.indexOf('6. New score from scratch')))), `${SKILL_PATH}: missing the new-score workflow`);
     has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## New score from scratch[\s\S]*?(?=## Workflow)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the new-score workflow`);
     has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('do not fall back to manual rhythm generation', 'write the rhythm yourself'))), `${INSTRUCTIONS_PATH}: new-score workflow must keep /fall ?back/i`);
-    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('1. Structural draft.', '1. Draft.'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must keep /structural draft/i`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('2. Write the structural draft into', '2. Write the draft into'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must keep /structural draft/i`);
   });
 
   it('reordering or removing a validate -> analyze -> apply -> validate step fails', async () => {
@@ -280,9 +280,9 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
     has(await gateAfter(root => edit(root, SKILL_PATH, t => swap(t, '6. New score from scratch'))), `${SKILL_PATH}: new-score workflow must name`);
     has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => swap(t, '## New score from scratch'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
     // Dropping the final validation step.
-    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('6. Run `guitardsl_validate_dsl` again and resolve unintended diagnostics.', '6. Done.'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('6. Run `guitardsl_validate_dsl` again on the same new target and resolve unintended diagnostics.', '6. Done.'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
     // Dropping the first validation step.
-    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('2. First validation. Run `guitardsl_validate_dsl`.', '2. First validation.'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('3. Validate that exact document. Run `guitardsl_validate_dsl`,', '3. Validate that exact document,'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
   });
 
   it('removing the new-score guidance from either accompaniment tool description fails', async () => {
@@ -290,6 +290,39 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
       has(await gateAfter(root => editTool(root, name, d => d.slice(0, d.indexOf(' New score:')))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
       has(await gateAfter(root => editTool(root, name, d => d.replace('they are not handwritten by the model', 'you may write them'))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
     }
+  });
+
+  it('removing the distinct-new-target wording from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('create a distinct new GuitarDSL document first', 'write the song'))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
+  });
+
+  it('removing the existing-target reuse prohibition from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Never reuse an active, visible, last-active, or other open GuitarDSL document as the output target unless the user explicitly asked to edit that document; you may only read it for reference\. /, ''))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/During new-song creation, do not use target-less validate\/analyze calls[^.]*\. /, ''))), 'target-less validate');
+  });
+
+  it('removing the Skill current-file resolution exception fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(' (existing-score tasks only; never for a new/create request)', ''))), `${SKILL_PATH}: the current-file resolution rule must be limited to existing-score tasks`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace('do not reuse an existing score as the target, and pin every step to the new document', 'write it'))), `${SKILL_PATH}: new-score target identity must keep`);
+  });
+
+  it('removing the same-target invariant from the accompaniment guide fails', async () => {
+    const { ACCOMPANIMENT_GUIDE } = await load();
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(' Every step works on the same exact document:', ''))), `${ACCOMPANIMENT_GUIDE}: new-score target identity must keep /\\bsame exact document\\b/i`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('Pin that new target: its `path` once saved, or the `document.uri` that the first validation returns while the new untitled document is active. ', ''))), `${ACCOMPANIMENT_GUIDE}: new-score target identity must keep /\\bpin(ned)?\\b/i`);
+  });
+
+  it('removing the new/create fallback prohibition from the validate description fails', async () => {
+    has(await gateAfter(root => editTool(root, 'guitardsl_validate_dsl', d => d.slice(0, d.indexOf(' New/create-song workflow:')))), 'languageModelTools "guitardsl_validate_dsl" modelDescription must keep the new-target binding');
+    has(await gateAfter(root => editTool(root, 'guitardsl_validate_dsl', d => d.replace('do not use the fallback resolution to select an existing score as the destination of the new song', 'any open score works'))), 'languageModelTools "guitardsl_validate_dsl" modelDescription must keep the new-target binding');
+  });
+
+  it('removing the same-new-target wording from the analyze or apply description fails', async () => {
+    has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' Analyze the already-created new target explicitly (its path); do not search for another open score.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the new-target binding');
+    has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(' For new-song creation, this target must be the same new document used by validation/analyze.', ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the new-target binding');
   });
 
   it('the new checks leave the seven-tool contract unchanged', async () => {

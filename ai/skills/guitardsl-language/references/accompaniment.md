@@ -4,14 +4,16 @@ You decide the music; the extension guarantees the notation. Never write down/up
 
 ## New score from scratch
 
-When you create a complete new GuitarDSL song or score with accompaniment, use this order even if you already know a valid rhythm pattern:
+When you create a complete new GuitarDSL song or score with accompaniment, use this order even if you already know a valid rhythm pattern. Every step works on the same exact document:
 
-1. Structural draft. Write metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not write explicit generated accompaniment rhythm: no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm. A measure without rhythm tokens gets the parser's temporary default rhythm.
-2. First validation. Run `guitardsl_validate_dsl`. Fix structural errors and unintended warnings before planning the accompaniment.
-3. Analysis. Run `guitardsl_analyze_accompaniment` without `sectionIndex` for the whole score.
-4. Plan. Decide the intent of every section (see the rest of this guide). Give repeated roles an `arrangementGroup`. Mark a final repeated chorus `arrangementRole: finale` when the form has one. Add transition and ending candidates where they suit the music.
-5. Apply. Make one multi-section `guitardsl_apply_accompaniment` request for the complete arrangement whenever possible.
-6. Final validation. Run `guitardsl_validate_dsl` again and resolve unintended diagnostics.
+1. Create a distinct new GuitarDSL document. Do not search for an existing GuitarDSL document as the destination of a new-song request. Do not reuse the active/visible/last-active/open GuitarDSL document as the new song unless the user explicitly asked to edit it. Pin that new target: its `path` once saved, or the `document.uri` that the first validation returns while the new untitled document is active. If another GuitarDSL document is open and the untitled target could be ambiguous, save the new document and use its `path`.
+2. Write the structural draft into that exact document: metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not write explicit generated accompaniment rhythm: no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm. A measure without rhythm tokens gets the parser's temporary default rhythm.
+3. Validate that exact document. Run `guitardsl_validate_dsl`, and fix structural errors and unintended warnings before planning the accompaniment.
+4. Analyze that exact document. Run `guitardsl_analyze_accompaniment` without `sectionIndex` for the whole score. Then decide the intent of every section (see the rest of this guide). Give repeated roles an `arrangementGroup`. Mark a final repeated chorus `arrangementRole: finale` when the form has one. Add transition and ending candidates where they suit the music.
+5. Apply accompaniment to that exact document. Make one multi-section `guitardsl_apply_accompaniment` request for the complete arrangement whenever possible.
+6. Validate that exact document again. Run `guitardsl_validate_dsl` and resolve unintended diagnostics.
+
+If you cannot establish a distinct new target, do not substitute an existing score. Change no file and report it.
 
 If the user specifies the rhythm, still use the tool (see "Choosing the plan mode"): `grid`, `dsl` or `preset`.
 

@@ -2,8 +2,8 @@
 // Fails when the packaged Skill reference differs from the canonical syntax spec, the Skill name does not
 // match its directory, a contributed AI path is missing, the language model tool contract drifted, the
 // Skill / instructions do not describe the accompaniment tools, the new-score workflow lost its discovery
-// metadata or its validate -> analyze -> apply -> validate order, an AI asset / tool description mentions an
-// excluded integration, or the accompaniment code imports one. It never repairs anything.
+// metadata, its validate -> analyze -> apply -> validate order or its distinct-new-target binding, an AI asset /
+// tool description mentions an excluded integration, or the accompaniment code imports one. It never repairs anything.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -44,6 +44,24 @@ export const NEW_SCORE_WORKFLOW_ORDER = Object.freeze(['guitardsl_validate_dsl',
 export const NEW_SCORE_SECTION_MARKERS = Object.freeze([/structural draft/i, /D\/U/, /fall ?back/i]);
 /** Phrases both accompaniment tool modelDescriptions keep, in this order. */
 export const NEW_SCORE_TOOL_MARKERS = Object.freeze(['New score', 'structural draft', 'not handwritten']);
+
+/** New-score target identity (spec §8.2): a distinct new document, no reuse of an open score, every step pinned to it. */
+const DISTINCT_NEW_TARGET = /\bdistinct new GuitarDSL document\b/i;
+const NO_EXISTING_REUSE = /\b(never|do not) reuse (an?|the) (active|existing)\b/i;
+const PINNED_TARGET = /\bpin(ned)?\b/i;
+export const NEW_SCORE_TARGET_MARKERS = Object.freeze({
+  [INSTRUCTIONS_PATH]: [DISTINCT_NEW_TARGET, NO_EXISTING_REUSE, PINNED_TARGET, /\bsame new target\b/i, /\btarget-less validate\/analyze\b/i],
+  [SKILL_PATH]: [DISTINCT_NEW_TARGET, NO_EXISTING_REUSE, PINNED_TARGET],
+  [ACCOMPANIMENT_GUIDE]: [DISTINCT_NEW_TARGET, NO_EXISTING_REUSE, PINNED_TARGET, /\bsame exact document\b/i]
+});
+/** The Skill limits its current-file (no-argument) resolution rule to existing scores. */
+export const SKILL_EXISTING_ONLY = /existing-score tasks only; never for a new\/create request/;
+/** Target-binding phrases each tool modelDescription keeps. */
+export const NEW_SCORE_TARGET_TOOL_MARKERS = Object.freeze({
+  guitardsl_validate_dsl: [/\bNew\/create-song workflow\b/, /\bdo not use the fallback resolution to select an existing score\b/],
+  guitardsl_analyze_accompaniment: [/\balready-created new target\b/, /\bdo not search for another open score\b/],
+  guitardsl_apply_accompaniment: [/\bsame new document used by validation\/analyze\b/]
+});
 
 /** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
 export const ISOLATED_SOURCES = Object.freeze(['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']);
@@ -222,7 +240,23 @@ export function checkAiSync(root) {
     if (!hasOrderedMarkers(description, NEW_SCORE_TOOL_MARKERS)) errors.push(`package.json: languageModelTools "${name}" modelDescription must keep the new-score guidance (${NEW_SCORE_TOOL_MARKERS.join(' -> ')})`);
   }
 
-  // 9. The accompaniment engine and the tool adapter import no excluded integration.
+  // 9. New-score target identity: the new-score sections and the tool descriptions bind the workflow to a distinct new document.
+  for (const [rel, patterns] of Object.entries(NEW_SCORE_TARGET_MARKERS)) {
+    const section = sectionFrom(read(rel)?.toString('utf8') ?? '', NEW_SCORE_SECTIONS[rel]);
+    if (section === undefined) continue; // reported by check 8
+    for (const pattern of patterns) {
+      if (!pattern.test(section)) errors.push(`${rel}: new-score target identity must keep ${pattern}`);
+    }
+  }
+  if (!SKILL_EXISTING_ONLY.test(read(SKILL_PATH)?.toString('utf8') ?? '')) errors.push(`${SKILL_PATH}: the current-file resolution rule must be limited to existing-score tasks (${SKILL_EXISTING_ONLY})`);
+  for (const [name, patterns] of Object.entries(NEW_SCORE_TARGET_TOOL_MARKERS)) {
+    const description = String(actual.get(name)?.modelDescription ?? '');
+    for (const pattern of patterns) {
+      if (!pattern.test(description)) errors.push(`package.json: languageModelTools "${name}" modelDescription must keep the new-target binding ${pattern}`);
+    }
+  }
+
+  // 10. The accompaniment engine and the tool adapter import no excluded integration.
   for (const rel of ISOLATED_SOURCES) {
     const text = read(rel)?.toString('utf8');
     if (text === undefined) {
