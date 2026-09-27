@@ -74,6 +74,17 @@ npm run check:ai      # read-only gate; runs in npm test right after check:help
 - E2E tests that depend on the active editor (commands such as `undo`, tools or commands that resolve the active document) must use the helpers in `tests/e2e/extension.test.ts`: `showAndFocus(doc)` (waits until the document is really the active editor) and `undoIn(doc)`. A suite that needs a clean window starts with `closeAllEditors()`. A bare `showTextDocument` followed by an active-editor command races with editors left open by earlier suites.
 - The real-model Agent smoke (Issue #101 contract §21) cannot run in CI. Record it as manual evidence, or as not run, in the PR.
 
+#### macOS agent execution environment
+
+The E2E runner launches the VS Code GUI through Electron. Clear inherited Electron and Node flags for E2E and full-suite runs:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run test:e2e
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test
+```
+
+If a sandboxed macOS run exits with `SIGABRT` during AppKit application registration (`___RegisterApplication_block_invoke`) before Mocha starts, rerun the command in the host execution context outside the sandbox. This failure was reproduced with both flags unset; the same E2E and full-suite commands passed outside the sandbox. Record a pre-test launch crash separately from a test failure.
+
 ---
 
 ## Mandatory Verification Gate
@@ -111,7 +122,11 @@ npm run vscode:prepublish
 - Optionally run `npx @vscode/vsce ls` to ensure package files are resolved correctly.
 - `vsce ls` must include `media/help/guitardsl-help.ja.md` and `media/help/guitardsl-help.en.md` and must not include `docs/help/`.
 - `vsce ls` must include `ai/instructions/guitardsl.instructions.md`, `ai/skills/guitardsl-language/SKILL.md` and `ai/skills/guitardsl-language/references/guitardsl-syntax.md`.
-- Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, `ai/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
+- Packaged contents are controlled by `.vscodeignore`: the VSIX must contain runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, `ai/`, production `node_modules/`) and the five curated sample scores opened by `guitardsl.openSample` (`samples/sample.guitardsl`, `samples/sample_melody.guitardsl`, `samples/sample_leadsheet.guitardsl`, `samples/sample_voicings.guitardsl`, `samples/sample_notes.guitardsl`). Keep the sample list in sync with `src/onboarding.ts`. Development/agent paths (`.agent-state/`, `.vscode/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, non-curated sample files, `*.ts`, `*.map`) must not appear in `vsce ls`.
+- `vscode:prepublish` builds Audio MIR WASM. On macOS, put the rustup toolchain first when the default Homebrew Rust install lacks the `wasm32-unknown-unknown` target:
+  ```bash
+  PATH="$HOME/.cargo/bin:$PATH" npm run vscode:prepublish
+  ```
 
 ### 5. Audio MIR (Rust/WASM) Gate
 Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts or packaging. Prerequisites: rustup toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` on `PATH`. If Homebrew's `rustc` shadows rustup, put `~/.cargo/bin` first.
