@@ -1,7 +1,7 @@
 import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
 import { ZERO, fadd, fnum, partBeats } from '../duration';
 import { beamGroupIndex, structuralChange } from '../scoreEvents';
-import { AnnotationLane, laneLayout, rowAnnotations } from './annotations';
+import { AnnotationLane, connectionLinks, laneLayout, rowAnnotations } from './annotations';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
 import { keyAlter, writtenStaffPosition } from './notation';
@@ -162,17 +162,19 @@ const HEADER_CLEARANCE = 8;
  * the melody renderer with a small safety margin: noteheads and accidentals, stems and beams, tuplet
  * numbers, ties, H/P and slur arcs, staccato / tenuto, fermata, vibrato, bend, breath and grace notes.
  */
-function melodyInkTop(measures: MeasureData[]): number {
+function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureData[]): number {
   type Note = NonNullable<MeasureData['melody']>[number];
-  interface InkHead { n: Note; y: number; base: number; stemUp: boolean; stemEnd: number; accidental: boolean }
+  // One entry per drawn head: compound durations are expanded into their parts, as expandParts() does for the renderer.
+  interface InkHead { n: Note; y: number; base: number; tuplet: boolean; isFirstPart: boolean; isLastPart: boolean; stemUp: boolean; stemEnd: number; accidental: boolean }
   let top = MELODY_DEFAULT_INK_TOP;
   const seq: InkHead[] = [];
+  const at = new Map<Note, { y: number; stemUp: boolean }>();
   for (const m of measures) {
     const ottava = m.context?.ottava ?? 'none';
     const ts = m.context?.timeSignature;
     // Beam groups of this measure: eighth-or-shorter heads sharing a beat group; stems up when their mean position is below the middle line.
     const beams = new Map<number, { pos: number; y: number }[]>();
-    const heads: { n: Note; pos: number; y: number; base: number; group?: number; accidental: boolean }[] = [];
+    const heads: (Omit<InkHead, 'stemUp' | 'stemEnd'> & { pos: number; group?: number })[] = [];
     // Accidental state of the measure, as in melodyStaff.ts: drawn when the alteration differs from the key / earlier notes.
     const state = new Map<string, number>();
     const keySignature = m.context?.keySignature ?? 0;
@@ -182,7 +184,15 @@ function melodyInkTop(measures: MeasureData[]): number {
       const y = n.isRest ? MELODY_MID_Y : MELODY_STAVE_BOTTOM - pos * 4;
       if (n.techniques?.grace) {
         top = Math.min(top, y - 18);
+        at.set(n, { y, stemUp: true });
         continue;
+      }
+      let accidental = false;
+      if (n.pitch && !n.isRest) {
+        const k = `${n.pitch.step}${n.pitch.octave}`;
+        const expected = state.has(k) ? state.get(k)! : keyAlter(keySignature, n.pitch.step);
+        accidental = !n.tiedFromPrev && n.pitch.alter !== expected;
+        state.set(k, n.pitch.alter);
       }
       n.parts.forEach((part, i) => {
         const group = ts && !n.isRest && part.base >= 8 ? beamGroupIndex(ts, fnum(offset)) : undefined;
@@ -190,16 +200,7 @@ function melodyInkTop(measures: MeasureData[]): number {
           if (!beams.has(group)) beams.set(group, []);
           beams.get(group)!.push({ pos, y });
         }
-        if (i === 0) {
-          let accidental = false;
-          if (n.pitch && !n.isRest) {
-            const k = `${n.pitch.step}${n.pitch.octave}`;
-            const expected = state.has(k) ? state.get(k)! : keyAlter(keySignature, n.pitch.step);
-            accidental = !n.tiedFromPrev && n.pitch.alter !== expected;
-            state.set(k, n.pitch.alter);
-          }
-          heads.push({ n, pos, y, base: part.base, group, accidental });
-        }
+        heads.push({ n, pos, y, base: part.base, tuplet: part.tuplet !== undefined, group, isFirstPart: i === 0, isLastPart: i === n.parts.length - 1, accidental: i === 0 && accidental });
         offset = fadd(offset, partBeats(part));
       });
     }
@@ -211,36 +212,36 @@ function melodyInkTop(measures: MeasureData[]): number {
       if (!h.n.isRest && h.base >= 2 && stemUp) {
         stemEnd = beamed ? Math.min(...beam.map(b => b.y)) - MELODY_STEM_LENGTH - 2 : h.y - MELODY_STEM_LENGTH - (h.base >= 16 ? 4 : 0) - 2;
       }
-      seq.push({ n: h.n, y: h.y, base: h.base, stemUp, stemEnd, accidental: h.accidental });
+      seq.push({ ...h, stemUp, stemEnd });
+      if (h.isFirstPart) at.set(h.n, { y: h.y, stemUp });
     }
   }
 
-  const sounding = seq.filter(h => !h.n.isRest);
-  sounding.forEach((h, i) => {
-    const tech = h.n.techniques;
-    // Arcs go above only when the source note has its stem down (melodyStaff.ts renderConnections).
-    if (!h.stemUp && (tech?.connection === 'hammer' || tech?.connection === 'pull')) {
-      const to = sounding[i + 1];
-      top = Math.min(top, Math.min(h.y, to?.y ?? h.y) - 32);
-    }
-    if (!h.stemUp && tech?.slurStart) {
-      const end = sounding.slice(i + 1).find(o => o.n.techniques?.slurEnd);
-      top = Math.min(top, Math.min(h.y, end?.y ?? h.y) - 17);
-    }
-  });
+  // Arcs of H/P and slurs, with the score-wide links the renderer uses: a link whose other end is in another
+  // system still draws its half here. Arcs go above when the end in this system has its stem down.
+  const scoreSeq = scoreMeasures.flatMap(m => m.melody ?? []);
+  for (const link of connectionLinks(scoreSeq)) {
+    if (link.kind !== 'hammer' && link.kind !== 'pull' && link.kind !== 'slur') continue;
+    const from = at.get(scoreSeq[link.from]);
+    const to = at.get(scoreSeq[link.to]);
+    if (!from && !to) continue;
+    if ((from ?? to)!.stemUp) continue;
+    const arcY = Math.min(from?.y ?? to!.y, to?.y ?? from!.y) - 6;
+    top = Math.min(top, link.kind === 'slur' ? arcY - 11 : arcY - 26);
+  }
 
   for (const h of seq) {
     const { n, y, stemUp, stemEnd } = h;
-    const tech = n.techniques;
     if (!n.isRest) {
       top = Math.min(top, y - (h.accidental ? 12 : 5), stemEnd);
-      if (!stemUp) {
-        if (n.tieToNext || n.tiedFromPrev) top = Math.min(top, y - 12);
-        if (tech?.staccato || tech?.tenuto) top = Math.min(top, y - 14);
-      }
+      // Ties between the parts of a compound duration, to the next note, and from the previous system.
+      const tied = !h.isLastPart || n.tieToNext || (h.isFirstPart && n.tiedFromPrev);
+      if (!stemUp && tied) top = Math.min(top, y - 12);
     }
-    if (n.parts.some(p => p.tuplet)) top = Math.min(top, Math.min(y, stemEnd) - 10);
-    if (!tech) continue;
+    if (h.tuplet) top = Math.min(top, Math.min(y, stemEnd) - 10);
+    const tech = n.techniques;
+    if (!tech || !h.isFirstPart) continue;
+    if (!n.isRest && !stemUp && (tech.staccato || tech.tenuto)) top = Math.min(top, y - 14);
     const noteTop = !n.isRest && h.base >= 2 && stemUp ? Math.min(y - 5, stemEnd) : y - 5;
     const aboveY = Math.max(MELODY_MARK_CEILING + 8, Math.min(MELODY_STAVE_TOP - 4, noteTop - 4));
     if (tech.fermata) top = Math.min(top, aboveY - 7);
@@ -349,7 +350,7 @@ export function getSystemGeometry(measures: MeasureData[], score: GeometryScore)
     ? lyricBaseline + (verseCount - 1) * lineHeight + MELODY_BLOCK_BOTTOM_PADDING
     : MELODY_NO_LYRIC_BOTTOM;
   // The header comes down towards the staff; lane and dynamics positions are then computed on the lifted content.
-  const inkTop = melodyInkTop(measures);
+  const inkTop = melodyInkTop(measures, score.measures ?? measures);
   const lift = headerLift(inkTop, score);
   const top = contentInkTop(measures, score, inkTop - lift);
   if (leadSheet) {
