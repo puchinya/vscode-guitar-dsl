@@ -7,11 +7,14 @@ import { serializeSongToGuitarDsl } from './serializer';
 import { parseGuitarDsl } from '../compiler';
 import { AccompanimentFamily, FAMILY_ORDER, STRUMMING_PATTERN_PRESETS, StrummingPatternPreset } from '../strummingPatterns';
 
-// Transcription is 4/4 only (spec extension §3.4), so the panel offers only 4/4 presets, by family (issue #101 D1).
+// Transcription is 4/4 and writes no feel (straight), so the panel offers only 4/4 presets that allow a straight
+// feel, by family (spec extension §3.4, issue #101 D1 and PR #102 review).
 const TRANSCRIPTION_METER = '4/4';
 
 function transcriptionPresets(family: AccompanimentFamily): StrummingPatternPreset[] {
-  return STRUMMING_PATTERN_PRESETS.filter(p => p.meter === TRANSCRIPTION_METER && p.family === family);
+  return STRUMMING_PATTERN_PRESETS.filter(
+    p => p.meter === TRANSCRIPTION_METER && p.family === family && (p.feelCompatibility === 'any' || p.feelCompatibility.includes('straight'))
+  );
 }
 
 const TRANSCRIPTION_FAMILIES: AccompanimentFamily[] = FAMILY_ORDER.filter(f => transcriptionPresets(f).length > 0);

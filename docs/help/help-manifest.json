@@ -142,7 +142,7 @@
       "source": "extension",
       "section": "3",
       "helpPage": "features",
-      "reviewedSourceSha256": "594d4dff0a8f3e1d9dc4704073a341da9fa850c2d414e9bda5dc28d78923491a"
+      "reviewedSourceSha256": "393e29f56b8d48bee49e0b3f0353fed3e87ed75e38fccb4f50f6c8ae38f82b8f"
     },
     {
       "source": "extension",
@@ -190,7 +190,7 @@
       "source": "extension",
       "section": "8",
       "helpPage": "features",
-      "reviewedSourceSha256": "e3e4abc96ab1a319baae3c170231eecd297be05b64c84bbc06c976b600fc5b07"
+      "reviewedSourceSha256": "666586305017f2a86473bdd4198ea10e73b3f8d9fe787ee2c41ef2fbd9695bc0"
     }
   ],
   "excludedSections": [

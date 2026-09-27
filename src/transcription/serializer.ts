@@ -150,6 +150,10 @@ export function serializeSongToGuitarDsl(song: TranscribedSong, options?: Serial
   if (preset && preset.meter !== songMeter) {
     throw new Error(`Accompaniment preset ${preset.id} is ${preset.meter}; the transcription is ${songMeter}`);
   }
+  // The serializer writes no `feel:` header, so the output is straight.
+  if (preset && preset.feelCompatibility !== 'any' && !preset.feelCompatibility.includes('straight')) {
+    throw new Error(`Accompaniment preset ${preset.id} requires ${preset.feelCompatibility.join('/')} feel; transcription output is straight`);
+  }
 
   let sIdx = 0;
   while (sIdx < song.sections.length) {

@@ -623,16 +623,37 @@ function structuralFamily(m: MeasureData, all: readonly MeasureData[]): Accompan
   if (!rhythms.some(r => r.down || r.up)) return 'arpeggio';
   const grid = phaseGrid(m.context.timeSignature, events.map(e => e.onset));
   if (!grid) return null;
-  if (grid.kind === 'swing') return 'shuffle';
+  // A swung-eighth grid is shuffle or swing; only the score feel tells them apart.
+  if (grid.kind === 'swing') return m.context.feel === 'swing' ? 'swing' : m.context.feel === 'shuffle' ? 'shuffle' : null;
   if (grid.kind === 'triplet') return 'triplet';
   if (feq(grid.unit, frac(1))) return 'quarter';
   return feq(grid.unit, frac(1, 2)) ? 'eighth' : 'sixteenth';
 }
 
-/** Most frequent canonical match among the section's full source measures (ties: catalog order). */
+/**
+ * The one canonical preset a measure plays. Presets sharing a pattern (e.g. `blues_4_4_shuffle_basic` and
+ * `swing_4_4_comping`) are told apart only by the effective score feel naming their family; otherwise the
+ * match is ambiguous and catalog order never decides the musical meaning.
+ */
+function resolveMeasurePreset(m: MeasureData, all: readonly MeasureData[]): { preset?: StrummingPatternPreset; ambiguous: boolean } {
+  const matches = matchingPresets(m, all);
+  if (matches.length <= 1) return { preset: matches[0], ambiguous: false };
+  const byFeel = matches.filter(p => p.family === m.context.feel);
+  return byFeel.length === 1 ? { preset: byFeel[0], ambiguous: false } : { ambiguous: true };
+}
+
+/** Whether some full measure of the section matches several canonical presets that the feel cannot separate. */
+function hasAmbiguousMatch(section: AccompanimentSection, all: readonly MeasureData[]): boolean {
+  return section.measures.filter(isFullMeasure).some(m => resolveMeasurePreset(m, all).ambiguous);
+}
+
+/** Most frequent uniquely resolved canonical preset among the section's full source measures (ties: catalog order). */
 function currentPreset(section: AccompanimentSection, all: readonly MeasureData[]): StrummingPatternPreset | undefined {
   const counts = new Map<string, number>();
-  for (const m of section.measures.filter(isFullMeasure)) for (const p of matchingPresets(m, all)) counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+  for (const m of section.measures.filter(isFullMeasure)) {
+    const { preset } = resolveMeasurePreset(m, all);
+    if (preset) counts.set(preset.id, (counts.get(preset.id) ?? 0) + 1);
+  }
   let best: StrummingPatternPreset | undefined;
   for (const p of STRUMMING_PATTERN_PRESETS) {
     const c = counts.get(p.id) ?? 0;
@@ -1509,7 +1530,9 @@ function resolvePlan(
   }
   const ts = target.ts;
   const role = plan.arrangementRole ?? 'base';
-  const groupBasePreset = plan.arrangementGroup && role !== 'base' ? groupBase.get(plan.arrangementGroup) : undefined;
+  // Only the plan that established the group's base is unconstrained; later plans of the group, `base`
+  // included, follow it (spec §8.7.6).
+  const groupBasePreset = plan.arrangementGroup ? groupBase.get(plan.arrangementGroup) : undefined;
   const chordFail = (events: PatternEvent[]) => target.full.find(m => missesChordChange(m, events));
 
   if (plan.mode === 'preset') {
@@ -1561,6 +1584,9 @@ function resolvePlan(
   const group = groupBasePreset && !explicitOverride ? groupConstraint(groupBasePreset, role) : undefined;
   if (plan.operation === 'adapt') {
     const current = currentPreset(section, all);
+    if (!current && hasAmbiguousMatch(section, all)) {
+      return fail('noCompatibleAdaptation', 'the current rhythm matches several canonical presets that the score feel cannot tell apart; use operation replace');
+    }
     const currentFamily = current?.family ?? structuralFamilyOf(section, all);
     if (!currentFamily) return fail('noCompatibleAdaptation', 'the current rhythm has no recognizable family to adapt');
     if (current && plan.style !== current.style) return fail('noCompatibleAdaptation', `adapt keeps the current style (${current.style}); use operation replace to change it`);

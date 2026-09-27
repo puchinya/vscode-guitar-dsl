@@ -401,6 +401,15 @@ describe('transcription - serializer', () => {
     assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'compound_6_8_full' }), /is 6\/8/);
   });
 
+  it('S002 a preset that needs a non-straight feel is rejected; any-feel 4/4 presets still work (PR #102 review)', () => {
+    assert.throws(
+      () => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'swing_4_4_sixteenth_halftime' }),
+      /Accompaniment preset swing_4_4_sixteenth_halftime requires swing feel; transcription output is straight/
+    );
+    assert.ok(serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'swing_4_4_comping' }).includes('4t.d 8t.u'));
+    assert.ok(!serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'rock_4_4_eighth_full' }).includes('feel:'));
+  });
+
   it('S003 without a preset the automatic rhythm path is unchanged', () => {
     assert.strictEqual(serializeSongToGuitarDsl(sampleSong, { strummingPresetId: undefined }), serializeSongToGuitarDsl(sampleSong));
   });
@@ -411,7 +420,8 @@ describe('transcription - serializer', () => {
       const familySelect = html.slice(html.indexOf('<select id="strummingFamily">'), html.indexOf('</select>', html.indexOf('<select id="strummingFamily">')));
       assert.ok(familySelect.includes('<option value="auto">'), 'Auto stays');
       const families = [...familySelect.matchAll(/<option value="([a-z]+)">/g)].map(m => m[1]).filter(v => v !== 'auto');
-      const fourFour = STRUMMING_PATTERN_PRESETS.filter(p => p.meter === '4/4');
+      const fourFour = STRUMMING_PATTERN_PRESETS.filter(p => p.meter === '4/4' && (p.feelCompatibility === 'any' || p.feelCompatibility.includes('straight')));
+      assert.ok(!html.includes('swing_4_4_sixteenth_halftime'), 'a swing-only preset is not offered');
       assert.deepStrictEqual(families, FAMILY_ORDER.filter(f => fourFour.some(p => p.family === f)));
       const presetIds = [...html.matchAll(/<option value="([a-z0-9_]+_[0-9]+_[0-9]+_[a-z0-9_]+)">/g)].map(m => m[1]);
       assert.deepStrictEqual([...presetIds].sort(), fourFour.map(p => p.id).sort());

@@ -259,6 +259,15 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
     assert.deepStrictEqual(codes(text).filter(c => c.includes('unsupportedContinuationLine')), ['error:unsupportedContinuationLine:3', 'error:unsupportedContinuationLine:5']);
   });
 
+  it('chained and lyr:-only continuation lines never become measures', () => {
+    const chained = ['| C | 4.d 4.d 4.d 4.d |', 'mel: | c4/1 |', '  | d4/1 |', '  | e4/1 |', '  | f4/1 |', '| G | 4.d 4.d 4.d 4.d |'].join('\n');
+    assert.deepStrictEqual(parseGuitarDsl(chained).measures.map(m => m.chord), ['C', 'G']);
+    assert.deepStrictEqual(codes(chained).filter(c => c.includes('unsupportedContinuationLine')), [3, 4, 5].map(l => `error:unsupportedContinuationLine:${l}`));
+    const lyr = ['| C | 4.d 4.d 4.d 4.d |', 'mel: | c4/2 d4/2 |', 'lyr: ら ら', '    | ら ら |'].join('\n');
+    assert.strictEqual(parseGuitarDsl(lyr).measures.length, 1);
+    assert.deepStrictEqual(codes(lyr).filter(c => c.includes('Continuation')), ['error:unsupportedContinuationLine:4']);
+  });
+
   it('unrecognized measure tokens are errors instead of being dropped silently', () => {
     assert.deepStrictEqual(codes('| C | き の う 4.d 4.d 4.d 4.d |').filter(c => c.includes('unknownMeasureToken')), [
       'error:unknownMeasureToken:1',

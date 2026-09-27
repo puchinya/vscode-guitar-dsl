@@ -10,7 +10,8 @@ import {
   planAccompanimentTransform
 } from '../../src/accompaniment';
 import { parseGuitarDsl } from '../../src/compiler';
-import { formatRhythms } from '../../src/accompaniment';
+import { currentPatternShortcuts, formatRhythms } from '../../src/accompaniment';
+import { getPresetById } from '../../src/strummingPatterns';
 import { StrummingCodeLensProvider } from '../../src/strummingCodeLens';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -397,6 +398,53 @@ describe('accompaniment engine (Issue #101)', () => {
         intent(2, { style: 'arpeggio', arrangementGroup: 'chorus', arrangementRole: 'variation' })
       ]);
       assert.strictEqual(override.appliedSections[1].selectedPresetId, 'arp_4_4_eighth');
+    });
+
+    it('T027E a repeated base of the same group keeps the family; explicit style / family override; preset violation fails', () => {
+      const text = ['[Chorus]', '| C |', '[Verse]', '| G |', '[Chorus]', '| C |'].join('\n');
+      const loud = { energy: 'high' as const, density: 'medium' as const, syncopation: 'strong' as const, syncopationKinds: ['anticipation' as const] };
+      // Alone, these parameters pick a sixteenth preset.
+      assert.strictEqual(ok(text, [intent(2, loud)], { phraseVariation: false }).appliedSections[0].selectedPresetId, 'jpop_4_4_sixteenth_anticipation');
+      const grouped = ok(text, [intent(0, { arrangementGroup: 'chorus', arrangementRole: 'base' }), intent(2, { ...loud, arrangementGroup: 'chorus', arrangementRole: 'base' })], { phraseVariation: false });
+      const [first, second] = grouped.appliedSections.map(s => getPresetById(s.selectedPresetId as string)!);
+      assert.strictEqual(first.id, 'pop_4_4_eighth_orthodox');
+      assert.deepStrictEqual([second.family, second.style, second.subdivision], [first.family, first.style, first.subdivision], second.id);
+      const noRole = ok(text, [intent(0, { arrangementGroup: 'chorus' }), intent(2, { ...loud, arrangementGroup: 'chorus' })], { phraseVariation: false });
+      assert.strictEqual(getPresetById(noRole.appliedSections[1].selectedPresetId as string)!.family, 'eighth');
+      const family = ok(text, [intent(0, { arrangementGroup: 'chorus' }), intent(2, { ...loud, family: 'sixteenth', arrangementGroup: 'chorus' })], { phraseVariation: false });
+      assert.strictEqual(family.appliedSections[1].selectedPresetId, 'jpop_4_4_sixteenth_anticipation', 'an explicit family releases the constraint');
+      const style = ok(text, [intent(0, { arrangementGroup: 'chorus' }), intent(2, { style: 'arpeggio', arrangementGroup: 'chorus', arrangementRole: 'base' })], { phraseVariation: false });
+      assert.strictEqual(getPresetById(style.appliedSections[1].selectedPresetId as string)!.style, 'arpeggio');
+      assert.strictEqual(
+        failCode(text, [
+          { sectionIndex: 0, mode: 'preset', presetId: 'pop_4_4_eighth_orthodox', arrangementGroup: 'chorus', arrangementRole: 'base' },
+          { sectionIndex: 2, mode: 'preset', presetId: 'popfunk_4_4_sixteenth_full', arrangementGroup: 'chorus', arrangementRole: 'base' }
+        ]),
+        'invalidVariationRelationship'
+      );
+    });
+
+    it('C-review presets sharing a pattern resolve by score feel only; otherwise no current preset is guessed', () => {
+      const shared = '4t.d 8t.u 4t.d 8t.u 4t.d 8t.u 4t.d 8t.u';
+      const swing = analyzeAccompaniment(`feel: swing\n| C | ${shared} |\n| G | ${shared} |`, {});
+      const plain = analyzeAccompaniment(`| C | ${shared} |\n| G | ${shared} |`, {});
+      assert.ok(swing.ok && plain.ok);
+      if (!swing.ok || !plain.ok) return;
+      assert.deepStrictEqual(swing.sections[0].currentPresetMatches, ['blues_4_4_shuffle_basic', 'swing_4_4_comping']);
+      assert.deepStrictEqual(plain.sections[0].currentPresetMatches, ['blues_4_4_shuffle_basic', 'swing_4_4_comping']);
+      // With feel: swing the current preset is the swing one: adapt stays in the swing family (no triplet swing
+      // alternative exists, so it reports that instead of drifting to the shuffle family).
+      assert.ok(swing.sections[0].adaptationCandidates.every(id => getPresetById(id)!.family === 'swing'));
+      const swingAdapt = run(`feel: swing\n| C | ${shared} |`, [intent(0, { operation: 'adapt', energy: 'high', emphasis: 'backbeat' })]);
+      assert.ok(!swingAdapt.ok && /no swing preset/.test(swingAdapt.detail ?? ''), JSON.stringify(swingAdapt));
+      // Straight feel cannot tell them apart: no shortcut / adaptation candidates.
+      assert.deepStrictEqual(plain.sections[0].adaptationCandidates, []);
+      const section = accompanimentSections(parseGuitarDsl(`| C | ${shared} |`), `| C | ${shared} |`)[0];
+      assert.deepStrictEqual(currentPatternShortcuts(section, section.measures), []);
+      assert.strictEqual(failCode(`| C | ${shared} |`, [intent(0, { operation: 'adapt', energy: 'high' })]), 'noCompatibleAdaptation');
+      // feel: shuffle resolves to the shuffle preset, so adapt stays in the shuffle family.
+      const shuffled = ok(`feel: shuffle\n| C | ${shared} |`, [intent(0, { operation: 'adapt', energy: 'high', emphasis: 'backbeat' })], { phraseVariation: false });
+      assert.strictEqual(getPresetById(shuffled.appliedSections[0].selectedPresetId as string)!.family, 'shuffle');
     });
 
     it('T027F adapt keeps the current family, moves toward the request and never replaces silently', () => {
