@@ -14,7 +14,7 @@ All automated tests must be placed in designated directories based on their scop
 ### Test Conventions
 - Test file naming: `*.test.ts`.
 - Unit tests must be completely runnable standalone without launching VS Code or requiring external network access.
-- E2E tests run inside a headless VS Code instance managed by `@vscode/test-electron`.
+- E2E tests run inside an isolated VS Code test instance launched by `@vscode/test-electron`.
 
 ---
 
