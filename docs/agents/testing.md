@@ -71,6 +71,7 @@ npm run check:ai      # read-only gate; runs in npm test right after check:help
   - cancellation;
   - the accompaniment tools (analysis, multi-section apply as one edit and one undo, failures without edits, exact target) and the accompaniment QuickPick (stubbed `showQuickPick`).
 - Accompaniment unit tests: `tests/unit/strummingPatterns.test.ts` (catalog vs contract table, self-check, phase, syncopation), `tests/unit/accompaniment.test.ts` (selection, modes, source edits, arrangement, analysis) and `tests/unit/accompanimentArrangement.test.ts` (transitions and endings with `mel:` / `lyr:` timing).
+- E2E tests that depend on the active editor (commands such as `undo`, tools or commands that resolve the active document) must use the helpers in `tests/e2e/extension.test.ts`: `showAndFocus(doc)` (waits until the document is really the active editor) and `undoIn(doc)`. A suite that needs a clean window starts with `closeAllEditors()`. A bare `showTextDocument` followed by an active-editor command races with editors left open by earlier suites.
 - The real-model Agent smoke (Issue #101 contract §21) cannot run in CI. Record it as manual evidence, or as not run, in the PR.
 
 ---

@@ -1,6 +1,39 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 
+const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Shows `doc` and waits until it is the active editor and stays so briefly. An editor left open by an earlier
+ * test can otherwise still be (or become again) active, and commands such as `undo` or tools that resolve the
+ * active editor would target it.
+ */
+async function showAndFocus(doc: vscode.TextDocument, column: vscode.ViewColumn = vscode.ViewColumn.One): Promise<vscode.TextEditor> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const editor = await vscode.window.showTextDocument(doc, { viewColumn: column, preview: false, preserveFocus: false });
+    await settle(20);
+    if (vscode.window.activeTextEditor?.document === doc) {
+      await settle(20);
+      if (vscode.window.activeTextEditor?.document === doc) return editor;
+    }
+  }
+  assert.fail(`${doc.uri.toString()} did not become the active editor`);
+}
+
+/** Runs `undo` in `doc` (focused first) and waits until its text has changed. */
+async function undoIn(doc: vscode.TextDocument): Promise<void> {
+  const before = doc.getText();
+  await showAndFocus(doc);
+  await vscode.commands.executeCommand('undo');
+  for (let i = 0; i < 100 && doc.getText() === before; i++) await settle(10);
+}
+
+/** Closes every editor and waits until none is visible, so a suite starts without leftovers. */
+async function closeAllEditors(): Promise<void> {
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  for (let i = 0; i < 100 && (vscode.window.visibleTextEditors.length > 0 || vscode.window.activeTextEditor); i++) await settle(10);
+}
+
 suite('GuitarDSL Extension E2E Test Suite', () => {
   suiteSetup(async () => {
     const ext =
@@ -140,7 +173,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       language: 'guitardsl',
       content: ['chord C@barre = x35553 base:3', '| C@barre |'].join('\n')
     });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.editChordDiagram', doc.uri, 'C@barre');
     let tabs: vscode.Tab[] = [];
     let editorTab: vscode.Tab | undefined;
@@ -193,7 +226,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       language: 'guitardsl',
       content: ['| C | 4.d 4.d 4.d 4.d |', 'mel: | E4/4 d e f |'].join('\n')
     });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
 
     const waitFor = async (predicate: (d: readonly vscode.Diagnostic[]) => boolean) => {
       for (let i = 0; i < 50; i++) {
@@ -256,7 +289,7 @@ suite('Capo / playability (Issue #62)', () => {
   }
   async function openPreviewed(content: string): Promise<vscode.TextDocument> {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await showAndFocus(doc, vscode.ViewColumn.One);
     previewCapo().effectiveDslProbe.previewInput = undefined;
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
     await waitFor(() => previewCapo().effectiveDslProbe.previewInput === doc.getText(), 'preview should render the source');
@@ -284,7 +317,7 @@ suite('Capo / playability (Issue #62)', () => {
 
   test('E2E-02 opening the score settings editor does not mutate the source', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const version = doc.version;
     await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
     let tab: vscode.Tab | undefined;
@@ -300,7 +333,7 @@ suite('Capo / playability (Issue #62)', () => {
 
   test('EDITOR-01 apply recomputes from the latest source', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| B |\n' });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
     await replaceAll(doc, '| B | E |\n');
     const result = await scoreSettings().applyCapoTransform(doc.uri, 2);
@@ -310,11 +343,11 @@ suite('Capo / playability (Issue #62)', () => {
 
   test('EDITOR-02 a single undo restores the previous DSL', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const result = await scoreSettings().applyCapoTransform(doc.uri, 2);
     assert.ok(result.ok);
     assert.strictEqual(doc.getText(), AT_CAPO_2);
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), SOURCE);
   });
 
@@ -371,10 +404,10 @@ suite('Capo / playability (Issue #62)', () => {
 
     assert.ok(controller.setTarget(doc, 3));
     const other = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| G |\n' });
-    await vscode.window.showTextDocument(other, vscode.ViewColumn.One);
+    await showAndFocus(other, vscode.ViewColumn.One);
     await waitFor(() => controller.getState() === undefined, 'switching documents resets the override');
 
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await showAndFocus(doc, vscode.ViewColumn.One);
     assert.ok(controller.setTarget(doc, 3));
     const previewTab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input instanceof vscode.TabInputWebview && t.label.includes('GuitarDSL'));
     assert.ok(previewTab, 'preview tab');
@@ -417,7 +450,7 @@ suite('Beginner Mode (Issue #65)', () => {
   const capo = () => previewCapo().getPreviewCapoController();
   async function openPreviewed(content: string): Promise<vscode.TextDocument> {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await showAndFocus(doc, vscode.ViewColumn.One);
     probe().previewInput = undefined;
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
     await waitFor(() => probe().previewInput === doc.getText(), 'preview should render the source');
@@ -511,11 +544,11 @@ suite('Beginner Mode (Issue #65)', () => {
     const doc = await openPreviewed(SOURCE);
     assert.ok(beginner().enable(doc));
     const other = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| G |\n' });
-    await vscode.window.showTextDocument(other, vscode.ViewColumn.One);
+    await showAndFocus(other, vscode.ViewColumn.One);
     await waitFor(() => beginner().getState() === undefined, 'switching documents clears Beginner Mode');
     assert.strictEqual(await exportPdf(doc, 'switched'), SOURCE);
 
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await showAndFocus(doc, vscode.ViewColumn.One);
     assert.ok(beginner().enable(doc));
     const previewTab = vscode.window.tabGroups.all.flatMap(g => g.tabs).find(t => t.input instanceof vscode.TabInputWebview && t.label.includes('GuitarDSL'));
     assert.ok(previewTab, 'preview tab');
@@ -524,14 +557,14 @@ suite('Beginner Mode (Issue #65)', () => {
 
     const closing = await openPreviewed(SOURCE);
     assert.ok(beginner().enable(closing));
-    await vscode.window.showTextDocument(closing, vscode.ViewColumn.One);
+    await showAndFocus(closing, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
     await waitFor(() => beginner().getState() === undefined, 'closing the document clears Beginner Mode');
   });
 
   test('BEG-E2E-05 apply recomputes from the latest source in one WorkspaceEdit and one undo restores it', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const edited = SOURCE.replace('| G |', '| G | F |');
     await replaceAll(doc, edited);
     const versionBefore = doc.version;
@@ -539,8 +572,7 @@ suite('Beginner Mode (Issue #65)', () => {
     assert.ok(result.ok && result.changed);
     assert.strictEqual(doc.getText(), edited.replace(/\| F \|/g, '| Fmaj7 |'), 'computed from the latest source');
     assert.strictEqual(doc.version, versionBefore + 1, 'a single edit');
-    await vscode.window.showTextDocument(doc);
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), edited, 'one undo restores the whole DSL');
 
     await replaceAll(doc, '| Bm |\n');
@@ -551,7 +583,7 @@ suite('Beginner Mode (Issue #65)', () => {
 
   test('BEG-E2E-06 the Score Settings beginner section model shows the mapping and applies its own selection', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const section = new (scoreSettings().BeginnerSection)();
     let refreshed = 0;
     const statuses: string[] = [];
@@ -582,8 +614,7 @@ suite('Beginner Mode (Issue #65)', () => {
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text' });
     assert.strictEqual(doc.getText(), FORBID_AT_0);
     assert.ok(statuses.length > 0 && refreshed > 0);
-    await vscode.window.showTextDocument(doc);
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), SOURCE);
   });
 });
@@ -642,7 +673,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
 
   test('TR-E2E-01 apply recomputes from the latest source, not from the previous model (T042)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const statuses: string[] = [];
     const ctx = sectionContext(doc, statuses);
     const section = new (scoreSettings().TransposeSection)();
@@ -661,14 +692,13 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
 
   test('TR-E2E-02 transpose + explicit capo is one WorkspaceEdit and one undo (T043)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const version = doc.version;
     const result = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'explicit', capo: 2 } });
     assert.ok(result.ok && result.changed);
     assert.strictEqual(doc.getText(), SOURCE.replace('capo: 0', 'capo: 2').replace('key: C', 'key: D').replace('mel: | c5/1 | a4/1 |', 'mel: | d5/1 | b4/1 |'));
     assert.strictEqual(doc.version, version + 1, 'a single edit');
-    await vscode.window.showTextDocument(doc);
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), SOURCE, 'one undo restores the exact original');
 
     // A failing plan never edits the document.
@@ -680,7 +710,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
 
   test('TR-E2E-03 Score Settings exposes Capo, Beginner and Transpose sections side by side (T044)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
     const panel = (scoreSettings().ScoreSettingsEditorPanel as any).current;
     assert.ok(panel, 'panel open');
@@ -700,7 +730,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
 
   test('TR-E2E-04 Preview / PDF re-resolve from the transposed source, including Beginner Mode (T045)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
-    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await showAndFocus(doc, vscode.ViewColumn.One);
     probe().previewInput = undefined;
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
     await waitFor(() => probe().previewInput === doc.getText(), 'preview renders the source');
@@ -741,7 +771,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
   test('TR-E2E-05 the advanced notation sample exports to PDF (T048)', async () => {
     const sample = nodePath.join(__dirname, '../../../samples/sample_advanced_notation.guitardsl');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(sample));
-    await vscode.window.showTextDocument(doc);
+    await showAndFocus(doc);
     const target = tmpPdf('advanced');
     await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
     assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0, 'PDF written');
@@ -806,7 +836,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
   }
   async function openUntitled(content: string, show = true): Promise<vscode.TextDocument> {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
-    if (show) await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    if (show) await showAndFocus(doc, vscode.ViewColumn.One);
     return doc;
   }
   function makeTools(overrides: Record<string, unknown> = {}) {
@@ -844,6 +874,8 @@ suite('AI integration: language model tools (Issue #80)', () => {
   suiteSetup(async () => {
     const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
     if (ext && !ext.isActive) await ext.activate();
+    // Editors of earlier suites (e.g. the advanced notation sample) must not be the active editor here.
+    await closeAllEditors();
   });
   suiteTeardown(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
@@ -932,7 +964,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(result.text, undefined, 'the transformed DSL is not returned');
     assert.strictEqual(doc.getText(), CAPO_AT_2);
     assert.strictEqual(doc.version, version + 1, 'exactly one document change');
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), CAPO_SOURCE, 'one undo restores the source');
 
     for (const targetCapo of [13, -1, 2.5]) {
@@ -1140,7 +1172,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(doc.version, version + 1, 'one document change');
     assert.ok(doc.getText().includes('| C | 1.d | G | 1.d |'));
     assert.ok(doc.getText().includes('| F | 8.d 8.u 8.d.a 8.u 8.d 8.u 8.d.a 8.u |'));
-    await vscode.commands.executeCommand('undo');
+    await undoIn(doc);
     assert.strictEqual(doc.getText(), SONG, 'one undo restores every section');
   });
 
