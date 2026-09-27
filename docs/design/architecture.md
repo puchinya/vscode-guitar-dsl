@@ -415,8 +415,9 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 ```text
 VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
   ├─ chatInstructions  ai/instructions/guitardsl.instructions.md（applyTo: *.guitardsl / *.gdsl ＋ description）
-  ├─ chatSkills        ai/skills/guitardsl-language/SKILL.md → references/guitardsl-syntax.md（生成物）
-  │                                                       → references/accompaniment.md（手書きの伴奏ガイド）
+  ├─ chatSkills        ai/skills/guitardsl-language/SKILL.md
+  │                      ├─ Markdown リンク → ./references/guitardsl-syntax.md（生成物）
+  │                      └─ Markdown リンク → ./references/accompaniment.md（手書きの伴奏ガイド）
   └─ languageModelTools → src/ai/tools.ts
                             ├─ parseGuitarDsl（§2.2）
                             ├─ inferCapoForDsl（§2.10）
@@ -427,6 +428,15 @@ VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
 - **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、7 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと、Skill・伴奏ガイド・指示が伴奏の 2 ツールを参照し Skill がガイドを指すこと、新曲作成の発見経路と順序（下記）、伴奏エンジンとツールアダプタ（`src/accompaniment.ts`・`src/strummingPatterns.ts`・`src/strummingCodeLens.ts`・`src/ai/tools.ts`）が採譜・`@google/genai`・Audio MIR を import しないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
 - **発見経路（2 系統）**: 指示は `applyTo`（`**/*.{guitardsl,gdsl}`。作成・変更するファイルとの照合）と、frontmatter の `name` / `description`（依頼内容との関連性）の 2 つの経路で選ばれる。後者により、GuitarDSL ファイルがまだない「新しい曲を作って」という依頼でも指示が届く。Skill は frontmatter の `description` で新曲の作成・作曲・伴奏のアレンジを対象に含める。`applyTo: '**'` のような全ファイルへの適用はしない。
 - **新曲作成の順序（仕様 §8.2）**: 構造の下書き（伴奏のリズムトークンなし）→ `guitardsl_validate_dsl` → `guitardsl_analyze_accompaniment` → 1 回の `guitardsl_apply_accompaniment` → `guitardsl_validate_dsl`。この順序は指示・Skill・伴奏ガイド・伴奏 2 ツールの `modelDescription` の文章だけで伝え、拡張機能側に新しい実行時のオーケストレーション層（曲生成ツール、チャット参加者、カスタムエージェント、プロンプトコマンド、モデル呼び出し）は持たない。作曲（形式・コード・メロディ・歌詞・伴奏の意図）はモデルが行い、`src/accompaniment.ts` は作曲の規則を持たない。`check-ai-sync.mjs` は、指示の `description` と Skill の `description` が新曲作成を対象に含むこと、3 つの資産の新曲作成節が validate → analyze → apply → validate の順にツール名を含むこと（順序付きマーカーの照合で、文章の完全一致は求めない）、伴奏 2 ツールの `modelDescription` が新曲作成の手順を含むことを検査する。
+- **Skill の補助資料と代替禁止（仕様 §8.2）**: `SKILL.md` は補助資料を Markdown の相対リンクで参照し、Agent は Skill ファイルからの相対パスとしてそれを取得する。コードスパンのパスは取得できる参照にならない。構文の権威は `./references/guitardsl-syntax.md`、伴奏の指針は `./references/accompaniment.md` だけである。補助資料を解決できなかった場合の経路は次のとおりである。
+
+  ```text
+  補助資料の解決に失敗
+  → ワークスペースのスコアやサンプルを代わりに使わない
+  → 権威ある資料を読み込めないことを報告する
+  ```
+
+  既存のスコアやサンプルを読むのは、ユーザーが明示した参考・テンプレートの場合だけである。`check-ai-sync.mjs` は、`SKILL.md` が 2 つの資料を正確なリンク先（`./references/...`）の Markdown インラインリンクとして含むこと（パーサー依存なしの最小解析 `hasMarkdownLinkTo`）と、Skill と指示が代替禁止と報告の文言を保つことを検査する。
 - **新曲作成の対象の固定（仕様 §8.2「対象の同一性」）**: 新曲作成は次の順に進む。
 
   ```text

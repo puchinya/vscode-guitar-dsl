@@ -2,7 +2,8 @@
 // Fails when the packaged Skill reference differs from the canonical syntax spec, the Skill name does not
 // match its directory, a contributed AI path is missing, the language model tool contract drifted, the
 // Skill / instructions do not describe the accompaniment tools, the new-score workflow lost its discovery
-// metadata, its validate -> analyze -> apply -> validate order or its distinct-new-target binding, an AI asset /
+// metadata, its validate -> analyze -> apply -> validate order or its distinct-new-target binding, the Skill does
+// not link its supporting resources or allows a sample fallback, an AI asset /
 // tool description mentions an excluded integration, or the accompaniment code imports one. It never repairs anything.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -63,6 +64,14 @@ export const NEW_SCORE_TARGET_TOOL_MARKERS = Object.freeze({
   guitardsl_apply_accompaniment: [/\bsame new document used by validation\/analyze\b/]
 });
 
+/** Supporting resources SKILL.md must reference as Markdown relative links (a code span alone is not resolvable). */
+export const SKILL_RESOURCE_LINKS = Object.freeze(['./references/guitardsl-syntax.md', './references/accompaniment.md']);
+/** No substitute specification from existing scores / samples, and a missing resource is reported (spec §8.2). */
+export const NO_SAMPLE_FALLBACK_MARKERS = Object.freeze({
+  [SKILL_PATH]: [/\bsamples?\b[^.]*\bsubstitute specification\b/i, /\breport the missing resource\b/i],
+  [INSTRUCTIONS_PATH]: [/\bexisting GuitarDSL files or samples\b/i, /\bdo not substitute an existing score\/sample\b/i, /\breport the unavailable Skill resource\b/i]
+});
+
 /** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
 export const ISOLATED_SOURCES = Object.freeze(['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']);
 export const EXCLUDED_IMPORTS = Object.freeze(['@google/genai', '/transcription', 'audioMir', 'audio-mir']);
@@ -108,6 +117,12 @@ export function sectionFrom(text, marker) {
   const rest = text.slice(start + marker.length);
   const end = rest.search(/^## /m);
   return marker + (end < 0 ? rest : rest.slice(0, end));
+}
+
+/** True when `text` has an inline Markdown link `[label](destination)` whose destination is exactly `destination`. */
+export function hasMarkdownLinkTo(text, destination) {
+  const escaped = destination.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\[[^\\]\\n]+\\]\\(\\s*<?${escaped}>?(?:\\s+"[^"]*")?\\s*\\)`).test(text);
 }
 
 /** Runs every check against the repository rooted at `root`; returns the list of problems (empty = in sync). */
@@ -256,7 +271,19 @@ export function checkAiSync(root) {
     }
   }
 
-  // 10. The accompaniment engine and the tool adapter import no excluded integration.
+  // 10. The Skill links its supporting resources; neither asset allows existing scores / samples as a substitute specification.
+  const skillText = read(SKILL_PATH)?.toString('utf8') ?? '';
+  for (const destination of SKILL_RESOURCE_LINKS) {
+    if (!hasMarkdownLinkTo(skillText, destination)) errors.push(`${SKILL_PATH}: must reference ${destination} with a Markdown relative link [label](${destination})`);
+  }
+  for (const [rel, patterns] of Object.entries(NO_SAMPLE_FALLBACK_MARKERS)) {
+    const text = read(rel)?.toString('utf8') ?? '';
+    for (const pattern of patterns) {
+      if (!pattern.test(text)) errors.push(`${rel}: no-sample-fallback policy must keep ${pattern}`);
+    }
+  }
+
+  // 11. The accompaniment engine and the tool adapter import no excluded integration.
   for (const rel of ISOLATED_SOURCES) {
     const text = read(rel)?.toString('utf8');
     if (text === undefined) {

@@ -26,6 +26,8 @@ When you create a complete new GuitarDSL song or score with accompaniment, follo
 
 For a new/create request, create a distinct new GuitarDSL document first. Never reuse an active, visible, last-active, or other open GuitarDSL document as the output target unless the user explicitly asked to edit that document; you may only read it for reference. Establish the new target before calling any GuitarDSL tool, and keep every validate/analyze/apply step pinned to that same new target: pass its `path` once saved, or, for an untitled document that is active, keep the `document.uri` from the first validation. During new-song creation, do not use target-less validate/analyze calls if they could resolve to an existing GuitarDSL document; save the new document and pass its `path` instead. If you cannot establish a distinct new target, change no file and report it.
 
+Use the guitardsl-language Skill's packaged specification and accompaniment guide for GuitarDSL knowledge. Do not inspect existing GuitarDSL files or samples to infer syntax or accompaniment behavior for a new/create request. If a Skill resource is unavailable, do not substitute an existing score/sample; report the unavailable Skill resource.
+
 1. Create a structural draft first, in the new document: metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not hand-write generated accompaniment rhythm (no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm). Leave the rhythm out; the parser fills in a temporary default.
 2. Run `guitardsl_validate_dsl`. Fix structural errors and unintended warnings.
 3. Run `guitardsl_analyze_accompaniment` for the whole score.

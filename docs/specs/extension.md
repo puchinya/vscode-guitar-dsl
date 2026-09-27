@@ -629,6 +629,10 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 
 ### 8.2 Skill と指示
 - **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。frontmatter の `description` は、既存スコアの読み書きに加えて、新しい曲・スコアをゼロから作る（作曲する）ことと伴奏のアレンジを対象に含め、ファイルがまだない依頼でも関連する Skill として選ばれるようにする。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。伴奏を作る・変えるときは、手で書いた伴奏ガイド `references/accompaniment.md`（生成物ではなく、仕様の複製でもない）を先に読むよう指示する。このガイドは §8.7 のツールの使い方（計画モードの選び方、`replace` / `adapt`、`directionPolicy: literal` を自分から選ばないこと、セクションとジャンルの目安、セクション切替とエンディングの候補の出し方）を説明する。
+  - `SKILL.md` は 2 つの補助資料を、Agent が取得できる Markdown の相対リンク（`[language specification](./references/guitardsl-syntax.md)`、`[accompaniment guide](./references/accompaniment.md)`）で参照する。パス文字列やコードスパンだけでは参照しない。
+  - 構文・意味の権威は同梱の生成物である構文仕様の参照資料、伴奏の指針は同梱の手書きの伴奏ガイドである。既存のスコアやサンプルは権威ではない。
+  - 補助資料を読み込めない場合、既存の GuitarDSL 文書・サンプル・開いているスコアを仕様書の代わりに探したり読んだりせず、構文や伴奏の規則を推測しない。読み込めないことを報告する。
+  - 既存のスコアやサンプルは、ユーザーがその特定のスコア・サンプルを参考やテンプレートとして使うよう明示した場合に限り、音楽・構成の参考として読める。その場合も構文の権威は仕様であり、仕様で確認していない記法は採用しない。
 - **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: ファイル単位では GuitarDSL ファイルにだけ適用する（`applyTo: '**'` にはしない）。加えて frontmatter に `name` とタスク関連性の `description`（GuitarDSL スコアの作成・作曲・編集・アレンジ。GuitarDSL ファイルがまだない段階で新しい曲を作る場合を含む）を持ち、ファイルが存在する前の新曲作成の依頼でも関連する指示として選ばれる。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うこと、伴奏は `guitardsl_analyze_accompaniment` のあと `guitardsl_apply_accompaniment` で適用し、ダウン / アップを手で書かないことを求める。
 - **新しい曲の作成**: 伴奏まで含む完全な GuitarDSL 曲・スコアを新しく作る依頼では、指示・Skill・伴奏ガイドのそれぞれが次の順序を求める。
   1. 新しく作った GuitarDSL 文書（下記「対象の同一性」）に、構造の下書き（メタデータ、セクション名、コード、必要なら `mel:` / `lyr:`、小節線、ユーザーが求めた記法）だけを書く。伴奏のリズムトークン（生成した `.d` / `.u`、アクセント・ゴースト・タイ・アルペジオのリズム）は書かず、明示的なリズムを省略する（その小節は一時的に構文仕様 §8.6 の補完リズムで表される）。

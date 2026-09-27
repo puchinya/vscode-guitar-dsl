@@ -325,6 +325,43 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
     has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(' For new-song creation, this target must be the same new document used by validation/analyze.', ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the new-target binding');
   });
 
+  it('T-resource-1 the Skill links both supporting resources with Markdown relative links', async () => {
+    const { checkAiSync, hasMarkdownLinkTo, SKILL_PATH } = await load();
+    assert.deepStrictEqual(checkAiSync(ROOT), []);
+    const skill = fs.readFileSync(path.join(ROOT, SKILL_PATH), 'utf8');
+    assert.ok(hasMarkdownLinkTo(skill, './references/guitardsl-syntax.md'));
+    assert.ok(hasMarkdownLinkTo(skill, './references/accompaniment.md'));
+    assert.strictEqual(hasMarkdownLinkTo('see `references/accompaniment.md`', './references/accompaniment.md'), false, 'a code span is not a link');
+    assert.strictEqual(hasMarkdownLinkTo('see ./references/accompaniment.md', './references/accompaniment.md'), false, 'plain text is not a link');
+  });
+
+  it('T-resource-2/3 a supporting resource link reverted to a code span fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('[accompaniment guide](./references/accompaniment.md)').join('`references/accompaniment.md`'))), `${SKILL_PATH}: must reference ./references/accompaniment.md with a Markdown relative link`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('[language specification](./references/guitardsl-syntax.md)').join('`references/guitardsl-syntax.md`'))), `${SKILL_PATH}: must reference ./references/guitardsl-syntax.md with a Markdown relative link`);
+  });
+
+  it('T-resource-4 a link destination without ./ or pointing elsewhere fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('](./references/accompaniment.md)').join('](references/accompaniment.md)'))), `${SKILL_PATH}: must reference ./references/accompaniment.md`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('](./references/guitardsl-syntax.md)').join('](./guitardsl-syntax.md)'))), `${SKILL_PATH}: must reference ./references/guitardsl-syntax.md`);
+  });
+
+  it('T-resource-5 removing the no-sample-fallback rule from the Skill fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(/If either packaged resource cannot be loaded[^\n]*\n/, ''))), `${SKILL_PATH}: no-sample-fallback policy must keep`);
+  });
+
+  it('T-resource-6 removing the no-sample-fallback rule from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Use the guitardsl-language Skill's packaged specification[^\n]*\n/, ''))), `${INSTRUCTIONS_PATH}: no-sample-fallback policy must keep`);
+  });
+
+  it('T-resource-7 dropping the explicit user-reference exception is not a gate blocker (stricter is safe)', async () => {
+    const { SKILL_PATH } = await load();
+    assert.deepStrictEqual(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(' Read an existing score/sample only when the user asked to use it as a reference or template.', ''))), []);
+  });
+
   it('the new checks leave the seven-tool contract unchanged', async () => {
     const { EXPECTED_TOOLS } = await load();
     assert.deepStrictEqual(Object.keys(EXPECTED_TOOLS).sort(), Object.keys(TOOLS).sort());
