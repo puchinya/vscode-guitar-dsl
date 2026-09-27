@@ -1,7 +1,8 @@
 // Read-only AI asset synchronization gate (npm run check:ai).
 // Fails when the packaged Skill reference differs from the canonical syntax spec, the Skill name does not
 // match its directory, a contributed AI path is missing, the language model tool contract drifted, the
-// Skill / instructions do not describe the accompaniment tools, an AI asset / tool description mentions an
+// Skill / instructions do not describe the accompaniment tools, the new-score workflow lost its discovery
+// metadata or its validate -> analyze -> apply -> validate order, an AI asset / tool description mentions an
 // excluded integration, or the accompaniment code imports one. It never repairs anything.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -29,6 +30,21 @@ export const EXPECTED_TOOLS = Object.freeze({
 /** Tools the Skill and the instructions must both name (the accompaniment workflow, spec §8.2). */
 export const WORKFLOW_TOOLS = Object.freeze(['guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment']);
 
+/**
+ * New-score workflow (extension spec §8.2): each asset keeps a section starting at its marker, and that section
+ * names the tools in this order. Checked with ordered markers, not byte-for-byte prose.
+ */
+export const NEW_SCORE_SECTIONS = Object.freeze({
+  [INSTRUCTIONS_PATH]: '## New GuitarDSL score workflow',
+  [SKILL_PATH]: 'New score from scratch',
+  [ACCOMPANIMENT_GUIDE]: '## New score from scratch'
+});
+export const NEW_SCORE_WORKFLOW_ORDER = Object.freeze(['guitardsl_validate_dsl', 'guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment', 'guitardsl_validate_dsl']);
+/** Phrases every new-score section keeps: draft first, no hand-written D/U, no manual fallback after a tool failure. */
+export const NEW_SCORE_SECTION_MARKERS = Object.freeze([/structural draft/i, /D\/U/, /fall ?back/i]);
+/** Phrases both accompaniment tool modelDescriptions keep, in this order. */
+export const NEW_SCORE_TOOL_MARKERS = Object.freeze(['New score', 'structural draft', 'not handwritten']);
+
 /** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
 export const ISOLATED_SOURCES = Object.freeze(['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']);
 export const EXCLUDED_IMPORTS = Object.freeze(['@google/genai', '/transcription', 'audioMir', 'audio-mir']);
@@ -54,6 +70,26 @@ export function parseFrontmatter(text) {
     if (kv) fields[kv[1]] = kv[2].trim().replace(/^(['"])(.*)\1$/, '$2');
   }
   return fields;
+}
+
+/** True when every marker occurs in `text`, each after the end of the previous one. */
+export function hasOrderedMarkers(text, markers) {
+  let from = 0;
+  for (const marker of markers) {
+    const at = text.indexOf(marker, from);
+    if (at < 0) return false;
+    from = at + marker.length;
+  }
+  return true;
+}
+
+/** The text from `marker` to the next `## ` heading (or the end); undefined when the marker is absent. */
+export function sectionFrom(text, marker) {
+  const start = text.indexOf(marker);
+  if (start < 0) return undefined;
+  const rest = text.slice(start + marker.length);
+  const end = rest.search(/^## /m);
+  return marker + (end < 0 ? rest : rest.slice(0, end));
 }
 
 /** Runs every check against the repository rooted at `root`; returns the list of problems (empty = in sync). */
@@ -153,7 +189,40 @@ export function checkAiSync(root) {
     }
   }
 
-  // 7. The accompaniment engine and the tool adapter import no excluded integration.
+  // 7. New-score discovery: the instructions and the Skill are relevant to creating a new song before a file exists.
+  const instructionsDescription = parseFrontmatter(read(INSTRUCTIONS_PATH)?.toString('utf8') ?? '')?.description ?? '';
+  if (!instructionsDescription) errors.push(`${INSTRUCTIONS_PATH}: frontmatter needs a non-empty task-relevance description`);
+  else if (!(/GuitarDSL/.test(instructionsDescription) && /\b(creat|compos)/i.test(instructionsDescription) && /\bnew (song|score)\b/i.test(instructionsDescription) && /\bbefore\b.*\bfile\b.*\b(exists|present)\b/i.test(instructionsDescription))) {
+    errors.push(`${INSTRUCTIONS_PATH}: description must cover creating a new GuitarDSL song/score before a GuitarDSL file exists`);
+  }
+  const skillDescription = parseFrontmatter(read(SKILL_PATH)?.toString('utf8') ?? '')?.description ?? '';
+  if (!(/GuitarDSL/.test(skillDescription) && /\bcreat/i.test(skillDescription) && /\bcompos/i.test(skillDescription) && /\bnew\b[^.]*\b(song|score)\b/i.test(skillDescription) && /\baccompaniment\b/i.test(skillDescription))) {
+    errors.push(`${SKILL_PATH}: description must cover creating/composing a new GuitarDSL song or score and arranging its accompaniment`);
+  }
+
+  // 8. The new-score workflow is kept in all three assets, in order, and in both accompaniment tool descriptions.
+  for (const [rel, marker] of Object.entries(NEW_SCORE_SECTIONS)) {
+    const text = read(rel)?.toString('utf8');
+    if (text === undefined) continue;
+    const section = sectionFrom(text, marker);
+    if (section === undefined) {
+      errors.push(`${rel}: missing the new-score workflow "${marker}"`);
+      continue;
+    }
+    if (!hasOrderedMarkers(section, NEW_SCORE_WORKFLOW_ORDER)) errors.push(`${rel}: new-score workflow must name ${NEW_SCORE_WORKFLOW_ORDER.join(' -> ')} in order`);
+    for (const pattern of NEW_SCORE_SECTION_MARKERS) {
+      if (!pattern.test(section)) errors.push(`${rel}: new-score workflow must keep ${pattern}`);
+    }
+  }
+  if (!sectionFrom(read(SKILL_PATH)?.toString('utf8') ?? '', NEW_SCORE_SECTIONS[SKILL_PATH])?.includes('references/accompaniment.md')) {
+    errors.push(`${SKILL_PATH}: new-score rule must point to references/accompaniment.md`);
+  }
+  for (const name of WORKFLOW_TOOLS) {
+    const description = String(actual.get(name)?.modelDescription ?? '');
+    if (!hasOrderedMarkers(description, NEW_SCORE_TOOL_MARKERS)) errors.push(`package.json: languageModelTools "${name}" modelDescription must keep the new-score guidance (${NEW_SCORE_TOOL_MARKERS.join(' -> ')})`);
+  }
+
+  // 9. The accompaniment engine and the tool adapter import no excluded integration.
   for (const rel of ISOLATED_SOURCES) {
     const text = read(rel)?.toString('utf8');
     if (text === undefined) {

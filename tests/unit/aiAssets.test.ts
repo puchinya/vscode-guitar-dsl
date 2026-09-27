@@ -195,7 +195,8 @@ describe('AI integration assets (Issue #80)', () => {
     assert.ok(guide.includes('operation: adapt') && guide.includes('operation: replace'));
     assert.ok(guide.includes('@tempo: rit.'));
     const instructions = fs.readFileSync(path.join(ROOT, 'ai/instructions/guitardsl.instructions.md'), 'utf8');
-    assert.ok(instructions.startsWith("---\napplyTo: '**/*.{guitardsl,gdsl}'\n---"));
+    assert.ok(instructions.startsWith('---\n'));
+    assert.ok(/^applyTo: '\*\*\/\*\.\{guitardsl,gdsl\}'$/m.test(instructions.split('\n---')[0]), 'applyTo stays GuitarDSL-only (never **)');
     assert.ok(instructions.includes('guitardsl_validate_dsl'));
   });
 
@@ -203,5 +204,97 @@ describe('AI integration assets (Issue #80)', () => {
     const ignore = fs.readFileSync(path.join(ROOT, '.vscodeignore'), 'utf8').split(/\r?\n/).map(l => l.trim());
     assert.ok(!ignore.some(l => l.startsWith('ai') || l === '**/*.md'), 'ai/** must not be excluded');
     for (const pattern of ['docs/**', 'scripts/**', 'src/**', 'tests/**']) assert.ok(ignore.includes(pattern), pattern);
+  });
+});
+
+describe('AI integration assets: new-score workflow (Issue #104)', () => {
+  /** Runs the gate on a fixture root after `mutate`, returning its problems. */
+  async function gateAfter(mutate: (root: string) => void): Promise<string[]> {
+    const { checkAiSync } = await load();
+    const root = makeFixtureRoot();
+    try {
+      mutate(root);
+      return checkAiSync(root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+  const edit = (root: string, rel: string, change: (text: string) => string) => {
+    const file = path.join(root, rel);
+    const before = fs.readFileSync(file, 'utf8');
+    const after = change(before);
+    assert.notStrictEqual(after, before, `the mutation must change ${rel}`);
+    fs.writeFileSync(file, after);
+  };
+  const editTool = (root: string, name: string, change: (text: string) => string) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const tool = manifest.contributes.languageModelTools.find((t: any) => t.name === name);
+    const before = tool.modelDescription;
+    tool.modelDescription = change(before);
+    assert.notStrictEqual(tool.modelDescription, before, `the mutation must change ${name}`);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(manifest));
+  };
+  const has = (errors: string[], text: string) => assert.ok(errors.some(e => e.includes(text)), `expected "${text}" in:\n${errors.join('\n')}`);
+
+  it('the current assets pass and are discoverable for new-score creation', async () => {
+    const { checkAiSync, parseFrontmatter, INSTRUCTIONS_PATH, SKILL_PATH } = await load();
+    assert.deepStrictEqual(checkAiSync(ROOT), []);
+    const instructions = parseFrontmatter(fs.readFileSync(path.join(ROOT, INSTRUCTIONS_PATH), 'utf8'));
+    assert.strictEqual(instructions.name, 'GuitarDSL editing and creation');
+    assert.strictEqual(instructions.applyTo, '**/*.{guitardsl,gdsl}');
+    assert.ok(/new song before a GuitarDSL file exists/.test(instructions.description), instructions.description);
+    const skill = parseFrontmatter(fs.readFileSync(path.join(ROOT, SKILL_PATH), 'utf8'));
+    assert.strictEqual(skill.name, 'guitardsl-language');
+    assert.ok(/creating or composing a new GuitarDSL song or score from scratch/.test(skill.description), skill.description);
+  });
+
+  it('deleting the instructions description fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/^description:.*\n/m, ''))), 'non-empty task-relevance description');
+  });
+
+  it('removing the new-score meaning from the descriptions fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(', including creating a new song before a GuitarDSL file exists', ''))), 'before a GuitarDSL file exists');
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace('when creating or composing a new GuitarDSL song or score from scratch, ', ''))), 'description must cover creating/composing');
+  });
+
+  it('removing the new-score workflow from the instructions, the Skill or the guide fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH, ACCOMPANIMENT_GUIDE } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.slice(0, t.indexOf('## New GuitarDSL score workflow')))), `${INSTRUCTIONS_PATH}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.slice(0, t.indexOf('6. New score from scratch')))), `${SKILL_PATH}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## New score from scratch[\s\S]*?(?=## Workflow)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('do not fall back to manual rhythm generation', 'write the rhythm yourself'))), `${INSTRUCTIONS_PATH}: new-score workflow must keep /fall ?back/i`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('1. Structural draft.', '1. Draft.'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must keep /structural draft/i`);
+  });
+
+  it('reordering or removing a validate -> analyze -> apply -> validate step fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH, ACCOMPANIMENT_GUIDE } = await load();
+    const swap = (t: string, from: string) => {
+      const start = t.indexOf(from);
+      const head = t.slice(0, start);
+      const body = t.slice(start).replace('guitardsl_analyze_accompaniment', '\u0000').replace('guitardsl_apply_accompaniment', 'guitardsl_analyze_accompaniment').replace('\u0000', 'guitardsl_apply_accompaniment');
+      return head + body;
+    };
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => swap(t, '## New GuitarDSL score workflow'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => swap(t, '6. New score from scratch'))), `${SKILL_PATH}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => swap(t, '## New score from scratch'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
+    // Dropping the final validation step.
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('6. Run `guitardsl_validate_dsl` again and resolve unintended diagnostics.', '6. Done.'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
+    // Dropping the first validation step.
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('2. First validation. Run `guitardsl_validate_dsl`.', '2. First validation.'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
+  });
+
+  it('removing the new-score guidance from either accompaniment tool description fails', async () => {
+    for (const name of ['guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment']) {
+      has(await gateAfter(root => editTool(root, name, d => d.slice(0, d.indexOf(' New score:')))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
+      has(await gateAfter(root => editTool(root, name, d => d.replace('they are not handwritten by the model', 'you may write them'))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
+    }
+  });
+
+  it('the new checks leave the seven-tool contract unchanged', async () => {
+    const { EXPECTED_TOOLS } = await load();
+    assert.deepStrictEqual(Object.keys(EXPECTED_TOOLS).sort(), Object.keys(TOOLS).sort());
+    assert.deepStrictEqual(pkg.contributes.languageModelTools.map((t: any) => t.name).sort(), Object.keys(TOOLS).sort());
   });
 });

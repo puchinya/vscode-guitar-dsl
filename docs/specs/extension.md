@@ -628,8 +628,17 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 - YouTube 採譜・ローカル音源の採譜・プレビュー・PDF・コードダイアグラムエディタ・ヘルプはツールとして公開しない。
 
 ### 8.2 Skill と指示
-- **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。伴奏を作る・変えるときは、手で書いた伴奏ガイド `references/accompaniment.md`（生成物ではなく、仕様の複製でもない）を先に読むよう指示する。このガイドは §8.7 のツールの使い方（計画モードの選び方、`replace` / `adapt`、`directionPolicy: literal` を自分から選ばないこと、セクションとジャンルの目安、セクション切替とエンディングの候補の出し方）を説明する。
-- **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: GuitarDSL ファイルにだけ適用する。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うこと、伴奏は `guitardsl_analyze_accompaniment` のあと `guitardsl_apply_accompaniment` で適用し、ダウン / アップを手で書かないことを求める。
+- **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。frontmatter の `description` は、既存スコアの読み書きに加えて、新しい曲・スコアをゼロから作る（作曲する）ことと伴奏のアレンジを対象に含め、ファイルがまだない依頼でも関連する Skill として選ばれるようにする。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。伴奏を作る・変えるときは、手で書いた伴奏ガイド `references/accompaniment.md`（生成物ではなく、仕様の複製でもない）を先に読むよう指示する。このガイドは §8.7 のツールの使い方（計画モードの選び方、`replace` / `adapt`、`directionPolicy: literal` を自分から選ばないこと、セクションとジャンルの目安、セクション切替とエンディングの候補の出し方）を説明する。
+- **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: ファイル単位では GuitarDSL ファイルにだけ適用する（`applyTo: '**'` にはしない）。加えて frontmatter に `name` とタスク関連性の `description`（GuitarDSL スコアの作成・作曲・編集・アレンジ。GuitarDSL ファイルがまだない段階で新しい曲を作る場合を含む）を持ち、ファイルが存在する前の新曲作成の依頼でも関連する指示として選ばれる。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うこと、伴奏は `guitardsl_analyze_accompaniment` のあと `guitardsl_apply_accompaniment` で適用し、ダウン / アップを手で書かないことを求める。
+- **新しい曲の作成**: 伴奏まで含む完全な GuitarDSL 曲・スコアを新しく作る依頼では、指示・Skill・伴奏ガイドのそれぞれが次の順序を求める。
+  1. 構造の下書き（メタデータ、セクション名、コード、必要なら `mel:` / `lyr:`、小節線、ユーザーが求めた記法）だけを持つ GuitarDSL 文書を作る。伴奏のリズムトークン（生成した `.d` / `.u`、アクセント・ゴースト・タイ・アルペジオのリズム）は書かず、明示的なリズムを省略する（その小節は一時的に構文仕様 §8.6 の補完リズムで表される）。
+  2. `guitardsl_validate_dsl` で検証し、構造のエラーと意図しない警告を直す。
+  3. `guitardsl_analyze_accompaniment` でスコア全体を分析する。
+  4. セクションごとの音楽的な意図を決める（繰り返す役割には `arrangementGroup`、最後に繰り返すサビには必要に応じて `arrangementRole: finale`、音楽的に適切ならセクション切替・エンディングの候補）。
+  5. 可能な限り 1 回の `guitardsl_apply_accompaniment` で計画した全セクションを適用する。
+  6. もう一度 `guitardsl_validate_dsl` で検証し、意図しない診断を直す。
+
+  この順序は、モデルが構文上正しいリズムを知っている場合でも省略しない。ユーザーが正確な伴奏を指定した場合も、打つ位置は `grid`、ユーザーが示した GuitarDSL のリズムは `dsl`、名前のあるパターンは `preset` としてツールに渡し、生成したダウン / アップを直接書き込まない。伴奏ツールが使えない・拒否された・キャンセルされた・エラーを返した場合は、手書きの伴奏で代用せず、下書き（既存の伴奏）をそのまま残し、伴奏が未完成であることを報告する。文書を作らずチャット内で説明用の DSL 断片だけを求められた場合はこの順序の対象外とする。これはモデルへの指示であり、手で書く GuitarDSL のリズム記法（`.d` / `.u`、アクセント、ゴーストなど）は従来どおり有効な構文である。伴奏の選択・生成の規則（§8.7）は変えない。
 
 ### 8.3 ツール一覧
 すべてのツールは `canBeReferencedInPrompt: true` で、プロンプトから `#<参照名>` で参照できる。各ツールは `onLanguageModelTool:<ツール名>` で拡張機能を起動する。

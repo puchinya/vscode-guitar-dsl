@@ -1176,6 +1176,51 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(doc.getText(), SONG, 'one undo restores every section');
   });
 
+  test('#104 new score: structural draft -> validate -> analyze -> one apply -> validate; one undo restores the draft', async () => {
+    const DRAFT = ['title: New Song', 'time: 4/4', '', '[Verse]', '| C | G |', 'mel: | c4/2 d4/2 | e4/1 |', 'lyr: la la la', '', '[Chorus]', '| F | C |', 'mel: | f4/2 e4/2 | c4/1 |', 'lyr: la la la', ''].join('\n');
+    const strokes = /\b\d+\.[du]\b/;
+    const doc = await openUntitled(DRAFT);
+    assert.ok(!strokes.test(doc.getText()), 'the draft has no explicit accompaniment rhythm');
+
+    const first = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(first.document.uri, u(doc));
+    assert.strictEqual(first.valid, true, JSON.stringify(first));
+    assert.strictEqual(first.errorCount, 0);
+    assert.strictEqual(first.warningCount, 0);
+
+    const analysis = await invokeRegistered('guitardsl_analyze_accompaniment', {});
+    assert.strictEqual(analysis.ok, true, JSON.stringify(analysis));
+    assert.strictEqual(analysis.document.uri, u(doc));
+    assert.deepStrictEqual(analysis.sections.map((s: any) => [s.sectionIndex, s.name]), [[0, 'Verse'], [1, 'Chorus']]);
+
+    const version = doc.version;
+    const outcome = await Promise.race([
+      invokeRegistered('guitardsl_apply_accompaniment', {
+        uri: first.document.uri,
+        plans: [
+          intentPlan(0, { energy: 'low', density: 'sparse', arrangementGroup: 'verse' }),
+          intentPlan(1, { energy: 'high', density: 'dense', emphasis: 'backbeat', arrangementGroup: 'chorus' })
+        ]
+      }),
+      sleep(5000).then(() => 'timeout')
+    ]);
+    assert.notStrictEqual(outcome, 'timeout');
+    const applied = outcome as any;
+    assert.strictEqual(applied.ok, true, JSON.stringify(applied));
+    assert.deepStrictEqual(applied.appliedSections.map((s: any) => s.selectedPresetId), ['strum_4_4_quarter_basic', 'rock_4_4_eighth_backbeat']);
+    assert.strictEqual(applied.postValidationPassed, true);
+    assert.strictEqual(doc.version, version + 1, 'one document change');
+    assert.ok(strokes.test(doc.getText()), 'engine-generated rhythm appears only after apply');
+    assert.ok(doc.getText().includes('| F 8.d 8.u 8.d.a 8.u 8.d 8.u 8.d.a 8.u |'));
+    assert.ok(doc.getText().includes('mel: | c4/2 d4/2 | e4/1 |') && doc.getText().includes('lyr: la la la'), 'melody and lyrics are kept');
+
+    const last = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(last.errorCount, 0, JSON.stringify(last));
+
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), DRAFT, 'one undo restores the exact structural draft');
+  });
+
   test('T029/T030 accompaniment failures edit nothing; the target is the named document; guard and cancellation hold', async () => {
     const doc = await openUntitled(SONG);
     const { tools } = makeTools();

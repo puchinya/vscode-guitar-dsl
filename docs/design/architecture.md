@@ -414,7 +414,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 ```text
 VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
-  ├─ chatInstructions  ai/instructions/guitardsl.instructions.md（*.guitardsl / *.gdsl のみ）
+  ├─ chatInstructions  ai/instructions/guitardsl.instructions.md（applyTo: *.guitardsl / *.gdsl ＋ description）
   ├─ chatSkills        ai/skills/guitardsl-language/SKILL.md → references/guitardsl-syntax.md（生成物）
   │                                                       → references/accompaniment.md（手書きの伴奏ガイド）
   └─ languageModelTools → src/ai/tools.ts
@@ -424,7 +424,9 @@ VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
                             └─ analyzeAccompaniment / applyAccompanimentTransform（§2.19）
 ```
 
-- **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、7 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと、Skill・伴奏ガイド・指示が伴奏の 2 ツールを参照し Skill がガイドを指すこと、伴奏エンジンとツールアダプタ（`src/accompaniment.ts`・`src/strummingPatterns.ts`・`src/strummingCodeLens.ts`・`src/ai/tools.ts`）が採譜・`@google/genai`・Audio MIR を import しないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
+- **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、7 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと、Skill・伴奏ガイド・指示が伴奏の 2 ツールを参照し Skill がガイドを指すこと、新曲作成の発見経路と順序（下記）、伴奏エンジンとツールアダプタ（`src/accompaniment.ts`・`src/strummingPatterns.ts`・`src/strummingCodeLens.ts`・`src/ai/tools.ts`）が採譜・`@google/genai`・Audio MIR を import しないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
+- **発見経路（2 系統）**: 指示は `applyTo`（`**/*.{guitardsl,gdsl}`。作成・変更するファイルとの照合）と、frontmatter の `name` / `description`（依頼内容との関連性）の 2 つの経路で選ばれる。後者により、GuitarDSL ファイルがまだない「新しい曲を作って」という依頼でも指示が届く。Skill は frontmatter の `description` で新曲の作成・作曲・伴奏のアレンジを対象に含める。`applyTo: '**'` のような全ファイルへの適用はしない。
+- **新曲作成の順序（仕様 §8.2）**: 構造の下書き（伴奏のリズムトークンなし）→ `guitardsl_validate_dsl` → `guitardsl_analyze_accompaniment` → 1 回の `guitardsl_apply_accompaniment` → `guitardsl_validate_dsl`。この順序は指示・Skill・伴奏ガイド・伴奏 2 ツールの `modelDescription` の文章だけで伝え、拡張機能側に新しい実行時のオーケストレーション層（曲生成ツール、チャット参加者、カスタムエージェント、プロンプトコマンド、モデル呼び出し）は持たない。作曲（形式・コード・メロディ・歌詞・伴奏の意図）はモデルが行い、`src/accompaniment.ts` は作曲の規則を持たない。`check-ai-sync.mjs` は、指示の `description` と Skill の `description` が新曲作成を対象に含むこと、3 つの資産の新曲作成節が validate → analyze → apply → validate の順にツール名を含むこと（順序付きマーカーの照合で、文章の完全一致は求めない）、伴奏 2 ツールの `modelDescription` が新曲作成の手順を含むことを検査する。
 - **モジュールの責務 (`src/ai/tools.ts`)**: ツール入力の型、`vscode.lm.registerTool` による登録、`LanguageModelTool` の実装、JSON 結果の組み立て、文書ごとの変更ガードを持つ。音楽ドメインの計算（カポ・弾きやすさ・初心者モード・移調・伴奏の規則）は持たない。伴奏の 2 ツールは入力の形を `accompanimentRequestProblem` で検査し、`analyzeAccompaniment` / `applyAccompanimentTransform`（§2.19）を呼ぶだけである。`vscode.lm.selectChatModels` / `sendRequest` は使わない。
 - **登録と寿命**: `extension.ts` の `activate` が `registerGuitarDslAiTools(context, locale, getLastDoc)` を呼び、7 つの `registerTool` の Disposable を `context.subscriptions` に積む。`getLastDoc` は最後にアクティブだった GuitarDSL ドキュメントを返す関数で、コマンドと同じ解決順を保つために渡す。Worker・タイマー・ネットワーク・バックグラウンド処理は持たない。AI 拡張機能が入っていない環境でも登録は成功し、ツールが呼ばれないだけである。
 - **文書解決**: 読み取り専用ツールは、`path` があれば `Uri.file(path)` を `openTextDocument` で開き、`isGuitarDslDocument` を満たさなければ `documentNotFound`（フォールバックしない）。`path` がなければ `resolveGuitarDslDocument(undefined, getLastDoc())`。変更系ツールは入力の `uri`（`Uri.parse`）/ `path`（`Uri.file`）の文書だけを開く（`resolveMutationTarget`）。

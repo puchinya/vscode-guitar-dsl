@@ -1,4 +1,6 @@
 ---
+name: GuitarDSL editing and creation
+description: Use when creating, composing, writing, editing, or arranging GuitarDSL (.guitardsl/.gdsl) scores, including creating a new song before a GuitarDSL file exists.
 applyTo: '**/*.{guitardsl,gdsl}'
 ---
 
@@ -17,3 +19,18 @@ These files are GuitarDSL guitar scores.
   - `guitardsl_apply_transpose`
 - The `guitardsl_apply_*` tools edit only the document given by `uri` (for example, `document.uri` from `guitardsl_validate_dsl`) or by an absolute `path`.
 - To arrange or change the accompaniment (strumming / arpeggio patterns), call `guitardsl_analyze_accompaniment` first, then `guitardsl_apply_accompaniment`. Decide the musical intent yourself. Do not hand-write down/up strokes: use `intent`, `preset` or `grid` plans, and `dsl` only for a pattern the user gave. Never pick `directionPolicy: literal` on your own.
+
+## New GuitarDSL score workflow
+
+When you create a complete new GuitarDSL song or score with accompaniment, follow these steps in order, even if you already know a valid rhythm pattern:
+
+1. Create a structural draft first: metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not hand-write generated accompaniment rhythm (no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm). Leave the rhythm out; the parser fills in a temporary default.
+2. Run `guitardsl_validate_dsl`. Fix structural errors and unintended warnings.
+3. Run `guitardsl_analyze_accompaniment` for the whole score.
+4. Decide the musical intent per section. Use `arrangementGroup` for repeated roles, `arrangementRole: finale` for a final repeated chorus, and transition / ending candidates where they fit the music.
+5. Call `guitardsl_apply_accompaniment` once for the complete arrangement whenever possible.
+6. Run `guitardsl_validate_dsl` again and resolve unintended diagnostics.
+
+If the user gives an exact rhythm, still use the tool: exact attack positions → `grid`, a GuitarDSL rhythm pattern they supplied → `dsl`, a named catalog pattern → `preset`.
+
+If an accompaniment tool is unavailable, denied, cancelled or returns an error, do not fall back to manual rhythm generation. Leave the draft unchanged, tell the user the accompaniment is not realized yet, and do not say the arrangement is finished.

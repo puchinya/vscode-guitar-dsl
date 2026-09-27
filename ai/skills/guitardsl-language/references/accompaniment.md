@@ -2,6 +2,23 @@
 
 You decide the music; the extension guarantees the notation. Never write down/up strokes, durations or ties yourself when a tool can generate them.
 
+## New score from scratch
+
+When you create a complete new GuitarDSL song or score with accompaniment, use this order even if you already know a valid rhythm pattern:
+
+1. Structural draft. Write metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not write explicit generated accompaniment rhythm: no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm. A measure without rhythm tokens gets the parser's temporary default rhythm.
+2. First validation. Run `guitardsl_validate_dsl`. Fix structural errors and unintended warnings before planning the accompaniment.
+3. Analysis. Run `guitardsl_analyze_accompaniment` without `sectionIndex` for the whole score.
+4. Plan. Decide the intent of every section (see the rest of this guide). Give repeated roles an `arrangementGroup`. Mark a final repeated chorus `arrangementRole: finale` when the form has one. Add transition and ending candidates where they suit the music.
+5. Apply. Make one multi-section `guitardsl_apply_accompaniment` request for the complete arrangement whenever possible.
+6. Final validation. Run `guitardsl_validate_dsl` again and resolve unintended diagnostics.
+
+If the user specifies the rhythm, still use the tool (see "Choosing the plan mode"): `grid`, `dsl` or `preset`.
+
+If a tool is unavailable, denied, cancelled or returns an error, there is no manual fallback. Do not hand-write the rhythm. Keep the draft unchanged, report that the accompaniment is not realized, and do not claim the arrangement is finished.
+
+A raw DSL snippet that only explains notation in chat, with no GuitarDSL document created or edited, is outside this workflow.
+
 ## Workflow
 
 1. Call `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) first. Without `sectionIndex` it lists the sections (0-based `sectionIndex` in source order; measures before the first label are section 0; a repeated label such as a second `[Chorus]` is a separate section), their meters, feels, current rhythm families, canonical preset matches, `availableFamilies`, the section transition contexts and the ending context. Call it again with `sectionIndex` + `family` to see that family's compatible presets.

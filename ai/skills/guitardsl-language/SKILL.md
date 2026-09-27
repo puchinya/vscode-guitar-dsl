@@ -1,15 +1,15 @@
 ---
 name: guitardsl-language
-description: GuitarDSL (.guitardsl / .gdsl) guitar score language syntax and semantics. Use when reading, writing, explaining or editing GuitarDSL scores (chords, rhythm and strum tokens, lyrics, melody lines, score events, let fragments, note groups, capo, key and display headers).
+description: GuitarDSL (.guitardsl / .gdsl) guitar score language syntax and semantics. Use when reading, writing, explaining or editing GuitarDSL scores (chords, rhythm, lyrics, melody, score events, fragments, note groups, headers), when creating or composing a new GuitarDSL song or score from scratch, and when arranging accompaniment.
 ---
 
 # GuitarDSL language
 
-The only authority for GuitarDSL syntax and semantics is `references/guitardsl-syntax.md`, a generated, unmodified copy of the extension's language specification. This file only tells you how to use it and does not repeat the specification.
+The only authority for GuitarDSL syntax and semantics is `references/guitardsl-syntax.md`, a generated copy of the language specification. This file only tells you how to use it.
 
 ## How to look things up
 
-Read only the headings you need. Do not load the whole reference at once. The reference's top-level sections are:
+Read only the headings you need, never the whole reference:
 
 | Topic | Section in `references/guitardsl-syntax.md` |
 |---|---|
@@ -30,18 +30,18 @@ Read only the headings you need. Do not load the whole reference at once. The re
 
 ## Rules
 
-1. Use only syntax that the reference defines. If the reference does not support something, say so. Do not invent a notation.
-2. Check the relevant section before writing a construct that you have not already confirmed in this conversation.
+1. Use only syntax that the reference defines. If it is not supported, say so; never invent notation.
+2. Check the relevant section before writing a construct not yet confirmed in this conversation.
    Lines never continue: keep each `mel:` / `lyr:` on one line, or repeat the prefix per line (`## 6.3`). Lyrics go only in `lyr:` or `l:"..."`, one syllable per sung note.
-3. After you create or materially edit GuitarDSL, run the `guitardsl_validate_dsl` tool (`#guitardslValidate`) on the document. Fix every reported error and validate again. Fix warnings too (syllable counts, measure lengths, `:|` without `|:`) unless the user asked for that notation. Diagnostics are the parser's verdict. Do not argue with them.
-4. Do not calculate capo changes, playability, Beginner Mode chord substitutions or sounding transposition yourself. Use these tools instead:
+3. After you create or materially edit GuitarDSL, run `guitardsl_validate_dsl` (`#guitardslValidate`) on the document. Fix every reported error and validate again. Fix warnings too (syllable counts, measure lengths, `:|` without `|:`) unless the user asked for that notation. Diagnostics are the parser's verdict.
+4. Never compute capo changes, playability, Beginner Mode substitutions or sounding transposition yourself; use:
    - `guitardsl_analyze_playability` (`#guitardslPlayability`)
    - `guitardsl_apply_capo` (`#guitardslApplyCapo`)
    - `guitardsl_apply_beginner_mode` (`#guitardslApplyBeginner`)
    - `guitardsl_apply_transpose` (`#guitardslTranspose`)
 
-   They apply the extension's own deterministic algorithms as one undoable edit.
+   Each is one undoable edit. They edit only the document you name with `uri` or an absolute `path`. For the user's current file, call `guitardsl_validate_dsl` without arguments and pass its `document.uri`.
 
-   These tools edit only the document you name with `uri` or an absolute `path`. To target the file the user is working on, call `guitardsl_validate_dsl` without arguments first and pass its `document.uri`.
+5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read the authored guide `references/accompaniment.md`, then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). You decide the musical intent; the tools generate the strokes and the edit.
 
-5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read `references/accompaniment.md`, an authored guide that is not part of the specification. Then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). You decide the musical intent; the tools generate down/up strokes, durations and the edit.
+6. New score from scratch (a complete new song): read `references/accompaniment.md` first. Write a structural draft with no D/U rhythm, then `guitardsl_validate_dsl` → `guitardsl_analyze_accompaniment` → one `guitardsl_apply_accompaniment` → `guitardsl_validate_dsl`. If a tool fails, never fall back to hand-written rhythm.
