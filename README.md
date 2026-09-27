@@ -33,5 +33,5 @@
    ```
    実際の曲で定量評価するには `node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>]` を実行します（音源と LAB はコミットしないでください）。
 3. VS Code で本フォルダを開き、`F5` キーを押すと拡張機能開発ホストが起動します。
-4. 開発ホスト側でアクティビティバーの **GuitarDSL** アイコンを押してサイドバーを開き、**Get Started** の **Open Sample**（または **New from Template**）を選ぶと、編集できる無題の楽譜が開きます。続けて **Current File** の **Open Preview to the Side** を押すとプレビューが開きます。
+4. 開発ホスト側でアクティビティバーの **GuitarDSL** アイコンを押してサイドバー（**はじめに**）を開き、**はじめる** の **サンプルを開く**（または **テンプレートから新規作成**）を選ぶと、編集できる無題の楽譜が開きます。続けて **現在のファイル** の **プレビューを横に開く** を押すとプレビューが開きます（英語 UI では Get Started → Open Sample、Current File → Open Preview to the Side）。
    ファイルから始める場合は `samples/sample.guitardsl` を開き、右上のプレビューボタン（または `Ctrl+Shift+P` -> `GuitarDSL: Open Preview to the Side`）を実行してください。
