@@ -1248,6 +1248,49 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.ok(messages.some(m => m.includes('J-POP 16th Bright Drive')));
   });
 
+  test('R-CL same-name sections: the CodeLens identity targets only its section; a stale identity changes nothing', async () => {
+    const source = ['[Chorus]', '| C | 4.d 4.d 4.d 4.d |', '', '[Verse]', '| G | 4.d 4.d 4.d 4.d |', '', '[Chorus]', '| F | 4.d 4.d 4.d 4.d |', ''].join('\n');
+    const doc = await openUntitled(source);
+    const lenses = new (strumming().StrummingCodeLensProvider)('en').provideCodeLenses(doc) as vscode.CodeLens[];
+    const targets = lenses.map(l => l.command?.arguments?.[1]);
+    assert.deepStrictEqual(targets, [
+      { sectionIndex: 0, sectionName: 'Chorus', labelLine: 0 },
+      { sectionIndex: 1, sectionName: 'Verse', labelLine: 3 },
+      { sectionIndex: 2, sectionName: 'Chorus', labelLine: 6 }
+    ]);
+    const window = vscode.window as unknown as { showQuickPick: unknown; showInformationMessage: unknown; showWarningMessage: unknown };
+    const original = { pick: window.showQuickPick, info: window.showInformationMessage, warn: window.showWarningMessage };
+    const warnings: string[] = [];
+    let picks = 0;
+    try {
+      window.showQuickPick = async (items: vscode.QuickPickItem[]) => {
+        picks++;
+        return picks % 2 === 1 ? items.find(i => i.label.includes('8-beat')) : items.find(i => (i as any).preset?.id === 'rock_4_4_eighth_full');
+      };
+      window.showInformationMessage = async () => undefined;
+      window.showWarningMessage = async (message: string) => {
+        warnings.push(message);
+        return undefined;
+      };
+      await vscode.commands.executeCommand('guitardsl.applyStrummingPattern', doc.uri, targets[2]);
+      const lines = doc.getText().split('\n');
+      assert.strictEqual(lines[1], '| C | 4.d 4.d 4.d 4.d |', 'the first Chorus is untouched');
+      assert.strictEqual(lines[7], '| F | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |', 'the second Chorus changes');
+      const after = doc.getText();
+      // Stale identities: a moved label line, and an index now pointing at another section. No fallback to the first Chorus.
+      for (const stale of [{ sectionIndex: 2, sectionName: 'Chorus', labelLine: 5 }, { sectionIndex: 1, sectionName: 'Chorus', labelLine: 6 }]) {
+        await vscode.commands.executeCommand('guitardsl.applyStrummingPattern', doc.uri, stale);
+        assert.strictEqual(doc.getText(), after, JSON.stringify(stale));
+      }
+      assert.deepStrictEqual(warnings, ['The section has changed. Refresh the CodeLens and try again.', 'The section has changed. Refresh the CodeLens and try again.']);
+      assert.strictEqual(picks, 2, 'a stale identity opens no picker');
+    } finally {
+      window.showQuickPick = original.pick;
+      window.showInformationMessage = original.info;
+      window.showWarningMessage = original.warn;
+    }
+  });
+
   test('R012 repeated calls recompute from the latest source', async () => {
     const doc = await openUntitled('| B |\n');
     const { tools } = makeTools();

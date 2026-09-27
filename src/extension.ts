@@ -6,7 +6,7 @@ import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
-import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
+import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
 import { registerGuitarDslSidebar } from './sidebar';
@@ -401,13 +401,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const applyStrummingDisposable = vscode.commands.registerCommand(
     APPLY_STRUMMING_PATTERN_COMMAND,
-    async (uri?: vscode.Uri, section?: string | number, sectionName?: string) => {
+    async (uri?: vscode.Uri, section?: string | number | StrummingCodeLensTarget) => {
       const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
       if (!doc) {
         vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
         return;
       }
-      await promptAndApplyStrummingPattern(doc, section, currentLocale, sectionName);
+      await promptAndApplyStrummingPattern(doc, section, currentLocale);
     }
   );
 

@@ -77,7 +77,7 @@ describe('accompaniment engine (Issue #101)', () => {
   });
 
   describe('CodeLens section indexes', () => {
-    it('the cheap CodeLens line scan yields exactly the engine section indexes and names', () => {
+    it('the cheap CodeLens line scan yields exactly the engine section identity (index, name, label line)', () => {
       const docOf = (text: string) => {
         const lines = text.split(/\r?\n/);
         return { lineCount: lines.length, lineAt: (i: number) => ({ text: lines[i] }), uri: 'doc' } as never;
@@ -85,12 +85,17 @@ describe('accompaniment engine (Issue #101)', () => {
       const samples = path.join(__dirname, '../../samples');
       const texts = fs.readdirSync(samples).filter(f => f.endsWith('.guitardsl')).map(f => fs.readFileSync(path.join(samples, f), 'utf8'));
       texts.push(['| C |', '[A]', '[B]', '| G |', 'mel: | c4/1 |', '   | d4/1 |', '[C]', '| F |', '# c', '[A]', '| C | % |'].join('\n'));
+      // Top-level constructs containing `|` are not measures (metadata, events, chord definitions, comments, let).
+      texts.push(['title: A | B', 'memo: x|y', '@text: a | b', 'chord C@x = x32010', 'let r = 4.d 4.d 4.d 4.d', '# | c', '', '[Verse]', '| C | $r |', '[Chorus]', '| G |'].join('\n'));
+      texts.push(['[Chorus]', '| C | 4.d 4.d 4.d 4.d |', '', '[Verse]', '| G | 4.d 4.d 4.d 4.d |', '', '[Chorus]', '| F | 4.d 4.d 4.d 4.d |', '[Empty]', '| |', '[Outro]', '| C |'].join('\n'));
       for (const text of texts) {
         const want = accompanimentSections(parseGuitarDsl(text), text).filter(s => s.labelLine !== null).map(s => [s.labelLine, s.sectionIndex, s.name]);
         const got = new StrummingCodeLensProvider('en').provideCodeLenses(docOf(text)).map(l => {
+          const target = l.command?.arguments?.[1] as { sectionIndex: number; sectionName: string; labelLine: number };
           // The unit vscode mock keeps Range(line, ...) as a plain number.
           const start = l.range.start as unknown as number | { line: number };
-          return [typeof start === 'number' ? start : start.line, l.command?.arguments?.[1], l.command?.arguments?.[2]];
+          assert.strictEqual(typeof start === 'number' ? start : start.line, target.labelLine);
+          return [target.labelLine, target.sectionIndex, target.sectionName];
         });
         assert.deepStrictEqual(got, want);
       }

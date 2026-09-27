@@ -448,6 +448,54 @@ interface MelodyGroup {
   verseCount: number;
 }
 
+const DIRECTIVE_LINE_RE = /^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/;
+const HEADER_LINE_RE = /^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i;
+const SECTION_LABEL_RE = /^\[([^\]]+)\]$/;
+const MELODY_LINE_RE = /^(\s*mel:)(.*)$/i;
+const LYRICS_LINE_RE = /^(\s*lyr:)(.*)$/i;
+
+export type SourceLineKind =
+  | 'continuation'
+  | 'blank'
+  | 'let'
+  | 'pageBreak'
+  | 'chordDefinition'
+  | 'directive'
+  | 'header'
+  | 'section'
+  | 'melody'
+  | 'lyrics'
+  | 'measure'
+  | 'other';
+
+/**
+ * Kind of a source line, in the parser's own precedence. `afterMelodyLine` = the previous line was a `mel:` /
+ * `lyr:` line or a continuation line (see `continuesMelodyContext`). Shared with tools that scan lines cheaply
+ * (the accompaniment CodeLens) so they classify exactly like `parseGuitarDsl`.
+ */
+export function classifySourceLine(rawLine: string, afterMelodyLine: boolean): SourceLineKind {
+  if (afterMelodyLine && /^\s+\|/.test(rawLine)) return 'continuation';
+  const line = rawLine.trim();
+  if (!line || line.startsWith('#')) return 'blank';
+  if (/^let\s/.test(line)) return 'let';
+  if (/^---+$/.test(line) || /^pagebreak$/i.test(line)) return 'pageBreak';
+  if (isChordDefinitionLine(line)) return 'chordDefinition';
+  if (DIRECTIVE_LINE_RE.test(rawLine)) return 'directive';
+  if (HEADER_LINE_RE.test(line)) return 'header';
+  if (SECTION_LABEL_RE.test(line)) return 'section';
+  if (MELODY_LINE_RE.test(rawLine)) return 'melody';
+  if (LYRICS_LINE_RE.test(rawLine)) return 'lyrics';
+  return line.includes('|') ? 'measure' : 'other';
+}
+
+/** Whether a line of this kind lets the next indented `|` line be a (reported) continuation. */
+export const continuesMelodyContext = (kind: SourceLineKind): boolean => kind === 'continuation' || kind === 'melody' || kind === 'lyrics';
+
+/** Non-empty measure cells of a measure line; the line yields a measure per cell (after chord/rhythm merging). */
+export function measureCellsOf(rawLine: string): string[] {
+  return rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
+}
+
 export interface ParseGuitarDslOptions {
   expandPageBreakRepeats?: boolean;
 }
@@ -750,9 +798,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const line = rawLine.trim();
     // An indented `|` line right after a `mel:` / `lyr:` line (or another such line) is an attempted
     // continuation, which the syntax does not have: report it and do not read it as a measure (§6).
-    const continues: boolean = continuableLine && /^\s+\|/.test(rawLine);
-    continuableLine = continues || /^\s*(mel|lyr):/i.test(rawLine);
-    if (continues) {
+    const kind = classifySourceLine(rawLine, continuableLine);
+    continuableLine = continuesMelodyContext(kind);
+    if (kind === 'continuation') {
       const start = rawLine.indexOf('|');
       report(lineIdx, start, rawLine.trimEnd().length, 'unsupportedContinuationLine');
       continue;
@@ -792,7 +840,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Score event: @key: D, @tempo: 132, ... (spec §16). Applies before the next measure.
-    const directiveMatch = rawLine.match(/^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/);
+    const directiveMatch = rawLine.match(DIRECTIVE_LINE_RE);
     if (directiveMatch) {
       markBody(lineIdx);
       const name = directiveMatch[2].toLowerCase();
@@ -815,7 +863,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Headers
-    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i);
+    const headerMatch = line.match(HEADER_LINE_RE);
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
@@ -879,7 +927,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Section label [Intro], [Aメロ] etc
-    const secMatch = line.match(/^\[([^\]]+)\]$/);
+    const secMatch = line.match(SECTION_LABEL_RE);
     if (secMatch) {
       markBody(lineIdx);
       currentSection = secMatch[1];
@@ -889,7 +937,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Melody line: mel: | e4/8 d c | ... |
-    const melMatch = rawLine.match(/^(\s*mel:)(.*)$/i);
+    const melMatch = rawLine.match(MELODY_LINE_RE);
     if (melMatch) {
       markBody(lineIdx);
       lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx);
@@ -897,7 +945,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Syllable lyric line: lyr: あさの ひかりを | ...
-    const lyrMatch = rawLine.match(/^(\s*lyr:)(.*)$/i);
+    const lyrMatch = rawLine.match(LYRICS_LINE_RE);
     if (lyrMatch) {
       markBody(lineIdx);
       if (!lastMelodyGroup) {
@@ -916,7 +964,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   function parseMeasureLine(rawLine: string, lineIdx: number) {
-    const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
+    const rawBars = measureCellsOf(rawLine);
 
     const bars: string[] = [];
     const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+{}:]*)?$`);

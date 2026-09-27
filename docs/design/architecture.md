@@ -461,7 +461,7 @@ src/strummingCodeLens.ts: applyAccompanimentTransform（最新ソース → 1 �
 - **選択の決定性**: `selectPreset` は候補を（優先度、カタログ順）で並べて、必須の条件を満たす最初の候補を選ぶ。乱数・時刻・環境には依存しない。失敗の種類は、候補が到達した最後の必須の条件（コードの提示 → フィール → その他）で決める。
 - **配置と優先順位**: 計画は `base` の役割のものを先に解決して `arrangementGroup` の基準を決め、そのあと `variation` / `finale` を解決する。小節ごとの「求めるリズム」を `desired` に集め、フレーズ末の変化・セクション切替・エンディングの順に上書きする。候補は `repeatSafe` で、後続の `%` の意味を変えないことも確かめる。
 - **編集**: 変更する小節ごとに `rhythmSource` の範囲を置換（`explicit`）または挿入（`implicit`）し、`%` は受け継ぐリズムが求めるリズムと一致するときだけ残す（一致しなければ `repeatWouldChangeMeaning`）。編集は行と列から絶対位置を求め、後ろから順に適用する（CRLF の行末を保つ）。適用後のテキストを再解析し、全小節のリズム・コード・歌詞と小節数を比較して、1 つでも計画と違えば編集しない。VS Code 側（`applyAccompanimentTransform`）は変化した中間部分だけを置き換える 1 つの `WorkspaceEdit` を適用する。
-- **手動の UI**: CodeLens は入力中も軽いように文書を全体解析せず、行の走査で `accompanimentSections` と同じ番号（最初の見出しより前の小節がセクション 0、小節が続く見出しだけを数える）を求め、番号と見出し名を渡す。コマンドは解析したセクションの名前で番号を確かめる（単体テストが全サンプルで番号の一致を検査）。クイックピックは対象範囲の拍子（`uniformMeter`）とフィールでカテゴリとプリセットを絞り、選んだプリセットを `phraseVariation: false` の `preset` 計画として同じエンジンで適用する。
+- **手動の UI**: CodeLens は入力中も軽いように文書を全体解析せず、パーサーと共有する `classifySourceLine` / `measureCellsOf` で行を分類して `accompanimentSections` と同じ番号（最初の見出しより前の小節がセクション 0、小節が続く見出しだけを数える）を求め、識別情報 `{ sectionIndex, sectionName, labelLine }` を渡す。コマンドは最新ソースを解析し、3 つがすべて一致するセクションだけを対象にする。一致しなければ古い CodeLens として警告し、同じ名前のセクションに置き換えない（単体テストが全サンプルとヘッダー等に `|` を含む文書で識別情報の一致を、E2E が同名セクションと古い識別情報を検査）。クイックピックは対象範囲の拍子（`uniformMeter`）とフィールでカテゴリとプリセットを絞り、選んだプリセットを `phraseVariation: false` の `preset` 計画として同じエンジンで適用する。
 - **依存しないもの**: 採譜（§2.8）・Audio MIR（§2.9）・言語モデルの API には依存しない（`check:ai` が import を検査する）。
 
 ## 3. データフローとメッセージング (Data & Event Flow)

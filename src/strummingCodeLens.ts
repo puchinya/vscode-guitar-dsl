@@ -15,12 +15,22 @@ import {
   presetsForFamily,
   uniformMeter
 } from './accompaniment';
-import { MeasureData, parseGuitarDsl } from './compiler';
+import { MeasureData, classifySourceLine, continuesMelodyContext, measureCellsOf, parseGuitarDsl } from './compiler';
 import { AccompanimentUiMessages, SupportedLocale, getAccompanimentUiMessages } from './i18n';
 import { TimeSignature, formatTimeSignature, sameTimeSignature } from './scoreEvents';
 import { AccompanimentFamily, ScoreFeel, StrummingPatternPreset, USAGE_GROUP_ORDER } from './strummingPatterns';
 
 export const APPLY_STRUMMING_PATTERN_COMMAND = 'guitardsl.applyStrummingPattern';
+
+/** Identity of the section a CodeLens was created for; all three must still match when the command runs. */
+export interface StrummingCodeLensTarget {
+  sectionIndex: number;
+  sectionName: string;
+  labelLine: number;
+}
+
+const isCodeLensTarget = (v: unknown): v is StrummingCodeLensTarget =>
+  !!v && typeof v === 'object' && typeof (v as StrummingCodeLensTarget).sectionIndex === 'number' && typeof (v as StrummingCodeLensTarget).labelLine === 'number';
 
 export class StrummingCodeLensProvider implements vscode.CodeLensProvider {
   private readonly msgs: AccompanimentUiMessages;
@@ -30,9 +40,10 @@ export class StrummingCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   /**
-   * One lens per section label, from a line scan (no full parse, so typing stays cheap). The index follows
-   * `accompanimentSections`: measures before the first label form section 0 and a label only counts when a
-   * measure follows it. The section name travels along so the command can confirm the index.
+   * One lens per section label, from a line scan (no full parse, so typing stays cheap). Lines are classified
+   * with the parser's own `classifySourceLine`, so the index matches `accompanimentSections`: measures before
+   * the first label form section 0 and a label only counts when a measure follows it. The lens passes the
+   * section's identity (index, name, label line); the command re-parses and refuses a stale identity.
    */
   public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const lenses: vscode.CodeLens[] = [];
@@ -41,22 +52,20 @@ export class StrummingCodeLensProvider implements vscode.CodeLensProvider {
     let afterMelody = false;
     for (let i = 0; i < document.lineCount; i++) {
       const raw = document.lineAt(i).text;
-      const line = raw.trim();
-      const continuation: boolean = afterMelody && /^\s+\|/.test(raw);
-      afterMelody = continuation || /^(mel|lyr):/i.test(line);
-      const label = line.match(/^\[([^\]]+)\]$/);
-      if (label) {
-        pending = { line: i, name: label[1] };
+      const kind = classifySourceLine(raw, afterMelody);
+      afterMelody = continuesMelodyContext(kind);
+      if (kind === 'section') {
+        pending = { line: i, name: raw.trim().slice(1, -1) };
         continue;
       }
-      const isMeasureLine = line.includes('|') && !continuation && !/^(mel|lyr):/i.test(line) && !line.startsWith('#') && !/^let\s/.test(line);
-      if (!isMeasureLine) continue;
+      if (kind !== 'measure' || measureCellsOf(raw).length === 0) continue;
       if (pending) {
+        const target: StrummingCodeLensTarget = { sectionIndex: count, sectionName: pending.name, labelLine: pending.line };
         lenses.push(
           new vscode.CodeLens(new vscode.Range(pending.line, 0, pending.line, document.lineAt(pending.line).text.length), {
             title: this.msgs.lensTitle(pending.name),
             command: APPLY_STRUMMING_PATTERN_COMMAND,
-            arguments: [document.uri, count, pending.name]
+            arguments: [document.uri, target]
           })
         );
         count++;
@@ -176,9 +185,8 @@ function patternItems(category: CategoryItem, isJa: boolean, msgs: Accompaniment
  */
 export async function promptAndApplyStrummingPattern(
   document: vscode.TextDocument,
-  section?: string | number,
-  locale?: SupportedLocale,
-  expectedName?: string
+  section?: string | number | StrummingCodeLensTarget,
+  locale?: SupportedLocale
 ): Promise<void> {
   const isJa = locale === 'ja';
   const msgs = getAccompanimentUiMessages(locale ?? 'en');
@@ -192,10 +200,16 @@ export async function promptAndApplyStrummingPattern(
   const sectionLabel = (s: AccompanimentSection) => `[${s.name ?? msgs.unnamedSection}]`;
 
   let target: AccompanimentSection | undefined;
-  if (typeof section === 'number') {
+  if (isCodeLensTarget(section)) {
+    // Never guess another (e.g. same-name) section: a changed identity means the CodeLens is stale.
+    const candidate = sections[section.sectionIndex];
+    if (!candidate || candidate.name !== section.sectionName || candidate.labelLine !== section.labelLine) {
+      vscode.window.showWarningMessage(msgs.staleSection);
+      return;
+    }
+    target = candidate;
+  } else if (typeof section === 'number') {
     target = sections[section];
-    // A CodeLens index is confirmed by its label name; on a mismatch fall back to the first section of that name.
-    if (expectedName !== undefined && target?.name !== expectedName) target = sections.find(s => s.name === expectedName);
   }
   else if (typeof section === 'string') target = sections.find(s => s.name === section);
   if (section !== undefined && !target) {

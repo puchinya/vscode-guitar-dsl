@@ -981,6 +981,7 @@ export interface AccompanimentUiMessages {
   noChange: string;
   applied: (target: string, name: string) => string;
   failed: (detail: string) => string;
+  staleSection: string;
 }
 
 const ACCOMPANIMENT_UI_JA: AccompanimentUiMessages = {
@@ -1030,7 +1031,8 @@ const ACCOMPANIMENT_UI_JA: AccompanimentUiMessages = {
   noPresets: meter => `${meter} に使えるパターンがありません。`,
   noChange: '変更対象の小節が見つかりませんでした。',
   applied: (target, name) => `${target} の伴奏パターンを「${name}」に変更しました。`,
-  failed: detail => `伴奏パターンを適用できません: ${detail}`
+  failed: detail => `伴奏パターンを適用できません: ${detail}`,
+  staleSection: 'セクションが変更されています。CodeLens が更新されてから、もう一度実行してください。'
 };
 
 const ACCOMPANIMENT_UI_EN: AccompanimentUiMessages = {
@@ -1080,7 +1082,8 @@ const ACCOMPANIMENT_UI_EN: AccompanimentUiMessages = {
   noPresets: meter => `No pattern is available for ${meter}.`,
   noChange: 'No matching measures found to update.',
   applied: (target, name) => `Changed the accompaniment pattern of ${target} to "${name}".`,
-  failed: detail => `Cannot apply the accompaniment pattern: ${detail}`
+  failed: detail => `Cannot apply the accompaniment pattern: ${detail}`,
+  staleSection: 'The section has changed. Refresh the CodeLens and try again.'
 };
 
 export function getAccompanimentUiMessages(locale: SupportedLocale): AccompanimentUiMessages {
