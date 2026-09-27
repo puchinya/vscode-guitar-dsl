@@ -7,6 +7,7 @@
 **GuitarDSL** is a plain-text language for guitar scores such as strumming charts and lead sheets. You write chords, strum patterns (down/up strokes), melody and lyrics as text. The **GuitarDSL Previewer** extension then renders them as a score with a staff, rhythm slashes, pick-direction marks, chord names and chord diagrams.
 
 - File extensions: `.guitardsl` and `.gdsl` (UTF-8 text)
+- Requirements: VS Code 1.109 or later
 - One line = one element: a header, a section heading, a measure line, a melody line, and so on
 - `#` starts a comment
 
@@ -123,6 +124,20 @@ The change is a single undoable edit.
 ### Local Audio Transcription (Experimental)
 
 **GuitarDSL: Transcribe Local Audio (Experimental)** analyzes a WAV file on your computer, with no network and no API key. It estimates key, BPM, chords and strum positions, then opens the result as a new unsaved document. Down and up strokes are guessed from their position in the beat, and the output is 4/4 only. Treat the result as a rough draft. Details of the analysis are written to the **GuitarDSL Audio MIR** output channel. This feature is **experimental** and works only in desktop VS Code on local files.
+
+### AI Integration (VS Code Agent / Chat)
+
+On VS Code 1.109 or later, you can work with GuitarDSL from VS Code's built-in Agent / Chat. This is optional. Everything else works the same without AI. The extension itself never calls an AI model. The model and chat you use come from your VS Code setup.
+
+- **Language knowledge:** the `guitardsl-language` Skill lets the Agent read only the parts of the GuitarDSL language specification it needs. When you edit `.guitardsl` / `.gdsl` files, instructions apply automatically: do not invent syntax, and validate after editing.
+- **Tools:** reference them in a prompt with `#`.
+  - `#guitardslValidate` checks the score for errors and does not change the file.
+  - `#guitardslPlayability` analyzes playability at each capo position and does not change the file.
+  - `#guitardslApplyCapo` changes the capo.
+  - `#guitardslApplyBeginner` applies Beginner Mode.
+  - `#guitardslTranspose` transposes the sounding music.
+- **Tools that change the file** ask you to confirm the file and the operation first. They use the same calculation as **Apply to DSL** in the preview and write one undoable edit. If a change cannot be applied, the file is left unchanged. Changes to the same file run one at a time.
+- The target is the active GuitarDSL file. A file path can also be given.
 
 ### Score Events and Advanced Notation
 

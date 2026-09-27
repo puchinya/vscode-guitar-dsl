@@ -10,7 +10,8 @@
 
 - **拡張機能識別子 (Extension ID)**: `vscode-guitar-dsl`
 - **表示名 (Display Name)**: `GuitarDSL Previewer`
-- **対象プラットフォーム**: VS Code `^1.85.0` 以上（macOS, Windows, Linux）
+- **対象プラットフォーム**: VS Code `^1.109.0` 以上（macOS, Windows, Linux）。1.109.0 は拡張機能が提供する Agent Skill（§8）に必要な最小バージョンである（旧最小バージョン `^1.85.0` からの互換性変更）。
+- **AI 連携**: VS Code 標準の Agent / Chat 向けに、Skill・対象限定の指示・言語モデルツールを任意機能として提供する（§8）。AI 連携を使わない場合も、他のすべての機能は AI モデルやチャットプロバイダなしで動作する。
 
 ---
 
@@ -602,3 +603,56 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 - §3 のコマンド表・コマンド小見出しのコマンド ID の集合、および §3.7 の設定キーの集合は、`package.json` の貢献と完全に一致しなければならない。
 - NLS キーで参照するコマンドタイトル・設定説明は、英語・日本語の両方の NLS ファイルに存在しなければならない。
 - コミット済みの `media/help/*.md` は、現在の入力から生成される内容と一致しなければならない。
+
+---
+
+## 8. AI 連携 (VS Code AI Integration)
+
+VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定的な機能を使えるように、正式版の拡張 API（`contributes.chatInstructions`、`contributes.chatSkills`、`contributes.languageModelTools`、`vscode.lm.registerTool`）で次の 3 つを提供する。
+
+### 8.1 原則
+- 拡張機能は言語モデルを呼び出さない（`vscode.lm.selectChatModels` / `sendRequest`、外部のモデル API を使わない）。モデルの選択・会話・計画・通常のファイル編集は VS Code の Agent / Chat が担う。
+- 専用のチャット参加者、カスタムエージェント、AI 用 Webview、MCP サーバーは提供しない。
+- GitHub Copilot などの特定の AI 拡張機能に依存しない（`extensionDependencies` に含めない）。AI モデルやチャットプロバイダがなくても、拡張機能は起動し、§2〜§7 の機能はすべて動作する。
+- ツールは既存の機能（パーサー、カポ推論、カポ変更、初心者モード、実音移調）をそのまま呼び出す。ツール独自の変換規則は持たない。
+- YouTube 採譜・ローカル音源の採譜・プレビュー・PDF・コードダイアグラムエディタ・伴奏パターン・ヘルプはツールとして公開しない。
+
+### 8.2 Skill と指示
+- **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。
+- **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: GuitarDSL ファイルにだけ適用する。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うことを求める。
+
+### 8.3 ツール一覧
+すべてのツールは `canBeReferencedInPrompt: true` で、プロンプトから `#<参照名>` で参照できる。各ツールは `onLanguageModelTool:<ツール名>` で拡張機能を起動する。
+
+| ツール名 | 参照名 | 文書の変更 | 使用する既存機能 |
+|---|---|---|---|
+| `guitardsl_validate_dsl` | `guitardslValidate` | なし | パーサーの診断（§5A） |
+| `guitardsl_analyze_playability` | `guitardslPlayability` | なし | カポ候補と弾きやすさ（§4B） |
+| `guitardsl_apply_capo` | `guitardslApplyCapo` | あり | カポ変更の適用（§4B） |
+| `guitardsl_apply_beginner_mode` | `guitardslApplyBeginner` | あり | 初心者モードの適用（§4B） |
+| `guitardsl_apply_transpose` | `guitardslTranspose` | あり | 実音移調の適用（§4B） |
+
+入力（すべてのツールに共通の省略可能な `path`）:
+- `guitardsl_apply_capo`: `targetCapo`（整数 0〜12、必須）。
+- `guitardsl_apply_beginner_mode`: `barrePolicy`（`'allow'` | `'forbid'`、必須）、`targetCapo`（整数 0〜12、省略時は自動 = 現在のソースの推奨カポ）。
+- `guitardsl_apply_transpose`: `semitones`（整数 -11〜11、必須）、`capoMode`（`'keep'` | `'recommended'` | `'explicit'`、必須）、`capo`（整数 0〜12。`capoMode` が `'explicit'` のときだけ必須）。
+- 範囲外の値・型の誤り・`'explicit'` での `capo` の欠落は、文書を解決する前に `invalidInput` で失敗し、文書を変更しない。
+
+### 8.4 対象文書の解決
+- `path` を指定した場合: 絶対ファイルパスとして扱い、そのファイルを開く。GuitarDSL ドキュメント（§2.1）でなければ `documentNotFound` で失敗する。他の文書には切り替えない。
+- `path` を省略した場合: コマンドと同じ解決順（§3.1）で対象を決める。アクティブなエディタの無題の GuitarDSL ドキュメントも対象になる。
+- どちらでも対象が見つからない場合は `documentNotFound` を返し、UI・文書を変更しない。
+
+### 8.5 結果の形式
+結果は JSON テキスト 1 つで、`schemaVersion: 1` と `ok` を含む。対象文書は `document`（`uri` と、ファイルの場合は `path`）で示す。失敗時は `ok: false` と `code`（必要に応じて `detail`）を返す。
+- **`guitardsl_validate_dsl`**: `valid`（エラー数が 0 のときだけ `true`）、`errorCount`、`warningCount`、`diagnostics`（`severity`、`code`、省略可能な `args`、1 始まりの `line` / `startColumn` / `endColumn`。`endColumn` は範囲の直後の列）。構文エラーはツールの失敗ではなく、`valid: false` と診断で返す。ツールは診断を自動修正しない。
+- **`guitardsl_analyze_playability`**: `sourceCapo`、`currentPlayability`（現在のソースの `score` / `level` / `unresolvedChords`。算出できない場合は `null`）、`recommendedCapo`（ない場合は `null`）、カポ 0〜12 の `candidates`（`capo`、`supported`、`score`、`level`、`reason`）。値はカポ推論（§4B）の結果をそのまま返し、ツールが再計算しない。ソースの `capo:` が不正な場合は既存のコード `invalidSourceCapo` で失敗する。`currentPlayability` は同じ推論結果のソースのカポの候補から取る。
+- **変更系ツール**: 操作の概要（`operation`、`changed`、適用後のカポ・キー・置き換え数など既存の適用結果の値）、`warnings` / `unusedDefinitions`、事後条件を返す。変換後の DSL 全体は返さない。成功時は適用後の文書を再解析し、`postValidationPassed`（エラー診断が 0）と `postErrorCount` を含める。
+
+### 8.6 変更系ツールの動作
+- **確認**: 実行前に、対象文書（`path` のファイル名、または解決した文書の名前）と操作内容を示す確認メッセージを表示する。確認メッセージの作成は副作用を持たない。実行は VS Code が許可したあとだけ行う。
+- **最新ソースからの適用**: §4B の適用と同じく、実行時点の文書の内容から変換を計算し、1 つの取り消し可能な編集として適用する。モデルが作った置換用 DSL は受け取らない。変換後のテキストをキャッシュしない。同じ変換を 2 回呼ぶと、2 回目も最新のソースから計算する。
+- **失敗**: 既存の失敗コード（例: `untransposableChord`、`noRecommendation`、`editRejected`）をそのまま返し、文書を一切変更しない（部分的な編集をしない）。
+- **同時実行**: 同じ文書に対する変更系ツールは同時に 1 つだけ実行する。実行中に同じ文書へ別の変更系ツールが呼ばれた場合は、待たずに `documentBusy` で失敗し、文書を変更しない。読み取り専用のツールは同時に実行できる。
+- **キャンセル**: 文書の解決前と編集の開始直前にキャンセルを確認し、キャンセルされていれば `cancelled` を返して文書を変更しない。編集の適用を始めたあとは、取り消しや補正の編集を行わない。
+- **後処理なし**: ツールはバックグラウンド処理・タイマー・ネットワーク通信を持たない。

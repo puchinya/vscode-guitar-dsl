@@ -109,6 +109,21 @@
 
 この機能は **実験的** で、デスクトップ版 VS Code とローカルファイルだけに対応します。
 
+### AI 連携（VS Code の Agent / Chat）
+<!-- help-sources: extension:1 extension:8 -->
+
+VS Code 1.109 以降では、VS Code 標準の Agent / Chat から GuitarDSL を扱えます。任意の機能です。AI を使わなくても、他の機能はすべてそのまま動きます。拡張機能自身は AI モデルを呼び出しません。使うモデルやチャットは VS Code 側の設定に従います。
+
+- **言語の知識**: Skill `guitardsl-language` が、GuitarDSL の言語仕様から必要な部分だけを Agent に読ませます。`.guitardsl` / `.gdsl` ファイルの編集時には、仕様にない書き方をしない・編集後に検証する、という指示が自動で適用されます。
+- **ツール**: プロンプトに `#` で参照して使えます。
+  - `#guitardslValidate`: 楽譜のエラーを確認します。ファイルは変更しません。
+  - `#guitardslPlayability`: カポごとの弾きやすさを分析します。ファイルは変更しません。
+  - `#guitardslApplyCapo`: カポを変更します。
+  - `#guitardslApplyBeginner`: 初心者モードを適用します。
+  - `#guitardslTranspose`: 実音を移調します。
+- **ファイルを変更するツール**は、実行前に対象のファイルと操作内容を確認します。計算はプレビューの **DSLに適用** と同じで、1 回の元に戻せる編集として書き込みます。適用できない場合はファイルを変更しません。同じファイルに対する変更は 1 つずつ実行されます。
+- 対象のファイルはアクティブな GuitarDSL ファイルです。ファイルのパスを指定することもできます。
+
 ### スコアイベントと高度な記譜
 <!-- help-sources: syntax:12 syntax:16 -->
 

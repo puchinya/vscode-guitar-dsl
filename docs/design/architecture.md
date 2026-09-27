@@ -82,7 +82,8 @@ flowchart TD
   - プレビュー表示用パネル（`guitardslPreview`）は多重起動を防ぐため単一インスタンスとして保持。
   - `retainContextWhenHidden: true` を指定し、タブ切り替え時にプレビューのスクロール位置やDOM状態がリセットされるのを防ぐ。
   - パネル破棄イベント（`onDidDispose`）で参照をクリア。
-- **ドキュメント解決 (`resolveGuitarDslDocument`)**:
+- **ドキュメント解決 (`resolveGuitarDslDocument`, `src/documentResolver.ts`)**:
+  - `isGuitarDslDocument` と `resolveGuitarDslDocument` は `src/documentResolver.ts` に置き、コマンドと AI ツール（§2.18）が同じ実装を使う。
   - コマンド引数の URI、現在のアクティブエディタ、表示中のエディタ群、最後にアクティブだった GuitarDSL ドキュメント、ワークスペース内の開いているファイルの優先順位で対象ドキュメントを安全に解決。
 - **イベント駆動同期**:
   - `onDidChangeTextDocument`: テキストが編集された際、現在プレビュー対象のファイルと同一であれば即座に再描画（`compileGuitarDslToHtml`）を実行。
@@ -405,6 +406,30 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **Current File**: プロバイダはアクティブな GuitarDSL ドキュメントを返す関数を受け取る。`extension.ts` は `activeTextEditor` のドキュメントを `isGuitarDslDocument` で判定する関数を渡す。`resolveGuitarDslDocument` のような、他に開いているドキュメントへの切り替えは行わない。`onDidChangeActiveTextEditor` / `onDidOpenTextDocument` / `onDidCloseTextDocument` で `refresh()`（`EventEmitter` の発火）を呼ぶ。タイマーやポーリングは持たない。
 - **オンボーディングコマンド**: `newDocumentFromTemplate` はコード内に持つ短いテンプレート（`STARTER_TEMPLATES`。各サンプルの抜粋）から、`openSample` は `extensionUri` の `samples/` から読んだ内容から、`openTextDocument({ language: 'guitardsl', content })` で無題ドキュメントを作る。サンプルは読み込みが成功してからドキュメントを作るので、失敗時に何も開かない。例外は各関数で捕捉し、ローカライズされたメッセージを 1 件だけ表示する。
 - **同梱**: `.vscodeignore` は `samples/**` を除外したうえで、`CURATED_SAMPLES` の 5 ファイルだけを否定パターンで同梱する。両者の一致は単体テストで検査する。
+
+### 2.18 AI 連携 (`ai/`, `src/ai/tools.ts`, `scripts/*ai*.mjs`)
+仕様 extension.md §8 の実装。境界は次のとおりで、AI 層は既存の決定的なコアの薄いアダプタである。
+
+```text
+VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
+  ├─ chatInstructions  ai/instructions/guitardsl.instructions.md（*.guitardsl / *.gdsl のみ）
+  ├─ chatSkills        ai/skills/guitardsl-language/SKILL.md → references/guitardsl-syntax.md（生成物）
+  └─ languageModelTools → src/ai/tools.ts
+                            ├─ parseGuitarDsl（§2.2）
+                            ├─ inferCapoForDsl（§2.10）
+                            └─ applyCapoTransform / applyBeginnerTransform / applyTransposeTransform（§2.10, §2.11, §2.14）
+```
+
+- **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、5 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
+- **モジュールの責務 (`src/ai/tools.ts`)**: ツール入力の型、`vscode.lm.registerTool` による登録、`LanguageModelTool` の実装、JSON 結果の組み立て、文書ごとの変更ガードを持つ。音楽ドメインの計算（カポ・弾きやすさ・初心者モード・移調の規則）は持たない。`vscode.lm.selectChatModels` / `sendRequest` は使わない。
+- **登録と寿命**: `extension.ts` の `activate` が `registerGuitarDslAiTools(context, getLastDoc)` を呼び、5 つの `registerTool` の Disposable を `context.subscriptions` に積む。`getLastDoc` は最後にアクティブだった GuitarDSL ドキュメントを返す関数で、コマンドと同じ解決順を保つために渡す。Worker・タイマー・ネットワーク・バックグラウンド処理は持たない。AI 拡張機能が入っていない環境でも登録は成功し、ツールが呼ばれないだけである。
+- **文書解決**: `path` があれば `Uri.file(path)` を `openTextDocument` で開き、`isGuitarDslDocument` を満たさなければ `documentNotFound`（フォールバックしない）。`path` がなければ `resolveGuitarDslDocument(undefined, getLastDoc())`。
+- **読み取り専用ツール**: `validate` は `parseGuitarDsl` の `diagnostics` を 1 始まりの行・列に変換するだけである。`playability` は `inferCapoForDsl` の結果を写すだけで、`currentPlayability` は同じ結果の `candidates[sourceCapo]` から取る。どちらも文書を変更しない。
+- **変更系ツールの処理順**: (1) 入力の実行時検証（`isValidCapo` / `isValidSemitones` / `barrePolicy` / `'explicit'` の `capo`）→ (2) キャンセル確認 → (3) 文書解決 → (4) URI 文字列をキーにしたガードの取得（取得済みなら `documentBusy`）→ (5) キャンセル確認 → (6) 既存の `apply*Transform`（最新ソースの再読込・1 つの `WorkspaceEdit`）→ (7) 成功時は現在の文書を `parseGuitarDsl` で再解析して `postValidationPassed` → `finally` でガードを解放。ガードはモジュール内の `Set<string>` で、待ち行列は持たない。
+- **確認 (`prepareInvocation`)**: 副作用なし。`path` があればそのファイル名、なければ `resolveGuitarDslDocument` で解決した文書の名前（`openTextDocument` を呼ばない）と操作内容から、ローカライズした `confirmationMessages` と `invocationMessage` を返す。文言は `src/i18n.ts` の `getAiToolMessages(locale)`。
+- **テスト用の差し込み口**: ツールは依存（`getLastDoc`、3 つの apply 関数、ガード）を受け取るファクトリ `createGuitarDslAiTools(deps)` で作る。登録は既定の依存で同じファクトリを使う。E2E テストは apply 関数を保留できる関数に差し替えて同時実行とキャンセルを検査する。
+- **同梱**: `.vscodeignore` は `ai/**` を除外しない。`docs/**`・`scripts/**`・`src/**`・`tests/**` の除外は変えない。
+- **依存しないもの**: 採譜サブシステム（§2.8）とローカル Audio MIR（§2.9）はツールにも AI 資産にも含めない。
 
 ## 3. データフローとメッセージング (Data & Event Flow)
 

@@ -86,6 +86,8 @@
 | **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |
 | | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
 | | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
+| **AI 連携** | Skill `guitardsl-language` / 指示 `guitardsl.instructions.md`（`ai/`） | ✅ 完了 | 最小 VS Code 1.109.0。参照資料は `generate:ai` で構文仕様から生成し、`check:ai` で同期を検査。Agent / Chat 上での Skill・指示の読み込みは手動未確認 |
+| | 言語モデルツール 5 件（`src/ai/tools.ts`） | ✅ 完了 | validate / playability / カポ / 初心者モード / 移調。既存 API のアダプタのみ。確認メッセージ・`documentBusy`・キャンセル。モデルは呼ばない |
 
 ---
 
@@ -117,8 +119,11 @@
   - `tests/unit/helpSync.test.ts`: ヘルプ同期（仕様セクションの抽出・割り当て・ダイジェスト、追加・削除・英字付き番号、見出しの `help-sources` による本文の所有（削除された機能の孤児の本文の検出）、壊れた manifest の診断、コマンド・設定と仕様の一致、NLS、決定論的な生成と生成物の最新性、`let`・同時複数音の網羅、再生・Web プレーヤーの見出しがないこと）
   - `tests/unit/help.test.ts`: ヘルプの例の構文検証、ツールバーのヘルプボタン（ローカライズ・`openHelp` の送信・楽譜 SVG に含まれない）、ロケール別のファイル選択、ヘルプを開けないときのエラー表示
   - `tests/unit/sidebar.test.ts`: サイドバーのセクション順・展開状態・項目とコマンド、Current File（案内のみ／アクティブな URI を渡す 6 項目）、`refresh()`、`package.json` の貢献とアイコン
+  - `tests/unit/aiAssets.test.ts`: AI 連携の manifest（最小 VS Code、5 ツール・参照名・起動イベント・入力スキーマ・スクリプト）、`check:ai`（参照資料の 1 バイト変更・Skill 名・貢献パス・ツールのずれ・除外識別子）、Skill と指示の内容、`.vscodeignore` が `ai/**` を同梱すること
+  - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、日英の確認文言、モデル呼び出し・変換処理を持たないこと
+  - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **552 / 552 件 PASS** (0 failures)
+- **テスト実行結果**: **573 / 573 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -134,7 +139,8 @@
   - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
   - 移調（Issue #68）: 最新テキストからの再計算、移調 + カポ指定の 1 回の編集と 1 回の元に戻す、失敗時は不変、楽譜設定のカポ・初心者モード・移調の 3 セクション、適用後のプレビュー・PDF の再解決（初心者モード有効時を含む）、スコアイベントのアウトライン、高度な記譜のサンプルの PDF 出力
   - 初心者モード: ON で `forbid`・自動・カポ一時変更の解除、プレビュー入力と PDF 入力の一致、OFF でソース表示（カポ一時変更は戻さない）、ON/OFF の繰り返しでドリフトなし、固定カポ・バレーコード変更で自動へ、編集への追従と解なしでの解除（古い PDF なし）、切り替え・ドキュメントを閉じる・プレビューを閉じるでの解除、適用（最新テキスト・1 回の編集・1 回の元に戻す・失敗時は不変）、楽譜設定 `beginner` セクションのモデルと適用
-- **テスト実行結果**: **30 / 30 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+  - AI 連携（Issue #80）: モデルなしでの起動と 5 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算
+- **テスト実行結果**: **40 / 40 件 PASS**（VS Code 1.139.1 darwin-arm64 のテストビルド。最小バージョン 1.109.0 の VS Code では未実行）（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
