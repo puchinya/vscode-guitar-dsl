@@ -185,9 +185,10 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
       content += `<g transform="translate(0, ${fmt(geometry.rhythmOffset)})">${renderSystemSvgContent(row.measures, ctx, { drawHeader: false, drawTimeSignature: true, prefix, spans })}</g>`;
     }
   }
-  // Annotation lanes sit above the notation, which is shifted down by their height (spec §11).
+  // Annotation lanes sit above the notation, which is shifted down by their height and up by the header lift (spec §11).
   const lanes = renderRowLanes(row, ctx, spans);
-  const body = geometry.annotationTop > 0 ? `<g transform="translate(0, ${fmt(geometry.annotationTop)})">${content}</g>` : content;
+  const shift = geometry.annotationTop - geometry.lift;
+  const body = shift !== 0 ? `<g transform="translate(0, ${fmt(shift)})">${content}</g>` : content;
   return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${body}</g>\n`;
 }
 

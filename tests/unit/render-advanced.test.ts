@@ -124,8 +124,8 @@ describe('render - annotation lanes (T017, T049, T050)', () => {
     // Lanes come in the documented order: rehearsal mark above tempo above text above ottava.
     const pos = (s: string) => svg.indexOf(s);
     assert.ok(pos('annotation-mark') < pos('annotation-tempo') && pos('annotation-tempo') < pos('annotation-text'));
-    // The notation is shifted below the lanes.
-    assert.ok(svg.includes(`<g transform="translate(0, ${g.annotationTop})">`));
+    // The notation is shifted below the lanes (and up by the header lift of the melody staff).
+    assert.ok(svg.includes(`<g transform="translate(0, ${g.annotationTop - g.lift})">`));
   });
 
   it('keeps rhythm-only systems without events at the original height', () => {
@@ -336,7 +336,7 @@ describe('render - PR #69 review delta (dynamics collision, bend direction)', ()
 
 describe('render - annotation lanes close to the staff', () => {
   const geometry = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry;
-  const staffBottom = (g: ReturnType<typeof geometry>) => g.annotationTop + g.rhythmOffset + MELODY_STAVE_BOTTOM;
+  const staffBottom = (g: ReturnType<typeof geometry>) => g.annotationTop - g.lift + g.rhythmOffset + MELODY_STAVE_BOTTOM;
 
   it('puts dynamics right under the rhythm staff without growing the system', () => {
     const g = geometry(`@dynamic: mf\n${bar}`);
@@ -399,6 +399,250 @@ describe('render - grace notes skip rests (spec §12.2.1)', () => {
     for (const dsl of ['| C |\nmel: | c5/16{grace} r/1 |', '| C | 4 4 4 c4/16{grace} r4 |']) {
       const svg = svgOf(dsl);
       assert.strictEqual(graceX(svg).length, 1, dsl);
+    }
+  });
+});
+
+describe('render - melody staff header lift (Issue #70)', () => {
+  const geometry = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry;
+  // Chord names sit on y = 33 (+ lift) with a 15 unit font; the melody staff top line is y = 70.
+  const headerBottom = (g: ReturnType<typeof geometry>) => 33 + 15 * 0.25 + g.lift;
+  const melody = (notes: string) => `| C | 4 4 4 4 |\nmel: | ${notes} |`;
+
+  it('moves the header of a plain melody staff close to the staff and shortens the system', () => {
+    const g = geometry(melody('c5/4 d e f'));
+    assert.ok(g.lift >= 16, `lift ${g.lift}`);
+    assert.ok(70 - headerBottom(g) >= 8);
+    assert.strictEqual(g.unitHeight, g.contentHeight + g.annotationTop + g.annotationBottom);
+    const svg = svgOf(melody('c5/4 d e f'));
+    assert.ok(svg.includes(`<g class="melody-header" transform="translate(0, ${g.lift})">`));
+    assert.ok(svg.includes(`<g transform="translate(0, ${-g.lift})">`), 'content drawn higher by the lift');
+  });
+
+  it('keeps rhythm-only systems unchanged', () => {
+    const g = geometry('| C | 4 4 4 4 |');
+    assert.strictEqual(g.lift, 0);
+    assert.strictEqual(g.unitHeight, SYSTEM_UNIT_HEIGHT);
+    assert.ok(!svgOf('| C | 4 4 4 4 |').includes('melody-header'));
+  });
+
+  it('keeps 8 units between the header and the highest ink below it', () => {
+    const plain = geometry(melody('c5/4 d e f')).lift;
+    const cases: [string, string, number][] = [
+      ['high note', 'a6/4 g e c', 102 - 19 * 4 - 5],
+      ['bend', 'c5/4{bend:2} d e f', Math.min(Math.max(46, 82 - 22), 72) - 9],
+      ['hammer-on above stems down', 'c6/8{hammer} d6 e6 d6 c6/2', 102 - 12 * 4 - 32],
+      ['tuplet', 'c5/8{5:4} d e f g c5/2', 0],
+      ['fermata', 'c5/4 d e f/4{fermata}', 0],
+      ['beam with stems up', 'a4/8 b4 c5 d5 a4/2', 0]
+    ];
+    for (const [label, notes, inkTop] of cases) {
+      const g = geometry(melody(notes));
+      assert.ok(g.lift <= plain, `${label}: lift ${g.lift} vs plain ${plain}`);
+      // With no lift the header stays where it always was (a very high note may reach it, as before Issue #70).
+      if (inkTop > 0 && g.lift > 0) assert.ok(inkTop - headerBottom(g) >= 8 - 1e-9, `${label}: ink ${inkTop}, header bottom ${headerBottom(g)}`);
+    }
+    assert.strictEqual(geometry(melody('a6/4 g e c')).lift, 0);
+    assert.ok(geometry(melody('c5/8{5:4} d e f g c5/2')).lift < plain);
+    assert.ok(geometry(melody('c5/4 d e f/4{fermata}')).lift < plain);
+  });
+
+  it('draws the rendered tuplet number, fermata and bend label below the lifted chord names', () => {
+    let checked = 0;
+    for (const notes of ['c5/8{5:4} d e f g c5/2', 'c5/4 d e f/4{fermata}', 'c5/4{bend:2} d e f', 'a4/8 b4 c5 d5 a4/2']) {
+      const g = geometry(melody(notes));
+      const svg = svgOf(melody(notes));
+      if (g.lift === 0) continue;
+      const content = svg.slice(svg.indexOf(`<g transform="translate(0, ${-g.lift})">`));
+      const tops = [
+        ...[...content.matchAll(/class="tuplet-number" x="[\d.-]+" y="([\d.-]+)"/g)].map(m => Number(m[1]) - 6),
+        ...[...content.matchAll(/class="technique-fermata"><path d="M [\d.-]+,([\d.-]+)/g)].map(m => Number(m[1]) - 6),
+        ...[...content.matchAll(/class="technique-bend">[\s\S]*?<text x="[\d.-]+" y="([\d.-]+)"/g)].map(m => Number(m[1]) - 6)
+      ];
+      assert.ok(tops.length > 0 || notes.startsWith('a4/8'), notes);
+      checked++;
+      for (const t of tops) assert.ok(t - headerBottom(g) >= 8 - 1e-9, `${notes}: mark top ${t}, header bottom ${headerBottom(g)}`);
+    }
+    assert.ok(checked >= 3, 'most cases keep a lift and are checked');
+  });
+
+  it('moves the section label, volta bracket and special mark together with the chord names', () => {
+    const dsl = '[Verse]\n|: C | 4 4 4 4 | [1.] G Fine | 4 4 4 4 :|\nmel: | c5/4 d e f | g4/1 |';
+    const svg = svgOf(dsl);
+    const at = svg.indexOf('class="melody-header"');
+    assert.ok(at > 0);
+    const beforeHeader = svg.slice(0, at);
+    const inHeader = svg.slice(at);
+    // Header items only appear inside the lifted header group, never among the staff drawing before it.
+    for (const text of ['>Verse</text>', '>C</text>', '>1.</text>', '>Fine</text>']) {
+      assert.ok(inHeader.includes(text), `${text} in the lifted header`);
+      assert.ok(!beforeHeader.slice(beforeHeader.lastIndexOf('<g class="system"')).includes(text), `${text} not outside it`);
+    }
+  });
+});
+
+/**
+ * Highest drawn ink of the melody staff of each system, measured on the rendered SVG (content units, x ≥ minX),
+ * leaving out the lifted header group and the rhythm staff group. Paths are sampled (Bézier curves exactly
+ * enough, arcs by their radius), text uses 0.75 × font size above the baseline.
+ */
+function melodyStaffInk(systemBody: string, rhythmOffset: number, minX: number): number {
+  type Affine = [number, number, number, number]; // x' = a·x + c, y' = b·y + d
+  const apply = (t: Affine, x: number, y: number): [number, number] => [t[0] * x + t[2], t[1] * y + t[3]];
+  const compose = (outer: Affine, inner: Affine): Affine => [outer[0] * inner[0], outer[1] * inner[1], outer[0] * inner[2] + outer[2], outer[1] * inner[3] + outer[3]];
+  const parseTransform = (attr: string): Affine => {
+    let t: Affine = [1, 1, 0, 0];
+    for (const m of attr.matchAll(/(translate|scale)\(([^)]*)\)/g)) {
+      const v = m[2].split(/[\s,]+/).filter(Boolean).map(Number);
+      const step: Affine = m[1] === 'translate' ? [1, 1, v[0], v[1] ?? 0] : [v[0], v[1] ?? v[0], 0, 0];
+      t = compose(t, step);
+    }
+    return t;
+  };
+  const num = (attrs: string, name: string) => Number(new RegExp(`\\b${name}="([\\d.eE+-]+)"`).exec(attrs)?.[1] ?? NaN);
+  let top = Infinity;
+  const add = (t: Affine, x: number, y: number) => {
+    const [px, py] = apply(t, x, y);
+    if (px >= minX) top = Math.min(top, py);
+  };
+  const pathPoints = (t: Affine, d: string) => {
+    const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+    const counts: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, Q: 4, C: 6, S: 4, T: 2, A: 7, Z: 0 };
+    let cx = 0; let cy = 0; let cmd = 'M'; let i = 0;
+    while (i < tokens.length) {
+      if (/[A-Za-z]/.test(tokens[i])) { cmd = tokens[i++]; if (cmd.toUpperCase() === 'Z') continue; }
+      const n = counts[cmd.toUpperCase()];
+      const v = tokens.slice(i, i + n).map(Number);
+      i += n;
+      const rel = cmd === cmd.toLowerCase();
+      const X = (k: number) => (rel ? cx : 0) + v[k];
+      const Y = (k: number) => (rel ? cy : 0) + v[k];
+      const up = cmd.toUpperCase();
+      const bez = (pts: [number, number][]) => {
+        for (let s = 0; s <= 20; s++) {
+          const u = s / 20;
+          let p = pts;
+          while (p.length > 1) p = p.slice(1).map((q, k) => [p[k][0] + (q[0] - p[k][0]) * u, p[k][1] + (q[1] - p[k][1]) * u] as [number, number]);
+          add(t, p[0][0], p[0][1]);
+        }
+      };
+      if (up === 'M' || up === 'L' || up === 'T') { cx = X(0); cy = Y(1); add(t, cx, cy); }
+      else if (up === 'H') { cx = (rel ? cx : 0) + v[0]; add(t, cx, cy); }
+      else if (up === 'V') { cy = (rel ? cy : 0) + v[0]; add(t, cx, cy); }
+      else if (up === 'Q') { bez([[cx, cy], [X(0), Y(1)], [X(2), Y(3)]]); cx = X(2); cy = Y(3); }
+      else if (up === 'C') { bez([[cx, cy], [X(0), Y(1)], [X(2), Y(3)], [X(4), Y(5)]]); cx = X(4); cy = Y(5); }
+      else if (up === 'S') { add(t, X(0), Y(1)); cx = X(2); cy = Y(3); add(t, cx, cy); }
+      else if (up === 'A') {
+        // Noteheads and the breath mark draw half ellipses between opposite points: centre = midpoint,
+        // vertical half-extent of the rotated ellipse = √((rx·sin φ)² + (ry·cos φ)²).
+        const ex = X(5); const ey = Y(6);
+        const phi = (v[2] * Math.PI) / 180;
+        const ext = Math.hypot(v[0] * Math.sin(phi), v[1] * Math.cos(phi));
+        add(t, (cx + ex) / 2, (cy + ey) / 2 - ext);
+        cx = ex; cy = ey; add(t, cx, cy);
+      }
+    }
+  };
+  const stack: { t: Affine; skip: boolean }[] = [{ t: [1, 1, 0, 0], skip: false }];
+  for (const m of systemBody.matchAll(/<(\/?)([a-zA-Z]+)([^>]*?)(\/?)>/g)) {
+    const [, closing, tag, attrs, selfClosing] = m;
+    const cur = stack[stack.length - 1];
+    if (tag === 'g') {
+      if (closing) { stack.pop(); continue; }
+      const transform = /transform="([^"]*)"/.exec(attrs)?.[1] ?? '';
+      const skip = cur.skip || /class="melody-header"/.test(attrs) || (stack.length === 1 && transform === `translate(0, ${rhythmOffset})`);
+      stack.push({ t: compose(cur.t, parseTransform(transform)), skip });
+      continue;
+    }
+    if (closing || cur.skip) continue;
+    const t = compose(cur.t, parseTransform(/transform="([^"]*)"/.exec(attrs)?.[1] ?? ''));
+    if (tag === 'text') add(t, num(attrs, 'x'), num(attrs, 'y') - num(attrs, 'font-size') * 0.75);
+    else if (tag === 'ellipse') add(t, num(attrs, 'cx'), num(attrs, 'cy') - num(attrs, 'ry'));
+    else if (tag === 'circle') add(t, num(attrs, 'cx'), num(attrs, 'cy') - num(attrs, 'r'));
+    else if (tag === 'line') { add(t, num(attrs, 'x1'), num(attrs, 'y1')); add(t, num(attrs, 'x2'), num(attrs, 'y2')); }
+    else if (tag === 'rect') add(t, num(attrs, 'x'), num(attrs, 'y'));
+    else if (tag === 'path') pathPoints(t, /\bd="([^"]*)"/.exec(attrs)?.[1] ?? '');
+    else if (tag === 'polygon') for (const p of (/points="([^"]*)"/.exec(attrs)?.[1] ?? '').trim().split(/\s+/)) { const [x, y] = p.split(',').map(Number); add(t, x, y); }
+    void selfClosing;
+  }
+  return top;
+}
+
+describe('render - melody staff header lift keeps 8 units above the drawn ink (Issue #70 review)', () => {
+  /** [lift, measured ink top, header bottom] per melody system with a lift. */
+  const check = (dsl: string) => {
+    const score = parseGuitarDsl(dsl);
+    const rows = splitIntoRows(score)[0];
+    const minX = getRenderContext(score).startX;
+    const bodies = systems(renderContinuousSvg(score));
+    return rows.map((row, i) => {
+      const g = row.geometry;
+      if (g.kind === 'rhythm' || g.lift === 0) return undefined;
+      const shift = g.annotationTop - g.lift;
+      const body = bodies[i].slice(bodies[i].indexOf(`<g transform="translate(0, ${shift})">`));
+      const ink = melodyStaffInk(body.slice(body.indexOf('>') + 1), g.rhythmOffset, minX);
+      return { lift: g.lift, ink, headerBottom: 33 + 15 * 0.25 + g.lift };
+    });
+  };
+  const assertClear = (label: string, dsl: string) => {
+    const results = check(dsl);
+    for (const r of results) {
+      if (r) assert.ok(r.ink - r.headerBottom >= 8 - 0.3, `${label}: ink ${r.ink.toFixed(2)}, header bottom ${r.headerBottom.toFixed(2)} (lift ${r.lift})`);
+    }
+    return results;
+  };
+  const plainLift = splitIntoRows(parseGuitarDsl('| C | 4 4 4 4 |\nmel: | c5/4 d e f |'))[0][0].geometry.lift;
+  const liftOf = (dsl: string) => splitIntoRows(parseGuitarDsl(dsl))[0][0].geometry.lift;
+  /** The element lowers the lift compared with the same bar without it, and the rendered ink stays 8 below the header. */
+  const limits = (label: string, withElement: string, without: string) => {
+    assertClear(label, withElement);
+    assert.ok(liftOf(withElement) < liftOf(without), `${label}: lift ${liftOf(withElement)} should be below ${liftOf(without)} without it`);
+  };
+  const one = (notes: string, head = '') => `${head}| C | 4 4 4 4 |\nmel: | ${notes} |`;
+
+  it('limits the lift for each element group above the staff (R70-03)', () => {
+    const cases: [string, string, string, string?][] = [
+      ['accidental', 'c5/4 d e f#5/4', 'c5/4 d e f5/4'],
+      ['tie above stems down', 'g5/2~ g5/4 c5/4', 'g5/2 g5/4 c5/4'],
+      ['staccato above stems down', 'c5/4 d e g5/4{staccato}', 'c5/4 d e g5/4'],
+      ['tenuto above stems down', 'c5/4 d e g5/4{tenuto}', 'c5/4 d e g5/4'],
+      ['slur above stems down', 'g5/4{slur-start} f e c5/4{slur-end}', 'g5/4 f e c5/4'],
+      ['hammer-on above stems down', 'g5/4{hammer} a5/4 e c', 'g5/4 a5/4 e c'],
+      ['vibrato', 'c5/4{vibrato} d e f', 'c5/4 d e f'],
+      ['breath', 'c5/4{breath} d e f', 'c5/4 d e f'],
+      ['grace note', 'a5/16{grace} c5/4 d e f', 'c5/4 d e f'],
+      ['ottava 8vb', 'c5/4 d e f', 'c5/4 d e f', '@ottava: 8vb\n'],
+      ['tuplet', 'c5/8{5:4} d e f g c5/2', 'c5/8 d e f c5/2'],
+      ['fermata', 'c5/4 d e f/4{fermata}', 'c5/4 d e f/4'],
+      ['bend', 'c5/4{bend:2} d e f', 'c5/4 d e f'],
+      ['beam with stems up', 'a4/8 b4 c5 d5 a4/2', 'a4/4 b4 a4/2']
+    ];
+    for (const [label, withElement, without, head] of cases) limits(label, one(withElement, head ?? ''), one(without));
+  });
+
+  it('evaluates every part of a compound duration (review: parts [4, 16])', () => {
+    // The trailing 16th stands alone (a rest follows), so its stem is the longest: 26 + 4 above y = 90.
+    const dsl = one('a4/4+16 r/8. c5/2');
+    const [r] = assertClear('compound', dsl);
+    assert.ok(r, 'the compound row keeps a lift and is measured');
+  });
+
+  it('counts an H/P or slur arc coming in from the previous system (review)', () => {
+    const hammer = 'measures_per_row: 1\n| C | 4 4 4 4 |\nmel: | c5/2 d5/4 e5/4{hammer} |\n| C | 4 4 4 4 |\nmel: | c5/1 |';
+    const slur = 'measures_per_row: 1\n| C | 4 4 4 4 |\nmel: | c5/2 d5/4 e5/4{slur-start} |\n| C | 4 4 4 4 |\nmel: | g5/2{slur-end} d5/2 |';
+    for (const [label, dsl] of [['incoming hammer-on', hammer], ['incoming slur', slur]]) {
+      const results = assertClear(label, dsl);
+      const lifts = splitIntoRows(parseGuitarDsl(dsl))[0].map(r => r.geometry.lift);
+      assert.ok(lifts[1] < plainLift, `${label}: the second system has lift ${lifts[1]}`);
+      assert.ok(results.length === 2);
+    }
+  });
+
+  it('keeps every lifted system of the samples clear of its melody ink', () => {
+    for (const file of ['sample_advanced_notation', 'sample_melody', 'sample_leadsheet', 'sample_notes', 'sample_voicing_song']) {
+      const dsl = fs.readFileSync(path.join(__dirname, '../../samples', `${file}.guitardsl`), 'utf8');
+      const results = assertClear(file, dsl).filter(Boolean);
+      assert.ok(results.length > 0, `${file} has lifted systems`);
     }
   });
 });
