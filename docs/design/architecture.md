@@ -129,6 +129,16 @@ flowchart TD
 - **コード理論 (`src/chordDetect.ts`)**: 標準チューニングの押弦からの自動判定 `detectChordNames`（ピッチクラス集合とタイプの照合、7th・9th 系の 5 度省略、最低音による分数コード、単純な名前ほど上位）と、コード名の分解 `parseChordName`。
 - **プリセット (`src/chordPresets.ts`)**: 手書きの基本形 `CHORD_LIBRARY` と、CAGED 系の形テンプレートを 12 ルートへ平行移動したボイシング（`getPresetVoicings`）。手書き → 開放弦あり → 低いフレットの順に並べ、重複を除く。セーハは `inferBarres` で推定する。`getDefaultVoicing` がラベルなしコードの既定の押さえ方。
 
+#### 2.2.1 演奏順 resolver (`src/playOrder.ts`)
+
+- `resolvePlayOrder` は、書かれた小節の構造値だけを受け取る純粋・同期 API。`compiler.ts`、Renderer、VS Code、i18n、AI / MCP に依存しない。依存方向は `compiler -> playOrder`、将来の再生・練習・同期・export adapter は `playOrder` の結果を消費し、Renderer は compiler の書かれた順序を消費する。
+- `PlayOrderResult` は有効性、診断、演奏小節出現列を所有する。各 `PlayOrderOccurrence` は連続する0始まりの `occurrenceIndex` と元の `measureIndex` の組だけを持ち、`MeasureData` を複製しない。
+- compiler は小節配列とセクション文脈の確定後に resolver を1回呼び、結果を `ParsedScore.playOrder` に格納する。resolver の小節番号診断は compiler が `ScoreDiagnostic` に変換する。ソース行・列はパース中だけ保持する内部 `MeasureSourceLocation` から補い、公開 `MeasureData` に source span を追加しない。
+- resolver は明示的な反復をスタックで対応付け、暗黙の右反復には直前のセクション開始位置または楽譜先頭を使う。volta の通過番号をブロック状態として持ち、外側の反復が戻ると内側の回数を初期化する。連続 volta の終了線は同じブロックの制御として扱う。
+- `D.C.` / `D.S.` は単一消費の主ジャンプ状態で管理する。ジャンプ後は `Fine` / `to Coda` を有効にし、反復の後戻りは止めて終端 volta を選ぶ。改ページはレイアウト境界だけで、resolver の入力・反復所有関係・演奏順には含めない。既存 `repeatEndWithoutStart` 警告はページ文脈を使う compiler の構文診断として別に残す。
+- 不正または曖昧な状態は型付きエラーとして返し、部分的な出現列を公開しない。実行状態の循環検出と100,000回の上限で無限展開を防ぐ。
+- `%` の内容複製は既存 `expandMeasureRepeat()` が所有し、resolver は `%` の書かれた小節IDを維持する。`ParsedScore.measures` と `pages[*].measures` は表示・描画用の書かれた順序を保ち、演奏出現列で並べ替えない。
+
 ### 2.3 Renderer (`src/render/`)
 AST からページ SVG と Webview HTML を生成する。VS Code API に依存しない純粋関数群。
 
@@ -682,4 +692,3 @@ sequenceDiagram
   - オプション未指定時のデフォルト動作は英語（`'en'`）とし、外部呼び出し・単体テストとの後方互換性を保証。
 - **VS Code マニフェスト (`package.json`, `package.nls.json`, `package.nls.ja.json`)**:
   - コマンドタイトルを `%command.showPreview.title%` / `%command.exportPdf.title%` に置換し、VS Code プラットフォーム標準の NLS 機構と完全連動。
-

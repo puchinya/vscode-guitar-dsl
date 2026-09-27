@@ -192,10 +192,13 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 
 Barlines and navigation marks:
 
-- `|` normal barline, `|:` and `:|` repeats (every `:|` needs a matching `|:`), `||` double barline, `|]` final barline
-- `[1.]` and `[2.]` for first and second endings
-- `Segno`, `Coda`, `to Coda`, `D.S.`, `D.C.` and `Fine`
+- `|` normal barline, `|:` and `:|` repeats, `||` double barline, `|]` final barline. A `:|` with no unmatched `|:` uses an implicit repeat starting at the nearest preceding section heading or the start of the score. Its notation warning is checked separately from play-order resolution.
+- `[1.]`, `[2.]` and other volta labels select repeat passes. Lists and ranges are supported, for example `[1,3-4.]`. Consecutive volta ending measures immediately after a repeat end share that repeat within the same section; an unbracketed measure, new repeat start, or section heading ends the run.
+- Page breaks affect display only; they do not change play-order resolution or volta sharing. The `repeatEndWithoutStart` warning is checked separately; whether it is suppressed also depends on page boundaries.
+- `Segno`, `Coda`, `to Coda`, `D.S.`, `D.C.` and `Fine` mark play-order jumps or endings. A score may have at most one `D.C.` or `D.S.`, and a used jump must have a unique destination.
 - `%` repeats the previous measure. If you leave out the chord, the previous chord is kept.
+
+These marks resolve the order of written measures without changing their display order. GuitarDSL does not play audio.
 
 ### Chords
 
