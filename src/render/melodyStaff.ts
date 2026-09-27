@@ -35,6 +35,7 @@ import {
   renderSystemKeySignature,
   renderTieArc,
   renderTimeSignature,
+  splitBeamRuns,
   staffPosition,
   writtenStaffPosition
 } from './notation';
@@ -333,7 +334,10 @@ function renderBarline(m: MeasureData, bx: number, bEnd: number): string {
   return out;
 }
 
-/** Beams 8th/16th notes within the same beat group of a measure; the stem direction follows the group average. */
+/**
+ * Beams 8th/16th notes within the same beat group of a measure; the stem direction follows the group average,
+ * or the direction of the note groups it contains (split where they disagree, see splitBeamRuns).
+ */
 function renderBeams(heads: Head[]): string {
   const groups = new Map<string, Head[]>();
   for (const h of heads) {
@@ -343,10 +347,10 @@ function renderBeams(heads: Head[]): string {
   }
 
   let out = '';
-  groups.forEach(group => {
+  // A note group keeps its own stem direction: the beam group splits where the directions disagree.
+  const runs = [...groups.values()].flatMap(group => splitBeamRuns(group, h => (h.members ? h.stemUp : undefined), h => h.pos));
+  runs.forEach(({ items: group, up }) => {
     if (group.length < 2) return;
-    const avg = group.reduce((acc, h) => acc + h.pos, 0) / group.length;
-    const up = avg < 4;
     const beamY = up
       ? Math.min(...group.map(h => h.yTop)) - STEM_LENGTH
       : Math.max(...group.map(h => h.yBottom)) + STEM_LENGTH;

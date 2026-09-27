@@ -312,3 +312,25 @@ describe('samples/sample_variables.guitardsl', () => {
     assert.ok(score.measures.some(m => m.melody?.some(n => n.pitches)));
   });
 });
+
+describe('PR #73 review fixes', () => {
+  it('A-1: a tie inside a fragment needs a single pitched note right after it', () => {
+    const bad = diag('let bad = e4/4~ r/4', 'invalidVariableValue');
+    assert.deepStrictEqual(bad.map(d => [d.args!.reason, d.startCol]), [['tieTarget', 10]]);
+    assert.deepStrictEqual(codes('let bad = e4/4~ [e4,g4]/4'), ['unsupportedNoteGroupTechnique']);
+    assert.deepStrictEqual(codes('let ok = e4/4~ e4/4'), []);
+    // An invalid definition is not expanded.
+    assert.deepStrictEqual(codes(['let bad = e4/4~ r/4', '| C |', 'mel: | $bad r/2 |'].join('\n')), ['invalidVariableValue']);
+  });
+
+  it('A-3: the first pitched single note sets its own octave and length even after a rest or a group', () => {
+    assert.deepStrictEqual(codes('let bad = r/4 e4'), ['missingInitialOctaveOrLength']);
+    assert.deepStrictEqual(codes('let bad = r/4 e/8'), ['missingInitialOctaveOrLength']);
+    assert.deepStrictEqual(codes('let bad = [c4,e4]/4 g4'), ['missingInitialOctaveOrLength']);
+    assert.deepStrictEqual(codes('let ok = r/4 e4/4'), []);
+    assert.deepStrictEqual(codes('let ok = r/4 e4/4 g a'), []);
+    // A leading grace note needs its octave; the first timed note still writes its length.
+    assert.deepStrictEqual(codes('let ok = d4{grace} e4/4'), []);
+    assert.deepStrictEqual(codes('let bad = d4{grace} e4'), ['missingInitialOctaveOrLength']);
+  });
+});

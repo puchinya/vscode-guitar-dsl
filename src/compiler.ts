@@ -531,6 +531,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Single notes inherit only inside this definition, starting from an empty state (no default octave).
     const state: MelodyTokenState = {};
+    // The first pitched single note writes its own octave, and the first timed one its own length: a rest or
+    // a note group before it does not establish them (spec §17.4).
+    let needOctave = true;
+    let needLength = true;
     const sequence = pitchSequence++;
     const valueStart = m[1].length + name.length + m[3].length;
     const re = /\S+/g;
@@ -568,6 +572,18 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (typeof parsed === 'string') {
           fail(parsed, { token: tok });
           continue;
+        }
+        if (parsed.pitch) {
+          const pitchLen = pitchTextLength(tok);
+          const grace = parsed.techniques?.grace === true;
+          const missingOctave = needOctave && !/[0-9]$/.test(tok.slice(0, pitchLen));
+          const missingLength = needLength && !grace && !/^[/:]/.test(tok.slice(pitchLen));
+          needOctave = false;
+          if (!grace) needLength = false;
+          if (missingOctave || missingLength) {
+            fail('missingInitialOctaveOrLength', { token: tok });
+            continue;
+          }
         }
         if (parsed.pitch) {
           const len = pitchTextLength(tok);
@@ -646,10 +662,15 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const entry = entries[i];
       const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
       if (tied) {
-        if (i === items.length - 1) fail(entry, 'openTie');
-        else if (items[i + 1].pitches) {
+        // The tie continues into the very next event, which must be a valid target inside the fragment:
+        // a single pitched note for a note tie (never a rest or a note group), a sounding slash for a slash tie.
+        const next = items[i + 1];
+        if (!next) fail(entry, 'openTie');
+        else if (next.pitches) {
           report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'unsupportedNoteGroupTechnique', { token: entry.token });
           ok = false;
+        } else if (next.isRest || ('tieToNext' in item && !next.pitch)) {
+          fail(entry, 'tieTarget');
         }
       }
       const tech = item.techniques;

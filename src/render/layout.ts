@@ -4,7 +4,7 @@ import { beamGroupIndex, structuralChange } from '../scoreEvents';
 import { AnnotationLane, connectionLinks, laneLayout, rowAnnotations } from './annotations';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
-import { groupStemUp, keyAlter, writtenStaffPosition } from './notation';
+import { groupStemUp, keyAlter, splitBeamRuns, writtenStaffPosition } from './notation';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -239,13 +239,22 @@ function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureDa
         offset = fadd(offset, partBeats(part));
       });
     }
+    // Beam runs as in melodyStaff.ts renderBeams: a note group keeps its own direction and splits the beam.
+    const runOf = new Map<(typeof heads)[number], { up: boolean; tops: number[]; size: number }>();
+    for (const key of beams.keys()) {
+      const members = heads.filter(h => h.group === key);
+      for (const run of splitBeamRuns(members, h => (eventPitches(h.n).length > 1 ? h.soloStemUp : undefined), h => h.pos)) {
+        const info = { up: run.up, tops: run.items.map(h => h.yTop), size: run.items.length };
+        for (const h of run.items) runOf.set(h, info);
+      }
+    }
     for (const h of heads) {
-      const beam = h.group !== undefined ? beams.get(h.group) : undefined;
-      const beamed = beam !== undefined && beam.length >= 2;
-      const stemUp = beamed ? beam.reduce((a, b) => a + b.pos, 0) / beam.length < 4 : h.soloStemUp;
+      const beam = runOf.get(h);
+      const beamed = beam !== undefined && beam.size >= 2;
+      const stemUp = beamed ? beam.up : h.soloStemUp;
       let stemEnd = h.y;
       if (!h.n.isRest && h.base >= 2 && stemUp) {
-        stemEnd = beamed ? Math.min(...beam.map(b => b.y)) - MELODY_STEM_LENGTH - 2 : h.yTop - MELODY_STEM_LENGTH - (h.base >= 16 ? 4 : 0) - 2;
+        stemEnd = beamed ? Math.min(...beam.tops) - MELODY_STEM_LENGTH - 2 : h.yTop - MELODY_STEM_LENGTH - (h.base >= 16 ? 4 : 0) - 2;
       }
       seq.push({ ...h, stemUp, stemEnd });
       if (h.isFirstPart) at.set(h.n, { y: h.y, stemUp });

@@ -453,6 +453,31 @@ export function groupStemUp(positions: readonly number[]): boolean {
   return 4 - low > high - 4;
 }
 
+/**
+ * Splits a melody beam group into runs that can share one stem direction. A note group keeps its own
+ * direction (spec §18.3), so a group whose direction differs from an earlier group of the run starts a new
+ * run; single notes join the current run. A run with a note group uses that direction, otherwise the mean
+ * position rule (below the middle line = up). Without note groups the result is the whole group, unchanged.
+ */
+export function splitBeamRuns<T>(items: readonly T[], fixedUp: (item: T) => boolean | undefined, pos: (item: T) => number): { items: T[]; up: boolean }[] {
+  const runs: { items: T[]; fixed?: boolean }[] = [];
+  let current: { items: T[]; fixed?: boolean } = { items: [] };
+  for (const item of items) {
+    const fixed = fixedUp(item);
+    if (fixed !== undefined && current.fixed !== undefined && fixed !== current.fixed) {
+      runs.push(current);
+      current = { items: [] };
+    }
+    if (fixed !== undefined) current.fixed = fixed;
+    current.items.push(item);
+  }
+  if (current.items.length > 0) runs.push(current);
+  return runs.map(run => ({
+    items: run.items,
+    up: run.fixed ?? run.items.reduce((acc, item) => acc + pos(item), 0) / run.items.length < 4
+  }));
+}
+
 /** Vertical extent of the accidental glyphs of renderAccidental around their y. */
 const ACCIDENTAL_EXTENT: Record<-1 | 0 | 1, [number, number]> = { 1: [-7.8, 7], [-1]: [-10, 3.2], 0: [-8, 8] };
 /** Horizontal distance between accidental columns. */

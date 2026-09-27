@@ -159,6 +159,40 @@ describe('render - note groups', () => {
   });
 });
 
+describe('render - melody beams keep note-group stems (PR #73 review A-2)', () => {
+  /** Melody stems (x1 == x2) as { x, top, bottom }. */
+  const stems = (svg: string) => [...svg.matchAll(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="\1" y2="([\d.-]+)" stroke="#000" stroke-width="1.35"\/>/g)]
+    .map(m => ({ x: Number(m[1]), y1: Number(m[2]), y2: Number(m[3]) }));
+
+  it('keeps [g4,d5] (equal distance) stem-down next to a low group in the same beat', () => {
+    const svg = svgOf('| C |\nmel: | [g4,d5]/8 [c4,e4]/8 r/4 r/2 |');
+    const [first, second] = stems(svg);
+    assert.ok(first.y2 > first.y1, `[g4,d5] stem goes down: ${JSON.stringify(first)}`);
+    assert.ok(second.y2 < second.y1, `[c4,e4] stem goes up: ${JSON.stringify(second)}`);
+    // The two directions cannot share one beam: each is flagged instead.
+    assert.strictEqual(count(svg, BEAM), 0);
+  });
+
+  it('beams single notes in the direction of the note group of their run', () => {
+    const svg = svgOf('| C |\nmel: | [g4,d5]/8 c4/8 r/4 r/2 |');
+    const [group, single] = stems(svg);
+    assert.strictEqual(count(svg, BEAM), 1);
+    assert.ok(group.y2 > group.y1 && single.y2 > single.y1, 'both stems down under one beam');
+    // Without a note group the mean position rule is unchanged (c4 e4 -> up).
+    const plain = stems(svgOf('| C |\nmel: | c4/8 e4/8 r/4 r/2 |'));
+    assert.ok(plain.every(st => st.y2 < st.y1));
+  });
+
+  it('estimates the same beam directions for the header lift', () => {
+    const lift = (mel: string) => {
+      const score = parseGuitarDsl(`| C |\nmel: | ${mel} |`);
+      return getSystemGeometry(score.measures, score).lift;
+    };
+    // Stem-up beams from the average would reach far above; the kept stem-down group does not.
+    assert.strictEqual(lift('[g4,d5]/8 [c4,e4]/8 r/4 r/2'), lift('[g4,d5]/4 [c4,e4]/8 r/8 r/2'));
+  });
+});
+
 describe('render - inline note groups (Issue #72 supplement)', () => {
   it('beams stem-up groups with the slashes and draws stem-down groups unbeamed with down flags', () => {
     assert.strictEqual(count(svgOf('| C [c4,e4]/8 [c4,e4]/8 4.d 2.d |'), BEAM), 1);
