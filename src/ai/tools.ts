@@ -25,17 +25,25 @@ export interface DocumentToolInput {
   /** Absolute file path; omitted = the command resolution order (spec extension §3.1). */
   path?: string;
 }
+/**
+ * Mutation target (spec extension §8.4): exactly one of a document URI string (e.g. `untitled:Untitled-1`,
+ * the `document.uri` of a read-only tool result) or an absolute file path. Never the active editor.
+ */
+export interface MutationTargetInput {
+  uri?: string;
+  path?: string;
+}
 export type ValidateInput = DocumentToolInput;
 export type PlayabilityInput = DocumentToolInput;
-export interface ApplyCapoInput extends DocumentToolInput {
+export interface ApplyCapoInput extends MutationTargetInput {
   targetCapo: number;
 }
-export interface ApplyBeginnerInput extends DocumentToolInput {
+export interface ApplyBeginnerInput extends MutationTargetInput {
   barrePolicy: BarrePolicy;
   /** Omitted = auto (the recommended capo of the current source). */
   targetCapo?: number;
 }
-export interface ApplyTransposeInput extends DocumentToolInput {
+export interface ApplyTransposeInput extends MutationTargetInput {
   semitones: number;
   capoMode: 'keep' | 'recommended' | 'explicit';
   /** Required only when capoMode is 'explicit'. */
@@ -58,40 +66,7 @@ export class MutationGuard {
   }
 }
 
-/**
- * Binds a mutation's confirmation to its edit (spec extension §8.6). VS Code shares only the input between
- * prepareInvocation and invoke, so the URI resolved for the confirmation text is recorded per tool name +
- * canonical input (FIFO) and taken by invoke. In memory only; the oldest keys are dropped beyond the limit.
- */
-export class ConfirmedTargets {
-  private readonly entries = new Map<string, string[]>();
-  constructor(private readonly maxKeys = 64) {}
-  record(key: string, uri: string): void {
-    const list = this.entries.get(key) ?? [];
-    this.entries.delete(key);
-    this.entries.set(key, [...list, uri]);
-    while (this.entries.size > this.maxKeys) this.entries.delete(this.entries.keys().next().value as string);
-  }
-  take(key: string): string | undefined {
-    const list = this.entries.get(key);
-    if (!list) return undefined;
-    const [first, ...rest] = list;
-    if (rest.length) this.entries.set(key, rest);
-    else this.entries.delete(key);
-    return first;
-  }
-  get size(): number {
-    return this.entries.size;
-  }
-}
-
-/** Key of one confirmation: tool name + the flat input with sorted keys. */
-export function confirmationKey(toolName: string, input: DocumentToolInput): string {
-  const record = input as unknown as Record<string, unknown>;
-  return `${toolName}\u0000${JSON.stringify(record, Object.keys(record).sort())}`;
-}
-
-/** Dependencies of the tools; tests replace the apply helpers, the guard and the confirmation record. */
+/** Dependencies of the tools; tests replace the apply helpers and the guard. */
 export interface AiToolDeps {
   locale: SupportedLocale;
   getLastDoc: () => vscode.TextDocument | undefined;
@@ -99,7 +74,6 @@ export interface AiToolDeps {
   applyBeginner: typeof applyBeginnerTransform;
   applyTranspose: typeof applyTransposeTransform;
   guard: MutationGuard;
-  confirmations: ConfirmedTargets;
 }
 
 export interface GuitarDslAiTools {
@@ -137,17 +111,28 @@ function pathProblem(input: DocumentToolInput): string | undefined {
   return undefined;
 }
 
+/** Checks the mutation target: exactly one of `uri` (with a scheme) or an absolute `path`. */
+export function mutationTargetProblem(input: MutationTargetInput): string | undefined {
+  const hasUri = input.uri !== undefined;
+  const hasPath = input.path !== undefined;
+  if (hasUri === hasPath) {
+    return 'pass exactly one of uri (a document URI, e.g. document.uri from guitardsl_validate_dsl) or an absolute path';
+  }
+  if (hasPath) return pathProblem(input);
+  return typeof input.uri === 'string' && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(input.uri) ? undefined : 'uri must be a document URI string such as file:///… or untitled:Untitled-1';
+}
+
 /** Tool input as sent by VS Code; a missing object is treated as empty and rejected by the input checks. */
 const inputOf = <T>(options: { input: T }): T => (options.input ?? {}) as T;
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
 
 export function capoInputProblem(input: ApplyCapoInput): string | undefined {
-  return pathProblem(input) ?? (isInt(input.targetCapo) && isValidCapo(input.targetCapo) ? undefined : 'targetCapo must be an integer 0..12');
+  return mutationTargetProblem(input) ?? (isInt(input.targetCapo) && isValidCapo(input.targetCapo) ? undefined : 'targetCapo must be an integer 0..12');
 }
 
 export function beginnerInputProblem(input: ApplyBeginnerInput): string | undefined {
-  const problem = pathProblem(input);
+  const problem = mutationTargetProblem(input);
   if (problem) return problem;
   if (!isBarrePolicy(input.barrePolicy)) return "barrePolicy must be 'allow' or 'forbid'";
   if (input.targetCapo !== undefined && !(isInt(input.targetCapo) && isValidCapo(input.targetCapo))) {
@@ -157,7 +142,7 @@ export function beginnerInputProblem(input: ApplyBeginnerInput): string | undefi
 }
 
 export function transposeInputProblem(input: ApplyTransposeInput): string | undefined {
-  const problem = pathProblem(input);
+  const problem = mutationTargetProblem(input);
   if (problem) return problem;
   if (!(isInt(input.semitones) && isValidSemitones(input.semitones))) return 'semitones must be an integer -11..11';
   if (input.capoMode === 'explicit') {
@@ -188,71 +173,90 @@ async function resolveTarget(input: DocumentToolInput, deps: AiToolDeps): Promis
 }
 
 /**
- * The document a call will target, for confirmation text, without opening or changing anything: the
- * `path` file, or the document the command resolution order currently yields (`uri` undefined if none).
+ * Label of the document a read-only call will target, for progress text: the `path` file name, or the
+ * name of the document the command resolution order currently yields. Reads editor state only.
  */
-async function previewTarget(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<{ label: string; uri?: string }> {
-  if (typeof input.path === 'string' && input.path) return { label: path.basename(input.path), uri: vscode.Uri.file(input.path).toString() };
+async function targetLabel(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<string> {
+  if (typeof input.path === 'string' && input.path) return path.basename(input.path);
   const doc = await resolveGuitarDslDocument(undefined, deps.getLastDoc());
-  return doc ? { label: path.basename(doc.fileName), uri: doc.uri.toString() } : { label: msgs.activeDocument };
+  return doc ? path.basename(doc.fileName) : msgs.activeDocument;
 }
 
-async function targetLabel(input: DocumentToolInput, deps: AiToolDeps, msgs: AiToolMessages): Promise<string> {
-  return (await previewTarget(input, deps, msgs)).label;
+/** The URI a mutation input names (undefined when invalid); computed from the input alone. */
+function mutationUri(input: MutationTargetInput): vscode.Uri | undefined {
+  try {
+    if (typeof input.path === 'string') return vscode.Uri.file(input.path);
+    if (typeof input.uri === 'string') return vscode.Uri.parse(input.uri, true);
+  } catch {
+    // Invalid URI: reported by invoke.
+  }
+  return undefined;
+}
+
+/** Unambiguous name shown in a mutation confirmation: the file system path, or the URI for other schemes. */
+function mutationLabel(input: MutationTargetInput): string {
+  const uri = mutationUri(input);
+  if (!uri) return String(input.uri ?? input.path ?? '');
+  return uri.scheme === 'file' ? uri.fsPath : uri.toString(true);
 }
 
 /**
- * prepareInvocation of a mutation tool: records the target it names in the confirmation (valid input only;
- * invalid input fails in invoke without editing, so there is nothing to confirm). Changes no document or UI.
+ * Opens exactly the document the mutation input names; never falls back to another editor. An `untitled:`
+ * URI is only looked up among open documents, since opening an unknown one would create a new document.
  */
-async function prepareMutation(
-  deps: AiToolDeps,
-  msgs: AiToolMessages,
-  toolName: string,
-  input: DocumentToolInput,
+async function resolveMutationTarget(input: MutationTargetInput): Promise<Resolution> {
+  const uri = mutationUri(input);
+  if (uri) {
+    const key = uri.toString();
+    const open = vscode.workspace.textDocuments.find(d => !d.isClosed && d.uri.toString() === key);
+    try {
+      const doc = open ?? (uri.scheme === 'untitled' ? undefined : await vscode.workspace.openTextDocument(uri));
+      if (isGuitarDslDocument(doc)) return { ok: true, doc };
+    } catch {
+      // Reported below.
+    }
+  }
+  return { ok: false, detail: `not an open or readable GuitarDSL document: ${input.uri ?? input.path}` };
+}
+
+/**
+ * prepareInvocation of a mutation tool: builds the confirmation from the input's target alone, so the
+ * confirmed document is exactly the one invoke edits. Free of side effects; resolves no editor state.
+ */
+function prepareMutation(
+  input: MutationTargetInput,
   problem: string | undefined,
   progress: (doc: string) => string,
   confirm: (doc: string) => vscode.LanguageModelToolConfirmationMessages
-): Promise<vscode.PreparedToolInvocation> {
-  const target = await previewTarget(input, deps, msgs);
-  if (problem) return { invocationMessage: progress(target.label) };
-  if (target.uri) deps.confirmations.record(confirmationKey(toolName, input), target.uri);
-  return { invocationMessage: progress(target.label), confirmationMessages: confirm(target.label) };
+): vscode.PreparedToolInvocation {
+  const label = mutationLabel(input);
+  // Invalid input fails in invoke without editing, so there is nothing to confirm.
+  if (problem) return { invocationMessage: progress(label) };
+  return { invocationMessage: progress(label), confirmationMessages: confirm(label) };
 }
 
 type ApplyOutcome = { ok: true } & Payload | { ok: false; code: string; detail?: string };
 
 /**
- * Shared mutation flow (spec extension §8.6): take the confirmation record -> input check -> cancellation ->
- * resolution -> confirmed-target match (path omitted) -> guard -> cancellation -> existing apply helper
- * (fresh source, one WorkspaceEdit) -> post-parse. The guard is always released; nothing continues after
- * the call returns.
+ * Shared mutation flow (spec extension §8.6): input check (incl. the uri / path target) -> cancellation ->
+ * open exactly the named document -> guard -> cancellation -> existing apply helper (fresh source, one
+ * WorkspaceEdit) -> post-parse. The guard is always released; nothing continues after the call returns.
  */
 async function runMutation(
   deps: AiToolDeps,
-  toolName: string,
   operation: string,
-  input: DocumentToolInput,
+  input: MutationTargetInput,
   problem: string | undefined,
   token: vscode.CancellationToken,
   apply: (uri: vscode.Uri) => Thenable<ApplyOutcome> | Promise<ApplyOutcome>
 ): Promise<vscode.LanguageModelToolResult> {
-  const confirmed = deps.confirmations.take(confirmationKey(toolName, input));
   if (problem) return failure('invalidInput', problem, { operation });
   if (token.isCancellationRequested) return failure('cancelled', undefined, { operation });
-  const target = await resolveTarget(input, deps);
+  const target = await resolveMutationTarget(input);
   if (!target.ok) return failure('documentNotFound', target.detail, { operation });
   const uri = target.doc.uri;
   const key = uri.toString();
   const document = documentInfo(target.doc);
-  if (input.path === undefined) {
-    if (confirmed === undefined) {
-      return failure('targetNotConfirmed', 'no confirmed target for this call; nothing was edited', { operation, document });
-    }
-    if (confirmed !== key) {
-      return failure('targetChanged', `the confirmed document (${confirmed}) is no longer the resolved target; nothing was edited. Pass an absolute path to target a file explicitly`, { operation, document });
-    }
-  }
   if (!deps.guard.tryAcquire(key)) {
     return failure('documentBusy', 'another GuitarDSL mutation is running on this document; retry after it finishes', { operation, document });
   }
@@ -340,28 +344,28 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
     [APPLY_CAPO_TOOL]: {
       prepareInvocation(options) {
         const input = inputOf(options);
-        return prepareMutation(deps, msgs, APPLY_CAPO_TOOL, input, capoInputProblem(input), msgs.capoProgress, doc => ({
+        return prepareMutation(input, capoInputProblem(input), msgs.capoProgress, doc => ({
           title: msgs.capoTitle,
           message: msgs.capoConfirm(doc, input.targetCapo)
         }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, APPLY_CAPO_TOOL, 'applyCapo', input, capoInputProblem(input), token, uri => deps.applyCapo(uri, input.targetCapo));
+        return runMutation(deps, 'applyCapo', input, capoInputProblem(input), token, uri => deps.applyCapo(uri, input.targetCapo));
       }
     },
 
     [APPLY_BEGINNER_TOOL]: {
       prepareInvocation(options) {
         const input = inputOf(options);
-        return prepareMutation(deps, msgs, APPLY_BEGINNER_TOOL, input, beginnerInputProblem(input), msgs.beginnerProgress, doc => ({
+        return prepareMutation(input, beginnerInputProblem(input), msgs.beginnerProgress, doc => ({
           title: msgs.beginnerTitle,
           message: msgs.beginnerConfirm(doc, input.barrePolicy, input.targetCapo)
         }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, APPLY_BEGINNER_TOOL, 'applyBeginnerMode', input, beginnerInputProblem(input), token, uri =>
+        return runMutation(deps, 'applyBeginnerMode', input, beginnerInputProblem(input), token, uri =>
           deps.applyBeginner(uri, { barrePolicy: input.barrePolicy, targetCapo: input.targetCapo })
         );
       }
@@ -370,14 +374,14 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
     [APPLY_TRANSPOSE_TOOL]: {
       prepareInvocation(options) {
         const input = inputOf(options);
-        return prepareMutation(deps, msgs, APPLY_TRANSPOSE_TOOL, input, transposeInputProblem(input), msgs.transposeProgress, doc => ({
+        return prepareMutation(input, transposeInputProblem(input), msgs.transposeProgress, doc => ({
           title: msgs.transposeTitle,
           message: msgs.transposeConfirm(doc, input.semitones, capoLabel(input))
         }));
       },
       invoke(options, token) {
         const input = inputOf(options);
-        return runMutation(deps, APPLY_TRANSPOSE_TOOL, 'applyTranspose', input, transposeInputProblem(input), token, uri =>
+        return runMutation(deps, 'applyTranspose', input, transposeInputProblem(input), token, uri =>
           deps.applyTranspose(uri, { semitones: input.semitones, capoMode: toCapoMode(input) })
         );
       }
@@ -385,9 +389,8 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
   };
 }
 
-/** The guard and confirmation record shared by the registered tools. */
+/** The guard shared by the registered tools. */
 export const aiMutationGuard = new MutationGuard();
-export const aiConfirmedTargets = new ConfirmedTargets();
 
 /**
  * Registers the five tools (spec extension §8.3). Every Disposable goes to `context.subscriptions`;
@@ -404,8 +407,7 @@ export function registerGuitarDslAiTools(
     applyCapo: applyCapoTransform,
     applyBeginner: applyBeginnerTransform,
     applyTranspose: applyTransposeTransform,
-    guard: aiMutationGuard,
-    confirmations: aiConfirmedTargets
+    guard: aiMutationGuard
   });
   for (const [name, tool] of Object.entries(tools) as [string, vscode.LanguageModelTool<unknown>][]) {
     context.subscriptions.push(vscode.lm.registerTool(name, tool));

@@ -66,6 +66,10 @@ describe('AI integration assets (Issue #80)', () => {
     assert.deepStrictEqual(schema('guitardsl_apply_transpose').properties.capoMode.enum, ['keep', 'recommended', 'explicit']);
     assert.deepStrictEqual([schema('guitardsl_apply_transpose').properties.semitones.minimum, schema('guitardsl_apply_transpose').properties.semitones.maximum], [-11, 11]);
     for (const name of Object.keys(TOOLS)) assert.strictEqual(schema(name).properties.path.type, 'string');
+    for (const name of ['guitardsl_apply_capo', 'guitardsl_apply_beginner_mode', 'guitardsl_apply_transpose']) {
+      assert.strictEqual(schema(name).properties.uri.type, 'string', `${name} takes a document uri`);
+    }
+    for (const name of ['guitardsl_validate_dsl', 'guitardsl_analyze_playability']) assert.strictEqual(schema(name).properties.uri, undefined);
   });
 
   it('T001 scripts: precompile generates Help and AI assets; npm test runs both checks before tests', () => {

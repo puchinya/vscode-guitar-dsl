@@ -14,3 +14,4 @@ These files are GuitarDSL guitar scores.
   - `guitardsl_apply_capo`
   - `guitardsl_apply_beginner_mode`
   - `guitardsl_apply_transpose`
+- The `guitardsl_apply_*` tools edit only the document given by `uri` (for example, `document.uri` from `guitardsl_validate_dsl`) or by an absolute `path`.

@@ -808,11 +808,11 @@ suite('AI integration: language model tools (Issue #80)', () => {
       applyBeginner: scoreSettings().applyBeginnerTransform,
       applyTranspose: scoreSettings().applyTransposeTransform,
       guard,
-      confirmations: new (aiTools().ConfirmedTargets)(),
       ...overrides
     });
     return { tools, guard };
   }
+  const u = (doc: vscode.TextDocument) => doc.uri.toString();
   /** Invokes without prepareInvocation (no confirmation). */
   async function invokeOnly(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
     return parse((await tool.invoke({ input, toolInvocationToken: undefined }, token)) as vscode.LanguageModelToolResult);
@@ -886,27 +886,33 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.deepStrictEqual(result.currentPlayability, { score: current.score, level: current.level, unresolvedChords: current.unresolvedChords });
   });
 
-  test('R010 read-only tools and prepareInvocation do not change the document', async () => {
+  test('R010 read-only tools and prepareInvocation do not change the document; mutation confirmations come from the input only', async () => {
     const doc = await openUntitled(CAPO_SOURCE);
     const version = doc.version;
     const { tools } = makeTools();
     await call(tools.guitardsl_validate_dsl, {});
     await call(tools.guitardsl_analyze_playability, {});
-    const prepared = await tools.guitardsl_apply_capo.prepareInvocation({ input: { targetCapo: 2 } }, never);
+    const prepared = await tools.guitardsl_apply_capo.prepareInvocation({ input: { uri: u(doc), targetCapo: 2 } }, never);
     assert.ok(prepared.confirmationMessages, 'mutation tools ask for confirmation');
-    assert.ok(String(prepared.confirmationMessages.message).includes(nodePath.basename(doc.fileName)));
+    assert.ok(String(prepared.confirmationMessages.message).includes(doc.uri.toString(true)), String(prepared.confirmationMessages.message));
     assert.ok(String(prepared.confirmationMessages.message).includes('2'));
+    const other = await openUntitled('| G |\n');
+    const again = await tools.guitardsl_apply_capo.prepareInvocation({ input: { uri: u(doc), targetCapo: 2 } }, never);
+    assert.deepStrictEqual(again, prepared, 'independent of the active editor and of earlier calls');
     const preparedPath = await tools.guitardsl_apply_transpose.prepareInvocation({ input: { path: '/x/song.guitardsl', semitones: 2, capoMode: 'keep' } }, never);
-    assert.ok(String(preparedPath.confirmationMessages.message).includes('song.guitardsl'));
+    assert.ok(String(preparedPath.confirmationMessages.message).includes(vscode.Uri.file('/x/song.guitardsl').fsPath));
+    const noTarget = await tools.guitardsl_apply_capo.prepareInvocation({ input: { targetCapo: 2 } }, never);
+    assert.strictEqual(noTarget.confirmationMessages, undefined, 'invalid input (no target) has nothing to confirm');
     assert.strictEqual(doc.version, version);
     assert.strictEqual(doc.getText(), CAPO_SOURCE);
+    assert.strictEqual(other.getText(), '| G |\n');
   });
 
   test('T007 apply capo: one change, expected transform, post-validation; unsupported input makes no edit', async () => {
     const doc = await openUntitled(CAPO_SOURCE);
     const version = doc.version;
     const { tools } = makeTools();
-    const result = await call(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    const result = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.operation, 'applyCapo');
     assert.strictEqual(result.changed, true);
@@ -919,12 +925,16 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(doc.getText(), CAPO_SOURCE, 'one undo restores the source');
 
     for (const targetCapo of [13, -1, 2.5]) {
-      const bad = await call(tools.guitardsl_apply_capo, { targetCapo });
+      const bad = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo });
       assert.strictEqual(bad.ok, false);
       assert.strictEqual(bad.code, 'invalidInput');
     }
+    for (const input of [{ targetCapo: 2 }, { uri: u(doc), path: '/x/a.guitardsl', targetCapo: 2 }, { uri: 'Untitled-1', targetCapo: 2 }]) {
+      assert.strictEqual((await call(tools.guitardsl_apply_capo, input)).code, 'invalidInput', JSON.stringify(input));
+    }
+    assert.strictEqual(doc.getText(), CAPO_SOURCE, 'no target means no edit (never the active editor)');
     const broken = await openUntitled(INVALID_SOURCE);
-    const failed = await call(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    const failed = await call(tools.guitardsl_apply_capo, { uri: u(broken), targetCapo: 2 });
     assert.strictEqual(failed.ok, false);
     assert.strictEqual(failed.code, 'sourceParseError', 'existing failure code');
     assert.strictEqual(broken.getText(), INVALID_SOURCE);
@@ -932,6 +942,9 @@ suite('AI integration: language model tools (Issue #80)', () => {
 
     const missing = await call(tools.guitardsl_apply_capo, { targetCapo: 2, path: writeFixture('notes.txt', 'hello') });
     assert.strictEqual(missing.code, 'documentNotFound');
+    const unknownUntitled = 'untitled:NoSuchDocument-999';
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: unknownUntitled, targetCapo: 2 })).code, 'documentNotFound');
+    assert.ok(!vscode.workspace.textDocuments.some(d => d.uri.toString() === vscode.Uri.parse(unknownUntitled).toString()), 'no untitled document is created');
   });
 
   test('T008 Beginner Mode matches applyBeginnerTransform for allow and forbid (auto capo); failure leaves the source unchanged', async () => {
@@ -940,7 +953,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
       const twin = await openUntitled(BEGINNER_SOURCE, false);
       const expected = await scoreSettings().applyBeginnerTransform(twin.uri, { barrePolicy });
       const doc = await openUntitled(BEGINNER_SOURCE);
-      const result = await call(tools.guitardsl_apply_beginner_mode, { barrePolicy });
+      const result = await call(tools.guitardsl_apply_beginner_mode, { uri: u(doc), barrePolicy });
       assert.strictEqual(result.ok, true, barrePolicy);
       assert.strictEqual(result.operation, 'applyBeginnerMode');
       const { ok, ...expectedSummary } = expected;
@@ -951,12 +964,12 @@ suite('AI integration: language model tools (Issue #80)', () => {
     const explicitTwin = await openUntitled(BEGINNER_SOURCE, false);
     const explicitExpected = await scoreSettings().applyBeginnerTransform(explicitTwin.uri, { barrePolicy: 'allow', targetCapo: 0 });
     const explicitDoc = await openUntitled(BEGINNER_SOURCE);
-    await call(tools.guitardsl_apply_beginner_mode, { barrePolicy: 'allow', targetCapo: 0 });
+    await call(tools.guitardsl_apply_beginner_mode, { uri: u(explicitDoc), barrePolicy: 'allow', targetCapo: 0 });
     assert.strictEqual(explicitDoc.getText(), explicitTwin.getText());
     assert.ok(explicitExpected.ok);
 
     const broken = await openUntitled(INVALID_SOURCE);
-    const failed = await call(tools.guitardsl_apply_beginner_mode, { barrePolicy: 'allow' });
+    const failed = await call(tools.guitardsl_apply_beginner_mode, { uri: u(broken), barrePolicy: 'allow' });
     assert.strictEqual(failed.ok, false);
     assert.strictEqual(broken.getText(), INVALID_SOURCE);
   });
@@ -972,7 +985,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
       const twin = await openUntitled(CAPO_SOURCE, false);
       const expected = await scoreSettings().applyTransposeTransform(twin.uri, { semitones: (input as any).semitones, capoMode });
       const doc = await openUntitled(CAPO_SOURCE);
-      const result = await call(tools.guitardsl_apply_transpose, input);
+      const result = await call(tools.guitardsl_apply_transpose, { uri: u(doc), ...input });
       assert.strictEqual(result.ok, expected.ok, JSON.stringify(input));
       const { ok, ...expectedSummary } = expected;
       assert.deepStrictEqual(summaryOf(result), { ok: expected.ok, ...expectedSummary });
@@ -983,7 +996,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
     const doc = await openUntitled(CAPO_SOURCE);
     const version = doc.version;
     for (const input of [{ semitones: 2, capoMode: 'explicit' }, { semitones: 2, capoMode: 'explicit', capo: 13 }, { semitones: 12, capoMode: 'keep' }]) {
-      const bad = await call(tools.guitardsl_apply_transpose, input);
+      const bad = await call(tools.guitardsl_apply_transpose, { uri: u(doc), ...input });
       assert.strictEqual(bad.code, 'invalidInput', JSON.stringify(input));
     }
     assert.strictEqual(doc.version, version);
@@ -1002,9 +1015,9 @@ suite('AI integration: language model tools (Issue #80)', () => {
         return scoreSettings().applyCapoTransform(uri, capo);
       }
     });
-    const first = call(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    const first = call(tools.guitardsl_apply_capo, { uri: key, targetCapo: 2 });
     await waitFor(() => guard.isHeld(key), 'the first call should own the guard');
-    const second = await call(tools.guitardsl_apply_beginner_mode, { barrePolicy: 'allow' });
+    const second = await call(tools.guitardsl_apply_beginner_mode, { uri: key, barrePolicy: 'allow' });
     assert.strictEqual(second.ok, false);
     assert.strictEqual(second.code, 'documentBusy');
     assert.strictEqual(doc.getText(), CAPO_SOURCE, 'the busy call does not edit');
@@ -1016,11 +1029,11 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(guard.isHeld(key), false, 'released after success');
 
     const failing = makeTools({ applyCapo: async () => ({ ok: false, code: 'untransposableChord' }) });
-    assert.strictEqual((await call(failing.tools.guitardsl_apply_capo, { targetCapo: 3 })).code, 'untransposableChord');
+    assert.strictEqual((await call(failing.tools.guitardsl_apply_capo, { uri: key, targetCapo: 3 })).code, 'untransposableChord');
     assert.strictEqual(failing.guard.isHeld(key), false, 'released after failure');
 
     const throwing = makeTools({ applyCapo: async () => { throw new Error('boom'); } });
-    await assert.rejects(() => call(throwing.tools.guitardsl_apply_capo, { targetCapo: 3 }), /boom/);
+    await assert.rejects(() => call(throwing.tools.guitardsl_apply_capo, { uri: key, targetCapo: 3 }), /boom/);
     assert.strictEqual(throwing.guard.isHeld(key), false, 'released after an exception');
   });
 
@@ -1030,55 +1043,50 @@ suite('AI integration: language model tools (Issue #80)', () => {
     const { tools, guard } = makeTools({ applyCapo: async () => { applyCalls++; return { ok: true, changed: false }; } });
     const source = new vscode.CancellationTokenSource();
     source.cancel();
-    assert.strictEqual((await call(tools.guitardsl_apply_capo, { targetCapo: 2 }, source.token)).code, 'cancelled');
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 }, source.token)).code, 'cancelled');
 
     // Cancelled after resolution, immediately before the mutation.
     let checks = 0;
     const lateToken = { get isCancellationRequested() { return ++checks > 1; }, onCancellationRequested: source.token.onCancellationRequested } as vscode.CancellationToken;
-    assert.strictEqual((await call(tools.guitardsl_apply_capo, { targetCapo: 2 }, lateToken)).code, 'cancelled');
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 }, lateToken)).code, 'cancelled');
     assert.strictEqual(guard.isHeld(doc.uri.toString()), false);
     await sleep(200);
     assert.strictEqual(applyCalls, 0);
     assert.strictEqual(doc.getText(), CAPO_SOURCE);
   });
 
-  test('B-1 the edit is applied only to the confirmed document; otherwise targetChanged / targetNotConfirmed without edits', async () => {
+  test('B-1 the edited document is exactly the one the input names, even if the active editor changes after confirmation', async () => {
     const { tools } = makeTools();
     const docA = await openUntitled(CAPO_SOURCE);
-    await tools.guitardsl_apply_capo.prepareInvocation({ input: { targetCapo: 2 } }, never);
+    const input = { uri: u(docA), targetCapo: 2 };
+    const prepared = await tools.guitardsl_apply_capo.prepareInvocation({ input }, never);
+    assert.ok(String(prepared.confirmationMessages.message).includes(docA.uri.toString(true)));
     const docB = await openUntitled(CAPO_SOURCE);
-    const changed = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2 });
-    assert.strictEqual(changed.ok, false);
-    assert.strictEqual(changed.code, 'targetChanged');
-    assert.strictEqual(docA.getText(), CAPO_SOURCE);
-    assert.strictEqual(docB.getText(), CAPO_SOURCE);
+    assert.strictEqual(vscode.window.activeTextEditor?.document, docB, 'the active editor changed after confirmation');
+    const result = await invokeOnly(tools.guitardsl_apply_capo, input);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.document.uri, u(docA));
+    assert.strictEqual(docA.getText(), CAPO_AT_2, 'the confirmed document is edited');
+    assert.strictEqual(docB.getText(), CAPO_SOURCE, 'the active document is not');
 
-    const unconfirmed = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2 });
-    assert.strictEqual(unconfirmed.code, 'targetNotConfirmed', 'the record was consumed by the previous invoke');
-    assert.strictEqual(docB.getText(), CAPO_SOURCE);
-
-    const confirmed = await call(tools.guitardsl_apply_capo, { targetCapo: 2 });
-    assert.strictEqual(confirmed.ok, true);
-    assert.strictEqual(confirmed.document.uri, docB.uri.toString());
-    assert.strictEqual(docB.getText(), CAPO_AT_2);
-    assert.strictEqual(docA.getText(), CAPO_SOURCE);
-
-    // An explicit absolute path fixes the target by input, so no confirmation record is required.
+    // prepareInvocation is not required before invoke (VS Code does not guarantee the pairing either way).
     const file = writeFixture('explicit.guitardsl', CAPO_SOURCE);
     const explicit = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2, path: file });
     assert.strictEqual(explicit.ok, true);
     assert.strictEqual((await vscode.workspace.openTextDocument(vscode.Uri.file(file))).getText(), CAPO_AT_2);
+    assert.strictEqual(docB.getText(), CAPO_SOURCE);
   });
 
-  test('B-1 vscode.lm.invokeTool runs prepareInvocation before invoke for a registered mutation tool', async () => {
+  test('B-1 read-only result document.uri targets an untitled document through vscode.lm.invokeTool', async () => {
     const doc = await openUntitled(CAPO_SOURCE);
+    const validated = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(validated.document.uri, u(doc));
     const outcome = await Promise.race([
-      invokeRegistered('guitardsl_apply_capo', { targetCapo: 2 }),
+      invokeRegistered('guitardsl_apply_capo', { uri: validated.document.uri, targetCapo: 2 }),
       sleep(5000).then(() => 'timeout')
     ]);
     assert.notStrictEqual(outcome, 'timeout', 'invokeTool should not wait for interactive confirmation outside a chat request');
     const result = outcome as any;
-    assert.notStrictEqual(result.code, 'targetNotConfirmed', 'VS Code must call prepareInvocation first');
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     assert.strictEqual(doc.getText(), CAPO_AT_2);
   });
@@ -1086,16 +1094,16 @@ suite('AI integration: language model tools (Issue #80)', () => {
   test('R012 repeated calls recompute from the latest source', async () => {
     const doc = await openUntitled('| B |\n');
     const { tools } = makeTools();
-    assert.strictEqual((await call(tools.guitardsl_apply_capo, { targetCapo: 2 })).changed, true);
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 })).changed, true);
     assert.strictEqual(doc.getText(), 'capo: 2\n| A |\n');
     const edit = new vscode.WorkspaceEdit();
     edit.insert(doc.uri, doc.positionAt(doc.getText().length), '| E |\n');
     assert.ok(await vscode.workspace.applyEdit(edit));
-    const again = await call(tools.guitardsl_apply_capo, { targetCapo: 2 });
+    const again = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 });
     assert.strictEqual(again.ok, true);
     assert.strictEqual(again.changed, false, 'same capo again is a no-op decided by the existing helper');
     const latest = doc.getText();
-    assert.strictEqual((await call(tools.guitardsl_apply_capo, { targetCapo: 0 })).changed, true);
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 0 })).changed, true);
     assert.strictEqual(doc.getText(), capoModule().planCapoTransform(latest, 0).text, 'the edit made in between is transformed too');
   });
 });

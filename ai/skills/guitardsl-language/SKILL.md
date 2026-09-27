@@ -40,3 +40,5 @@ Read only the headings you need. Do not load the whole reference at once. The re
    - `guitardsl_apply_transpose` (`#guitardslTranspose`)
 
    They apply the extension's own deterministic algorithms as one undoable edit.
+
+   These tools edit only the document you name with `uri` or an absolute `path`. To target the file the user is working on, call `guitardsl_validate_dsl` without arguments first and pass its `document.uri`.
