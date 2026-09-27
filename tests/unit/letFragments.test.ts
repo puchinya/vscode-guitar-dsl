@@ -329,8 +329,8 @@ describe('PR #73 review fixes', () => {
     assert.deepStrictEqual(codes('let bad = [c4,e4]/4 g4'), ['missingInitialOctaveOrLength']);
     assert.deepStrictEqual(codes('let ok = r/4 e4/4'), []);
     assert.deepStrictEqual(codes('let ok = r/4 e4/4 g a'), []);
-    // A leading grace note needs its octave; the first timed note still writes its length.
-    assert.deepStrictEqual(codes('let ok = d4{grace} e4/4'), []);
-    assert.deepStrictEqual(codes('let bad = d4{grace} e4'), ['missingInitialOctaveOrLength']);
+    // A leading grace note is the first pitched single note: it writes its own octave and length too.
+    assert.deepStrictEqual(codes('let bad = d4{grace} e4/4'), ['missingInitialOctaveOrLength']);
+    assert.deepStrictEqual(codes('let ok = d4/8{grace} e4/4'), []);
   });
 });

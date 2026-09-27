@@ -531,10 +531,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Single notes inherit only inside this definition, starting from an empty state (no default octave).
     const state: MelodyTokenState = {};
-    // The first pitched single note writes its own octave, and the first timed one its own length: a rest or
-    // a note group before it does not establish them (spec §17.4).
-    let needOctave = true;
-    let needLength = true;
+    // The first pitched single note (a grace note included) writes its own octave and length: a rest or a
+    // note group before it does not establish them (spec §17.4).
+    let firstSingle = true;
     const sequence = pitchSequence++;
     const valueStart = m[1].length + name.length + m[3].length;
     const re = /\S+/g;
@@ -575,12 +574,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         }
         if (parsed.pitch) {
           const pitchLen = pitchTextLength(tok);
-          const grace = parsed.techniques?.grace === true;
-          const missingOctave = needOctave && !/[0-9]$/.test(tok.slice(0, pitchLen));
-          const missingLength = needLength && !grace && !/^[/:]/.test(tok.slice(pitchLen));
-          needOctave = false;
-          if (!grace) needLength = false;
-          if (missingOctave || missingLength) {
+          const incomplete = firstSingle && (!/[0-9]$/.test(tok.slice(0, pitchLen)) || !/^[/:]/.test(tok.slice(pitchLen)));
+          firstSingle = false;
+          if (incomplete) {
             fail('missingInitialOctaveOrLength', { token: tok });
             continue;
           }
