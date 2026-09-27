@@ -448,6 +448,15 @@ VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
   ```
 
   読み取り専用ツールの暗黙の文書解決（アクティブ → 表示中 → 最後にアクティブ → 開いている文書）は、既存の文書を操作するための簡便な仕組みにすぎず、新しい文書を作る意味は持たない。新曲作成の出力先はモデルが最初に確立した新しい文書だけで、これも AI 資産とツール説明の文章で伝える。解決順序・変更系ツールの明示的な対象指定・スキーマは変えない。`check-ai-sync.mjs` は、3 つの資産の新曲作成節が「別の新しい文書」「既存文書を再利用しない」「同じ対象への固定」を含むこと、Skill が現在のファイル向けの解決を既存スコアの作業に限ること、検証ツールの説明が新曲の出力先に fallback を使わないと述べ、伴奏 2 ツールの説明が同じ新しい対象を求めることを検査する。
+- **計画の境界（仕様 §8.2「計画の方針」）**: 一般的な依頼では、モデルとエンジンが次のように分担する。
+
+  ```text
+  モデル: セクションごとの大まかな意図と相対的な強弱（base → variation → finale）
+    ↓
+  伴奏エンジン: 正規プリセットの決定的な選択（§2.19）
+  ```
+
+  ユーザーが特定のファミリーやプリセットを求めない限り、モデルがセクションごとにカタログのプリセットを列挙して選ぶ経路は持たない。任意の制約（`family`・`syncopationKinds`・`difficulty`・`preferredPresetId`・固定の `subdivision`）はユーザーが求めた場合だけ付ける。この方針も AI 資産とツール説明の文章だけで伝え、エンジンの重み・絞り込み・カタログは変えない。`check-ai-sync.mjs` は、伴奏ガイドの `## Keep intent plans minimal`、指示の新曲作成節、分析・適用ツールの説明が方針の文言（`subdivision: auto`、任意制約を既定にしない、ファミリーごとに見比べない、エンジンが選ぶ、`finale` の余地、切替とエンディングの候補数、失敗後の 1 回だけの緩和）を保つことを検査する。
 - **モジュールの責務 (`src/ai/tools.ts`)**: ツール入力の型、`vscode.lm.registerTool` による登録、`LanguageModelTool` の実装、JSON 結果の組み立て、文書ごとの変更ガードを持つ。音楽ドメインの計算（カポ・弾きやすさ・初心者モード・移調・伴奏の規則）は持たない。伴奏の 2 ツールは入力の形を `accompanimentRequestProblem` で検査し、`analyzeAccompaniment` / `applyAccompanimentTransform`（§2.19）を呼ぶだけである。`vscode.lm.selectChatModels` / `sendRequest` は使わない。
 - **登録と寿命**: `extension.ts` の `activate` が `registerGuitarDslAiTools(context, locale, getLastDoc)` を呼び、7 つの `registerTool` の Disposable を `context.subscriptions` に積む。`getLastDoc` は最後にアクティブだった GuitarDSL ドキュメントを返す関数で、コマンドと同じ解決順を保つために渡す。Worker・タイマー・ネットワーク・バックグラウンド処理は持たない。AI 拡張機能が入っていない環境でも登録は成功し、ツールが呼ばれないだけである。
 - **文書解決**: 読み取り専用ツールは、`path` があれば `Uri.file(path)` を `openTextDocument` で開き、`isGuitarDslDocument` を満たさなければ `documentNotFound`（フォールバックしない）。`path` がなければ `resolveGuitarDslDocument(undefined, getLastDoc())`。変更系ツールは入力の `uri`（`Uri.parse`）/ `path`（`Uri.file`）の文書だけを開く（`resolveMutationTarget`）。

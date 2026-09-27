@@ -264,7 +264,7 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
     has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.slice(0, t.indexOf('## New GuitarDSL score workflow')))), `${INSTRUCTIONS_PATH}: missing the new-score workflow`);
     has(await gateAfter(root => edit(root, SKILL_PATH, t => t.slice(0, t.indexOf('6. New score from scratch')))), `${SKILL_PATH}: missing the new-score workflow`);
     has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## New score from scratch[\s\S]*?(?=## Workflow)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the new-score workflow`);
-    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('do not fall back to manual rhythm generation', 'write the rhythm yourself'))), `${INSTRUCTIONS_PATH}: new-score workflow must keep /fall ?back/i`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('do not fall back to manual rhythm generation', 'write the rhythm yourself'))), `${INSTRUCTIONS_PATH}: new-score workflow must keep /\\b(do not|never) fall back to`);
     has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('2. Write the structural draft into', '2. Write the draft into'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must keep /structural draft/i`);
   });
 
@@ -360,6 +360,43 @@ describe('AI integration assets: new-score workflow (Issue #104)', () => {
   it('T-resource-7 dropping the explicit user-reference exception is not a gate blocker (stricter is safe)', async () => {
     const { SKILL_PATH } = await load();
     assert.deepStrictEqual(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(' Read an existing score/sample only when the user asked to use it as a reference or template.', ''))), []);
+  });
+
+  describe('minimal-intent planning (review amendment 3)', () => {
+    const guideCases: [string, string, string][] = [
+      ['1 subdivision: auto default', 'Use `mode: intent` with `subdivision: auto` (the default).', 'Use `mode: intent`.'],
+      ['2 family optional by default', 'are optional hard constraints, not defaults.', 'can be set.'],
+      ['3 no preset browsing', 'Do not browse presets family by family', 'You may browse presets'],
+      ['4 candidate abundance -> engine selection', 'Many compatible candidates is normal, not a problem. Let the deterministic engine choose.', 'Pick a candidate.'],
+      ['5 finale headroom', 'Keep dynamic headroom for the finale.', 'Make choruses strong.'],
+      ['6 transition budget', 'Do not add `transitions` at every boundary;', 'Add transitions freely;'],
+      ['7 ending 1 primary + at most 1 fallback', 'use one primary candidate and at most one fallback', 'use up to three candidates']
+    ];
+    for (const [label, from, to] of guideCases) {
+      it(`guide: removing ${label} fails`, async () => {
+        const { ACCOMPANIMENT_GUIDE } = await load();
+        has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(from, to))), `${ACCOMPANIMENT_GUIDE}: minimal-intent planning policy must keep`);
+      });
+    }
+
+    it('guide: removing the whole section fails', async () => {
+      const { ACCOMPANIMENT_GUIDE } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## Keep intent plans minimal[\s\S]*?(?=## Choosing the plan mode)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the minimal-intent planning policy`);
+    });
+
+    it('8 instructions: removing the minimal-intent wording fails', async () => {
+      const { INSTRUCTIONS_PATH } = await load();
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Keep the intent broad\. Prefer `subdivision: auto` and omit optional hard constraints \([^)]*\) unless the user asked for them\. /, ''))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep`);
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('preserve headroom for the finale rather than making every chorus maximal', 'make every chorus strong'))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep /\\bheadroom for the finale\\b/i`);
+    });
+
+    it('9 analyze description: removing the whole-score-first rule fails', async () => {
+      has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' For a general arrangement/new-song request, call whole-score analysis once; do not request sectionIndex+family merely to browse presets; use that form only when a family is specifically needed.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the minimal-intent guidance');
+    });
+
+    it('10 apply description: removing the optional-hard-constraint guidance fails', async () => {
+      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/ For general intent plans, prefer subdivision auto and omit optional hard constraints \([^)]*\) not requested by the user; the extension selects the canonical preset\./, ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the minimal-intent guidance');
+    });
   });
 
   it('the new checks leave the seven-tool contract unchanged', async () => {

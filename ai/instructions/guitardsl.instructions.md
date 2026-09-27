@@ -31,7 +31,7 @@ Use the guitardsl-language Skill's packaged specification and accompaniment guid
 1. Create a structural draft first, in the new document: metadata, section labels, chords, optional `mel:` / `lyr:`, barlines and any notation the user asked for. Do not hand-write generated accompaniment rhythm (no `.d` / `.u` D/U strokes, accents, ghosts, ties or arpeggio rhythm). Leave the rhythm out; the parser fills in a temporary default.
 2. Run `guitardsl_validate_dsl`. Fix structural errors and unintended warnings.
 3. Run `guitardsl_analyze_accompaniment` for the whole score.
-4. Decide the musical intent per section. Use `arrangementGroup` for repeated roles, `arrangementRole: finale` for a final repeated chorus, and transition / ending candidates where they fit the music.
+4. Decide the musical intent per section. Keep the intent broad. Prefer `subdivision: auto` and omit optional hard constraints (`family`, `syncopationKinds`, `difficulty`, `preferredPresetId`) unless the user asked for them. Do not browse family preset lists merely to choose a pattern; let the deterministic engine select it, even when there are many candidates. Use `arrangementGroup` for repeated roles (`base` → `variation`). With repeated choruses, preserve headroom for the finale rather than making every chorus maximal: mark the final chorus `arrangementRole: finale`. Add transitions only where really needed, and give the ending one primary candidate plus at most one fallback.
 5. Call `guitardsl_apply_accompaniment` once for the complete arrangement whenever possible.
 6. Run `guitardsl_validate_dsl` again on the same new target and resolve unintended diagnostics.
 

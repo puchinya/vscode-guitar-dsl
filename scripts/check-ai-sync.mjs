@@ -3,7 +3,7 @@
 // match its directory, a contributed AI path is missing, the language model tool contract drifted, the
 // Skill / instructions do not describe the accompaniment tools, the new-score workflow lost its discovery
 // metadata, its validate -> analyze -> apply -> validate order or its distinct-new-target binding, the Skill does
-// not link its supporting resources or allows a sample fallback, an AI asset /
+// not link its supporting resources or allows a sample fallback, the minimal-intent planning policy drifted, an AI asset /
 // tool description mentions an excluded integration, or the accompaniment code imports one. It never repairs anything.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -42,7 +42,7 @@ export const NEW_SCORE_SECTIONS = Object.freeze({
 });
 export const NEW_SCORE_WORKFLOW_ORDER = Object.freeze(['guitardsl_validate_dsl', 'guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment', 'guitardsl_validate_dsl']);
 /** Phrases every new-score section keeps: draft first, no hand-written D/U, no manual fallback after a tool failure. */
-export const NEW_SCORE_SECTION_MARKERS = Object.freeze([/structural draft/i, /D\/U/, /fall ?back/i]);
+export const NEW_SCORE_SECTION_MARKERS = Object.freeze([/structural draft/i, /D\/U/, /\b(do not|never) fall back to (manual|hand-written)\b|\bno manual fallback\b/i]);
 /** Phrases both accompaniment tool modelDescriptions keep, in this order. */
 export const NEW_SCORE_TOOL_MARKERS = Object.freeze(['New score', 'structural draft', 'not handwritten']);
 
@@ -70,6 +70,22 @@ export const SKILL_RESOURCE_LINKS = Object.freeze(['./references/guitardsl-synta
 export const NO_SAMPLE_FALLBACK_MARKERS = Object.freeze({
   [SKILL_PATH]: [/\bsamples?\b[^.]*\bsubstitute specification\b/i, /\breport the missing resource\b/i],
   [INSTRUCTIONS_PATH]: [/\bexisting GuitarDSL files or samples\b/i, /\bdo not substitute an existing score\/sample\b/i, /\breport the unavailable Skill resource\b/i]
+});
+
+/** Minimal-intent planning policy (spec §8.2): where it lives, and the phrases each place keeps. */
+export const MINIMAL_INTENT_SECTION = '## Keep intent plans minimal';
+export const MINIMAL_INTENT_MARKERS = Object.freeze({
+  [ACCOMPANIMENT_GUIDE]: [
+    /`subdivision: auto`/, /\boptional hard constraints, not defaults\b/i, /\bdo not browse presets family by family\b/i,
+    /\bmany compatible candidates is normal\b/i, /\blet the deterministic engine choose\b/i, /\bheadroom for the finale\b/i,
+    /\bdo not add `transitions` at every boundary\b/i, /\bone primary candidate and at most one fallback\b/i,
+    /\bretry once with minimal intent\b/i, /\bnever relax a constraint the user asked for\b/i
+  ],
+  [INSTRUCTIONS_PATH]: [/\bkeep the intent broad\b/i, /`subdivision: auto`/, /\bomit optional hard constraints\b/i, /\bdo not browse family preset lists\b/i, /\bheadroom for the finale\b/i]
+});
+export const MINIMAL_INTENT_TOOL_MARKERS = Object.freeze({
+  guitardsl_analyze_accompaniment: [/\bcall whole-score analysis once\b/, /\bdo not request sectionIndex\+family merely to browse presets\b/],
+  guitardsl_apply_accompaniment: [/\bprefer subdivision auto\b/, /\bomit optional hard constraints\b/]
 });
 
 /** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
@@ -283,7 +299,29 @@ export function checkAiSync(root) {
     }
   }
 
-  // 11. The accompaniment engine and the tool adapter import no excluded integration.
+  // 11. Minimal-intent planning: broad intent, no preset browsing, engine choice, finale headroom, small transition / ending budgets.
+  const minimalScopes = {
+    [ACCOMPANIMENT_GUIDE]: sectionFrom(read(ACCOMPANIMENT_GUIDE)?.toString('utf8') ?? '', MINIMAL_INTENT_SECTION),
+    [INSTRUCTIONS_PATH]: sectionFrom(read(INSTRUCTIONS_PATH)?.toString('utf8') ?? '', NEW_SCORE_SECTIONS[INSTRUCTIONS_PATH])
+  };
+  for (const [rel, patterns] of Object.entries(MINIMAL_INTENT_MARKERS)) {
+    const scope = minimalScopes[rel];
+    if (scope === undefined) {
+      errors.push(`${rel}: missing the minimal-intent planning policy`);
+      continue;
+    }
+    for (const pattern of patterns) {
+      if (!pattern.test(scope)) errors.push(`${rel}: minimal-intent planning policy must keep ${pattern}`);
+    }
+  }
+  for (const [name, patterns] of Object.entries(MINIMAL_INTENT_TOOL_MARKERS)) {
+    const description = String(actual.get(name)?.modelDescription ?? '');
+    for (const pattern of patterns) {
+      if (!pattern.test(description)) errors.push(`package.json: languageModelTools "${name}" modelDescription must keep the minimal-intent guidance ${pattern}`);
+    }
+  }
+
+  // 12. The accompaniment engine and the tool adapter import no excluded integration.
   for (const rel of ISOLATED_SOURCES) {
     const text = read(rel)?.toString('utf8');
     if (text === undefined) {

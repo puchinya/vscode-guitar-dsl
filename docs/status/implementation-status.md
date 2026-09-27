@@ -86,7 +86,7 @@
 | **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |
 | | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
 | | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
-| **AI 連携** | Skill `guitardsl-language` / 指示 `guitardsl.instructions.md`（`ai/`） | ✅ 完了 | 最小 VS Code 1.109.0。参照資料は `generate:ai` で構文仕様から生成し、`check:ai` で同期を検査。指示は `applyTo` とタスク関連性の `description` の 2 経路で選ばれ、Skill の `description` も新曲作成を含む。新曲作成の手順（構造の下書き → validate → analyze → 1 回の apply → validate、失敗時に手書きへ代用しない）と、対象の同一性（最初に別の新しい文書を作り、開いている既存スコアを出力先に再利用せず、すべての手順をその文書に固定する）を指示・Skill・伴奏ガイド・ツール説明に記載し、`check:ai` が順序と対象の固定を検査。Skill は補助資料（構文仕様・伴奏ガイド）を Markdown の相対リンクで参照し、新曲作成では既存スコアやサンプルを仕様の代わりに使わない（読み込めない場合は報告する）ことを Skill と指示に記載し、`check:ai` がリンクと代替禁止を検査。実モデルでの回帰確認（既存スコアを開いたまま新曲作成を依頼し、既存ファイルが変わらず、記法確認のために既存スコアやサンプルを探さないこと）は未実施 |
+| **AI 連携** | Skill `guitardsl-language` / 指示 `guitardsl.instructions.md`（`ai/`） | ✅ 完了 | 最小 VS Code 1.109.0。参照資料は `generate:ai` で構文仕様から生成し、`check:ai` で同期を検査。指示は `applyTo` とタスク関連性の `description` の 2 経路で選ばれ、Skill の `description` も新曲作成を含む。新曲作成の手順（構造の下書き → validate → analyze → 1 回の apply → validate、失敗時に手書きへ代用しない）と、対象の同一性（最初に別の新しい文書を作り、開いている既存スコアを出力先に再利用せず、すべての手順をその文書に固定する）を指示・Skill・伴奏ガイド・ツール説明に記載し、`check:ai` が順序と対象の固定を検査。Skill は補助資料（構文仕様・伴奏ガイド）を Markdown の相対リンクで参照し、新曲作成では既存スコアやサンプルを仕様の代わりに使わない（読み込めない場合は報告する）ことを Skill と指示に記載し、`check:ai` がリンクと代替禁止を検査。一般的な新曲作成の伴奏計画は最小限の意図（`subdivision: auto`、ユーザーが求めない任意制約を付けない、スコア全体の分析から 1 回の適用、エンジンが選ぶ、`finale` の余地、切替は例外・エンディング候補は 1＋代替 1 まで、失敗後の 1 回だけの緩和）とし、ガイド・指示・ツール説明に記載して `check:ai` が検査（エンジンは不変）。実モデルでの回帰確認（既存スコアを開いたまま新曲作成を依頼し、既存ファイルが変わらず、記法確認のために既存スコアやサンプルを探さないこと）は未実施 |
 | | 伴奏エンジンと正規プリセットカタログ（`src/accompaniment.ts`、`src/strummingPatterns.ts`） | ✅ 完了 | 58 件のカタログ（メタデータの機械検査）、intent / preset / grid / dsl、物理的なダウン / アップ、シンコペーション判定、コード区間の提示（D3）、フレーズ末の変化・`arrangementGroup`・`adapt`、弱起の保持、`%`・インライン音高の安全性、セクション切替とエンディング（歌唱タイミング）。小節のリズム範囲（`rhythmSource`）だけを編集。実モデルでの Agent 操作は手動未確認 |
 | | 言語モデルツール 7 件（`src/ai/tools.ts`） | ✅ 完了 | validate / playability / カポ / 初心者モード / 移調 / 伴奏の分析 / 伴奏の適用。既存 API のアダプタのみ。変更系は対象を入力の `uri` / `path` で固定（確認メッセージの文書だけを編集。副作用のない `prepareInvocation`）・`documentBusy`・キャンセル。モデルは呼ばない |
 
@@ -121,14 +121,14 @@
   - `tests/unit/helpSync.test.ts`: ヘルプ同期（仕様セクションの抽出・割り当て・ダイジェスト、追加・削除・英字付き番号、見出しの `help-sources` による本文の所有（削除された機能の孤児の本文の検出）、壊れた manifest の診断、コマンド・設定と仕様の一致、NLS、決定論的な生成と生成物の最新性、`let`・同時複数音の網羅、再生・Web プレーヤーの見出しがないこと）
   - `tests/unit/help.test.ts`: ヘルプの例の構文検証、ツールバーのヘルプボタン（ローカライズ・`openHelp` の送信・楽譜 SVG に含まれない）、ロケール別のファイル選択、ヘルプを開けないときのエラー表示
   - `tests/unit/sidebar.test.ts`: サイドバーのセクション順・展開状態・項目とコマンド、Current File（案内のみ／アクティブな URI を渡す 6 項目）、`refresh()`、`package.json` の貢献とアイコン
-  - `tests/unit/aiAssets.test.ts`: AI 連携の manifest（最小 VS Code、7 ツール・参照名・起動イベント・入力スキーマ・スクリプト）、`check:ai`（参照資料の 1 バイト変更・Skill 名・貢献パス・ツールのずれ・除外識別子・伴奏ツールの参照・伴奏コードの除外 import）、Skill・伴奏ガイド・指示の内容、新曲作成の発見用メタデータと validate → analyze → apply → validate の順序（説明の削除・意味の除去・節の削除・順序の入れ替え・手順の欠落・ツール説明からの削除で失敗すること）、新曲の対象の同一性（別の新しい文書・既存文書を再利用しない・同じ対象への固定・Skill の現在のファイル向けの解決の限定・3 ツールの説明のいずれを消しても失敗すること）、Skill の補助資料リンク（コードスパンへの戻し・`./` なし・誤ったリンク先で失敗）と代替禁止の文言、`.vscodeignore` が `ai/**` を同梱すること
+  - `tests/unit/aiAssets.test.ts`: AI 連携の manifest（最小 VS Code、7 ツール・参照名・起動イベント・入力スキーマ・スクリプト）、`check:ai`（参照資料の 1 バイト変更・Skill 名・貢献パス・ツールのずれ・除外識別子・伴奏ツールの参照・伴奏コードの除外 import）、Skill・伴奏ガイド・指示の内容、新曲作成の発見用メタデータと validate → analyze → apply → validate の順序（説明の削除・意味の除去・節の削除・順序の入れ替え・手順の欠落・ツール説明からの削除で失敗すること）、新曲の対象の同一性（別の新しい文書・既存文書を再利用しない・同じ対象への固定・Skill の現在のファイル向けの解決の限定・3 ツールの説明のいずれを消しても失敗すること）、Skill の補助資料リンク（コードスパンへの戻し・`./` なし・誤ったリンク先で失敗）と代替禁止の文言、最小限の意図の方針（ガイド・指示・分析 / 適用ツールの説明の各文言）、`.vscodeignore` が `ai/**` を同梱すること
   - `tests/unit/strummingPatterns.test.ts`: 正規カタログ 58 件（ID・宣言順・契約の表とメタデータの一致・重複なし・分類例）、全パターンの構文と拍数、自己検査（誤ったメタデータの検出を含む）、8 分 / 16 分 / 3 連 / 複合拍子の往復、オールダウンは `authored` だけ、シンコペーションの判定、アルペジオ記法の解析と描画
   - `tests/unit/accompaniment.test.ts`: セクション番号、入力検証、`intent` の必須条件・重み・同点・`preferredPresetId`・難易度・選択理由、コード区間の提示（D3。ゴースト・レゲエ）、`grid`（最も粗い往復・加算音価・拍子ごとのスロット）、`dsl`（`physical` / `literal`・拍数・小節線をまたぐタイ）、ソースを保つ編集（1 行複数小節・リズム省略・CRLF・`%`・インライン音高・拍子とフィールの混在・弱起）、フレーズ末の変化・`arrangementGroup`・`adapt`、分析の結果
   - `tests/unit/accompanimentArrangement.test.ts`: セクション切替の文脈（`exact` / `measureOnly` / `none`、複数番の歌詞、タイ）、候補の順序と不採用理由、歌唱中・コード区間・タイミング不明での拒否、エンディング（`hold` / `finalHit` / `fillToHold` / `breakThenHit` / `rolledFinal`・フェルマータ）、優先順位、`@tempo` を挿入しないこと
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **669 / 669 件 PASS** (0 failures)
+- **テスト実行結果**: **680 / 680 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
