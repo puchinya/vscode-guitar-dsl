@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "puchinya",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.109.0"
   },
   "categories": [
     "Programming Languages",
@@ -13,7 +13,12 @@
   ],
   "activationEvents": [
     "onLanguage:guitardsl",
-    "onView:guitardsl.sidebar"
+    "onView:guitardsl.sidebar",
+    "onLanguageModelTool:guitardsl_validate_dsl",
+    "onLanguageModelTool:guitardsl_analyze_playability",
+    "onLanguageModelTool:guitardsl_apply_capo",
+    "onLanguageModelTool:guitardsl_apply_beginner_mode",
+    "onLanguageModelTool:guitardsl_apply_transpose"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -145,7 +150,187 @@
           "group": "navigation"
         }
       ]
-    }
+    },
+    "chatInstructions": [
+      {
+        "path": "./ai/instructions/guitardsl.instructions.md"
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./ai/skills/guitardsl-language/SKILL.md"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "guitardsl_validate_dsl",
+        "toolReferenceName": "guitardslValidate",
+        "displayName": "%languageModelTools.validate.displayName%",
+        "userDescription": "%languageModelTools.validate.userDescription%",
+        "modelDescription": "Validate a GuitarDSL (.guitardsl/.gdsl) score with the extension's own parser and return its diagnostics as JSON (valid, errorCount, warningCount, diagnostics with 1-based line/startColumn/endColumn). Read-only. Call it after creating or materially editing GuitarDSL. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order).",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(check)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
+            }
+          }
+        }
+      },
+      {
+        "name": "guitardsl_analyze_playability",
+        "toolReferenceName": "guitardslPlayability",
+        "displayName": "%languageModelTools.playability.displayName%",
+        "userDescription": "%languageModelTools.playability.userDescription%",
+        "modelDescription": "Analyze capo playability of a GuitarDSL score with the extension's deterministic capo inference: returns sourceCapo, currentPlayability, recommendedCapo and one candidate per capo 0..12 (supported, score, level, reason). Read-only. Use it instead of estimating chord difficulty yourself. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order).",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(graph)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document. If omitted, the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document (the extension's command resolution order)."
+            }
+          }
+        }
+      },
+      {
+        "name": "guitardsl_apply_capo",
+        "toolReferenceName": "guitardslApplyCapo",
+        "displayName": "%languageModelTools.applyCapo.displayName%",
+        "userDescription": "%languageModelTools.applyCapo.userDescription%",
+        "modelDescription": "Change the capo of a GuitarDSL score to targetCapo (0..12) while keeping the sounding harmony; the extension rewrites the capo header and chord names from the latest source in one undoable edit. Returns an operation summary and postValidationPassed, never the whole score. Fails without editing when a chord cannot be moved. Requires exactly one of uri or path identifying the document to edit; it never falls back to the active editor, and the user confirms that exact document. To edit the file the user is working on, first call guitardsl_validate_dsl without arguments and pass its result document.uri (this also works for unsaved untitled documents).",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-operator)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "Document URI of the GuitarDSL document to edit, for example document.uri from a guitardsl_validate_dsl result (file:///… or untitled:…). Pass exactly one of uri or path."
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document to edit. Pass exactly one of uri or path."
+            },
+            "targetCapo": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12,
+              "description": "Capo fret after the change."
+            }
+          },
+          "required": [
+            "targetCapo"
+          ]
+        }
+      },
+      {
+        "name": "guitardsl_apply_beginner_mode",
+        "toolReferenceName": "guitardslApplyBeginner",
+        "displayName": "%languageModelTools.applyBeginner.displayName%",
+        "userDescription": "%languageModelTools.applyBeginner.userDescription%",
+        "modelDescription": "Apply Beginner Mode to a GuitarDSL score: the extension chooses an easy capo and simpler chord voicings that keep the sounding harmony, and rewrites the latest source in one undoable edit. barrePolicy allow/forbid controls barre chords; omit targetCapo for the automatic recommendation. Returns an operation summary and postValidationPassed. Requires exactly one of uri or path identifying the document to edit; it never falls back to the active editor, and the user confirms that exact document. To edit the file the user is working on, first call guitardsl_validate_dsl without arguments and pass its result document.uri (this also works for unsaved untitled documents).",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(mortar-board)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "Document URI of the GuitarDSL document to edit, for example document.uri from a guitardsl_validate_dsl result (file:///… or untitled:…). Pass exactly one of uri or path."
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document to edit. Pass exactly one of uri or path."
+            },
+            "barrePolicy": {
+              "type": "string",
+              "enum": [
+                "allow",
+                "forbid"
+              ],
+              "description": "Whether barre chords may be used."
+            },
+            "targetCapo": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12,
+              "description": "Capo fret to use. Omit for the automatic recommendation."
+            }
+          },
+          "required": [
+            "barrePolicy"
+          ]
+        }
+      },
+      {
+        "name": "guitardsl_apply_transpose",
+        "toolReferenceName": "guitardslTranspose",
+        "displayName": "%languageModelTools.transpose.displayName%",
+        "userDescription": "%languageModelTools.transpose.userDescription%",
+        "modelDescription": "Transpose the sounding music (key, chords, melody) of a GuitarDSL score by semitones (-11..11) and choose the capo afterwards: keep the current capo, use the recommended capo, or an explicit capo (capo is required only for capoMode explicit). The extension rewrites the latest source in one undoable edit and returns an operation summary and postValidationPassed. Requires exactly one of uri or path identifying the document to edit; it never falls back to the active editor, and the user confirms that exact document. To edit the file the user is working on, first call guitardsl_validate_dsl without arguments and pass its result document.uri (this also works for unsaved untitled documents).",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(arrow-swap)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "Document URI of the GuitarDSL document to edit, for example document.uri from a guitardsl_validate_dsl result (file:///… or untitled:…). Pass exactly one of uri or path."
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document to edit. Pass exactly one of uri or path."
+            },
+            "semitones": {
+              "type": "integer",
+              "minimum": -11,
+              "maximum": 11,
+              "description": "Sounding transposition in semitones."
+            },
+            "capoMode": {
+              "type": "string",
+              "enum": [
+                "keep",
+                "recommended",
+                "explicit"
+              ],
+              "description": "Capo after transposing."
+            },
+            "capo": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12,
+              "description": "Capo fret; required only when capoMode is 'explicit'."
+            }
+          },
+          "required": [
+            "semitones",
+            "capoMode"
+          ]
+        }
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build:audio-mir && npm run compile",
@@ -153,20 +338,22 @@
     "test:audio-mir-wasm": "node --import tsx scripts/test-audio-mir-wasm.mjs",
     "generate:help": "node scripts/generate-help.mjs",
     "check:help": "node scripts/check-help-sync.mjs",
-    "precompile": "npm run generate:help",
+    "generate:ai": "node scripts/generate-ai-assets.mjs",
+    "check:ai": "node scripts/check-ai-sync.mjs",
+    "precompile": "npm run generate:help && npm run generate:ai",
     "compile": "tsc -p ./",
     "compile:tests": "tsc -p ./tests",
     "compile:all": "npm run compile && npm run compile:tests",
     "watch": "tsc -watch -p ./",
     "test:unit": "mocha -r tsx -r ./tests/unit/setup.ts 'tests/unit/**/*.test.ts'",
     "test:e2e": "npm run compile:all && node out/tests/e2e/runTest.js",
-    "test": "npm run check:help && npm run test:unit && npm run test:e2e"
+    "test": "npm run check:help && npm run check:ai && npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/pdfkit": "^0.17.6",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.109.0",
     "@vscode/test-electron": "^3.1.0",
     "glob": "^13.0.6",
     "mocha": "^12.0.2",

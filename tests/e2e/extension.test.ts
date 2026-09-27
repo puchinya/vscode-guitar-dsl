@@ -751,3 +751,359 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     assert.deepStrictEqual(diagnostics, []);
   });
 });
+
+suite('AI integration: language model tools (Issue #80)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const aiTools = () => require('../../ai/tools');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const capoModule = () => require('../../capo');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const compiler = () => require('../../compiler');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const scoreSettings = () => require('../../scoreSettingsEditor');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('os');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('path');
+
+  const TOOL_NAMES = ['guitardsl_validate_dsl', 'guitardsl_analyze_playability', 'guitardsl_apply_capo', 'guitardsl_apply_beginner_mode', 'guitardsl_apply_transpose'];
+  // The deterministic capo fixture of the Capo / playability suite.
+  const CAPO_SOURCE = ['title: Capo Test', 'key: B', '', '[Intro]', '| B | E | F#m7 | E/G# |', ''].join('\n');
+  const CAPO_AT_2 = ['title: Capo Test', 'capo: 2', 'key: B', '', '[Intro]', '| A | D | Em7 | D/F# |', ''].join('\n');
+  const BEGINNER_SOURCE = ['title: Beginner Test', 'key: C', '', '[Intro]', '| F | C | G | Am |', ''].join('\n');
+  const INVALID_SOURCE = 'title: X\n| C |\nmel: C4\n';
+
+  const tmpDir: string = fs.mkdtempSync(nodePath.join(os.tmpdir(), `guitardsl-e2e-ai-${process.pid}-`));
+  const never = new vscode.CancellationTokenSource().token;
+  const parse = (r: vscode.LanguageModelToolResult) => {
+    assert.strictEqual(r.content.length, 1, 'one text part');
+    return JSON.parse((r.content[0] as vscode.LanguageModelTextPart).value);
+  };
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitFor(check: () => boolean, message: string): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+      if (check()) return;
+      await sleep(20);
+    }
+    assert.fail(message);
+  }
+  function writeFixture(name: string, content: string): string {
+    const file = nodePath.join(tmpDir, name);
+    fs.writeFileSync(file, content, 'utf8');
+    return file;
+  }
+  async function openUntitled(content: string, show = true): Promise<vscode.TextDocument> {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content });
+    if (show) await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    return doc;
+  }
+  function makeTools(overrides: Record<string, unknown> = {}) {
+    const guard = new (aiTools().MutationGuard)();
+    const tools = aiTools().createGuitarDslAiTools({
+      locale: 'en',
+      getLastDoc: () => undefined,
+      applyCapo: scoreSettings().applyCapoTransform,
+      applyBeginner: scoreSettings().applyBeginnerTransform,
+      applyTranspose: scoreSettings().applyTransposeTransform,
+      guard,
+      ...overrides
+    });
+    return { tools, guard };
+  }
+  const u = (doc: vscode.TextDocument) => doc.uri.toString();
+  /** Invokes without prepareInvocation (no confirmation). */
+  async function invokeOnly(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
+    return parse((await tool.invoke({ input, toolInvocationToken: undefined }, token)) as vscode.LanguageModelToolResult);
+  }
+  /** Like VS Code: prepareInvocation (confirmation) first, then invoke. */
+  async function call(tool: vscode.LanguageModelTool<object>, input: object, token: vscode.CancellationToken = never) {
+    await tool.prepareInvocation?.({ input }, never);
+    return invokeOnly(tool, input, token);
+  }
+  const invokeRegistered = async (name: string, input: object) =>
+    parse(await vscode.lm.invokeTool(name, { input, toolInvocationToken: undefined }, never));
+  /** Removes the tool-only fields so a result can be compared with the apply helper's result. */
+  const summaryOf = (result: Record<string, unknown>) => {
+    const { schemaVersion, operation, document, postValidationPassed, postErrorCount, ...rest } = result;
+    return rest;
+  };
+
+  suiteSetup(async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    if (ext && !ext.isActive) await ext.activate();
+  });
+  suiteTeardown(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  test('T012 activation without any model: commands, language and the five tools are registered', async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    assert.ok(ext?.isActive);
+    const commands = await vscode.commands.getCommands(true);
+    for (const c of ['guitardsl.showPreview', 'guitardsl.editCapo', 'guitardsl.openHelp', 'guitardsl.transcribeYouTube']) assert.ok(commands.includes(c), c);
+    assert.ok((await vscode.languages.getLanguages()).includes('guitardsl'));
+    const registered = vscode.lm.tools.map(t => t.name).filter(n => n.startsWith('guitardsl_'));
+    assert.deepStrictEqual([...registered].sort(), [...TOOL_NAMES].sort());
+    const doc = await openUntitled(CAPO_SOURCE);
+    const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+    assert.strictEqual(diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Error).length, 0, 'normal language support works');
+  });
+
+  test('T005 validate via vscode.lm.invokeTool: valid fixture, invalid fixture with 1-based location', async () => {
+    const valid = await invokeRegistered('guitardsl_validate_dsl', { path: writeFixture('valid.guitardsl', CAPO_SOURCE) });
+    assert.strictEqual(valid.schemaVersion, 1);
+    assert.strictEqual(valid.ok, true);
+    assert.strictEqual(valid.valid, true);
+    assert.strictEqual(valid.errorCount, 0);
+
+    const invalidPath = writeFixture('invalid.guitardsl', INVALID_SOURCE);
+    const invalid = await invokeRegistered('guitardsl_validate_dsl', { path: invalidPath });
+    assert.strictEqual(invalid.ok, true, 'parser errors are data, not a tool failure');
+    assert.strictEqual(invalid.valid, false);
+    assert.strictEqual(invalid.errorCount, 1);
+    assert.strictEqual(invalid.document.path, invalidPath);
+    assert.deepStrictEqual(invalid.diagnostics, [{ severity: 'error', code: 'upperCaseNoteName', args: { token: 'C4' }, line: 3, startColumn: 6, endColumn: 8 }]);
+    assert.strictEqual(fs.readFileSync(invalidPath, 'utf8'), INVALID_SOURCE, 'no repair');
+
+    // path omitted: the active untitled GuitarDSL document.
+    const doc = await openUntitled(INVALID_SOURCE);
+    const active = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(active.document.uri, doc.uri.toString());
+    assert.strictEqual(active.valid, false);
+  });
+
+  test('T006 playability via vscode.lm.invokeTool equals inferCapoForDsl exactly', async () => {
+    const result = await invokeRegistered('guitardsl_analyze_playability', { path: writeFixture('capo.guitardsl', CAPO_SOURCE) });
+    const expected = capoModule().inferCapoForDsl(CAPO_SOURCE);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.sourceCapo, expected.sourceCapo);
+    assert.strictEqual(result.recommendedCapo, expected.recommendedCapo ?? null);
+    assert.strictEqual(result.candidates.length, 13);
+    assert.deepStrictEqual(result.candidates, expected.candidates.map((c: any) => ({
+      capo: c.capo, supported: c.supported, score: c.playability?.score ?? null, level: c.playability?.level ?? null, reason: c.reason ?? null
+    })));
+    const current = expected.candidates[expected.sourceCapo].playability;
+    assert.deepStrictEqual(result.currentPlayability, { score: current.score, level: current.level, unresolvedChords: current.unresolvedChords });
+  });
+
+  test('R010 read-only tools and prepareInvocation do not change the document; mutation confirmations come from the input only', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    const version = doc.version;
+    const { tools } = makeTools();
+    await call(tools.guitardsl_validate_dsl, {});
+    await call(tools.guitardsl_analyze_playability, {});
+    const prepared = await tools.guitardsl_apply_capo.prepareInvocation({ input: { uri: u(doc), targetCapo: 2 } }, never);
+    assert.ok(prepared.confirmationMessages, 'mutation tools ask for confirmation');
+    assert.ok(String(prepared.confirmationMessages.message).includes(doc.uri.toString(true)), String(prepared.confirmationMessages.message));
+    assert.ok(String(prepared.confirmationMessages.message).includes('2'));
+    const other = await openUntitled('| G |\n');
+    const again = await tools.guitardsl_apply_capo.prepareInvocation({ input: { uri: u(doc), targetCapo: 2 } }, never);
+    assert.deepStrictEqual(again, prepared, 'independent of the active editor and of earlier calls');
+    const preparedPath = await tools.guitardsl_apply_transpose.prepareInvocation({ input: { path: '/x/song.guitardsl', semitones: 2, capoMode: 'keep' } }, never);
+    assert.ok(String(preparedPath.confirmationMessages.message).includes(vscode.Uri.file('/x/song.guitardsl').fsPath));
+    const noTarget = await tools.guitardsl_apply_capo.prepareInvocation({ input: { targetCapo: 2 } }, never);
+    assert.strictEqual(noTarget.confirmationMessages, undefined, 'invalid input (no target) has nothing to confirm');
+    assert.strictEqual(doc.version, version);
+    assert.strictEqual(doc.getText(), CAPO_SOURCE);
+    assert.strictEqual(other.getText(), '| G |\n');
+  });
+
+  test('T007 apply capo: one change, expected transform, post-validation; unsupported input makes no edit', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    const version = doc.version;
+    const { tools } = makeTools();
+    const result = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.operation, 'applyCapo');
+    assert.strictEqual(result.changed, true);
+    assert.strictEqual(result.targetCapo, 2);
+    assert.strictEqual(result.postValidationPassed, true);
+    assert.strictEqual(result.text, undefined, 'the transformed DSL is not returned');
+    assert.strictEqual(doc.getText(), CAPO_AT_2);
+    assert.strictEqual(doc.version, version + 1, 'exactly one document change');
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), CAPO_SOURCE, 'one undo restores the source');
+
+    for (const targetCapo of [13, -1, 2.5]) {
+      const bad = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo });
+      assert.strictEqual(bad.ok, false);
+      assert.strictEqual(bad.code, 'invalidInput');
+    }
+    for (const input of [{ targetCapo: 2 }, { uri: u(doc), path: '/x/a.guitardsl', targetCapo: 2 }, { uri: 'Untitled-1', targetCapo: 2 }]) {
+      assert.strictEqual((await call(tools.guitardsl_apply_capo, input)).code, 'invalidInput', JSON.stringify(input));
+    }
+    assert.strictEqual(doc.getText(), CAPO_SOURCE, 'no target means no edit (never the active editor)');
+    const broken = await openUntitled(INVALID_SOURCE);
+    const failed = await call(tools.guitardsl_apply_capo, { uri: u(broken), targetCapo: 2 });
+    assert.strictEqual(failed.ok, false);
+    assert.strictEqual(failed.code, 'sourceParseError', 'existing failure code');
+    assert.strictEqual(broken.getText(), INVALID_SOURCE);
+    assert.strictEqual(doc.getText(), CAPO_SOURCE);
+
+    const missing = await call(tools.guitardsl_apply_capo, { targetCapo: 2, path: writeFixture('notes.txt', 'hello') });
+    assert.strictEqual(missing.code, 'documentNotFound');
+    const unknownUntitled = 'untitled:NoSuchDocument-999';
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: unknownUntitled, targetCapo: 2 })).code, 'documentNotFound');
+    assert.ok(!vscode.workspace.textDocuments.some(d => d.uri.toString() === vscode.Uri.parse(unknownUntitled).toString()), 'no untitled document is created');
+  });
+
+  test('T008 Beginner Mode matches applyBeginnerTransform for allow and forbid (auto capo); failure leaves the source unchanged', async () => {
+    const { tools } = makeTools();
+    for (const barrePolicy of ['allow', 'forbid']) {
+      const twin = await openUntitled(BEGINNER_SOURCE, false);
+      const expected = await scoreSettings().applyBeginnerTransform(twin.uri, { barrePolicy });
+      const doc = await openUntitled(BEGINNER_SOURCE);
+      const result = await call(tools.guitardsl_apply_beginner_mode, { uri: u(doc), barrePolicy });
+      assert.strictEqual(result.ok, true, barrePolicy);
+      assert.strictEqual(result.operation, 'applyBeginnerMode');
+      const { ok, ...expectedSummary } = expected;
+      assert.deepStrictEqual(summaryOf(result), { ok: true, ...expectedSummary });
+      assert.strictEqual(doc.getText(), twin.getText());
+      assert.strictEqual(result.postValidationPassed, true);
+    }
+    const explicitTwin = await openUntitled(BEGINNER_SOURCE, false);
+    const explicitExpected = await scoreSettings().applyBeginnerTransform(explicitTwin.uri, { barrePolicy: 'allow', targetCapo: 0 });
+    const explicitDoc = await openUntitled(BEGINNER_SOURCE);
+    await call(tools.guitardsl_apply_beginner_mode, { uri: u(explicitDoc), barrePolicy: 'allow', targetCapo: 0 });
+    assert.strictEqual(explicitDoc.getText(), explicitTwin.getText());
+    assert.ok(explicitExpected.ok);
+
+    const broken = await openUntitled(INVALID_SOURCE);
+    const failed = await call(tools.guitardsl_apply_beginner_mode, { uri: u(broken), barrePolicy: 'allow' });
+    assert.strictEqual(failed.ok, false);
+    assert.strictEqual(broken.getText(), INVALID_SOURCE);
+  });
+
+  test('T009 transpose keep / recommended / explicit match applyTransposeTransform; explicit without capo fails before mutation', async () => {
+    const { tools } = makeTools();
+    const modes: [object, any][] = [
+      [{ semitones: 2, capoMode: 'keep' }, { kind: 'keep' }],
+      [{ semitones: -3, capoMode: 'recommended' }, { kind: 'recommended' }],
+      [{ semitones: 5, capoMode: 'explicit', capo: 3 }, { kind: 'explicit', capo: 3 }]
+    ];
+    for (const [input, capoMode] of modes) {
+      const twin = await openUntitled(CAPO_SOURCE, false);
+      const expected = await scoreSettings().applyTransposeTransform(twin.uri, { semitones: (input as any).semitones, capoMode });
+      const doc = await openUntitled(CAPO_SOURCE);
+      const result = await call(tools.guitardsl_apply_transpose, { uri: u(doc), ...input });
+      assert.strictEqual(result.ok, expected.ok, JSON.stringify(input));
+      const { ok, ...expectedSummary } = expected;
+      assert.deepStrictEqual(summaryOf(result), { ok: expected.ok, ...expectedSummary });
+      assert.strictEqual(doc.getText(), twin.getText());
+      assert.strictEqual(result.postValidationPassed, true);
+      assert.strictEqual(compiler().parseGuitarDsl(doc.getText()).diagnostics.filter((d: any) => d.severity === 'error').length, 0);
+    }
+    const doc = await openUntitled(CAPO_SOURCE);
+    const version = doc.version;
+    for (const input of [{ semitones: 2, capoMode: 'explicit' }, { semitones: 2, capoMode: 'explicit', capo: 13 }, { semitones: 12, capoMode: 'keep' }]) {
+      const bad = await call(tools.guitardsl_apply_transpose, { uri: u(doc), ...input });
+      assert.strictEqual(bad.code, 'invalidInput', JSON.stringify(input));
+    }
+    assert.strictEqual(doc.version, version);
+  });
+
+  test('T010 concurrent mutation on the same document fails fast with documentBusy; the guard is always released', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    const key = doc.uri.toString();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => (release = resolve));
+    let applyCalls = 0;
+    const { tools, guard } = makeTools({
+      applyCapo: async (uri: vscode.Uri, capo: number) => {
+        applyCalls++;
+        await gate;
+        return scoreSettings().applyCapoTransform(uri, capo);
+      }
+    });
+    const first = call(tools.guitardsl_apply_capo, { uri: key, targetCapo: 2 });
+    await waitFor(() => guard.isHeld(key), 'the first call should own the guard');
+    const second = await call(tools.guitardsl_apply_beginner_mode, { uri: key, barrePolicy: 'allow' });
+    assert.strictEqual(second.ok, false);
+    assert.strictEqual(second.code, 'documentBusy');
+    assert.strictEqual(doc.getText(), CAPO_SOURCE, 'the busy call does not edit');
+    const readOnly = await call(tools.guitardsl_validate_dsl, {});
+    assert.strictEqual(readOnly.ok, true, 'read-only tools still run');
+    release();
+    assert.strictEqual((await first).ok, true);
+    assert.strictEqual(applyCalls, 1);
+    assert.strictEqual(guard.isHeld(key), false, 'released after success');
+
+    const failing = makeTools({ applyCapo: async () => ({ ok: false, code: 'untransposableChord' }) });
+    assert.strictEqual((await call(failing.tools.guitardsl_apply_capo, { uri: key, targetCapo: 3 })).code, 'untransposableChord');
+    assert.strictEqual(failing.guard.isHeld(key), false, 'released after failure');
+
+    const throwing = makeTools({ applyCapo: async () => { throw new Error('boom'); } });
+    await assert.rejects(() => call(throwing.tools.guitardsl_apply_capo, { uri: key, targetCapo: 3 }), /boom/);
+    assert.strictEqual(throwing.guard.isHeld(key), false, 'released after an exception');
+  });
+
+  test('T011 cancellation before mutation makes no edit and leaves no background work', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    let applyCalls = 0;
+    const { tools, guard } = makeTools({ applyCapo: async () => { applyCalls++; return { ok: true, changed: false }; } });
+    const source = new vscode.CancellationTokenSource();
+    source.cancel();
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 }, source.token)).code, 'cancelled');
+
+    // Cancelled after resolution, immediately before the mutation.
+    let checks = 0;
+    const lateToken = { get isCancellationRequested() { return ++checks > 1; }, onCancellationRequested: source.token.onCancellationRequested } as vscode.CancellationToken;
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 }, lateToken)).code, 'cancelled');
+    assert.strictEqual(guard.isHeld(doc.uri.toString()), false);
+    await sleep(200);
+    assert.strictEqual(applyCalls, 0);
+    assert.strictEqual(doc.getText(), CAPO_SOURCE);
+  });
+
+  test('B-1 the edited document is exactly the one the input names, even if the active editor changes after confirmation', async () => {
+    const { tools } = makeTools();
+    const docA = await openUntitled(CAPO_SOURCE);
+    const input = { uri: u(docA), targetCapo: 2 };
+    const prepared = await tools.guitardsl_apply_capo.prepareInvocation({ input }, never);
+    assert.ok(String(prepared.confirmationMessages.message).includes(docA.uri.toString(true)));
+    const docB = await openUntitled(CAPO_SOURCE);
+    assert.strictEqual(vscode.window.activeTextEditor?.document, docB, 'the active editor changed after confirmation');
+    const result = await invokeOnly(tools.guitardsl_apply_capo, input);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.document.uri, u(docA));
+    assert.strictEqual(docA.getText(), CAPO_AT_2, 'the confirmed document is edited');
+    assert.strictEqual(docB.getText(), CAPO_SOURCE, 'the active document is not');
+
+    // prepareInvocation is not required before invoke (VS Code does not guarantee the pairing either way).
+    const file = writeFixture('explicit.guitardsl', CAPO_SOURCE);
+    const explicit = await invokeOnly(tools.guitardsl_apply_capo, { targetCapo: 2, path: file });
+    assert.strictEqual(explicit.ok, true);
+    assert.strictEqual((await vscode.workspace.openTextDocument(vscode.Uri.file(file))).getText(), CAPO_AT_2);
+    assert.strictEqual(docB.getText(), CAPO_SOURCE);
+  });
+
+  test('B-1 read-only result document.uri targets an untitled document through vscode.lm.invokeTool', async () => {
+    const doc = await openUntitled(CAPO_SOURCE);
+    const validated = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(validated.document.uri, u(doc));
+    const outcome = await Promise.race([
+      invokeRegistered('guitardsl_apply_capo', { uri: validated.document.uri, targetCapo: 2 }),
+      sleep(5000).then(() => 'timeout')
+    ]);
+    assert.notStrictEqual(outcome, 'timeout', 'invokeTool should not wait for interactive confirmation outside a chat request');
+    const result = outcome as any;
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    assert.strictEqual(doc.getText(), CAPO_AT_2);
+  });
+
+  test('R012 repeated calls recompute from the latest source', async () => {
+    const doc = await openUntitled('| B |\n');
+    const { tools } = makeTools();
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 })).changed, true);
+    assert.strictEqual(doc.getText(), 'capo: 2\n| A |\n');
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, doc.positionAt(doc.getText().length), '| E |\n');
+    assert.ok(await vscode.workspace.applyEdit(edit));
+    const again = await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 2 });
+    assert.strictEqual(again.ok, true);
+    assert.strictEqual(again.changed, false, 'same capo again is a no-op decided by the existing helper');
+    const latest = doc.getText();
+    assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 0 })).changed, true);
+    assert.strictEqual(doc.getText(), capoModule().planCapoTransform(latest, 0).text, 'the edit made in between is transformed too');
+  });
+});

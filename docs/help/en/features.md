@@ -90,6 +90,22 @@ The change is a single undoable edit.
 
 **GuitarDSL: Transcribe Local Audio (Experimental)** analyzes a WAV file on your computer, with no network and no API key. It estimates key, BPM, chords and strum positions, then opens the result as a new unsaved document. Down and up strokes are guessed from their position in the beat, and the output is 4/4 only. Treat the result as a rough draft. Details of the analysis are written to the **GuitarDSL Audio MIR** output channel. This feature is **experimental** and works only in desktop VS Code on local files.
 
+### AI Integration (VS Code Agent / Chat)
+<!-- help-sources: extension:1 extension:8 -->
+
+On VS Code 1.109 or later, you can work with GuitarDSL from VS Code's built-in Agent / Chat. This is optional. Everything else works the same without AI. The extension itself never calls an AI model. The model and chat you use come from your VS Code setup.
+
+- **Language knowledge:** the `guitardsl-language` Skill lets the Agent read only the parts of the GuitarDSL language specification it needs. When you edit `.guitardsl` / `.gdsl` files, instructions apply automatically: do not invent syntax, and validate after editing.
+- **Tools:** reference them in a prompt with `#`.
+  - `#guitardslValidate` checks the score for errors and does not change the file.
+  - `#guitardslPlayability` analyzes playability at each capo position and does not change the file.
+  - `#guitardslApplyCapo` changes the capo.
+  - `#guitardslApplyBeginner` applies Beginner Mode.
+  - `#guitardslTranspose` transposes the sounding music.
+- **Tools that change the file** ask you to confirm the file and the operation first. They use the same calculation as **Apply to DSL** in the preview and write one undoable edit. If a change cannot be applied, the file is left unchanged. Changes to the same file run one at a time.
+- Tools that change the file edit only the file the Agent names (by path or URI). Nothing other than the file shown in the confirmation is changed, and switching to another file after confirming does not change the target. Unsaved untitled files can be targeted too.
+- Without a file, the validation and analysis tools choose the target the same way as commands: the active editor, then visible editors, then the last used or any open GuitarDSL file.
+
 ### Score Events and Advanced Notation
 <!-- help-sources: syntax:12 syntax:16 -->
 

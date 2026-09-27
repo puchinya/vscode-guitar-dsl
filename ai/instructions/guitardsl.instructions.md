@@ -1,0 +1,17 @@
+---
+applyTo: '**/*.{guitardsl,gdsl}'
+---
+
+# GuitarDSL editing rules
+
+These files are GuitarDSL guitar scores.
+
+- Never invent unsupported syntax. Use only notation defined by the GuitarDSL language specification.
+- For syntax or semantics, use the `guitardsl-language` Skill. It loads the relevant sections of the packaged specification.
+- After creating or materially editing a GuitarDSL file, validate it with `guitardsl_validate_dsl` (`#guitardslValidate`). Resolve reported errors before finishing.
+- Do not work out capo changes, playability, Beginner Mode or sounding transposition by hand. Use the deterministic tools:
+  - `guitardsl_analyze_playability`
+  - `guitardsl_apply_capo`
+  - `guitardsl_apply_beginner_mode`
+  - `guitardsl_apply_transpose`
+- The `guitardsl_apply_*` tools edit only the document given by `uri` (for example, `document.uri` from `guitardsl_validate_dsl`) or by an absolute `path`.

@@ -10,12 +10,16 @@
 - ワンクリックで PDF 保存（外部ブラウザ不要。A4/A3/A5/B4/B5/Letter、縦・横見開き）
 - メロディライン（`mel:`）と音符単位の歌詞（`lyr:`）、調号、リードシート表示（`samples/sample_melody.guitardsl`, `samples/sample_leadsheet.guitardsl`。使える音符・記号の一覧は `samples/sample_notes.guitardsl`）
 - 記述ミスをエディタの「問題」パネルに表示
+- （任意）VS Code の Agent / Chat との連携: GuitarDSL の言語仕様を Skill として提供し、楽譜の検証・カポごとの弾きやすさの分析・カポ変更・初心者モード・実音移調を言語モデルツール（`#guitardslValidate` など）として使えます。拡張機能自身は AI モデルを呼び出さず、特定の AI 拡張機能やプロバイダにも依存しません。AI を使わなくても他の機能はすべて動作します。
 - コードダイアグラムの定義（`chord C@barre = x35553 ...`）と `@ラベル` による押さえ方の使い分け、Guitar Pro 風の GUI エディタ（プリセット、指番号、セーハ、コード名の自動判定）。プレビューのダイアグラムをクリック、`chord` 行の CodeLens、または `GuitarDSL: Edit Chord Diagram` で開く（`samples/sample_voicings.guitardsl`、サンプル曲 `samples/sample_voicing_song.guitardsl`）
 
 - （実験的）ローカル音源からの採譜: `GuitarDSL: Transcribe Local Audio (Experimental)` で PCM WAV（16/24 bit、44.1/48 kHz、モノラル/ステレオ、15 分・128 MiB 以内）を選ぶと、ネットワークや API キーなしで Rust/WASM の解析エンジンがコード進行（16 分単位）とストロークの位置（8 分 / 3 連 / 16 分グリッド）を推定し、未保存の GuitarDSL を開きます。4/4 のみ対応です。ダウン/アップはグリッド位置からの推定で、小節をまたぐサステイン・ゴースト・アルペジオは判別しません。分数コードは出力せず、コード推定の精度はまだ検証中です。
 
 ## ライセンス表記
 - 同梱フォント `media/fonts/NotoSansJP-*.ttf`（Noto Sans JP）は SIL Open Font License 1.1 に従います（`media/fonts/OFL.txt`）。
+
+## 動作環境
+- VS Code 1.109 以降（Agent Skill の提供に必要な最小バージョン。以前の最小バージョンは 1.85 でした）
 
 ## 使い方・開発
 1. 依存ライブラリのインストール:

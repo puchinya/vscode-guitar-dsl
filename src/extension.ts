@@ -14,6 +14,8 @@ import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } fr
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
 import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
+import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
+import { registerGuitarDslAiTools } from './ai/tools';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
@@ -69,61 +71,6 @@ export async function exportScoreToPdf(
   } catch (err: any) {
     vscode.window.showErrorMessage(msgs.msgPdfFailed(err.message || err));
   }
-}
-
-export function isGuitarDslDocument(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
-  if (!doc) {
-    return false;
-  }
-  if (doc.languageId === 'guitardsl') {
-    return true;
-  }
-  const fileName = doc.fileName.toLowerCase();
-  return fileName.endsWith('.guitardsl') || fileName.endsWith('.gdsl');
-}
-
-export async function resolveGuitarDslDocument(
-  uri?: vscode.Uri,
-  lastDoc?: vscode.TextDocument
-): Promise<vscode.TextDocument | undefined> {
-  // 1. Uri passed explicitly
-  if (uri) {
-    try {
-      const doc = await vscode.workspace.openTextDocument(uri);
-      if (isGuitarDslDocument(doc)) {
-        return doc;
-      }
-    } catch {
-      // Continue fallback
-    }
-  }
-
-  // 2. Active text editor document
-  const activeDoc = vscode.window.activeTextEditor?.document;
-  if (isGuitarDslDocument(activeDoc)) {
-    return activeDoc;
-  }
-
-  // 3. Visible text editors
-  for (const editor of vscode.window.visibleTextEditors) {
-    if (isGuitarDslDocument(editor.document)) {
-      return editor.document;
-    }
-  }
-
-  // 4. Last active guitar DSL document (if still open)
-  if (lastDoc && !lastDoc.isClosed && isGuitarDslDocument(lastDoc)) {
-    return lastDoc;
-  }
-
-  // 5. Any open text document in workspace
-  for (const doc of vscode.workspace.textDocuments) {
-    if (!doc.isClosed && isGuitarDslDocument(doc)) {
-      return doc;
-    }
-  }
-
-  return undefined;
 }
 
 /** Converts compiler diagnostics of a GuitarDSL document into VS Code diagnostics (spec extension.md §5A). */
@@ -487,6 +434,9 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.window.onDidChangeActiveTextEditor(refreshSidebar, null, context.subscriptions);
   vscode.workspace.onDidOpenTextDocument(refreshSidebar, null, context.subscriptions);
   vscode.workspace.onDidCloseTextDocument(refreshSidebar, null, context.subscriptions);
+
+  // Language model tools for VS Code Agent / Chat (spec extension §8). Registration never calls a model.
+  registerGuitarDslAiTools(context, currentLocale, () => lastActiveGuitarDslDoc);
 
   context.subscriptions.push(
     previewDisposable,

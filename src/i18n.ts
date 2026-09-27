@@ -866,3 +866,66 @@ const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
 export function getScoreSettingsEditorMessages(locale: SupportedLocale): ScoreSettingsEditorMessages {
   return locale === 'ja' ? SCORE_SETTINGS_JA : SCORE_SETTINGS_EN;
 }
+
+/** Confirmation / progress text of the language model tools (spec extension §8.6). */
+export interface AiToolMessages {
+  activeDocument: string;
+  validating: (doc: string) => string;
+  analyzing: (doc: string) => string;
+  capoTitle: string;
+  capoConfirm: (doc: string, capo: number) => string;
+  capoProgress: (doc: string) => string;
+  beginnerTitle: string;
+  beginnerConfirm: (doc: string, barre: 'allow' | 'forbid', capo: number | undefined) => string;
+  beginnerProgress: (doc: string) => string;
+  transposeTitle: string;
+  transposeConfirm: (doc: string, semitones: number, capo: string) => string;
+  transposeProgress: (doc: string) => string;
+  capoKeep: string;
+  capoRecommended: string;
+  capoExplicit: (capo: number) => string;
+}
+
+const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+
+const AI_TOOLS_JA: AiToolMessages = {
+  activeDocument: 'アクティブな GuitarDSL ファイル',
+  validating: doc => `${doc} を検証しています`,
+  analyzing: doc => `${doc} の弾きやすさを分析しています`,
+  capoTitle: 'GuitarDSL: カポを変更',
+  capoConfirm: (doc, capo) => `${doc} のカポを ${capo} に変更し、コード名を書き換えます（1 回の編集。元に戻せます）。`,
+  capoProgress: doc => `${doc} のカポを変更しています`,
+  beginnerTitle: 'GuitarDSL: 初心者モードを適用',
+  beginnerConfirm: (doc, barre, capo) =>
+    `${doc} に初心者モードを適用します（セーハ: ${barre === 'allow' ? '使う' : '使わない'}、カポ: ${capo === undefined ? '自動' : capo}）。カポとコード名を 1 回の編集で書き換えます（元に戻せます）。`,
+  beginnerProgress: doc => `${doc} に初心者モードを適用しています`,
+  transposeTitle: 'GuitarDSL: 実音を移調',
+  transposeConfirm: (doc, semitones, capo) => `${doc} の実音を ${signed(semitones)} 半音移調します（移調後のカポ: ${capo}）。1 回の編集で書き換えます（元に戻せます）。`,
+  transposeProgress: doc => `${doc} を移調しています`,
+  capoKeep: '維持',
+  capoRecommended: '推奨',
+  capoExplicit: capo => String(capo)
+};
+
+const AI_TOOLS_EN: AiToolMessages = {
+  activeDocument: 'the active GuitarDSL file',
+  validating: doc => `Validating ${doc}`,
+  analyzing: doc => `Analyzing playability of ${doc}`,
+  capoTitle: 'GuitarDSL: Change capo',
+  capoConfirm: (doc, capo) => `Change the capo of ${doc} to ${capo} and rewrite the chord names (one undoable edit).`,
+  capoProgress: doc => `Changing the capo of ${doc}`,
+  beginnerTitle: 'GuitarDSL: Apply Beginner Mode',
+  beginnerConfirm: (doc, barre, capo) =>
+    `Apply Beginner Mode to ${doc} (barre chords: ${barre === 'allow' ? 'allowed' : 'not used'}, capo: ${capo === undefined ? 'auto' : capo}). The capo and chord names are rewritten in one undoable edit.`,
+  beginnerProgress: doc => `Applying Beginner Mode to ${doc}`,
+  transposeTitle: 'GuitarDSL: Transpose sounding pitch',
+  transposeConfirm: (doc, semitones, capo) => `Transpose the sounding music of ${doc} by ${signed(semitones)} semitones (capo after transposing: ${capo}) in one undoable edit.`,
+  transposeProgress: doc => `Transposing ${doc}`,
+  capoKeep: 'keep',
+  capoRecommended: 'recommended',
+  capoExplicit: capo => String(capo)
+};
+
+export function getAiToolMessages(locale: SupportedLocale): AiToolMessages {
+  return locale === 'ja' ? AI_TOOLS_JA : AI_TOOLS_EN;
+}

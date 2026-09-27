@@ -37,7 +37,7 @@ npm run test:e2e
 - Launches VS Code and runs the E2E test suite.
 
 ### 3. Full Test Suite
-Run the Help sync gate, then unit and E2E tests:
+Run the Help and AI asset sync gates, then unit and E2E tests:
 ```bash
 npm test
 ```
@@ -48,6 +48,25 @@ npm run generate:help   # regenerate media/help/guitardsl-help.{ja,en}.md (runs 
 npm run check:help      # read-only gate; first step of npm test
 ```
 - `check:help` fails on uncovered/stale spec sections, digest mismatches, command/setting parity with `docs/specs/extension.md`, missing NLS keys, or stale generated Help. Fix the cause (see `docs/help/README.md`); never suppress a check.
+
+### 5. AI Asset Generation and Sync
+```bash
+npm run generate:ai   # copy docs/specs/guitardsl-syntax.md to the packaged Skill reference (runs automatically as precompile)
+npm run check:ai      # read-only gate; runs in npm test right after check:help
+```
+- `check:ai` fails when:
+  - the packaged Skill reference differs byte-for-byte from the canonical syntax spec;
+  - the Skill `name` differs from its directory;
+  - the instruction `applyTo` is not `**/*.{guitardsl,gdsl}`;
+  - a contributed AI path is missing;
+  - the five `languageModelTools`, their reference names or `onLanguageModelTool:` activation events differ from the contract;
+  - `ai/**` or a tool description contains an excluded transcription identifier.
+- AI E2E checks live in `tests/e2e/extension.test.ts` (suite `AI integration: language model tools`). They cover:
+  - registration without a model;
+  - `vscode.lm.invokeTool` for the read-only tools;
+  - the mutation adapters compared against the `apply*Transform` helpers;
+  - `documentBusy` and guard release;
+  - cancellation.
 
 ---
 
@@ -85,7 +104,8 @@ npm run vscode:prepublish
 - Verifies compilation completes without errors before packaging.
 - Optionally run `npx @vscode/vsce ls` to ensure package files are resolved correctly.
 - `vsce ls` must include `media/help/guitardsl-help.ja.md` and `media/help/guitardsl-help.en.md` and must not include `docs/help/`.
-- Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
+- `vsce ls` must include `ai/instructions/guitardsl.instructions.md`, `ai/skills/guitardsl-language/SKILL.md` and `ai/skills/guitardsl-language/references/guitardsl-syntax.md`.
+- Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, `ai/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
 
 ### 5. Audio MIR (Rust/WASM) Gate
 Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts or packaging. Prerequisites: rustup toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` on `PATH`. If Homebrew's `rustc` shadows rustup, put `~/.cargo/bin` first.

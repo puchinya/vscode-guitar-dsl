@@ -16,5 +16,15 @@
   "view.sidebar.name": "はじめに",
   "config.geminiModel.description": "YouTube音源の自動採譜に使用するGeminiモデル名。",
   "config.compressRepeats.description": "コードとメロディが一致する繰り返しセクションを反復記号（|: :|）と複数行歌詞に圧縮して楽譜を短縮します。",
-  "config.expandPageBreakRepeats.description": "改ページ後の先頭小節が小節リピート記号（%）の場合、自動的に展開して前小節の内容を表示します。"
+  "config.expandPageBreakRepeats.description": "改ページ後の先頭小節が小節リピート記号（%）の場合、自動的に展開して前小節の内容を表示します。",
+  "languageModelTools.validate.displayName": "GuitarDSL: 楽譜を検証",
+  "languageModelTools.validate.userDescription": "拡張機能のパーサーで GuitarDSL の楽譜のエラーを確認します。",
+  "languageModelTools.playability.displayName": "GuitarDSL: カポごとの弾きやすさを分析",
+  "languageModelTools.playability.userDescription": "各カポ位置での弾きやすさを示します。",
+  "languageModelTools.applyCapo.displayName": "GuitarDSL: カポを変更",
+  "languageModelTools.applyCapo.userDescription": "カポを変更してコード名を書き換えます（1 回の編集で元に戻せます）。",
+  "languageModelTools.applyBeginner.displayName": "GuitarDSL: 初心者モードを適用",
+  "languageModelTools.applyBeginner.userDescription": "弾きやすいカポと簡単なコードを選びます（1 回の編集で元に戻せます）。",
+  "languageModelTools.transpose.displayName": "GuitarDSL: 実音を移調",
+  "languageModelTools.transpose.userDescription": "実音を移調し、カポを選びます（1 回の編集で元に戻せます）。"
 }

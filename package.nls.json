@@ -16,5 +16,15 @@
   "view.sidebar.name": "Start Here",
   "config.geminiModel.description": "Gemini model to use for YouTube audio transcription.",
   "config.compressRepeats.description": "Compress repeated sections with identical chords and melody into repeat barlines (|: :|) and multi-line lyrics to shorten the score.",
-  "config.expandPageBreakRepeats.description": "Automatically expand measure repeat symbols (%) when they appear at the start of a page."
+  "config.expandPageBreakRepeats.description": "Automatically expand measure repeat symbols (%) when they appear at the start of a page.",
+  "languageModelTools.validate.displayName": "GuitarDSL: Validate Score",
+  "languageModelTools.validate.userDescription": "Check a GuitarDSL score for errors with the extension's parser.",
+  "languageModelTools.playability.displayName": "GuitarDSL: Analyze Capo Playability",
+  "languageModelTools.playability.userDescription": "Show how easy the score is to play at each capo position.",
+  "languageModelTools.applyCapo.displayName": "GuitarDSL: Apply Capo",
+  "languageModelTools.applyCapo.userDescription": "Change the capo and rewrite chord names (one undoable edit).",
+  "languageModelTools.applyBeginner.displayName": "GuitarDSL: Apply Beginner Mode",
+  "languageModelTools.applyBeginner.userDescription": "Choose an easy capo and simpler chords (one undoable edit).",
+  "languageModelTools.transpose.displayName": "GuitarDSL: Transpose",
+  "languageModelTools.transpose.userDescription": "Transpose the sounding music and choose the capo (one undoable edit)."
 }
