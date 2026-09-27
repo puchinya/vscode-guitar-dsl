@@ -6,6 +6,16 @@ import type { TransposeFailureCode } from './transpose';
 
 export type SupportedLocale = 'ja' | 'en';
 
+/** Starter templates offered by `guitardsl.newDocumentFromTemplate`, in Quick Pick order. */
+export type StarterTemplateId = 'basicChordSong' | 'melodyExample' | 'leadSheetExample';
+/** Curated samples offered by `guitardsl.openSample` (file names under `samples/`). */
+export type CuratedSampleId =
+  | 'sample.guitardsl'
+  | 'sample_melody.guitardsl'
+  | 'sample_leadsheet.guitardsl'
+  | 'sample_voicings.guitardsl'
+  | 'sample_notes.guitardsl';
+
 export interface Messages {
   // Extension host messages
   msgOpenGuitarDslFile: string;
@@ -36,6 +46,29 @@ export interface Messages {
   uiHelp: string;
   uiHelpTitle: string;
   msgHelpOpenFailed: string;
+
+  // Onboarding sidebar (Activity Bar "Start Here" view) and onboarding commands
+  sidebarGetStarted: string;
+  sidebarCurrentFile: string;
+  sidebarTools: string;
+  sidebarNoActiveFile: string;
+  sidebarNewFromTemplate: string;
+  sidebarOpenSample: string;
+  sidebarOpenPreview: string;
+  sidebarOpenHelp: string;
+  sidebarEditChordDiagram: string;
+  sidebarEditScoreSettings: string;
+  sidebarEditCapo: string;
+  sidebarChangeAccompaniment: string;
+  sidebarExportPdf: string;
+  sidebarTranscribeYouTube: string;
+  sidebarTranscribeAudio: string;
+  templatePickPlaceholder: string;
+  templates: Record<StarterTemplateId, { label: string; description: string }>;
+  samplePickPlaceholder: string;
+  samples: Record<CuratedSampleId, string>;
+  msgTemplateOpenFailed: string;
+  msgSampleOpenFailed: string;
 
   // Capo / playability (preview toolbar, score settings editor, host notifications)
   uiCapo: string;
@@ -126,6 +159,38 @@ export const MESSAGES_JA: Messages = {
   uiHelp: 'ヘルプ',
   uiHelpTitle: 'GuitarDSL ヘルプを開く',
   msgHelpOpenFailed: 'GuitarDSL ヘルプを開けませんでした。拡張機能を再インストールしてください。',
+
+  sidebarGetStarted: 'はじめる',
+  sidebarCurrentFile: '現在のファイル',
+  sidebarTools: 'ツール',
+  sidebarNoActiveFile: '.guitardsl ファイルを開くと、ファイル操作が表示されます。',
+  sidebarNewFromTemplate: 'テンプレートから新規作成',
+  sidebarOpenSample: 'サンプルを開く',
+  sidebarOpenPreview: 'プレビューを横に開く',
+  sidebarOpenHelp: 'ヘルプを開く',
+  sidebarEditChordDiagram: 'コードダイアグラムを編集',
+  sidebarEditScoreSettings: '楽譜設定を編集',
+  sidebarEditCapo: 'カポ / 弾きやすさを編集',
+  sidebarChangeAccompaniment: '伴奏パターンを変更',
+  sidebarExportPdf: 'PDF出力 / 印刷',
+  sidebarTranscribeYouTube: 'YouTubeから採譜',
+  sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
+  templatePickPlaceholder: '新しい GuitarDSL ドキュメントのテンプレートを選択',
+  templates: {
+    basicChordSong: { label: 'コード譜（基本）', description: 'コードとストロークのリズム、小節単位の歌詞' },
+    melodyExample: { label: 'メロディ付き', description: 'mel: のメロディ行と lyr: の音符単位の歌詞' },
+    leadSheetExample: { label: 'リードシート', description: 'リズムを隠し、メロディとコードだけを表示' }
+  },
+  samplePickPlaceholder: '開くサンプルを選択（無題の編集可能なドキュメントとして開きます）',
+  samples: {
+    'sample.guitardsl': '8ビートのコード譜と歌詞',
+    'sample_melody.guitardsl': 'メロディと音符単位の歌詞',
+    'sample_leadsheet.guitardsl': 'リードシート表示と3連符',
+    'sample_voicings.guitardsl': 'コードダイアグラムとボイシング定義',
+    'sample_notes.guitardsl': '音符・リズム記号の一覧'
+  },
+  msgTemplateOpenFailed: 'テンプレートからドキュメントを作成できませんでした。',
+  msgSampleOpenFailed: 'サンプルを開けませんでした。拡張機能を再インストールしてください。',
 
   uiCapo: 'カポ',
   uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
@@ -248,6 +313,38 @@ export const MESSAGES_EN: Messages = {
   uiHelp: 'Help',
   uiHelpTitle: 'Open GuitarDSL Help',
   msgHelpOpenFailed: 'Could not open GuitarDSL Help. Try reinstalling the extension.',
+
+  sidebarGetStarted: 'Get Started',
+  sidebarCurrentFile: 'Current File',
+  sidebarTools: 'Tools',
+  sidebarNoActiveFile: 'Open a .guitardsl file to show file actions.',
+  sidebarNewFromTemplate: 'New from Template',
+  sidebarOpenSample: 'Open Sample',
+  sidebarOpenPreview: 'Open Preview to the Side',
+  sidebarOpenHelp: 'Open Help',
+  sidebarEditChordDiagram: 'Edit Chord Diagram',
+  sidebarEditScoreSettings: 'Edit Score Settings',
+  sidebarEditCapo: 'Edit Capo / Playability',
+  sidebarChangeAccompaniment: 'Change Accompaniment Pattern',
+  sidebarExportPdf: 'Export PDF / Print',
+  sidebarTranscribeYouTube: 'Transcribe from YouTube',
+  sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
+  templatePickPlaceholder: 'Choose a template for the new GuitarDSL document',
+  templates: {
+    basicChordSong: { label: 'Basic Chord Song', description: 'Chords, strumming rhythm and per-bar lyrics' },
+    melodyExample: { label: 'Melody Example', description: 'A mel: melody line with lyr: per-note lyrics' },
+    leadSheetExample: { label: 'Lead Sheet Example', description: 'Melody and chords only, rhythm hidden' }
+  },
+  samplePickPlaceholder: 'Choose a sample to open (opens as an untitled, editable document)',
+  samples: {
+    'sample.guitardsl': '8-beat chord chart with lyrics',
+    'sample_melody.guitardsl': 'Melody with per-note lyrics',
+    'sample_leadsheet.guitardsl': 'Lead sheet display and triplets',
+    'sample_voicings.guitardsl': 'Chord diagrams and voicing definitions',
+    'sample_notes.guitardsl': 'Catalog of note and rhythm symbols'
+  },
+  msgTemplateOpenFailed: 'Could not create a document from the template.',
+  msgSampleOpenFailed: 'Could not open the sample. Try reinstalling the extension.',
 
   uiCapo: 'Capo',
   uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',

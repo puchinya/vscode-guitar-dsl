@@ -12,6 +12,10 @@
 
 ## Getting Started
 
+The easiest way to start is the **GuitarDSL** icon in the Activity Bar, which opens the GuitarDSL sidebar. Under **Get Started**, choose **New from Template** or **Open Sample** to open an editable untitled score, then continue with step 3 below.
+
+To create a file yourself:
+
 1. Create a file named, for example, `song.guitardsl`.
 2. Type a small score:
 
@@ -35,11 +39,22 @@ Errors and warnings in your score appear as squiggles in the editor and in the *
 ## Opening This Help Again
 
 - Command Palette: **GuitarDSL: Open Help**
+- The GuitarDSL sidebar: **Get Started** → **Open Help**
 - The **?** Help button in the score preview toolbar
 
 Help opens next to your editor and never changes your score. It is bundled with the extension and works offline. Help, commands and messages appear in Japanese when VS Code's display language is Japanese, and in English otherwise.
 
 ## Features
+
+### GuitarDSL Sidebar
+
+Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view. It works before you open any GuitarDSL file. It is a starting point, not a score editor.
+
+- **Get Started**: **New from Template** (Basic Chord Song, Melody Example or Lead Sheet Example), **Open Sample** (five bundled samples), **Open Preview to the Side** and **Open Help**. Templates and samples open as editable untitled documents, so no original file changes. Save them under any name.
+- **Current File**: when the active editor holds a GuitarDSL file, the actions for that file: preview, chord diagram editing, score settings, capo / playability, accompaniment pattern and PDF export. When no GuitarDSL file is active, it shows a hint only.
+- **Tools**: YouTube transcription and local audio transcription (experimental).
+
+The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
 
 ### Editor Support
 
@@ -365,6 +380,8 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 | GuitarDSL: Clear Gemini API Key | `guitardsl.clearGeminiApiKey` |
 | GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio) | `guitardsl.applyStrummingPattern` |
 | GuitarDSL: Open Help | `guitardsl.openHelp` |
+| GuitarDSL: New from Template | `guitardsl.newDocumentFromTemplate` |
+| GuitarDSL: Open Sample | `guitardsl.openSample` |
 
 ## Settings Reference
 

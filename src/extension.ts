@@ -8,6 +8,8 @@ import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, 
 import { parseGuitarDsl } from './compiler';
 import { StrummingCodeLensProvider, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
+import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
+import { registerGuitarDslSidebar } from './sidebar';
 import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
@@ -467,6 +469,25 @@ export function activate(context: vscode.ExtensionContext) {
     openGuitarDslHelp(context.extensionUri, vscode.env.language)
   );
 
+  // Onboarding: new document from a starter template / from a curated sample (untitled, editable).
+  const newFromTemplateDisposable = vscode.commands.registerCommand(NEW_FROM_TEMPLATE_COMMAND, () =>
+    newDocumentFromTemplate(currentLocale)
+  );
+  const openSampleDisposable = vscode.commands.registerCommand(OPEN_SAMPLE_COMMAND, () =>
+    openSample(context.extensionUri, currentLocale)
+  );
+
+  // Activity Bar sidebar. `Current File` follows the active editor only (no fallback to other open documents).
+  const sidebar = registerGuitarDslSidebar(msgs, () => {
+    const doc = vscode.window.activeTextEditor?.document;
+    return isGuitarDslDocument(doc) ? doc : undefined;
+  });
+  context.subscriptions.push(...sidebar.disposables);
+  const refreshSidebar = () => sidebar.provider.refresh();
+  vscode.window.onDidChangeActiveTextEditor(refreshSidebar, null, context.subscriptions);
+  vscode.workspace.onDidOpenTextDocument(refreshSidebar, null, context.subscriptions);
+  vscode.workspace.onDidCloseTextDocument(refreshSidebar, null, context.subscriptions);
+
   context.subscriptions.push(
     previewDisposable,
     printDisposable,
@@ -479,7 +500,9 @@ export function activate(context: vscode.ExtensionContext) {
     transcribeAudioDisposable,
     strummingCodeLensDisposable,
     applyStrummingDisposable,
-    openHelpDisposable
+    openHelpDisposable,
+    newFromTemplateDisposable,
+    openSampleDisposable
   );
 }
 

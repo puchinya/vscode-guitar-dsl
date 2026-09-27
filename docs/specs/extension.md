@@ -6,7 +6,7 @@
 
 ## 1. 概要 (Overview)
 
-`vscode-guitar-dsl` は、ギター弾き語り・アコースティックギターストローク譜向けDSLである **GuitarDSL**（`.guitardsl`, `.gdsl`）の編集を支援し、リアルタイムでの五線・リズムスラッシュ楽譜プレビュー、印刷・PDF保存、およびシンタックスハイライトやアウトライン構造を提供する VS Code 拡張機能である。
+`vscode-guitar-dsl` は、ギター弾き語り・アコースティックギターストローク譜向けDSLである **GuitarDSL**（`.guitardsl`, `.gdsl`）の編集を支援し、リアルタイムでの五線・リズムスラッシュ楽譜プレビュー、印刷・PDF保存、およびシンタックスハイライトやアウトライン構造を提供する VS Code 拡張機能である。アクティビティバーの GuitarDSL サイドバー（§4C）から、テンプレート・サンプル・ヘルプ・現在のファイルへの操作に移動できる。
 
 - **拡張機能識別子 (Extension ID)**: `vscode-guitar-dsl`
 - **表示名 (Display Name)**: `GuitarDSL Previewer`
@@ -60,7 +60,7 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の11のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
+拡張機能は以下の13のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
@@ -74,7 +74,9 @@
 | `guitardsl.clearGeminiApiKey` | `GuitarDSL: Clear Gemini API Key` | コマンドパレット | - |
 | `guitardsl.transcribeAudio` | `GuitarDSL: Transcribe Local Audio (Experimental)` | コマンドパレット | - |
 | `guitardsl.applyStrummingPattern` | `GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)` | コマンドパレット、セクション見出し行の CodeLens | - |
-| `guitardsl.openHelp` | `GuitarDSL: Open Help` | コマンドパレット、プレビュー内ツールバー | - |
+| `guitardsl.openHelp` | `GuitarDSL: Open Help` | コマンドパレット、プレビュー内ツールバー、サイドバー | - |
+| `guitardsl.newDocumentFromTemplate` | `GuitarDSL: New from Template` | コマンドパレット、サイドバー | - |
+| `guitardsl.openSample` | `GuitarDSL: Open Sample` | コマンドパレット、サイドバー | - |
 
 ### 3.1 `guitardsl.showPreview`
 GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn.Beside`）の Webview パネルとして開く。
@@ -221,6 +223,33 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 - **副作用なし**: GuitarDSL ドキュメントの作成・変更・保存、プレビューの表示モード・用紙設定、カポの一時変更、初心者モードの状態を一切変更しない。繰り返し実行しても安全である。
 - **エラー処理**: 同梱ヘルプファイルが見つからない・読めない・開けない場合は、ローカライズされたエラーメッセージを 1 件だけ表示する。スタックトレースは表示しない。
 - **内容の出所**: ヘルプの本文は本仕様書と `docs/specs/guitardsl-syntax.md` から派生したユーザー向け文書であり、規範ではない。仕様と食い違う場合は仕様が優先する。コマンド・設定一覧は `package.json` と `package.nls*.json` から生成する。
+
+### 3.12 `guitardsl.newDocumentFromTemplate`
+スターターテンプレートから新しい無題の GuitarDSL ドキュメントを作成する。
+
+- **前提条件**: なし。ワークスペースや GuitarDSL ドキュメントがなくても実行できる。
+- **テンプレート選択**: クイックピックで次の 3 つをこの順に表示する（ラベル・説明はローカライズ）。
+  1. `Basic Chord Song`（コードとストロークのリズム、小節単位の歌詞。`samples/sample.guitardsl` の抜粋）
+  2. `Melody Example`（`mel:` のメロディ行と `lyr:` の音符単位の歌詞。`samples/sample_melody.guitardsl` の抜粋）
+  3. `Lead Sheet Example`（リズムを隠したリードシート。`samples/sample_leadsheet.guitardsl` の抜粋）
+- **作成**: 選んだテンプレートの本文で `workspace.openTextDocument({ language: 'guitardsl', content })` の無題ドキュメントを作成し、エディタに表示する。テンプレートの本文は診断 0 件で解析できる。既存ファイルの変更・保存は行わない。
+- **キャンセル**: クイックピックをキャンセルした場合は何もせず、通知も表示しない。
+- **エラー処理**: ドキュメントを作成できない場合は、ローカライズされたエラーメッセージを 1 件だけ表示する。
+
+### 3.13 `guitardsl.openSample`
+同梱のサンプルを、新しい無題の編集可能な GuitarDSL ドキュメントとして開く。
+
+- **前提条件**: なし。ワークスペースフォルダーにも依存しない。
+- **サンプル選択**: クイックピックで次の固定リストをこの順に表示する（ラベルはファイル名、説明はローカライズ）。`samples/` の他のファイルは列挙しない。
+  1. `sample.guitardsl`
+  2. `sample_melody.guitardsl`
+  3. `sample_leadsheet.guitardsl`
+  4. `sample_voicings.guitardsl`
+  5. `sample_notes.guitardsl`
+- **読み込み**: 選んだファイルを拡張機能のインストール先（`context.extensionUri`）の `samples/` から読む。これら 5 ファイルは VSIX に同梱する。
+- **作成**: 読み込んだ内容そのままで `workspace.openTextDocument({ language: 'guitardsl', content })` の無題ドキュメントを作成し、エディタに表示する。同梱ファイル自体は開かない。
+- **キャンセル**: クイックピックをキャンセルした場合は何もせず、通知も表示しない。
+- **エラー処理**: サンプルを読めない場合はドキュメントを作成せず、ローカライズされたエラーメッセージを 1 件だけ表示する。スタックトレースは表示しない。
 
 ---
 
@@ -405,6 +434,37 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 
 ---
 
+## 4C. サイドバー (GuitarDSL Sidebar)
+
+アクティビティバーに GuitarDSL 専用のサイドバーを提供する。サイドバーは使い始めと移動のための画面であり、楽譜の編集画面ではない。各項目は既存のコマンドを実行するだけで、サイドバー自身は GuitarDSL ドキュメントを変更しない。
+
+### 4C.1 貢献とアクティベーション
+- **ビューコンテナ**: `contributes.viewsContainers.activitybar` の `guitardslSidebar`。タイトルは `GuitarDSL`、アイコンは単色 SVG `media/icons/guitardsl-sidebar.svg`（アコースティックギターと五線・音符の図案。文字は含まない）。
+- **ビュー**: コンテナ内に Tree View `guitardsl.sidebar` を 1 つだけ置く。名前は `Start Here`（日本語: `はじめに`）。WebviewView は使用しない。
+- **アクティベーション**: `activationEvents` に `onView:guitardsl.sidebar` を含める。GuitarDSL ファイルを開く前でもサイドバーを開くと拡張機能が起動し、使用できる。`onLanguage:guitardsl` も維持する。
+
+### 4C.2 セクションと項目
+ルートは次の 3 セクションをこの順に表示する。各項目はアイコン付きで、ラベルはローカライズする（§6.8）。
+
+1. **Get Started**（初期状態で展開）
+   1. `New from Template` → `guitardsl.newDocumentFromTemplate`
+   2. `Open Sample` → `guitardsl.openSample`
+   3. `Open Preview to the Side` → `guitardsl.showPreview`（引数なし。対象は §3.1 の規則で決まる）
+   4. `Open Help` → `guitardsl.openHelp`
+2. **Current File**（初期状態で展開。§4C.3）
+3. **Tools**（初期状態で折りたたみ）
+   1. `Transcribe from YouTube` → `guitardsl.transcribeYouTube`
+   2. `Transcribe Local Audio (Experimental)` → `guitardsl.transcribeAudio`
+
+ヘルプの内容はサイドバーに複製せず、`guitardsl.openHelp` で開く。
+
+### 4C.3 Current File
+- アクティブなエディタのドキュメントが GuitarDSL ドキュメント（§2.1）の場合、そのドキュメントの URI を引数として次の 6 項目をこの順に表示する: `Open Preview to the Side`（`guitardsl.showPreview`）、`Edit Chord Diagram`（`guitardsl.editChordDiagram`）、`Edit Score Settings`（`guitardsl.editScoreSettings`）、`Edit Capo / Playability`（`guitardsl.editCapo`）、`Change Accompaniment Pattern`（`guitardsl.applyStrummingPattern`）、`Export PDF / Print`（`guitardsl.exportPdf`）。
+- アクティブなエディタがない、または GuitarDSL ドキュメントでない場合は、コマンドを持たない案内項目（「.guitardsl ファイルを開くと、ファイル操作が表示されます。」）を 1 つだけ表示する。他に開いている GuitarDSL ドキュメントには切り替えない。
+- アクティブなエディタの変更、テキストドキュメントのオープン・クローズで表示を更新する。定期的なポーリングは行わない。
+
+---
+
 ## 5. アウトライン仕様 (DocumentSymbol Specification)
 
 `GuitarDslDocumentSymbolProvider` により、VS Code の「アウトライン (Outline)」ビューおよび「シンボルへ移動 (Go to Symbol in File)」に楽譜の論理構造を提供する。
@@ -485,10 +545,14 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
   - `%command.transcribeAudio.title%`
   - `%command.applyStrummingPattern.title%`
   - `%command.openHelp.title%`
+  - `%command.newDocumentFromTemplate.title%`
+  - `%command.openSample.title%`
+  - `%viewsContainer.guitardslSidebar.title%`（サイドバーのビューコンテナタイトル）
+  - `%view.sidebar.name%`（サイドバーのビュー名）
   - `%config.geminiModel.description%`
   - `%config.compressRepeats.description%`
   - `%config.expandPageBreakRepeats.description%`
-- `package.json` が NLS キーで参照するすべてのコマンドタイトル・設定説明は、`package.nls.json` と `package.nls.ja.json` の両方に定義しなければならない（§7.3）。
+- `package.json` が NLS キーで参照するすべてのコマンドタイトル・設定説明・ビューコンテナタイトル・ビュー名は、`package.nls.json` と `package.nls.ja.json` の両方に定義しなければならない（§7.3）。
 
 ### 6.3 拡張機能メッセージのローカライズ
 - 以下のホスト側UIメッセージおよびダイアログは、解決されたロケールに従ってローカライズされる。
@@ -514,6 +578,9 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 ### 6.7 ヘルプのローカライズ
 - `guitardsl.openHelp` のコマンドタイトル（`%command.openHelp.title%`）、プレビューのヘルプボタンのラベル・ツールチップ・アクセシブル名、ヘルプを開けなかったときのエラーメッセージをロケールに従ってローカライズする。
 - ヘルプ本文は日本語版と英語版を同梱し、§6.1 の規則で選ぶ（§3.11）。
+
+### 6.8 サイドバーとオンボーディングのローカライズ
+- サイドバーのセクション名・項目ラベル・案内項目、テンプレートとサンプルのクイックピック（プレースホルダー・ラベル・説明）、テンプレート・サンプルを開けなかったときのエラーメッセージをロケールに従ってローカライズする。サンプルのラベルはファイル名のまま表示する。
 
 ---
 

@@ -3,6 +3,7 @@
 シンコー・ミュージック風の「五線譜 ＋ リズムスラッシュ ＋ ピッキング記号（п / ∨）＋ コードダイアグラム ＋ 歌詞」をリアルタイムにプレビュー・A4印刷できる VS Code 拡張機能です。
 
 ## 特徴
+- アクティビティバーの GuitarDSL サイドバー（「はじめに」ビュー）から、テンプレートからの新規作成・サンプル・ヘルプ・開いているファイルへの操作を選べる
 - `.guitardsl` ファイルのシンタックスハイライト
 - 横分割 Webview によるリアルタイム SVG レンダリング
 - 外部 CDN やインターネット接続不要の完全スタンドアロン動作
@@ -32,4 +33,5 @@
    ```
    実際の曲で定量評価するには `node scripts/evaluate-audio-mir.mjs <audio.wav> <reference.lab> [--bpm <n>]` を実行します（音源と LAB はコミットしないでください）。
 3. VS Code で本フォルダを開き、`F5` キーを押すと拡張機能開発ホストが起動します。
-4. 開発ホスト側で `samples/sample.guitardsl` を開き、右上のプレビューボタン（または `Ctrl+Shift+P` -> `GuitarDSL: Open Preview to the Side`）を実行してください。
+4. 開発ホスト側でアクティビティバーの **GuitarDSL** アイコンを押してサイドバー（**はじめに**）を開き、**はじめる** の **サンプルを開く**（または **テンプレートから新規作成**）を選ぶと、編集できる無題の楽譜が開きます。続けて **現在のファイル** の **プレビューを横に開く** を押すとプレビューが開きます（英語 UI では Get Started → Open Sample、Current File → Open Preview to the Side）。
+   ファイルから始める場合は `samples/sample.guitardsl` を開き、右上のプレビューボタン（または `Ctrl+Shift+P` -> `GuitarDSL: Open Preview to the Side`）を実行してください。
