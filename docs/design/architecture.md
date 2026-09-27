@@ -146,7 +146,8 @@ AST からページ SVG と Webview HTML を生成する。VS Code API に依存
   - 五線譜上のコード名は `notation.ts` の `renderChordName` で描く（リズム段とメロディ段で共用）。`@ラベル` は上付きの別 `<text>` として描き、戻り値の幅で次のコード名との間隔を決める。
   - 臨時記号の要否は調号と小節内の臨時記号状態から決める。♯・♭・♮ はフォントに依存しないベクターパスで描き、プレビューと PDF の同一性を保つ。
   - フォントはルート要素の `font-family`（同梱 Noto Sans JP）に統一し、要素ごとの `font-family` 指定は持たない。全テキストは `escapeXml` を通す。
-- **`chordLibrary.ts`**: ダイアグラムの解決 `resolveChordDiagram` / `resolveScoreDiagrams`（ファイル内の定義 → ラベルなし定義 → プリセット → フォールバック）。
+- **`chordLibrary.ts`**: ダイアグラムの解決 `resolveChordDiagram` / `resolveScoreDiagrams`。押さえ方の意味的な解決（ファイル内の定義 → ラベルなし定義 → コード名全体のプリセット → 分数コードは上のコードのプリセット）は共有リゾルバ `src/chordVoicingResolver.ts` に委ね、解決できないときだけ表示用のフォールバック形状（`xx0232`, `source: 'fallback'`）を返す。フォールバック形状は renderer の中だけに置く。
+- **共有リゾルバ `src/chordVoicingResolver.ts`**（純粋。依存方向: `chordDefinition` + `chordPresets` → `chordVoicingResolver` → renderer・`capo`・`beginnerMode`）: `resolveApplicableChordDefinition(key, definitions)`（そのキーの定義、ラベル付きキーはラベルなし定義にフォールバック。最初の定義を使う）、`resolveDefaultChordVoicing(name)`（`getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → `undefined`）、`resolveChordVoicing(key, definitions)`（定義 → 既定、`source` は `definition` / `library`、解決できなければ `undefined`）。renderer・VS Code・Webview・採譜・Audio MIR に依存しない。
 - **`chordDiagram.ts`**: 1 枚のダイアグラムの SVG（`renderChordDiagramSvg`、ダイアグラム単位座標）。楽譜ヘッダーとエディタのプレビュー・サムネイルで共用する。`notation.ts` → `layout.ts` の循環を避けるため `notation.ts` を import しない。
 - **ダイアグラム領域**: `getDiagramGrid` は解決済みダイアグラムから、ラベル行と指番号行が要るかを判定してセル高さを決める。各セルは `<g class="chord-diagram" data-chord-key>` で、プレビューのクリック対象になる（PDF には影響しない属性）。
 - **`chordEditorHtml.ts`**: コードダイアグラムエディタ Webview の静的な HTML（文言は JSON として埋め込む）。
@@ -271,7 +272,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 ### 2.10 カポ推論・弾きやすさ・カポ変更 (`src/capo.ts`, `src/previewCapo.ts`, `src/scoreSettingsEditor.ts`)
 
-**依存方向**: `chordDetect` / `chordPresets` / `chordDefinition` / `compiler` → `src/capo.ts` → 楽譜設定エディタ・プレビュー・（将来の）採譜など。`src/capo.ts` は VS Code・Webview・`src/transcription/`・`src/audioMir/` に依存しない純粋なモジュールで、単体テストの対象。
+**依存方向**: `chordDetect` / `chordPresets` / `chordDefinition` / `chordVoicingResolver` / `compiler` → `src/capo.ts` → 楽譜設定エディタ・プレビュー・（将来の）採譜など。`src/capo.ts` は VS Code・Webview・`src/transcription/`・`src/audioMir/` に依存しない純粋なモジュールで、単体テストの対象。
 
 - **汎用推論 API**（GuitarDSL のテキストを必要としない）:
   - `inferCapo({ sourceCapo, chords: [{ name, count? }], currentVoicings? })`: カポ 0〜12 の全候補（`capo`、`supported`、`playability`、書かれたコード名の対応 `chordMap`、不可の理由 `reason`）と推奨カポを返す。推奨は変更可能な候補のうちスコア最大、同点は小さいカポ。推奨するだけで適用はしない。`sourceCapo` が 0〜12 の整数でなければ `RangeError`（正規化しない）。
@@ -279,9 +280,9 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - 書かれたコードの移調量は `-(targetCapo - sourceCapo)` 半音。`name@label` の出現はカポが変わる候補では `labeledChordVariant` で不可。
 - **弾きやすさの計算式**（この 1 か所だけに実装し、推論・エディタ・プレビューで共用）:
   - コードのコスト = `0.5 × 押弦数 + 2.5 × セーハ数 + 0.75 × max(0, 幅 − 2) + 0.25 × max(0, 最低フレット − 3) + (開放弦なしなら 1.5) + (分数コードなら 1)`。幅・最低フレットは 1 以上のフレットで計算する（なければ 0）。押さえ方が不明なら 10。
-  - 押さえ方: `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → 不明。元のカポの評価に限り `currentVoicings`（ファイルの `chord` 定義）を優先する。ほかのカポでは変換したカスタム押さえ方を作らない。
+  - 押さえ方: 共有リゾルバの `resolveDefaultChordVoicing(name)`（`getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → 不明。renderer のフォールバック形状は使わない）。元のカポの評価に限り `currentVoicings`（ファイルの `chord` 定義）を優先する。ほかのカポでは変換したカスタム押さえ方を作らない。
   - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
-- **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、ファイルの定義を `currentVoicings` にする）、`inferCapoFromDsl(text)`。
+- **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、`resolveApplicableChordDefinition` で解決したファイルの定義を `currentVoicings` にする。プリセットは入れない）、`inferCapoFromDsl(text)`。
 - **DSL 上の候補 `inferCapoForDsl(text)`**: 汎用推論の各候補について、元のカポ以外は `planCapoTransform` まで実行し、失敗したら（定義の衝突・ラベル付きコード・構文エラー等）その候補を変更不可（`reason` = 失敗コード）にする。推奨はこの変更可能な候補から選び直す。楽譜設定エディタとプレビューのカポバーはこの結果だけを表示するため、適用できないカポは選択肢に出ない。汎用の `inferCapo` はテキストを見ないので、この検証を含まない。
 - **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分（共通ヘルパー `replaceChordTokenNames(text, tokens, targetName)`。初心者モードと共用）と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
   1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
@@ -308,13 +309,13 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 公開の振る舞いは `docs/specs/extension.md` §4.5 / §4B.4。DSL の構文・設定・コマンドは増やさない。
 
-**依存方向**: `compiler` / `chordDefinition` / `chordDetect` / `chordPresets` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
+**依存方向**: `compiler` / `chordDefinition` / `chordDetect` / `chordVoicingResolver` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
 
 - **カポ候補**: `inferBeginnerModeForDsl(text, barrePolicy)` はカポ 0〜12 ごとに `planCapoTransform(text, capo)` を実行し、失敗したカポはその失敗コードで不可にする（初心者モード独自の移調はしない）。元のカポでは `resolveEffectiveDsl` と同じく元のテキストそのものを中間 DSL にする（`capo:` 行を挿入しない）。中間 DSL を解析し、異なるコードキーごとに代替を選ぶ。
-- **押さえ方（ユーザー決定, Issue #65）**: 変換はコード名しか書き換えず `chord` 定義を追加しないため、評価する押さえ方は**最終の楽譜に描画されるもの 1 つ**に限る。キーの `chord` 定義（ラベル付きキーはラベルなし定義にフォールバック。renderer の `resolveChordDiagram` と同じ優先順位）→ `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing`（カポの弾きやすさと同じ）。どれもなければ候補にしない。`forbid` ではその押さえ方の `barres.length > 0` を除外する（絶対条件）。`getPresetVoicings` の他の押さえ方は描画されないので評価しない。
+- **押さえ方（ユーザー決定, Issue #65）**: 変換はコード名しか書き換えず `chord` 定義を追加しないため、評価する押さえ方は**最終の楽譜に描画されるもの 1 つ**に限る。renderer と同じ共有リゾルバ `resolveChordVoicing(key, definitions)`（キーの `chord` 定義、ラベル付きキーはラベルなし定義にフォールバック → `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing`）で決める。解決できなければ（renderer ならフォールバック形状になるもの）候補にしない。`forbid` ではその押さえ方の `barres.length > 0` を除外する（絶対条件）。`getPresetVoicings` の他の押さえ方は描画されないので評価しない。
 - **代替**: そのまま（ペナルティ 0）、`BEGINNER_SUBSTITUTION_RULES`（宣言順）、`forbid` かつそのままのコードが使えない長三和音／`m` に限り `BEGINNER_BARRE_FALLBACK_RULES`（`maj7` / `m7`、2）。分数コードはベースを残す／省く（1）の組み合わせで、ペナルティは加算。ラベル付きコードはそのままのみ。置き換え先と同名のラベルなし `chord` 定義があれば除外（衝突）。選択は `chordCost + ペナルティ` 最小、同点はペナルティ、そのまま、宣言順。
 - **カポの評価**: `physicalSongCost` = 出現回数で重み付けした `chordCost` の平均 + `0.25 × max(0, 最終コードの種類 − 4)` + `0.15 × カポ`。`optimizationCost` = `physicalSongCost` + 重み付きペナルティ平均。表示する弾きやすさは `easeScore(physicalSongCost)` / `levelForScore`（ペナルティを含まない）。推奨は `optimizationCost` 最小、同点は置き換えた出現回数、置き換えたコードの種類、小さいカポの順（浮動小数の比較は 1e-9 の許容差）。`capo.ts` の計算式・推論結果は変えない。
-- **変換 `planBeginnerTransform(text, { barrePolicy, targetCapo? })`**: 常に渡された元のテキストから計算する（自動なら推奨カポを再計算）。中間 DSL の `chordTokens` のコード名部分だけを `replaceChordTokenNames` で置き換え、解析し直してエラー診断なし・目標カポ・期待したコード配置列・（`forbid` なら）描画される押さえ方にセーハなし、を確認する。失敗コードは `CapoTransformFailureCode` に `noPlayableAlternative`（`detail` = コードキー）と `noRecommendation` を加えたもの。元のコードが実際に解決していた定義キー（renderer と同じ優先順位）のうち、最終のコードがどれも解決しなくなったものを `unusedDefinitions` にする（警告のみ、削除しない。参照されていないラベル付き定義などは含めない）。
+- **変換 `planBeginnerTransform(text, { barrePolicy, targetCapo? })`**: 常に渡された元のテキストから計算する（自動なら推奨カポを再計算）。中間 DSL の `chordTokens` のコード名部分だけを `replaceChordTokenNames` で置き換え、解析し直してエラー診断なし・目標カポ・期待したコード配置列・（`forbid` なら）描画される押さえ方にセーハなし、を確認する。失敗コードは `CapoTransformFailureCode` に `noPlayableAlternative`（`detail` = コードキー）と `noRecommendation` を加えたもの。元のコードが実際に解決していた定義キー（`resolveApplicableChordDefinition`）のうち、最終のコードがどれも解決しなくなったものを `unusedDefinitions` にする（警告のみ、削除しない。参照されていないラベル付き定義などは含めない）。
 - **`PreviewBeginnerController`**（`src/previewBeginner.ts`、ホスト側）: `PreviewBeginnerState { documentUri, barrePolicy, targetCapo? }`（永続化しない）。`enable` は `PreviewCapoController` の一時変更を解除して `forbid`・自動で開始、`disable` は解除のみ（カポの一時変更は戻さない）、`setBarrePolicy` は自動に戻す、`setTargetCapo` は固定。`resolve(doc)` は毎回最新のテキストから計算し、失敗したら状態を解除して警告（`currentNotice()` でカポバーにも表示）。`switchDocument` / プレビューの破棄 / ドキュメントを閉じるで解除する。
 - **有効 DSL の一本化 `resolvePreviewEffectiveDsl(doc, beginner, capo)`**: 初心者モードが有効ならその結果、そうでなければ `PreviewCapoController.resolve`。プレビュー描画・プレビューの PDF 保存・`guitardsl.exportPdf` はすべてこの関数を通すため、入力は同一の文字列になる。
 - **プレビューのカポバー**: `buildBeginnerPreviewUiModel` がカポバー用のモデル（候補のスコアは初心者モードの評価）と `BeginnerPreviewUiModel { active, barrePolicy, autoCapo, substitutions }` を作り、`previewHtml.ts` は描画するだけ。既存のカポ選択・`DSLに適用` はホストが初心者モードの有無で振り分ける。

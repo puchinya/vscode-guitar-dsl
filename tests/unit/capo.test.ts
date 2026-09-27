@@ -5,6 +5,7 @@ import { parseGuitarDsl } from '../../src/compiler';
 import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
 import {
   UNKNOWN_CHORD_COST,
+  buildCapoInferenceInputFromScore,
   buildCapoPreviewUiModel,
   inferCapoForDsl,
   chordCost,
@@ -108,11 +109,17 @@ describe('capo - playability formula', () => {
     const bb = evaluatePlayability({ sourceCapo: 0, chords: [{ name: 'C' }] }, 2)!;
     assert.strictEqual(bb.score, 32);
     // Slash chord without a library entry uses the upper chord shape (Am: 1.5) + slash (1) -> 75
-    assert.strictEqual(evaluatePlayability({ sourceCapo: 0, chords: [{ name: 'Am/G' }] }, 0)!.score, 75);
+    const amG = evaluatePlayability({ sourceCapo: 0, chords: [{ name: 'Am/G' }] }, 0)!;
+    assert.strictEqual(amG.score, 75);
+    assert.deepStrictEqual(amG.unresolvedChords, []);
     // Unknown voicing -> 0 and reported
     const unknown = evaluatePlayability({ sourceCapo: 0, chords: [{ name: 'C13' }] }, 0)!;
     assert.strictEqual(unknown.score, 0);
     assert.deepStrictEqual(unknown.unresolvedChords, ['C13']);
+    // An unknown upper chord is unresolved too: the renderer's placeholder is never a playability voicing.
+    const unknownSlash = evaluatePlayability({ sourceCapo: 0, chords: [{ name: 'C13/E' }] }, 0)!;
+    assert.strictEqual(unknownSlash.score, 0);
+    assert.deepStrictEqual(unknownSlash.unresolvedChords, ['C13/E']);
     // Vocabulary: 6 unique chords -> mean cost + 0.25 * (6 - 4)
     const names = ['C', 'G', 'D', 'A', 'E', 'F'];
     const mean = names.reduce((sum, n) => sum + chordCost(getDefaultVoicing(n), false), 0) / names.length;
@@ -305,6 +312,18 @@ describe('capo - DSL-backed candidates', () => {
     assert.ok(r.candidates.slice(1).every(c => !c.supported && c.reason === 'labeledChordVariant'));
     assert.strictEqual(r.recommendedCapo, 0);
     assert.strictEqual(inferCapoForDsl('capo: 13\n| C |\n'), null);
+  });
+
+  it('uses the applicable definition at the source capo: exact labeled, then unlabeled', () => {
+    // C@x has its own open-position definition; C@y falls back to the unlabeled C barre definition.
+    const input = buildCapoInferenceInputFromScore(
+      parseGuitarDsl('chord C = x35553\nchord C@x = x32010\n| C@x | C@y |\n')
+    );
+    assert.deepStrictEqual(input.currentVoicings!.get('C@x')!.frets, ['x', 3, 2, 0, 1, 0]);
+    assert.deepStrictEqual(input.currentVoicings!.get('C@y')!.frets, ['x', 3, 5, 5, 5, 3]);
+    // Library shapes are not copied into the override map.
+    const plain = buildCapoInferenceInputFromScore(parseGuitarDsl('| F/A |\n'));
+    assert.strictEqual(plain.currentVoicings!.size, 0);
   });
 });
 

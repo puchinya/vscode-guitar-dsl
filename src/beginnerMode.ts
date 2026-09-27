@@ -21,7 +21,7 @@ import {
 } from './capo';
 import { ChordDefinition, ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { parseChordName } from './chordDetect';
-import { getDefaultVoicing } from './chordPresets';
+import { resolveApplicableChordDefinition, resolveChordVoicing } from './chordVoicingResolver';
 import { ParsedScore, parseGuitarDsl } from './compiler';
 
 export type BarrePolicy = 'allow' | 'forbid';
@@ -147,36 +147,14 @@ export const SLASH_BASS_DROP_PENALTY = 1;
 
 const EPSILON = 1e-9;
 
-/** The `chord` definition a key resolves to (renderer precedence); undefined when none applies. */
-function definitionFor(name: string, label: string | undefined, definitions: readonly ChordDefinition[]): ChordDefinition | undefined {
-  const find = (key: string) => definitions.find(d => chordKey(d.name, d.label) === key);
-  return find(chordKey(name, label)) ?? (label !== undefined ? find(name) : undefined);
-}
-
 /** Keys of the definitions the written chords of a score actually resolve to. */
 function usedDefinitionKeys(keys: readonly string[], definitions: readonly ChordDefinition[]): Set<string> {
   const used = new Set<string>();
   for (const key of new Set(keys)) {
-    const { name, label } = splitChordKey(key);
-    const d = definitionFor(name, label, definitions);
+    const d = resolveApplicableChordDefinition(key, definitions);
     if (d) used.add(chordKey(d.name, d.label));
   }
   return used;
-}
-
-/**
- * The voicing the final score draws for a key (same precedence as the renderer, docs/specs
- * guitardsl-syntax §7.3): the key's `chord` definition (a labeled key falls back to the unlabeled
- * definition), then the preset default; a slash chord without either uses its upper chord's default
- * (the capo playability semantics). Undefined when none is known.
- */
-function drawnVoicing(name: string, label: string | undefined, definitions: readonly ChordDefinition[]): ChordVoicing | undefined {
-  const own = definitionFor(name, label, definitions);
-  if (own) return own;
-  const direct = getDefaultVoicing(name);
-  if (direct) return direct;
-  const slash = name.indexOf('/');
-  return slash > 0 ? getDefaultVoicing(name.slice(0, slash)) : undefined;
 }
 
 function allowedBy(voicing: ChordVoicing | undefined, policy: BarrePolicy): voicing is ChordVoicing {
@@ -194,7 +172,8 @@ interface Alternative {
 function alternativesFor(key: string, definitions: readonly ChordDefinition[], policy: BarrePolicy): Alternative[] {
   const { name, label } = splitChordKey(key);
   const isSlash = (n: string) => parseChordName(n)?.bass !== undefined;
-  const exactVoicing = drawnVoicing(name, label, definitions);
+  // The voicing the final score draws (shared resolver, spec §7.3).
+  const exactVoicing = resolveChordVoicing(chordKey(name, label), definitions)?.voicing;
   const out: Alternative[] = [];
   if (allowedBy(exactVoicing, policy)) {
     out.push({ name, penalty: 0, cost: chordCost(exactVoicing, isSlash(name)), order: 0 });
@@ -222,7 +201,7 @@ function alternativesFor(key: string, definitions: readonly ChordDefinition[], p
         const target = q.upper + b.suffix;
         if (target === name) continue;
         if (!isValidChordName(target) || unlabeledDefinitions.has(target)) continue;
-        const voicing = drawnVoicing(target, undefined, definitions);
+        const voicing = resolveChordVoicing(target, definitions)?.voicing;
         if (!allowedBy(voicing, policy)) continue;
         out.push({ name: target, penalty: q.penalty + b.penalty, cost: chordCost(voicing, b.suffix !== ''), order });
       }
@@ -385,8 +364,7 @@ export function planBeginnerTransform(
   }
   if (policy === 'forbid') {
     for (const key of new Set(actual)) {
-      const { name, label } = splitChordKey(key);
-      if (!allowedBy(drawnVoicing(name, label, final.chordDefinitions), policy)) {
+      if (!allowedBy(resolveChordVoicing(key, final.chordDefinitions)?.voicing, policy)) {
         return { ok: false, code: 'transformedParseError', detail: `barre voicing: ${key}` };
       }
     }

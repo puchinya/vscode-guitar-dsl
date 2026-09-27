@@ -123,7 +123,30 @@ describe('chord definition - compiler integration', () => {
     assert.strictEqual(resolveChordDiagram('C@nope', defs).voicing.frets[2], 5);
     assert.strictEqual(resolveChordDiagram('G', defs).source, 'library');
     assert.strictEqual(resolveChordDiagram('Bbm7', defs).source, 'library');
-    assert.strictEqual(resolveChordDiagram('C#m7/E', defs).source, 'fallback');
+    // A slash chord without its own preset draws the upper chord's default (spec §7.3).
+    assert.strictEqual(resolveChordDiagram('C#m7/E', defs).source, 'library');
+    assert.deepStrictEqual(resolveChordDiagram('C#m7/E', defs).voicing, getDefaultVoicing('C#m7'));
+  });
+
+  it('resolves slash chord diagrams: dedicated preset, upper chord default, fallback', () => {
+    for (const [slash, upper] of [['F/A', 'F'], ['C/E', 'C']]) {
+      const d = resolveChordDiagram(slash, []);
+      assert.strictEqual(d.source, 'library', slash);
+      assert.deepStrictEqual(d.voicing, getDefaultVoicing(upper), slash);
+      assert.notDeepStrictEqual(d.voicing.frets, ['x', 'x', 0, 2, 3, 2], slash);
+    }
+    for (const slash of ['G/B', 'D/F#']) {
+      const d = resolveChordDiagram(slash, []);
+      assert.strictEqual(d.source, 'library', slash);
+      assert.deepStrictEqual(d.voicing, getDefaultVoicing(slash), slash);
+    }
+    const unknown = resolveChordDiagram('C13/E', []);
+    assert.strictEqual(unknown.source, 'fallback');
+    assert.deepStrictEqual(unknown.voicing.frets, ['x', 'x', 0, 2, 3, 2]);
+    // A definition still wins over the slash upper chord default.
+    const own = resolveChordDiagram('F/A', parseGuitarDsl('chord F/A = x03211').chordDefinitions);
+    assert.strictEqual(own.source, 'definition');
+    assert.deepStrictEqual(own.voicing.frets, ['x', 0, 3, 2, 1, 1]);
   });
 });
 

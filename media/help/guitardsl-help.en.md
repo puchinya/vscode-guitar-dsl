@@ -80,7 +80,7 @@ Measures wrap onto rows automatically (4 per row by default, set with `measures_
 
 ### Chord Diagrams and the Chord Diagram Editor
 
-Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. You can keep several voicings of the same chord with labels, such as `C@barre`.
+Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. The same shape is used to rate playability for capo and Beginner Mode. You can keep several voicings of the same chord with labels, such as `C@barre`.
 
 **GuitarDSL: Edit Chord Diagram** opens a visual editor. Start it from:
 
