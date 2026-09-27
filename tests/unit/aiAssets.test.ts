@@ -195,7 +195,8 @@ describe('AI integration assets (Issue #80)', () => {
     assert.ok(guide.includes('operation: adapt') && guide.includes('operation: replace'));
     assert.ok(guide.includes('@tempo: rit.'));
     const instructions = fs.readFileSync(path.join(ROOT, 'ai/instructions/guitardsl.instructions.md'), 'utf8');
-    assert.ok(instructions.startsWith("---\napplyTo: '**/*.{guitardsl,gdsl}'\n---"));
+    assert.ok(instructions.startsWith('---\n'));
+    assert.ok(/^applyTo: '\*\*\/\*\.\{guitardsl,gdsl\}'$/m.test(instructions.split('\n---')[0]), 'applyTo stays GuitarDSL-only (never **)');
     assert.ok(instructions.includes('guitardsl_validate_dsl'));
   });
 
@@ -203,5 +204,223 @@ describe('AI integration assets (Issue #80)', () => {
     const ignore = fs.readFileSync(path.join(ROOT, '.vscodeignore'), 'utf8').split(/\r?\n/).map(l => l.trim());
     assert.ok(!ignore.some(l => l.startsWith('ai') || l === '**/*.md'), 'ai/** must not be excluded');
     for (const pattern of ['docs/**', 'scripts/**', 'src/**', 'tests/**']) assert.ok(ignore.includes(pattern), pattern);
+  });
+});
+
+describe('AI integration assets: new-score workflow (Issue #104)', () => {
+  /** Runs the gate on a fixture root after `mutate`, returning its problems. */
+  async function gateAfter(mutate: (root: string) => void): Promise<string[]> {
+    const { checkAiSync } = await load();
+    const root = makeFixtureRoot();
+    try {
+      mutate(root);
+      return checkAiSync(root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+  const edit = (root: string, rel: string, change: (text: string) => string) => {
+    const file = path.join(root, rel);
+    const before = fs.readFileSync(file, 'utf8');
+    const after = change(before);
+    assert.notStrictEqual(after, before, `the mutation must change ${rel}`);
+    fs.writeFileSync(file, after);
+  };
+  const editTool = (root: string, name: string, change: (text: string) => string) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const tool = manifest.contributes.languageModelTools.find((t: any) => t.name === name);
+    const before = tool.modelDescription;
+    tool.modelDescription = change(before);
+    assert.notStrictEqual(tool.modelDescription, before, `the mutation must change ${name}`);
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(manifest));
+  };
+  const has = (errors: string[], text: string) => assert.ok(errors.some(e => e.includes(text)), `expected "${text}" in:\n${errors.join('\n')}`);
+
+  it('the current assets pass and are discoverable for new-score creation', async () => {
+    const { checkAiSync, parseFrontmatter, INSTRUCTIONS_PATH, SKILL_PATH } = await load();
+    assert.deepStrictEqual(checkAiSync(ROOT), []);
+    const instructions = parseFrontmatter(fs.readFileSync(path.join(ROOT, INSTRUCTIONS_PATH), 'utf8'));
+    assert.strictEqual(instructions.name, 'GuitarDSL editing and creation');
+    assert.strictEqual(instructions.applyTo, '**/*.{guitardsl,gdsl}');
+    assert.ok(/new song before a GuitarDSL file exists/.test(instructions.description), instructions.description);
+    const skill = parseFrontmatter(fs.readFileSync(path.join(ROOT, SKILL_PATH), 'utf8'));
+    assert.strictEqual(skill.name, 'guitardsl-language');
+    assert.ok(/creating or composing a new GuitarDSL song or score from scratch/.test(skill.description), skill.description);
+  });
+
+  it('deleting the instructions description fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/^description:.*\n/m, ''))), 'non-empty task-relevance description');
+  });
+
+  it('removing the new-score meaning from the descriptions fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(', including creating a new song before a GuitarDSL file exists', ''))), 'before a GuitarDSL file exists');
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace('when creating or composing a new GuitarDSL song or score from scratch, ', ''))), 'description must cover creating/composing');
+  });
+
+  it('removing the new-score workflow from the instructions, the Skill or the guide fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH, ACCOMPANIMENT_GUIDE } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.slice(0, t.indexOf('## New GuitarDSL score workflow')))), `${INSTRUCTIONS_PATH}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.slice(0, t.indexOf('6. New score from scratch')))), `${SKILL_PATH}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## New score from scratch[\s\S]*?(?=## Workflow)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the new-score workflow`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('do not fall back to manual rhythm generation', 'write the rhythm yourself'))), `${INSTRUCTIONS_PATH}: new-score workflow must keep /\\b(do not|never) fall back to`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('2. Write the structural draft into', '2. Write the draft into'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must keep /structural draft/i`);
+  });
+
+  it('reordering or removing a validate -> analyze -> apply -> validate step fails', async () => {
+    const { INSTRUCTIONS_PATH, SKILL_PATH, ACCOMPANIMENT_GUIDE } = await load();
+    const swap = (t: string, from: string) => {
+      const start = t.indexOf(from);
+      const head = t.slice(0, start);
+      const body = t.slice(start).replace('guitardsl_analyze_accompaniment', '\u0000').replace('guitardsl_apply_accompaniment', 'guitardsl_analyze_accompaniment').replace('\u0000', 'guitardsl_apply_accompaniment');
+      return head + body;
+    };
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => swap(t, '## New GuitarDSL score workflow'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => swap(t, '6. New score from scratch'))), `${SKILL_PATH}: new-score workflow must name`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => swap(t, '## New score from scratch'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
+    // Dropping the final validation step.
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('6. Run `guitardsl_validate_dsl` again on the same new target and resolve unintended diagnostics.', '6. Done.'))), `${INSTRUCTIONS_PATH}: new-score workflow must name`);
+    // Dropping the first validation step.
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('3. Validate that exact document. Run `guitardsl_validate_dsl`,', '3. Validate that exact document,'))), `${ACCOMPANIMENT_GUIDE}: new-score workflow must name`);
+  });
+
+  it('removing the new-score guidance from either accompaniment tool description fails', async () => {
+    for (const name of ['guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment']) {
+      has(await gateAfter(root => editTool(root, name, d => d.slice(0, d.indexOf(' New score:')))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
+      has(await gateAfter(root => editTool(root, name, d => d.replace('they are not handwritten by the model', 'you may write them'))), `languageModelTools "${name}" modelDescription must keep the new-score guidance`);
+    }
+  });
+
+  it('removing the distinct-new-target wording from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('create a distinct new GuitarDSL document first', 'write the song'))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
+  });
+
+  it('removing the existing-target reuse prohibition from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Never reuse an active, visible, last-active, or other open GuitarDSL document as the output target unless the user explicitly asked to edit that document\. /, ''))), `${INSTRUCTIONS_PATH}: new-score target identity must keep`);
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/During new-song creation, do not use target-less validate\/analyze calls[^.]*\. /, ''))), 'target-less validate');
+  });
+
+  it('removing the Skill current-file resolution exception fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(' (existing-score tasks only; never for a new/create request)', ''))), `${SKILL_PATH}: the current-file resolution rule must be limited to existing-score tasks`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace('do not reuse an existing score as the target, and pin every step to the new document', 'write it'))), `${SKILL_PATH}: new-score target identity must keep`);
+  });
+
+  it('removing the same-target invariant from the accompaniment guide fails', async () => {
+    const { ACCOMPANIMENT_GUIDE } = await load();
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(' Every step works on the same exact document:', ''))), `${ACCOMPANIMENT_GUIDE}: new-score target identity must keep /\\bsame exact document\\b/i`);
+    has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace('Pin that new target: its `path` once saved, or the `document.uri` that the first validation returns while the new untitled document is active. ', ''))), `${ACCOMPANIMENT_GUIDE}: new-score target identity must keep /\\bpin(ned)?\\b/i`);
+  });
+
+  it('removing the new/create fallback prohibition from the validate description fails', async () => {
+    has(await gateAfter(root => editTool(root, 'guitardsl_validate_dsl', d => d.slice(0, d.indexOf(' New/create-song workflow:')))), 'languageModelTools "guitardsl_validate_dsl" modelDescription must keep the new-target binding');
+    has(await gateAfter(root => editTool(root, 'guitardsl_validate_dsl', d => d.replace('do not use the fallback resolution to select an existing score as the destination of the new song', 'any open score works'))), 'languageModelTools "guitardsl_validate_dsl" modelDescription must keep the new-target binding');
+  });
+
+  it('removing the same-new-target wording from the analyze or apply description fails', async () => {
+    has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' Analyze the already-created new target explicitly (its path); do not search for another open score.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the new-target binding');
+    has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(' For new-song creation, this target must be the same new document used by validation/analyze.', ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the new-target binding');
+  });
+
+  it('instructions: reverting to unrequested reference reads of existing scores fails; the explicit exception is required', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    const errors = await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('unless the user explicitly asked to edit that document. Do not read an existing GuitarDSL document unless the user explicitly asked to use that specific document as a reference or template.', 'unless the user explicitly asked to edit that document; you may only read it for reference.')));
+    has(errors, `${INSTRUCTIONS_PATH}: must not permit unrequested reference reads of existing scores`);
+    has(errors, `${INSTRUCTIONS_PATH}: must read an existing GuitarDSL document only when the user named it as a reference or template`);
+  });
+
+  it('T-resource-1 the Skill links both supporting resources with Markdown relative links', async () => {
+    const { checkAiSync, hasMarkdownLinkTo, SKILL_PATH } = await load();
+    assert.deepStrictEqual(checkAiSync(ROOT), []);
+    const skill = fs.readFileSync(path.join(ROOT, SKILL_PATH), 'utf8');
+    assert.ok(hasMarkdownLinkTo(skill, './references/guitardsl-syntax.md'));
+    assert.ok(hasMarkdownLinkTo(skill, './references/accompaniment.md'));
+    assert.strictEqual(hasMarkdownLinkTo('see `references/accompaniment.md`', './references/accompaniment.md'), false, 'a code span is not a link');
+    assert.strictEqual(hasMarkdownLinkTo('see ./references/accompaniment.md', './references/accompaniment.md'), false, 'plain text is not a link');
+  });
+
+  it('T-resource-2/3 a supporting resource link reverted to a code span fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('[accompaniment guide](./references/accompaniment.md)').join('`references/accompaniment.md`'))), `${SKILL_PATH}: must reference ./references/accompaniment.md with a Markdown relative link`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('[language specification](./references/guitardsl-syntax.md)').join('`references/guitardsl-syntax.md`'))), `${SKILL_PATH}: must reference ./references/guitardsl-syntax.md with a Markdown relative link`);
+  });
+
+  it('T-resource-4 a link destination without ./ or pointing elsewhere fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('](./references/accompaniment.md)').join('](references/accompaniment.md)'))), `${SKILL_PATH}: must reference ./references/accompaniment.md`);
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.split('](./references/guitardsl-syntax.md)').join('](./guitardsl-syntax.md)'))), `${SKILL_PATH}: must reference ./references/guitardsl-syntax.md`);
+  });
+
+  it('T-resource-5 removing the no-sample-fallback rule from the Skill fails', async () => {
+    const { SKILL_PATH } = await load();
+    has(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(/If either packaged resource cannot be loaded[^\n]*\n/, ''))), `${SKILL_PATH}: no-sample-fallback policy must keep`);
+  });
+
+  it('T-resource-6 removing the no-sample-fallback rule from the instructions fails', async () => {
+    const { INSTRUCTIONS_PATH } = await load();
+    has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Use the guitardsl-language Skill's packaged specification[^\n]*\n/, ''))), `${INSTRUCTIONS_PATH}: no-sample-fallback policy must keep`);
+  });
+
+  it('T-resource-7 dropping the explicit user-reference exception is not a gate blocker (stricter is safe)', async () => {
+    const { SKILL_PATH } = await load();
+    assert.deepStrictEqual(await gateAfter(root => edit(root, SKILL_PATH, t => t.replace(' Read an existing score/sample only when the user asked to use it as a reference or template.', ''))), []);
+  });
+
+  describe('minimal-intent planning (review amendment 3)', () => {
+    const guideCases: [string, string, string][] = [
+      ['1 subdivision: auto default', 'Use `mode: intent` with `subdivision: auto` (the default).', 'Use `mode: intent`.'],
+      ['2 family optional by default', 'Optional constraints / preferences are not defaults.', 'Constraints can be set.'],
+      ['3 no preset browsing', 'Do not browse presets family by family', 'You may browse presets'],
+      ['4 candidate abundance -> engine selection', 'Many compatible candidates is normal, not a problem. Let the deterministic engine choose.', 'Pick a candidate.'],
+      ['5 finale headroom', 'Keep dynamic headroom for the finale.', 'Make choruses strong.'],
+      ['6 transition budget', 'Do not add `transitions` at every boundary;', 'Add transitions freely;'],
+      ['7 ending 1 primary + at most 1 fallback', 'use one primary candidate and at most one fallback', 'use up to three candidates']
+    ];
+    for (const [label, from, to] of guideCases) {
+      it(`guide: removing ${label} fails`, async () => {
+        const { ACCOMPANIMENT_GUIDE } = await load();
+        has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(from, to))), `${ACCOMPANIMENT_GUIDE}: minimal-intent planning policy must keep`);
+      });
+    }
+
+    it('guide: removing the whole section fails', async () => {
+      const { ACCOMPANIMENT_GUIDE } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/## Keep intent plans minimal[\s\S]*?(?=## Choosing the plan mode)/, ''))), `${ACCOMPANIMENT_GUIDE}: missing the minimal-intent planning policy`);
+    });
+
+    it('8 instructions: removing the minimal-intent wording fails', async () => {
+      const { INSTRUCTIONS_PATH } = await load();
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/Keep the intent broad\. Prefer `subdivision: auto` and omit optional constraints \/ preferences unless the user asked for them: [^.]*\. /, ''))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep`);
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace('preserve headroom for the finale rather than making every chorus maximal', 'make every chorus strong'))), `${INSTRUCTIONS_PATH}: minimal-intent planning policy must keep /\\bheadroom for the finale\\b/i`);
+    });
+
+    it('9 analyze description: removing the whole-score-first rule fails', async () => {
+      has(await gateAfter(root => editTool(root, 'guitardsl_analyze_accompaniment', d => d.replace(' For a general arrangement/new-song request, call whole-score analysis once; do not request sectionIndex+family merely to browse presets; use that form only when a family is specifically needed.', ''))), 'languageModelTools "guitardsl_analyze_accompaniment" modelDescription must keep the minimal-intent guidance');
+    });
+
+    it('preferredPresetId reverted to a hard constraint fails (guide, instructions, apply description)', async () => {
+      const { ACCOMPANIMENT_GUIDE, INSTRUCTIONS_PATH } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(/Optional constraints \/ preferences are not defaults\. [^\n]*?\(it favors one preset\)\./, '`family`, `syncopationKinds`, `difficulty` and `preferredPresetId` are optional hard constraints, not defaults.'))), `${ACCOMPANIMENT_GUIDE}: preferredPresetId is a soft preference, not a hard constraint`);
+      has(await gateAfter(root => edit(root, INSTRUCTIONS_PATH, t => t.replace(/omit optional constraints \/ preferences unless the user asked for them: [^.]*\./, 'omit optional hard constraints (`family`, `syncopationKinds`, `difficulty`, `preferredPresetId`) unless the user asked for them.'))), `${INSTRUCTIONS_PATH}: preferredPresetId is a soft preference, not a hard constraint`);
+      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/omit optional constraints \/ preferences not requested by the user \([^)]*\)/, 'omit optional hard constraints (family, syncopationKinds, difficulty, preferredPresetId) not requested by the user'))), 'preferredPresetId is a soft preference, not a hard constraint');
+    });
+
+    it('guide: dropping the soft-preference distinction fails', async () => {
+      const { ACCOMPANIMENT_GUIDE } = await load();
+      has(await gateAfter(root => edit(root, ACCOMPANIMENT_GUIDE, t => t.replace(' `preferredPresetId` is only a soft preference (it favors one preset).', ''))), `${ACCOMPANIMENT_GUIDE}: minimal-intent planning policy must keep`);
+    });
+
+    it('10 apply description: removing the optional-hard-constraint guidance fails', async () => {
+      has(await gateAfter(root => editTool(root, 'guitardsl_apply_accompaniment', d => d.replace(/ For general intent plans, prefer subdivision auto and omit optional constraints \/ preferences not requested by the user \([^)]*\); the extension selects the canonical preset\./, ''))), 'languageModelTools "guitardsl_apply_accompaniment" modelDescription must keep the minimal-intent guidance');
+    });
+  });
+
+  it('the new checks leave the seven-tool contract unchanged', async () => {
+    const { EXPECTED_TOOLS } = await load();
+    assert.deepStrictEqual(Object.keys(EXPECTED_TOOLS).sort(), Object.keys(TOOLS).sort());
+    assert.deepStrictEqual(pkg.contributes.languageModelTools.map((t: any) => t.name).sort(), Object.keys(TOOLS).sort());
   });
 });

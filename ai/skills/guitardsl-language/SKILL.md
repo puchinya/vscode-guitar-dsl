@@ -1,47 +1,32 @@
 ---
 name: guitardsl-language
-description: GuitarDSL (.guitardsl / .gdsl) guitar score language syntax and semantics. Use when reading, writing, explaining or editing GuitarDSL scores (chords, rhythm and strum tokens, lyrics, melody lines, score events, let fragments, note groups, capo, key and display headers).
+description: GuitarDSL (.guitardsl / .gdsl) guitar score language syntax and semantics. Use when reading, writing, explaining or editing GuitarDSL scores (chords, rhythm, lyrics, melody, score events, fragments, note groups, headers), when creating or composing a new GuitarDSL song or score from scratch, and when arranging accompaniment.
 ---
 
 # GuitarDSL language
 
-The only authority for GuitarDSL syntax and semantics is `references/guitardsl-syntax.md`, a generated, unmodified copy of the extension's language specification. This file only tells you how to use it and does not repeat the specification.
+The only authority for GuitarDSL syntax and semantics is the [language specification](./references/guitardsl-syntax.md).
+
+If either packaged resource cannot be loaded, do not search existing GuitarDSL documents or samples as a substitute specification; report the missing resource instead of guessing. Read an existing score/sample only when the user asked to use it as a reference or template.
 
 ## How to look things up
 
-Read only the headings you need. Do not load the whole reference at once. The reference's top-level sections are:
-
-| Topic | Section in `references/guitardsl-syntax.md` |
-|---|---|
-| Overview, lexical rules, document layout | `## 1.`, `## 2.`, `## 3.` |
-| Metadata headers (`title:`, `capo:`, `key:`, `time:` …) | `## 4.` |
-| Section headers `[Name]` | `## 5.` |
-| Measures and barlines | `## 6.` |
-| Chord names and custom chord diagrams | `## 7.` |
-| Rhythm / stroke tokens | `## 8.` |
-| Lyrics and syllable lyrics | `## 9.`, `## 13.` |
-| Page breaks, rendering/layout rules | `## 10.`, `## 11.` |
-| Melody lines (`mel:`) | `## 12.` |
-| Key signature and display options | `## 14.` |
-| Complete example | `## 15.` |
-| Score events (mid-score changes) | `## 16.` |
-| Reusable fragments (`let` / `$name`) | `## 17.` |
-| Note groups `[...]` | `## 18.` |
+Read only the headings you need. Its `## N.` sections: 1–3 overview, lexical rules, layout; 4 metadata headers (`title:`, `key:` …); 5 section headers `[Name]`; 6 measures, barlines; 7 chords, custom diagrams; 8 rhythm / stroke tokens; 9, 13 lyrics; 10–11 page breaks, layout; 12 melody `mel:`; 14 key signature, display; 15 complete example; 16 score events; 17 fragments `let` / `$name`; 18 note groups `[...]`.
 
 ## Rules
 
-1. Use only syntax that the reference defines. If the reference does not support something, say so. Do not invent a notation.
-2. Check the relevant section before writing a construct that you have not already confirmed in this conversation.
+1. Use only syntax the reference defines. Otherwise say so; never invent notation.
+2. Check the relevant section before writing an unconfirmed construct.
    Lines never continue: keep each `mel:` / `lyr:` on one line, or repeat the prefix per line (`## 6.3`). Lyrics go only in `lyr:` or `l:"..."`, one syllable per sung note.
-3. After you create or materially edit GuitarDSL, run the `guitardsl_validate_dsl` tool (`#guitardslValidate`) on the document. Fix every reported error and validate again. Fix warnings too (syllable counts, measure lengths, `:|` without `|:`) unless the user asked for that notation. Diagnostics are the parser's verdict. Do not argue with them.
-4. Do not calculate capo changes, playability, Beginner Mode chord substitutions or sounding transposition yourself. Use these tools instead:
+3. After you create or materially edit GuitarDSL, run `guitardsl_validate_dsl` (`#guitardslValidate`). Fix every error and revalidate. Fix warnings too (syllable counts, measure lengths) unless the user asked for that notation.
+4. Never compute capo changes, playability, Beginner Mode substitutions or sounding transposition yourself; use:
    - `guitardsl_analyze_playability` (`#guitardslPlayability`)
    - `guitardsl_apply_capo` (`#guitardslApplyCapo`)
    - `guitardsl_apply_beginner_mode` (`#guitardslApplyBeginner`)
    - `guitardsl_apply_transpose` (`#guitardslTranspose`)
 
-   They apply the extension's own deterministic algorithms as one undoable edit.
+   They edit only the document you name with `uri` or an absolute `path`. For the user's current file, call `guitardsl_validate_dsl` without arguments and pass its `document.uri` (existing-score tasks only; never for a new/create request).
 
-   These tools edit only the document you name with `uri` or an absolute `path`. To target the file the user is working on, call `guitardsl_validate_dsl` without arguments first and pass its `document.uri`.
+5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read the [accompaniment guide](./references/accompaniment.md), then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). For general arrangement keep intent broad: `subdivision: auto`, no `family` / `syncopationKinds` / `difficulty` / `preferredPresetId` unless the user asks; the engine picks the preset.
 
-5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read `references/accompaniment.md`, an authored guide that is not part of the specification. Then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). You decide the musical intent; the tools generate down/up strokes, durations and the edit.
+6. New score from scratch: read the [accompaniment guide](./references/accompaniment.md) first. Create a distinct new GuitarDSL document first; do not reuse an existing score as the target, and pin every step to the new document. Write a structural draft with no D/U rhythm, then `guitardsl_validate_dsl` → `guitardsl_analyze_accompaniment` → one `guitardsl_apply_accompaniment` → `guitardsl_validate_dsl`. If a tool fails, never fall back to hand-written rhythm.

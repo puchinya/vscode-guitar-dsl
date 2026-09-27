@@ -1176,6 +1176,88 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(doc.getText(), SONG, 'one undo restores every section');
   });
 
+  const NEW_SONG_DRAFT = ['title: New Song', 'time: 4/4', '', '[Verse]', '| C | G |', 'mel: | c4/2 d4/2 | e4/1 |', 'lyr: la la la', '', '[Chorus]', '| F | C |', 'mel: | f4/2 e4/2 | c4/1 |', 'lyr: la la la', ''].join('\n');
+  const newSongPlans = [
+    intentPlan(0, { energy: 'low', density: 'sparse', arrangementGroup: 'verse' }),
+    intentPlan(1, { energy: 'high', density: 'dense', emphasis: 'backbeat', arrangementGroup: 'chorus' })
+  ];
+  const strokes = /\b\d+\.[du]\b/;
+
+  // Tool mechanics only: this test starts after the new target already exists (an active untitled document).
+  // It does not prove Agent target selection; the model's new-target policy is covered by the AI asset gate.
+  test('#104 new score mechanics (target already established): structural draft -> validate -> analyze -> one apply -> validate; one undo restores the draft', async () => {
+    const DRAFT = NEW_SONG_DRAFT;
+    const doc = await openUntitled(DRAFT);
+    assert.ok(!strokes.test(doc.getText()), 'the draft has no explicit accompaniment rhythm');
+
+    const first = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(first.document.uri, u(doc));
+    assert.strictEqual(first.valid, true, JSON.stringify(first));
+    assert.strictEqual(first.errorCount, 0);
+    assert.strictEqual(first.warningCount, 0);
+
+    const analysis = await invokeRegistered('guitardsl_analyze_accompaniment', {});
+    assert.strictEqual(analysis.ok, true, JSON.stringify(analysis));
+    assert.strictEqual(analysis.document.uri, u(doc));
+    assert.deepStrictEqual(analysis.sections.map((s: any) => [s.sectionIndex, s.name]), [[0, 'Verse'], [1, 'Chorus']]);
+
+    const version = doc.version;
+    const outcome = await Promise.race([
+      invokeRegistered('guitardsl_apply_accompaniment', {
+        uri: first.document.uri,
+        plans: newSongPlans
+      }),
+      sleep(5000).then(() => 'timeout')
+    ]);
+    assert.notStrictEqual(outcome, 'timeout');
+    const applied = outcome as any;
+    assert.strictEqual(applied.ok, true, JSON.stringify(applied));
+    assert.deepStrictEqual(applied.appliedSections.map((s: any) => s.selectedPresetId), ['strum_4_4_quarter_basic', 'rock_4_4_eighth_backbeat']);
+    assert.strictEqual(applied.postValidationPassed, true);
+    assert.strictEqual(doc.version, version + 1, 'one document change');
+    assert.ok(strokes.test(doc.getText()), 'engine-generated rhythm appears only after apply');
+    assert.ok(doc.getText().includes('| F 8.d 8.u 8.d.a 8.u 8.d 8.u 8.d.a 8.u |'));
+    assert.ok(doc.getText().includes('mel: | c4/2 d4/2 | e4/1 |') && doc.getText().includes('lyr: la la la'), 'melody and lyrics are kept');
+
+    const last = await invokeRegistered('guitardsl_validate_dsl', {});
+    assert.strictEqual(last.errorCount, 0, JSON.stringify(last));
+
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), DRAFT, 'one undo restores the exact structural draft');
+  });
+
+  // Mechanical target-pinning regression (not a substitute for the Agent policy): with an existing score A active,
+  // every new-score step on a distinct new document B by explicit path edits only B.
+  test('#104 new-target pinning: validate/analyze/apply/validate by path edit only the new document; the open existing score is byte-for-byte unchanged', async () => {
+    const existingText = SONG;
+    const existingPath = writeFixture('existing-song.guitardsl', existingText);
+    const existing = await vscode.workspace.openTextDocument(vscode.Uri.file(existingPath));
+    await showAndFocus(existing, vscode.ViewColumn.One);
+    const newPath = writeFixture('new-song.guitardsl', NEW_SONG_DRAFT);
+    assert.notStrictEqual(newPath, existingPath);
+    assert.strictEqual(vscode.window.activeTextEditor?.document, existing, 'the existing score is the active editor throughout');
+
+    const first = await invokeRegistered('guitardsl_validate_dsl', { path: newPath });
+    assert.deepStrictEqual([first.document.path, first.errorCount], [newPath, 0], JSON.stringify(first));
+    const analysis = await invokeRegistered('guitardsl_analyze_accompaniment', { path: newPath });
+    assert.strictEqual(analysis.document.path, newPath);
+    assert.deepStrictEqual(analysis.sections.map((s: any) => s.name), ['Verse', 'Chorus']);
+    const outcome = await Promise.race([invokeRegistered('guitardsl_apply_accompaniment', { path: newPath, plans: newSongPlans }), sleep(5000).then(() => 'timeout')]);
+    assert.notStrictEqual(outcome, 'timeout');
+    const applied = outcome as any;
+    assert.strictEqual(applied.ok, true, JSON.stringify(applied));
+    assert.strictEqual(applied.document.path, newPath);
+    const last = await invokeRegistered('guitardsl_validate_dsl', { path: newPath });
+    assert.deepStrictEqual([last.document.path, last.errorCount], [newPath, 0]);
+
+    const created = await vscode.workspace.openTextDocument(vscode.Uri.file(newPath));
+    assert.ok(strokes.test(created.getText()), 'only the new document received accompaniment');
+    assert.strictEqual(existing.getText(), existingText, 'the open existing score is unchanged');
+    assert.strictEqual(existing.isDirty, false);
+    assert.strictEqual(fs.readFileSync(existingPath, 'utf8'), existingText, 'the existing file on disk is byte-for-byte unchanged');
+    assert.strictEqual(vscode.window.activeTextEditor?.document, existing);
+  });
+
   test('T029/T030 accompaniment failures edit nothing; the target is the named document; guard and cancellation hold', async () => {
     const doc = await openUntitled(SONG);
     const { tools } = makeTools();
