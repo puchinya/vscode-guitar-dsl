@@ -110,16 +110,21 @@ Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / P
 
 ### Change Accompaniment Pattern
 
-**GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)** replaces the rhythm of the measures with a preset strumming or arpeggio pattern. Start it from:
+**GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)** replaces the rhythm of the measures with one of 58 strumming and arpeggio patterns. Start it from:
 
 - the **Change Pattern [section]** CodeLens above a section heading, or
 - the Command Palette, where you first choose the whole score or one section.
 
-The change is a single undoable edit.
+You choose in two steps. First pick a category that fits the meter: 8-beat, 16-beat, Shuffle, Arpeggio and so on for 4/4, or 3/4 Waltz, 6/8, 12/8 and so on for other meters. Then pick a pattern. Patterns are grouped by style: Pop / J-POP, Rock / Punk / Metal, Funk and others. When the current rhythm is already a catalog pattern, **Close to the current pattern** appears first.
+
+- Only the rhythm changes. Chords, lyrics, melody, comments and `%` stay as they are, and so do pickup measures.
+- A score with mixed meters cannot take one pattern for the whole score. Choose a section instead.
+- Measures are left alone when a change would alter the meaning of a `%`, or when they contain inline notes.
+- The change is a single undoable edit.
 
 ### YouTube Transcription (Gemini)
 
-**GuitarDSL: Transcribe from YouTube** sends a public YouTube URL to Google Gemini and opens a new, unsaved GuitarDSL document with chords, rhythm and melody. It supports 4/4 songs only. It needs a Gemini API key, which is stored in VS Code's secret storage. Manage the key with **GuitarDSL: Set Gemini API Key** and **GuitarDSL: Clear Gemini API Key**. The model is chosen by the `guitardsl.gemini.model` setting. This feature uses the network, and existing files are never overwritten.
+**GuitarDSL: Transcribe from YouTube** sends a public YouTube URL to Google Gemini and opens a new, unsaved GuitarDSL document with chords, rhythm and melody. It supports 4/4 songs only. Besides **Auto**, you can pick an accompaniment pattern: first a category, then one of its 4/4 patterns (patterns that need a swing or shuffle feel are not offered). It needs a Gemini API key, which is stored in VS Code's secret storage. Manage the key with **GuitarDSL: Set Gemini API Key** and **GuitarDSL: Clear Gemini API Key**. The model is chosen by the `guitardsl.gemini.model` setting. This feature uses the network, and existing files are never overwritten.
 
 ### Local Audio Transcription (Experimental)
 
@@ -136,6 +141,8 @@ On VS Code 1.109 or later, you can work with GuitarDSL from VS Code's built-in A
   - `#guitardslApplyCapo` changes the capo.
   - `#guitardslApplyBeginner` applies Beginner Mode.
   - `#guitardslTranspose` transposes the sounding music.
+  - `#guitardslAccompaniment` analyzes the sections, meters, current accompaniment and available patterns. It does not change the file.
+  - `#guitardslApplyAccompaniment` adds accompaniment section by section. Use it for requests like "keep the verse quiet and give the chorus a strong 8-beat" or "push the chorus a little". The model decides the style. The extension gets the down / up strokes, beat counts and chord changes right. It can also shape section transitions and the ending of the song around where the vocal ends.
 - **Tools that change the file** ask you to confirm the file and the operation first. They use the same calculation as **Apply to DSL** in the preview and write one undoable edit. If a change cannot be applied, the file is left unchanged. Changes to the same file run one at a time.
 - Tools that change the file edit only the file the Agent names (by path or URI). Nothing other than the file shown in the confirmation is changed, and switching to another file after confirming does not change the target. Unsaved untitled files can be targeted too.
 - Without a file, the validation and analysis tools choose the target the same way as commands: the active editor, then visible editors, then the last used or any open GuitarDSL file.
@@ -174,7 +181,7 @@ time: 4/4
 
 ### Sections, Measures and Barlines
 
-A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell:
+A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell. A line never continues on the next line:
 
 ```guitardsl
 [Intro]
@@ -184,7 +191,7 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 
 Barlines and navigation marks:
 
-- `|` normal barline, `|:` and `:|` repeats, `||` double barline, `|]` final barline
+- `|` normal barline, `|:` and `:|` repeats (every `:|` needs a matching `|:`), `||` double barline, `|]` final barline
 - `[1.]` and `[2.]` for first and second endings
 - `Segno`, `Coda`, `to Coda`, `D.S.`, `D.C.` and `Fine`
 - `%` repeats the previous measure. If you leave out the chord, the previous chord is kept.
@@ -338,6 +345,9 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
+| Unrecognized token | A measure can hold only chords, rhythm tokens, notes, `$name`, `%`, volta brackets, navigation marks and `l:"..."`. Lyrics belong in `lyr:` or `l:"..."`. |
+| Continuation line | A `mel:` / `lyr:` line cannot continue on an indented `\| ... \|` line (that line is not read as measures). Put it on one line, or start each line with `mel:` / `lyr:`. |
+| `:\|` without `\|:` | Write `\|:` at the start of the passage to repeat. |
 
 ### The Preview Looks Wrong or Does Not Change
 

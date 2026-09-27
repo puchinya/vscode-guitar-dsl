@@ -18,7 +18,9 @@
     "onLanguageModelTool:guitardsl_analyze_playability",
     "onLanguageModelTool:guitardsl_apply_capo",
     "onLanguageModelTool:guitardsl_apply_beginner_mode",
-    "onLanguageModelTool:guitardsl_apply_transpose"
+    "onLanguageModelTool:guitardsl_apply_transpose",
+    "onLanguageModelTool:guitardsl_analyze_accompaniment",
+    "onLanguageModelTool:guitardsl_apply_accompaniment"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -327,6 +329,497 @@
           "required": [
             "semitones",
             "capoMode"
+          ]
+        }
+      },
+      {
+        "name": "guitardsl_analyze_accompaniment",
+        "toolReferenceName": "guitardslAccompaniment",
+        "displayName": "%languageModelTools.analyzeAccompaniment.displayName%",
+        "userDescription": "%languageModelTools.analyzeAccompaniment.userDescription%",
+        "modelDescription": "Analyze the accompaniment of a GuitarDSL score before arranging it; returns JSON only, read-only. Without sectionIndex: every section (0-based sectionIndex in source order, name, meters, feels, current rhythm families, canonical preset matches, up to 5 adaptation candidates, availableFamilies), the section transition contexts and the ending context (vocal timing from mel:/lyr:). With sectionIndex: that section only; add family to list that family's compatible canonical presets (metadata, no full catalog). The tool never guesses genre or mood; you choose the musical intent. Without path the target is the active editor's GuitarDSL document, else a visible GuitarDSL editor, else the last active or any open GuitarDSL document; pass the result's document.uri to guitardsl_apply_accompaniment.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(pulse)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document. Omit to use the active editor's GuitarDSL document, else a visible one, else the last active or any open GuitarDSL document."
+            },
+            "sectionIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "0-based section index; omit for the whole score structure."
+            },
+            "family": {
+              "type": "string",
+              "enum": [
+                "quarter",
+                "eighth",
+                "sixteenth",
+                "shuffle",
+                "swing",
+                "triplet",
+                "sustain",
+                "arpeggio",
+                "rolled"
+              ],
+              "description": "With sectionIndex: list this family's presets compatible with the section's meter and feel."
+            }
+          }
+        }
+      },
+      {
+        "name": "guitardsl_apply_accompaniment",
+        "toolReferenceName": "guitardslApplyAccompaniment",
+        "displayName": "%languageModelTools.applyAccompaniment.displayName%",
+        "userDescription": "%languageModelTools.applyAccompaniment.userDescription%",
+        "modelDescription": "Apply guitar accompaniment rhythms to sections of a GuitarDSL score. You decide the musical intent per section; the extension guarantees meter length, the physical down/up phase, syncopation, chord articulation (every chord gets a harmonic attack), phrase-end variations from the canonical catalog, and a source-preserving edit of rhythm tokens only (chords, lyrics, melody, comments, % repeats and barlines are kept). Optional transitions (max 3 ordered candidates per section boundary) and ending (max 3 ordered candidates for the final 1-2 measures) are checked against vocal timing and chords; the first legal candidate wins and nothing else is invented. All plans are validated before editing; any failure edits nothing. One invocation = one undoable edit. Returns a summary (selected presets, rationale, warnings, postValidationPassed), never the whole score. Requires exactly one of uri or path; it never falls back to the active editor. Call guitardsl_analyze_accompaniment first and guitardsl_validate_dsl afterwards.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(pulse)",
+        "tags": [
+          "guitardsl"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "Document URI of the GuitarDSL document to edit, for example document.uri from a guitardsl_analyze_accompaniment result (file:///… or untitled:…). Pass exactly one of uri or path."
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute file path of the GuitarDSL document to edit. Pass exactly one of uri or path."
+            },
+            "plans": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "description": "One section plan. mode intent: the extension picks a canonical preset deterministically (operation replace changes the family; adapt keeps family/style/subdivision and only moves energy/density/syncopation/emphasis/difficulty, failing noCompatibleAdaptation instead of replacing). mode preset: exact catalog preset. mode grid: attack positions only. mode dsl: an explicit GuitarDSL rhythm pattern for one full measure, validated for meter length and (directionPolicy physical, the default) the physical down/up phase.",
+                "properties": {
+                  "sectionIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based section index in source order, from guitardsl_analyze_accompaniment (measures before the first [label] form section 0; repeated labels are separate sections)."
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "intent",
+                      "preset",
+                      "grid",
+                      "dsl"
+                    ]
+                  },
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "strum",
+                      "arpeggio",
+                      "rolled",
+                      "sustain"
+                    ],
+                    "description": "intent / dsl: strum, arpeggio, rolled or sustain; grid: strum or arpeggio."
+                  },
+                  "subdivision": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "quarter",
+                      "eighth",
+                      "sixteenth",
+                      "triplet"
+                    ],
+                    "description": "intent only."
+                  },
+                  "family": {
+                    "type": "string",
+                    "enum": [
+                      "quarter",
+                      "eighth",
+                      "sixteenth",
+                      "shuffle",
+                      "swing",
+                      "triplet",
+                      "sustain",
+                      "arpeggio",
+                      "rolled"
+                    ],
+                    "description": "intent only: restrict to one family."
+                  },
+                  "energy": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ],
+                    "description": "intent only."
+                  },
+                  "density": {
+                    "type": "string",
+                    "enum": [
+                      "sparse",
+                      "medium",
+                      "dense"
+                    ],
+                    "description": "intent only."
+                  },
+                  "syncopation": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "light",
+                      "medium",
+                      "strong"
+                    ],
+                    "description": "intent only."
+                  },
+                  "syncopationKinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "offbeat",
+                        "anticipation",
+                        "beatCrossing"
+                      ]
+                    },
+                    "description": "intent only: every listed kind is required. Anticipation ('食い') is within the measure; cross-bar chord anticipation is not generated."
+                  },
+                  "emphasis": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "downbeat",
+                      "backbeat",
+                      "offbeat",
+                      "custom"
+                    ],
+                    "description": "intent only."
+                  },
+                  "preferredPresetId": {
+                    "type": "string",
+                    "description": "intent only: a soft preference (used when it passes every hard filter)."
+                  },
+                  "difficulty": {
+                    "type": "string",
+                    "enum": [
+                      "beginner",
+                      "intermediate",
+                      "advanced"
+                    ],
+                    "description": "intent only: presets harder than this are excluded."
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "replace",
+                      "adapt"
+                    ],
+                    "description": "intent only (required there). Relative requests (stronger, softer, more syncopated, for beginners) = adapt; family changes (make it 16-beat, arpeggio) = replace."
+                  },
+                  "presetId": {
+                    "type": "string",
+                    "description": "preset only: canonical preset id from guitardsl_analyze_accompaniment."
+                  },
+                  "gridUnit": {
+                    "type": "string",
+                    "enum": [
+                      "quarter",
+                      "eighth",
+                      "sixteenth",
+                      "tripletEighth"
+                    ],
+                    "description": "grid only."
+                  },
+                  "attacks": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "description": "grid only: ascending unique 0-based slots that sound (4/4 eighth = 0..7, 4/4 sixteenth = 0..15, 4/4 tripletEighth = 0..11, 6/8 eighth = 0..5)."
+                  },
+                  "accents": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "description": "grid only: subset of attacks with an accent."
+                  },
+                  "ghosts": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "description": "grid only: subset of attacks played as ghost strokes (strum only)."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "dsl only: GuitarDSL rhythm tokens of one full measure, e.g. '4.d 8.d 4.u 8.u 8.d 8.u'."
+                  },
+                  "directionPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "physical",
+                      "literal"
+                    ],
+                    "description": "dsl only. Default physical. Use literal only when the user explicitly asked for special stroke directions; never choose it on your own."
+                  },
+                  "phraseLength": {
+                    "type": "integer",
+                    "enum": [
+                      2,
+                      4,
+                      8
+                    ],
+                    "description": "Phrase length in measures for phrase-end variations; omitted = 8/4/2 by the section's measure count."
+                  },
+                  "arrangementGroup": {
+                    "type": "string",
+                    "description": "Keeps repeated sections (e.g. every chorus) in the same family / style / subdivision."
+                  },
+                  "arrangementRole": {
+                    "type": "string",
+                    "enum": [
+                      "base",
+                      "variation",
+                      "finale"
+                    ],
+                    "description": "base = defines the group's preset; variation = a catalog variation of it; finale = same family, energy/density at most one step higher."
+                  }
+                },
+                "required": [
+                  "sectionIndex",
+                  "mode"
+                ]
+              },
+              "description": "Section plans; each sectionIndex at most once."
+            },
+            "transitions": {
+              "type": "array",
+              "description": "Optional non-final section-boundary variations.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "afterSectionIndex": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "candidates": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "intent": {
+                          "type": "string",
+                          "enum": [
+                            "space",
+                            "hold",
+                            "lift",
+                            "fill",
+                            "cadence"
+                          ]
+                        },
+                        "targetMeasureOffset": {
+                          "type": "integer",
+                          "enum": [
+                            -2,
+                            -1
+                          ],
+                          "description": "-1 = the section's last measure, -2 = the one before."
+                        },
+                        "pattern": {
+                          "type": "object",
+                          "description": "Structured pattern: {source:'preset', presetId} (full measures), {source:'grid', gridUnit, attacks, accents?, ghosts?} (0-based slots; the extension decides down/up and durations) or {source:'hold'} (hold the last stroke before the vocal-safe point to the measure end). Raw down/up tokens are not accepted.",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "preset",
+                                "grid",
+                                "hold"
+                              ]
+                            },
+                            "presetId": {
+                              "type": "string"
+                            },
+                            "gridUnit": {
+                              "type": "string",
+                              "enum": [
+                                "quarter",
+                                "eighth",
+                                "sixteenth",
+                                "tripletEighth"
+                              ]
+                            },
+                            "attacks": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "description": "Ascending unique slot indices that sound."
+                            },
+                            "accents": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "description": "Subset of attacks with .a."
+                            },
+                            "ghosts": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "description": "Subset of attacks played as ghost (muted) strokes."
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "intent",
+                        "targetMeasureOffset",
+                        "pattern"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "afterSectionIndex",
+                  "candidates"
+                ]
+              }
+            },
+            "ending": {
+              "type": "object",
+              "description": "Optional final-song ending for the last section's final 1-2 measures.",
+              "properties": {
+                "candidates": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "hold",
+                          "finalHit",
+                          "fillToHold",
+                          "breakThenHit",
+                          "rolledFinal"
+                        ]
+                      },
+                      "measures": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "relativeMeasure": {
+                              "type": "integer",
+                              "enum": [
+                                -2,
+                                -1
+                              ]
+                            },
+                            "pattern": {
+                              "type": "object",
+                              "description": "Structured pattern: {source:'preset', presetId} (full measures), {source:'grid', gridUnit, attacks, accents?, ghosts?} (0-based slots; the extension decides down/up and durations) or {source:'hold'} (hold the last stroke before the vocal-safe point to the measure end). Raw down/up tokens are not accepted.",
+                              "properties": {
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "preset",
+                                    "grid",
+                                    "hold"
+                                  ]
+                                },
+                                "presetId": {
+                                  "type": "string"
+                                },
+                                "gridUnit": {
+                                  "type": "string",
+                                  "enum": [
+                                    "quarter",
+                                    "eighth",
+                                    "sixteenth",
+                                    "tripletEighth"
+                                  ]
+                                },
+                                "attacks": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "description": "Ascending unique slot indices that sound."
+                                },
+                                "accents": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "description": "Subset of attacks with .a."
+                                },
+                                "ghosts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "description": "Subset of attacks played as ghost (muted) strokes."
+                                }
+                              },
+                              "required": [
+                                "source"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "relativeMeasure",
+                            "pattern"
+                          ]
+                        }
+                      },
+                      "fermataFinal": {
+                        "type": "boolean",
+                        "description": "Add a fermata to the final event."
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "measures"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "candidates"
+              ]
+            }
+          },
+          "required": [
+            "plans"
           ]
         }
       }

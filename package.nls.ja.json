@@ -26,5 +26,9 @@
   "languageModelTools.applyBeginner.displayName": "GuitarDSL: 初心者モードを適用",
   "languageModelTools.applyBeginner.userDescription": "弾きやすいカポと簡単なコードを選びます（1 回の編集で元に戻せます）。",
   "languageModelTools.transpose.displayName": "GuitarDSL: 実音を移調",
-  "languageModelTools.transpose.userDescription": "実音を移調し、カポを選びます（1 回の編集で元に戻せます）。"
+  "languageModelTools.transpose.userDescription": "実音を移調し、カポを選びます（1 回の編集で元に戻せます）。",
+  "languageModelTools.analyzeAccompaniment.displayName": "GuitarDSL: 伴奏を分析",
+  "languageModelTools.analyzeAccompaniment.userDescription": "セクション・拍子・現在のリズム系統と、使える伴奏プリセットを表示します。",
+  "languageModelTools.applyAccompaniment.displayName": "GuitarDSL: 伴奏を適用",
+  "languageModelTools.applyAccompaniment.userDescription": "セクションの伴奏リズムを書き換えます（1 回の編集。元に戻せます）。"
 }

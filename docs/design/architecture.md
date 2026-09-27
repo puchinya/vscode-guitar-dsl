@@ -113,7 +113,8 @@ flowchart TD
   - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
   - `originalKey` / `bpm` / `keySignature` は**冒頭の**メタデータ（最後に見たイベントではない）。冒頭の拍子 `timeSignature`、フィール `feel`、弱起 `pickup?`、スコアイベント列 `events` を持つ（§2.12）。
   - `MeasureData` は `measureIndex`（全体での 0 始まり）、解決済みのコンテキスト `context: ResolvedMeasureContext`、その小節の直前に適用されるイベント `eventsBefore`、期待する長さ `expectedBeats`、`isPickup?` を持つ。描画はこれだけを参照し、DSL のイベント行を読み直さない。
-  - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。採用した位置の直後から次のトークンを探すので、同じ小節の同名コード（`| l:"C" C C |`）はそれぞれ別の範囲になる。
+  - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）、小節ごとの `rhythmSource`（リズムの記述範囲。`explicit` / `implicit` / `repeat`。詳細は §2.19）。
+  - 構造の検査（生成された DSL の誤りを黙って受け入れないため）: 小節セルのトークンがどの分類にも当たらなければ `unknownMeasureToken`（エラー。トークンは無視）。本文ループは直前の行が `mel:` / `lyr:`（またはその続きの誤記）だったかを覚え、空行を挟まずに字下げした `|` 行が続けば `unsupportedContinuationLine`（エラー）として小節にしない。反復は小節の生成順に「開いた `|:` があるか」と「1番・2番カッコの `:|` の直後の小節が、同じセクション・ページで次のカッコを始めたか（D5 の共有。カッコのない小節・新しい `|:`・見出し・改ページで共有は終わる）」を追い、対応のない `:|` を `repeatEndWithoutStart`（警告）にする。コードトークンの列は、トークンの前後が空白・`|`・`:`（後ろは `]` も）である位置を探すため、`l:"..."` 内の同じ文字列には一致しない。採用した位置の直後から次のトークンを探すので、同じ小節の同名コード（`| l:"C" C C |`）はそれぞれ別の範囲になる。
 - **音価 (`src/duration.ts`)**: 共通音価表記（`項 (+ 項)*`、項 = 基本音価 + 付点 / 連符比）を `parseNoteValue` で解析し、拍数を有理数 `Fraction` で返す。コード・メロディの `/` 形式とリズムトークンで共用し、小節の合計拍数の検算も有理数で行う。コード・メロディの `:` 形式（拍数）は `parseBeats` で有理数化する。`parseDurationToBeats` は互換ラッパー。
 - **パーサー (`parseGuitarDsl`)**:
   - `mel:` / `lyr:` 行は小節行より先に判定する。メロディは「未割り当て小節カーソル」で小節へ割り当て、セクション見出し・改ページでカーソルを末尾へ進める。`lyr:` は直前の `mel:` 行が割り当てた音符列に番ごとに音節を割り当てる。
@@ -415,23 +416,53 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 VS Code Agent / Chat（モデル選択・会話・計画・通常の編集）
   ├─ chatInstructions  ai/instructions/guitardsl.instructions.md（*.guitardsl / *.gdsl のみ）
   ├─ chatSkills        ai/skills/guitardsl-language/SKILL.md → references/guitardsl-syntax.md（生成物）
+  │                                                       → references/accompaniment.md（手書きの伴奏ガイド）
   └─ languageModelTools → src/ai/tools.ts
                             ├─ parseGuitarDsl（§2.2）
                             ├─ inferCapoForDsl（§2.10）
-                            └─ applyCapoTransform / applyBeginnerTransform / applyTransposeTransform（§2.10, §2.11, §2.14）
+                            ├─ applyCapoTransform / applyBeginnerTransform / applyTransposeTransform（§2.10, §2.11, §2.14）
+                            └─ analyzeAccompaniment / applyAccompanimentTransform（§2.19）
 ```
 
-- **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、5 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
-- **モジュールの責務 (`src/ai/tools.ts`)**: ツール入力の型、`vscode.lm.registerTool` による登録、`LanguageModelTool` の実装、JSON 結果の組み立て、文書ごとの変更ガードを持つ。音楽ドメインの計算（カポ・弾きやすさ・初心者モード・移調の規則）は持たない。`vscode.lm.selectChatModels` / `sendRequest` は使わない。
-- **登録と寿命**: `extension.ts` の `activate` が `registerGuitarDslAiTools(context, locale, getLastDoc)` を呼び、5 つの `registerTool` の Disposable を `context.subscriptions` に積む。`getLastDoc` は最後にアクティブだった GuitarDSL ドキュメントを返す関数で、コマンドと同じ解決順を保つために渡す。Worker・タイマー・ネットワーク・バックグラウンド処理は持たない。AI 拡張機能が入っていない環境でも登録は成功し、ツールが呼ばれないだけである。
+- **言語知識の所有**: 言語仕様の権威は `docs/specs/guitardsl-syntax.md` だけである。`scripts/generate-ai-assets.mjs`（`generate:ai`、`precompile` から実行）が Skill の参照資料へバイト単位でコピーし、`scripts/check-ai-sync.mjs`（`check:ai`、`npm test` の最初に `check:help` と並んで実行）が読み取り専用で次を検査する: 参照資料と仕様のバイト一致、Skill の `name` とディレクトリ名の一致、`package.json` の `chatInstructions` / `chatSkills` のパスの存在、7 つのツール名・参照名・`onLanguageModelTool:` 起動イベントと manifest の一致、`ai/**` に採譜関連の除外識別子が含まれないこと、Skill・伴奏ガイド・指示が伴奏の 2 ツールを参照し Skill がガイドを指すこと、伴奏エンジンとツールアダプタ（`src/accompaniment.ts`・`src/strummingPatterns.ts`・`src/strummingCodeLens.ts`・`src/ai/tools.ts`）が採譜・`@google/genai`・Audio MIR を import しないこと。検査ロジックはルートディレクトリを引数に取る関数として公開し、単体テストが一時コピーに対して実行する。
+- **モジュールの責務 (`src/ai/tools.ts`)**: ツール入力の型、`vscode.lm.registerTool` による登録、`LanguageModelTool` の実装、JSON 結果の組み立て、文書ごとの変更ガードを持つ。音楽ドメインの計算（カポ・弾きやすさ・初心者モード・移調・伴奏の規則）は持たない。伴奏の 2 ツールは入力の形を `accompanimentRequestProblem` で検査し、`analyzeAccompaniment` / `applyAccompanimentTransform`（§2.19）を呼ぶだけである。`vscode.lm.selectChatModels` / `sendRequest` は使わない。
+- **登録と寿命**: `extension.ts` の `activate` が `registerGuitarDslAiTools(context, locale, getLastDoc)` を呼び、7 つの `registerTool` の Disposable を `context.subscriptions` に積む。`getLastDoc` は最後にアクティブだった GuitarDSL ドキュメントを返す関数で、コマンドと同じ解決順を保つために渡す。Worker・タイマー・ネットワーク・バックグラウンド処理は持たない。AI 拡張機能が入っていない環境でも登録は成功し、ツールが呼ばれないだけである。
 - **文書解決**: 読み取り専用ツールは、`path` があれば `Uri.file(path)` を `openTextDocument` で開き、`isGuitarDslDocument` を満たさなければ `documentNotFound`（フォールバックしない）。`path` がなければ `resolveGuitarDslDocument(undefined, getLastDoc())`。変更系ツールは入力の `uri`（`Uri.parse`）/ `path`（`Uri.file`）の文書だけを開く（`resolveMutationTarget`）。
 - **読み取り専用ツール**: `validate` は `parseGuitarDsl` の `diagnostics` を 1 始まりの行・列に変換するだけである。`playability` は `inferCapoForDsl` の結果を写すだけで、`currentPlayability` は同じ結果の `candidates[sourceCapo]` から取る。どちらも文書を変更しない。
 - **変更系ツールの処理順**: (1) 入力の実行時検証（対象 `mutationTargetProblem`: `uri` / 絶対 `path` のちょうど 1 つ、`isValidCapo` / `isValidSemitones` / `barrePolicy` / `'explicit'` の `capo`）→ (2) キャンセル確認 → (3) 入力が示す文書だけを `openTextDocument` で開き `isGuitarDslDocument` を確認（`resolveMutationTarget`。エディタ状態へのフォールバックなし）→ (4) URI 文字列をキーにしたガードの取得（取得済みなら `documentBusy`）→ (5) キャンセル確認 → (6) 既存の `apply*Transform`（最新ソースの再読込・1 つの `WorkspaceEdit`）→ (7) 成功時は現在の文書を `parseGuitarDsl` で再解析して `postValidationPassed` → `finally` でガードを解放。ガードはモジュール内の `Set<string>` で、待ち行列は持たない。
 - **確認した対象と編集する対象の同一性**: VS Code は `prepareInvocation` と `invoke` の間で入力しか共有せず、`prepareInvocation` のあとに `invoke` が呼ばれる保証もない（API 上も副作用を持ってはならない）。そのため変更系ツールの対象は入力（`uri` / `path`）だけで決める。`prepareInvocation` と `invoke` は同じ入力から同じ URI（`mutationUri`）を得るので、確認した文書と編集する文書は常に一致する。読み取り専用ツールの結果の `document.uri` を渡せば、無題ドキュメントも対象にできる。
 - **確認 (`prepareInvocation`)**: 副作用なし（状態を記録しない）。変更系ツールは入力の `uri` / `path` から作った表示名（file はファイルシステムのパス、それ以外は URI。`mutationLabel`）と操作内容から、ローカライズした `confirmationMessages` と `invocationMessage` を返し、エディタ状態を参照しない。読み取り専用ツールは確認を持たず、`invocationMessage` にだけ `path` のファイル名または `resolveGuitarDslDocument` で解決した文書名（`openTextDocument` を呼ばない）を使う。文言は `src/i18n.ts` の `getAiToolMessages(locale)`。
-- **テスト用の差し込み口**: ツールは依存（`getLastDoc`、3 つの apply 関数、ガード）を受け取るファクトリ `createGuitarDslAiTools(deps)` で作る。登録は既定の依存で同じファクトリを使う。E2E テストは apply 関数を保留できる関数に差し替えて同時実行とキャンセルを検査する。
+- **テスト用の差し込み口**: ツールは依存（`getLastDoc`、4 つの apply 関数、ガード）を受け取るファクトリ `createGuitarDslAiTools(deps)` で作る。登録は既定の依存で同じファクトリを使う。E2E テストは apply 関数を保留できる関数に差し替えて同時実行とキャンセルを検査する。
 - **同梱**: `.vscodeignore` は `ai/**` を除外しない。`docs/**`・`scripts/**`・`src/**`・`tests/**` の除外は変えない。
 - **依存しないもの**: 採譜サブシステム（§2.8）とローカル Audio MIR（§2.9）はツールにも AI 資産にも含めない。
+
+### 2.19 伴奏エンジンとプリセットカタログ (`src/strummingPatterns.ts`, `src/accompaniment.ts`, `src/strummingCodeLens.ts`)
+仕様 extension.md §3.10 / §8.7 の実装。責務は次の 3 層に分かれる。
+
+```text
+Agent / Chat（曲調・セクションの役割・意図） ─┐
+QuickPick（§3.10、手動でプリセットを選ぶ）  ─┼→ AccompanimentRequest
+                                               ↓
+src/accompaniment.ts（純粋。VS Code・Gemini・Audio MIR に依存しない）
+  ├─ 分析: accompanimentSections / analyzeAccompaniment / transitionContext / buildEndingContext
+  ├─ 選択: hardRejection → softCost → カタログ順（intent）、adapt、arrangementGroup
+  ├─ 生成: buildGrid / buildDsl / buildHold（ダウン / アップ・音価・加算音価）
+  ├─ 配置: base → applyPhraseVariation → applyTransition → applyEnding（desired: 小節 → リズム）
+  └─ 編集: buildEdits（rhythmSource の範囲だけ）→ applyEdits → 再解析で事後条件を確認
+                                               ↓
+src/strummingCodeLens.ts: applyAccompanimentTransform（最新ソース → 1 つの WorkspaceEdit）
+  ← src/ai/tools.ts（ガード・キャンセル・事後検証）/ promptAndApplyStrummingPattern（QuickPick）
+```
+
+- **カタログ (`src/strummingPatterns.ts`)**: 唯一のプリセット一覧 `STRUMMING_PATTERN_PRESETS`（58 件）と型、表示順（`FAMILY_ORDER` / `USAGE_GROUP_ORDER`）、パターンの解析 `parseRhythmPattern` を持つ。`parseRhythmPattern` はパターンを `time: <拍子>` 付きの 1 小節として `parseGuitarDsl` に通すので、受け付けるトークンは常に正式な DSL である。メタデータはすべて明示データで、実行時の推測はしない。整合性は `presetProblems`（長さ・方向モデル・シンコペーションの種類・奏法と修飾子・強調と `.a`・変化形の関係）で機械的に検査し、単体テストが全件に対して実行する。採譜パネル（§2.8）は同じカタログから 4/4 のプリセットだけを読み、シリアライザが ID と拍子を検証する。
+- **小節のソース位置 (`MeasureData.rhythmSource`)**: パーサーが小節ごとにリズムの記述範囲を記録する（`explicit` = リズム・`$name`・インライン音符のトークンが連続する列範囲、`implicit` = リズム省略時の挿入位置（セルの最後のトークンの直後）、`repeat` = `%`）。リズムのトークンがコード・マーク・歌詞と交互になる小節には記録しない（エンジンは `editRejected`）。これはパーサーの解釈結果で、レンダラーは使わない。
+- **時間の表現**: 小節内の位置と長さは `duration.ts` の分数（4 分音符 = 1）で扱う。`patternEvents` がリズムを「開始位置・長さ・打点か（休符・タイの続きでない）・和声的か（さらにゴーストでない）」のイベント列にする。位相の単位は単純拍子が 4 分拍、x/8 拍子が拍のグループ（`beamGroupStarts`）である。`phaseGrid` はすべての打点を含む最も粗い往復（4 分 → 8 分 → 16 分 → 32 分、3 連は「1 つ目と 3 つ目」→ 3 連 8 分 → 3 連 16 分）を選ぶ。
+- **現在のプリセットの逆引き**: `resolveMeasurePreset` が小節ごとに完全一致を 1 件に決める（複数ならフィールと同じファミリーで絞る。決まらなければ曖昧として数えない）。`currentPreset` はその多数決で、曖昧な小節があって決まらないときは `adapt` を失敗させ、候補を出さない。`arrangementGroup` は最初に基準を決めた計画だけが制約を受けず、後の計画は役割に関係なく基準に従う。
+- **選択の決定性**: `selectPreset` は候補を（優先度、カタログ順）で並べて、必須の条件を満たす最初の候補を選ぶ。乱数・時刻・環境には依存しない。失敗の種類は、候補が到達した最後の必須の条件（コードの提示 → フィール → その他）で決める。
+- **配置と優先順位**: 計画は `base` の役割のものを先に解決して `arrangementGroup` の基準を決め、そのあと `variation` / `finale` を解決する。小節ごとの「求めるリズム」を `desired` に集め、フレーズ末の変化・セクション切替・エンディングの順に上書きする。候補は `repeatSafe` で、後続の `%` の意味を変えないことも確かめる。
+- **編集**: 変更する小節ごとに `rhythmSource` の範囲を置換（`explicit`）または挿入（`implicit`）し、`%` は受け継ぐリズムが求めるリズムと一致するときだけ残す（一致しなければ `repeatWouldChangeMeaning`）。編集は行と列から絶対位置を求め、後ろから順に適用する（CRLF の行末を保つ）。適用後のテキストを再解析し、全小節のリズム・コード・歌詞と小節数を比較して、1 つでも計画と違えば編集しない。VS Code 側（`applyAccompanimentTransform`）は変化した中間部分だけを置き換える 1 つの `WorkspaceEdit` を適用する。
+- **手動の UI**: CodeLens は入力中も軽いように文書を全体解析せず、パーサーと共有する `classifySourceLine` / `measureCellsOf` で行を分類して `accompanimentSections` と同じ番号（最初の見出しより前の小節がセクション 0、小節が続く見出しだけを数える）を求め、識別情報 `{ sectionIndex, sectionName, labelLine }` を渡す。コマンドは最新ソースを解析し、3 つがすべて一致するセクションだけを対象にする。一致しなければ古い CodeLens として警告し、同じ名前のセクションに置き換えない（単体テストが全サンプルとヘッダー等に `|` を含む文書で識別情報の一致を、E2E が同名セクションと古い識別情報を検査）。クイックピックは対象範囲の拍子（`uniformMeter`）とフィールでカテゴリとプリセットを絞り、選んだプリセットを `phraseVariation: false` の `preset` 計画として同じエンジンで適用する。
+- **依存しないもの**: 採譜（§2.8）・Audio MIR（§2.9）・言語モデルの API には依存しない（`check:ai` が import を検査する）。
 
 ## 3. データフローとメッセージング (Data & Event Flow)
 

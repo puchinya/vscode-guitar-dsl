@@ -59,14 +59,20 @@ npm run check:ai      # read-only gate; runs in npm test right after check:help
   - the Skill `name` differs from its directory;
   - the instruction `applyTo` is not `**/*.{guitardsl,gdsl}`;
   - a contributed AI path is missing;
-  - the five `languageModelTools`, their reference names or `onLanguageModelTool:` activation events differ from the contract;
-  - `ai/**` or a tool description contains an excluded transcription identifier.
+  - the seven `languageModelTools`, their reference names or `onLanguageModelTool:` activation events differ from the contract;
+  - `ai/**` or a tool description contains an excluded transcription identifier;
+  - `SKILL.md` does not point to `references/accompaniment.md`, or the Skill, the guide or the instructions do not name both accompaniment tools;
+  - `src/accompaniment.ts`, `src/strummingPatterns.ts`, `src/strummingCodeLens.ts` or `src/ai/tools.ts` imports `@google/genai`, `src/transcription` or Audio MIR.
 - AI E2E checks live in `tests/e2e/extension.test.ts` (suite `AI integration: language model tools`). They cover:
   - registration without a model;
   - `vscode.lm.invokeTool` for the read-only tools;
   - the mutation adapters compared against the `apply*Transform` helpers;
   - `documentBusy` and guard release;
-  - cancellation.
+  - cancellation;
+  - the accompaniment tools (analysis, multi-section apply as one edit and one undo, failures without edits, exact target) and the accompaniment QuickPick (stubbed `showQuickPick`).
+- Accompaniment unit tests: `tests/unit/strummingPatterns.test.ts` (catalog vs contract table, self-check, phase, syncopation), `tests/unit/accompaniment.test.ts` (selection, modes, source edits, arrangement, analysis) and `tests/unit/accompanimentArrangement.test.ts` (transitions and endings with `mel:` / `lyr:` timing).
+- E2E tests that depend on the active editor (commands such as `undo`, tools or commands that resolve the active document) must use the helpers in `tests/e2e/extension.test.ts`: `showAndFocus(doc)` (waits until the document is really the active editor) and `undoIn(doc)`. A suite that needs a clean window starts with `closeAllEditors()`. A bare `showTextDocument` followed by an active-editor command races with editors left open by earlier suites.
+- The real-model Agent smoke (Issue #101 contract §21) cannot run in CI. Record it as manual evidence, or as not run, in the PR.
 
 ---
 

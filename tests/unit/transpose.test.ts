@@ -72,7 +72,7 @@ describe('transpose - planSoundingTranspose', () => {
       'lyr: あ い う',
       '@key:  B   # up',
       '@dynamic: f',
-      '| B:3 | 4. 4. |',
+      '| B:3 | 4+8 4+8 |',
       'mel: | b4/4.{staccato} f#5/8{5:4}~ f#5/8{5:4} f# f# f# |'
     ].join('\r\n');
     const plan = ok(planSoundingTranspose(src, 2));

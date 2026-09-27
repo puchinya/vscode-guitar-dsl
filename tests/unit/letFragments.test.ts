@@ -273,7 +273,7 @@ describe('note groups', () => {
   });
 
   it('keeps [Intro] and volta brackets out of note groups', () => {
-    const score = parseGuitarDsl(['[Intro]', '| C | G |', '|[1] C :|'].join('\n'));
+    const score = parseGuitarDsl(['[Intro]', '|: C | G |', '|[1] C :|'].join('\n'));
     assert.deepStrictEqual(score.diagnostics, []);
     assert.strictEqual(score.measures[0].sectionName, 'Intro');
   });

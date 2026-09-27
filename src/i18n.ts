@@ -545,7 +545,10 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   invalidVariableValue: a => `let ${a.name} の値が不正です（${VARIABLE_VALUE_REASON_JA[a.reason] ?? a.reason}）: ${a.token}`,
   variableContextMismatch: a => `$${a.name} は${a.context === 'melody' ? ' mel: 行' : '小節行'}では使えません`,
   invalidNoteGroup: a => `同時複数音が不正です（[音名オクターブ,…] に2音以上、重複なし、空白なし、共通の長さが必須）: ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`
+  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`,
+  unknownMeasureToken: a => `小節の中で解釈できないトークンです（コード・リズム・音符・記号のどれでもありません）: ${a.token}`,
+  unsupportedContinuationLine: () => '`mel:` / `lyr:` の続きの行は書けません。この行は小節として読みません。1 行にまとめるか、行ごとに `mel:` / `lyr:` を付けてください',
+  repeatEndWithoutStart: () => '反復終了線 `:|` に対応する反復開始線 `|:` がありません（楽譜の先頭または直前の `:|` のあと）'
 };
 
 const DIAGNOSTICS_EN: DiagnosticTemplates = {
@@ -587,7 +590,10 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   invalidVariableValue: a => `Invalid value for let ${a.name} (${VARIABLE_VALUE_REASON_EN[a.reason] ?? a.reason}): ${a.token}`,
   variableContextMismatch: a => `$${a.name} cannot be used in ${a.context === 'melody' ? 'a mel: line' : 'a measure line'}`,
   invalidNoteGroup: a => `Invalid note group ([pitch+octave,...] with two or more distinct pitches, no spaces and a shared length): ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`
+  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`,
+  unknownMeasureToken: a => `Unrecognized token in a measure (not a chord, rhythm, note or mark): ${a.token}`,
+  unsupportedContinuationLine: () => 'A `mel:` / `lyr:` line cannot continue on the next line; this line is not read as measures. Put it on one line or start each line with `mel:` / `lyr:`',
+  repeatEndWithoutStart: () => 'Repeat end `:|` has no matching repeat start `|:` (since the start of the score or the previous `:|`)'
 };
 
 export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {
@@ -884,6 +890,12 @@ export interface AiToolMessages {
   capoKeep: string;
   capoRecommended: string;
   capoExplicit: (capo: number) => string;
+  accompanimentAnalyzing: (doc: string) => string;
+  accompanimentTitle: string;
+  accompanimentConfirm: (doc: string, sections: string, extras: string) => string;
+  accompanimentProgress: (doc: string) => string;
+  accompanimentTransitions: (count: number) => string;
+  accompanimentEnding: string;
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -904,7 +916,14 @@ const AI_TOOLS_JA: AiToolMessages = {
   transposeProgress: doc => `${doc} を移調しています`,
   capoKeep: '維持',
   capoRecommended: '推奨',
-  capoExplicit: capo => String(capo)
+  capoExplicit: capo => String(capo),
+  accompanimentAnalyzing: doc => `${doc} の伴奏を分析しています`,
+  accompanimentTitle: 'GuitarDSL: 伴奏を適用',
+  accompanimentConfirm: (doc, sections, extras) =>
+    `${doc} のセクション ${sections}${extras} の伴奏リズムを書き換えます。コード・歌詞・メロディは変更しません（1 回の編集。元に戻せます）。`,
+  accompanimentProgress: doc => `${doc} に伴奏を適用しています`,
+  accompanimentTransitions: count => `、セクション切替 ${count} か所`,
+  accompanimentEnding: '、エンディング'
 };
 
 const AI_TOOLS_EN: AiToolMessages = {
@@ -923,9 +942,150 @@ const AI_TOOLS_EN: AiToolMessages = {
   transposeProgress: doc => `Transposing ${doc}`,
   capoKeep: 'keep',
   capoRecommended: 'recommended',
-  capoExplicit: capo => String(capo)
+  capoExplicit: capo => String(capo),
+  accompanimentAnalyzing: doc => `Analyzing the accompaniment of ${doc}`,
+  accompanimentTitle: 'GuitarDSL: Apply accompaniment',
+  accompanimentConfirm: (doc, sections, extras) =>
+    `Rewrite the accompaniment rhythm of ${doc}, section(s) ${sections}${extras}. Chords, lyrics and melody stay unchanged (one undoable edit).`,
+  accompanimentProgress: doc => `Applying accompaniment to ${doc}`,
+  accompanimentTransitions: count => `, ${count} section transition(s)`,
+  accompanimentEnding: ', the ending'
 };
 
 export function getAiToolMessages(locale: SupportedLocale): AiToolMessages {
   return locale === 'ja' ? AI_TOOLS_JA : AI_TOOLS_EN;
+}
+
+/** Text of the accompaniment pattern QuickPick (spec extension §3.10). */
+export interface AccompanimentUiMessages {
+  lensTitle: (section: string) => string;
+  unnamedSection: string;
+  scopeEntireScore: string;
+  scopeEntireScoreDetail: string;
+  scopeSection: string;
+  scopePlaceholder: string;
+  categoryPlaceholder: (target: string) => string;
+  patternPlaceholder: (target: string, category: string) => string;
+  currentShortcut: string;
+  currentShortcutDetail: string;
+  meterCategory: (meter: string) => string;
+  familyLabels: Record<string, string>;
+  usageGroupLabels: Record<string, string>;
+  levelLabels: Record<string, string>;
+  requiresFeel: (feels: string) => string;
+  entireScore: string;
+  noDocument: string;
+  noMeasures: string;
+  mixedMeter: string;
+  noPresets: (meter: string) => string;
+  noChange: string;
+  applied: (target: string, name: string) => string;
+  failed: (detail: string) => string;
+  staleSection: string;
+}
+
+const ACCOMPANIMENT_UI_JA: AccompanimentUiMessages = {
+  lensTitle: section => `$(symbol-event) 伴奏パターンを変更 [${section}]`,
+  unnamedSection: '（先頭）',
+  scopeEntireScore: '$(globe) 楽譜全体に適用',
+  scopeEntireScoreDetail: 'すべての小節の伴奏パターンを変更',
+  scopeSection: 'このセクションのみ変更',
+  scopePlaceholder: '変更を適用する範囲を選択してください',
+  categoryPlaceholder: target => `${target} の伴奏カテゴリを選択してください`,
+  patternPlaceholder: (target, category) => `${target} に適用するパターンを選択してください（${category}）`,
+  currentShortcut: '$(history) 現在のパターンに近い候補',
+  currentShortcutDetail: '今のパターンと同じ系統（ファミリー・奏法・細かさ）の候補',
+  meterCategory: meter => (meter === '3/4' ? '3/4 ワルツ' : meter),
+  familyLabels: {
+    quarter: '基本 / 4分',
+    eighth: '8ビート',
+    sixteenth: '16ビート',
+    shuffle: 'シャッフル',
+    swing: 'スウィング',
+    triplet: '3連',
+    sustain: 'バラード / サステイン',
+    arpeggio: 'アルペジオ',
+    rolled: 'アルペジアート'
+  },
+  usageGroupLabels: {
+    standard: '基本 / 汎用',
+    popJpop: 'Pop / J-POP',
+    acousticBallad: 'Acoustic / Folk / Ballad',
+    rockPunkMetal: 'Rock / Punk / Metal',
+    funkSoulDisco: 'Funk / Soul / Disco / R&B',
+    reggaeSka: 'Reggae / Ska',
+    blues: 'Blues / Shuffle',
+    special: '特殊奏法（オールダウン等）'
+  },
+  levelLabels: {
+    low: '低', medium: '中', high: '高', sparse: '疎', dense: '密',
+    none: 'なし', light: '弱', strong: '強',
+    downbeat: '強拍', backbeat: 'バックビート', offbeat: '裏拍', custom: '独自',
+    beginner: '初級', intermediate: '中級', advanced: '上級'
+  },
+  requiresFeel: feels => `要 feel: ${feels}`,
+  entireScore: '楽譜全体',
+  noDocument: 'GuitarDSL ファイルが見つかりません。',
+  noMeasures: '伴奏を変更できる小節がありません。',
+  mixedMeter: '拍子が混在しているため、楽譜全体へは 1 つのパターンを適用できません。セクションを選んで適用してください。',
+  noPresets: meter => `${meter} に使えるパターンがありません。`,
+  noChange: '変更対象の小節が見つかりませんでした。',
+  applied: (target, name) => `${target} の伴奏パターンを「${name}」に変更しました。`,
+  failed: detail => `伴奏パターンを適用できません: ${detail}`,
+  staleSection: 'セクションが変更されています。CodeLens が更新されてから、もう一度実行してください。'
+};
+
+const ACCOMPANIMENT_UI_EN: AccompanimentUiMessages = {
+  lensTitle: section => `$(symbol-event) Change Pattern [${section}]`,
+  unnamedSection: '(start)',
+  scopeEntireScore: '$(globe) Apply to Entire Score',
+  scopeEntireScoreDetail: 'Change the accompaniment pattern of every measure',
+  scopeSection: 'Change only this section',
+  scopePlaceholder: 'Select the target scope for the accompaniment pattern',
+  categoryPlaceholder: target => `Select an accompaniment category for ${target}`,
+  patternPlaceholder: (target, category) => `Select the pattern to apply to ${target} (${category})`,
+  currentShortcut: '$(history) Close to the current pattern',
+  currentShortcutDetail: 'Candidates of the same family, style and subdivision as the current pattern',
+  meterCategory: meter => (meter === '3/4' ? '3/4 Waltz' : meter),
+  familyLabels: {
+    quarter: 'Basic / Quarter',
+    eighth: '8-beat',
+    sixteenth: '16-beat',
+    shuffle: 'Shuffle',
+    swing: 'Swing',
+    triplet: 'Triplet',
+    sustain: 'Ballad / Sustain',
+    arpeggio: 'Arpeggio',
+    rolled: 'Arpeggiato'
+  },
+  usageGroupLabels: {
+    standard: 'Standard',
+    popJpop: 'Pop / J-POP',
+    acousticBallad: 'Acoustic / Folk / Ballad',
+    rockPunkMetal: 'Rock / Punk / Metal',
+    funkSoulDisco: 'Funk / Soul / Disco / R&B',
+    reggaeSka: 'Reggae / Ska',
+    blues: 'Blues / Shuffle',
+    special: 'Special techniques (all-downs, ...)'
+  },
+  levelLabels: {
+    low: 'low', medium: 'medium', high: 'high', sparse: 'sparse', dense: 'dense',
+    none: 'none', light: 'light', strong: 'strong',
+    downbeat: 'downbeat', backbeat: 'backbeat', offbeat: 'offbeat', custom: 'custom',
+    beginner: 'beginner', intermediate: 'intermediate', advanced: 'advanced'
+  },
+  requiresFeel: feels => `needs feel: ${feels}`,
+  entireScore: 'Entire Score',
+  noDocument: 'No GuitarDSL document found.',
+  noMeasures: 'There are no measures whose accompaniment can change.',
+  mixedMeter: 'The score mixes meters, so one pattern cannot be applied to the entire score. Choose a section instead.',
+  noPresets: meter => `No pattern is available for ${meter}.`,
+  noChange: 'No matching measures found to update.',
+  applied: (target, name) => `Changed the accompaniment pattern of ${target} to "${name}".`,
+  failed: detail => `Cannot apply the accompaniment pattern: ${detail}`,
+  staleSection: 'The section has changed. Refresh the CodeLens and try again.'
+};
+
+export function getAccompanimentUiMessages(locale: SupportedLocale): AccompanimentUiMessages {
+  return locale === 'ja' ? ACCOMPANIMENT_UI_JA : ACCOMPANIMENT_UI_EN;
 }

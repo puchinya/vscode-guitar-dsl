@@ -1,11 +1,27 @@
 // Webview panel for YouTube transcription settings and execution GUI.
 import * as vscode from 'vscode';
-import { SupportedLocale, getMessages } from '../i18n';
+import { SupportedLocale, getAccompanimentUiMessages, getMessages } from '../i18n';
 import { isValidYouTubeUrl } from './youtube';
 import { transcribeWithGemini } from './gemini';
 import { serializeSongToGuitarDsl } from './serializer';
 import { parseGuitarDsl } from '../compiler';
-import { STRUMMING_PATTERN_PRESETS } from '../strummingPatterns';
+import { AccompanimentFamily, FAMILY_ORDER, STRUMMING_PATTERN_PRESETS, StrummingPatternPreset } from '../strummingPatterns';
+
+// Transcription is 4/4 and writes no feel (straight), so the panel offers only 4/4 presets that allow a straight
+// feel, by family (spec extension §3.4, issue #101 D1 and PR #102 review).
+const TRANSCRIPTION_METER = '4/4';
+
+function transcriptionPresets(family: AccompanimentFamily): StrummingPatternPreset[] {
+  return STRUMMING_PATTERN_PRESETS.filter(
+    p => p.meter === TRANSCRIPTION_METER && p.family === family && (p.feelCompatibility === 'any' || p.feelCompatibility.includes('straight'))
+  );
+}
+
+const TRANSCRIPTION_FAMILIES: AccompanimentFamily[] = FAMILY_ORDER.filter(f => transcriptionPresets(f).length > 0);
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
@@ -197,6 +213,7 @@ export class TranscribePanel {
     locale: SupportedLocale;
   }): string {
     const isJa = ctx.locale === 'ja';
+    const uiMsgs = getAccompanimentUiMessages(ctx.locale);
 
     return `<!DOCTYPE html>
 <html lang="${ctx.locale}">
@@ -420,10 +437,15 @@ export class TranscribePanel {
 
   <div class="field-group">
     <label for="strummingPreset">${isJa ? '伴奏パターン (ストローク／アルペジオ)' : 'Accompaniment Pattern'}</label>
-    <select id="strummingPreset">
+    <select id="strummingFamily">
       <option value="auto">${isJa ? '自動（曲に合わせて耳コピ・定番パターンを優先）' : 'Auto (Standard guitar patterns)'}</option>
-      ${STRUMMING_PATTERN_PRESETS.map(p => `<option value="${p.id}">${isJa ? p.nameJa : p.nameEn} [${p.pattern}]</option>`).join('')}
+      ${TRANSCRIPTION_FAMILIES.map(f => `<option value="${f}">${escapeHtml(uiMsgs.familyLabels[f])}</option>`).join('')}
     </select>
+    ${TRANSCRIPTION_FAMILIES.map(
+      f => `<select id="strummingPreset-${f}" class="preset-select" style="display:none; margin-top:6px;">
+      ${transcriptionPresets(f).map(p => `<option value="${p.id}">${escapeHtml(isJa ? p.nameJa : p.nameEn)} [${escapeHtml(p.pattern)}]</option>`).join('')}
+    </select>`
+    ).join('\n    ')}
   </div>
 
   <div class="field-group">
@@ -487,6 +509,12 @@ export class TranscribePanel {
     }
 
     const btnStart = document.getElementById('btnStart');
+    const strummingFamily = document.getElementById('strummingFamily');
+    strummingFamily.addEventListener('change', () => {
+      document.querySelectorAll('.preset-select').forEach(el => {
+        el.style.display = el.id === 'strummingPreset-' + strummingFamily.value ? 'block' : 'none';
+      });
+    });
     const statusBox = document.getElementById('statusBox');
     const statusText = document.getElementById('statusText');
 
@@ -498,7 +526,10 @@ export class TranscribePanel {
       const capoMode = document.querySelector('input[name="capoMode"]:checked').value;
       const capoVal = parseInt(capoValue.value, 10);
       const beatType = document.querySelector('input[name="beatType"]:checked')?.value || 'auto';
-      const strummingPresetId = document.getElementById('strummingPreset')?.value || 'auto';
+      const strummingFamily = document.getElementById('strummingFamily')?.value || 'auto';
+      const strummingPresetId = strummingFamily === 'auto'
+        ? 'auto'
+        : document.getElementById('strummingPreset-' + strummingFamily)?.value || 'auto';
       const compressRepeats = document.getElementById('compressRepeats').checked;
       const model = document.getElementById('modelSelect').value;
 

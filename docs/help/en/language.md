@@ -31,7 +31,7 @@ time: 4/4
 ### Sections, Measures and Barlines
 <!-- help-sources: syntax:5 syntax:6 -->
 
-A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell:
+A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell. A line never continues on the next line:
 
 ```guitardsl
 [Intro]
@@ -41,7 +41,7 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 
 Barlines and navigation marks:
 
-- `|` normal barline, `|:` and `:|` repeats, `||` double barline, `|]` final barline
+- `|` normal barline, `|:` and `:|` repeats (every `:|` needs a matching `|:`), `||` double barline, `|]` final barline
 - `[1.]` and `[2.]` for first and second endings
 - `Segno`, `Coda`, `to Coda`, `D.S.`, `D.C.` and `Fine`
 - `%` repeats the previous measure. If you leave out the chord, the previous chord is kept.

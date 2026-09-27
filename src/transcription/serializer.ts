@@ -142,6 +142,18 @@ export function serializeSongToGuitarDsl(song: TranscribedSong, options?: Serial
   lines.push('');
 
   const preset = options?.strummingPresetId ? getPresetById(options.strummingPresetId) : undefined;
+  // A selected preset must exist and match the song meter; nothing falls back silently (issue #101 D1).
+  if (options?.strummingPresetId && !preset) {
+    throw new Error(`Unknown accompaniment preset: ${options.strummingPresetId}`);
+  }
+  const songMeter = `${song.timeSignature.numerator}/${song.timeSignature.denominator}`;
+  if (preset && preset.meter !== songMeter) {
+    throw new Error(`Accompaniment preset ${preset.id} is ${preset.meter}; the transcription is ${songMeter}`);
+  }
+  // The serializer writes no `feel:` header, so the output is straight.
+  if (preset && preset.feelCompatibility !== 'any' && !preset.feelCompatibility.includes('straight')) {
+    throw new Error(`Accompaniment preset ${preset.id} requires ${preset.feelCompatibility.join('/')} feel; transcription output is straight`);
+  }
 
   let sIdx = 0;
   while (sIdx < song.sections.length) {

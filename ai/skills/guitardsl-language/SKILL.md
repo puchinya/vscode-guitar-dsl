@@ -32,7 +32,8 @@ Read only the headings you need. Do not load the whole reference at once. The re
 
 1. Use only syntax that the reference defines. If the reference does not support something, say so. Do not invent a notation.
 2. Check the relevant section before writing a construct that you have not already confirmed in this conversation.
-3. After you create or materially edit GuitarDSL, run the `guitardsl_validate_dsl` tool (`#guitardslValidate`) on the document. Fix every reported error and validate again. Diagnostics are the parser's verdict. Do not argue with them.
+   Lines never continue: keep each `mel:` / `lyr:` on one line, or repeat the prefix per line (`## 6.3`). Lyrics go only in `lyr:` or `l:"..."`, one syllable per sung note.
+3. After you create or materially edit GuitarDSL, run the `guitardsl_validate_dsl` tool (`#guitardslValidate`) on the document. Fix every reported error and validate again. Fix warnings too (syllable counts, measure lengths, `:|` without `|:`) unless the user asked for that notation. Diagnostics are the parser's verdict. Do not argue with them.
 4. Do not calculate capo changes, playability, Beginner Mode chord substitutions or sounding transposition yourself. Use these tools instead:
    - `guitardsl_analyze_playability` (`#guitardslPlayability`)
    - `guitardsl_apply_capo` (`#guitardslApplyCapo`)
@@ -42,3 +43,5 @@ Read only the headings you need. Do not load the whole reference at once. The re
    They apply the extension's own deterministic algorithms as one undoable edit.
 
    These tools edit only the document you name with `uri` or an absolute `path`. To target the file the user is working on, call `guitardsl_validate_dsl` without arguments first and pass its `document.uri`.
+
+5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read `references/accompaniment.md`, an authored guide that is not part of the specification. Then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). You decide the musical intent; the tools generate down/up strokes, durations and the edit.

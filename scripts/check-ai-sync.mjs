@@ -1,7 +1,8 @@
 // Read-only AI asset synchronization gate (npm run check:ai).
 // Fails when the packaged Skill reference differs from the canonical syntax spec, the Skill name does not
-// match its directory, a contributed AI path is missing, the language model tool contract drifted, or an
-// AI asset / tool description mentions an excluded integration. It never repairs anything.
+// match its directory, a contributed AI path is missing, the language model tool contract drifted, the
+// Skill / instructions do not describe the accompaniment tools, an AI asset / tool description mentions an
+// excluded integration, or the accompaniment code imports one. It never repairs anything.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +11,8 @@ export const CANONICAL_SYNTAX_SPEC = 'docs/specs/guitardsl-syntax.md';
 export const SKILL_REFERENCE = 'ai/skills/guitardsl-language/references/guitardsl-syntax.md';
 export const INSTRUCTIONS_PATH = 'ai/instructions/guitardsl.instructions.md';
 export const SKILL_PATH = 'ai/skills/guitardsl-language/SKILL.md';
+/** Authored accompaniment guide the Skill points to (not generated, not a spec copy). */
+export const ACCOMPANIMENT_GUIDE = 'ai/skills/guitardsl-language/references/accompaniment.md';
 export const INSTRUCTIONS_APPLY_TO = '**/*.{guitardsl,gdsl}';
 
 /** The exact tool contract (extension spec §8.3): tool name -> prompt reference name. */
@@ -18,8 +21,17 @@ export const EXPECTED_TOOLS = Object.freeze({
   guitardsl_analyze_playability: 'guitardslPlayability',
   guitardsl_apply_capo: 'guitardslApplyCapo',
   guitardsl_apply_beginner_mode: 'guitardslApplyBeginner',
-  guitardsl_apply_transpose: 'guitardslTranspose'
+  guitardsl_apply_transpose: 'guitardslTranspose',
+  guitardsl_analyze_accompaniment: 'guitardslAccompaniment',
+  guitardsl_apply_accompaniment: 'guitardslApplyAccompaniment'
 });
+
+/** Tools the Skill and the instructions must both name (the accompaniment workflow, spec §8.2). */
+export const WORKFLOW_TOOLS = Object.freeze(['guitardsl_analyze_accompaniment', 'guitardsl_apply_accompaniment']);
+
+/** Accompaniment / AI tool sources that must stay independent of the excluded integrations. */
+export const ISOLATED_SOURCES = Object.freeze(['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']);
+export const EXCLUDED_IMPORTS = Object.freeze(['@google/genai', '/transcription', 'audioMir', 'audio-mir']);
 
 /** Identifiers of integrations that must never be advertised to the Agent. */
 export const EXCLUDED_IDENTIFIERS = Object.freeze(['Gemini', 'gemini', 'transcribeYouTube', '@google/genai', 'src/transcription']);
@@ -92,7 +104,7 @@ export function checkAiSync(root) {
     if (applyTo !== INSTRUCTIONS_APPLY_TO) errors.push(`${rel}: applyTo must be '${INSTRUCTIONS_APPLY_TO}' (found '${applyTo ?? ''}')`);
   }
 
-  // 4. Exactly the five contract tools, reference names and activation events.
+  // 4. Exactly the seven contract tools, reference names and activation events.
   const tools = Array.isArray(contributes.languageModelTools) ? contributes.languageModelTools : [];
   const actual = new Map();
   for (const tool of tools) {
@@ -125,6 +137,31 @@ export function checkAiSync(root) {
   for (const [label, text] of scanned) {
     for (const id of EXCLUDED_IDENTIFIERS) {
       if (text.includes(id)) errors.push(`${label}: contains excluded identifier "${id}"`);
+    }
+  }
+
+  // 6. The Skill, its accompaniment guide and the instructions describe the accompaniment workflow tools.
+  if (!read(SKILL_PATH)?.toString('utf8').includes('references/accompaniment.md')) errors.push(`${SKILL_PATH}: must point to references/accompaniment.md`);
+  for (const rel of [SKILL_PATH, ACCOMPANIMENT_GUIDE, INSTRUCTIONS_PATH]) {
+    const text = read(rel)?.toString('utf8');
+    if (text === undefined) {
+      errors.push(`${rel}: missing`);
+      continue;
+    }
+    for (const name of WORKFLOW_TOOLS) {
+      if (!text.includes(name)) errors.push(`${rel}: must reference ${name}`);
+    }
+  }
+
+  // 7. The accompaniment engine and the tool adapter import no excluded integration.
+  for (const rel of ISOLATED_SOURCES) {
+    const text = read(rel)?.toString('utf8');
+    if (text === undefined) {
+      errors.push(`${rel}: missing`);
+      continue;
+    }
+    for (const spec of text.matchAll(/^\s*import\b[^;]*?from\s+['"]([^'"]+)['"]/gm)) {
+      if (EXCLUDED_IMPORTS.some(id => spec[1].includes(id))) errors.push(`${rel}: imports excluded module "${spec[1]}"`);
     }
   }
 

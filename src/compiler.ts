@@ -127,6 +127,19 @@ export interface HeaderLine {
   valueEnd: number;
 }
 
+/**
+ * Source location of a measure's rhythm expression (spec extension §8.7): `explicit` = the column range
+ * [startCol, endCol) holds the measure's rhythm tokens (including `$name` fragments and inline notes) and
+ * nothing else; `implicit` = no rhythm was written and `startCol === endCol` is the insertion anchor right
+ * after the cell's last token; `repeat` = the `%` token (the measure inherits the previous source measure).
+ */
+export interface MeasureRhythmSource {
+  line: number;
+  startCol: number;
+  endCol: number;
+  kind: 'explicit' | 'implicit' | 'repeat';
+}
+
 export interface MeasureData {
   chord: string;
   chords: ChordPlacement[];
@@ -152,6 +165,11 @@ export interface MeasureData {
   /** Expected length in quarter beats (the pickup length for a pickup measure). */
   expectedBeats: Fraction;
   isPickup?: boolean;
+  /**
+   * Where this source-authored measure's rhythm is written; undefined when it cannot be isolated (rhythm
+   * tokens interleaved with chords / marks / a lyric, or an empty cell).
+   */
+  rhythmSource?: MeasureRhythmSource;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning';
@@ -195,7 +213,10 @@ export type DiagnosticCode =
   | 'invalidVariableValue'
   | 'variableContextMismatch'
   | 'invalidNoteGroup'
-  | 'unsupportedNoteGroupTechnique';
+  | 'unsupportedNoteGroupTechnique'
+  | 'unknownMeasureToken'
+  | 'unsupportedContinuationLine'
+  | 'repeatEndWithoutStart';
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -247,7 +268,10 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   invalidVariableValue: 'error',
   variableContextMismatch: 'error',
   invalidNoteGroup: 'error',
-  unsupportedNoteGroupTechnique: 'error'
+  unsupportedNoteGroupTechnique: 'error',
+  unknownMeasureToken: 'error',
+  unsupportedContinuationLine: 'error',
+  repeatEndWithoutStart: 'warning'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -422,6 +446,54 @@ interface MelodyGroup {
   notes: MelodyNote[];
   cellRanges: { start: number; end: number }[];
   verseCount: number;
+}
+
+const DIRECTIVE_LINE_RE = /^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/;
+const HEADER_LINE_RE = /^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i;
+const SECTION_LABEL_RE = /^\[([^\]]+)\]$/;
+const MELODY_LINE_RE = /^(\s*mel:)(.*)$/i;
+const LYRICS_LINE_RE = /^(\s*lyr:)(.*)$/i;
+
+export type SourceLineKind =
+  | 'continuation'
+  | 'blank'
+  | 'let'
+  | 'pageBreak'
+  | 'chordDefinition'
+  | 'directive'
+  | 'header'
+  | 'section'
+  | 'melody'
+  | 'lyrics'
+  | 'measure'
+  | 'other';
+
+/**
+ * Kind of a source line, in the parser's own precedence. `afterMelodyLine` = the previous line was a `mel:` /
+ * `lyr:` line or a continuation line (see `continuesMelodyContext`). Shared with tools that scan lines cheaply
+ * (the accompaniment CodeLens) so they classify exactly like `parseGuitarDsl`.
+ */
+export function classifySourceLine(rawLine: string, afterMelodyLine: boolean): SourceLineKind {
+  if (afterMelodyLine && /^\s+\|/.test(rawLine)) return 'continuation';
+  const line = rawLine.trim();
+  if (!line || line.startsWith('#')) return 'blank';
+  if (/^let\s/.test(line)) return 'let';
+  if (/^---+$/.test(line) || /^pagebreak$/i.test(line)) return 'pageBreak';
+  if (isChordDefinitionLine(line)) return 'chordDefinition';
+  if (DIRECTIVE_LINE_RE.test(rawLine)) return 'directive';
+  if (HEADER_LINE_RE.test(line)) return 'header';
+  if (SECTION_LABEL_RE.test(line)) return 'section';
+  if (MELODY_LINE_RE.test(rawLine)) return 'melody';
+  if (LYRICS_LINE_RE.test(rawLine)) return 'lyrics';
+  return line.includes('|') ? 'measure' : 'other';
+}
+
+/** Whether a line of this kind lets the next indented `|` line be a (reported) continuation. */
+export const continuesMelodyContext = (kind: SourceLineKind): boolean => kind === 'continuation' || kind === 'melody' || kind === 'lyrics';
+
+/** Non-empty measure cells of a measure line; the line yields a measure per cell (after chord/rhythm merging). */
+export function measureCellsOf(rawLine: string): string[] {
+  return rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
 }
 
 export interface ParseGuitarDslOptions {
@@ -716,9 +788,27 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     return def !== undefined && !def.invalid && (def.ctx & CTX_MEASURE) !== 0;
   };
 
+  let continuableLine = false;
+  // `:|` needs a `|:` since the score start or the previous `:|` (D4). Consecutive volta endings share one
+  // `|:` (D5): after a `:|` that closed an ending, the very next measure must start the next ending (a bracket,
+  // same section and page) for the shared start to stay usable; any other measure ends the sharing.
+  let repeatOpen = false;
+  let voltaSinceEnd = false;
+  let awaitingNextEnding = false;
+  let sharedStartOpen = false;
+  let endingPage = -1;
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const rawLine = lines[lineIdx];
     const line = rawLine.trim();
+    // An indented `|` line right after a `mel:` / `lyr:` line (or another such line) is an attempted
+    // continuation, which the syntax does not have: report it and do not read it as a measure (§6).
+    const kind = classifySourceLine(rawLine, continuableLine);
+    continuableLine = continuesMelodyContext(kind);
+    if (kind === 'continuation') {
+      const start = rawLine.indexOf('|');
+      report(lineIdx, start, rawLine.trimEnd().length, 'unsupportedContinuationLine');
+      continue;
+    }
     if (!line || line.startsWith('#')) continue;
     // `let` definitions were handled above; they never change measures, sections, pages or the melody cursor.
     if (/^let\s/.test(line)) continue;
@@ -754,7 +844,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Score event: @key: D, @tempo: 132, ... (spec §16). Applies before the next measure.
-    const directiveMatch = rawLine.match(/^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/);
+    const directiveMatch = rawLine.match(DIRECTIVE_LINE_RE);
     if (directiveMatch) {
       markBody(lineIdx);
       const name = directiveMatch[2].toLowerCase();
@@ -777,7 +867,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Headers
-    const headerMatch = line.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i);
+    const headerMatch = line.match(HEADER_LINE_RE);
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
       const val = headerMatch[2].trim();
@@ -841,7 +931,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Section label [Intro], [Aメロ] etc
-    const secMatch = line.match(/^\[([^\]]+)\]$/);
+    const secMatch = line.match(SECTION_LABEL_RE);
     if (secMatch) {
       markBody(lineIdx);
       currentSection = secMatch[1];
@@ -851,7 +941,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Melody line: mel: | e4/8 d c | ... |
-    const melMatch = rawLine.match(/^(\s*mel:)(.*)$/i);
+    const melMatch = rawLine.match(MELODY_LINE_RE);
     if (melMatch) {
       markBody(lineIdx);
       lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx);
@@ -859,7 +949,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     // Syllable lyric line: lyr: あさの ひかりを | ...
-    const lyrMatch = rawLine.match(/^(\s*lyr:)(.*)$/i);
+    const lyrMatch = rawLine.match(LYRICS_LINE_RE);
     if (lyrMatch) {
       markBody(lineIdx);
       if (!lastMelodyGroup) {
@@ -878,7 +968,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   function parseMeasureLine(rawLine: string, lineIdx: number) {
-    const rawBars = rawLine.split('|').map(s => s.trim()).filter(s => s.length > 0 && s !== ':' && s !== ']' && s !== ':]');
+    const rawBars = measureCellsOf(rawLine);
 
     const bars: string[] = [];
     const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+{}:]*)?$`);
@@ -983,6 +1073,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       let multiChordEqualSplit = false;
       // A cell with an unusable `$name` is not length-checked (the reference already has its diagnostic).
       let fragmentFailed = false;
+      // Rhythm expression span (rhythm tokens, `$name`, inline notes / groups) and the end of the last token.
+      let rhythmStartCol = -1;
+      let rhythmEndCol = -1;
+      let otherAfterRhythm = false;
+      let rhythmInterleaved = false;
+      let lastTokenEnd = -1;
 
       for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
         const tok = tokens[tokIdx];
@@ -991,6 +1087,15 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         const tokCol = found >= 0 ? found : searchPos;
         if (found >= 0) searchPos = found + tok.length;
         if (firstTokenCol < 0) firstTokenCol = tokCol;
+        const isRhythmToken = tok.startsWith('$') || RHYTHM_REGEX.test(tok) || NOTE_GROUP_START.test(tok) || (NOTE_TOKEN_REGEX.test(tok) && !CHORD_REGEX.test(tok));
+        if (isRhythmToken) {
+          if (otherAfterRhythm) rhythmInterleaved = true;
+          if (rhythmStartCol < 0) rhythmStartCol = tokCol;
+          rhythmEndCol = tokCol + tok.length;
+        } else if (rhythmStartCol >= 0) {
+          otherAfterRhythm = true;
+        }
+        lastTokenEnd = Math.max(lastTokenEnd, tokCol + tok.length);
 
         if (tok === '%') {
           isMeasureRepeat = true;
@@ -1029,6 +1134,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (tok.toLowerCase() === 'to' && tokens[tokIdx + 1]?.toLowerCase() === 'coda') {
           mSpecialMark = 'to_coda';
           tokIdx++;
+          const codaCol = rawLine.indexOf(tokens[tokIdx], searchPos);
+          if (codaCol >= 0) {
+            searchPos = codaCol + tokens[tokIdx].length;
+            lastTokenEnd = Math.max(lastTokenEnd, searchPos);
+          }
           continue;
         }
 
@@ -1107,6 +1217,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           } else {
             report(lineIdx, tokCol, tokCol + tok.length, parsed, { token: tok });
           }
+        } else {
+          // Not a chord, rhythm, inline note / group, `$name`, `%`, bracket or mark: never drop it silently.
+          report(lineIdx, tokCol, tokCol + tok.length, 'unknownMeasureToken', { token: tok });
         }
       }
 
@@ -1166,6 +1279,37 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
         lyric: mLyric
       });
+      if (rStart) {
+        repeatOpen = true;
+        voltaSinceEnd = false;
+        sharedStartOpen = false;
+        awaitingNextEnding = false;
+      } else if (awaitingNextEnding) {
+        sharedStartOpen = mBracket !== undefined && !currentSection && currentPageIndex === endingPage;
+        awaitingNextEnding = false;
+      }
+      if (mBracket !== undefined) voltaSinceEnd = true;
+      if (rEnd) {
+        if (!repeatOpen && !sharedStartOpen) {
+          const endCol = rawLine.indexOf(':|', Math.max(firstTokenCol, 0));
+          const col = endCol >= 0 ? endCol : Math.max(firstTokenCol, 0);
+          report(lineIdx, col, endCol >= 0 ? endCol + 2 : rawLine.trimEnd().length, 'repeatEndWithoutStart');
+        }
+        awaitingNextEnding = voltaSinceEnd;
+        endingPage = currentPageIndex;
+        repeatOpen = false;
+        sharedStartOpen = false;
+        voltaSinceEnd = false;
+      }
+      if (isMeasureRepeat && repeatTokenCol >= 0) {
+        mData.rhythmSource = { line: lineIdx, startCol: repeatTokenCol, endCol: repeatTokenCol + 1, kind: 'repeat' };
+      } else if (rhythmStartCol >= 0) {
+        if (!rhythmInterleaved && !rawLine.slice(rhythmStartCol, rhythmEndCol).includes('l:"')) {
+          mData.rhythmSource = { line: lineIdx, startCol: rhythmStartCol, endCol: rhythmEndCol, kind: 'explicit' };
+        }
+      } else if (lastTokenEnd >= 0) {
+        mData.rhythmSource = { line: lineIdx, startCol: lastTokenEnd, endCol: lastTokenEnd, kind: 'implicit' };
+      }
       if (!isMeasureRepeat && rhythms.length === 0) defaultRhythmMeasures.add(mData);
       if (multiChordEqualSplit) equalSplitChords.add(mData);
       measures.push(mData);
