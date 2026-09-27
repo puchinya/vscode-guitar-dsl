@@ -32,6 +32,9 @@ const mockVscode = {
   Range: class {
     constructor(public start: any, public end: any) {}
   },
+  CodeLens: class {
+    constructor(public range: any, public command?: any) {}
+  },
   Position: class {
     constructor(public line: number, public character: number) {}
   },

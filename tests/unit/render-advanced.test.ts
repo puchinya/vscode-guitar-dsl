@@ -52,7 +52,7 @@ describe('render - structural system breaks (T012)', () => {
 
 describe('render - system prefix (T013, T014, T015, T016)', () => {
   it('keeps the first barline x identical on every system (T013)', () => {
-    const dsl = 'key: C\nmeasures_per_row: 2\n| C | 4 4 4 4 |\nmel: | c5/1 |\n@key: F#\n| F# | 4 4 4 4 |\nmel: | f#5/1 |\n@key: Bb\n| Bb | 4 4 4 4 |\nmel: | bb4/1 |\n@time: 12/8\n| Bb | 4. 4. 4. 4. |\nmel: | bb4/1+2 |';
+    const dsl = 'key: C\nmeasures_per_row: 2\n| C | 4 4 4 4 |\nmel: | c5/1 |\n@key: F#\n| F# | 4 4 4 4 |\nmel: | f#5/1 |\n@key: Bb\n| Bb | 4 4 4 4 |\nmel: | bb4/1 |\n@time: 12/8\n| Bb | 4+8 4+8 4+8 4+8 |\nmel: | bb4/1+2 |';
     const score = parseGuitarDsl(dsl);
     assert.deepStrictEqual(score.diagnostics, []);
     const ctx = getRenderContext(score);

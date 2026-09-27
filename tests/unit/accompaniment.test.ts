@@ -11,6 +11,9 @@ import {
 } from '../../src/accompaniment';
 import { parseGuitarDsl } from '../../src/compiler';
 import { formatRhythms } from '../../src/accompaniment';
+import { StrummingCodeLensProvider } from '../../src/strummingCodeLens';
+import * as fs from 'fs';
+import * as path from 'path';
 
 type Ok = Extract<AccompanimentPlanResult, { ok: true }>;
 
@@ -69,6 +72,27 @@ describe('accompaniment engine (Issue #101)', () => {
         [2, 'Verse', 3, 1],
         [3, 'Chorus', 5, 1]
       ]);
+    });
+  });
+
+  describe('CodeLens section indexes', () => {
+    it('the cheap CodeLens line scan yields exactly the engine section indexes and names', () => {
+      const docOf = (text: string) => {
+        const lines = text.split(/\r?\n/);
+        return { lineCount: lines.length, lineAt: (i: number) => ({ text: lines[i] }), uri: 'doc' } as never;
+      };
+      const samples = path.join(__dirname, '../../samples');
+      const texts = fs.readdirSync(samples).filter(f => f.endsWith('.guitardsl')).map(f => fs.readFileSync(path.join(samples, f), 'utf8'));
+      texts.push(['| C |', '[A]', '[B]', '| G |', 'mel: | c4/1 |', '   | d4/1 |', '[C]', '| F |', '# c', '[A]', '| C | % |'].join('\n'));
+      for (const text of texts) {
+        const want = accompanimentSections(parseGuitarDsl(text), text).filter(s => s.labelLine !== null).map(s => [s.labelLine, s.sectionIndex, s.name]);
+        const got = new StrummingCodeLensProvider('en').provideCodeLenses(docOf(text)).map(l => {
+          // The unit vscode mock keeps Range(line, ...) as a plain number.
+          const start = l.range.start as unknown as number | { line: number };
+          return [typeof start === 'number' ? start : start.line, l.command?.arguments?.[1], l.command?.arguments?.[2]];
+        });
+        assert.deepStrictEqual(got, want);
+      }
     });
   });
 

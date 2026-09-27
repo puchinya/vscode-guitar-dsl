@@ -181,7 +181,7 @@ time: 4/4
 
 ### Sections, Measures and Barlines
 
-A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell:
+A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `|` is a measure line. You can put the chord and rhythm in one cell, or in a chord cell followed by a rhythm cell. A line never continues on the next line:
 
 ```guitardsl
 [Intro]
@@ -191,7 +191,7 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 
 Barlines and navigation marks:
 
-- `|` normal barline, `|:` and `:|` repeats, `||` double barline, `|]` final barline
+- `|` normal barline, `|:` and `:|` repeats (every `:|` needs a matching `|:`), `||` double barline, `|]` final barline
 - `[1.]` and `[2.]` for first and second endings
 - `Segno`, `Coda`, `to Coda`, `D.S.`, `D.C.` and `Fine`
 - `%` repeats the previous measure. If you leave out the chord, the previous chord is kept.
@@ -345,6 +345,9 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
+| Unrecognized token | A measure can hold only chords, rhythm tokens, notes, `$name`, `%`, volta brackets, navigation marks and `l:"..."`. Lyrics belong in `lyr:` or `l:"..."`. |
+| Continuation line | A `mel:` / `lyr:` line cannot continue on an indented `\| ... \|` line (that line is not read as measures). Put it on one line, or start each line with `mel:` / `lyr:`. |
+| `:\|` without `\|:` | Write `\|:` at the start of the passage to repeat. |
 
 ### The Preview Looks Wrong or Does Not Change
 

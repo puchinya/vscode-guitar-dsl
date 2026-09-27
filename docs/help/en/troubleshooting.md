@@ -2,7 +2,7 @@
 <!-- help-sources: extension:5A -->
 
 ### Squiggles and the Problems Panel
-<!-- help-sources: extension:5A syntax:7 syntax:8 syntax:12 syntax:13 syntax:17 syntax:18 -->
+<!-- help-sources: extension:5A syntax:6 syntax:7 syntax:8 syntax:12 syntax:13 syntax:17 syntax:18 -->
 
 GuitarDSL checks your file as you type.
 
@@ -23,6 +23,9 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
+| Unrecognized token | A measure can hold only chords, rhythm tokens, notes, `$name`, `%`, volta brackets, navigation marks and `l:"..."`. Lyrics belong in `lyr:` or `l:"..."`. |
+| Continuation line | A `mel:` / `lyr:` line cannot continue on an indented `\| ... \|` line (that line is not read as measures). Put it on one line, or start each line with `mel:` / `lyr:`. |
+| `:\|` without `\|:` | Write `\|:` at the start of the passage to repeat. |
 
 ### The Preview Looks Wrong or Does Not Change
 <!-- help-sources: extension:4 -->

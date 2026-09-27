@@ -8,7 +8,8 @@ These files are GuitarDSL guitar scores.
 
 - Never invent unsupported syntax. Use only notation defined by the GuitarDSL language specification.
 - For syntax or semantics, use the `guitardsl-language` Skill. It loads the relevant sections of the packaged specification.
-- After creating or materially editing a GuitarDSL file, validate it with `guitardsl_validate_dsl` (`#guitardslValidate`). Resolve reported errors before finishing.
+- After creating or materially editing a GuitarDSL file, validate it with `guitardsl_validate_dsl` (`#guitardslValidate`). Resolve reported errors, and warnings too unless the user asked for that notation, before finishing.
+- There is no line continuation. Write each `mel:` / `lyr:` on a single line (or start every line with `mel:` / `lyr:`); an indented `| ... |` line after them is an error, not a continuation. Every `:|` needs a `|:`.
 - Do not work out capo changes, playability, Beginner Mode or sounding transposition by hand. Use the deterministic tools:
   - `guitardsl_analyze_playability`
   - `guitardsl_apply_capo`

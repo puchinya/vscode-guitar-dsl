@@ -213,7 +213,10 @@ export type DiagnosticCode =
   | 'invalidVariableValue'
   | 'variableContextMismatch'
   | 'invalidNoteGroup'
-  | 'unsupportedNoteGroupTechnique';
+  | 'unsupportedNoteGroupTechnique'
+  | 'unknownMeasureToken'
+  | 'unsupportedContinuationLine'
+  | 'repeatEndWithoutStart';
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -265,7 +268,10 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   invalidVariableValue: 'error',
   variableContextMismatch: 'error',
   invalidNoteGroup: 'error',
-  unsupportedNoteGroupTechnique: 'error'
+  unsupportedNoteGroupTechnique: 'error',
+  unknownMeasureToken: 'error',
+  unsupportedContinuationLine: 'error',
+  repeatEndWithoutStart: 'warning'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -734,9 +740,23 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     return def !== undefined && !def.invalid && (def.ctx & CTX_MEASURE) !== 0;
   };
 
+  let continuableLine = false;
+  // `:|` needs a `|:` since the score start or the previous `:|`; volta endings share their section's start.
+  let repeatOpen = false;
+  let voltaSinceEnd = false;
+  let lastEndInVolta = false;
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const rawLine = lines[lineIdx];
     const line = rawLine.trim();
+    // An indented `|` line right after a `mel:` / `lyr:` line (or another such line) is an attempted
+    // continuation, which the syntax does not have: report it and do not read it as a measure (§6).
+    const continues: boolean = continuableLine && /^\s+\|/.test(rawLine);
+    continuableLine = continues || /^\s*(mel|lyr):/i.test(rawLine);
+    if (continues) {
+      const start = rawLine.indexOf('|');
+      report(lineIdx, start, rawLine.trimEnd().length, 'unsupportedContinuationLine');
+      continue;
+    }
     if (!line || line.startsWith('#')) continue;
     // `let` definitions were handled above; they never change measures, sections, pages or the melody cursor.
     if (/^let\s/.test(line)) continue;
@@ -1145,6 +1165,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           } else {
             report(lineIdx, tokCol, tokCol + tok.length, parsed, { token: tok });
           }
+        } else {
+          // Not a chord, rhythm, inline note / group, `$name`, `%`, bracket or mark: never drop it silently.
+          report(lineIdx, tokCol, tokCol + tok.length, 'unknownMeasureToken', { token: tok });
         }
       }
 
@@ -1204,6 +1227,22 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
         lyric: mLyric
       });
+      if (rStart) {
+        repeatOpen = true;
+        voltaSinceEnd = false;
+        lastEndInVolta = false;
+      }
+      if (mBracket !== undefined) voltaSinceEnd = true;
+      if (rEnd) {
+        if (!repeatOpen && !(lastEndInVolta && voltaSinceEnd)) {
+          const endCol = rawLine.indexOf(':|', Math.max(firstTokenCol, 0));
+          const col = endCol >= 0 ? endCol : Math.max(firstTokenCol, 0);
+          report(lineIdx, col, endCol >= 0 ? endCol + 2 : rawLine.trimEnd().length, 'repeatEndWithoutStart');
+        }
+        lastEndInVolta = voltaSinceEnd;
+        repeatOpen = false;
+        voltaSinceEnd = false;
+      }
       if (isMeasureRepeat && repeatTokenCol >= 0) {
         mData.rhythmSource = { line: lineIdx, startCol: repeatTokenCol, endCol: repeatTokenCol + 1, kind: 'repeat' };
       } else if (rhythmStartCol >= 0) {

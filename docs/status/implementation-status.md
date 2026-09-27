@@ -79,7 +79,7 @@
 | | 表示モード（1ページ / 見開き / Web） | ✅ 完了 | シート SVG の縦並び・横並び、連続 SVG |
 | | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
-| **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | メロディ・歌詞・長さ・拍数・表示設定の問題を日英メッセージで表示 |
+| **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | メロディ・歌詞・長さ・拍数・表示設定の問題を日英メッセージで表示。小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
 | | Language Configuration | ✅ 完了 | コメント記号、括弧自動閉じ |
@@ -97,7 +97,7 @@
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
 - **テストファイル**:
-  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、モジュール境界（描画 API を公開しないこと）
+  - `tests/unit/compiler.test.ts`: メタデータパース、小節・コード・リズム解析、改ページ、モジュール境界（描画 API を公開しないこと）、AI が生成しがちな誤り（続きの行・解釈できないトークン・`|:` のない `:|`）の診断
   - `tests/unit/duration.test.ts`: 共通音価表記・拍数・有理数計算
   - `tests/unit/melody.test.ts`: `mel:` / `lyr:` の解析と割り当て、コードの長さ指定、調号、表示設定、診断
   - `tests/unit/render-melody.test.ts`: メロディ段の高さ、符頭、調号・臨時記号、3連、リードシート、`measures_per_row` と改ページ
@@ -128,7 +128,7 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **642 / 642 件 PASS** (0 failures)
+- **テスト実行結果**: **646 / 646 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`

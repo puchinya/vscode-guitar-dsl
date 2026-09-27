@@ -240,3 +240,43 @@ describe('compiler - module boundary', () => {
     }
   });
 });
+
+describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () => {
+  const codes = (text: string) => parseGuitarDsl(text).diagnostics.map(d => `${d.severity}:${d.code}:${d.line + 1}`);
+
+  it('indented | lines after mel: / lyr: are continuation errors and never become measures', () => {
+    const text = [
+      '| Am | 4.d 4.d 4.d 4.d | F | 4.d 4.d 4.d 4.d |',
+      'mel: | a4/2 b4/2 |',
+      '      | c5/2 b4/2 |',
+      'lyr: | ら ら |',
+      '      | ら ら |',
+      '',
+      '  | C | 4.d 4.d 4.d 4.d |'
+    ].join('\n');
+    const score = parseGuitarDsl(text);
+    assert.deepStrictEqual(score.measures.map(m => m.chord), ['Am', 'F', 'C'], 'an indented measure line after a blank line is still a measure');
+    assert.deepStrictEqual(codes(text).filter(c => c.includes('unsupportedContinuationLine')), ['error:unsupportedContinuationLine:3', 'error:unsupportedContinuationLine:5']);
+  });
+
+  it('unrecognized measure tokens are errors instead of being dropped silently', () => {
+    assert.deepStrictEqual(codes('| C | き の う 4.d 4.d 4.d 4.d |').filter(c => c.includes('unknownMeasureToken')), [
+      'error:unknownMeasureToken:1',
+      'error:unknownMeasureToken:1',
+      'error:unknownMeasureToken:1'
+    ]);
+    const d = parseGuitarDsl('| N.C. | 4.d 4.d 4.d 4.d |').diagnostics[0];
+    assert.deepStrictEqual([d.code, d.args], ['unknownMeasureToken', { token: 'N.C.' }]);
+    for (const valid of ['|: [1.] C 4.d 4.d 4.d 4.d :| [2.] G To Coda |', '| C Fine | D.S. |', '| C | % |', '| C | c4/4 [c4,e4]/4 2.d |']) {
+      assert.deepStrictEqual(codes(valid).filter(c => c.includes('unknownMeasureToken')), [], valid);
+    }
+  });
+
+  it(':| without a |: since the start or the previous :| is a warning; volta endings share their start', () => {
+    assert.deepStrictEqual(codes('|: C | G :|\n| F | C :|'), ['warning:repeatEndWithoutStart:2']);
+    assert.deepStrictEqual(codes('| C | G :|'), ['warning:repeatEndWithoutStart:1']);
+    assert.deepStrictEqual(codes('|: C | G :|\n|: F | C :|'), []);
+    assert.deepStrictEqual(codes('|: C | [1.] G :| [2.] F :| [3.] Am ||'), []);
+    assert.deepStrictEqual(codes('|: C :|'), []);
+  });
+});

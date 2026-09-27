@@ -545,7 +545,10 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   invalidVariableValue: a => `let ${a.name} の値が不正です（${VARIABLE_VALUE_REASON_JA[a.reason] ?? a.reason}）: ${a.token}`,
   variableContextMismatch: a => `$${a.name} は${a.context === 'melody' ? ' mel: 行' : '小節行'}では使えません`,
   invalidNoteGroup: a => `同時複数音が不正です（[音名オクターブ,…] に2音以上、重複なし、空白なし、共通の長さが必須）: ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`
+  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`,
+  unknownMeasureToken: a => `小節の中で解釈できないトークンです（コード・リズム・音符・記号のどれでもありません）: ${a.token}`,
+  unsupportedContinuationLine: () => '`mel:` / `lyr:` の続きの行は書けません。この行は小節として読みません。1 行にまとめるか、行ごとに `mel:` / `lyr:` を付けてください',
+  repeatEndWithoutStart: () => '反復終了線 `:|` に対応する反復開始線 `|:` がありません（楽譜の先頭または直前の `:|` のあと）'
 };
 
 const DIAGNOSTICS_EN: DiagnosticTemplates = {
@@ -587,7 +590,10 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   invalidVariableValue: a => `Invalid value for let ${a.name} (${VARIABLE_VALUE_REASON_EN[a.reason] ?? a.reason}): ${a.token}`,
   variableContextMismatch: a => `$${a.name} cannot be used in ${a.context === 'melody' ? 'a mel: line' : 'a measure line'}`,
   invalidNoteGroup: a => `Invalid note group ([pitch+octave,...] with two or more distinct pitches, no spaces and a shared length): ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`
+  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`,
+  unknownMeasureToken: a => `Unrecognized token in a measure (not a chord, rhythm, note or mark): ${a.token}`,
+  unsupportedContinuationLine: () => 'A `mel:` / `lyr:` line cannot continue on the next line; this line is not read as measures. Put it on one line or start each line with `mel:` / `lyr:`',
+  repeatEndWithoutStart: () => 'Repeat end `:|` has no matching repeat start `|:` (since the start of the score or the previous `:|`)'
 };
 
 export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {
