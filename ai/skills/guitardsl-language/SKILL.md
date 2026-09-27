@@ -42,3 +42,5 @@ Read only the headings you need. Do not load the whole reference at once. The re
    They apply the extension's own deterministic algorithms as one undoable edit.
 
    These tools edit only the document you name with `uri` or an absolute `path`. To target the file the user is working on, call `guitardsl_validate_dsl` without arguments first and pass its `document.uri`.
+
+5. To arrange or change the accompaniment (strumming / arpeggio patterns), first read `references/accompaniment.md`, an authored guide that is not part of the specification. Then use `guitardsl_analyze_accompaniment` (`#guitardslAccompaniment`) and `guitardsl_apply_accompaniment` (`#guitardslApplyAccompaniment`). You decide the musical intent; the tools generate down/up strokes, durations and the edit.

@@ -15,3 +15,4 @@ These files are GuitarDSL guitar scores.
   - `guitardsl_apply_beginner_mode`
   - `guitardsl_apply_transpose`
 - The `guitardsl_apply_*` tools edit only the document given by `uri` (for example, `document.uri` from `guitardsl_validate_dsl`) or by an absolute `path`.
+- To arrange or change the accompaniment (strumming / arpeggio patterns), call `guitardsl_analyze_accompaniment` first, then `guitardsl_apply_accompaniment`. Decide the musical intent yourself. Do not hand-write down/up strokes: use `intent`, `preset` or `grid` plans, and `dsl` only for a pattern the user gave. Never pick `directionPolicy: literal` on your own.

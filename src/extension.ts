@@ -401,13 +401,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const applyStrummingDisposable = vscode.commands.registerCommand(
     APPLY_STRUMMING_PATTERN_COMMAND,
-    async (uri?: vscode.Uri, sectionName?: string) => {
+    async (uri?: vscode.Uri, section?: string | number) => {
       const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
       if (!doc) {
         vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
         return;
       }
-      await promptAndApplyStrummingPattern(doc, sectionName, currentLocale);
+      await promptAndApplyStrummingPattern(doc, section, currentLocale);
     }
   );
 

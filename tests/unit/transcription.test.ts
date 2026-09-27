@@ -1,6 +1,8 @@
 import * as assert from 'assert';
 import { validateTranscribedSong, TranscribedSong } from '../../src/transcription/model';
 import { serializeSongToGuitarDsl } from '../../src/transcription/serializer';
+import { TranscribePanel } from '../../src/transcription/transcribePanel';
+import { FAMILY_ORDER, STRUMMING_PATTERN_PRESETS, getPresetById } from '../../src/strummingPatterns';
 import { extractYouTubeVideoId, isValidYouTubeUrl, normalizeYouTubeUrl } from '../../src/transcription/youtube';
 import { transcribeWithGemini, GeminiClientLike, DEFAULT_GEMINI_MODEL } from '../../src/transcription/gemini';
 import { parseGuitarDsl } from '../../src/compiler';
@@ -390,6 +392,38 @@ describe('transcription - serializer', () => {
       }
     ]
   };
+
+  it('S002 a selected accompaniment preset must exist and match the song meter; no silent fallback (Issue #101 D1)', () => {
+    const dsl = serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'rock_4_4_eighth_full' });
+    assert.ok(dsl.includes('| G/2 D/F#/2 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |'), dsl);
+    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: '8beat_standard' }), /Unknown accompaniment preset: 8beat_standard/);
+    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'waltz_3_4_eighth_flow' }), /is 3\/4; the transcription is 4\/4/);
+    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'compound_6_8_full' }), /is 6\/8/);
+  });
+
+  it('S003 without a preset the automatic rhythm path is unchanged', () => {
+    assert.strictEqual(serializeSongToGuitarDsl(sampleSong, { strummingPresetId: undefined }), serializeSongToGuitarDsl(sampleSong));
+  });
+
+  it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
+    for (const locale of ['ja', 'en'] as const) {
+      const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });
+      const familySelect = html.slice(html.indexOf('<select id="strummingFamily">'), html.indexOf('</select>', html.indexOf('<select id="strummingFamily">')));
+      assert.ok(familySelect.includes('<option value="auto">'), 'Auto stays');
+      const families = [...familySelect.matchAll(/<option value="([a-z]+)">/g)].map(m => m[1]).filter(v => v !== 'auto');
+      const fourFour = STRUMMING_PATTERN_PRESETS.filter(p => p.meter === '4/4');
+      assert.deepStrictEqual(families, FAMILY_ORDER.filter(f => fourFour.some(p => p.family === f)));
+      const presetIds = [...html.matchAll(/<option value="([a-z0-9_]+_[0-9]+_[0-9]+_[a-z0-9_]+)">/g)].map(m => m[1]);
+      assert.deepStrictEqual([...presetIds].sort(), fourFour.map(p => p.id).sort());
+      for (const f of families) {
+        const start = html.indexOf(`<select id="strummingPreset-${f}"`);
+        assert.ok(start >= 0, f);
+        const block = html.slice(start, html.indexOf('</select>', start));
+        const ids = [...block.matchAll(/<option value="([^"]+)">/g)].map(m => m[1]);
+        assert.ok(ids.length > 0 && ids.every(id => getPresetById(id)?.family === f && getPresetById(id)?.meter === '4/4'), f);
+      }
+    }
+  });
 
   it('produces exact deterministic DSL snapshot for valid 4/4 IR', () => {
     const dsl = serializeSongToGuitarDsl(sampleSong);

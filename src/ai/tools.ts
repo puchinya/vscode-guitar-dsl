@@ -1,16 +1,19 @@
 // Language model tools for VS Code Agent / Chat (spec extension.md §8, design architecture.md §2.18).
-// Thin adapters over the existing deterministic GuitarDSL core: the parser, capo inference and the
-// apply*Transform helpers. This module owns input checks, JSON results and the per-document mutation
-// guard only. It holds no music-domain rules and never calls a language model.
+// Thin adapters over the existing deterministic GuitarDSL core: the parser, capo inference, the
+// accompaniment engine and the apply*Transform helpers. This module owns input checks, JSON results and
+// the per-document mutation guard only. It holds no music-domain rules and never calls a language model.
 
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { AccompanimentRequest, accompanimentRequestProblem, analyzeAccompaniment } from '../accompaniment';
 import { BarrePolicy, isBarrePolicy } from '../beginnerMode';
 import { inferCapoForDsl, isValidCapo } from '../capo';
 import { parseGuitarDsl } from '../compiler';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from '../documentResolver';
 import { AiToolMessages, SupportedLocale, getAiToolMessages } from '../i18n';
 import { applyBeginnerTransform, applyCapoTransform, applyTransposeTransform } from '../scoreSettingsEditor';
+import { applyAccompanimentTransform } from '../strummingCodeLens';
+import { AccompanimentFamily, FAMILY_ORDER } from '../strummingPatterns';
 import { CapoMode, isValidSemitones } from '../transpose';
 
 export const RESULT_SCHEMA_VERSION = 1;
@@ -20,6 +23,8 @@ export const PLAYABILITY_TOOL = 'guitardsl_analyze_playability';
 export const APPLY_CAPO_TOOL = 'guitardsl_apply_capo';
 export const APPLY_BEGINNER_TOOL = 'guitardsl_apply_beginner_mode';
 export const APPLY_TRANSPOSE_TOOL = 'guitardsl_apply_transpose';
+export const ANALYZE_ACCOMPANIMENT_TOOL = 'guitardsl_analyze_accompaniment';
+export const APPLY_ACCOMPANIMENT_TOOL = 'guitardsl_apply_accompaniment';
 
 export interface DocumentToolInput {
   /** Absolute file path; omitted = the command resolution order (spec extension §3.1). */
@@ -49,6 +54,13 @@ export interface ApplyTransposeInput extends MutationTargetInput {
   /** Required only when capoMode is 'explicit'. */
   capo?: number;
 }
+export interface AnalyzeAccompanimentInput extends DocumentToolInput {
+  /** 0-based section in source order; omitted = score structure only. */
+  sectionIndex?: number;
+  /** With sectionIndex: list that family's compatible presets. */
+  family?: AccompanimentFamily;
+}
+export type ApplyAccompanimentInput = MutationTargetInput & AccompanimentRequest;
 
 /** Fail-fast, in-process guard: at most one AI mutation per document URI; never queues. */
 export class MutationGuard {
@@ -73,6 +85,7 @@ export interface AiToolDeps {
   applyCapo: typeof applyCapoTransform;
   applyBeginner: typeof applyBeginnerTransform;
   applyTranspose: typeof applyTransposeTransform;
+  applyAccompaniment: typeof applyAccompanimentTransform;
   guard: MutationGuard;
 }
 
@@ -82,6 +95,8 @@ export interface GuitarDslAiTools {
   [APPLY_CAPO_TOOL]: vscode.LanguageModelTool<ApplyCapoInput>;
   [APPLY_BEGINNER_TOOL]: vscode.LanguageModelTool<ApplyBeginnerInput>;
   [APPLY_TRANSPOSE_TOOL]: vscode.LanguageModelTool<ApplyTransposeInput>;
+  [ANALYZE_ACCOMPANIMENT_TOOL]: vscode.LanguageModelTool<AnalyzeAccompanimentInput>;
+  [APPLY_ACCOMPANIMENT_TOOL]: vscode.LanguageModelTool<ApplyAccompanimentInput>;
 }
 
 type Payload = Record<string, unknown>;
@@ -149,6 +164,25 @@ export function transposeInputProblem(input: ApplyTransposeInput): string | unde
     return isInt(input.capo) && isValidCapo(input.capo) ? undefined : "capo must be an integer 0..12 when capoMode is 'explicit'";
   }
   return input.capoMode === 'keep' || input.capoMode === 'recommended' ? undefined : "capoMode must be 'keep', 'recommended' or 'explicit'";
+}
+
+export function analyzeAccompanimentInputProblem(input: AnalyzeAccompanimentInput): string | undefined {
+  const problem = pathProblem(input);
+  if (problem) return problem;
+  if (input.sectionIndex !== undefined && !(isInt(input.sectionIndex) && input.sectionIndex >= 0)) return 'sectionIndex must be a 0-based integer';
+  if (input.family !== undefined && !FAMILY_ORDER.includes(input.family)) return `family must be one of ${FAMILY_ORDER.join(', ')}`;
+  if (input.family !== undefined && input.sectionIndex === undefined) return 'family requires sectionIndex';
+  return undefined;
+}
+
+export function applyAccompanimentInputProblem(input: ApplyAccompanimentInput): string | undefined {
+  return mutationTargetProblem(input) ?? accompanimentRequestProblem(accompanimentRequestOf(input));
+}
+
+/** Request part of the apply input (the target is resolved separately). */
+function accompanimentRequestOf(input: ApplyAccompanimentInput): AccompanimentRequest {
+  const { uri: _uri, path: _path, ...request } = input;
+  return request;
 }
 
 function toCapoMode(input: ApplyTransposeInput): CapoMode {
@@ -385,6 +419,45 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
           deps.applyTranspose(uri, { semitones: input.semitones, capoMode: toCapoMode(input) })
         );
       }
+    },
+
+    [ANALYZE_ACCOMPANIMENT_TOOL]: {
+      async prepareInvocation(options) {
+        return { invocationMessage: msgs.accompanimentAnalyzing(await targetLabel(inputOf(options), deps, msgs)) };
+      },
+      async invoke(options, token) {
+        const input = inputOf(options);
+        const problem = analyzeAccompanimentInputProblem(input);
+        if (problem) return failure('invalidInput', problem);
+        if (token.isCancellationRequested) return failure('cancelled');
+        const target = await resolveTarget(input, deps);
+        if (!target.ok) return failure('documentNotFound', target.detail);
+        const document = documentInfo(target.doc);
+        const analysis = analyzeAccompaniment(target.doc.getText(), { sectionIndex: input.sectionIndex, family: input.family }, deps.locale);
+        if (!analysis.ok) return failure(analysis.code, analysis.detail, { document });
+        const { ok: _ok, ...rest } = analysis;
+        return toolResult({ ok: true, document, ...rest });
+      }
+    },
+
+    [APPLY_ACCOMPANIMENT_TOOL]: {
+      prepareInvocation(options) {
+        const input = inputOf(options);
+        const plans = Array.isArray(input.plans) ? input.plans : [];
+        const sections = plans.map(p => `#${p?.sectionIndex}`).join(', ') || '-';
+        const transitions = Array.isArray(input.transitions) ? input.transitions.length : 0;
+        const extras = (transitions > 0 ? msgs.accompanimentTransitions(transitions) : '') + (input.ending ? msgs.accompanimentEnding : '');
+        return prepareMutation(input, applyAccompanimentInputProblem(input), msgs.accompanimentProgress, doc => ({
+          title: msgs.accompanimentTitle,
+          message: msgs.accompanimentConfirm(doc, sections, extras)
+        }));
+      },
+      invoke(options, token) {
+        const input = inputOf(options);
+        return runMutation(deps, 'applyAccompaniment', input, applyAccompanimentInputProblem(input), token, uri =>
+          deps.applyAccompaniment(uri, accompanimentRequestOf(input))
+        );
+      }
     }
   };
 }
@@ -393,7 +466,7 @@ export function createGuitarDslAiTools(deps: AiToolDeps): GuitarDslAiTools {
 export const aiMutationGuard = new MutationGuard();
 
 /**
- * Registers the five tools (spec extension §8.3). Every Disposable goes to `context.subscriptions`;
+ * Registers the seven tools (spec extension §8.3). Every Disposable goes to `context.subscriptions`;
  * registration itself never selects or calls a language model.
  */
 export function registerGuitarDslAiTools(
@@ -407,6 +480,7 @@ export function registerGuitarDslAiTools(
     applyCapo: applyCapoTransform,
     applyBeginner: applyBeginnerTransform,
     applyTranspose: applyTransposeTransform,
+    applyAccompaniment: applyAccompanimentTransform,
     guard: aiMutationGuard
   });
   for (const [name, tool] of Object.entries(tools) as [string, vscode.LanguageModelTool<unknown>][]) {

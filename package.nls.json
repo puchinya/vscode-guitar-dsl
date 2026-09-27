@@ -26,5 +26,9 @@
   "languageModelTools.applyBeginner.displayName": "GuitarDSL: Apply Beginner Mode",
   "languageModelTools.applyBeginner.userDescription": "Choose an easy capo and simpler chords (one undoable edit).",
   "languageModelTools.transpose.displayName": "GuitarDSL: Transpose",
-  "languageModelTools.transpose.userDescription": "Transpose the sounding music and choose the capo (one undoable edit)."
+  "languageModelTools.transpose.userDescription": "Transpose the sounding music and choose the capo (one undoable edit).",
+  "languageModelTools.analyzeAccompaniment.displayName": "GuitarDSL: Analyze Accompaniment",
+  "languageModelTools.analyzeAccompaniment.userDescription": "Show sections, meters, current rhythm families and compatible accompaniment presets.",
+  "languageModelTools.applyAccompaniment.displayName": "GuitarDSL: Apply Accompaniment",
+  "languageModelTools.applyAccompaniment.userDescription": "Rewrite the accompaniment rhythm of sections (one undoable edit)."
 }

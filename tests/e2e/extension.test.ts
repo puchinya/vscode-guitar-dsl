@@ -768,7 +768,17 @@ suite('AI integration: language model tools (Issue #80)', () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const nodePath = require('path');
 
-  const TOOL_NAMES = ['guitardsl_validate_dsl', 'guitardsl_analyze_playability', 'guitardsl_apply_capo', 'guitardsl_apply_beginner_mode', 'guitardsl_apply_transpose'];
+  const TOOL_NAMES = [
+    'guitardsl_validate_dsl',
+    'guitardsl_analyze_playability',
+    'guitardsl_apply_capo',
+    'guitardsl_apply_beginner_mode',
+    'guitardsl_apply_transpose',
+    'guitardsl_analyze_accompaniment',
+    'guitardsl_apply_accompaniment'
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const strumming = () => require('../../strummingCodeLens');
   // The deterministic capo fixture of the Capo / playability suite.
   const CAPO_SOURCE = ['title: Capo Test', 'key: B', '', '[Intro]', '| B | E | F#m7 | E/G# |', ''].join('\n');
   const CAPO_AT_2 = ['title: Capo Test', 'capo: 2', 'key: B', '', '[Intro]', '| A | D | Em7 | D/F# |', ''].join('\n');
@@ -807,6 +817,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
       applyCapo: scoreSettings().applyCapoTransform,
       applyBeginner: scoreSettings().applyBeginnerTransform,
       applyTranspose: scoreSettings().applyTransposeTransform,
+      applyAccompaniment: strumming().applyAccompanimentTransform,
       guard,
       ...overrides
     });
@@ -836,7 +847,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
   });
   suiteTeardown(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
-  test('T012 activation without any model: commands, language and the five tools are registered', async () => {
+  test('T012/T028 activation without any model: commands, language and the seven tools are registered', async () => {
     const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
     assert.ok(ext?.isActive);
     const commands = await vscode.commands.getCommands(true);
@@ -1089,6 +1100,120 @@ suite('AI integration: language model tools (Issue #80)', () => {
     const result = outcome as any;
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     assert.strictEqual(doc.getText(), CAPO_AT_2);
+  });
+
+  const SONG = ['title: Song', '', '[Verse]', '| C | 4.d 4.d 4.d 4.d | G | 4.d 4.d 4.d 4.d |', '[Chorus]', '| F | 4.d 4.d 4.d 4.d | C | 4.d 4.d 4.d 4.d |]', ''].join('\n');
+  const intentPlan = (sectionIndex: number, patch: object = {}) => ({
+    sectionIndex, mode: 'intent', style: 'strum', subdivision: 'auto', energy: 'medium', density: 'medium', syncopation: 'none', emphasis: 'none', operation: 'replace', ...patch
+  });
+
+  test('T027A analyze accompaniment through vscode.lm.invokeTool: structure, then one family', async () => {
+    const file = writeFixture('accompaniment.guitardsl', SONG);
+    const structure = await invokeRegistered('guitardsl_analyze_accompaniment', { path: file });
+    assert.strictEqual(structure.schemaVersion, 1);
+    assert.strictEqual(structure.ok, true);
+    assert.strictEqual(structure.document.path, file);
+    assert.deepStrictEqual(structure.sections.map((s: any) => [s.sectionIndex, s.name]), [[0, 'Verse'], [1, 'Chorus']]);
+    assert.ok(structure.sections[0].availableFamilies.includes('eighth'));
+    assert.strictEqual(structure.sections[0].availablePresets, undefined);
+    const family = await invokeRegistered('guitardsl_analyze_accompaniment', { path: file, sectionIndex: 1, family: 'shuffle' });
+    assert.deepStrictEqual(family.selectedSection.availablePresets.map((p: any) => p.id), ['blues_4_4_shuffle_basic', 'bluesrock_4_4_shuffle_backbeat', 'blues_4_4_shuffle_all_down']);
+    assert.strictEqual((await invokeRegistered('guitardsl_analyze_accompaniment', { path: file, family: 'shuffle' })).code, 'invalidInput');
+    assert.strictEqual((await invokeRegistered('guitardsl_analyze_accompaniment', { path: file, sectionIndex: 7 })).code, 'sectionNotFound');
+  });
+
+  test('T031/T032 apply accompaniment: several sections in one WorkspaceEdit, one undo, compact result with post-validation', async () => {
+    const doc = await openUntitled(SONG);
+    const version = doc.version;
+    const { tools } = makeTools();
+    const result = await call(tools.guitardsl_apply_accompaniment, {
+      uri: u(doc),
+      plans: [intentPlan(0, { energy: 'low', density: 'sparse', style: 'sustain' }), intentPlan(1, { energy: 'high', density: 'dense', emphasis: 'backbeat' })]
+    });
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    assert.strictEqual(result.operation, 'applyAccompaniment');
+    assert.strictEqual(result.changed, true);
+    assert.deepStrictEqual(result.appliedSections.map((s: any) => s.selectedPresetId), ['sustain_4_4_whole', 'rock_4_4_eighth_backbeat']);
+    assert.strictEqual(result.postValidationPassed, true);
+    assert.strictEqual(result.postErrorCount, 0);
+    assert.strictEqual(result.text, undefined, 'the DSL is not returned');
+    assert.strictEqual(doc.version, version + 1, 'one document change');
+    assert.ok(doc.getText().includes('| C | 1.d | G | 1.d |'));
+    assert.ok(doc.getText().includes('| F | 8.d 8.u 8.d.a 8.u 8.d 8.u 8.d.a 8.u |'));
+    await vscode.commands.executeCommand('undo');
+    assert.strictEqual(doc.getText(), SONG, 'one undo restores every section');
+  });
+
+  test('T029/T030 accompaniment failures edit nothing; the target is the named document; guard and cancellation hold', async () => {
+    const doc = await openUntitled(SONG);
+    const { tools } = makeTools();
+    const bad = await call(tools.guitardsl_apply_accompaniment, { uri: u(doc), plans: [{ sectionIndex: 0, mode: 'preset', presetId: 'waltz_3_4_eighth_flow' }] });
+    assert.deepStrictEqual([bad.ok, bad.code], [false, 'invalidPresetForContext']);
+    const noTarget = await call(tools.guitardsl_apply_accompaniment, { plans: [intentPlan(0)] });
+    assert.strictEqual(noTarget.code, 'invalidInput', 'never the active editor');
+    const partial = await call(tools.guitardsl_apply_accompaniment, { uri: u(doc), plans: [intentPlan(0), { sectionIndex: 1, mode: 'dsl', style: 'strum', pattern: '8.d 8.d 8.u 8.u 8.d 8.u 8.d 8.u' }] });
+    assert.strictEqual(partial.code, 'unnaturalStrokeDirection', 'one failing plan fails the whole request');
+    assert.strictEqual(doc.getText(), SONG);
+
+    const input = { uri: u(doc), plans: [{ sectionIndex: 0, mode: 'preset', presetId: 'arp_4_4_eighth' }] };
+    const prepared = await tools.guitardsl_apply_accompaniment.prepareInvocation({ input }, never);
+    assert.ok(String(prepared.confirmationMessages.message).includes(doc.uri.toString(true)));
+    const other = await openUntitled(SONG);
+    assert.strictEqual(vscode.window.activeTextEditor?.document, other);
+    assert.strictEqual((await invokeOnly(tools.guitardsl_apply_accompaniment, input)).ok, true);
+    assert.ok(doc.getText().includes('| C | 8 8 8 8 8 8 8 8 |'));
+    assert.strictEqual(other.getText(), SONG, 'the active editor is not edited');
+
+    const key = u(other);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => (release = resolve));
+    const slow = makeTools({ applyAccompaniment: async (uri: vscode.Uri, request: object) => { await gate; return strumming().applyAccompanimentTransform(uri, request); } });
+    const first = call(slow.tools.guitardsl_apply_accompaniment, { uri: key, plans: [intentPlan(0)] });
+    await waitFor(() => slow.guard.isHeld(key), 'the first call should own the guard');
+    assert.strictEqual((await call(slow.tools.guitardsl_apply_capo, { uri: key, targetCapo: 2 })).code, 'documentBusy');
+    release();
+    assert.strictEqual((await first).ok, true);
+    assert.strictEqual(slow.guard.isHeld(key), false);
+
+    const source = new vscode.CancellationTokenSource();
+    source.cancel();
+    const before = other.getText();
+    assert.strictEqual((await call(tools.guitardsl_apply_accompaniment, { uri: key, plans: [intentPlan(1, { style: 'arpeggio' })] }, source.token)).code, 'cancelled');
+    assert.strictEqual(other.getText(), before);
+  });
+
+  test('T027 manual QuickPick: meter categories, usage-group separators, no flat 58-item list', async () => {
+    const doc = await openUntitled(SONG);
+    const window = vscode.window as unknown as { showQuickPick: unknown; showInformationMessage: unknown };
+    const original = { pick: window.showQuickPick, info: window.showInformationMessage };
+    const shown: vscode.QuickPickItem[][] = [];
+    const messages: string[] = [];
+    try {
+      window.showQuickPick = async (items: vscode.QuickPickItem[]) => {
+        shown.push(items);
+        if (shown.length === 1) return items.find(i => i.label.includes('16'));
+        return items.find(i => (i as any).preset?.id === 'jpop_4_4_sixteenth_bright_drive');
+      };
+      window.showInformationMessage = async (message: string) => {
+        messages.push(message);
+        return undefined;
+      };
+      await strumming().promptAndApplyStrummingPattern(doc, 1, 'en');
+    } finally {
+      window.showQuickPick = original.pick;
+      window.showInformationMessage = original.info;
+    }
+    assert.strictEqual(shown.length, 2);
+    const categories = shown[0].map(i => i.label);
+    assert.ok(categories.every(l => l.startsWith('4/4') || l.includes('Close to the current')), categories.join(', '));
+    assert.ok(categories.length <= 10);
+    const patterns = shown[1];
+    assert.ok(patterns.some(i => i.kind === vscode.QuickPickItemKind.Separator && i.label === 'Pop / J-POP'));
+    assert.ok(patterns.filter(i => (i as any).preset).every(i => (i as any).preset.family === 'sixteenth'));
+    assert.ok(patterns.length < 58);
+    assert.ok(doc.getText().includes('| F | 8.d 8.d 16.d 16.u 16.d 16.u 8.d 8.d 16.d 16.u 16.d 16.u |'));
+    assert.ok(doc.getText().includes('| C | 4.d 4.d 4.d 4.d | G | 4.d 4.d 4.d 4.d |'), 'the verse is untouched');
+    assert.ok(messages.some(m => m.includes('J-POP 16th Bright Drive')));
   });
 
   test('R012 repeated calls recompute from the latest source', async () => {

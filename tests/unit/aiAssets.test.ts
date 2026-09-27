@@ -13,7 +13,9 @@ const TOOLS: Record<string, string> = {
   guitardsl_analyze_playability: 'guitardslPlayability',
   guitardsl_apply_capo: 'guitardslApplyCapo',
   guitardsl_apply_beginner_mode: 'guitardslApplyBeginner',
-  guitardsl_apply_transpose: 'guitardslTranspose'
+  guitardsl_apply_transpose: 'guitardslTranspose',
+  guitardsl_analyze_accompaniment: 'guitardslAccompaniment',
+  guitardsl_apply_accompaniment: 'guitardslApplyAccompaniment'
 };
 const EXCLUDED = ['Gemini', 'gemini', 'transcribeYouTube', '@google/genai', 'src/transcription'];
 
@@ -34,11 +36,12 @@ function makeFixtureRoot(): string {
   copy('package.json');
   copy('docs/specs/guitardsl-syntax.md');
   for (const file of listFiles(path.join(ROOT, 'ai'))) copy(path.relative(ROOT, file));
+  for (const rel of ['src/accompaniment.ts', 'src/strummingPatterns.ts', 'src/strummingCodeLens.ts', 'src/ai/tools.ts']) copy(rel);
   return tmp;
 }
 
 describe('AI integration assets (Issue #80)', () => {
-  it('T001 manifest: VS Code ^1.109.0, the five tools exactly once, prompt-referenceable, unique references, activation events', () => {
+  it('T001 manifest: VS Code ^1.109.0, the seven tools exactly once, prompt-referenceable, unique references, activation events', () => {
     assert.strictEqual(pkg.engines.vscode, '^1.109.0');
     assert.strictEqual(pkg.devDependencies['@types/vscode'], '^1.109.0');
     const tools: any[] = pkg.contributes.languageModelTools;
@@ -66,10 +69,20 @@ describe('AI integration assets (Issue #80)', () => {
     assert.deepStrictEqual(schema('guitardsl_apply_transpose').properties.capoMode.enum, ['keep', 'recommended', 'explicit']);
     assert.deepStrictEqual([schema('guitardsl_apply_transpose').properties.semitones.minimum, schema('guitardsl_apply_transpose').properties.semitones.maximum], [-11, 11]);
     for (const name of Object.keys(TOOLS)) assert.strictEqual(schema(name).properties.path.type, 'string');
-    for (const name of ['guitardsl_apply_capo', 'guitardsl_apply_beginner_mode', 'guitardsl_apply_transpose']) {
+    for (const name of ['guitardsl_apply_capo', 'guitardsl_apply_beginner_mode', 'guitardsl_apply_transpose', 'guitardsl_apply_accompaniment']) {
       assert.strictEqual(schema(name).properties.uri.type, 'string', `${name} takes a document uri`);
     }
-    for (const name of ['guitardsl_validate_dsl', 'guitardsl_analyze_playability']) assert.strictEqual(schema(name).properties.uri, undefined);
+    for (const name of ['guitardsl_validate_dsl', 'guitardsl_analyze_playability', 'guitardsl_analyze_accompaniment']) assert.strictEqual(schema(name).properties.uri, undefined);
+    const analyze = schema('guitardsl_analyze_accompaniment');
+    assert.strictEqual(analyze.properties.sectionIndex.minimum, 0);
+    assert.strictEqual(analyze.properties.family.enum.length, 9);
+    const apply = schema('guitardsl_apply_accompaniment');
+    assert.deepStrictEqual(apply.required, ['plans']);
+    assert.deepStrictEqual(apply.properties.plans.items.properties.mode.enum, ['intent', 'preset', 'grid', 'dsl']);
+    assert.deepStrictEqual(apply.properties.plans.items.properties.directionPolicy.enum, ['physical', 'literal']);
+    assert.strictEqual(apply.properties.transitions.items.properties.candidates.maxItems, 3);
+    assert.strictEqual(apply.properties.ending.properties.candidates.maxItems, 3);
+    assert.ok(!('D' in apply.properties.transitions.items.properties.candidates.items.properties.pattern.properties), 'structured candidates take no raw strokes');
   });
 
   it('T001 scripts: precompile generates Help and AI assets; npm test runs both checks before tests', () => {
@@ -138,12 +151,49 @@ describe('AI integration assets (Issue #80)', () => {
     }
   });
 
+  it('T017 the gate requires the accompaniment workflow in the Skill, its guide and the instructions', async () => {
+    const { checkAiSync, ACCOMPANIMENT_GUIDE, INSTRUCTIONS_PATH } = await load();
+    const root = makeFixtureRoot();
+    try {
+      const guide = path.join(root, ACCOMPANIMENT_GUIDE);
+      fs.writeFileSync(guide, fs.readFileSync(guide, 'utf8').split('guitardsl_apply_accompaniment').join('the apply tool'));
+      const instructions = path.join(root, INSTRUCTIONS_PATH);
+      fs.writeFileSync(instructions, fs.readFileSync(instructions, 'utf8').split('guitardsl_analyze_accompaniment').join('the analyze tool'));
+      const errors: string[] = checkAiSync(root);
+      assert.ok(errors.some(e => e.includes(`${ACCOMPANIMENT_GUIDE}: must reference guitardsl_apply_accompaniment`)), errors.join('\n'));
+      assert.ok(errors.some(e => e.includes(`${INSTRUCTIONS_PATH}: must reference guitardsl_analyze_accompaniment`)), errors.join('\n'));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('T033 the gate rejects an excluded import in the accompaniment engine or the tool adapter', async () => {
+    const { checkAiSync } = await load();
+    const root = makeFixtureRoot();
+    try {
+      const engine = path.join(root, 'src/accompaniment.ts');
+      fs.writeFileSync(engine, `import { transcribeWithGemini } from './transcription/gemini';\n${fs.readFileSync(engine, 'utf8')}`);
+      const tools = path.join(root, 'src/ai/tools.ts');
+      fs.writeFileSync(tools, `import { GoogleGenAI } from '@google/genai';\n${fs.readFileSync(tools, 'utf8')}`);
+      const errors: string[] = checkAiSync(root);
+      assert.ok(errors.some(e => e.includes('src/accompaniment.ts: imports excluded module "./transcription/gemini"')), errors.join('\n'));
+      assert.ok(errors.some(e => e.includes('src/ai/tools.ts: imports excluded module "@google/genai"')), errors.join('\n'));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('Skill is concise orchestration, not a copy of the spec; instructions target GuitarDSL files only', () => {
     const skill = fs.readFileSync(path.join(ROOT, 'ai/skills/guitardsl-language/SKILL.md'), 'utf8');
     const spec = fs.readFileSync(path.join(ROOT, 'docs/specs/guitardsl-syntax.md'), 'utf8');
     assert.ok(skill.length * 10 < spec.length, 'SKILL.md must stay much shorter than the spec');
     assert.ok(skill.includes('references/guitardsl-syntax.md'));
     assert.ok(skill.includes('guitardsl_validate_dsl'));
+    assert.ok(skill.includes('references/accompaniment.md'));
+    const guide = fs.readFileSync(path.join(ROOT, 'ai/skills/guitardsl-language/references/accompaniment.md'), 'utf8');
+    assert.ok(guide.includes('directionPolicy') && /never choose `literal` on your own/i.test(guide), 'the guide forbids choosing literal autonomously');
+    assert.ok(guide.includes('operation: adapt') && guide.includes('operation: replace'));
+    assert.ok(guide.includes('@tempo: rit.'));
     const instructions = fs.readFileSync(path.join(ROOT, 'ai/instructions/guitardsl.instructions.md'), 'utf8');
     assert.ok(instructions.startsWith("---\napplyTo: '**/*.{guitardsl,gdsl}'\n---"));
     assert.ok(instructions.includes('guitardsl_validate_dsl'));

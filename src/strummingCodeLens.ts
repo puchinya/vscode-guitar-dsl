@@ -1,137 +1,225 @@
-// CodeLens and command provider for applying strumming and arpeggio patterns.
+// CodeLens, command and QuickPick for applying accompaniment patterns (spec extension.md §3.10), plus the
+// VS Code edit step shared with the AI accompaniment tool. Every change goes through the deterministic
+// accompaniment engine (src/accompaniment.ts); this module only drives the UI and applies one edit.
 import * as vscode from 'vscode';
-import { SupportedLocale } from './i18n';
-import { STRUMMING_PATTERN_PRESETS, StrummingPatternPreset, replaceRhythmInDsl } from './strummingPatterns';
+import {
+  AccompanimentOptions,
+  AccompanimentPlanResult,
+  AccompanimentRequest,
+  AccompanimentSection,
+  accompanimentSections,
+  availableFamilies,
+  currentPatternShortcuts,
+  effectiveFeels,
+  planAccompanimentTransform,
+  presetsForFamily,
+  uniformMeter
+} from './accompaniment';
+import { MeasureData, parseGuitarDsl } from './compiler';
+import { AccompanimentUiMessages, SupportedLocale, getAccompanimentUiMessages } from './i18n';
+import { TimeSignature, formatTimeSignature, sameTimeSignature } from './scoreEvents';
+import { AccompanimentFamily, ScoreFeel, StrummingPatternPreset, USAGE_GROUP_ORDER } from './strummingPatterns';
 
 export const APPLY_STRUMMING_PATTERN_COMMAND = 'guitardsl.applyStrummingPattern';
 
 export class StrummingCodeLensProvider implements vscode.CodeLensProvider {
-  private readonly isJa: boolean;
+  private readonly msgs: AccompanimentUiMessages;
 
   constructor(locale: SupportedLocale) {
-    this.isJa = locale === 'ja';
+    this.msgs = getAccompanimentUiMessages(locale);
   }
 
   public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-    const codeLenses: vscode.CodeLens[] = [];
     const text = document.getText();
-    const lines = text.split(/\r?\n/);
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const match = line.match(/^\[(.*)\]$/);
-      if (match) {
-        const sectionName = match[1].trim();
-        const range = new vscode.Range(i, 0, i, lines[i].length);
-        const title = this.isJa
-          ? `$(symbol-event) 伴奏パターンを変更 [${sectionName}]`
-          : `$(symbol-event) Change Pattern [${sectionName}]`;
-
-        codeLenses.push(
-          new vscode.CodeLens(range, {
-            title,
-            command: APPLY_STRUMMING_PATTERN_COMMAND,
-            arguments: [document.uri, sectionName]
-          })
-        );
-      }
-    }
-
-    return codeLenses;
+    return accompanimentSections(parseGuitarDsl(text), text)
+      .filter(s => s.labelLine !== null)
+      .map(s => {
+        const line = s.labelLine as number;
+        return new vscode.CodeLens(new vscode.Range(line, 0, line, document.lineAt(line).text.length), {
+          title: this.msgs.lensTitle(s.name ?? ''),
+          command: APPLY_STRUMMING_PATTERN_COMMAND,
+          arguments: [document.uri, s.sectionIndex]
+        });
+      });
   }
 }
 
-interface StrummingQuickPickItem extends vscode.QuickPickItem {
-  preset: StrummingPatternPreset;
+/** Replaces only the changed middle of the document, as one undoable WorkspaceEdit. */
+async function replaceDocumentText(doc: vscode.TextDocument, text: string, next: string): Promise<boolean> {
+  let start = 0;
+  while (start < text.length && start < next.length && text[start] === next[start]) start++;
+  let endOld = text.length;
+  let endNew = next.length;
+  while (endOld > start && endNew > start && text[endOld - 1] === next[endNew - 1]) {
+    endOld--;
+    endNew--;
+  }
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(doc.uri, new vscode.Range(doc.positionAt(start), doc.positionAt(endOld)), next.slice(start, endNew));
+  return vscode.workspace.applyEdit(edit);
 }
 
+export type AccompanimentApplyResult =
+  | Omit<Extract<AccompanimentPlanResult, { ok: true }>, 'text'>
+  | { ok: false; code: string; detail?: string };
+
+/**
+ * Applies an accompaniment request to the document at `uri`: re-reads the current source, plans every
+ * change with the engine (never from cached or caller-provided text) and applies one undoable edit.
+ */
+export async function applyAccompanimentTransform(
+  uri: vscode.Uri,
+  request: AccompanimentRequest,
+  options?: AccompanimentOptions
+): Promise<AccompanimentApplyResult> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const text = doc.getText();
+  const plan = planAccompanimentTransform(text, request, options);
+  if (!plan.ok) return plan;
+  const { text: next, ...summary } = plan;
+  if (next === text) return summary;
+  return (await replaceDocumentText(doc, text, next)) ? summary : { ok: false, code: 'editRejected' };
+}
+
+interface ScopeItem extends vscode.QuickPickItem {
+  section?: AccompanimentSection;
+}
+
+interface CategoryItem extends vscode.QuickPickItem {
+  presets?: StrummingPatternPreset[];
+  groupBy?: 'usageGroup' | 'family';
+}
+
+interface PatternItem extends vscode.QuickPickItem {
+  preset?: StrummingPatternPreset;
+}
+
+const meterText = (ts: TimeSignature) => formatTimeSignature(ts);
+const separator = (label: string): vscode.QuickPickItem => ({ label, kind: vscode.QuickPickItemKind.Separator });
+
+/** Step 1 (spec §3.10): meter / family categories for the target meter; 4/4 splits by family. */
+function categoryItems(ts: TimeSignature, feels: ScoreFeel[], shortcuts: StrummingPatternPreset[], msgs: AccompanimentUiMessages): CategoryItem[] {
+  const items: CategoryItem[] = [];
+  if (shortcuts.length > 0) items.push({ label: msgs.currentShortcut, detail: msgs.currentShortcutDetail, presets: shortcuts, groupBy: 'usageGroup' });
+  const meter = meterText(ts);
+  const families = availableFamilies(ts, feels);
+  if (meter === '4/4') {
+    for (const f of families) items.push({ label: `${meter} — ${msgs.familyLabels[f]}`, presets: presetsForFamily(f, ts, feels), groupBy: 'usageGroup' });
+  } else if (families.length > 0) {
+    items.push({ label: msgs.meterCategory(meter), presets: families.flatMap(f => presetsForFamily(f, ts, feels)), groupBy: 'family' });
+  }
+  return items;
+}
+
+function levels(p: StrummingPatternPreset, msgs: AccompanimentUiMessages): string {
+  const l = msgs.levelLabels;
+  const parts = [
+    msgs.usageGroupLabels[p.usageGroup],
+    ...(p.feelCompatibility === 'any' ? [] : [msgs.requiresFeel(p.feelCompatibility.join('/'))]),
+    `${l[p.energy]} / ${l[p.density]}`,
+    `sync: ${l[p.syncopation]}${p.syncopationKinds.length ? ` (${p.syncopationKinds.join('+')})` : ''}`,
+    `emphasis: ${l[p.emphasis]}`,
+    l[p.difficulty],
+    p.tags.join(', ')
+  ];
+  return parts.join(' · ');
+}
+
+/** Step 2: the category's presets with usage-group (4/4) or family (other meters) separators. */
+function patternItems(category: CategoryItem, isJa: boolean, msgs: AccompanimentUiMessages): PatternItem[] {
+  const presets = category.presets ?? [];
+  const items: PatternItem[] = [];
+  const keys = category.groupBy === 'family' ? [...new Set(presets.map(p => p.family))] : USAGE_GROUP_ORDER.filter(g => presets.some(p => p.usageGroup === g));
+  for (const key of keys) {
+    const group = presets.filter(p => (category.groupBy === 'family' ? p.family === key : p.usageGroup === key));
+    items.push(separator(category.groupBy === 'family' ? msgs.familyLabels[key as AccompanimentFamily] : msgs.usageGroupLabels[key]));
+    for (const preset of group) {
+      items.push({
+        label: `$(music) ${isJa ? preset.nameJa : preset.nameEn}`,
+        description: `[${preset.pattern}]`,
+        detail: `${isJa ? preset.descriptionJa : preset.descriptionEn} — ${levels(preset, msgs)}`,
+        preset
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Command flow: scope (entire score or one section) -> category -> pattern. Cancelling the pattern list
+ * returns to the category list; cancelling the category or scope list changes nothing.
+ */
 export async function promptAndApplyStrummingPattern(
   document: vscode.TextDocument,
-  sectionName?: string,
+  section?: string | number,
   locale?: SupportedLocale
 ): Promise<void> {
   const isJa = locale === 'ja';
-
-  // 1. If sectionName is not given, ask user whether to change entire song or specific section
-  let targetSection: string | undefined = sectionName;
-
-  if (!targetSection) {
-    // Extract sections from document
-    const text = document.getText();
-    const lines = text.split(/\r?\n/);
-    const sections: string[] = [];
-    for (const line of lines) {
-      const m = line.trim().match(/^\[(.*)\]$/);
-      if (m && !sections.includes(m[1].trim())) {
-        sections.push(m[1].trim());
-      }
-    }
-
-    const scopeItems: (vscode.QuickPickItem & { scope?: string })[] = [
-      {
-        label: isJa ? '$(globe) 楽譜全体に適用' : '$(globe) Apply to Entire Score',
-        description: isJa ? 'すべての小節の伴奏パターンを変更' : 'Change accompaniment pattern for all measures',
-        scope: undefined
-      },
-      ...sections.map(s => ({
-        label: `$(symbol-class) [${s}]`,
-        description: isJa ? `このセクションのみ変更` : `Change only this section`,
-        scope: s
-      }))
-    ];
-
-    const chosenScope = await vscode.window.showQuickPick(scopeItems, {
-      placeHolder: isJa ? '変更を適用する範囲を選択してください' : 'Select target scope for accompaniment pattern'
-    });
-
-    if (!chosenScope) return;
-    targetSection = chosenScope.scope;
-  }
-
-  // 2. Select Strumming / Arpeggio pattern
-  const items: StrummingQuickPickItem[] = STRUMMING_PATTERN_PRESETS.map(preset => ({
-    label: `$(music) ${isJa ? preset.nameJa : preset.nameEn}`,
-    description: `[${preset.pattern}]`,
-    detail: isJa ? preset.descriptionJa : preset.descriptionEn,
-    preset
-  }));
-
-  const targetLabel = targetSection ? `[${targetSection}]` : (isJa ? '楽譜全体' : 'Entire Score');
-  const chosen = await vscode.window.showQuickPick(items, {
-    placeHolder: isJa
-      ? `${targetLabel} に適用する伴奏パターンを選択してください`
-      : `Select accompaniment pattern to apply to ${targetLabel}`,
-    matchOnDescription: true,
-    matchOnDetail: true
-  });
-
-  if (!chosen) return;
-
-  // 3. Apply edit to document
-  const currentText = document.getText();
-  const updatedText = replaceRhythmInDsl(currentText, chosen.preset.pattern, {
-    sectionName: targetSection
-  });
-
-  if (currentText === updatedText) {
-    vscode.window.showInformationMessage(
-      isJa ? '変更対象の小節が見つかりませんでした。' : 'No matching measures found to update.'
-    );
+  const msgs = getAccompanimentUiMessages(locale ?? 'en');
+  const text = document.getText();
+  const score = parseGuitarDsl(text);
+  const sections = accompanimentSections(score, text);
+  if (sections.length === 0) {
+    vscode.window.showInformationMessage(msgs.noMeasures);
     return;
   }
+  const sectionLabel = (s: AccompanimentSection) => `[${s.name ?? msgs.unnamedSection}]`;
 
-  const edit = new vscode.WorkspaceEdit();
-  const fullRange = new vscode.Range(
-    document.positionAt(0),
-    document.positionAt(currentText.length)
-  );
-  edit.replace(document.uri, fullRange, updatedText);
-
-  const success = await vscode.workspace.applyEdit(edit);
-  if (success) {
-    const successMsg = isJa
-      ? `${targetLabel} の伴奏パターンを「${chosen.preset.nameJa}」に変更しました。`
-      : `Changed accompaniment pattern of ${targetLabel} to "${chosen.preset.nameEn}".`;
-    vscode.window.showInformationMessage(successMsg);
+  let target: AccompanimentSection | undefined;
+  if (typeof section === 'number') target = sections[section];
+  else if (typeof section === 'string') target = sections.find(s => s.name === section);
+  if (section !== undefined && !target) {
+    vscode.window.showInformationMessage(msgs.noMeasures);
+    return;
   }
+  if (!target) {
+    const scopeItems: ScopeItem[] = [
+      { label: msgs.scopeEntireScore, description: msgs.scopeEntireScoreDetail },
+      ...sections.map(s => ({ label: `$(symbol-class) ${sectionLabel(s)}`, description: msgs.scopeSection, section: s }))
+    ];
+    const chosen = await vscode.window.showQuickPick(scopeItems, { placeHolder: msgs.scopePlaceholder });
+    if (!chosen) return;
+    target = chosen.section;
+  }
+
+  const measures: MeasureData[] = target ? target.measures : score.measures;
+  const ts = uniformMeter(measures);
+  if (!ts) {
+    const mixed = measures.some(m => !sameTimeSignature(m.context.timeSignature, measures[0].context.timeSignature));
+    vscode.window.showInformationMessage(mixed ? msgs.mixedMeter : msgs.noMeasures);
+    return;
+  }
+  const feels = effectiveFeels(measures);
+  const shortcuts = target ? currentPatternShortcuts(target, score.measures) : [];
+  const categories = categoryItems(ts, feels, shortcuts, msgs);
+  if (categories.length === 0) {
+    vscode.window.showInformationMessage(msgs.noPresets(meterText(ts)));
+    return;
+  }
+  const targetLabel = target ? sectionLabel(target) : msgs.entireScore;
+
+  let preset: StrummingPatternPreset | undefined;
+  while (!preset) {
+    const category = await vscode.window.showQuickPick(categories, { placeHolder: msgs.categoryPlaceholder(targetLabel) });
+    if (!category) return;
+    const pick = await vscode.window.showQuickPick(patternItems(category, isJa, msgs), {
+      placeHolder: msgs.patternPlaceholder(targetLabel, category.label),
+      matchOnDescription: true,
+      matchOnDetail: true
+    });
+    preset = pick?.preset;
+  }
+
+  const plans = (target ? [target] : sections).map(s => ({ sectionIndex: s.sectionIndex, mode: 'preset' as const, presetId: (preset as StrummingPatternPreset).id }));
+  // The manual choice is applied exactly: no automatic phrase-end variation.
+  const result = await applyAccompanimentTransform(document.uri, { plans }, { phraseVariation: false });
+  if (!result.ok) {
+    vscode.window.showWarningMessage(msgs.failed(result.detail ?? result.code));
+    return;
+  }
+  if (!result.changed) {
+    vscode.window.showInformationMessage(msgs.noChange);
+    return;
+  }
+  vscode.window.showInformationMessage(msgs.applied(targetLabel, isJa ? preset.nameJa : preset.nameEn));
 }

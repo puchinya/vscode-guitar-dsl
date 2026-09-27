@@ -60,7 +60,7 @@
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
-| | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → パターンのクイックピック）、セクション見出し行の CodeLens。1 回の元に戻せる編集 |
+| | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
 | **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | Get Started / Current File（アクティブなエディタのみ）/ Tools。`onView:guitardsl.sidebar` で起動 |
@@ -87,7 +87,8 @@
 | | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップの動的ローカライズ |
 | | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
 | **AI 連携** | Skill `guitardsl-language` / 指示 `guitardsl.instructions.md`（`ai/`） | ✅ 完了 | 最小 VS Code 1.109.0。参照資料は `generate:ai` で構文仕様から生成し、`check:ai` で同期を検査。Agent / Chat 上での Skill・指示の読み込みは手動未確認 |
-| | 言語モデルツール 5 件（`src/ai/tools.ts`） | ✅ 完了 | validate / playability / カポ / 初心者モード / 移調。既存 API のアダプタのみ。変更系は対象を入力の `uri` / `path` で固定（確認メッセージの文書だけを編集。副作用のない `prepareInvocation`）・`documentBusy`・キャンセル。モデルは呼ばない |
+| | 伴奏エンジンと正規プリセットカタログ（`src/accompaniment.ts`、`src/strummingPatterns.ts`） | ✅ 完了 | 58 件のカタログ（メタデータの機械検査）、intent / preset / grid / dsl、物理的なダウン / アップ、シンコペーション判定、コード区間の提示（D3）、フレーズ末の変化・`arrangementGroup`・`adapt`、弱起の保持、`%`・インライン音高の安全性、セクション切替とエンディング（歌唱タイミング）。小節のリズム範囲（`rhythmSource`）だけを編集。実モデルでの Agent 操作は手動未確認 |
+| | 言語モデルツール 7 件（`src/ai/tools.ts`） | ✅ 完了 | validate / playability / カポ / 初心者モード / 移調 / 伴奏の分析 / 伴奏の適用。既存 API のアダプタのみ。変更系は対象を入力の `uri` / `path` で固定（確認メッセージの文書だけを編集。副作用のない `prepareInvocation`）・`documentBusy`・キャンセル。モデルは呼ばない |
 
 ---
 
@@ -110,7 +111,7 @@
   - `tests/unit/audioMirEvaluator.test.ts`: 評価スクリプトの Harte 表記の語彙縮約、時間加重の各一致率、GuitarSet JAMS（演奏側コード・テンポ）の読み取り、テンポ Acc1/Acc2
   - `tests/unit/audioMir.test.ts`: `AudioMirResultV1` の実行時検証（版・tick・スロット重複・非有限値・コード名/キー名）、アダプタ（1 セクション、コード/リズム 8・12・16 グリッドの各小節ちょうど 4 拍、先頭休符・`r1`・3 連、方向の決定的割り当て、strict 検証をそのまま通過、再パースでエラー 0）、Worker プロトコル（1 回だけ確定・遅延メッセージ無視）、推論プール（並列数の上限、完了順に依存しない集約、キャンセルで全 Worker 終了、推論 Worker の失敗・不正メッセージ）、`tempo.tracker` の検証、コントローラ（多重起動防止、キャンセル、失敗後の再実行、非 file URI、失敗時にドキュメントを作らない、dispose）
   - `tests/unit/beginnerMode.test.ts`: バレーコードの絶対条件（`F → Fmaj7`、全カポでセーハなし）、カポ 0〜12 の評価と決定的な推奨、通常のカポ推論が変わらないこと、置き換え規則の範囲（ルート・長短の性質を変えない、sus/dim/aug を変えない）、分数コードのベース省略とペナルティ、解なし（暗黙の allow なし、`noRecommendation`）、定義との衝突・定義の保持・使われなくなる定義の警告（元のコードが解決していた定義キーだけ。参照されていないラベル付き定義は含めない）、ラベル付きコード、ソースのバイト保持（CRLF・コメント・長さ・メロディ・歌詞）、再解析と配置列の確認、積み重ならないこと、カポバーの描画と JA/EN 文言
-  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力）、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
+  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力、伴奏プリセットの未知 ID・拍子不一致の拒否）、採譜パネルが 4/4 のプリセットだけをファミリー別に出すこと、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
   - `tests/unit/scoreEvents.test.ts`: 拍子の解析・既定のグループ・小節の長さ・連桁のまとまり（`3/8` と `3/8(1+1+1)` も拍のグループどおり）、イベント値の正規化、コンテキストの持続と `tempo primo`、イベントの順序・孤立イベント・不正イベントからの回復、拍子ごとの長さ検証、弱起と補完、`%` の拍子境界、フィールで拍数が変わらないこと
   - `tests/unit/transpose.test.ts`: 実音移調（固定カポ・指定カポ・推奨カポ・コードなし）、転調を含む楽譜、オクターブ境界と範囲外、ソースのバイト保持（CRLF・コメント・空白・歌詞・奏法）、ラベル付きコード・定義衝突、オッターヴァとの関係
   - `tests/unit/render-advanced.test.ts`: 構造的な段区切り、全段で揃う第1小節線、転調（打ち消し・臨時記号のリセット・リズムのみの段の `Key:`）、拍子記号、注記欄と改ページ、注記欄を五線に近づける配置（コード名の上の空きへの重ね、強弱記号を一番下の五線・歌詞・低い音のすぐ下に置く）、メロディのある段の見出し（コード名・セクション名等）を五線へ下げる量と、描画された SVG で測ったメロディ譜表のインクとの間隔（記号の種類ごと、複合音価、段をまたぐ H/P・スラー、各サンプル）、同じ小節前の複数強弱記号が重ならないこと、XML エスケープ、オッターヴァ、奏法記号（高音でもベンドの矢印が上向き、装飾音は休符を飛ばして次の音符の左）、連符、従来の楽譜の描画が変わらないこと（リズムのみのサンプルは `origin/main@62fec74`、メロディのあるサンプルは Issue #70 で目視確認した描画とのハッシュ一致）
@@ -120,11 +121,14 @@
   - `tests/unit/helpSync.test.ts`: ヘルプ同期（仕様セクションの抽出・割り当て・ダイジェスト、追加・削除・英字付き番号、見出しの `help-sources` による本文の所有（削除された機能の孤児の本文の検出）、壊れた manifest の診断、コマンド・設定と仕様の一致、NLS、決定論的な生成と生成物の最新性、`let`・同時複数音の網羅、再生・Web プレーヤーの見出しがないこと）
   - `tests/unit/help.test.ts`: ヘルプの例の構文検証、ツールバーのヘルプボタン（ローカライズ・`openHelp` の送信・楽譜 SVG に含まれない）、ロケール別のファイル選択、ヘルプを開けないときのエラー表示
   - `tests/unit/sidebar.test.ts`: サイドバーのセクション順・展開状態・項目とコマンド、Current File（案内のみ／アクティブな URI を渡す 6 項目）、`refresh()`、`package.json` の貢献とアイコン
-  - `tests/unit/aiAssets.test.ts`: AI 連携の manifest（最小 VS Code、5 ツール・参照名・起動イベント・入力スキーマ・スクリプト）、`check:ai`（参照資料の 1 バイト変更・Skill 名・貢献パス・ツールのずれ・除外識別子）、Skill と指示の内容、`.vscodeignore` が `ai/**` を同梱すること
+  - `tests/unit/aiAssets.test.ts`: AI 連携の manifest（最小 VS Code、7 ツール・参照名・起動イベント・入力スキーマ・スクリプト）、`check:ai`（参照資料の 1 バイト変更・Skill 名・貢献パス・ツールのずれ・除外識別子・伴奏ツールの参照・伴奏コードの除外 import）、Skill・伴奏ガイド・指示の内容、`.vscodeignore` が `ai/**` を同梱すること
+  - `tests/unit/strummingPatterns.test.ts`: 正規カタログ 58 件（ID・宣言順・契約の表とメタデータの一致・重複なし・分類例）、全パターンの構文と拍数、自己検査（誤ったメタデータの検出を含む）、8 分 / 16 分 / 3 連 / 複合拍子の往復、オールダウンは `authored` だけ、シンコペーションの判定、アルペジオ記法の解析と描画
+  - `tests/unit/accompaniment.test.ts`: セクション番号、入力検証、`intent` の必須条件・重み・同点・`preferredPresetId`・難易度・選択理由、コード区間の提示（D3。ゴースト・レゲエ）、`grid`（最も粗い往復・加算音価・拍子ごとのスロット）、`dsl`（`physical` / `literal`・拍数・小節線をまたぐタイ）、ソースを保つ編集（1 行複数小節・リズム省略・CRLF・`%`・インライン音高・拍子とフィールの混在・弱起）、フレーズ末の変化・`arrangementGroup`・`adapt`、分析の結果
+  - `tests/unit/accompanimentArrangement.test.ts`: セクション切替の文脈（`exact` / `measureOnly` / `none`、複数番の歌詞、タイ）、候補の順序と不採用理由、歌唱中・コード区間・タイミング不明での拒否、エンディング（`hold` / `finalHit` / `fillToHold` / `breakThenHit` / `rolledFinal`・フェルマータ）、優先順位、`@tempo` を挿入しないこと
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **583 / 583 件 PASS** (0 failures)
+- **テスト実行結果**: **642 / 642 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -140,8 +144,9 @@
   - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
   - 移調（Issue #68）: 最新テキストからの再計算、移調 + カポ指定の 1 回の編集と 1 回の元に戻す、失敗時は不変、楽譜設定のカポ・初心者モード・移調の 3 セクション、適用後のプレビュー・PDF の再解決（初心者モード有効時を含む）、スコアイベントのアウトライン、高度な記譜のサンプルの PDF 出力
   - 初心者モード: ON で `forbid`・自動・カポ一時変更の解除、プレビュー入力と PDF 入力の一致、OFF でソース表示（カポ一時変更は戻さない）、ON/OFF の繰り返しでドリフトなし、固定カポ・バレーコード変更で自動へ、編集への追従と解なしでの解除（古い PDF なし）、切り替え・ドキュメントを閉じる・プレビューを閉じるでの解除、適用（最新テキスト・1 回の編集・1 回の元に戻す・失敗時は不変）、楽譜設定 `beginner` セクションのモデルと適用
-  - AI 連携（Issue #80）: モデルなしでの起動と 5 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算、入力が示す文書だけを編集すること（確認後にアクティブなエディタが変わっても対象は変わらない。対象なし・両方指定は `invalidInput`。未知の無題 URI で文書を作らない）、確認メッセージが入力だけから作られること、読み取り専用ツールの `document.uri` を `vscode.lm.invokeTool` 経由で変更系ツールに渡して無題ドキュメントを編集できること
-- **テスト実行結果**: **42 / 42 件 PASS**（VS Code 1.139.1 darwin-arm64 のテストビルド。最小バージョン 1.109.0 の VS Code では未実行）（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+  - 伴奏（Issue #101）: `vscode.lm.invokeTool` による伴奏の分析（構造・ファミリー別）、複数セクションの適用が 1 回の編集と 1 回の元に戻す・事後検証、失敗時は不変（1 計画の失敗で全体を拒否）、入力が示す文書だけを編集、`documentBusy`・キャンセル、手動クイックピック（拍子のカテゴリ・用途グループの区切り・58 件の一覧を出さない）
+  - AI 連携（Issue #80）: モデルなしでの起動と 7 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算、入力が示す文書だけを編集すること（確認後にアクティブなエディタが変わっても対象は変わらない。対象なし・両方指定は `invalidInput`。未知の無題 URI で文書を作らない）、確認メッセージが入力だけから作られること、読み取り専用ツールの `document.uri` を `vscode.lm.invokeTool` 経由で変更系ツールに渡して無題ドキュメントを編集できること
+- **テスト実行結果**: **46 / 46 件 PASS**（VS Code 1.139.1 darwin-arm64 のテストビルド。最小バージョン 1.109.0 の VS Code では未実行）（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:

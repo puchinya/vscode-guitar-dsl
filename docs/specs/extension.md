@@ -142,6 +142,8 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   2. Gemini API（`@google/genai` の `interactions.create`）へ固定プロンプト、YouTube URL、および JSON Schema（Music IR）を送信。
   3. 受信したレスポンスの構造バリデーションおよびセマンティックバリデーション（BPM 30..300、4/4 拍子、各小節内合計 4 拍、コード名・音高妥当性、カポ・歌詞・音節）を実施。
   4. バリデーション済み IR を純粋シリアライザにより決定論的 GuitarDSL テキストへ変換。推奨カポ設定（`capo:`）、同一パターンの繰り返し（`%` 記号）、およびメロディ音符ごとの音節歌詞（`lyr:`）を活用して出力。
+     - 採譜パネルの伴奏パターン指定: 「自動」（既定。採譜したリズムを使う）または正規プリセットカタログ（§8.7.1）の **4/4 のプリセットだけ**を、ファミリー → パターンの 2 段階で選べる。58 件を 1 つの一覧に並べず、4/4 以外のプリセットは表示しない。
+     - プリセットを指定した場合、シリアライザはそのプリセットが存在し、拍子が採譜結果の拍子と一致することを必須とする。未知の ID や拍子の不一致は書き出さずにエラーとし、別のパターンへの自動置き換えは行わない。
   5. `parseGuitarDsl` により構文検証を実施し、エラー診断が 0 件であることを確認。
   6. 成功時のみ `workspace.openTextDocument({ language: 'guitardsl', content })` を呼び出し、`showTextDocument` で新規エディタとして開く。
   7. 既存ファイルの上書きや自動保存は行わない。
@@ -205,14 +207,18 @@ Gemini API キーを設定・更新する。
 設定キーの集合は `package.json` の `contributes.configuration.properties` と一致しなければならない（§7.3）。
 
 ### 3.10 `guitardsl.applyStrummingPattern`
-楽譜全体または 1 つのセクションの小節のリズム（伴奏パターン）を、プリセットのストローク／アルペジオパターンに置き換える。
+楽譜全体または 1 つのセクションの小節のリズム（伴奏パターン）を、正規プリセットカタログ（§8.7.1）のストローク／アルペジオパターンに置き換える。適用は伴奏エンジン（§8.7）の `preset` 計画として行い、AI ツールと同じ規則（拍子・フィールの互換、コードの提示、ソースを保つ編集、`%`・インライン音高の扱い）に従う。
 
-- **引数**: `(uri?: Uri, sectionName?: string)`。対象ドキュメントは `showPreview` と同一規則（§3.1）。見つからない場合は警告を表示する。
-- **CodeLens**: GuitarDSL ドキュメントのセクション見出し行（`[名前]`）の上に「伴奏パターンを変更 [名前]」を表示し、そのセクション名でこのコマンドを実行する。
-- **`sectionName` がない場合**（コマンドパレットから実行）: 適用範囲（「楽譜全体に適用」またはドキュメント内の各セクション）をクイックピックで選択する。
-- 次に、プリセットのパターン一覧（名前・パターン・説明）をクイックピックで選択する。いずれかのクイックピックをキャンセルした場合は何も変更しない。
-- 選択したパターンを対象範囲の小節に適用し、ドキュメント全体を 1 回の `WorkspaceEdit` で置き換える（取り消し可能。自動保存しない）。成功時は適用範囲とパターン名を通知する。
-- 変更対象の小節がない（テキストが変化しない）場合は編集せず、その旨を通知する。
+- **引数**: `(uri?: Uri, section?: number | string)`。`section` は 0 始まりのセクション番号（§8.7.2）。文字列の場合は、その名前を持つ最初のセクションとして扱う。対象ドキュメントは `showPreview` と同一規則（§3.1）。見つからない場合は警告を表示する。
+- **CodeLens**: GuitarDSL ドキュメントのセクション見出し行（`[名前]`）の上に「伴奏パターンを変更 [名前]」を表示し、そのセクション番号でこのコマンドを実行する。同じ名前のセクションが複数あっても、それぞれ別のセクションとして扱う。
+- **`section` がない場合**（コマンドパレットから実行）: 適用範囲（「楽譜全体に適用」またはドキュメント内の各セクション）をクイックピックで選択する。
+- **2 段階の選択**: 58 件のプリセットを 1 つの一覧に並べない。
+  1. **カテゴリ**: 対象範囲の拍子に合うカテゴリだけを表示する。4/4 はファミリーごと（`4/4 — 8ビート`、`4/4 — 16ビート`、シャッフル、スウィング、3連、バラード / サステイン、アルペジオ、アルペジアート、基本 / 4分）に分ける。2/4・3/4（ワルツ）・6/8・9/8・12/8 は拍子ごとに 1 つのカテゴリにまとめる。対象セクションの現在のリズムがいずれかのプリセットと完全に一致する場合に限り、先頭に「現在のパターンに近い候補」（同じファミリー・奏法・細かさの候補、最大 5 件）を表示する。曲調を推測した「おすすめ」は表示しない。
+  2. **パターン**: カテゴリ内のプリセットを、4/4 は用途グループ（基本 / 汎用、Pop / J-POP、Acoustic / Folk / Ballad、Rock / Punk / Metal、Funk / Soul / Disco / R&B、Reggae / Ska、Blues / Shuffle、特殊奏法）の区切り付きで、それ以外の拍子はファミリーの区切り付きで表示する。各行は名前、パターン、説明、および用途グループ・必要なフィール・エネルギー / 密度・シンコペーション・強調・難易度・タグを示す。名前・パターン・説明・タグは標準の検索で絞り込める。全件を再表示する「すべて」項目は作らない。
+  - 対象範囲のフィール（`feel:` / `@feel:`）と互換のないプリセットは表示しない。パターン一覧をキャンセルするとカテゴリ一覧に戻る。カテゴリ一覧または範囲の選択をキャンセルした場合は何も変更しない。
+- **楽譜全体への適用**: 全セクションの完全小節の拍子が 1 つの場合だけ行う。拍子が混在する場合は適用せず、セクションを選ぶよう通知する。
+- 選択したプリセットを対象範囲の完全小節に、フレーズ末の変化（§8.7.6）なしでそのまま適用する。弱起・終止補完の小節は変更しない。変更は 1 回の `WorkspaceEdit`（取り消し可能。自動保存しない）で、リズムの記述範囲だけを書き換える。成功時は適用範囲とパターン名を通知する。
+- エンジンが失敗コード（§8.7.10）を返した場合は、その内容を警告として表示し、何も変更しない。変更対象の小節がない（テキストが変化しない）場合は編集せず、その旨を通知する。
 
 ### 3.11 `guitardsl.openHelp`
 GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機能、GuitarDSL 言語、トラブルシューティング、コマンド・設定一覧）を開く。
@@ -614,12 +620,13 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 - 拡張機能は言語モデルを呼び出さない（`vscode.lm.selectChatModels` / `sendRequest`、外部のモデル API を使わない）。モデルの選択・会話・計画・通常のファイル編集は VS Code の Agent / Chat が担う。
 - 専用のチャット参加者、カスタムエージェント、AI 用 Webview、MCP サーバーは提供しない。
 - GitHub Copilot などの特定の AI 拡張機能に依存しない（`extensionDependencies` に含めない）。AI モデルやチャットプロバイダがなくても、拡張機能は起動し、§2〜§7 の機能はすべて動作する。
-- ツールは既存の機能（パーサー、カポ推論、カポ変更、初心者モード、実音移調）をそのまま呼び出す。ツール独自の変換規則は持たない。
-- YouTube 採譜・ローカル音源の採譜・プレビュー・PDF・コードダイアグラムエディタ・伴奏パターン・ヘルプはツールとして公開しない。
+- ツールは既存の機能（パーサー、カポ推論、カポ変更、初心者モード、実音移調、伴奏エンジン（§8.7））をそのまま呼び出す。ツール独自の変換規則は持たない。
+- 伴奏では、曲調・セクションの役割・エネルギー・密度・シンコペーションなどの音楽的な判断をモデルが行う。拍数・ダウン / アップ・拍子・構文・編集の安全性は拡張機能の伴奏エンジンが保証する（§8.7）。
+- YouTube 採譜・ローカル音源の採譜・プレビュー・PDF・コードダイアグラムエディタ・ヘルプはツールとして公開しない。
 
 ### 8.2 Skill と指示
-- **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。
-- **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: GuitarDSL ファイルにだけ適用する。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うことを求める。
+- **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。伴奏を作る・変えるときは、手で書いた伴奏ガイド `references/accompaniment.md`（生成物ではなく、仕様の複製でもない）を先に読むよう指示する。このガイドは §8.7 のツールの使い方（計画モードの選び方、`replace` / `adapt`、`directionPolicy: literal` を自分から選ばないこと、セクションとジャンルの目安、セクション切替とエンディングの候補の出し方）を説明する。
+- **指示** `ai/instructions/guitardsl.instructions.md`（`applyTo: '**/*.{guitardsl,gdsl}'`）: GuitarDSL ファイルにだけ適用する。仕様にない構文を作らないこと、構文・意味は Skill で確認すること、作成・大きな編集のあとに検証すること、カポ・初心者モード・実音移調はモデルで再現せずツールを使うこと、伴奏は `guitardsl_analyze_accompaniment` のあと `guitardsl_apply_accompaniment` で適用し、ダウン / アップを手で書かないことを求める。
 
 ### 8.3 ツール一覧
 すべてのツールは `canBeReferencedInPrompt: true` で、プロンプトから `#<参照名>` で参照できる。各ツールは `onLanguageModelTool:<ツール名>` で拡張機能を起動する。
@@ -631,14 +638,18 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 | `guitardsl_apply_capo` | `guitardslApplyCapo` | あり | カポ変更の適用（§4B） |
 | `guitardsl_apply_beginner_mode` | `guitardslApplyBeginner` | あり | 初心者モードの適用（§4B） |
 | `guitardsl_apply_transpose` | `guitardslTranspose` | あり | 実音移調の適用（§4B） |
+| `guitardsl_analyze_accompaniment` | `guitardslAccompaniment` | なし | 伴奏エンジンの分析（§8.7） |
+| `guitardsl_apply_accompaniment` | `guitardslApplyAccompaniment` | あり | 伴奏エンジンの適用（§8.7） |
 
 入力:
-- 読み取り専用ツール（`guitardsl_validate_dsl`、`guitardsl_analyze_playability`）: 省略可能な `path`（絶対ファイルパス）。
-- 変更系ツール（下の 3 つ）: 対象文書を示す `uri`（文書 URI の文字列。例: `file:///…`、`untitled:Untitled-1`）と `path`（絶対ファイルパス）のうち、ちょうど 1 つが必須。
+- 読み取り専用ツール（`guitardsl_validate_dsl`、`guitardsl_analyze_playability`、`guitardsl_analyze_accompaniment`）: 省略可能な `path`（絶対ファイルパス）。
+- 変更系ツール（`guitardsl_apply_*` の 4 つ）: 対象文書を示す `uri`（文書 URI の文字列。例: `file:///…`、`untitled:Untitled-1`）と `path`（絶対ファイルパス）のうち、ちょうど 1 つが必須。
 - `guitardsl_apply_capo`: `targetCapo`（整数 0〜12、必須）。
 - `guitardsl_apply_beginner_mode`: `barrePolicy`（`'allow'` | `'forbid'`、必須）、`targetCapo`（整数 0〜12、省略時は自動 = 現在のソースの推奨カポ）。
 - `guitardsl_apply_transpose`: `semitones`（整数 -11〜11、必須）、`capoMode`（`'keep'` | `'recommended'` | `'explicit'`、必須）、`capo`（整数 0〜12。`capoMode` が `'explicit'` のときだけ必須）。
-- 範囲外の値・型の誤り・`'explicit'` での `capo` の欠落、変更系ツールでの `uri` / `path` の欠落・両方の指定・相対パス・スキームのない `uri` は、文書を開く前に `invalidInput` で失敗し、文書を変更しない。
+- `guitardsl_analyze_accompaniment`: 省略可能な `sectionIndex`（0 始まりの整数）と `family`（`quarter` | `eighth` | `sixteenth` | `shuffle` | `swing` | `triplet` | `sustain` | `arpeggio` | `rolled`。`sectionIndex` と一緒のときだけ指定できる）。
+- `guitardsl_apply_accompaniment`: `plans`（セクション計画の配列、必須）、省略可能な `transitions` と `ending`。形式は §8.7.4。
+- 範囲外の値・型の誤り・`'explicit'` での `capo` の欠落、伴奏の計画の形式の誤り（§8.7.4）、変更系ツールでの `uri` / `path` の欠落・両方の指定・相対パス・スキームのない `uri` は、文書を開く前に `invalidInput` で失敗し、文書を変更しない。
 
 ### 8.4 対象文書の解決
 - **読み取り専用ツール**:
@@ -652,12 +663,161 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 結果は JSON テキスト 1 つで、`schemaVersion: 1` と `ok` を含む。対象文書は `document`（`uri` と、ファイルの場合は `path`）で示す。失敗時は `ok: false` と `code`（必要に応じて `detail`）を返す。
 - **`guitardsl_validate_dsl`**: `valid`（エラー数が 0 のときだけ `true`）、`errorCount`、`warningCount`、`diagnostics`（`severity`、`code`、省略可能な `args`、1 始まりの `line` / `startColumn` / `endColumn`。`endColumn` は範囲の直後の列）。構文エラーはツールの失敗ではなく、`valid: false` と診断で返す。ツールは診断を自動修正しない。
 - **`guitardsl_analyze_playability`**: `sourceCapo`、`currentPlayability`（現在のソースの `score` / `level` / `unresolvedChords`。算出できない場合は `null`）、`recommendedCapo`（ない場合は `null`）、カポ 0〜12 の `candidates`（`capo`、`supported`、`score`、`level`、`reason`）。値はカポ推論（§4B）の結果をそのまま返し、ツールが再計算しない。ソースの `capo:` が不正な場合は既存のコード `invalidSourceCapo` で失敗する。`currentPlayability` は同じ推論結果のソースのカポの候補から取る。
+- **`guitardsl_analyze_accompaniment`**: §8.7.3 の分析結果。
+- **`guitardsl_apply_accompaniment`**: 共通の変更系の結果に加えて、§8.7.9 の `appliedSections` / `transitionResults` / `endingResult` / `warnings`。
 - **変更系ツール**: 操作の概要（`operation`、`changed`、適用後のカポ・キー・置き換え数など既存の適用結果の値）、`warnings` / `unusedDefinitions`、事後条件を返す。変換後の DSL 全体は返さない。成功時は適用後の文書を再解析し、`postValidationPassed`（エラー診断が 0）と `postErrorCount` を含める。
 
 ### 8.6 変更系ツールの動作
 - **確認**: 実行前に、入力の `uri` / `path` が示す対象文書（ファイルはファイルシステムのパス、それ以外は URI）と操作内容を示す確認メッセージを表示する。確認メッセージは入力だけから作り、副作用を持たない（状態を記録せず、エディタの状態も参照しない）。実行は VS Code が許可したあとだけ行い、確認メッセージに示した文書だけを編集する。
-- **最新ソースからの適用**: §4B の適用と同じく、実行時点の文書の内容から変換を計算し、1 つの取り消し可能な編集として適用する。モデルが作った置換用 DSL は受け取らない。変換後のテキストをキャッシュしない。同じ変換を 2 回呼ぶと、2 回目も最新のソースから計算する。
+- **最新ソースからの適用**: §4B の適用と同じく、実行時点の文書の内容から変換を計算し、1 つの取り消し可能な編集として適用する。モデルが作った置換用 DSL は受け取らない。唯一の例外は、伴奏の `dsl` 計画（§8.7.4）で渡す 1 小節分のリズムパターンである。これは拍子の長さと物理的なダウン / アップを検証してから、リズムの記述範囲にだけ書き込む。変換後のテキストをキャッシュしない。同じ変換を 2 回呼ぶと、2 回目も最新のソースから計算する。
 - **失敗**: 既存の失敗コード（例: `untransposableChord`、`noRecommendation`、`editRejected`）をそのまま返し、文書を一切変更しない（部分的な編集をしない）。
 - **同時実行**: 同じ文書に対する変更系ツールは同時に 1 つだけ実行する。実行中に同じ文書へ別の変更系ツールが呼ばれた場合は、待たずに `documentBusy` で失敗し、文書を変更しない。読み取り専用のツールは同時に実行できる。
 - **キャンセル**: 文書の解決前と編集の開始直前にキャンセルを確認し、キャンセルされていれば `cancelled` を返して文書を変更しない。編集の適用を始めたあとは、取り消しや補正の編集を行わない。
 - **後処理なし**: ツールはバックグラウンド処理・タイマー・ネットワーク通信を持たない。
+
+### 8.7 伴奏（ストローク／アルペジオ）の生成
+伴奏エンジン（`src/accompaniment.ts`）は、モデル（または §3.10 のクイックピック）が決めた音楽的な意図を、拍子・ダウン / アップ・拍数・構文・編集の安全性を保証したリズムに変換する。エンジンは言語モデル・YouTube / ローカル音源の採譜・Audio MIR に依存しない。乱数を使わず、同じ入力と同じソースからは常に同じ結果を返す。
+
+#### 8.7.1 正規プリセットカタログ
+- カタログは次の 58 件だけで、別名や旧 ID の対応表は持たない。宣言順は下表の順で、選択の同点はこの順で決める。
+- 各プリセットは `id`、`nameJa` / `nameEn`、`descriptionJa` / `descriptionEn`、`pattern`（その拍子の 1 小節ちょうどのリズムトークン）、`meter`、`style`（`strum` | `arpeggio` | `rolled` | `sustain`）、`subdivision`（`quarter` | `eighth` | `sixteenth` | `triplet`）、`family`、`usageGroup`、`difficulty`（`beginner` | `intermediate` | `advanced`）、`feelCompatibility`、`energy` / `density`、`syncopation` / `syncopationKinds`、`emphasis`、`directionModel`、`chordArticulation`、`tags`、および変化形のときだけ `variationOf` / `variationRole` を持つ。どの値も明示的なデータで、実行時に ID から推測しない。
+- `style` / `subdivision`: `sustain_*` は `sustain` / `quarter`、`arp_*` は `arpeggio` / ID 末尾の細かさ、`roll_*` は `rolled` / `quarter`、ファミリー `shuffle`・`triplet` と `swing_4_4_comping` は `strum` / `triplet`、`swing_4_4_sixteenth_halftime` は `strum` / `sixteenth`、その他は `strum` / ファミリーと同じ細かさ（`quarter` / `eighth` / `sixteenth`）。
+- `feelCompatibility`: `swing_4_4_sixteenth_halftime` だけが `['swing']`（書かれた 16 分をスコアの Swing 注記で解釈する）で、他はすべて `any`。スコアのフィールは拍数の計算を変えない。複合拍子は `meter` / 拍のグループで表し、フィールの値にはしない。
+- `directionModel`: `pendulum` は §8.7.7 の物理的なダウン / アップに一致する。`authored` は意図的にそれと異なる奏法（オールダウン 3 件）で、カタログのパターンをそのまま使う。`none` はアルペジオとアルペジアートで、`.d` / `.u` を持たない。
+- `chordArticulation`: `reggae_*` は `offbeatAllowed`、`arp_*` は `freeWithinChord`、他は `onsetPreferred`（§8.7.5 の優先度だけに使う）。
+- `usageGroup` は表示用の分類で、音楽的な妥当性の規則ではない。`tags` はモデル向けの参考情報にすぎない。
+- 現行の記法だけでは忠実に表せない奏法（ブーンチャック / 交互ベース、トラヴィス奏法、弦の音域を分けたカッティング、小節をまたぐコードの先取り）は、名前だけのプリセットとして作らない。
+
+| ID | 拍子 | パターン | ファミリー / 用途 | E / D | シンコペーション | 強調 | 方向 | 難易度 | 変化 |
+|---|---|---|---|---|---|---|---|---|---|
+| `strum_4_4_quarter_basic` | 4/4 | `4.d 4.d 4.d 4.d` | quarter / standard | 中 / 疎 | - | none | pendulum | beginner | - |
+| `strum_4_4_quarter_backbeat` | 4/4 | `4.d 4.d.a 4.d 4.d.a` | quarter / standard | 中 / 疎 | - | backbeat | pendulum | beginner | - |
+| `strum_4_4_quarter_palm_mute` | 4/4 | `4.d.pm 4.d.pm 4.d.pm 4.d.pm` | quarter / rockPunkMetal | 中 / 疎 | - | none | pendulum | intermediate | - |
+| `sustain_4_4_whole` | 4/4 | `1.d` | sustain / acousticBallad | 低 / 疎 | - | none | pendulum | beginner | - |
+| `sustain_4_4_half` | 4/4 | `2.d 2.d` | sustain / acousticBallad | 低 / 疎 | - | none | pendulum | beginner | - |
+| `rock_4_4_eighth_full` | 4/4 | `8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u` | eighth / rockPunkMetal | 高 / 密 | - | none | pendulum | intermediate | - |
+| `pop_4_4_eighth_orthodox` | 4/4 | `4.d 8.d 8.u 8.d 8.u 8.d 8.u` | eighth / popJpop | 中 / 中 | - | none | pendulum | beginner | - |
+| `pop_4_4_eighth_halfbar` | 4/4 | `4.d 8.d 8.u 4.d 8.d 8.u` | eighth / popJpop | 中 / 中 | - | none | pendulum | beginner | - |
+| `jpop_4_4_eighth_old_faithful` | 4/4 | `4.d 8.d 4.u 8.u 8.d 8.u` | eighth / popJpop | 中 / 中 | medium: anticipation+beatCrossing | none | pendulum | intermediate | lift of `pop_4_4_eighth_orthodox` |
+| `folk_4_4_eighth_classic` | 4/4 | `4.d 8.d 8.u 8.d 8.u 4.d` | eighth / acousticBallad | 中 / 中 | - | none | pendulum | beginner | - |
+| `ballad_4_4_eighth_sparse` | 4/4 | `4.d 4.d 8.d 4.u 8.u` | eighth / acousticBallad | 低 / 疎 | light: anticipation+beatCrossing | none | pendulum | beginner | - |
+| `rock_4_4_eighth_push` | 4/4 | `8.d 8.u 8.d 4.u 8.u 8.d 8.u` | eighth / rockPunkMetal | 高 / 密 | medium: anticipation+beatCrossing | none | pendulum | intermediate | fill of `rock_4_4_eighth_full` |
+| `rock_4_4_eighth_backbeat` | 4/4 | `8.d 8.u 8.d.a 8.u 8.d 8.u 8.d.a 8.u` | eighth / rockPunkMetal | 高 / 密 | - | backbeat | pendulum | intermediate | lift of `rock_4_4_eighth_full` |
+| `reggae_4_4_skank` | 4/4 | `r8 8.u r8 8.u r8 8.u r8 8.u` | eighth / reggaeSka | 中 / 疎 | strong: offbeat | offbeat | pendulum | intermediate | - |
+| `rock_4_4_eighth_all_down` | 4/4 | `8.d 8.d 8.d 8.d 8.d 8.d 8.d 8.d` | eighth / special | 高 / 密 | - | none | authored | intermediate | - |
+| `rock_4_4_eighth_palm_mute` | 4/4 | `8.d.pm 8.u.pm 8.d.pm 8.u.pm 8.d.pm 8.u.pm 8.d.pm 8.u.pm` | eighth / rockPunkMetal | 中 / 密 | - | none | pendulum | intermediate | breakdown of `rock_4_4_eighth_full` |
+| `acoustic_4_4_percussive_backbeat` | 4/4 | `8.d 8.u 8.d.g 8.u 8.d 8.u 8.d.g 8.u` | eighth / acousticBallad | 中 / 密 | - | backbeat | pendulum | intermediate | - |
+| `popfunk_4_4_sixteenth_full` | 4/4 | `16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u` | sixteenth / funkSoulDisco | 高 / 密 | - | none | pendulum | advanced | - |
+| `jpop_4_4_sixteenth_bright_drive` | 4/4 | `8.d 8.d 16.d 16.u 16.d 16.u 8.d 8.d 16.d 16.u 16.d 16.u` | sixteenth / popJpop | 中 / 中 | - | none | pendulum | intermediate | - |
+| `jpop_4_4_sixteenth_singer_songwriter` | 4/4 | `8.d 8.d 8.d 16.d 16.u 8.d 8.d 8.d 16.d 16.u` | sixteenth / popJpop | 中 / 中 | - | none | pendulum | intermediate | - |
+| `jpop_4_4_sixteenth_dynamic_mix` | 4/4 | `8.d 8.d 8.d 16.d 16.u 16.d 16.u 8.d 8.d 16.d 16.u` | sixteenth / popJpop | 中 / 中 | - | none | pendulum | intermediate | fill of `jpop_4_4_sixteenth_bright_drive` |
+| `jpop_4_4_sixteenth_anticipation` | 4/4 | `8.d 8.d 8.d 16.d 16+8.u 8.d 8.d 16.d 16.u` | sixteenth / popJpop | 高 / 中 | strong: anticipation+beatCrossing | none | pendulum | advanced | lift of `jpop_4_4_sixteenth_bright_drive` |
+| `acoustic_rock_4_4_sixteenth_syncopated` | 4/4 | `8.d 16.d 8+16.u 16.d 16.u 8.d 16.d 8+16.u 16.d 16.u` | sixteenth / acousticBallad | 高 / 中 | strong: anticipation+beatCrossing | none | pendulum | advanced | - |
+| `poprock_4_4_sixteenth_backbeat` | 4/4 | `16.d 16.u 16.d 16.u 16.d.a 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d.a 16.u 16.d 16.u` | sixteenth / rockPunkMetal | 高 / 密 | - | backbeat | pendulum | intermediate | lift of `popfunk_4_4_sixteenth_full` |
+| `funk_4_4_sixteenth_ghost_motor` | 4/4 | `16.d 16.u.g 16.d 16.u.g 16.d.a 16.u.g 16.d 16.u.g 16.d 16.u.g 16.d 16.u.g 16.d.a 16.u.g 16.d 16.u.g` | sixteenth / funkSoulDisco | 高 / 密 | - | backbeat | pendulum | advanced | - |
+| `reggae_4_4_sixteenth_scratch` | 4/4 | `16.d.g 16.u.g 16.d.a 16.u.g 16.d.g 16.u.g 16.d.a 16.u.g 16.d.g 16.u.g 16.d.a 16.u.g 16.d.g 16.u.g 16.d.a 16.u.g` | sixteenth / reggaeSka | 中 / 密 | strong: offbeat | custom | pendulum | advanced | - |
+| `rock_4_4_sixteenth_palm_mute` | 4/4 | `16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm 16.d.pm 16.u.pm` | sixteenth / rockPunkMetal | 高 / 密 | - | none | pendulum | advanced | breakdown of `popfunk_4_4_sixteenth_full` |
+| `metal_4_4_sixteenth_all_down` | 4/4 | `16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d 16.d` | sixteenth / special | 高 / 密 | - | none | authored | advanced | - |
+| `swing_4_4_sixteenth_halftime` | 4/4 | `16.d 16.u 16.d 16.u 16.d 16.u 16.d 16.u 16.d.a 16.u 16.d 16.u 16.d 16.u 16.d 16.u` | swing / standard (feel: swing) | 中 / 密 | - | custom | pendulum | advanced | - |
+| `blues_4_4_shuffle_basic` | 4/4 | `4t.d 8t.u 4t.d 8t.u 4t.d 8t.u 4t.d 8t.u` | shuffle / blues | 中 / 中 | - | none | pendulum | intermediate | - |
+| `bluesrock_4_4_shuffle_backbeat` | 4/4 | `4t.d 8t.u 4t.d.a 8t.u 4t.d 8t.u 4t.d.a 8t.u` | shuffle / blues | 高 / 中 | - | backbeat | pendulum | intermediate | lift of `blues_4_4_shuffle_basic` |
+| `blues_4_4_shuffle_all_down` | 4/4 | `4t.d 8t.d 4t.d 8t.d 4t.d 8t.d 4t.d 8t.d` | shuffle / special | 高 / 中 | - | none | authored | intermediate | lift of `blues_4_4_shuffle_basic` |
+| `swing_4_4_comping` | 4/4 | `4t.d 8t.u 4t.d 8t.u 4t.d 8t.u 4t.d 8t.u` | swing / standard | 中 / 中 | - | none | pendulum | intermediate | - |
+| `triplet_4_4_full` | 4/4 | `8t.d 8t.u 8t.d 8t.d 8t.u 8t.d 8t.d 8t.u 8t.d 8t.d 8t.u 8t.d` | triplet / standard | 高 / 密 | - | none | pendulum | advanced | - |
+| `triplet_4_4_backbeat` | 4/4 | `8t.d 8t.u 8t.d 8t.d.a 8t.u 8t.d 8t.d 8t.u 8t.d 8t.d.a 8t.u 8t.d` | triplet / standard | 高 / 密 | - | backbeat | pendulum | advanced | lift of `triplet_4_4_full` |
+| `arp_4_4_quarter` | 4/4 | `4 4 4 4` | arpeggio / acousticBallad | 低 / 疎 | - | none | none | beginner | - |
+| `arp_4_4_eighth` | 4/4 | `8 8 8 8 8 8 8 8` | arpeggio / acousticBallad | 中 / 中 | - | none | none | beginner | - |
+| `arp_4_4_triplet` | 4/4 | `8t 8t 8t 8t 8t 8t 8t 8t 8t 8t 8t 8t` | arpeggio / acousticBallad | 中 / 密 | - | none | none | intermediate | - |
+| `arp_4_4_sixteenth` | 4/4 | `16 16 16 16 16 16 16 16 16 16 16 16 16 16 16 16` | arpeggio / acousticBallad | 高 / 密 | - | none | none | intermediate | - |
+| `roll_4_4_whole` | 4/4 | `1.arp` | rolled / acousticBallad | 低 / 疎 | - | none | none | beginner | - |
+| `roll_4_4_half` | 4/4 | `2.arp 2.arp` | rolled / acousticBallad | 低 / 疎 | - | none | none | beginner | - |
+| `strum_2_4_quarter_basic` | 2/4 | `4.d 4.d` | quarter / standard | 中 / 疎 | - | none | pendulum | beginner | - |
+| `strum_2_4_eighth_full` | 2/4 | `8.d 8.u 8.d 8.u` | eighth / standard | 高 / 密 | - | none | pendulum | intermediate | - |
+| `waltz_3_4_quarter_basic` | 3/4 | `4.d 4.d 4.d` | quarter / standard | 中 / 疎 | - | downbeat | pendulum | beginner | - |
+| `waltz_3_4_eighth_flow` | 3/4 | `4.d 8.d 8.u 4.d` | eighth / standard | 中 / 中 | - | downbeat | pendulum | intermediate | - |
+| `waltz_3_4_eighth_full` | 3/4 | `8.d 8.u 8.d 8.u 8.d 8.u` | eighth / standard | 高 / 密 | - | downbeat | pendulum | intermediate | lift of `waltz_3_4_eighth_flow` |
+| `sustain_3_4_basic` | 3/4 | `2.d 4.d` | sustain / acousticBallad | 低 / 疎 | - | downbeat | pendulum | beginner | - |
+| `arp_3_4_eighth` | 3/4 | `8 8 8 8 8 8` | arpeggio / acousticBallad | 中 / 中 | - | none | none | beginner | - |
+| `compound_6_8_full` | 6/8 | `8.d 8.u 8.d 8.d 8.u 8.d` | eighth / standard | 高 / 密 | - | downbeat | pendulum | intermediate | - |
+| `compound_6_8_slowrock` | 6/8 | `4.d 8.d 4.d 8.d` | eighth / standard | 中 / 中 | - | downbeat | pendulum | beginner | - |
+| `compound_6_8_second_pulse_accent` | 6/8 | `8.d 8.u 8.d 8.d.a 8.u 8.d` | eighth / standard | 高 / 密 | - | custom | pendulum | intermediate | lift of `compound_6_8_full` |
+| `arp_6_8_eighth` | 6/8 | `8 8 8 8 8 8` | arpeggio / acousticBallad | 中 / 中 | - | none | none | beginner | - |
+| `compound_9_8_full` | 9/8 | `8.d 8.u 8.d 8.d 8.u 8.d 8.d 8.u 8.d` | eighth / standard | 高 / 密 | - | downbeat | pendulum | intermediate | - |
+| `arp_9_8_eighth` | 9/8 | `8 8 8 8 8 8 8 8 8` | arpeggio / acousticBallad | 中 / 中 | - | none | none | beginner | - |
+| `compound_12_8_full` | 12/8 | `8.d 8.u 8.d 8.d 8.u 8.d 8.d 8.u 8.d 8.d 8.u 8.d` | eighth / standard | 高 / 密 | - | downbeat | pendulum | intermediate | - |
+| `compound_12_8_slowrock` | 12/8 | `4.d 8.d 4.d 8.d 4.d 8.d 4.d 8.d` | eighth / standard | 中 / 中 | - | downbeat | pendulum | beginner | - |
+| `compound_12_8_backbeat` | 12/8 | `8.d 8.u 8.d 8.d.a 8.u 8.d 8.d 8.u 8.d 8.d.a 8.u 8.d` | eighth / standard | 高 / 密 | - | backbeat | pendulum | intermediate | lift of `compound_12_8_full` |
+| `arp_12_8_eighth` | 12/8 | `8 8 8 8 8 8 8 8 8 8 8 8` | arpeggio / acousticBallad | 中 / 中 | - | none | none | beginner | - |
+
+#### 8.7.2 セクション
+- セクション番号 `sectionIndex` は 0 始まりで、ソース順に振る。最初の見出しより前に小節がある場合、その小節は名前のないセクション 0（`name: null`）になる。見出し `[名前]` ごとに新しいセクションが始まり、同じ名前がもう一度現れても別のセクションとして数える。
+- 計画はセクション名ではなく `sectionIndex` で対象を指定する。
+
+#### 8.7.3 分析（`guitardsl_analyze_accompaniment`）
+結果は `schemaVersion: 1`、`ok`、`document`、`bpm`（ヘッダーの値。解釈できなければ `null`）、`sections`、`warnings` を持つ。
+- `sectionIndex` なし: 全セクションについて `sectionIndex`、`name`、`measureCount`、`meters`、`expectedBeats`、`feels`、`currentRhythmFamilies`、`currentPresetMatches`（パターン・拍子・フィールが完全に一致する正規 ID）、`adaptationCandidates`（現在のファミリー・奏法・細かさを保つ構造的な候補。最大 5 件。変化形の関係にある候補が先）、`availableFamilies` を返す。あわせて各セクション境界の `transitionContexts`（§8.7.9）と最終セクションの `endingContext` を返す。プリセットの一覧は返さない。
+- `sectionIndex` あり: そのセクションの分析だけを返す。`family` も指定すると、そのセクションの拍子・フィールと互換のあるそのファミリーのプリセットのメタデータ（ID、名前、ファミリー、用途、奏法、細かさ、フィール互換、エネルギー、密度、シンコペーション、強調、難易度、`chordArticulation`、変化形の関係、タグ）を `selectedSection.availablePresets` に返す。パターン本文は返さない。
+- 分析は曲調・ジャンルを推測せず、「おすすめ」を返さない。音楽的な意図はモデルが決める。
+
+#### 8.7.4 計画（`guitardsl_apply_accompaniment` の入力）
+各計画は `sectionIndex` と `mode` を持ち、同じ `sectionIndex` は 1 回だけ指定できる。共通の省略可能な項目は `phraseLength`（2 | 4 | 8）、`arrangementGroup`（文字列）、`arrangementRole`（`base` | `variation` | `finale`）である。
+- **`intent`**: `style`、`subdivision`（`auto` | 細かさ）、省略可能な `family`、`energy`、`density`、`syncopation`、省略可能な `syncopationKinds`、`emphasis`、省略可能な `preferredPresetId`・`difficulty`、`operation`（`replace` | `adapt`、必須）を持つ。エンジンが §8.7.5 の規則でプリセットを選ぶ。
+- **`preset`**: `presetId`。常にそのプリセットでの置き換え。
+- **`grid`**: `style`（`strum` | `arpeggio`）、`gridUnit`（`quarter` | `eighth` | `sixteenth` | `tripletEighth`）、`attacks`（鳴らす 0 始まりのスロット。昇順で重複なし）、省略可能な `accents` / `ghosts`（`attacks` の部分集合で、互いに重ならない）。スロット数は小節の長さ ÷ 単位（4/4 の 8 分 = 8、6/8 の 8 分 = 6、4/4 の 3 連 8 分 = 12）。単位が拍のグループに合わない場合と、x/8 拍子での `tripletEighth` は `invalidGridAttack`。ダウン / アップと音価はエンジンが決める。各打点は次の打点（または小節末）まで鳴り、拍をまたぐ長さは `8+16`・`4+8` のような加算音価で書く。モデルはダウン / アップや `.t` を渡さない。
+- **`dsl`**: `style` と `pattern`（1 小節ちょうどの GuitarDSL リズムトークン）、省略可能な `directionPolicy`（`physical`（既定）| `literal`）。構文、小節の長さ（不一致は `rhythmBeatCountMismatch`）、奏法と修飾子の整合を検証する。`physical` ではダウン / アップも §8.7.7 で検証し、違反は書き換えずに `unnaturalStrokeDirection` で拒否する。`literal` はユーザーが特殊なストローク方向を明示した場合だけに使う。最後のトークンが小節線をまたぐタイ（`.t`）の場合は `unsupportedCrossBarSyncopation`。
+- `operation` は `intent` だけが持つ。`preset` / `grid` / `dsl` は常に置き換えで、`operation` を指定すると `invalidInput`。
+- `transitions`: `afterSectionIndex`（最終セクション以外）ごとに、優先順の候補 1〜3 件。各候補は `intent`（`space` | `hold` | `lift` | `fill` | `cadence`）、`targetMeasureOffset`（-1 = そのセクションの最終小節、-2 = その前）、構造化パターン（`{ source: 'preset', presetId }`、`{ source: 'grid', gridUnit, attacks, accents?, ghosts? }`、`{ source: 'hold' }`）を持つ。生のダウン / アップのトークンは受け取らない。
+- `ending`: 優先順の候補 1〜3 件。各候補は `kind`（`hold` | `finalHit` | `fillToHold` | `breakThenHit` | `rolledFinal`）、`measures`（`relativeMeasure` -1 / -2 と構造化パターンの 1〜2 件）、省略可能な `fermataFinal` を持つ。
+
+#### 8.7.5 決定的な選択（`intent`）
+- **必須の条件**（すべて満たす候補だけを選ぶ）: 対象の完全小節の拍子とプリセットの拍子が一致する（4/4 のプリセットを他の拍子に切り詰め・引き伸ばさない）。`style` が一致する。`family` を指定した場合は一致する。`subdivision` が `auto` でなければ一致する。`authored` のプリセットは選ばない（必要なら `preset` を使う）。`feelCompatibility` が `any` でなければ、対象の完全小節のすべてのフィールを許す。`syncopationKinds` を指定した場合は、それをすべて含む。`difficulty` を指定した場合は、それより難しくない。コードの提示（§8.7.8）を満たす。`arrangementGroup` の制約（§8.7.6）を満たす。
+- **優先度**（小さいほどよい）: `6 × |エネルギーの差| + 6 × |密度の差| + 8 × |シンコペーションの差| + 3 × (強調が違えば 1)`。段階は low=0 / medium=1 / high=2、sparse=0 / medium=1 / dense=2、none=0 / light=1 / medium=2 / strong=3。さらに、`onsetPreferred` のプリセットがいずれかのコードの開始位置に和声的な打点を持たない場合は +4（計画ごとに 1 回）。`preferredPresetId` が必須の条件を満たす場合は -20。同点はカタログの宣言順。
+- BPM・ジャンル・セクションの役割はモデルが意図を決める材料で、エンジンは解釈しない。
+- 結果の `selectionRationale` は一致した特徴 `matchedTraits`（拍子、一致したエネルギー・密度・シンコペーション・強調、難易度、コードの提示）と、選ばれたものより優先度がよかったのに必須の条件で外れた候補 `rejectedCandidates`（最大 3 件。`reason` は `meter` | `style` | `subdivision` | `scoreFeel` | `difficulty` | `syncopationKind` | `chordChange` | `adaptation`）だけを持つ。全候補の点数は返さない。
+
+#### 8.7.6 アレンジ
+- **`replace` / `adapt`**: `replace` は選んだパターンへ置き換える（「8 ビートにして」「アルペジオにして」などファミリーの変更）。`adapt` は現在のリズム（最も多く一致する正規プリセット。一致がなければ構造から判定したファミリー）のファミリー・奏法・細かさを保ち、エネルギー・密度・強調・シンコペーション・難易度だけを動かす（「もっと強く」「少し控えめに」「食い気味に」「初心者向けに」）。優先度が現在のプリセットより真によくなる候補だけを選び、変化形の関係にある候補を先に探す。見つからなければ `noCompatibleAdaptation` で失敗し、`replace` に切り替えない。`adapt` で現在と異なる `style` / `family` を指定した場合も `noCompatibleAdaptation`。
+- **フレーズ末の変化**: `intent` / `preset` の計画では、セクションの小節を `phraseLength`（省略時は小節数が 8・4・2 の順で割り切れる値。どれでも割り切れなければ変化なし）ごとのフレーズに分け、各フレーズの最後の小節だけに、そのプリセットを `variationOf` とする変化形を使う。セクションの最後の小節では、次のセクションの計画のエネルギーが上がる場合は `lift`、下がる場合は `breakdown` を使う。それ以外のフレーズ末は `fill`、なければ `cadence` を使う。該当する変化形がない、コードの提示を満たさない、弱起・終止補完の小節、`%` の小節、`%` に受け継がれる小節では基本のパターンのままにする。`intent` では `authored` の変化形と、指定の `difficulty` より難しい変化形を使わない。§3.10 のクイックピックはフレーズ末の変化を使わない。
+- **`arrangementGroup`**: 同じグループの最初の `base`（または役割なし）の計画のプリセットがグループの基準になる。後の計画はファミリー・奏法・細かさを基準と同じにする。`variation` は基準そのものか、基準と変化形の関係にあるプリセットに限る。`finale` はエネルギー・密度を基準より最大 1 段まで上げてよい。`intent` で `style` または `family` を基準と違う値に明示した場合は、その指定を優先して制約を外す。`preset` が制約に反する場合は `invalidVariationRelationship`。エンジンはセクション名を意味的に解釈しない。
+- **優先順位**: 同じ小節には、基本のパターン → フレーズ末の変化 → セクション切替の候補 → エンディングの候補の順に適用し、後のものが前のものを置き換える。
+
+#### 8.7.7 物理的なダウン / アップとシンコペーション
+- **位相**: 休符や鳴らさない位置でも手の往復は進み、打点ごとにダウンへ戻らない。強調・ゴースト・パームミュートは方向を変えない。
+  - 単純拍子（x/2・x/4）は 4 分拍ごとに位相を始める。4 分の打点はダウン、8 分は `D U`、16 分は `D U D U`。
+  - すべての打点が 8 分の位置にあれば、`gridUnit` が 16 分でも 8 分の往復を使う（最も粗い往復）。16 分の位置の打点が 1 つでもあれば 16 分の往復を使う。
+  - 複合拍子・x/8 拍子は、拍のグループ（`TimeSignature.groups`。6/8 = 3+3、9/8 = 3+3+3、12/8 = 3+3+3+3）ごとにダウンから始めて往復する（6/8 の 8 分 = `D U D | D U D`）。
+  - 3 連: 各拍の 1 つ目と 3 つ目だけを鳴らす場合は `D - U`（`4t.d 8t.u`）。2 つ目も鳴らす場合は `D U D`。
+  - `swing_4_4_sixteenth_halftime` の 16 分は通常の 16 分の往復を使い、ハーフタイムの感じは 3 拍目の強調で表す。
+  - 直線と 3 連の位置が混ざるパターンは往復を決められないため、`physical` の検証で拒否する。
+- **シンコペーション**（拍 = 拍のグループの始まり。小節線の拍は対象外）:
+  - `anticipation` と `beatCrossing`: 拍でない位置の打点が、次の拍を打ち直さずにその拍を越えて鳴る（長さまたはタイで）。例: `4.d 8.d 4.u 8.u 8.d 8.u` の 1.5 拍目のアップは 2.5 拍目まで鳴って 3 拍目を越える。
+  - `offbeat`: 拍でない位置の打点のあとの拍が無音（休符）である場合、または拍でない位置の打点が `.a` を持ち、前後の拍が強調されていない場合。裏拍に音があるだけではシンコペーションとしない。
+  - 小節をまたぐコードの先取りや、前のコードを次の小節へ伸ばす伴奏は生成しない。
+
+#### 8.7.8 小節の扱いとソースの編集
+- **コードの提示**: 対象の各小節の各コード区間（`[コードの開始, 次のコードの開始または小節末)`。同じコードが続けて置かれた場合は 1 区間）に、和声的な打点が少なくとも 1 つ必要である。和声的な打点は、休符・ゴースト（`.g`）・タイで続く音以外の打点で、`.a`・`.pm`・`.arp` を含む。これを満たさないパターンは `patternMissesChordChange`（`intent` では候補から外す）。
+- **弱起・終止補完**: 長さが拍子の 1 小節と違う小節（`expectedBeats` が異なる）は、`intent` / `preset` / `grid` / `dsl` の計画では変更せず、`partialMeasurePreserved` の警告を返す。完全小節のパターンを切り詰めて使わない。変更できるのは、セクション切替・エンディングの `grid` 候補でその小節の長さに一致する場合だけである。
+- **拍子・フィールの混在**: 計画の対象セクションの完全小節の拍子が 1 つでない場合は `mixedMeterSection`。`intent` / `preset` では、`feelCompatibility` が対象のすべてのフィールを許さない場合、フィールが混在していれば `mixedFeelSection`、1 つなら `invalidPresetForContext`（`intent` で候補がない場合も同じ）。`grid` / `dsl` はフィールが違ってもよい。ツールは `feel:` / `@feel:` を変更しない。
+- **インライン音高**: 計画の対象セクション、または変更する小節に、インラインの音符・同時音グループを含む小節があれば `measureContainsInlinePitch` で全体を失敗させる。`mel:` 行はリズムの伴奏と独立しており、変更しない。
+- **`%`（小節の繰り返し）**: `%` を展開しない。`%` が受け継ぐ小節（直前の `%` でない小節）の変更後のリズムと、その `%` の小節に求められるリズムが同じなら `%` を残す。違う場合（対象外の `%` の意味が変わる場合を含む）は `repeatWouldChangeMeaning` で全体を失敗させる。
+- **編集範囲**: パーサーは各小節のリズムの記述範囲（§5A の診断と同じ 0 始まりの行・列）を持つ。リズムがある小節はその範囲だけを置き換える。リズムを省略した小節は、そのセルの最後のトークンの直後に挿入する。1 行に複数の小節があっても小節ごとに編集し、コード・歌詞・小節線・反復記号・括弧・マーク・コメント・見出し・他のセクションは変更しない。リズムのトークンがコード・マーク・歌詞と交互に書かれていて範囲を分けられない小節を変更する必要がある場合は、`editRejected` で失敗する。
+- **事後条件**: すべての計画を検証してから編集を作る（部分的な編集をしない）。編集後のソースを再解析し、変更した小節が計画どおりのリズムになり、小節数・コード・歌詞が変わらないことを確かめる。満たさなければ `editRejected` で失敗し、編集しない。1 回の呼び出しは 1 つの取り消し可能な編集である。
+
+#### 8.7.9 セクション切替とエンディング
+- **歌唱のタイミング**: 現在のセクションの最後の 2 小節と次のセクションの最初の小節から判定する。`mel:` と `lyr:` の音節がある場合は `exact`、小節の歌詞 `l:"…"` だけの場合は `measureOnly`、歌詞がない場合は `none`。`exact` では、歌われる音（音節のある音と、そこからのタイ・メリスマ）の最後の終わりを `currentLastSungEnd`（最終小節の始まりからの拍。前の小節なら負）とし、複数番の歌詞では最も遅いものを使う。`currentTrailingSpaceBeats` は小節末までの空き、`nextFirstSungOnset` は次のセクションで最初に歌われる位置である。タイ・ハイフン（`sun-`）・メリスマで歌が境界を越える場合は `continuesByTie` / `continuesByHyphen` / `continuesByMelisma` が `true`。
+- **セクション切替**: 候補を上から順に検証し、最初に合法なものだけを適用する。すべて不成立なら基本のパターンのままにし、エンジンが別の候補を作らない。合法の条件は次のとおり。
+  - 対象の小節（`%` でなく、インライン音高を含まない）の長さ・コードの提示・ダウン / アップを満たす。
+  - `exact` の場合、歌の終わりより前のリズムを変えない（歌の終わりをまたぐ音の長さだけは変わってよい）。
+  - `fill` / `lift` は `exact` で、歌が境界を越えない場合だけ採用する。
+  - `space` / `cadence` は打点を増やさない。`cadence` は最後の音を小節末まで伸ばすか強調する。`lift` は歌の終わりのあとの打点を減らさない。`hold` は `source: 'hold'` だけで、歌の終わり（タイミングが `exact` でなければ小節頭）以前の最後の和声的な打点を小節末まで伸ばす。その間にコードが変わる場合は不成立。
+  - 次のセクションのソースと、後続の `%` の意味を変えない。
+- **エンディング**: 最終セクションの最後の 1〜2 小節だけを、候補を上から順に検証して最初に合法なものに置き換える。すべて不成立なら変更しない。
+  - `hold` は最終小節が `source: 'hold'`。`finalHit` は最終小節の最後のコードの開始位置で和声的に鳴らし、それより後に打点を置かない。`fillToHold` は最終小節の最後の音を曲末まで伸ばす。`breakThenHit` は最後のコードの開始位置で鳴らす直前に、少なくとも 1 スロットの無音を置く（`grid` の直前の打点を 1 スロット短くする。1 拍目で鳴らす場合は -2 の小節の最後に無音を置く）。`rolledFinal` は最終小節が `style: rolled` のプリセット。
+  - 歌の制約: `exact` で歌が小節末まで続く場合、またはタイ・ハイフンで歌が続く場合は、`fillToHold` / `breakThenHit` を採用しない。`fillToHold` は空きが 1 拍以上、`breakThenHit` は 0.5 拍以上ある場合だけ、歌の終わりのあとに限って採用する。`measureOnly` / `none` では `hold` / `finalHit` / `rolledFinal` だけを採用する。
+  - `fermataFinal` は最終小節の最後のイベント（音または休符）にフェルマータを付ける。エンディングのために `@tempo: rit.` を挿入せず、コードの開始位置・小節・`|]` を作らない。
+- **結果**: `appliedSections` の各要素は `sectionIndex`、`mode`、`selectedPresetId`（`intent` / `preset`）または `generatedPattern`（`grid` / `dsl`）、`meter`、`scoreFeel`（1 つのフィール、または `mixed`）、`operation`（`intent` の値。他のモードは `replace`）、指定された `phraseLength` / `arrangementGroup` / `arrangementRole`、`variationPresetsUsed`、`selectionRationale` を持つ。`transitionResults` は境界ごとに `afterSectionIndex`、`applied`、採用した `candidateIndex`（0 始まり）と `intent`、`rationale`（採用と不採用の理由）を持つ。`endingResult` は `applied`、`kind`、`windowMeasures`、`usedFermata`、`rationale` を持つ。変更後の DSL 全体は返さない。
+
+#### 8.7.10 失敗コードと警告
+- 失敗（`ok: false`。文書を変更しない）: `invalidInput`、`documentNotFound`、`documentBusy`、`cancelled`、`sectionNotFound`、`duplicateSectionPlan`、`mixedMeterSection`、`mixedFeelSection`、`invalidPresetForContext`、`invalidGridAttack`、`invalidRhythmPattern`、`rhythmBeatCountMismatch`、`unnaturalStrokeDirection`、`measureContainsInlinePitch`、`repeatWouldChangeMeaning`、`patternMissesChordChange`、`noCompatibleAdaptation`、`invalidVariationRelationship`、`unsupportedCrossBarSyncopation`、`editRejected`。
+- セクション切替・エンディングの候補の不採用理由（`rationale` に含める。候補の不採用だけでは失敗にしない）: `invalidTransitionCandidate`、`transitionConflictsWithVocal`、`transitionConflictsWithChordChange`、`invalidEndingCandidate`、`endingConflictsWithVocal`、`endingConflictsWithChordChange`。
+- 警告（`warnings`。`code`、`sectionIndex`、1 始まりの `measureNumber`）: `partialMeasurePreserved`、`vocalTimingUnknown`（切替またはエンディングの対象の歌唱のタイミングが `exact` でない）。

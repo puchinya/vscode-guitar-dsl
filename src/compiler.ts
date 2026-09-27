@@ -127,6 +127,19 @@ export interface HeaderLine {
   valueEnd: number;
 }
 
+/**
+ * Source location of a measure's rhythm expression (spec extension §8.7): `explicit` = the column range
+ * [startCol, endCol) holds the measure's rhythm tokens (including `$name` fragments and inline notes) and
+ * nothing else; `implicit` = no rhythm was written and `startCol === endCol` is the insertion anchor right
+ * after the cell's last token; `repeat` = the `%` token (the measure inherits the previous source measure).
+ */
+export interface MeasureRhythmSource {
+  line: number;
+  startCol: number;
+  endCol: number;
+  kind: 'explicit' | 'implicit' | 'repeat';
+}
+
 export interface MeasureData {
   chord: string;
   chords: ChordPlacement[];
@@ -152,6 +165,11 @@ export interface MeasureData {
   /** Expected length in quarter beats (the pickup length for a pickup measure). */
   expectedBeats: Fraction;
   isPickup?: boolean;
+  /**
+   * Where this source-authored measure's rhythm is written; undefined when it cannot be isolated (rhythm
+   * tokens interleaved with chords / marks / a lyric, or an empty cell).
+   */
+  rhythmSource?: MeasureRhythmSource;
 }
 
 export type DiagnosticSeverity = 'error' | 'warning';
@@ -983,6 +1001,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       let multiChordEqualSplit = false;
       // A cell with an unusable `$name` is not length-checked (the reference already has its diagnostic).
       let fragmentFailed = false;
+      // Rhythm expression span (rhythm tokens, `$name`, inline notes / groups) and the end of the last token.
+      let rhythmStartCol = -1;
+      let rhythmEndCol = -1;
+      let otherAfterRhythm = false;
+      let rhythmInterleaved = false;
+      let lastTokenEnd = -1;
 
       for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
         const tok = tokens[tokIdx];
@@ -991,6 +1015,15 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         const tokCol = found >= 0 ? found : searchPos;
         if (found >= 0) searchPos = found + tok.length;
         if (firstTokenCol < 0) firstTokenCol = tokCol;
+        const isRhythmToken = tok.startsWith('$') || RHYTHM_REGEX.test(tok) || NOTE_GROUP_START.test(tok) || (NOTE_TOKEN_REGEX.test(tok) && !CHORD_REGEX.test(tok));
+        if (isRhythmToken) {
+          if (otherAfterRhythm) rhythmInterleaved = true;
+          if (rhythmStartCol < 0) rhythmStartCol = tokCol;
+          rhythmEndCol = tokCol + tok.length;
+        } else if (rhythmStartCol >= 0) {
+          otherAfterRhythm = true;
+        }
+        lastTokenEnd = Math.max(lastTokenEnd, tokCol + tok.length);
 
         if (tok === '%') {
           isMeasureRepeat = true;
@@ -1029,6 +1062,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (tok.toLowerCase() === 'to' && tokens[tokIdx + 1]?.toLowerCase() === 'coda') {
           mSpecialMark = 'to_coda';
           tokIdx++;
+          const codaCol = rawLine.indexOf(tokens[tokIdx], searchPos);
+          if (codaCol >= 0) {
+            searchPos = codaCol + tokens[tokIdx].length;
+            lastTokenEnd = Math.max(lastTokenEnd, searchPos);
+          }
           continue;
         }
 
@@ -1166,6 +1204,15 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
         lyric: mLyric
       });
+      if (isMeasureRepeat && repeatTokenCol >= 0) {
+        mData.rhythmSource = { line: lineIdx, startCol: repeatTokenCol, endCol: repeatTokenCol + 1, kind: 'repeat' };
+      } else if (rhythmStartCol >= 0) {
+        if (!rhythmInterleaved && !rawLine.slice(rhythmStartCol, rhythmEndCol).includes('l:"')) {
+          mData.rhythmSource = { line: lineIdx, startCol: rhythmStartCol, endCol: rhythmEndCol, kind: 'explicit' };
+        }
+      } else if (lastTokenEnd >= 0) {
+        mData.rhythmSource = { line: lineIdx, startCol: lastTokenEnd, endCol: lastTokenEnd, kind: 'implicit' };
+      }
       if (!isMeasureRepeat && rhythms.length === 0) defaultRhythmMeasures.add(mData);
       if (multiChordEqualSplit) equalSplitChords.add(mData);
       measures.push(mData);
