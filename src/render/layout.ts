@@ -1,10 +1,10 @@
-import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, expandMeasureRepeat } from '../compiler';
+import { DEFAULT_MEASURES_PER_ROW, MeasureData, ParsedScore, eventPitches, expandMeasureRepeat } from '../compiler';
 import { ZERO, fadd, fnum, partBeats } from '../duration';
 import { beamGroupIndex, structuralChange } from '../scoreEvents';
 import { AnnotationLane, connectionLinks, laneLayout, rowAnnotations } from './annotations';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, hasFingers } from './chordDiagram';
 import { ResolvedChordDiagram, resolveScoreDiagrams } from './chordLibrary';
-import { keyAlter, writtenStaffPosition } from './notation';
+import { groupStemUp, keyAlter, splitBeamRuns, writtenStaffPosition } from './notation';
 
 // All layout coordinates are in PDF points (1pt = 1/72 inch).
 // A sheet SVG uses a viewBox equal to its paper size in pt, so the same SVG maps 1:1 onto a PDF page.
@@ -117,6 +117,19 @@ function rhythmStaffInkBottom(measures: MeasureData[]): number {
   for (const m of measures) {
     if (!m.melody && m.lyric) bottom = Math.max(bottom, MELODY_STAVE_BOTTOM + 22);
     for (const r of m.rhythms) {
+      const pitches = eventPitches(r);
+      if (pitches.length > 1) {
+        // Note group (svg.ts): the lowest head, a downward stem and flag, articulations below an up stem,
+        // ties of a compound length.
+        const positions = pitches.map(p => writtenStaffPosition(p, m.context?.ottava ?? 'none'));
+        const y = MELODY_STAVE_BOTTOM - Math.min(...positions) * 4;
+        let b = y + 5;
+        if (!groupStemUp(positions)) b = y + 26 + 4 + 8;
+        else if (r.techniques?.staccato || r.techniques?.tenuto) b = y + 16;
+        if (r.duration.includes('+')) b = Math.max(b, y + 16);
+        bottom = Math.max(bottom, b);
+        continue;
+      }
       if (!r.pitch || r.isRest) continue;
       const y = MELODY_STAVE_BOTTOM - writtenStaffPosition(r.pitch, m.context?.ottava ?? 'none') * 4;
       let b = y + 5;
@@ -141,6 +154,15 @@ function contentInkTop(measures: MeasureData[], score: GeometryScore, melodyTop:
   if (Number.isFinite(melodyTop)) return Math.min(top, melodyTop);
   for (const m of measures) {
     for (const r of m.rhythms) {
+      const pitches = eventPitches(r);
+      if (pitches.length > 1) {
+        // Note group: the highest head, the accidentals of any member, the arpeggio sign and upper ties.
+        for (const p of pitches) {
+          const y = MELODY_STAVE_BOTTOM - writtenStaffPosition(p, m.context?.ottava ?? 'none') * 4;
+          top = Math.min(top, y - (p.alter !== 0 ? 11 : 5), r.arpeggio ? y - 11 : y - 5, r.duration.includes('+') ? y - 12 : y - 5);
+        }
+        continue;
+      }
       if (!r.pitch || r.isRest) continue;
       const y = MELODY_STAVE_BOTTOM - writtenStaffPosition(r.pitch, m.context?.ottava ?? 'none') * 4;
       top = Math.min(top, y - 5);
@@ -165,7 +187,8 @@ const HEADER_CLEARANCE = 8;
 function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureData[]): number {
   type Note = NonNullable<MeasureData['melody']>[number];
   // One entry per drawn head: compound durations are expanded into their parts, as expandParts() does for the renderer.
-  interface InkHead { n: Note; y: number; base: number; tuplet: boolean; isFirstPart: boolean; isLastPart: boolean; stemUp: boolean; stemEnd: number; accidental: boolean }
+  // `yTop` is the highest head (a note group's top member, else `y`); `accidentalTop` the top of a group's accidentals.
+  interface InkHead { n: Note; y: number; yTop: number; base: number; tuplet: boolean; isFirstPart: boolean; isLastPart: boolean; stemUp: boolean; stemEnd: number; accidental: boolean; accidentalTop: number; soloStemUp: boolean }
   let top = MELODY_DEFAULT_INK_TOP;
   const seq: InkHead[] = [];
   const at = new Map<Note, { y: number; stemUp: boolean }>();
@@ -180,14 +203,26 @@ function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureDa
     const keySignature = m.context?.keySignature ?? 0;
     let offset = ZERO;
     for (const n of m.melody ?? []) {
-      const pos = n.pitch ? writtenStaffPosition(n.pitch, ottava) : 4;
+      // A note group stands at the member that sets its stem (spec §18.3) and reaches up to its top member.
+      const pitches = eventPitches(n);
+      const positions = pitches.length > 1 ? pitches.map(p => writtenStaffPosition(p, ottava)) : undefined;
+      const soloStemUp = positions ? groupStemUp(positions) : undefined;
+      const pos = positions ? (soloStemUp ? Math.min(...positions) : Math.max(...positions)) : n.pitch ? writtenStaffPosition(n.pitch, ottava) : 4;
       const y = n.isRest ? MELODY_MID_Y : MELODY_STAVE_BOTTOM - pos * 4;
+      const yTop = positions ? MELODY_STAVE_BOTTOM - Math.max(...positions) * 4 : y;
       if (n.techniques?.grace) {
-        top = Math.min(top, y - 18);
+        top = Math.min(top, yTop - 18);
         at.set(n, { y, stemUp: true });
         continue;
       }
       let accidental = false;
+      let accidentalTop = Infinity;
+      for (const p of positions ? pitches : []) {
+        const k = `${p.step}${p.octave}`;
+        const expected = state.has(k) ? state.get(k)! : keyAlter(keySignature, p.step);
+        if (p.alter !== expected) accidentalTop = Math.min(accidentalTop, MELODY_STAVE_BOTTOM - writtenStaffPosition(p, ottava) * 4 - 12);
+        state.set(k, p.alter);
+      }
       if (n.pitch && !n.isRest) {
         const k = `${n.pitch.step}${n.pitch.octave}`;
         const expected = state.has(k) ? state.get(k)! : keyAlter(keySignature, n.pitch.step);
@@ -198,19 +233,28 @@ function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureDa
         const group = ts && !n.isRest && part.base >= 8 ? beamGroupIndex(ts, fnum(offset)) : undefined;
         if (group !== undefined) {
           if (!beams.has(group)) beams.set(group, []);
-          beams.get(group)!.push({ pos, y });
+          beams.get(group)!.push({ pos, y: yTop });
         }
-        heads.push({ n, pos, y, base: part.base, tuplet: part.tuplet !== undefined, group, isFirstPart: i === 0, isLastPart: i === n.parts.length - 1, accidental: i === 0 && accidental });
+        heads.push({ n, pos, y, yTop, base: part.base, tuplet: part.tuplet !== undefined, group, isFirstPart: i === 0, isLastPart: i === n.parts.length - 1, accidental: i === 0 && accidental, accidentalTop: i === 0 ? accidentalTop : Infinity, soloStemUp: soloStemUp ?? pos < 4 });
         offset = fadd(offset, partBeats(part));
       });
     }
+    // Beam runs as in melodyStaff.ts renderBeams: a note group keeps its own direction and splits the beam.
+    const runOf = new Map<(typeof heads)[number], { up: boolean; tops: number[]; size: number }>();
+    for (const key of beams.keys()) {
+      const members = heads.filter(h => h.group === key);
+      for (const run of splitBeamRuns(members, h => (eventPitches(h.n).length > 1 ? h.soloStemUp : undefined), h => h.pos)) {
+        const info = { up: run.up, tops: run.items.map(h => h.yTop), size: run.items.length };
+        for (const h of run.items) runOf.set(h, info);
+      }
+    }
     for (const h of heads) {
-      const beam = h.group !== undefined ? beams.get(h.group) : undefined;
-      const beamed = beam !== undefined && beam.length >= 2;
-      const stemUp = beamed ? beam.reduce((a, b) => a + b.pos, 0) / beam.length < 4 : h.pos < 4;
+      const beam = runOf.get(h);
+      const beamed = beam !== undefined && beam.size >= 2;
+      const stemUp = beamed ? beam.up : h.soloStemUp;
       let stemEnd = h.y;
       if (!h.n.isRest && h.base >= 2 && stemUp) {
-        stemEnd = beamed ? Math.min(...beam.map(b => b.y)) - MELODY_STEM_LENGTH - 2 : h.y - MELODY_STEM_LENGTH - (h.base >= 16 ? 4 : 0) - 2;
+        stemEnd = beamed ? Math.min(...beam.tops) - MELODY_STEM_LENGTH - 2 : h.yTop - MELODY_STEM_LENGTH - (h.base >= 16 ? 4 : 0) - 2;
       }
       seq.push({ ...h, stemUp, stemEnd });
       if (h.isFirstPart) at.set(h.n, { y: h.y, stemUp });
@@ -222,6 +266,8 @@ function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureDa
   const scoreSeq = scoreMeasures.flatMap(m => m.melody ?? []);
   for (const link of connectionLinks(scoreSeq)) {
     if (link.kind !== 'hammer' && link.kind !== 'pull' && link.kind !== 'slur') continue;
+    // The renderer never draws an arc to or from a note group.
+    if (eventPitches(scoreSeq[link.from]).length > 1 || eventPitches(scoreSeq[link.to]).length > 1) continue;
     const from = at.get(scoreSeq[link.from]);
     const to = at.get(scoreSeq[link.to]);
     if (!from && !to) continue;
@@ -231,18 +277,20 @@ function melodyInkTop(measures: MeasureData[], scoreMeasures: readonly MeasureDa
   }
 
   for (const h of seq) {
-    const { n, y, stemUp, stemEnd } = h;
+    const { n, y, yTop, stemUp, stemEnd } = h;
     if (!n.isRest) {
-      top = Math.min(top, y - (h.accidental ? 12 : 5), stemEnd);
+      top = Math.min(top, yTop - (h.accidental ? 12 : 5), stemEnd, h.accidentalTop);
       // Ties between the parts of a compound duration, to the next note, and from the previous system.
       const tied = !h.isLastPart || n.tieToNext || (h.isFirstPart && n.tiedFromPrev);
       if (!stemUp && tied) top = Math.min(top, y - 12);
+      // A group's upper members tie upwards whatever the stem direction.
+      if (eventPitches(n).length > 1 && !h.isLastPart) top = Math.min(top, yTop - 12);
     }
-    if (h.tuplet) top = Math.min(top, Math.min(y, stemEnd) - 10);
+    if (h.tuplet) top = Math.min(top, Math.min(yTop, stemEnd) - 10);
     const tech = n.techniques;
     if (!tech || !h.isFirstPart) continue;
-    if (!n.isRest && !stemUp && (tech.staccato || tech.tenuto)) top = Math.min(top, y - 14);
-    const noteTop = !n.isRest && h.base >= 2 && stemUp ? Math.min(y - 5, stemEnd) : y - 5;
+    if (!n.isRest && !stemUp && (tech.staccato || tech.tenuto)) top = Math.min(top, yTop - 14);
+    const noteTop = !n.isRest && h.base >= 2 && stemUp ? Math.min(yTop - 5, stemEnd) : yTop - 5;
     const aboveY = Math.max(MELODY_MARK_CEILING + 8, Math.min(MELODY_STAVE_TOP - 4, noteTop - 4));
     if (tech.fermata) top = Math.min(top, aboveY - 7);
     if (tech.vibrato) top = Math.min(top, Math.max(MELODY_MARK_CEILING, aboveY - (tech.fermata ? 10 : 2)) - 3);
@@ -319,6 +367,22 @@ export function getSystemGeometry(measures: MeasureData[], score: GeometryScore)
   let maxMelodyBottom = MELODY_STAVE_BOTTOM; // bottom staff line (y = 102)
   for (const m of measures) {
     for (const n of m.melody ?? []) {
+      const pitches = eventPitches(n);
+      if (!n.isRest && pitches.length > 1) {
+        // Note group: the lowest member, its downward stem, or the ties / articulations under an up stem.
+        const positions = pitches.map(p => writtenStaffPosition(p, m.context?.ottava ?? 'none'));
+        const low = Math.min(...positions);
+        const y = MELODY_STAVE_BOTTOM - low * 4;
+        let bottom = y + 5;
+        if (!groupStemUp(positions)) bottom = Math.max(bottom, y + 32);
+        else {
+          if (n.parts.length > 1) bottom = Math.max(bottom, y + 18);
+          if (n.techniques?.staccato || n.techniques?.tenuto) bottom = Math.max(bottom, y + 12);
+        }
+        if (low <= -2) bottom = Math.max(bottom, y + 6);
+        maxMelodyBottom = Math.max(maxMelodyBottom, bottom);
+        continue;
+      }
       if (!n.isRest && n.pitch) {
         const pos = writtenStaffPosition(n.pitch, m.context?.ottava ?? 'none');
         const y = MELODY_STAVE_BOTTOM - pos * 4;

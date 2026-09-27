@@ -1,4 +1,4 @@
-import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl, expandMeasureRepeat } from '../compiler';
+import { MeasureData, ParsedScore, RhythmItem, eventPitches, parseGuitarDsl, expandMeasureRepeat } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, fnum, tupletGroups } from '../duration';
 import { beamGroupIndex } from '../scoreEvents';
 import { RowSpanCollector, connectionLinks, hasRhythmLaneMark, isLetRing, isPalmMute, newRowSpanCollector } from './annotations';
@@ -63,7 +63,12 @@ import {
   rhythmParts,
   systemPrefix,
   writtenStaffPosition,
-  HEAD_RX
+  ACCIDENTAL_COLUMN_WIDTH,
+  HEAD_RX,
+  accidentalColumns,
+  groupHeadOffsets,
+  groupStemUp,
+  ledgerLinePositions
 } from './notation';
 
 export { escapeXml } from './notation';
@@ -451,6 +456,10 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       isFirstPart: boolean;
       pos?: number;
       noteY?: number;
+      /** Inline note group (spec §18.3): members from low to high, with their x offsets (seconds). */
+      members?: { pos: number; y: number; dx: number; alter: -1 | 0 | 1 }[];
+      /** A stem-down note group: unbeamed, with its own downward flag. */
+      stemDown?: boolean;
     }
 
     const columns = computeMeasureColumns(m, bx, actualBarWidth, true);
@@ -465,7 +474,30 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       const rx = columns.xAt(head.offset) ?? bx + actualBarWidth / 2;
       const pos = r.pitch ? writtenStaffPosition(r.pitch, ottava) : undefined;
       const noteY = pos !== undefined ? staveLines[4] - pos * 4 : undefined;
-      const stemX = r.pitch ? rx + HEAD_RX - 0.4 : (isWhole ? rx : rx + 6.5);
+      let stemX = r.pitch ? rx + HEAD_RX - 0.4 : (isWhole ? rx : rx + 6.5);
+      const groupPitches = eventPitches(r);
+      if (groupPitches.length > 1) {
+        const sorted = groupPitches.map(p => ({ pos: writtenStaffPosition(p, ottava), alter: p.alter })).sort((a, b) => a.pos - b.pos);
+        const stemUp = groupStemUp(sorted.map(mb => mb.pos));
+        const offsets = groupHeadOffsets(sorted.map(mb => mb.pos), stemUp);
+        stemX = stemUp ? rx + HEAD_RX - 0.4 : rx - HEAD_RX + 0.4;
+        rhythmDetails.push({
+          item: r,
+          beats: fnum(head.beats),
+          beatFraction: head.beats,
+          part: head.part,
+          beatOffset: fnum(head.offset),
+          rx,
+          stemX,
+          isWhole,
+          isHalf,
+          isQuarterOrShorter: !isWhole && !isHalf,
+          isFirstPart: head.isFirstPart,
+          members: sorted.map((mb, k) => ({ pos: mb.pos, y: staveLines[4] - mb.pos * 4, dx: offsets[k], alter: mb.alter })),
+          stemDown: !stemUp
+        });
+        continue;
+      }
       rhythmDetails.push({
         item: r,
         beats: fnum(head.beats),
@@ -485,6 +517,10 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
 
     // Inline grace notes: scaled heads left of the next sounding head (end of the measure when none follows).
     graces.forEach(g => {
+      if (eventPitches(g.item).length > 1) {
+        barsSvg += renderInlineGraceGroup(g.item, g.itemIndex);
+        return;
+      }
       if (!g.item.pitch) return;
       const target = heads.find(h => h.itemIndex > g.itemIndex && !h.item.isRest);
       const targetX = target ? (columns.xAt(target.offset) ?? bx + actualBarWidth / 2) : bx + actualBarWidth - 6;
@@ -499,6 +535,31 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       barsSvg += `<g class="technique-grace" transform="translate(${fmt(gx)}, ${fmt(gy)}) scale(0.62)">${inner}</g>`;
       inlineAt.set(g.item, { x: gx, y: gy });
     });
+
+    /** Inline grace note group: every member scaled around the lowest head, one stem up. */
+    function renderInlineGraceGroup(item: RhythmItem, itemIndex: number): string {
+      const target = heads.find(h => h.itemIndex > itemIndex && !h.item.isRest);
+      const targetX = target ? (columns.xAt(target.offset) ?? bx + actualBarWidth / 2) : bx + actualBarWidth - 6;
+      const run = graces.filter(o => o.itemIndex > itemIndex && (!target || o.itemIndex < target.itemIndex)).length;
+      const gx = targetX - 12 - run * 9;
+      const sorted = eventPitches(item).map(p => ({ pos: writtenStaffPosition(p, ottava), alter: p.alter })).sort((a, b) => a.pos - b.pos);
+      const gy = staveLines[4] - sorted[0].pos * 4;
+      const dys = sorted.map(mb => (sorted[0].pos - mb.pos) * 4 / 0.62);
+      const offsets = groupHeadOffsets(sorted.map(mb => mb.pos), true);
+      const base = (rhythmParts(item.duration)[0]?.base ?? 8) as NoteBase;
+      const stemTop = dys[dys.length - 1] - 26;
+      let inner = sorted.map((_, k) => renderNotehead(base, offsets[k], dys[k])).join('')
+        + `<line x1="${fmt(HEAD_RX - 0.4)}" y1="-1" x2="${fmt(HEAD_RX - 0.4)}" y2="${fmt(stemTop)}" stroke="#000" stroke-width="1.5"/>`
+        + renderFlags(Math.max(8, base) as NoteBase, HEAD_RX - 0.4, stemTop);
+      const accidentals = sorted.map((mb, k) => ({ y: dys[k], alter: mb.alter })).filter(a => a.alter !== 0);
+      const cols = accidentalColumns(accidentals);
+      accidentals.forEach((a, k) => (inner += renderAccidental(a.alter, -10 - cols[k] * ACCIDENTAL_COLUMN_WIDTH, a.y)));
+      let ledgers = '';
+      for (const p of ledgerLinePositions(sorted.map(mb => mb.pos))) {
+        ledgers += `<line x1="${fmt(gx - 6)}" y1="${fmt(staveLines[4] - p * 4)}" x2="${fmt(gx + 6)}" y2="${fmt(staveLines[4] - p * 4)}" stroke="#000" stroke-width="1"/>`;
+      }
+      return `${ledgers}<g class="technique-grace" transform="translate(${fmt(gx)}, ${fmt(gy)}) scale(0.62)">${inner}</g>`;
+    }
 
     // Chords (placed clearly above picking marks: baseline at y = 33)
     if (opts.drawHeader) {
@@ -521,11 +582,17 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
 
     // Beam grouping for eighth and sixteenth notes (by the beat groups of the measure's time signature)
     const beamedIndices = new Set<number>();
-    const beatGroups: Map<number, number[]> = new Map();
+    const beatGroups: Map<string, number[]> = new Map();
+    // A stem-down note group cannot reach the shared beam line: it splits its beat group (spec §18.3).
+    let beamSegment = 0;
 
     rhythmDetails.forEach((rd, idx) => {
+      if (rd.stemDown) {
+        beamSegment++;
+        return;
+      }
       if (!rd.item.isRest && rd.part.base >= 8) {
-        const beatKey = beamGroupIndex(m.context.timeSignature, rd.beatOffset);
+        const beatKey = `${beamGroupIndex(m.context.timeSignature, rd.beatOffset)}:${beamSegment}`;
         if (!beatGroups.has(beatKey)) {
           beatGroups.set(beatKey, []);
         }
@@ -595,7 +662,12 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
         if (!r.isRest) spanEntries.push({ x: rx, palmMute: isPalmMute(r), letRing: isLetRing(r), item: r });
         if (hasRhythmLaneMark(r)) opts.spans.laneMarks.push({ x: rx, fermata: tech?.fermata === true, vibrato: tech?.vibrato === true });
         if (tech?.breath) barsSvg += renderBreath(rx + 10, staveLines[0] - 9);
-        if (!r.isRest && (tech?.staccato || tech?.tenuto)) {
+        if (!r.isRest && (tech?.staccato || tech?.tenuto) && rd.members) {
+          // Note group: on the notehead side opposite the stem.
+          const artY = rd.stemDown ? rd.members[rd.members.length - 1].y - 8 : rd.members[0].y + 8;
+          if (tech.tenuto) barsSvg += renderTenuto(rx, artY);
+          if (tech.staccato) barsSvg += renderStaccato(rx, tech.tenuto ? artY + (rd.stemDown ? -4 : 4) : artY);
+        } else if (!r.isRest && (tech?.staccato || tech?.tenuto)) {
           // Below the slash / notehead (stems always point up on the rhythm staff).
           const artY = (rd.noteY ?? midY + 4) + 8;
           if (tech.tenuto) barsSvg += renderTenuto(rx, artY);
@@ -609,6 +681,8 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
 
       if (r.isRest) {
         barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines);
+      } else if (rd.members) {
+        barsSvg += renderInlineGroup(rd, rd.members, rIdx);
       } else if (r.pitch && rd.noteY !== undefined && rd.pos !== undefined) {
         // Inline pitch note (arpeggio / melody note in rhythm staff)
         const noteY = rd.noteY;
@@ -700,6 +774,53 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       }
     });
 
+    /** Inline note group: ledger lines once, accidental columns, displaced seconds, shared stem, member ties. */
+    function renderInlineGroup(rd: RenderedRhythm, members: NonNullable<RenderedRhythm['members']>, rIdx: number): string {
+      const opacity = rd.item.ghost ? '0.35' : '1.0';
+      const rx = rd.rx;
+      const top = members[members.length - 1].y;
+      const bottom = members[0].y;
+      const xs = members.map(mb => rx + mb.dx);
+      const left = Math.min(...xs);
+      const right = Math.max(...xs);
+      let out = '';
+      for (const p of ledgerLinePositions(members.map(mb => mb.pos))) {
+        out += `<line x1="${fmt(left - 8)}" y1="${fmt(staveLines[4] - p * 4)}" x2="${fmt(right + 8)}" y2="${fmt(staveLines[4] - p * 4)}" stroke="#000" stroke-width="1"/>`;
+      }
+      if (rd.isFirstPart) {
+        // Same rule as inline single notes: every altered pitch shows its accidental.
+        const accidentals = members.filter(mb => mb.alter !== 0).map(mb => ({ y: mb.y, alter: mb.alter }));
+        const cols = accidentalColumns(accidentals);
+        accidentals.forEach((a, k) => (out += renderAccidental(a.alter, left - 11 - cols[k] * ACCIDENTAL_COLUMN_WIDTH, a.y)));
+      }
+      members.forEach((mb, k) => (out += renderNotehead(rd.part.base, xs[k], mb.y)));
+      if (rd.part.dotted) {
+        const dotYs = new Set(members.map(mb => (mb.pos % 2 === 0 ? mb.y - 4 : mb.y)));
+        dotYs.forEach(dotY => (out += `<circle cx="${fmt(right + 8.5)}" cy="${fmt(dotY)}" r="1.6" fill="#000"/>`));
+      }
+      if (rd.part.base >= 2) {
+        if (rd.stemDown) {
+          const stemEnd = bottom + 26 + (rd.part.base >= 16 ? 4 : 0);
+          out += `<line x1="${fmt(rd.stemX)}" y1="${fmt(top + 1)}" x2="${fmt(rd.stemX)}" y2="${fmt(stemEnd)}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
+          out += renderFlags(rd.part.base, rd.stemX, stemEnd, true, opacity);
+        } else {
+          out += `<line x1="${fmt(rd.stemX)}" y1="${stemTopY}" x2="${fmt(rd.stemX)}" y2="${fmt(bottom - 1)}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
+          if (!beamedIndices.has(rIdx)) out += renderFlags(rd.part.base, rd.stemX, stemTopY, false, opacity);
+        }
+      }
+      if (rd.item.arpeggio && rd.isFirstPart) out += renderArpeggioSign(left - 12, top - 10, bottom + 10, opacity);
+      // Tie from the previous head of a compound length, one per member (lower half down, upper half up).
+      if (!rd.isFirstPart && rIdx > 0) {
+        const prev = rhythmDetails[rIdx - 1];
+        const n = members.length;
+        members.forEach((mb, k) => {
+          const below = k * 2 + 1 === n ? !rd.stemDown : k * 2 + 1 < n;
+          out += renderTieArc(prev.rx + Math.max(0, prev.members?.[k]?.dx ?? 0) + 6, rx + Math.min(0, mb.dx) - 6, below ? mb.y + 6 : mb.y - 6, below);
+        });
+      }
+      return out;
+    }
+
     // Lyric (placed below bottom stave line: baseline y = 120)
     if (measureLyric) {
       barsSvg += `<text x="${bx + actualBarWidth / 2}" y="${staveLines[4] + 18}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(measureLyric)}</text>`;
@@ -721,6 +842,8 @@ function renderInlineConnections(inlineAt: Map<RhythmItem, { x: number; y: numbe
   const seq = rhythmSequence(ctx);
   let out = '';
   for (const link of connectionLinks(seq)) {
+    // A note group is never a connection end (the parser rejects it, spec §18.2).
+    if (eventPitches(seq[link.from]).length > 1 || eventPitches(seq[link.to]).length > 1) continue;
     const from = inlineAt.get(seq[link.from]);
     const to = inlineAt.get(seq[link.to]);
     if (!from && !to) continue;

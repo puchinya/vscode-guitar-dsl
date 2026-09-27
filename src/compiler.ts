@@ -21,10 +21,12 @@ import {
 import {
   MelodyNote,
   MelodyTokenState,
+  NoteGroupToken,
   NoteTechniques,
   Pitch,
   isGrace,
   parseMelodyToken,
+  parseNoteGroupToken,
   pitchTextLength,
   takesSyllable,
   tokenizeLyrics
@@ -63,23 +65,38 @@ export interface RhythmItem {
   accent: boolean;
   tie: boolean;
   arpeggio?: boolean;
+  /** Single inline pitch; undefined for slashes, rests and note groups. */
   pitch?: Pitch;
+  /** Inline simultaneous note group (spec §18): two or more pitches, `pitch` undefined. */
+  pitches?: Pitch[];
   inlineLyric?: string;
   /** Inline note `{...}` block, or slash modifiers `.pm .lr .stacc .ten .fermata .vib .breath`. */
   techniques?: NoteTechniques;
 }
 
-/** Source location of a pitch (`c#4`, octave included when written) in a `mel:` note or an inline note. */
+/**
+ * Source location of a pitch (`c#4`, octave included when written) in a `mel:` note, an inline note, a single
+ * note of a `let` definition (`fragment`) or a note-group member (`group`, always with an explicit octave).
+ */
 export interface PitchTokenSpan {
   line: number;
   startCol: number;
   endCol: number;
   pitch: Pitch;
-  kind: 'melody' | 'inline';
+  kind: 'melody' | 'inline' | 'fragment' | 'group';
   /** The octave digit is written (otherwise it is inherited from the previous note of `sequence`). */
   explicitOctave: boolean;
-  /** Notes sharing octave inheritance: one `mel:` line, or one bar of a measure line. */
+  /**
+   * Notes sharing octave inheritance: one `mel:` line, one bar of a measure line or one `let` definition.
+   * Group members never take part in the inheritance.
+   */
   sequence: number;
+}
+
+/** Pitches of a rhythm item or melody note: none (rest / slash), one (single note) or several (note group). */
+export function eventPitches(event: { pitch?: Pitch; pitches?: Pitch[] }): Pitch[] {
+  if (event.pitches) return event.pitches;
+  return event.pitch ? [event.pitch] : [];
 }
 
 export interface ChordPlacement {
@@ -170,7 +187,15 @@ export type DiagnosticCode =
   | 'danglingGrace'
   | 'nestedSlur'
   | 'unmatchedSlurEnd'
-  | 'unclosedSlur';
+  | 'unclosedSlur'
+  | 'invalidLetDefinition'
+  | 'duplicateVariable'
+  | 'unknownVariable'
+  | 'cyclicVariableReference'
+  | 'invalidVariableValue'
+  | 'variableContextMismatch'
+  | 'invalidNoteGroup'
+  | 'unsupportedNoteGroupTechnique';
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -214,7 +239,15 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   danglingGrace: 'warning',
   nestedSlur: 'warning',
   unmatchedSlurEnd: 'warning',
-  unclosedSlur: 'warning'
+  unclosedSlur: 'warning',
+  invalidLetDefinition: 'error',
+  duplicateVariable: 'error',
+  unknownVariable: 'error',
+  cyclicVariableReference: 'error',
+  invalidVariableValue: 'error',
+  variableContextMismatch: 'error',
+  invalidNoteGroup: 'error',
+  unsupportedNoteGroupTechnique: 'error'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -357,6 +390,23 @@ export interface ParsedScore {
   pitchTokens?: PitchTokenSpan[];
 }
 
+const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?(?:\+(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?)*|w|h|q)|r[a-z0-9]*)(\.[a-z][a-z0-9:\-]*)*$/;
+const NOTE_TOKEN_REGEX = /^[a-g][#b]?[0-9]?(?:\/|:|$|~|\{)/;
+/** Start of a note group token `[c4,...` (spec §18); `[Intro]`-like or `[1.]` tokens do not match. */
+const NOTE_GROUP_START = /^\[[a-gA-G][#b]?[0-9]?[,\]]/;
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Deep copy of plain AST data (keys holding `undefined` are kept, so copies compare equal to literals). */
+function cloneData<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(cloneData) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) out[key] = cloneData((value as Record<string, unknown>)[key]);
+    return out as T;
+  }
+  return value;
+}
+
 /** Column of `tok` in `rawLine` at or after `from`, delimited like a measure token; -1 when absent. */
 function locateToken(rawLine: string, tok: string, from: number): number {
   for (let at = rawLine.indexOf(tok, from); at >= 0; at = rawLine.indexOf(tok, at + 1)) {
@@ -440,10 +490,238 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     diagnostics.push({ line: lineIdx, startCol, endCol: Math.max(endCol, startCol + 1), severity: DIAGNOSTIC_SEVERITY[code], code, args });
   };
 
+  // `let` fragments (spec §17): every definition is parsed and resolved before the score lines, so
+  // references may come before or after their definition. All state here belongs to this parse call.
+  const CTX_MEASURE = 1;
+  const CTX_MELODY = 2;
+  type FragmentEvent = { kind: 'rhythm'; item: RhythmItem } | { kind: 'note'; note: MelodyNote };
+  interface FragmentEntry { event: FragmentEvent; loc: NoteLocation; token: string }
+  interface FragmentElement { entry?: FragmentEntry; ref?: string; ctx: number; loc: NoteLocation; token: string }
+  interface LetDefinition {
+    name: string;
+    nameLoc: NoteLocation;
+    elements: FragmentElement[];
+    invalid: boolean;
+    /** 0 = unresolved, 1 = resolving (cycle detection), 2 = resolved. */
+    state: 0 | 1 | 2;
+    ctx: number;
+    entries: FragmentEntry[];
+  }
+  const letDefinitions = new Map<string, LetDefinition>();
+
+  lines.forEach((rawLine, lineIdx) => {
+    const trimmed = rawLine.trim();
+    if (!/^let\s/.test(trimmed)) return;
+    const lineStart = rawLine.indexOf(trimmed);
+    const comment = rawLine.slice(lineStart).search(/\s#/);
+    const body = comment >= 0 ? rawLine.slice(0, lineStart + comment) : rawLine;
+    const m = body.match(/^(\s*let\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(\S.*?)?\s*$/);
+    if (!m || m[4] === undefined) {
+      report(lineIdx, lineStart, lineStart + body.trim().length, 'invalidLetDefinition', { token: body.trim() });
+      return;
+    }
+    const name = m[2];
+    const nameLoc = { line: lineIdx, startCol: m[1].length, endCol: m[1].length + name.length };
+    if (letDefinitions.has(name)) {
+      report(lineIdx, nameLoc.startCol, nameLoc.endCol, 'duplicateVariable', { name });
+      return;
+    }
+    const def: LetDefinition = { name, nameLoc, elements: [], invalid: false, state: 0, ctx: 0, entries: [] };
+    letDefinitions.set(name, def);
+
+    // Single notes inherit only inside this definition, starting from an empty state (no default octave).
+    const state: MelodyTokenState = {};
+    // The first pitched single note (a grace note included) writes its own octave and length: a rest or a
+    // note group before it does not establish them (spec §17.4).
+    let firstSingle = true;
+    const sequence = pitchSequence++;
+    const valueStart = m[1].length + name.length + m[3].length;
+    const re = /\S+/g;
+    let t: RegExpExecArray | null;
+    while ((t = re.exec(m[4])) !== null) {
+      const tok = t[0];
+      const col = valueStart + t.index;
+      const loc = { line: lineIdx, startCol: col, endCol: col + tok.length };
+      const fail = (code: DiagnosticCode, args: Record<string, string | number>) => {
+        report(lineIdx, loc.startCol, loc.endCol, code, args);
+        def.invalid = true;
+      };
+      if (tok === '%') {
+        fail('invalidVariableValue', { name, token: tok, reason: 'percent' });
+      } else if (tok.startsWith('$')) {
+        if (VARIABLE_NAME.test(tok.slice(1))) def.elements.push({ ref: tok.slice(1), ctx: 0, loc, token: tok });
+        else fail('invalidVariableValue', { name, token: tok, reason: 'token' });
+      } else if (tok.startsWith('[')) {
+        const parsed = parseNoteGroupToken(tok);
+        if (typeof parsed === 'string') {
+          fail(parsed, { token: tok });
+          continue;
+        }
+        pushGroupPitchTokens(parsed, lineIdx, col, sequence);
+        def.elements.push({ entry: { event: { kind: 'note', note: parsed.note }, loc, token: tok }, ctx: CTX_MEASURE | CTX_MELODY, loc, token: tok });
+      } else if (RHYTHM_REGEX.test(tok)) {
+        const item = parseRhythmToken(tok, lineIdx, col);
+        if (!item) {
+          def.invalid = true;
+          continue;
+        }
+        def.elements.push({ entry: { event: { kind: 'rhythm', item }, loc, token: tok }, ctx: CTX_MEASURE, loc, token: tok });
+      } else if (/^[a-gA-Gr]/.test(tok)) {
+        const parsed = parseMelodyToken(tok, state);
+        if (typeof parsed === 'string') {
+          fail(parsed, { token: tok });
+          continue;
+        }
+        if (parsed.pitch) {
+          const pitchLen = pitchTextLength(tok);
+          const incomplete = firstSingle && (!/[0-9]$/.test(tok.slice(0, pitchLen)) || !/^[/:]/.test(tok.slice(pitchLen)));
+          firstSingle = false;
+          if (incomplete) {
+            fail('missingInitialOctaveOrLength', { token: tok });
+            continue;
+          }
+        }
+        if (parsed.pitch) {
+          const len = pitchTextLength(tok);
+          pitchTokens.push({
+            line: lineIdx,
+            startCol: col,
+            endCol: col + len,
+            pitch: parsed.pitch,
+            kind: 'fragment',
+            explicitOctave: /[0-9]$/.test(tok.slice(0, len)),
+            sequence
+          });
+        }
+        // A pitched note works in both line types; a rest written as r/8 or r:1 only in mel: (r8 is a rhythm rest).
+        def.elements.push({ entry: { event: { kind: 'note', note: parsed }, loc, token: tok }, ctx: parsed.isRest ? CTX_MELODY : CTX_MEASURE | CTX_MELODY, loc, token: tok });
+      } else {
+        fail('invalidVariableValue', { name, token: tok, reason: 'token' });
+      }
+    }
+  });
+
+  /** Resolves references (memoized depth-first search); returns null for an invalid definition. */
+  function resolveLet(def: LetDefinition): FragmentEntry[] | null {
+    if (def.state === 2) return def.invalid ? null : def.entries;
+    def.state = 1;
+    let ctx = CTX_MEASURE | CTX_MELODY;
+    const entries: FragmentEntry[] = [];
+    for (const el of def.elements) {
+      if (el.ref === undefined) {
+        ctx &= el.ctx;
+        entries.push(el.entry!);
+        continue;
+      }
+      const target = letDefinitions.get(el.ref);
+      if (!target) {
+        report(el.loc.line, el.loc.startCol, el.loc.endCol, 'unknownVariable', { name: el.ref });
+        def.invalid = true;
+        continue;
+      }
+      if (target.state === 1) {
+        report(el.loc.line, el.loc.startCol, el.loc.endCol, 'cyclicVariableReference', { name: el.ref });
+        def.invalid = true;
+        continue;
+      }
+      const sub = resolveLet(target);
+      if (!sub) {
+        // The referenced definition already reported its own error.
+        def.invalid = true;
+        continue;
+      }
+      ctx &= target.ctx;
+      // Nested entries are attributed to the reference inside this definition.
+      entries.push(...sub.map(e => ({ event: e.event, loc: el.loc, token: el.token })));
+    }
+    if (!def.invalid && ctx === 0) {
+      report(def.nameLoc.line, def.nameLoc.startCol, def.nameLoc.endCol, 'invalidVariableValue', { name: def.name, token: def.name, reason: 'noContext' });
+      def.invalid = true;
+    }
+    if (!def.invalid && !validateFragmentBoundary(def, entries)) def.invalid = true;
+    def.state = 2;
+    def.ctx = ctx;
+    def.entries = entries;
+    return def.invalid ? null : entries;
+  }
+
+  /** A fragment leaves no open tie, connection, slur or grace sequence for its caller (spec §17.5). */
+  function validateFragmentBoundary(def: LetDefinition, entries: FragmentEntry[]): boolean {
+    let ok = true;
+    const fail = (entry: FragmentEntry, reason: string) => {
+      report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'invalidVariableValue', { name: def.name, token: entry.token, reason });
+      ok = false;
+    };
+    const items = entries.map(e => (e.event.kind === 'rhythm' ? e.event.item : e.event.note));
+    let openSlur: FragmentEntry | undefined;
+    items.forEach((item, i) => {
+      const entry = entries[i];
+      const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
+      if (tied) {
+        // The tie continues into the very next event, which must be a valid target inside the fragment:
+        // a single pitched note for a note tie (never a rest or a note group), a sounding slash for a slash tie.
+        const next = items[i + 1];
+        if (!next) fail(entry, 'openTie');
+        else if (next.pitches) {
+          report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'unsupportedNoteGroupTechnique', { token: entry.token });
+          ok = false;
+        } else if (next.isRest || ('tieToNext' in item && !next.pitch)) {
+          fail(entry, 'tieTarget');
+        }
+      }
+      const tech = item.techniques;
+      if (!tech) return;
+      if (tech.connection) {
+        const target = nextConnectionTarget(items, i);
+        if (target < 0 || !items[target].pitch) fail(entry, 'danglingConnection');
+      }
+      if (tech.grace && !items.slice(i + 1).some(x => !x.techniques?.grace && eventPitches(x).length > 0)) fail(entry, 'danglingGrace');
+      if (tech.slurStart) {
+        if (openSlur) fail(entry, 'nestedSlur');
+        else openSlur = entry;
+      }
+      if (tech.slurEnd) {
+        if (!openSlur) fail(entry, 'unmatchedSlurEnd');
+        openSlur = undefined;
+      }
+    });
+    if (openSlur) fail(openSlur, 'openSlur');
+    return ok;
+  }
+
+  for (const def of letDefinitions.values()) resolveLet(def);
+
+  /**
+   * Events of `$name` for a use in a measure cell (CTX_MEASURE) or a mel: cell (CTX_MELODY); null after
+   * reporting an unknown name or a context mismatch, or silently for a definition that has its own error.
+   */
+  function useFragment(tok: string, lineIdx: number, col: number, ctx: number): FragmentEvent[] | null {
+    const name = tok.slice(1);
+    const def = VARIABLE_NAME.test(name) ? letDefinitions.get(name) : undefined;
+    if (!def) {
+      report(lineIdx, col, col + tok.length, 'unknownVariable', { name });
+      return null;
+    }
+    if (def.invalid) return null;
+    if (!(def.ctx & ctx)) {
+      report(lineIdx, col, col + tok.length, 'variableContextMismatch', { name, context: ctx === CTX_MELODY ? 'melody' : 'measure' });
+      return null;
+    }
+    return def.entries.map(e => e.event);
+  }
+
+  /** `$name` of a valid definition usable in a measure cell (counts as rhythm content for the cell merge). */
+  const isMeasureReference = (tok: string) => {
+    const def = tok.startsWith('$') ? letDefinitions.get(tok.slice(1)) : undefined;
+    return def !== undefined && !def.invalid && (def.ctx & CTX_MEASURE) !== 0;
+  };
+
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const rawLine = lines[lineIdx];
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
+    // `let` definitions were handled above; they never change measures, sections, pages or the melody cursor.
+    if (/^let\s/.test(line)) continue;
     const lineStart = rawLine.indexOf(line);
     const lineEnd = lineStart + line.length;
 
@@ -604,8 +882,6 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     const bars: string[] = [];
     const CHORD_REGEX = new RegExp(`^${CHORD_NAME_PATTERN}(?:@${CHORD_LABEL_PATTERN})?(?::[0-9][0-9.]*|\\/[0-9][0-9.t+{}:]*)?$`);
-    const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?(?:\+(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?)*|w|h|q)|r[a-z0-9]*)(\.[a-z][a-z0-9:\-]*)*$/;
-    const NOTE_TOKEN_REGEX = /^[a-g][#b]?[0-9]?(?:\/|:|$|~|\{)/;
     let searchPos = 0;
 
     let bi = 0;
@@ -620,7 +896,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         const nextTokens = nextClean.replace(/^:+|:+$/g, '').trim().split(/\s+/).filter(Boolean);
         const nextHasChord = nextTokens.some(t => CHORD_REGEX.test(t));
         const isNoteToken = (t: string) => NOTE_TOKEN_REGEX.test(t);
-        const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]) || t === '%' || isNoteToken(t));
+        const nextHasRhythm = nextTokens.some(t => RHYTHM_REGEX.test(t.split('.')[0]) || t === '%' || isNoteToken(t) || NOTE_GROUP_START.test(t) || isMeasureReference(t));
 
         if (!nextHasChord && nextHasRhythm) {
           bars.push(cur + ' ' + next);
@@ -705,6 +981,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const barSequence = pitchSequence++;
       let repeatTokenCol = -1;
       let multiChordEqualSplit = false;
+      // A cell with an unusable `$name` is not length-checked (the reference already has its diagnostic).
+      let fragmentFailed = false;
 
       for (let tokIdx = 0; tokIdx < tokens.length; tokIdx++) {
         const tok = tokens[tokIdx];
@@ -717,6 +995,28 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (tok === '%') {
           isMeasureRepeat = true;
           repeatTokenCol = tokCol;
+          continue;
+        }
+
+        if (tok.startsWith('$')) {
+          // `let` fragment: fresh copies of the resolved events; the bar's inline inheritance is untouched.
+          const fragment = useFragment(tok, lineIdx, tokCol, CTX_MEASURE);
+          if (!fragment) {
+            fragmentFailed = true;
+            continue;
+          }
+          for (const ev of fragment) {
+            if (ev.kind === 'rhythm') {
+              const item = cloneData(ev.item);
+              rhythms.push(item);
+              runningBeat = fadd(runningBeat, rhythmBeatsFraction(item.duration));
+            } else {
+              const item = inlineItem(cloneData(ev.note));
+              rhythms.push(item);
+              inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
+              runningBeat = fadd(runningBeat, ev.note.beats);
+            }
+          }
           continue;
         }
 
@@ -768,72 +1068,27 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           }
         } else if (RHYTHM_REGEX.test(tok)) {
           // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, 8t.d, 8{5:4}.d, 4+8.d, 4.pm, etc.
-          const parts = tok.split('.');
-          const dur = parts[0];
-          const isRest = dur.startsWith('r');
-          const durationValue = parseRhythmDurationDetailed(dur);
-          if (durationValue === 'invalidTuplet') {
-            report(lineIdx, tokCol, tokCol + tok.length, 'invalidTuplet', { token: tok });
+          const item = parseRhythmToken(tok, lineIdx, tokCol);
+          if (!item) continue;
+          rhythms.push(item);
+          runningBeat = fadd(runningBeat, rhythmBeatsFraction(item.duration));
+        } else if (NOTE_GROUP_START.test(tok)) {
+          // Inline simultaneous note group (e.g. [c4,e4,g4]/4, [c4,e4]/8{staccato}); no inheritance either way.
+          const parsed = parseNoteGroupToken(tok);
+          if (typeof parsed === 'string') {
+            report(lineIdx, tokCol, tokCol + tok.length, parsed, { token: tok });
             continue;
           }
-          let down = false, up = false, ghost = false, accent = false, tie = false, arpeggio = false;
-          let inlineL: string | undefined = undefined;
-          const techniques: NoteTechniques = {};
-          let techniqueError: 'invalidTechnique' | 'techniqueRequiresPitch' | undefined;
-
-          for (let i = 1; i < parts.length; i++) {
-            const mod = parts[i];
-            if (mod === 'd') down = true;
-            else if (mod === 'u') up = true;
-            else if (mod === 'g' || mod === 'ghost') ghost = true;
-            else if (mod === 'a' || mod === 'accent') accent = true;
-            else if (mod === 't' || mod === 'tie') tie = true;
-            else if (mod === 'arp' || mod === 'arpeggio') arpeggio = true;
-            else if (RHYTHM_TECHNIQUE_MODIFIERS[mod]) {
-              const key = RHYTHM_TECHNIQUE_MODIFIERS[mod];
-              if (isRest && key !== 'fermata' && key !== 'breath') techniqueError = 'techniqueRequiresPitch';
-              else (techniques as Record<string, unknown>)[key] = true;
-            } else if (PITCHED_ONLY_TECHNIQUES.includes(mod.replace(/:.*$/, ''))) {
-              techniqueError = 'techniqueRequiresPitch';
-            }
-          }
-          if (techniqueError) report(lineIdx, tokCol, tokCol + tok.length, techniqueError, { token: tok });
-
-          const item: RhythmItem = {
-            duration: dur,
-            isRest,
-            down,
-            up,
-            ghost,
-            accent,
-            tie,
-            arpeggio: arpeggio || undefined,
-            inlineLyric: inlineL
-          };
-          if (Object.keys(techniques).length > 0) item.techniques = techniques;
+          const item = inlineItem(parsed.note);
           rhythms.push(item);
-          runningBeat = fadd(runningBeat, rhythmBeatsFraction(dur));
+          inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
+          pushGroupPitchTokens(parsed, lineIdx, tokCol, barSequence);
+          runningBeat = fadd(runningBeat, parsed.note.beats);
         } else if (NOTE_TOKEN_REGEX.test(tok)) {
           // Inline arpeggio / melody note token (e.g. c3/8, e4, g4/4, f#4:0.5, a4/8{hammer})
           const parsed = parseMelodyToken(tok, inlineMelodyState);
           if (typeof parsed !== 'string') {
-            const baseParts = parsed.parts;
-            const primaryBase = baseParts[0]?.base ?? 8;
-            let durStr = String(primaryBase);
-            if (baseParts[0]?.tuplet) durStr = formatNoteValuePart(baseParts[0]);
-            else if (baseParts[0]?.dotted) durStr = `${primaryBase}+${primaryBase * 2}`;
-
-            const item: RhythmItem = {
-              duration: durStr,
-              isRest: parsed.isRest,
-              down: false,
-              up: false,
-              ghost: false,
-              accent: false,
-              tie: parsed.tieToNext,
-              pitch: parsed.pitch
-            };
-            if (parsed.techniques) item.techniques = parsed.techniques;
+            const item = inlineItem(parsed);
             rhythms.push(item);
             inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
             if (parsed.pitch) {
@@ -855,7 +1110,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         }
       }
 
-      if (!isMeasureRepeat && rhythms.length > 0) {
+      if (!isMeasureRepeat && rhythms.length > 0 && !fragmentFailed) {
         const col = firstTokenCol >= 0 ? firstTokenCol : 0;
         const heads = rhythms.filter(r => !r.techniques?.grace).flatMap(r => (parseRhythmDuration(r.duration)?.parts ?? []).map(part => ({ part })));
         lengthChecks.push({ measureIdx: measures.length, line: lineIdx, startCol: col, endCol: searchPos, beats: runningBeat, heads });
@@ -919,6 +1174,98 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
   }
 
+  /** Rhythm item of an inline note or note group of a measure cell (the note's length as a rhythm duration). */
+  function inlineItem(parsed: MelodyNote): RhythmItem {
+    const baseParts = parsed.parts;
+    if (parsed.pitches) {
+      // Every part is kept so a compound group length (4+16) keeps its tied heads.
+      const duration = baseParts.map(p => (p.tuplet ? formatNoteValuePart(p) : p.dotted ? `${p.base}+${p.base * 2}` : String(p.base))).join('+');
+      const group: RhythmItem = { duration, isRest: false, down: false, up: false, ghost: false, accent: false, tie: false, pitches: parsed.pitches };
+      if (parsed.techniques) group.techniques = parsed.techniques;
+      return group;
+    }
+    const primaryBase = baseParts[0]?.base ?? 8;
+    let durStr = String(primaryBase);
+    if (baseParts[0]?.tuplet) durStr = formatNoteValuePart(baseParts[0]);
+    else if (baseParts[0]?.dotted) durStr = `${primaryBase}+${primaryBase * 2}`;
+
+    const item: RhythmItem = {
+      duration: durStr,
+      isRest: parsed.isRest,
+      down: false,
+      up: false,
+      ghost: false,
+      accent: false,
+      tie: parsed.tieToNext,
+      pitch: parsed.pitch
+    };
+    if (parsed.techniques) item.techniques = parsed.techniques;
+    return item;
+  }
+
+  /** One source span per note-group member; members always carry their octave and never join inheritance. */
+  function pushGroupPitchTokens(parsed: NoteGroupToken, lineIdx: number, tokCol: number, sequence: number) {
+    parsed.members.forEach((member, i) => {
+      pitchTokens.push({
+        line: lineIdx,
+        startCol: tokCol + member.offset,
+        endCol: tokCol + member.offset + member.length,
+        pitch: parsed.note.pitches![i],
+        kind: 'group',
+        explicitOctave: true,
+        sequence
+      });
+    });
+  }
+
+  /** Rhythm token (4.d, 8.u, r8, 8t.d, 4+8.pm, ...) of a measure cell or a `let` value; null (reported) when invalid. */
+  function parseRhythmToken(tok: string, lineIdx: number, tokCol: number): RhythmItem | null {
+    const parts = tok.split('.');
+    const dur = parts[0];
+    const isRest = dur.startsWith('r');
+    const durationValue = parseRhythmDurationDetailed(dur);
+    if (durationValue === 'invalidTuplet') {
+      report(lineIdx, tokCol, tokCol + tok.length, 'invalidTuplet', { token: tok });
+      return null;
+    }
+    let down = false, up = false, ghost = false, accent = false, tie = false, arpeggio = false;
+    let inlineL: string | undefined = undefined;
+    const techniques: NoteTechniques = {};
+    let techniqueError: 'invalidTechnique' | 'techniqueRequiresPitch' | undefined;
+
+    for (let i = 1; i < parts.length; i++) {
+      const mod = parts[i];
+      if (mod === 'd') down = true;
+      else if (mod === 'u') up = true;
+      else if (mod === 'g' || mod === 'ghost') ghost = true;
+      else if (mod === 'a' || mod === 'accent') accent = true;
+      else if (mod === 't' || mod === 'tie') tie = true;
+      else if (mod === 'arp' || mod === 'arpeggio') arpeggio = true;
+      else if (RHYTHM_TECHNIQUE_MODIFIERS[mod]) {
+        const key = RHYTHM_TECHNIQUE_MODIFIERS[mod];
+        if (isRest && key !== 'fermata' && key !== 'breath') techniqueError = 'techniqueRequiresPitch';
+        else (techniques as Record<string, unknown>)[key] = true;
+      } else if (PITCHED_ONLY_TECHNIQUES.includes(mod.replace(/:.*$/, ''))) {
+        techniqueError = 'techniqueRequiresPitch';
+      }
+    }
+    if (techniqueError) report(lineIdx, tokCol, tokCol + tok.length, techniqueError, { token: tok });
+
+    const item: RhythmItem = {
+      duration: dur,
+      isRest,
+      down,
+      up,
+      ghost,
+      accent,
+      tie,
+      arpeggio: arpeggio || undefined,
+      inlineLyric: inlineL
+    };
+    if (Object.keys(techniques).length > 0) item.techniques = techniques;
+    return item;
+  }
+
   function placement(c: { name: string; label?: string }, beat: number): ChordPlacement {
     return c.label !== undefined ? { name: c.name, beat, label: c.label } : { name: c.name, beat };
   }
@@ -953,6 +1300,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const measure = measures[measureIdx];
       const start = group.notes.length;
       let notes: MelodyNote[] = [];
+      let fragmentFailed = false;
 
       if (cell.text.trim() === '%') {
         repeatChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: trimmedEnd });
@@ -960,7 +1308,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (!prevMelody) {
           report(lineIdx, trimmedCol, trimmedEnd, 'melodyRepeatWithoutPrevious');
         } else {
-          notes = prevMelody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, tiedFromPrev: false, syllables: [] }));
+          notes = prevMelody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, ...(n.pitches ? { pitches: n.pitches.map(p => ({ ...p })) } : {}), tiedFromPrev: false, syllables: [] }));
           const last = prevMelody[prevMelody.length - 1];
           if (last) state.octave = last.pitch?.octave ?? state.octave;
         }
@@ -969,6 +1317,32 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         let m: RegExpExecArray | null;
         while ((m = re.exec(cell.text)) !== null) {
           const col = cell.col + m.index;
+          if (m[0].startsWith('$')) {
+            // `let` fragment: fresh copies; the line's inheritance state is neither read nor changed.
+            const fragment = useFragment(m[0], lineIdx, col, CTX_MELODY);
+            if (!fragment) {
+              fragmentFailed = true;
+              continue;
+            }
+            for (const ev of fragment) {
+              if (ev.kind !== 'note') continue;
+              const note = cloneData(ev.note);
+              notes.push(note);
+              melodyLocations.set(note, { line: lineIdx, startCol: col, endCol: col + m[0].length });
+            }
+            continue;
+          }
+          if (m[0].startsWith('[')) {
+            const group = parseNoteGroupToken(m[0]);
+            if (typeof group === 'string') {
+              report(lineIdx, col, col + m[0].length, group, { token: m[0] });
+              continue;
+            }
+            notes.push(group.note);
+            melodyLocations.set(group.note, { line: lineIdx, startCol: col, endCol: col + m[0].length });
+            pushGroupPitchTokens(group, lineIdx, col, sequence);
+            continue;
+          }
           const parsed = parseMelodyToken(m[0], state);
           if (typeof parsed === 'string') {
             report(lineIdx, col, col + m[0].length, parsed, { token: m[0] });
@@ -992,7 +1366,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
 
       for (const note of notes) {
-        if (prevNote?.tieToNext && !note.isRest) note.tiedFromPrev = true;
+        // A tie into a note group is invalid (validateConnections); the group still takes its syllable.
+        if (prevNote?.tieToNext && !note.isRest && !note.pitches) note.tiedFromPrev = true;
         prevNote = note;
       }
 
@@ -1005,7 +1380,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
       const total = notes.reduce((acc, n) => fadd(acc, n.beats), ZERO);
       // A `%` cell copies an already checked measure (a meter mismatch is reported by resolveMeasures).
-      if (notes.length > 0 && cell.text.trim() !== '%') {
+      if (notes.length > 0 && cell.text.trim() !== '%' && !fragmentFailed) {
         const heads = notes.filter(n => !isGrace(n)).flatMap(n => n.parts.map(part => ({ part })));
         lengthChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: Math.min(trimmedEnd, cellEnd), beats: total, heads });
       }
@@ -1141,11 +1516,18 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   function validateConnections() {
     const melody = measures.flatMap(m => (m.melody ?? []).map(n => ({ n, loc: melodyLocations.get(n), measure: m })));
     const inline = measures.flatMap(m => (m.isMeasureRepeat ? [] : m.rhythms).map(r => ({ n: r, loc: inlineLocations.get(r), measure: m })));
-    const check = <T extends { isRest: boolean; techniques?: NoteTechniques; pitch?: Pitch }>(seq: { n: T; loc?: NoteLocation; measure: MeasureData }[]) => {
+    const check = <T extends { isRest: boolean; techniques?: NoteTechniques; pitch?: Pitch; pitches?: Pitch[] }>(
+      seq: { n: T; loc?: NoteLocation; measure: MeasureData }[],
+      tied: (n: T) => boolean
+    ) => {
       const items = seq.map(s => s.n);
       let openSlur: NoteLocation | undefined;
       let openSlurSeen = false;
       seq.forEach(({ n, loc, measure }, i) => {
+        // A tie never picks one member of a following note group (spec §18.2).
+        if (loc && tied(n) && items[i + 1]?.pitches) {
+          report(loc.line, loc.startCol, loc.endCol, 'unsupportedNoteGroupTechnique', { token: lines[loc.line].slice(loc.startCol, loc.endCol) });
+        }
         const tech = n.techniques;
         if (!tech || !loc) return;
         if (tech.connection) {
@@ -1173,9 +1555,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       });
       if (openSlur) report(openSlur.line, openSlur.startCol, openSlur.endCol, 'unclosedSlur');
     };
-    check(melody);
-    check(inline);
+    check(melody, n => n.tieToNext);
+    check(inline, r => r.tie);
   }
+
+  // `let` definitions are read before the score lines: keep the documented source order.
+  pitchTokens.sort((a, b) => a.line - b.line || a.startCol - b.startCol);
 
   const validPages = pages.filter((p, idx) => p.measures.length > 0 || idx === 0);
   validPages.forEach((p, idx) => {
@@ -1231,7 +1616,8 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
   const rhythms = source && source.rhythms.length > 0
     ? source.rhythms.map(r => ({
         ...r,
-        pitch: r.pitch ? { ...r.pitch } : undefined
+        pitch: r.pitch ? { ...r.pitch } : undefined,
+        ...(r.pitches ? { pitches: r.pitches.map(p => ({ ...p })) } : {})
       }))
     : defaultRhythms(measure.context.timeSignature, measure.expectedBeats);
 
@@ -1241,9 +1627,10 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
 
   const chord = measure.chord || source?.chord || (chords[0]?.name ?? '');
 
+  const clonePitches = (n: MelodyNote) => (n.pitches ? { pitches: n.pitches.map(p => ({ ...p })) } : {});
   const melody = measure.melody
-    ? measure.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined }))
-    : (source?.melody ? source.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, tiedFromPrev: false, syllables: [] })) : undefined);
+    ? measure.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, ...clonePitches(n) }))
+    : (source?.melody ? source.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, ...clonePitches(n), tiedFromPrev: false, syllables: [] })) : undefined);
 
   return {
     ...measure,

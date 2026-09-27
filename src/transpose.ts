@@ -4,7 +4,7 @@
 
 import { chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { CapoTransformFailureCode, inferCapoForDsl, parseCapoValue, planCapoTransform, transposeChordName } from './capo';
-import { ParsedScore, Pitch, parseGuitarDsl } from './compiler';
+import { ParsedScore, Pitch, eventPitches, parseGuitarDsl } from './compiler';
 import { PitchStep } from './melody';
 
 export const MIN_SEMITONES = -11;
@@ -141,8 +141,8 @@ function writtenChordSequence(score: ParsedScore): string[] {
 /** Sounding pitches in score order (melody notes, then each measure's inline notes). */
 function pitchSequence(score: ParsedScore): Pitch[] {
   return score.measures.flatMap(m => [
-    ...(m.melody ?? []).flatMap(n => (n.pitch ? [n.pitch] : [])),
-    ...(m.isMeasureRepeat ? [] : m.rhythms).flatMap(r => (r.pitch ? [r.pitch] : []))
+    ...(m.melody ?? []).flatMap(eventPitches),
+    ...(m.isMeasureRepeat ? [] : m.rhythms).flatMap(eventPitches)
   ]);
 }
 
@@ -218,11 +218,18 @@ export function planSoundingTranspose(text: string, semitones: number): Transpos
     }
   }
 
-  // Pitches: octave digits follow the inheritance of each sequence (mel: line / measure-line bar).
+  // Pitches: octave digits follow the inheritance of each sequence (mel: line / measure-line bar / let
+  // definition). A let definition is rewritten once at its own source, however often it is referenced.
   const inherited = new Map<number, number>();
   for (const tok of score.pitchTokens ?? []) {
     const next = transposePitch(tok.pitch, semitones);
     if (next === null) return { ok: false, code: 'pitchOutOfRange', detail: `line ${tok.line + 1}`, stage: 'transpose' };
+    if (tok.kind === 'group') {
+      // Note-group members always keep their octave and never touch the single-note inheritance.
+      const expected = lines[tok.line].slice(tok.startCol, tok.endCol);
+      edits.push({ line: tok.line, start: tok.startCol, end: tok.endCol, expected, text: pitchName(next) + String(next.octave) });
+      continue;
+    }
     // Inline notes start from the default octave 4; a mel: line always starts with a written octave.
     const prevOctave = inherited.get(tok.sequence) ?? (tok.kind === 'inline' ? 4 : undefined);
     const writeOctave = tok.explicitOctave || prevOctave !== next.octave;

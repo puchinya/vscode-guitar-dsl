@@ -157,3 +157,33 @@ describe('transpose - capo composition', () => {
     assert.ok(!('text' in plan));
   });
 });
+
+describe('transpose - let fragments and note groups (Issue #72)', () => {
+  it('rewrites each definition pitch once and every expanded use follows (26)', () => {
+    const src = ['key: C', 'let riff = e4/8 g a [c4,e4]/8', '| C | $riff 2.d |', '| C | $riff 2.d |', '| C | $riff 2.d |', 'mel: | $riff r/2 |'].join('\n');
+    const plan = ok(planSoundingTranspose(src, 2));
+    assert.strictEqual(plan.text, ['key: D', 'let riff = f#4/8 a b [d4,f#4]/8', '| D | $riff 2.d |', '| D | $riff 2.d |', '| D | $riff 2.d |', 'mel: | $riff r/2 |'].join('\n'));
+    const after = parseGuitarDsl(plan.text);
+    const pitches = (m: { rhythms: { pitch?: { step: string; alter: number; octave: number }; pitches?: { step: string; alter: number; octave: number }[] }[] }) =>
+      m.rhythms.flatMap(r => (r.pitches ?? (r.pitch ? [r.pitch] : [])).map(p => `${p.step}${p.alter}${p.octave}`));
+    for (const m of after.measures) assert.deepStrictEqual(pitches(m), ['f14', 'a04', 'b04', 'd04', 'f14']);
+  });
+
+  it('keeps every note-group member octave explicit (27)', () => {
+    const plan = ok(planSoundingTranspose('| C |\nmel: | [a4,c5,e5]/2 b4/2 |', 3));
+    assert.strictEqual(plan.text, 'key: Eb\n| Eb |\nmel: | [c5,eb5,g5]/2 d5/2 |');
+    const down = ok(planSoundingTranspose('key: C\n| C [b3,d4]/4 c/4 2.d |', 1));
+    // The group does not disturb the inline inheritance of the following single note.
+    assert.strictEqual(down.text, 'key: C#\n| C# [c4,eb4]/4 c#/4 2.d |');
+  });
+
+  it('transposes an unused definition too (28)', () => {
+    const plan = ok(planSoundingTranspose('key: C\nlet unused = b4/4 c5 [e4,g4]/4\n| C |', 1));
+    assert.strictEqual(plan.text, 'key: C#\nlet unused = c5/4 c#5 [f4,ab4]/4\n| C# |');
+  });
+
+  it('keeps octave inheritance inside a definition without the inline default octave', () => {
+    const plan = ok(planSoundingTranspose('key: C\nlet r = b3/8 c4 d\n| C | $r 4.d 2.d |', 1));
+    assert.strictEqual(plan.text, 'key: C#\nlet r = c4/8 c#4 eb\n| C# | $r 4.d 2.d |');
+  });
+});

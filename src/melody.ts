@@ -93,7 +93,10 @@ export function isGrace(note: { techniques?: NoteTechniques }): boolean {
 
 export interface MelodyNote {
   isRest: boolean;
+  /** Single pitch; undefined for rests and note groups. */
   pitch?: Pitch;
+  /** Simultaneous note group (`[c4,e4,g4]/4`, spec §18): two or more pitches, `pitch` undefined. */
+  pitches?: Pitch[];
   parts: NoteValuePart[];
   /** Rhythmic length; 0 for grace notes (their `parts` only shape the glyph). */
   beats: Fraction;
@@ -122,7 +125,9 @@ export type MelodyTokenError =
   | 'missingInitialOctaveOrLength'
   | 'invalidTuplet'
   | 'invalidTechnique'
-  | 'techniqueRequiresPitch';
+  | 'techniqueRequiresPitch'
+  | 'invalidNoteGroup'
+  | 'unsupportedNoteGroupTechnique';
 
 const NOTE_RE = /^([a-gA-G])([#b]?)([0-9])?(?:\/(.+)|:([^/]+))?$/;
 const REST_RE = /^r(?:\/(.+)|:([^/]+))?$/;
@@ -206,6 +211,71 @@ export function parseMelodyToken(tok: string, state: MelodyTokenState): MelodyNo
   };
   if (techniques) note.techniques = techniques;
   return note;
+}
+
+const GROUP_RE = /^\[([^[\]]*)\](.*)$/;
+const GROUP_MEMBER_RE = /^([a-gA-G])([#b]?)([0-9])$/;
+const GROUP_LENGTH_RE = /^(?:\/(.+)|:([^/]+))$/;
+
+/** A parsed note group and the column offset / length of each member's pitch text within the token. */
+export interface NoteGroupToken {
+  note: MelodyNote;
+  members: { offset: number; length: number }[];
+}
+
+/**
+ * Parses a simultaneous note group `[c4,e4,g4]/4{staccato}` (spec §18). Members need an explicit octave,
+ * the shared length is mandatory and only group-level techniques are allowed (no connection, bend, slur or
+ * tie). Never reads nor updates the single-note inheritance state.
+ */
+export function parseNoteGroupToken(tok: string): NoteGroupToken | MelodyTokenError {
+  if (tok.endsWith('~')) return 'unsupportedNoteGroupTechnique';
+  const m = tok.match(GROUP_RE);
+  if (!m) return 'invalidNoteGroup';
+  let tail = m[2];
+  let techniques: NoteTechniques | undefined;
+  const block = tail.match(TECHNIQUE_BLOCK_RE);
+  if (block) {
+    const parsed = parseTechniqueBlock(block[1]);
+    if (parsed === 'invalidTechnique') return 'invalidTechnique';
+    if (parsed.connection || parsed.bend !== undefined || parsed.slurStart || parsed.slurEnd) return 'unsupportedNoteGroupTechnique';
+    techniques = parsed;
+    tail = tail.slice(0, block.index);
+  }
+
+  const pitches: Pitch[] = [];
+  const members: { offset: number; length: number }[] = [];
+  let offset = 1;
+  for (const text of m[1].split(',')) {
+    const pm = text.match(GROUP_MEMBER_RE);
+    if (!pm) return 'invalidNoteGroup';
+    if (pm[1] !== pm[1].toLowerCase()) return 'upperCaseNoteName';
+    const pitch: Pitch = { step: pm[1] as PitchStep, alter: pm[2] === '#' ? 1 : pm[2] === 'b' ? -1 : 0, octave: Number(pm[3]) };
+    if (pitches.some(p => p.step === pitch.step && p.alter === pitch.alter && p.octave === pitch.octave)) return 'invalidNoteGroup';
+    pitches.push(pitch);
+    members.push({ offset, length: text.length });
+    offset += text.length + 1;
+  }
+  if (pitches.length < 2) return 'invalidNoteGroup';
+
+  const lm = tail.match(GROUP_LENGTH_RE);
+  if (!lm) return 'invalidNoteGroup';
+  const length = parseLength(lm[1], lm[2]);
+  if (length === undefined) return 'invalidNoteGroup';
+  if (typeof length === 'string') return length;
+
+  const grace = techniques?.grace === true;
+  const note: MelodyNote = {
+    isRest: false,
+    pitches,
+    parts: length.parts,
+    beats: grace ? ZERO : length.beats,
+    tieToNext: false,
+    tiedFromPrev: false,
+    syllables: []
+  };
+  if (techniques) note.techniques = techniques;
+  return { note, members };
 }
 
 export type LyricItem =

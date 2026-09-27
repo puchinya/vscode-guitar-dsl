@@ -425,6 +425,94 @@ export function renderNotehead(base: NoteBase, x: number, y: number): string {
   return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
 }
 
+/** Horizontal distance between the two columns of noteheads on either side of a shared stem. */
+export const GROUP_HEAD_SHIFT = 2 * (HEAD_RX - 0.4);
+
+/**
+ * Note group (spec §18.3): x offset of each head for `positions` sorted ascending. Seconds alternate to the
+ * other side of the stem, starting from the head at the stem's origin (the lowest for a stem up).
+ */
+export function groupHeadOffsets(positions: readonly number[], stemUp: boolean): number[] {
+  const out = positions.map(() => 0);
+  if (stemUp) {
+    for (let i = 1; i < positions.length; i++) {
+      if (positions[i] - positions[i - 1] === 1 && out[i - 1] === 0) out[i] = GROUP_HEAD_SHIFT;
+    }
+  } else {
+    for (let i = positions.length - 2; i >= 0; i--) {
+      if (positions[i + 1] - positions[i] === 1 && out[i + 1] === 0) out[i] = -GROUP_HEAD_SHIFT;
+    }
+  }
+  return out;
+}
+
+/** Stem of a note group: away from the member farthest from the middle line (position 4); a tie points down. */
+export function groupStemUp(positions: readonly number[]): boolean {
+  const low = Math.min(...positions);
+  const high = Math.max(...positions);
+  return 4 - low > high - 4;
+}
+
+/**
+ * Splits a melody beam group into runs that can share one stem direction. A note group keeps its own
+ * direction (spec §18.3), so a group whose direction differs from an earlier group of the run starts a new
+ * run; single notes join the current run. A run with a note group uses that direction, otherwise the mean
+ * position rule (below the middle line = up). Without note groups the result is the whole group, unchanged.
+ */
+export function splitBeamRuns<T>(items: readonly T[], fixedUp: (item: T) => boolean | undefined, pos: (item: T) => number): { items: T[]; up: boolean }[] {
+  const runs: { items: T[]; fixed?: boolean }[] = [];
+  let current: { items: T[]; fixed?: boolean } = { items: [] };
+  for (const item of items) {
+    const fixed = fixedUp(item);
+    if (fixed !== undefined && current.fixed !== undefined && fixed !== current.fixed) {
+      runs.push(current);
+      current = { items: [] };
+    }
+    if (fixed !== undefined) current.fixed = fixed;
+    current.items.push(item);
+  }
+  if (current.items.length > 0) runs.push(current);
+  return runs.map(run => ({
+    items: run.items,
+    up: run.fixed ?? run.items.reduce((acc, item) => acc + pos(item), 0) / run.items.length < 4
+  }));
+}
+
+/** Vertical extent of the accidental glyphs of renderAccidental around their y. */
+const ACCIDENTAL_EXTENT: Record<-1 | 0 | 1, [number, number]> = { 1: [-7.8, 7], [-1]: [-10, 3.2], 0: [-8, 8] };
+/** Horizontal distance between accidental columns. */
+export const ACCIDENTAL_COLUMN_WIDTH = 8;
+
+/**
+ * Greedy leftward columns for simultaneous accidentals: each accidental (top to bottom) takes the nearest
+ * column whose glyphs it does not overlap vertically. Returns the column (0 = nearest the heads) per item.
+ */
+export function accidentalColumns(items: readonly { y: number; alter: -1 | 0 | 1 }[]): number[] {
+  const order = items.map((_, i) => i).sort((a, b) => items[a].y - items[b].y);
+  const placed: { col: number; top: number; bottom: number }[] = [];
+  const cols = items.map(() => 0);
+  for (const i of order) {
+    const [dt, db] = ACCIDENTAL_EXTENT[items[i].alter];
+    const top = items[i].y + dt;
+    const bottom = items[i].y + db;
+    let col = 0;
+    while (placed.some(p => p.col === col && top < p.bottom + 1 && bottom > p.top - 1)) col++;
+    placed.push({ col, top, bottom });
+    cols[i] = col;
+  }
+  return cols;
+}
+
+/** Staff positions needing a ledger line for any of `positions`, each once (no doubled strokes). */
+export function ledgerLinePositions(positions: readonly number[]): number[] {
+  const low = Math.min(...positions);
+  const high = Math.max(...positions);
+  const out: number[] = [];
+  for (let p = -2; p >= low; p -= 2) out.push(p);
+  for (let p = 10; p <= high; p += 2) out.push(p);
+  return out;
+}
+
 /** Written staff position under an ottava: 8va draws one octave lower, 8vb one octave higher (pitch data unchanged). */
 export function writtenStaffPosition(p: Pitch, ottava: 'none' | '8va' | '8vb'): number {
   return staffPosition(p) + (ottava === '8va' ? -7 : ottava === '8vb' ? 7 : 0);
