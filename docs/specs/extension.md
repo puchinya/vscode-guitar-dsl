@@ -60,7 +60,7 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の9つのコマンドを提供する。
+拡張機能は以下の11のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
@@ -73,6 +73,8 @@
 | `guitardsl.setGeminiApiKey` | `GuitarDSL: Set Gemini API Key` | コマンドパレット | - |
 | `guitardsl.clearGeminiApiKey` | `GuitarDSL: Clear Gemini API Key` | コマンドパレット | - |
 | `guitardsl.transcribeAudio` | `GuitarDSL: Transcribe Local Audio (Experimental)` | コマンドパレット | - |
+| `guitardsl.applyStrummingPattern` | `GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)` | コマンドパレット、セクション見出し行の CodeLens | - |
+| `guitardsl.openHelp` | `GuitarDSL: Open Help` | コマンドパレット、プレビュー内ツールバー | - |
 
 ### 3.1 `guitardsl.showPreview`
 GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn.Beside`）の Webview パネルとして開く。
@@ -194,6 +196,31 @@ Gemini API キーを設定・更新する。
 | 設定キー | 型 | デフォルト値 | 説明 |
 |---|---|---|---|
 | `guitardsl.gemini.model` | `string` | `"gemini-3.8-flash"` | YouTube 音源の自動採譜に使用する Gemini モデル名。 |
+| `guitardsl.transcription.compressRepeats` | `boolean` | `false` | YouTube 自動採譜パネルの「反復の圧縮」オプションの初期値。有効にすると、コードとメロディが一致する連続セクションを反復記号（`\|: :\|`）と複数行歌詞に圧縮して出力する。 |
+| `guitardsl.expandPageBreakRepeats` | `boolean` | `true` | プレビューおよび PDF 出力で、ページ先頭の小節が小節リピート記号（`%`）の場合に展開して前小節の内容を表示する。 |
+
+設定キーの集合は `package.json` の `contributes.configuration.properties` と一致しなければならない（§7.3）。
+
+### 3.10 `guitardsl.applyStrummingPattern`
+楽譜全体または 1 つのセクションの小節のリズム（伴奏パターン）を、プリセットのストローク／アルペジオパターンに置き換える。
+
+- **引数**: `(uri?: Uri, sectionName?: string)`。対象ドキュメントは `showPreview` と同一規則（§3.1）。見つからない場合は警告を表示する。
+- **CodeLens**: GuitarDSL ドキュメントのセクション見出し行（`[名前]`）の上に「伴奏パターンを変更 [名前]」を表示し、そのセクション名でこのコマンドを実行する。
+- **`sectionName` がない場合**（コマンドパレットから実行）: 適用範囲（「楽譜全体に適用」またはドキュメント内の各セクション）をクイックピックで選択する。
+- 次に、プリセットのパターン一覧（名前・パターン・説明）をクイックピックで選択する。いずれかのクイックピックをキャンセルした場合は何も変更しない。
+- 選択したパターンを対象範囲の小節に適用し、ドキュメント全体を 1 回の `WorkspaceEdit` で置き換える（取り消し可能。自動保存しない）。成功時は適用範囲とパターン名を通知する。
+- 変更対象の小節がない（テキストが変化しない）場合は編集せず、その旨を通知する。
+
+### 3.11 `guitardsl.openHelp`
+GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機能、GuitarDSL 言語、トラブルシューティング、コマンド・設定一覧）を開く。
+
+- **実行コンテキスト**: コマンドパレット、プレビューツールバーのヘルプボタン（§4.2）。どちらも同じ処理を実行する。
+- **前提条件**: なし。GuitarDSL ドキュメントやアクティブなエディタがなくても実行できる。
+- **表示**: 拡張機能に同梱されたヘルプ Markdown（`media/help/guitardsl-help.ja.md` または `media/help/guitardsl-help.en.md`）を、VS Code 組み込みの Markdown プレビューでエディタ横に開く。ファイルは実行時のロケール（§6.1）で選ぶ。日本語なら `.ja.md`、それ以外は `.en.md`。
+- **オフライン**: ヘルプは VSIX に同梱されたローカルファイルのみを表示し、ネットワークからは取得しない。ネットワーク上の URL に切り替えることもしない。
+- **副作用なし**: GuitarDSL ドキュメントの作成・変更・保存、プレビューの表示モード・用紙設定、カポの一時変更、初心者モードの状態を一切変更しない。繰り返し実行しても安全である。
+- **エラー処理**: 同梱ヘルプファイルが見つからない・読めない・開けない場合は、ローカライズされたエラーメッセージを 1 件だけ表示する。スタックトレースは表示しない。
+- **内容の出所**: ヘルプの本文は本仕様書と `docs/specs/guitardsl-syntax.md` から派生したユーザー向け文書であり、規範ではない。仕様と食い違う場合は仕様が優先する。コマンド・設定一覧は `package.json` と `package.nls*.json` から生成する。
 
 ---
 
@@ -218,6 +245,7 @@ Gemini API キーを設定・更新する。
    - 用紙の向き: `縦 (Portrait)`, `横（見開き） (Landscape)`
    - 変更すると、選択した用紙サイズ・向きでプレビューを再レイアウトする。
 3. **PDF保存ボタン**: 選択中の用紙サイズ・向きで `guitardsl.exportPdf` と同じ処理（§3.2）を実行する。
+3a. **ヘルプボタン**（ツールバー右側、PDF保存ボタンの隣。`?` とローカライズされた「ヘルプ」ラベル、キーボードで操作できる `<button>`）: `guitardsl.openHelp`（§3.11）を実行する。表示モード・用紙設定・カポ・初心者モード・有効 DSL・楽譜の描画には影響しない。HTML ツールバーのみに表示し、楽譜 SVG・PDF には描画しない。
 4. **カポバー**（ツールバーの下の 2 段目。§4.4）:
    - カポ選択（0〜12）。各候補に弾きやすさスコアを添え、推奨カポに `★ 推奨` を付ける。変更できない候補は選択できない。
    - 現在の弾きやすさ（段階名とスコア `n/100`）。コードがない場合は「評価できません」。
@@ -454,7 +482,13 @@ Gemini API キーを設定・更新する。
   - `%command.transcribeYouTube.title%`
   - `%command.setGeminiApiKey.title%`
   - `%command.clearGeminiApiKey.title%`
+  - `%command.transcribeAudio.title%`
+  - `%command.applyStrummingPattern.title%`
+  - `%command.openHelp.title%`
   - `%config.geminiModel.description%`
+  - `%config.compressRepeats.description%`
+  - `%config.expandPageBreakRepeats.description%`
+- `package.json` が NLS キーで参照するすべてのコマンドタイトル・設定説明は、`package.nls.json` と `package.nls.ja.json` の両方に定義しなければならない（§7.3）。
 
 ### 6.3 拡張機能メッセージのローカライズ
 - 以下のホスト側UIメッセージおよびダイアログは、解決されたロケールに従ってローカライズされる。
@@ -465,7 +499,7 @@ Gemini API キーを設定・更新する。
 
 ### 6.4 Webview プレビューツールバーのローカライズ
 - `compileGuitarDslToHtml(dslContent, options?: { locale?: string; pageSize?; orientation?; fontUris? })` を提供する（`src/render/previewHtml.ts`）。
-- 指定されたロケールに従い、ツールバーの各コントロール（表示モード切替、用紙サイズ、向き切替、PDF保存ボタン）の表示ラベルおよびツールチップ（title 属性）をローカライズして描画する。
+- 指定されたロケールに従い、ツールバーの各コントロール（表示モード切替、用紙サイズ、向き切替、PDF保存ボタン、ヘルプボタン）の表示ラベルおよびツールチップ（title 属性）をローカライズして描画する。
 - 引数 `options` が省略された場合のデフォルトロケールは英語（`en`）とする。
 
 ### 6.5 コードダイアグラムエディタのローカライズ
@@ -477,3 +511,26 @@ Gemini API キーを設定・更新する。
 ### 6.6 YouTube 自動採譜メッセージのローカライズ
 - YouTube URL 入力ボックス、API キー入力プロンプト、進捗メッセージ、および各種エラー通知メッセージ（API エラー、URL 不正、バリデーション失敗等）をロケールに従ってローカライズする。
 
+### 6.7 ヘルプのローカライズ
+- `guitardsl.openHelp` のコマンドタイトル（`%command.openHelp.title%`）、プレビューのヘルプボタンのラベル・ツールチップ・アクセシブル名、ヘルプを開けなかったときのエラーメッセージをロケールに従ってローカライズする。
+- ヘルプ本文は日本語版と英語版を同梱し、§6.1 の規則で選ぶ（§3.11）。
+
+---
+
+## 7. ヘルプと仕様の同期 (Help Synchronization)
+
+### 7.1 ヘルプの構成
+- ヘルプ本文の編集元は `docs/help/`（日英それぞれの概要・機能・言語・トラブルシューティング）とする。同梱される `media/help/guitardsl-help.{ja,en}.md` は生成物であり、手で編集しない。
+- コマンド一覧と設定一覧は `package.json` と `package.nls*.json` から生成する。手書きの一覧は持たない。
+- ヘルプに Web プレーヤー、楽譜の再生機能、音が出ない場合の対処など、拡張機能が提供しない機能を記載しない。
+
+### 7.2 生成と検査
+- `npm run generate:help` は同梱ヘルプを決定論的に生成する（同じ入力に対してバイト単位で同一の出力）。書き換えるのは `media/help/` の生成物だけである。`npm run compile` の前に自動実行される。
+- `npm run check:help` は読み取り専用の検査であり、`npm test` の最初に実行される。§7.3 のいずれかに違反すると、対処が必要な仕様セクション・コマンド・設定・ファイルを示して失敗する。ネットワークは使用しない。
+
+### 7.3 同期の不変条件
+- 本仕様書と `docs/specs/guitardsl-syntax.md` の番号付きトップレベルセクション（`## 4A.` のような英字付き番号を含む）は、それぞれヘルプの対応ページに割り当てられているか、理由付きで除外されていなければならない。存在しないセクションへの割り当て、重複した割り当て、空の除外理由は違反である。
+- 割り当てられたセクションには、ヘルプを確認した時点のセクション内容のダイジェストを記録する。仕様セクションが変わると検査は失敗する。ヘルプを見直し、ダイジェストを意図して更新するまで失敗は続く。
+- §3 のコマンド表・コマンド小見出しのコマンド ID の集合、および §3.7 の設定キーの集合は、`package.json` の貢献と完全に一致しなければならない。
+- NLS キーで参照するコマンドタイトル・設定説明は、英語・日本語の両方の NLS ファイルに存在しなければならない。
+- コミット済みの `media/help/*.md` は、現在の入力から生成される内容と一致しなければならない。

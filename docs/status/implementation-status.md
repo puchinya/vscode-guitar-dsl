@@ -60,6 +60,10 @@
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
+| | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → パターンのクイックピック）、セクション見出し行の CodeLens。1 回の元に戻せる編集 |
+| | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
+| **設定** | `guitardsl.gemini.model`, `guitardsl.transcription.compressRepeats`, `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
+| **ヘルプ同期** | `docs/help/` → `media/help/`（`generate:help` / `check:help`） | ✅ 完了 | 仕様セクションの割り当てとダイジェスト、コマンド・設定の仕様との一致、NLS、生成物の最新性を `npm test` で検査。コマンド・設定一覧は `package.json` から生成 |
 | **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入。倍音の差し引き {3,5,6} と 7th ゲートで maj7/7 への偏りを抑制）、拍は学習済みモデル Beat This! small（ONNX を tract で推論、最大 2 Worker で並列。拍が得られなければ従来方式に切り替え）、ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／ギター以外のドラム無し音源（ピアノ・ストリングス・パッド）では倍・半分テンポの選択を誤りやすい（#59）／5 分の曲の解析に約 45 秒・ピーク約 1.5 GB（M1）／ファンク・ジャズ等のテンションの多い和音のルート精度が低い／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
 | **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
@@ -108,21 +112,24 @@
   - `tests/unit/grammar.test.ts`: 新しいヘッダー・スコアイベント・連符・奏法の TextMate 規則、`let` 宣言・`$name` 参照・同時複数音（`[Intro]` はセクションのまま）
   - `tests/unit/letFragments.test.ts`: `let` の前方参照・入れ子・複製・使える位置の推論・重複・未定義・循環・`%` の禁止・継承の独立・行末コメント・コードセルとのまとめ・定義の境界、同時複数音の解析・検証・奏法・連符と複合音価・歌詞・装飾音・接続とタイの拒否、定義の音高のソース位置、サンプル
   - `tests/unit/render-noteGroups.test.ts`: 同時複数音の符頭・共有の符幹・2度のずらし・臨時記号の列・加線・タイ・奏法の位置、レイアウトのインク（見出しの持ち上げ・歌詞・強弱・注記欄）、`let` を使った楽譜と展開済みの楽譜の描画の一致、小節内の下向きの同時複数音（連桁に加えない）と臨時記号の規則
-- **テスト実行結果**: **486 / 486 件 PASS** (0 failures)
+  - `tests/unit/helpSync.test.ts`: ヘルプ同期（仕様セクションの抽出・割り当て・ダイジェスト、追加・削除・英字付き番号、コマンド・設定と仕様の一致、NLS、決定論的な生成と生成物の最新性、`let`・同時複数音の網羅、再生・Web プレーヤーの見出しがないこと）
+  - `tests/unit/help.test.ts`: ヘルプの例の構文検証、ツールバーのヘルプボタン（ローカライズ・`openHelp` の送信・楽譜 SVG に含まれない）、ロケール別のファイル選択、ヘルプを開けないときのエラー表示
+- **テスト実行結果**: **515 / 515 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.openHelp` コマンドの登録確認
+  - ヘルプ: GuitarDSL ドキュメントなしで `guitardsl.openHelp` が完了し、テキストドキュメントを変更しないこと
   - ドキュメントシンボル
   - メロディ行の診断の発行と修正時のクリア
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）
   - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
   - 移調（Issue #68）: 最新テキストからの再計算、移調 + カポ指定の 1 回の編集と 1 回の元に戻す、失敗時は不変、楽譜設定のカポ・初心者モード・移調の 3 セクション、適用後のプレビュー・PDF の再解決（初心者モード有効時を含む）、スコアイベントのアウトライン、高度な記譜のサンプルの PDF 出力
   - 初心者モード: ON で `forbid`・自動・カポ一時変更の解除、プレビュー入力と PDF 入力の一致、OFF でソース表示（カポ一時変更は戻さない）、ON/OFF の繰り返しでドリフトなし、固定カポ・バレーコード変更で自動へ、編集への追従と解なしでの解除（古い PDF なし）、切り替え・ドキュメントを閉じる・プレビューを閉じるでの解除、適用（最新テキスト・1 回の編集・1 回の元に戻す・失敗時は不変）、楽譜設定 `beginner` セクションのモデルと適用
-- **テスト実行結果**: **27 / 27 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
+- **テスト実行結果**: **29 / 29 件 PASS**（VS Code 内のターミナルから実行する場合は `ELECTRON_RUN_AS_NODE` を外す必要がある）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:

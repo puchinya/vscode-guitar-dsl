@@ -73,6 +73,7 @@ Keep large output in `.agent-state/issues/<issue>/logs/` and inspect bounded exc
   - durable architecture -> `docs/design/`
   - concise current implementation/gap/verification state -> `docs/status/`
 - Keep evidence/history in Issue/PR/evidence artifacts, not `docs/status/`.
+- Help is derived documentation: when a user-facing feature, command, setting, or syntax changes, review/update `docs/help/{ja,en}/` and intentionally refresh the affected `reviewedSourceSha256` digests in `docs/help/help-manifest.json`, then run `npm run generate:help` and commit `media/help/*.md`. `npm run check:help` must pass (`docs/help/README.md`).
 
 If code/spec/design conflict requires a material public API, compatibility, ownership, backend-boundary, threading, dependency, non-goal, or acceptance change, stop and return to `phase:design`.
 

@@ -33,6 +33,9 @@ export interface Messages {
   uiLandscapeTitle: string;
   uiSavePdf: string;
   uiSavePdfTitle: string;
+  uiHelp: string;
+  uiHelpTitle: string;
+  msgHelpOpenFailed: string;
 
   // Capo / playability (preview toolbar, score settings editor, host notifications)
   uiCapo: string;
@@ -120,6 +123,9 @@ export const MESSAGES_JA: Messages = {
   uiLandscapeTitle: '横向き（見開き印刷）',
   uiSavePdf: '📄 PDF保存',
   uiSavePdfTitle: '選択中の用紙サイズと向きでPDFを保存',
+  uiHelp: 'ヘルプ',
+  uiHelpTitle: 'GuitarDSL ヘルプを開く',
+  msgHelpOpenFailed: 'GuitarDSL ヘルプを開けませんでした。拡張機能を再インストールしてください。',
 
   uiCapo: 'カポ',
   uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
@@ -239,6 +245,9 @@ export const MESSAGES_EN: Messages = {
   uiLandscapeTitle: 'Landscape orientation (2-up spread)',
   uiSavePdf: '📄 Save PDF',
   uiSavePdfTitle: 'Save score as PDF with selected paper size and orientation',
+  uiHelp: 'Help',
+  uiHelpTitle: 'Open GuitarDSL Help',
+  msgHelpOpenFailed: 'Could not open GuitarDSL Help. Try reinstalling the extension.',
 
   uiCapo: 'Capo',
   uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',

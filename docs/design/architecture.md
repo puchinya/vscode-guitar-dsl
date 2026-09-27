@@ -384,6 +384,21 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 ---
 
+### 2.16 ヘルプ (`src/help.ts`, `docs/help/`, `scripts/*help*.mjs`, `media/help/`)
+- **表示の境界**: `src/help.ts` の `openGuitarDslHelp(extensionUri, locale)` は、`resolveLocale` でロケールを決め、`helpFilePath` で `media/help/guitardsl-help.{ja,en}.md` を選ぶ。`workspace.fs.stat` で存在を確認したあと、組み込みの `markdown.showPreviewToSide` に URI を渡す。拡張側は独自の `WebviewPanel`、CSP、スクリプトブリッジ、パネルのライフサイクルを持たない。繰り返し呼び出したときの挙動は組み込み Markdown プレビューに任せる。
+- **入口は 1 つ**: コマンド `guitardsl.openHelp`（`OPEN_HELP_COMMAND`）が唯一の実装である。プレビューのツールバーボタンは `{ command: 'openHelp' }` だけを送り、`extension.ts` はそれを受けて同じコマンドを実行する。この経路は楽譜の再コンパイル、有効 DSL、カポの一時変更、初心者モード、レイアウトの状態に触れない。
+- **失敗の境界**: 存在確認とプレビュー起動の例外は `openGuitarDslHelp` の中で捕捉し、ローカライズされたメッセージ（`msgHelpOpenFailed`）を `showErrorMessage` で 1 件だけ表示する。スタックトレースは表示しない。ネットワーク上の URL への切り替えはしない。ネットワークは使わない。
+- **編集元と生成物**: `.vscodeignore` は `docs/**` と `scripts/**` を除外し、`media/**` を同梱する。そのため編集元（`docs/help/{ja,en}/{about,features,language,troubleshooting}.md` と `help-manifest.json`）はインストール後には存在しない。実行時のヘルプは生成物 `media/help/*.md`（先頭に GENERATED コメント付き）としてコミットし、同梱する。
+- **生成**: `scripts/generate-help.mjs` が生成を担う。manifest のページ順に編集元を連結し、`package.json` + `package.nls*.json` から生成したコマンド一覧・設定一覧を追記する。出力は LF で、末尾に改行を付ける。同じ入力なら同じ出力になる。`precompile` から自動実行する。共通処理は `scripts/help-sync-lib.mjs` に置き、Node の組み込みモジュール（`fs`, `path`, `crypto`）だけを使う。
+- **検査**: `scripts/check-help-sync.mjs`（`npm test` の最初に実行）は読み取り専用である。次の点を検証する。
+  - 仕様の番号付き `##` 見出し（英字付き番号を含む）を見出しテキストから抽出し、manifest の coverage と excluded を突き合わせる。すべてのセクションが割り当て済みまたは除外済みであること、存在しない・重複した割り当てや空の除外理由がないこと。
+  - coverage ごとに記録した `reviewedSourceSha256` が、正規化したセクション本文の SHA-256 と一致すること。正規化は CRLF→LF、行末空白の除去、前後の空行の除去。
+  - 仕様 §3 のコマンド表・小見出しのコマンド ID と §3.7 の設定キーが、`package.json` の集合と完全に一致すること。
+  - NLS キーが英語・日本語の両方にあること。
+  - コミット済みの生成物が、メモリ上で生成した期待値とバイト単位で一致すること。
+
+  違反はセクション・キー・ファイル単位で報告する。ダイジェストは自動修復しない。ダイジェストの更新は、ヘルプを見直したことを明示する作業であり、`docs/help/README.md` に手順を記載する。
+
 ## 3. データフローとメッセージング (Data & Event Flow)
 
 ### 3.1 リアルタイムプレビュー更新フロー

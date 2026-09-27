@@ -1,0 +1,191 @@
+{
+  "sources": {
+    "syntax": "docs/specs/guitardsl-syntax.md",
+    "extension": "docs/specs/extension.md"
+  },
+  "pages": [
+    {
+      "id": "about"
+    },
+    {
+      "id": "features"
+    },
+    {
+      "id": "language"
+    },
+    {
+      "id": "troubleshooting"
+    }
+  ],
+  "coverage": [
+    {
+      "source": "syntax",
+      "section": "1",
+      "helpPage": "about",
+      "reviewedSourceSha256": "029e3d0ff456c465fe70f6a9fb6d744a1afe0277203cc0aa75541bd57616c273"
+    },
+    {
+      "source": "syntax",
+      "section": "2",
+      "helpPage": "language",
+      "reviewedSourceSha256": "581e9da3b6c746141eb6da8612031e76ed5b05bee343037f347c2aba3ea0be5e"
+    },
+    {
+      "source": "syntax",
+      "section": "3",
+      "helpPage": "language",
+      "reviewedSourceSha256": "21b5739495b7215ccb0d0e01e1f17af14b33def9278aa4f0bfdc84f8be582fc2"
+    },
+    {
+      "source": "syntax",
+      "section": "4",
+      "helpPage": "language",
+      "reviewedSourceSha256": "5b80329927f9b10c61903fe1946851ff513f522573f988d7ed5996846dac489a"
+    },
+    {
+      "source": "syntax",
+      "section": "5",
+      "helpPage": "language",
+      "reviewedSourceSha256": "a0fc0b2f91b9b8de936b3baf95b81e55f32fd738557930ab67d5f6546365162d"
+    },
+    {
+      "source": "syntax",
+      "section": "6",
+      "helpPage": "language",
+      "reviewedSourceSha256": "708b42fa3bacae4a761a3c58c2a9a31474b295f3c849df90def608111f9c7149"
+    },
+    {
+      "source": "syntax",
+      "section": "7",
+      "helpPage": "language",
+      "reviewedSourceSha256": "e5f839723e4c50d658e9684ec347fcfd0777def6afe3fc5b633074a980160106"
+    },
+    {
+      "source": "syntax",
+      "section": "8",
+      "helpPage": "language",
+      "reviewedSourceSha256": "16e445d02656abe0d9ad9a716e374d6e3ed257fb0a9616a2cb7d3a362f439baf"
+    },
+    {
+      "source": "syntax",
+      "section": "9",
+      "helpPage": "language",
+      "reviewedSourceSha256": "47ec63c5a6038188fc3dd6f53b8e6a11c91e3754c90228c4a9836ca90f76635f"
+    },
+    {
+      "source": "syntax",
+      "section": "10",
+      "helpPage": "language",
+      "reviewedSourceSha256": "59be9ed577a0fe7db2ebeb6010dade36c5e542f65472388751c106922b577509"
+    },
+    {
+      "source": "syntax",
+      "section": "11",
+      "helpPage": "language",
+      "reviewedSourceSha256": "cf62749cb6f67385ff6f7d61fb3c3d231ac71da2219011883bc08650d0f73479"
+    },
+    {
+      "source": "syntax",
+      "section": "12",
+      "helpPage": "language",
+      "reviewedSourceSha256": "3eb6c161ebd97ff5baced40f5d02f375490fb6bf952792491b56d15322f31f77"
+    },
+    {
+      "source": "syntax",
+      "section": "13",
+      "helpPage": "language",
+      "reviewedSourceSha256": "5c325268e64690e765857fd147ee6c7b15106b6fc8b2bb78495e71b54828c701"
+    },
+    {
+      "source": "syntax",
+      "section": "14",
+      "helpPage": "language",
+      "reviewedSourceSha256": "2bfac95117e35b8a71c13d7da4c29de67d6b3626fb88b611ce1a139eff99595c"
+    },
+    {
+      "source": "syntax",
+      "section": "15",
+      "helpPage": "about",
+      "reviewedSourceSha256": "c4d4822437f11f63a64131a3b5328141eb60780bcd43a9077685a378f1940c8e"
+    },
+    {
+      "source": "syntax",
+      "section": "16",
+      "helpPage": "language",
+      "reviewedSourceSha256": "9f6d30d41fc69141f06b5fd5fd7241fbce366d4a331a26ba16eada3b44eafcc2"
+    },
+    {
+      "source": "syntax",
+      "section": "17",
+      "helpPage": "language",
+      "reviewedSourceSha256": "b0a8dc11b3e211737b4c26ac6efac62b5d93e3060247a4cadcbdf91d4cb118f3"
+    },
+    {
+      "source": "syntax",
+      "section": "18",
+      "helpPage": "language",
+      "reviewedSourceSha256": "eba3f691d7ec9b4e07ddece1d44abee5e7c01e161161966d90251e52e0d66310"
+    },
+    {
+      "source": "extension",
+      "section": "1",
+      "helpPage": "about",
+      "reviewedSourceSha256": "5f2f0ac6692cabf8a2799aa9641d28471adfeebfbc7d9b23e199a3c08b5fea16"
+    },
+    {
+      "source": "extension",
+      "section": "2",
+      "helpPage": "features",
+      "reviewedSourceSha256": "eac9a1ed59298c3d35b921ece46fbeede4970578ad24b0f3268bb826d89c973b"
+    },
+    {
+      "source": "extension",
+      "section": "3",
+      "helpPage": "features",
+      "reviewedSourceSha256": "3df5925b267a36b1f803a12d03788e244751a9ed707faaa2d4eef8eacc22bf02"
+    },
+    {
+      "source": "extension",
+      "section": "4",
+      "helpPage": "features",
+      "reviewedSourceSha256": "0cc2853c9e7071ee98a8d5335f6f06ba4e68a57f678cc593c3dacbb32f692968"
+    },
+    {
+      "source": "extension",
+      "section": "4B",
+      "helpPage": "features",
+      "reviewedSourceSha256": "b2070b22fa7d638943d6c77b9f381c5963baebe585ffdd3d499d2b9a310e1842"
+    },
+    {
+      "source": "extension",
+      "section": "4A",
+      "helpPage": "features",
+      "reviewedSourceSha256": "902a93c8104b148806737e8993785a273840e19d1206d03d7bf90dfdf33c7606"
+    },
+    {
+      "source": "extension",
+      "section": "5",
+      "helpPage": "features",
+      "reviewedSourceSha256": "514b4270888af4d5ae0175bdd227f9f093c464b575ce483b8001488d09b01950"
+    },
+    {
+      "source": "extension",
+      "section": "5A",
+      "helpPage": "troubleshooting",
+      "reviewedSourceSha256": "89dc907eb5e3ce2f2910dc5dc48c8ba339a13c055bf94c5b36d9b149792f98a3"
+    },
+    {
+      "source": "extension",
+      "section": "6",
+      "helpPage": "about",
+      "reviewedSourceSha256": "cbbc45290209ab1ec88cf53e0bc6ae0be8ce0820701962b7ee22b28dc1bdccad"
+    }
+  ],
+  "excludedSections": [
+    {
+      "source": "extension",
+      "section": "7",
+      "reason": "Developer-facing synchronization contract for Help itself (generation/check invariants); users need no Help prose for it."
+    }
+  ]
+}

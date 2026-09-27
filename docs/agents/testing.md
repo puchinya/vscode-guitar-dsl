@@ -37,10 +37,17 @@ npm run test:e2e
 - Launches VS Code and runs the E2E test suite.
 
 ### 3. Full Test Suite
-Run both unit and E2E tests:
+Run the Help sync gate, then unit and E2E tests:
 ```bash
 npm test
 ```
+
+### 4. Help Generation and Sync
+```bash
+npm run generate:help   # regenerate media/help/guitardsl-help.{ja,en}.md (runs automatically as precompile)
+npm run check:help      # read-only gate; first step of npm test
+```
+- `check:help` fails on uncovered/stale spec sections, digest mismatches, command/setting parity with `docs/specs/extension.md`, missing NLS keys, or stale generated Help. Fix the cause (see `docs/help/README.md`); never suppress a check.
 
 ---
 
@@ -77,6 +84,7 @@ npm run vscode:prepublish
 ```
 - Verifies compilation completes without errors before packaging.
 - Optionally run `npx @vscode/vsce ls` to ensure package files are resolved correctly.
+- `vsce ls` must include `media/help/guitardsl-help.ja.md` and `media/help/guitardsl-help.en.md` and must not include `docs/help/`.
 - Packaged contents are controlled by `.vscodeignore`: the VSIX must contain only runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, production `node_modules/`). Development/agent paths (`.agent-state/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, `samples/`, `*.ts`, `*.map`) must not appear in `vsce ls`.
 
 ### 5. Audio MIR (Rust/WASM) Gate
