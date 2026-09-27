@@ -11,7 +11,11 @@
 - `#` starts a comment
 
 ## Getting Started
-<!-- help-sources: syntax:3 syntax:15 extension:3 extension:4 -->
+<!-- help-sources: syntax:3 syntax:15 extension:3 extension:4 extension:4C -->
+
+The easiest way to start is the **GuitarDSL** icon in the Activity Bar, which opens the GuitarDSL sidebar. Under **Get Started**, choose **New from Template** or **Open Sample** to open an editable untitled score, then continue with step 3 below.
+
+To create a file yourself:
 
 1. Create a file named, for example, `song.guitardsl`.
 2. Type a small score:
@@ -35,9 +39,10 @@
 Errors and warnings in your score appear as squiggles in the editor and in the **Problems** panel. An error means a line is ignored. A warning means the score still renders but may not match what you meant, such as a measure with the wrong number of beats. See **Troubleshooting** below.
 
 ## Opening This Help Again
-<!-- help-sources: extension:3 extension:6 -->
+<!-- help-sources: extension:3 extension:4C extension:6 -->
 
 - Command Palette: **GuitarDSL: Open Help**
+- The GuitarDSL sidebar: **Get Started** → **Open Help**
 - The **?** Help button in the score preview toolbar
 
 Help opens next to your editor and never changes your score. It is bundled with the extension and works offline. Help, commands and messages appear in Japanese when VS Code's display language is Japanese, and in English otherwise.

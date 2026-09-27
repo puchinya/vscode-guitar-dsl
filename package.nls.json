@@ -10,6 +10,10 @@
   "command.clearGeminiApiKey.title": "GuitarDSL: Clear Gemini API Key",
   "command.applyStrummingPattern.title": "GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)",
   "command.openHelp.title": "GuitarDSL: Open Help",
+  "command.newDocumentFromTemplate.title": "GuitarDSL: New from Template",
+  "command.openSample.title": "GuitarDSL: Open Sample",
+  "viewsContainer.guitardslSidebar.title": "GuitarDSL",
+  "view.sidebar.name": "Start Here",
   "config.geminiModel.description": "Gemini model to use for YouTube audio transcription.",
   "config.compressRepeats.description": "Compress repeated sections with identical chords and melody into repeat barlines (|: :|) and multi-line lyrics to shorten the score.",
   "config.expandPageBreakRepeats.description": "Automatically expand measure repeat symbols (%) when they appear at the start of a page."

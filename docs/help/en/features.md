@@ -1,6 +1,17 @@
 ## Features
 <!-- help-sources: extension:3 -->
 
+### GuitarDSL Sidebar
+<!-- help-sources: extension:3 extension:4C -->
+
+Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view. It works before you open any GuitarDSL file. It is a starting point, not a score editor.
+
+- **Get Started**: **New from Template** (Basic Chord Song, Melody Example or Lead Sheet Example), **Open Sample** (five bundled samples), **Open Preview to the Side** and **Open Help**. Templates and samples open as editable untitled documents, so no original file changes. Save them under any name.
+- **Current File**: when the active editor holds a GuitarDSL file, the actions for that file: preview, chord diagram editing, score settings, capo / playability, accompaniment pattern and PDF export. When no GuitarDSL file is active, it shows a hint only.
+- **Tools**: YouTube transcription and local audio transcription (experimental).
+
+The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
+
 ### Editor Support
 <!-- help-sources: extension:2 extension:5 extension:5A -->
 

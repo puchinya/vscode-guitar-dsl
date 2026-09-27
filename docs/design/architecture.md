@@ -400,6 +400,12 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
   manifest の `pages` が構造的に不正な場合は生成物の比較を行わない（構造の誤りは診断として報告し、例外で終了しない）。違反はセクション・キー・ファイル単位で報告する。ダイジェストは自動修復しない。ダイジェストの更新は、ヘルプを見直したことを明示する作業であり、`docs/help/README.md` に手順を記載する。
 
+### 2.17 サイドバーとオンボーディング (`src/sidebar.ts`, `src/onboarding.ts`)
+- **表示の境界**: `GuitarDslSidebarProvider` は `TreeDataProvider` で、`registerGuitarDslSidebar` が `window.registerTreeDataProvider('guitardsl.sidebar', …)` で登録する。項目は判別共用体 `GuitarDslSidebarItem`（`section` / `command` / `hint`）で表し、`getTreeItem` で `TreeItem` に変換する。各 `command` 項目はコマンド ID と引数を持つだけで、処理は既存コマンドに委ねる。コマンド ID は文字列リテラルで持ち、ビューの読み込みでコマンドモジュール（エディタパネル等）を読み込まない。
+- **Current File**: プロバイダはアクティブな GuitarDSL ドキュメントを返す関数を受け取る。`extension.ts` は `activeTextEditor` のドキュメントを `isGuitarDslDocument` で判定する関数を渡す。`resolveGuitarDslDocument` のような、他に開いているドキュメントへの切り替えは行わない。`onDidChangeActiveTextEditor` / `onDidOpenTextDocument` / `onDidCloseTextDocument` で `refresh()`（`EventEmitter` の発火）を呼ぶ。タイマーやポーリングは持たない。
+- **オンボーディングコマンド**: `newDocumentFromTemplate` はコード内に持つ短いテンプレート（`STARTER_TEMPLATES`。各サンプルの抜粋）から、`openSample` は `extensionUri` の `samples/` から読んだ内容から、`openTextDocument({ language: 'guitardsl', content })` で無題ドキュメントを作る。サンプルは読み込みが成功してからドキュメントを作るので、失敗時に何も開かない。例外は各関数で捕捉し、ローカライズされたメッセージを 1 件だけ表示する。
+- **同梱**: `.vscodeignore` は `samples/**` を除外したうえで、`CURATED_SAMPLES` の 5 ファイルだけを否定パターンで同梱する。両者の一致は単体テストで検査する。
+
 ## 3. データフローとメッセージング (Data & Event Flow)
 
 ### 3.1 リアルタイムプレビュー更新フロー

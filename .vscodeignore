@@ -26,5 +26,10 @@ docs_only_human/**
 AGENTS.md
 CLAUDE.md
 
-# Sample scores
+# Sample scores (the curated samples opened by guitardsl.openSample ship; keep in sync with src/onboarding.ts)
 samples/**
+!samples/sample.guitardsl
+!samples/sample_melody.guitardsl
+!samples/sample_leadsheet.guitardsl
+!samples/sample_voicings.guitardsl
+!samples/sample_notes.guitardsl

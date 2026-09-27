@@ -12,7 +12,8 @@
     "Visualization"
   ],
   "activationEvents": [
-    "onLanguage:guitardsl"
+    "onLanguage:guitardsl",
+    "onView:guitardsl.sidebar"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -82,8 +83,33 @@
       {
         "command": "guitardsl.openHelp",
         "title": "%command.openHelp.title%"
+      },
+      {
+        "command": "guitardsl.newDocumentFromTemplate",
+        "title": "%command.newDocumentFromTemplate.title%"
+      },
+      {
+        "command": "guitardsl.openSample",
+        "title": "%command.openSample.title%"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "guitardslSidebar",
+          "title": "%viewsContainer.guitardslSidebar.title%",
+          "icon": "media/icons/guitardsl-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "guitardslSidebar": [
+        {
+          "id": "guitardsl.sidebar",
+          "name": "%view.sidebar.name%"
+        }
+      ]
+    },
     "configuration": {
       "title": "GuitarDSL",
       "properties": {

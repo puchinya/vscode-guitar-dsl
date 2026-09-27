@@ -54,6 +54,17 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       'Command guitardsl.applyStrummingPattern should be registered'
     );
     assert.ok(commands.includes('guitardsl.openHelp'), 'Command guitardsl.openHelp should be registered');
+    assert.ok(commands.includes('guitardsl.newDocumentFromTemplate'), 'Command guitardsl.newDocumentFromTemplate should be registered');
+    assert.ok(commands.includes('guitardsl.openSample'), 'Command guitardsl.openSample should be registered');
+  });
+
+  test('the GuitarDSL sidebar view is contributed and can be focused', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('guitardsl.sidebar.focus'), 'the guitardsl.sidebar view exists');
+    await vscode.commands.executeCommand('guitardsl.sidebar.focus');
+    // Give focus back to the editor: later tests run focus-dependent commands such as `undo`.
+    await vscode.commands.executeCommand('workbench.action.closeSidebar');
+    await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
   });
 
   test('Every contributed command is registered (T016)', async () => {
