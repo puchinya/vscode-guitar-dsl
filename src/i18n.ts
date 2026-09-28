@@ -548,7 +548,14 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`,
   unknownMeasureToken: a => `小節の中で解釈できないトークンです（コード・リズム・音符・記号のどれでもありません）: ${a.token}`,
   unsupportedContinuationLine: () => '`mel:` / `lyr:` の続きの行は書けません。この行は小節として読みません。1 行にまとめるか、行ごとに `mel:` / `lyr:` を付けてください',
-  repeatEndWithoutStart: () => '反復終了線 `:|` に対応する反復開始線 `|:` がありません（楽譜の先頭または直前の `:|` のあと）'
+  repeatEndWithoutStart: () => '反復終了線 `:|` に対応する反復開始線 `|:` がありません（楽譜の先頭または直前の `:|` のあと）',
+  playOrderMultipleNavigationJumps: () => '楽譜全体で `D.C.` または `D.S.` は 1 つだけ指定できます',
+  playOrderMissingDestination: a => `演奏順のジャンプ先 ${a.destination} がありません`,
+  playOrderAmbiguousDestination: a => `演奏順のジャンプ先 ${a.destination} が複数あります（${a.count} 個）`,
+  playOrderInvalidVolta: a => `volta の通過番号が不正です: [${a.bracket}]`,
+  playOrderVoltaWithoutRepeat: a => `volta [${a.bracket}] に対応する反復区間がありません`,
+  playOrderUnclosedRepeat: () => '反復開始線 `|:` に対応する反復終了線 `:|` がありません',
+  playOrderLimitExceeded: a => `演奏小節数が上限 ${a.limit} を超えます`
 };
 
 const DIAGNOSTICS_EN: DiagnosticTemplates = {
@@ -593,7 +600,14 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`,
   unknownMeasureToken: a => `Unrecognized token in a measure (not a chord, rhythm, note or mark): ${a.token}`,
   unsupportedContinuationLine: () => 'A `mel:` / `lyr:` line cannot continue on the next line; this line is not read as measures. Put it on one line or start each line with `mel:` / `lyr:`',
-  repeatEndWithoutStart: () => 'Repeat end `:|` has no matching repeat start `|:` (since the start of the score or the previous `:|`)'
+  repeatEndWithoutStart: () => 'Repeat end `:|` has no matching repeat start `|:` (since the start of the score or the previous `:|`)',
+  playOrderMultipleNavigationJumps: () => 'A score can contain only one primary jump: `D.C.` or `D.S.`',
+  playOrderMissingDestination: a => `Play-order jump destination ${a.destination} is missing`,
+  playOrderAmbiguousDestination: a => `Play-order jump destination ${a.destination} is ambiguous (${a.count} marks)`,
+  playOrderInvalidVolta: a => `Invalid volta pass numbers: [${a.bracket}]`,
+  playOrderVoltaWithoutRepeat: a => `Volta [${a.bracket}] is not associated with a repeat`,
+  playOrderUnclosedRepeat: () => 'Repeat start `|:` has no matching repeat end `:|`',
+  playOrderLimitExceeded: a => `Play order exceeds the occurrence limit of ${a.limit}`
 };
 
 export function formatDiagnostic(code: DiagnosticCode, args: DiagnosticArgs | undefined, locale: SupportedLocale): string {

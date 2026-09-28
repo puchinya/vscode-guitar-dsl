@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
 
 describe('compiler - parseGuitarDsl', () => {
@@ -289,7 +291,10 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
     // D5: only consecutive volta endings share the start.
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|'), []);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|\n| [3.] Am ||'), []);
-    assert.deepStrictEqual(codes('|: C | [1.] G | D :|\n| [2.] F | G :|\n| [3.] Am ||'), [], 'multi-measure endings stay one sequence');
+    const multiMeasureEndings = '|: C | [1.] G | D :|\n| [2.] F | G :|\n| [3.] Am ||';
+    const parsedMultiMeasureEndings = parseGuitarDsl(multiMeasureEndings);
+    assert.deepStrictEqual(codes(multiMeasureEndings), [], 'multi-measure endings stay one sequence');
+    assert.deepStrictEqual(parsedMultiMeasureEndings.playOrder.occurrences.map(item => item.measureIndex), [0, 1, 2, 0, 3, 4, 0, 5]);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3']);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| Dm |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:4']);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n|: Am | Dm :|'), [], 'a new independent repeat');
@@ -297,5 +302,47 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n[Next]\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3'], 'a section boundary ends the sequence');
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n---\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3'], 'a page break ends the sequence');
     assert.deepStrictEqual(codes('|: C :|'), []);
+  });
+
+  it('exposes resolved play order and maps resolver errors to an internal measure source range', () => {
+    const text = '| C | D D.S. |';
+    const parsed = parseGuitarDsl(text);
+    assert.strictEqual(parsed.playOrder.valid, false);
+    assert.deepStrictEqual(parsed.playOrder.occurrences, []);
+    assert.deepStrictEqual(parsed.measures.map(measure => measure.measureIndex), [0, 1]);
+    assert.deepStrictEqual(parsed.pages.flatMap(page => page.measures.map(measure => measure.measureIndex)), [0, 1]);
+
+    const diagnostic = parsed.diagnostics.find(item => item.code === 'playOrderMissingDestination');
+    assert.ok(diagnostic);
+    assert.strictEqual(diagnostic.severity, 'error');
+    assert.strictEqual(diagnostic.line, 0);
+    assert.ok(diagnostic.startCol >= 0 && diagnostic.endCol > diagnostic.startCol);
+    assert.ok(diagnostic.endCol <= text.length);
+  });
+
+  it('keeps page breaks out of play-order resolution while preserving the separate parser warning', () => {
+    const continuous = parseGuitarDsl('|: C | [1.] G :| [2.] F :|');
+    const paged = parseGuitarDsl('|: C | [1.] G :|\n---\n| [2.] F :|');
+    assert.strictEqual(continuous.playOrder.valid, true);
+    assert.strictEqual(paged.playOrder.valid, true);
+    assert.deepStrictEqual(paged.playOrder, continuous.playOrder);
+    assert.ok(paged.diagnostics.some(item => item.code === 'repeatEndWithoutStart' && item.severity === 'warning'));
+  });
+
+  it('ends consecutive-volta sharing at a section heading and applies the implicit section start', () => {
+    const parsed = parseGuitarDsl('|: C | [1.] G :|\n[Next]\n| C | [2.] F :|');
+    assert.strictEqual(parsed.playOrder.valid, true);
+    assert.deepStrictEqual(parsed.playOrder.occurrences.map(item => item.measureIndex), [0, 1, 0, 2, 2, 3]);
+    assert.ok(parsed.diagnostics.some(item => item.code === 'repeatEndWithoutStart' && item.severity === 'warning'));
+  });
+
+  it('T30 keeps bundled Outro right repeats executable without rewriting sample sources', () => {
+    for (const sampleName of ['sample.guitardsl', 'sample_16beat.guitardsl', 'sample_8beat.guitardsl']) {
+      const source = fs.readFileSync(path.join(__dirname, '../../samples', sampleName), 'utf8');
+      const parsed = parseGuitarDsl(source);
+      assert.strictEqual(parsed.playOrder.valid, true, sampleName);
+      assert.ok(parsed.playOrder.occurrences.length > parsed.measures.length, `${sampleName} uses implicit repeat execution`);
+      assert.ok(!parsed.playOrder.diagnostics.length, sampleName);
+    }
   });
 });

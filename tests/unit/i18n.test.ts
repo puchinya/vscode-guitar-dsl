@@ -86,4 +86,24 @@ describe('i18n - getMessages', () => {
     assert.ok(formatDiagnostic('invalidVariableValue', args, 'ja').includes('%'));
     assert.ok(formatDiagnostic('variableContextMismatch', { name: 'p', context: 'measure' }, 'ja').includes('小節行'));
   });
+
+  it('T27 formats every play-order diagnostic in Japanese and English', () => {
+    const codes: DiagnosticCode[] = [
+      'playOrderMultipleNavigationJumps',
+      'playOrderMissingDestination',
+      'playOrderAmbiguousDestination',
+      'playOrderInvalidVolta',
+      'playOrderVoltaWithoutRepeat',
+      'playOrderUnclosedRepeat',
+      'playOrderLimitExceeded'
+    ];
+    const args = { count: 2, destination: 'Coda', bracket: '1,3-4.', limit: 100_000 };
+    for (const code of codes) {
+      const ja = formatDiagnostic(code, args, 'ja');
+      const en = formatDiagnostic(code, args, 'en');
+      assert.ok(ja.trim().length > 0 && en.trim().length > 0, code);
+      assert.notStrictEqual(ja, en, code);
+      assert.ok(!/undefined/.test(ja) && !/undefined/.test(en), code);
+    }
+  });
 });

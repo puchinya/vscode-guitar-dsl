@@ -50,6 +50,8 @@ import {
   parseTimeSignature,
   sameTimeSignature
 } from './scoreEvents';
+import { resolvePlayOrder } from './playOrder';
+import type { PlayOrderDiagnosticCode, PlayOrderMeasure, PlayOrderResult } from './playOrder';
 
 export type { MelodyNote, NoteTechniques, Pitch, Syllable } from './melody';
 export type { ChordDefinition } from './chordDefinition';
@@ -216,7 +218,8 @@ export type DiagnosticCode =
   | 'unsupportedNoteGroupTechnique'
   | 'unknownMeasureToken'
   | 'unsupportedContinuationLine'
-  | 'repeatEndWithoutStart';
+  | 'repeatEndWithoutStart'
+  | PlayOrderDiagnosticCode;
 
 export interface ScoreDiagnostic {
   /** 0-based line index in the source text. */
@@ -271,7 +274,14 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   unsupportedNoteGroupTechnique: 'error',
   unknownMeasureToken: 'error',
   unsupportedContinuationLine: 'error',
-  repeatEndWithoutStart: 'warning'
+  repeatEndWithoutStart: 'warning',
+  playOrderMultipleNavigationJumps: 'error',
+  playOrderMissingDestination: 'error',
+  playOrderAmbiguousDestination: 'error',
+  playOrderInvalidVolta: 'error',
+  playOrderVoltaWithoutRepeat: 'error',
+  playOrderUnclosedRepeat: 'error',
+  playOrderLimitExceeded: 'error'
 };
 
 /** Beats of a rhythm token duration ('4', 'q', '8t', '4+8', 'r8', ...). Unknown durations count as 1 beat. */
@@ -389,6 +399,7 @@ export interface ParsedScore {
   /** `chord` definitions in source order (first definition of a key wins). */
   chordDefinitions: ChordDefinition[];
   measures: MeasureData[];
+  playOrder: PlayOrderResult;
   pages: ScorePage[];
   /** Sharps (> 0) / flats (< 0) derived from `key:`; null when the key cannot be parsed. */
   keySignature: number | null;
@@ -516,6 +527,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const diagnostics: ScoreDiagnostic[] = [];
 
   const measures: MeasureData[] = [];
+  interface MeasureSourceLocation {
+    line: number;
+    startCol: number;
+    endCol: number;
+  }
+  const measureSourceLocations: MeasureSourceLocation[] = [];
   const pages: ScorePage[] = [{ pageNumber: 1, measures: [] }];
   let currentPageIndex = 0;
   let currentSection = '';
@@ -1312,6 +1329,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
       if (!isMeasureRepeat && rhythms.length === 0) defaultRhythmMeasures.add(mData);
       if (multiChordEqualSplit) equalSplitChords.add(mData);
+      const sourceStart = firstTokenCol >= 0 ? firstTokenCol : 0;
+      const sourceEnd = firstTokenCol >= 0
+        ? Math.max(sourceStart + 1, Math.min(rawLine.length, searchPos))
+        : Math.max(1, rawLine.length);
+      measureSourceLocations.push({ line: lineIdx, startCol: sourceStart, endCol: sourceEnd });
       measures.push(mData);
       pages[currentPageIndex].measures.push(mData);
       currentSection = ''; // consume section for the first bar
@@ -1591,6 +1613,27 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   resolveMeasures();
   validateConnections();
 
+  const playOrderInput: PlayOrderMeasure[] = measures.map(measure => ({
+    measureIndex: measure.measureIndex,
+    repeatStart: measure.repeatStart,
+    repeatEnd: measure.repeatEnd,
+    bracket: measure.bracket,
+    specialMark: measure.specialMark,
+    sectionName: measure.sectionName
+  }));
+  const playOrder = resolvePlayOrder(playOrderInput);
+  for (const playDiagnostic of playOrder.diagnostics) {
+    const location = measureSourceLocations[playDiagnostic.measureIndex] ?? { line: 0, startCol: 0, endCol: 1 };
+    diagnostics.push({
+      line: location.line,
+      startCol: location.startCol,
+      endCol: location.endCol,
+      severity: 'error',
+      code: playDiagnostic.code,
+      args: playDiagnostic.args
+    });
+  }
+
   /** Applies score events, resolves each measure's context and runs the length / meter checks. */
   function resolveMeasures() {
     const initialBpm = parseBpm(bpm);
@@ -1722,6 +1765,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     usedChords: Array.from(usedChordsSet),
     chordDefinitions,
     measures,
+    playOrder,
     pages: validPages,
     keySignature: parseKeySignature(originalKey),
     showRhythm,
