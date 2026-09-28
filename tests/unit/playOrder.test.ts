@@ -92,7 +92,7 @@ describe('playOrder - deterministic written-measure execution order', () => {
       measure(2, { repeatEnd: true })
     ]);
     assert.strictEqual(mixed.valid, true);
-    assert.deepStrictEqual(sequence(mixed), [0, 1, 2, 0, 2, 0, 1, 2, 0, 1, 2]);
+    assert.deepStrictEqual(sequence(mixed), [0, 1, 2, 0, 0, 1, 2, 0, 1, 2]);
   });
 
   it('T07 rejects malformed, unsafe, nonpositive, empty, and descending volta values without partial output', () => {
@@ -256,6 +256,60 @@ describe('playOrder - deterministic written-measure execution order', () => {
     assert.deepStrictEqual(sequence(result), [0, 1, 0, 2, 3, 0, 2]);
   });
 
+  it('RMT01 keeps three multi-measure endings in the same repeat sequence', () => {
+    const result = resolvePlayOrder([
+      measure(0, { repeatStart: true }),
+      measure(1, { bracket: '1.' }),
+      measure(2, { repeatEnd: true }),
+      measure(3, { bracket: '2.' }),
+      measure(4, { repeatEnd: true }),
+      measure(5, { bracket: '3.' })
+    ]);
+    assert.strictEqual(result.valid, true);
+    assert.deepStrictEqual(sequence(result), [0, 1, 2, 0, 3, 4, 0, 5]);
+  });
+
+  it('RMT02 lets first and second endings span multiple measures', () => {
+    const result = resolvePlayOrder([
+      measure(0, { repeatStart: true }),
+      measure(1, { bracket: '1.' }),
+      measure(2),
+      measure(3, { repeatEnd: true }),
+      measure(4, { bracket: '2.' }),
+      measure(5),
+      measure(6, { repeatEnd: true })
+    ]);
+    assert.strictEqual(result.valid, true);
+    assert.deepStrictEqual(sequence(result), [0, 1, 2, 3, 0, 4, 5, 6]);
+  });
+
+  it('RMT03 skips every measure in an unbracketed first-ending continuation', () => {
+    const result = resolvePlayOrder([
+      measure(0, { repeatStart: true }),
+      measure(1, { bracket: '1.' }),
+      measure(2),
+      measure(3, { repeatEnd: true }),
+      measure(4, { bracket: '2.' }),
+      measure(5, { repeatEnd: true })
+    ]);
+    assert.strictEqual(result.valid, true);
+    assert.deepStrictEqual(sequence(result), [0, 1, 2, 3, 0, 4, 5]);
+  });
+
+  it('RMT04 resets nested multi-measure endings when the outer repeat starts again', () => {
+    const result = resolvePlayOrder([
+      measure(0, { repeatStart: true }),
+      measure(1, { repeatStart: true }),
+      measure(2, { bracket: '1.' }),
+      measure(3, { repeatEnd: true }),
+      measure(4, { bracket: '2.' }),
+      measure(5, { repeatEnd: true }),
+      measure(6, { repeatEnd: true })
+    ]);
+    assert.strictEqual(result.valid, true);
+    assert.deepStrictEqual(sequence(result), [0, 1, 2, 3, 1, 4, 5, 6, 0, 1, 2, 3, 1, 4, 5, 6]);
+  });
+
   it('T21 keeps the written identity of a repeated-measure occurrence', () => {
     const result = resolvePlayOrder([
       measure(7, { repeatStart: true }),
@@ -284,7 +338,7 @@ describe('playOrder - deterministic written-measure execution order', () => {
     assert.strictEqual(JSON.stringify(input), before);
   });
 
-  it('T24 terminates a very large repeat through the typed occurrence guard', () => {
+  it('T24 caps a huge finite repeat while sparse pass ranges fast-forward', () => {
     const result = resolvePlayOrder([
       measure(0, { repeatStart: true }),
       measure(1, { bracket: '1-1000000.', repeatEnd: true })
@@ -301,7 +355,7 @@ describe('playOrder - deterministic written-measure execution order', () => {
     assert.deepStrictEqual(sequence(sparse), [0, 1]);
   });
 
-  it('T25 rejects the first occurrence beyond the hard cap and discards partial output', () => {
+  it('T25 rejects the first occurrence beyond MAX_PLAY_ORDER_OCCURRENCES (100,001) and discards partial output', () => {
     const input = Array.from({ length: MAX_PLAY_ORDER_OCCURRENCES + 1 }, (_, index) => measure(index));
     const result = resolvePlayOrder(input);
     assert.strictEqual(result.valid, false);

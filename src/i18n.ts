@@ -555,7 +555,6 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   playOrderInvalidVolta: a => `volta の通過番号が不正です: [${a.bracket}]`,
   playOrderVoltaWithoutRepeat: a => `volta [${a.bracket}] に対応する反復区間がありません`,
   playOrderUnclosedRepeat: () => '反復開始線 `|:` に対応する反復終了線 `:|` がありません',
-  playOrderCycle: () => '演奏順の解決中に制御状態の循環を検出しました',
   playOrderLimitExceeded: a => `演奏小節数が上限 ${a.limit} を超えます`
 };
 
@@ -608,7 +607,6 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   playOrderInvalidVolta: a => `Invalid volta pass numbers: [${a.bracket}]`,
   playOrderVoltaWithoutRepeat: a => `Volta [${a.bracket}] is not associated with a repeat`,
   playOrderUnclosedRepeat: () => 'Repeat start `|:` has no matching repeat end `:|`',
-  playOrderCycle: () => 'A cycle was detected while resolving the play order',
   playOrderLimitExceeded: a => `Play order exceeds the occurrence limit of ${a.limit}`
 };
 

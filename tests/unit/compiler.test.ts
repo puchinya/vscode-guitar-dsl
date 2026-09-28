@@ -291,7 +291,10 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
     // D5: only consecutive volta endings share the start.
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|'), []);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| [2.] F :|\n| [3.] Am ||'), []);
-    assert.deepStrictEqual(codes('|: C | [1.] G | D :|\n| [2.] F | G :|\n| [3.] Am ||'), [], 'multi-measure endings stay one sequence');
+    const multiMeasureEndings = '|: C | [1.] G | D :|\n| [2.] F | G :|\n| [3.] Am ||';
+    const parsedMultiMeasureEndings = parseGuitarDsl(multiMeasureEndings);
+    assert.deepStrictEqual(codes(multiMeasureEndings), [], 'multi-measure endings stay one sequence');
+    assert.deepStrictEqual(parsedMultiMeasureEndings.playOrder.occurrences.map(item => item.measureIndex), [0, 1, 2, 0, 3, 4, 0, 5]);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:3']);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n| Am |\n| Dm |\n| [2.] F :|'), ['warning:repeatEndWithoutStart:4']);
     assert.deepStrictEqual(codes('|: C | [1.] G :|\n|: Am | Dm :|'), [], 'a new independent repeat');

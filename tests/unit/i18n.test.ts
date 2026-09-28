@@ -95,7 +95,6 @@ describe('i18n - getMessages', () => {
       'playOrderInvalidVolta',
       'playOrderVoltaWithoutRepeat',
       'playOrderUnclosedRepeat',
-      'playOrderCycle',
       'playOrderLimitExceeded'
     ];
     const args = { count: 2, destination: 'Coda', bracket: '1,3-4.', limit: 100_000 };

@@ -22,7 +22,6 @@ export type PlayOrderDiagnosticCode =
   | 'playOrderInvalidVolta'
   | 'playOrderVoltaWithoutRepeat'
   | 'playOrderUnclosedRepeat'
-  | 'playOrderCycle'
   | 'playOrderLimitExceeded';
 
 export interface PlayOrderDiagnostic {
@@ -65,15 +64,6 @@ interface RepeatStructure {
   voltaPasses: Map<number, ParsedVolta>;
   diagnostics: PlayOrderDiagnostic[];
 }
-
-interface PassTrieNode {
-  id: number;
-  left?: PassTrieNode;
-  right?: PassTrieNode;
-  value?: number;
-}
-
-const EMPTY_PASS_TRIE: PassTrieNode = { id: 0 };
 
 function parseVolta(bracket: string): ParsedVolta | undefined {
   const components = bracket.split(',');
@@ -128,6 +118,7 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
   const diagnostics: PlayOrderDiagnostic[] = [];
   const explicitStack: RepeatBlock[] = [];
   let sharedEnding: { block: RepeatBlock; lastPosition: number } | undefined;
+  let activeSharedEnding: { block: RepeatBlock; lastPosition: number } | undefined;
   let sectionStart = 0;
 
   for (let position = 0; position < measures.length; position += 1) {
@@ -135,19 +126,35 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
     if (measure.sectionName) {
       sectionStart = position;
       sharedEnding = undefined;
+      activeSharedEnding = undefined;
     }
 
-    const continuesSharedEnding = Boolean(
+    if (measure.repeatStart) {
+      sharedEnding = undefined;
+      activeSharedEnding = undefined;
+    }
+
+    const startsSharedEnding = Boolean(
       sharedEnding
       && sharedEnding.lastPosition === position - 1
       && measure.bracket !== undefined
       && !measure.repeatStart
       && !measure.sectionName
     );
-    if (!continuesSharedEnding) sharedEnding = undefined;
+    if (startsSharedEnding && sharedEnding) {
+      activeSharedEnding = { block: sharedEnding.block, lastPosition: position };
+      sharedEnding = undefined;
+    } else if (sharedEnding) {
+      sharedEnding = undefined;
+    }
+
+    if (activeSharedEnding && measure.bracket !== undefined && !startsSharedEnding) {
+      activeSharedEnding = undefined;
+    }
+    const continuesSharedEnding = activeSharedEnding !== undefined;
+    if (activeSharedEnding) voltaOwners.set(position, activeSharedEnding.block);
 
     if (measure.repeatStart) {
-      sharedEnding = undefined;
       const block: RepeatBlock = {
         id: blocks.length,
         start: position,
@@ -163,8 +170,8 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
 
     let closedBlock: RepeatBlock | undefined;
     if (measure.repeatEnd) {
-      if (continuesSharedEnding && sharedEnding) {
-        closedBlock = sharedEnding.block;
+      if (continuesSharedEnding && activeSharedEnding) {
+        closedBlock = activeSharedEnding.block;
         repeatEndBlocks.set(position, closedBlock);
       } else if (explicitStack.length > 0) {
         closedBlock = explicitStack.pop()!;
@@ -186,9 +193,13 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
       }
     }
 
-    if (continuesSharedEnding && sharedEnding) {
-      voltaOwners.set(position, sharedEnding.block);
-      sharedEnding = { block: sharedEnding.block, lastPosition: position };
+    if (continuesSharedEnding && activeSharedEnding) {
+      if (measure.repeatEnd) {
+        sharedEnding = { block: activeSharedEnding.block, lastPosition: position };
+        activeSharedEnding = undefined;
+      } else {
+        activeSharedEnding = { block: activeSharedEnding.block, lastPosition: position };
+      }
     } else if (closedBlock) {
       sharedEnding = { block: closedBlock, lastPosition: position };
     }
@@ -198,7 +209,7 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
     diagnostics.push(diagnostic(measures, block.start, 'playOrderUnclosedRepeat'));
   }
 
-  const voltaPasses = new Map<number, ParsedVolta>();
+  const parsedVoltas = new Map<number, ParsedVolta>();
   for (let position = 0; position < measures.length; position += 1) {
     const bracket = measures[position].bracket;
     if (bracket === undefined) continue;
@@ -208,16 +219,39 @@ function buildRepeatStructure(measures: readonly PlayOrderMeasure[]): RepeatStru
       diagnostics.push(diagnostic(measures, position, 'playOrderInvalidVolta', { bracket }));
       continue;
     }
-    voltaPasses.set(position, parsed);
+    parsedVoltas.set(position, parsed);
+  }
 
-    const owner = voltaOwners.get(position) ?? innermostContainingBlock(blocks, position);
-    if (!owner) {
-      diagnostics.push(diagnostic(measures, position, 'playOrderVoltaWithoutRepeat', { bracket }));
-      continue;
+  const voltaPasses = new Map<number, ParsedVolta>();
+  let activeVoltaSegment: { owner: RepeatBlock | undefined; passes: ParsedVolta } | undefined;
+  for (let position = 0; position < measures.length; position += 1) {
+    const measure = measures[position];
+    if (measure.sectionName || measure.repeatStart) activeVoltaSegment = undefined;
+
+    if (measure.bracket !== undefined) {
+      activeVoltaSegment = undefined;
+      const parsed = parsedVoltas.get(position);
+      if (!parsed) continue;
+
+      const owner = voltaOwners.get(position) ?? innermostContainingBlock(blocks, position);
+      if (!owner) {
+        diagnostics.push(diagnostic(measures, position, 'playOrderVoltaWithoutRepeat', { bracket: measure.bracket }));
+      } else {
+        voltaOwners.set(position, owner);
+        owner.voltaPositions.push(position);
+      }
+      activeVoltaSegment = { owner, passes: parsed };
     }
-    voltaOwners.set(position, owner);
-    owner.voltaPositions.push(position);
-    if (owner.start <= position && position <= owner.end) owner.voltaCountInBody += 1;
+
+    if (activeVoltaSegment) {
+      voltaPasses.set(position, activeVoltaSegment.passes);
+      if (activeVoltaSegment.owner) {
+        const owner = activeVoltaSegment.owner;
+        voltaOwners.set(position, owner);
+        if (owner.start <= position && position <= owner.end) owner.voltaCountInBody += 1;
+      }
+      if (measure.repeatEnd) activeVoltaSegment = undefined;
+    }
   }
 
   for (const block of blocks) {
@@ -365,47 +399,10 @@ export function resolvePlayOrder(measures: readonly PlayOrderMeasure[]): PlayOrd
   const occurrences: PlayOrderOccurrence[] = [];
   const diagnostics: PlayOrderDiagnostic[] = [];
   const passes = new Map<number, number>();
-  const stateInterner = new Map<string, PassTrieNode>();
-  const trieDepth = Math.ceil(Math.log2(Math.max(1, structure.blocks.length)));
-  let nextTrieId = 1;
-  let passStateRoot = EMPTY_PASS_TRIE;
-
-  const internLeaf = (value: number): PassTrieNode => {
-    const key = `leaf:${value}`;
-    let node = stateInterner.get(key);
-    if (!node) {
-      node = { id: nextTrieId++, value };
-      stateInterner.set(key, node);
-    }
-    return node;
-  };
-
-  const internBranch = (level: number, left: PassTrieNode, right: PassTrieNode): PassTrieNode => {
-    if (left === EMPTY_PASS_TRIE && right === EMPTY_PASS_TRIE) return EMPTY_PASS_TRIE;
-    const key = `branch:${level}:${left.id}:${right.id}`;
-    let node = stateInterner.get(key);
-    if (!node) {
-      node = { id: nextTrieId++, left, right };
-      stateInterner.set(key, node);
-    }
-    return node;
-  };
-
-  const updatePassTrie = (node: PassTrieNode, blockId: number, value: number, level = trieDepth): PassTrieNode => {
-    if (level < 0) return internLeaf(value);
-    const bit = (blockId >> level) & 1;
-    const left = node.left ?? EMPTY_PASS_TRIE;
-    const right = node.right ?? EMPTY_PASS_TRIE;
-    if (bit === 0) return internBranch(level, updatePassTrie(left, blockId, value, level - 1), right);
-    return internBranch(level, left, updatePassTrie(right, blockId, value, level - 1));
-  };
-
   const setPass = (blockId: number, pass: number) => {
     passes.set(blockId, pass);
-    passStateRoot = updatePassTrie(passStateRoot, blockId, pass);
   };
 
-  const seenStates = new Set<string>();
   let position = 0;
   let primaryJumpConsumed = false;
   let codaJumpConsumed = false;
@@ -415,13 +412,6 @@ export function resolvePlayOrder(measures: readonly PlayOrderMeasure[]): PlayOrd
     for (const block of startsAt.get(position) ?? []) {
       if (!passes.has(block.id)) setPass(block.id, 1);
     }
-
-    const stateKey = `${position}|${postPrimaryJump ? 1 : 0}|${primaryJumpConsumed ? 1 : 0}|${codaJumpConsumed ? 1 : 0}|${passStateRoot.id}`;
-    if (seenStates.has(stateKey)) {
-      diagnostics.push(diagnostic(measures, position, 'playOrderCycle'));
-      return { valid: false, occurrences: [], diagnostics: sortDiagnostics(diagnostics) };
-    }
-    seenStates.add(stateKey);
 
     const measure = measures[position];
     const owner = structure.voltaOwners.get(position);

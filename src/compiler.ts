@@ -281,7 +281,6 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   playOrderInvalidVolta: 'error',
   playOrderVoltaWithoutRepeat: 'error',
   playOrderUnclosedRepeat: 'error',
-  playOrderCycle: 'error',
   playOrderLimitExceeded: 'error'
 };
 
