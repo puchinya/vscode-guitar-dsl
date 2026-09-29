@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { compileGuitarDslToHtml } from './render/previewHtml';
@@ -10,7 +11,7 @@ import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrum
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
 import { registerGuitarDslSidebar } from './sidebar';
-import { PreviewCapoController, effectiveDslProbe, setPreviewCapoController } from './previewCapo';
+import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
 import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
@@ -133,6 +134,8 @@ export function activate(context: vscode.ExtensionContext) {
       effectiveDslProbe.previewInput = effective.text;
       const htmlContent = compileGuitarDslToHtml(effective.text, {
         locale: currentLocale,
+        cspSource: webview.cspSource,
+        nonce: randomBytes(16).toString('base64'),
         pageSize: previewPageSize,
         orientation: previewOrientation,
         expandPageBreakRepeats,
@@ -144,6 +147,8 @@ export function activate(context: vscode.ExtensionContext) {
         }
       });
       webview.html = htmlContent;
+      previewLifecycleProbe.generation++;
+      previewLifecycleProbe.currentDocumentUri = doc.uri.toString();
     }
   };
 
@@ -233,6 +238,7 @@ export function activate(context: vscode.ExtensionContext) {
       );
 
       currentPanel.onDidDispose(() => {
+        previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();

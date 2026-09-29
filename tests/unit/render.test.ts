@@ -234,3 +234,57 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(frHtml.includes('>📄 Save PDF<'));
   });
 });
+
+describe('render - playback Preview HTML', () => {
+  it('renders localized transport controls without adding them to score SVG output', () => {
+    const source = 'bpm: 120\n| C | 4.d 4.d 4.d 4.d |';
+    const enHtml = compileGuitarDslToHtml(source, { locale: 'en' });
+    const jaHtml = compileGuitarDslToHtml(source, { locale: 'ja' });
+    for (const control of ['id="btn-play"', 'id="btn-pause"', 'id="btn-stop"', 'id="playback-seek"', 'id="playback-time"', 'id="count-in-toggle"', 'id="metronome-toggle"']) {
+      assert.ok(enHtml.includes(control), `English preview contains ${control}`);
+      assert.ok(jaHtml.includes(control), `Japanese preview contains ${control}`);
+    }
+    assert.ok(enHtml.includes('>Count-in</label>'));
+    assert.ok(enHtml.includes('>Metronome</label>'));
+    assert.ok(jaHtml.includes('>カウントイン</label>'));
+    assert.ok(jaHtml.includes('>メトロノーム</label>'));
+    assert.ok(!enHtml.includes('id="count-in-toggle" type="checkbox" checked'));
+    assert.ok(!enHtml.includes('id="metronome-toggle" type="checkbox" checked'));
+
+    const svg = compileGuitarDslToSvg(source);
+    assert.ok(!svg.includes('playback-toolbar'));
+    assert.ok(!svg.includes('Count-in'));
+    assert.ok(!svg.includes('Metronome'));
+  });
+
+  it('embeds escaped playback JSON and applies a nonce-only offline production CSP', () => {
+    const html = compileGuitarDslToHtml('title: Safe <score> & playback\nbpm: 120\n| C@variant | 4.d 4.d 4.d 4.d |', {
+      cspSource: 'vscode-webview-resource:',
+      nonce: 'nonce-issue-90'
+    });
+    const policy = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)">/);
+    assert.ok(policy, 'production HTML contains a CSP meta element');
+    const policyText = policy![1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    assert.ok(policyText.includes("default-src 'none'"));
+    assert.ok(policyText.includes("font-src vscode-webview-resource:"));
+    assert.ok(policyText.includes("img-src vscode-webview-resource: data:"));
+    assert.ok(policyText.includes("style-src 'nonce-nonce-issue-90'"));
+    assert.ok(policyText.includes("style-src-attr 'unsafe-inline'"));
+    assert.ok(policyText.includes("script-src 'nonce-nonce-issue-90'"));
+    assert.ok(policyText.includes("connect-src 'none'"));
+    assert.ok(policyText.includes("media-src 'none'"));
+    assert.ok(policyText.includes("object-src 'none'"));
+    assert.ok(policyText.includes("worker-src 'none'"));
+    assert.ok(!policyText.includes('unsafe-eval'));
+    assert.ok(!policyText.includes("script-src 'unsafe-inline'"));
+    assert.ok(html.includes('<style nonce="nonce-issue-90">'));
+    assert.ok(html.includes('<script type="application/json" id="playback-data" nonce="nonce-issue-90">'));
+    assert.ok(html.includes('<script nonce="nonce-issue-90">'));
+    assert.ok(html.includes('Safe &lt;score&gt; &amp; playback'));
+    const playbackJson = html.match(/<script type="application\/json" id="playback-data" nonce="nonce-issue-90">([\s\S]*?)<\/script>/);
+    assert.ok(playbackJson, 'playback is embedded as JSON data rather than executable source');
+    assert.doesNotThrow(() => JSON.parse(playbackJson![1]));
+    assert.ok(!playbackJson![1].includes('<'));
+    assert.ok(!html.includes('unsafe-eval'));
+  });
+});

@@ -506,6 +506,20 @@ src/strummingCodeLens.ts: applyAccompanimentTransform（最新ソース → 1 �
 - **手動の UI**: CodeLens は入力中も軽いように文書を全体解析せず、パーサーと共有する `classifySourceLine` / `measureCellsOf` で行を分類して `accompanimentSections` と同じ番号（最初の見出しより前の小節がセクション 0、小節が続く見出しだけを数える）を求め、識別情報 `{ sectionIndex, sectionName, labelLine }` を渡す。コマンドは最新ソースを解析し、3 つがすべて一致するセクションだけを対象にする。一致しなければ古い CodeLens として警告し、同じ名前のセクションに置き換えない（単体テストが全サンプルとヘッダー等に `|` を含む文書で識別情報の一致を、E2E が同名セクションと古い識別情報を検査）。クイックピックは対象範囲の拍子（`uniformMeter`）とフィールでカテゴリとプリセットを絞り、選んだプリセットを `phraseVariation: false` の `preset` 計画として同じエンジンで適用する。
 - **依存しないもの**: 採譜（§2.8）・Audio MIR（§2.9）・言語モデルの API には依存しない（`check:ai` が import を検査する）。
 
+### 2.20 Preview 再生タイムラインと Web Audio
+
+再生は既存コンパイラの解析結果を読み取り、Preview Webview 内の Web Audio だけで実行する。演奏順序の正本は `ParsedScore.playOrder` とし、再生用に楽譜の小節配列を並べ替えたり、繰り返し・ナビゲーション記号を再実装したりしない。
+
+- **`src/playbackTimeline.ts`** は VS Code・DOM・Audio API に依存しない純粋層。`ParsedScore.playOrder.occurrences` を走査し、各出現の小節内拍位置を `Fraction` のまま扱うイベントタイムラインを構築する。小節長は `MeasureData.expectedBeats` を使い、秒への変換はイベント出力などの境界で行う。位置と秒の相互変換もここで行う。弱起・連符・小節境界を含めて既存の解析済み位置を使い、不正な演奏順序または解決不能なテンポでは部分タイムラインを返さない。
+- **イベント解釈** は演奏順序の各小節出現について、その小節の解決済みコンテキストを用いる。音価の不足は無音、発音開始が小節末以降のイベントは除外し、小節末を越える音価は小節境界で切る。数値テンポと有効な `tempo primo` のみが秒位置に影響する。フィールおよび `rit.` / `accel.` / `a tempo` は時間計算へ持ち込まない。スラッシュ発音は同一小節内で発音位置以前に定義された直近のコードだけを参照し、小節を越えて引き継がない。
+- **`src/playbackSynth.ts`** は記譜上の `Pitch` と既存 `parseChordName()` の結果を基本的なオシレーター音へ変換する。メロディ・インライン音高は記譜された実音を使い、カポを加えない。コードのルートと分数コードのベースには有効 DSL のカポ半音を加える。コードの運指・チューニング・弦フレットのモデルを追加せず、非対応のコード品質は無音にする。
+- **拡張機能ホスト** は既存の `updateWebview` 全 HTML 置換を保ち、コンパイル済みスコアと有効 DSL から新しい Preview を生成する。ホストは再生タイムラインのリアルタイムスケジューラを所有しない。`src/render/previewHtml.ts` が Preview UI とシリアライズ済み再生データを出力し、Webview がその世代に閉じたタイムライン、AudioContext、イベントノード、再生状態を所有する。
+- **Webview スケジューラ** はユーザー操作でのみ遅延生成される単一 AudioContext を使う。25ms ごとに最大 100ms 先を AudioContext の現在時刻に固定してスケジュールし、タイマー差分を積算してスコア位置を進めない。全曲を一括登録しない。Pause、Stop、Seek ではスケジューラと全ノードを停止・切断する。Preview の再構築または破棄ではさらに AudioContext を閉じる。
+- **状態とライフサイクル**: transport、シーク位置、AudioContext は再構築を越えて保持しない。Count-in と Metronome の ON/OFF のみ既存 Webview state に保存する。ソース・有効 DSL・レイアウトの再構築、ドキュメント切替、Preview 閉鎖、`pagehide` / `unload` では冪等なクリーンアップを行う。`retainContextWhenHidden` に再生停止を委ねない。
+- **セキュリティ**: 本番 HTML 生成ごとに拡張機能ホストが暗号学的 nonce を発行し、実行スクリプトとメイン style に付けて CSP に渡す。Web Audio は Webview 内蔵 API だけを使い、ネットワーク、サンプル、Worker、AudioWorklet、native backend、追加ランタイム依存を導入しない。
+
+既存の全 HTML 置換は Preview の完全な世代境界を作るため維持する。増分 postMessage 描画や拡張機能ホストのリアルタイムスケジューラは追加しない。別スレッドや外部音源バックエンドは導入せず、Webview とブラウザー内蔵 Web Audio の範囲で完結させる。
+
 ## 3. データフローとメッセージング (Data & Event Flow)
 
 ### 3.1 リアルタイムプレビュー更新フロー
@@ -630,6 +644,36 @@ sequenceDiagram
 ```
 
 ---
+
+### 3.5 Preview 再生フロー
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as ユーザー
+    participant Ext as extension.ts / updateWebview
+    participant Compiler as compiler.ts / ParsedScore
+    participant Timeline as playbackTimeline.ts
+    participant HTML as render/previewHtml.ts
+    participant WV as Preview Webview
+    participant Audio as Web Audio
+
+    Ext->>Compiler: 現在の有効 DSL を解析
+    Compiler-->>Timeline: ParsedScore (playOrder を含む)
+    Timeline->>Timeline: 出現ごとのイベントと位置対応を構築
+    Timeline-->>HTML: 有効なタイムラインまたは再生不可の理由
+    HTML-->>WV: UI・タイムライン・トグル状態を含む新しい HTML
+    Note over WV,Audio: 新しい Preview は停止・先頭位置で開始
+    User->>WV: Play / Pause / Resume / Stop / Seek
+    WV->>WV: 操作に応じて再生位置と有限の先読み範囲を計算
+    WV->>Audio: 音符・コード・クリックを AudioContext 時計に登録
+    Audio-->>WV: AudioContext.currentTime に基づく再生進行
+    Note over Ext,WV: 編集・有効 DSL 変更・レイアウト再構築・切替・閉鎖時は Webview を破棄し、全音源を停止
+```
+
+Count-in は先頭からの Play の直前だけ Webview 内で一回再生し、その後のスコア時間は 0 から開始する。Metronome はタイムラインの拍子グループに沿って発音する。Pause は位置を保持し、Resume と先頭以外の Seek は Count-in を省略する。Webview state には Count-in / Metronome のトグルだけを保存する。
+
+タイムラインの unit tests はテンポ変更、演奏順序、弱起・連符、小節境界、位置と秒の往復、不正な入力を対象にする。合成層は音高・カポ・非対応コードを検証し、Preview の HTML tests はロケール、JSON 埋め込み、nonce CSP と SVG/PDF からの UI 分離を検証する。再生・再構築・切替・破棄時の音源停止は対応環境での手動 runtime smoke でも確認する。
 
 ## 4. ページネーションとレイアウト設計 (Pagination & Layout Design)
 

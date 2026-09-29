@@ -66,4 +66,4 @@ Even when the wording stays correct, the refresh records that someone checked it
 4. **Removed section or feature.** Delete the stale mapping. `check:help` then points at every heading whose `help-sources` still names the section; remove or rewrite that prose.
 5. **Regenerate and verify.** Run `npm run generate:help`, then `npm run check:help`, and commit the regenerated `media/help` files.
 
-Keep Help to features that actually exist. There is no playback or Web Player, and score events are notation only. Keep `guitardsl` examples valid (a unit test parses them) and do not copy whole spec sections.
+Keep Help aligned with features implemented in the current release, including the Preview's score playback controls. Keep `guitardsl` examples valid (a unit test parses them) and do not copy whole spec sections.

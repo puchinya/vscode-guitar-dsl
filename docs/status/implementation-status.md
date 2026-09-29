@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-09-27
+- **最終更新日**: 2026-09-29
 - **全体ステータス**: 基本機能実装完了・安定稼働
 
 ---
@@ -79,6 +79,8 @@
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
 | | 表示モード（1ページ / 見開き / Web） | ✅ 完了 | シート SVG の縦並び・横並び、連続 SVG |
 | | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
+| | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
+| | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | メロディ・歌詞・長さ・拍数・表示設定の問題を日英メッセージで表示。小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
@@ -102,7 +104,9 @@
   - `tests/unit/duration.test.ts`: 共通音価表記・拍数・有理数計算
   - `tests/unit/melody.test.ts`: `mel:` / `lyr:` の解析と割り当て、コードの長さ指定、調号、表示設定、診断
   - `tests/unit/render-melody.test.ts`: メロディ段の高さ、符頭、調号・臨時記号、3連、リードシート、`measures_per_row` と改ページ
-  - `tests/unit/render.test.ts`: シート SVG / 連続 SVG / Webview HTML 生成、用紙設定反映、XML エスケープ、自動改ページ、横向き 2 ページ配置、ツールバー多言語レンダリング
+  - `tests/unit/render.test.ts`: シート SVG / 連続 SVG / Webview HTML 生成、用紙設定反映、XML エスケープ、自動改ページ、横向き 2 ページ配置、ツールバー多言語レンダリング、再生データの安全な埋め込み、nonce CSP、再生 UI が SVG / PDF に含まれないこと
+  - `tests/unit/playbackTimeline.test.ts`: Fraction 拍タイムライン、BPM / tempo primo / feel、pickup / 連符、repeat / volta / navigation、`%` 小節と `mel:` 行の反復、音符・休符・コード攻撃、境界切り詰め、拍子クリック、位置変換、入力エラー
+  - `tests/unit/playbackSynth.test.ts`: C4 = MIDI 60、コード + capo の実音不変、メロディの capo 非適用、非対応コードの無音
   - `tests/unit/pdf.test.ts`: PDF 生成（ページ数、フォント埋め込み、書き出し、フォント欠落時の失敗）
   - `tests/unit/i18n.test.ts`: ロケール解決関数（`resolveLocale`）、メッセージ辞書整合性、診断メッセージ（日英）
   - `tests/unit/symbols.test.ts`: 小節要約フォーマッタ（`formatMeasureSummary`）の各種パターン
@@ -129,7 +133,7 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **683 / 683 件 PASS** (0 failures)
+- **テスト実行結果**: **734 / 734 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -175,6 +179,9 @@
   - 既存の合成セット: バンドあり Acc1 97.2 → 100%。バンド無し Acc2 86.1 → 97.2%、ビート F 0.44 → 0.58
   - GuitarSet 伴奏（演奏者 03〜05、Beat This! の学習データに含まれるため参考値）: Acc1 23.3 → 85.6%、ビート F 0.46 → 0.92
   - コードの一致率（#52 比）: 合成セットのルート 85.2 → 88.1%、完全一致 82.6 → 85.2%。GuitarSet のルート 51.0 → 51.6%、完全一致 41.3 → 41.7%。バンド無しのコード変化 F1 は 79.8 → 71.4% に低下（#61）
+
+### 2.2B Web Audio 再生 (Issue #90)
+- **手動 GUI smoke**: macOS arm64 / VS Code 1.139.1 Extension Development Host で Play・Pause・Resume・Stop・シーク、Count-in 後の進行、Resume で Count-in が再実行されないこと、再生中の Metronome 切替、ソース編集後に停止して再構築後は先頭になることを確認。Windows / Linux は未検証。
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)
