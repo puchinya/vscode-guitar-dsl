@@ -20,6 +20,13 @@ export interface EffectiveDsl {
 /** Last Preview / PDF render inputs, recorded for the effective-DSL identity tests. */
 export const effectiveDslProbe: { previewInput?: string; pdfInput?: string } = {};
 
+/** Host-side observation only; E2E tests use this to verify Preview HTML generations and disposal. */
+export const previewLifecycleProbe = {
+  generation: 0,
+  currentDocumentUri: undefined as string | undefined,
+  disposedGeneration: undefined as number | undefined
+};
+
 export class PreviewCapoController {
   private state: PreviewCapoState | undefined;
   private notice: string | undefined;

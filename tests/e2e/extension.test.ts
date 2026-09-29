@@ -414,6 +414,44 @@ suite('Capo / playability (Issue #62)', () => {
     await vscode.window.tabGroups.close(previewTab!);
     await waitFor(() => controller.getState() === undefined, 'closing the preview resets the override');
   });
+
+  test('E2E-PB01 source edits rebuild Preview HTML for the same document', async () => {
+    const doc = await openPreviewed(SOURCE);
+    const probe = previewCapo().previewLifecycleProbe;
+    const generation = probe.generation;
+
+    await replaceAll(doc, SOURCE.replace('Capo Test', 'Edited Capo Test'));
+    await waitFor(() => probe.generation > generation && probe.currentDocumentUri === doc.uri.toString(),
+      'editing the source should generate new Preview HTML for the same document');
+    assert.ok(probe.generation > generation);
+  });
+
+  test('E2E-PB02 switching documents rebuilds Preview for the newly active document', async () => {
+    await openPreviewed(SOURCE);
+    const probe = previewCapo().previewLifecycleProbe;
+    const generation = probe.generation;
+    const docB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| G |\n' });
+
+    await showAndFocus(docB, vscode.ViewColumn.One);
+    await waitFor(() => probe.generation > generation && probe.currentDocumentUri === docB.uri.toString(),
+      'document switch should generate Preview HTML for document B');
+  });
+
+  test('E2E-PB03 closing the Preview webview disposes its current HTML generation', async () => {
+    await openPreviewed(SOURCE);
+    const probe = previewCapo().previewLifecycleProbe;
+    const generation = probe.generation;
+    let previewTab: vscode.Tab | undefined;
+    await waitFor(() => {
+      previewTab = vscode.window.tabGroups.all.flatMap(group => group.tabs)
+        .find(tab => tab.input instanceof vscode.TabInputWebview && tab.label.includes('GuitarDSL'));
+      return previewTab !== undefined;
+    }, 'Preview Webview tab should be open');
+
+    await vscode.window.tabGroups.close(previewTab!);
+    await waitFor(() => probe.disposedGeneration === generation,
+      'closing the Preview tab should dispose the current generation');
+  });
 });
 
 suite('Beginner Mode (Issue #65)', () => {
