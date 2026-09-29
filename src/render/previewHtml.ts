@@ -568,14 +568,31 @@ ${cspMeta}
         }
       }
 
+      function gainAtTime(entry, time) {
+        if (time <= entry.when || time >= entry.endTime) return 0;
+        if (time < entry.attackEnd) return entry.volume * (time - entry.when) / (entry.attackEnd - entry.when);
+        if (time < entry.releaseStart) return entry.volume;
+        return entry.volume * (entry.endTime - time) / (entry.endTime - entry.releaseStart);
+      }
+
       function cancelScheduledNodes(category) {
         const now = audioContext ? audioContext.currentTime : 0;
         for (const entry of Array.from(activeNodes)) {
           if (category && entry.category !== category) continue;
-          activeNodes.delete(entry);
-          try { entry.oscillator.stop(now); } catch (_) {}
-          try { entry.oscillator.disconnect(); } catch (_) {}
-          try { entry.gain.disconnect(); } catch (_) {}
+          if (entry.cancelAt !== undefined) continue;
+          const currentGain = gainAtTime(entry, now);
+          const fadeEnd = currentGain > 0 ? Math.min(now + 0.008, entry.endTime) : now;
+          entry.cancelAt = fadeEnd;
+          try {
+            if (fadeEnd > now) {
+              entry.gain.gain.cancelScheduledValues(now);
+              entry.gain.gain.setValueAtTime(currentGain, now);
+              entry.gain.gain.linearRampToValueAtTime(0, fadeEnd);
+            }
+            entry.oscillator.stop(fadeEnd);
+          } catch (_) {
+            try { entry.oscillator.stop(now); } catch (_) {}
+          }
         }
       }
 
@@ -610,7 +627,17 @@ ${cspMeta}
         gain.gain.linearRampToValueAtTime(0, when + duration);
         oscillator.connect(gain);
         gain.connect(masterGain);
-        const entry = { oscillator, gain, category };
+        const entry = {
+          oscillator,
+          gain,
+          category,
+          when,
+          volume,
+          attackEnd: when + attack,
+          releaseStart,
+          endTime: when + duration,
+          cancelAt: undefined
+        };
         activeNodes.add(entry);
         oscillator.onended = () => {
           activeNodes.delete(entry);

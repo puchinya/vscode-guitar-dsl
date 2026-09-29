@@ -76,6 +76,13 @@ class FakeAudioParam {
     this.events.push({ kind: 'set', value, time });
   }
 
+  cancelScheduledValues(time: number): void {
+    for (let index = this.events.length - 1; index >= 0; index--) {
+      if (this.events[index].time >= time) this.events.splice(index, 1);
+    }
+    this.events.push({ kind: 'cancel', value: 0, time });
+  }
+
   linearRampToValueAtTime(value: number, time: number): void {
     this.value = value;
     this.events.push({ kind: 'ramp', value, time });
@@ -128,6 +135,11 @@ class FakeOscillatorNode {
 
   advanceTo(time: number): void {
     if (this.ended || this.stopAt === undefined || this.stopAt > time) return;
+    this.finish();
+  }
+
+  finish(): void {
+    if (this.ended) return;
     this.ended = true;
     this.onended?.();
   }
@@ -203,6 +215,7 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     async close(): Promise<void> {
       this.closeCalls++;
       this.state = 'closed';
+      for (const oscillator of this.oscillators) oscillator.finish();
     }
 
     advanceTo(time: number): void {

@@ -58,7 +58,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.intervalCount, 1, 'scheduler remains singular while playing');
   });
 
-  it('T02 Pause cancels nodes and freezes position; Resume continues without another scheduler', async () => {
+  it('T02 Pause fades active nodes without a click and freezes position; Resume continues without another scheduler', async () => {
     const runtime = createRuntime();
     await runtime.click('btn-play');
     runtime.advanceAudioTime(0.45);
@@ -67,7 +67,16 @@ describe('Preview production Webview runtime', () => {
 
     const pausedAt = Number(runtime.element('playback-seek').value);
     assert.strictEqual(runtime.intervalCount, 0);
-    assert.strictEqual(runtime.activeOscillators().length, 0);
+    const pausedNodes = runtime.activeOscillators();
+    assert.ok(pausedNodes.length > 0, 'active voices stay connected only for the short fade');
+    assert.ok(pausedNodes.every((node) => (node.stopAt ?? Infinity) <= 0.458001), 'all active and future voices stop within 8 ms');
+    const fadingNodes = pausedNodes.filter((node) => (node.startAt ?? Infinity) <= 0.45 && (node.stopAt ?? 0) > 0.45);
+    assert.ok(fadingNodes.length > 0, 'currently sounding voices use the fade');
+    for (const node of fadingNodes) {
+      const gainEvents = (node.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain.events;
+      assert.ok(gainEvents.some((event) => event.kind === 'ramp' && event.value === 0 && event.time === node.stopAt),
+        'the gain ramps to zero at the oscillator stop time');
+    }
     assert.strictEqual(runtime.element('btn-play').getAttribute('aria-label'), 'Resume');
     runtime.advanceAudioTime(0.7);
     runtime.runSchedulerTicks();
@@ -104,7 +113,9 @@ describe('Preview production Webview runtime', () => {
     runtime.setRange('playback-seek', 1);
     await runtime.change('playback-seek');
 
-    assert.ok(previousNodes.every((node) => node.disconnected), 'pre-seek nodes are disconnected');
+    assert.ok(previousNodes.every((node) => (node.stopAt ?? Infinity) <= 0.458001), 'pre-seek nodes are stopped or fading out');
+    runtime.advanceAudioTime(0.009);
+    assert.ok(previousNodes.every((node) => node.disconnected), 'pre-seek nodes disconnect after the fade');
     assert.strictEqual(runtime.intervalCount, 1, 'seek reuses one scheduler interval');
     closeEnough(Number(runtime.element('playback-seek').value), 1);
     assert.ok(runtime.scheduledOscillators().every((node) => node.disconnected || (node.startAt ?? -Infinity) >= 0.475));
@@ -173,7 +184,9 @@ describe('Preview production Webview runtime', () => {
 
     runtime.setChecked('metronome-toggle', false);
     await runtime.change('metronome-toggle');
-    assert.ok(click?.disconnected, 'Metronome OFF cancels a scheduled click');
+    assert.ok(click && (click.stopAt ?? Infinity) <= 0.458001, 'Metronome OFF stops or fades a scheduled click');
+    runtime.advanceAudioTime(0.009);
+    assert.ok(click?.disconnected, 'the canceled click disconnects after its fade');
     assert.strictEqual(runtime.intervalCount, 1, 'transport continues after the toggle');
     const oscillatorCountAfterDisable = runtime.scheduledOscillators().length;
     runtime.advanceAudioTime(0.65);
