@@ -46,6 +46,19 @@ export interface Messages {
   uiHelp: string;
   uiHelpTitle: string;
   msgHelpOpenFailed: string;
+  uiPlaybackGroup: string;
+  uiPlay: string;
+  uiPause: string;
+  uiResume: string;
+  uiStop: string;
+  uiSeek: string;
+  uiPlaybackTime: string;
+  uiCountIn: string;
+  uiMetronome: string;
+  uiPlaybackInvalidOrder: string;
+  uiPlaybackUnresolvedTempo: string;
+  uiPlaybackEmpty: string;
+  uiPlaybackAudioUnavailable: string;
 
   // Onboarding sidebar (Activity Bar "Start Here" view) and onboarding commands
   sidebarGetStarted: string;
@@ -159,6 +172,19 @@ export const MESSAGES_JA: Messages = {
   uiHelp: 'ヘルプ',
   uiHelpTitle: 'GuitarDSL ヘルプを開く',
   msgHelpOpenFailed: 'GuitarDSL ヘルプを開けませんでした。拡張機能を再インストールしてください。',
+  uiPlaybackGroup: '再生操作',
+  uiPlay: '再生',
+  uiPause: '一時停止',
+  uiResume: '再開',
+  uiStop: '停止',
+  uiSeek: '再生位置',
+  uiPlaybackTime: '現在位置 / 全長',
+  uiCountIn: 'カウントイン',
+  uiMetronome: 'メトロノーム',
+  uiPlaybackInvalidOrder: '演奏順序にエラーがあるため再生できません。',
+  uiPlaybackUnresolvedTempo: '再生位置のテンポを解決できないため再生できません。',
+  uiPlaybackEmpty: '再生する小節がありません。',
+  uiPlaybackAudioUnavailable: 'この環境では Web Audio を利用できません。',
 
   sidebarGetStarted: 'はじめる',
   sidebarCurrentFile: '現在のファイル',
@@ -313,6 +339,19 @@ export const MESSAGES_EN: Messages = {
   uiHelp: 'Help',
   uiHelpTitle: 'Open GuitarDSL Help',
   msgHelpOpenFailed: 'Could not open GuitarDSL Help. Try reinstalling the extension.',
+  uiPlaybackGroup: 'Playback controls',
+  uiPlay: 'Play',
+  uiPause: 'Pause',
+  uiResume: 'Resume',
+  uiStop: 'Stop',
+  uiSeek: 'Seek position',
+  uiPlaybackTime: 'Current position / duration',
+  uiCountIn: 'Count-in',
+  uiMetronome: 'Metronome',
+  uiPlaybackInvalidOrder: 'Playback is unavailable because the play order is invalid.',
+  uiPlaybackUnresolvedTempo: 'Playback is unavailable because a played measure has no valid tempo.',
+  uiPlaybackEmpty: 'There are no measures to play.',
+  uiPlaybackAudioUnavailable: 'Web Audio is unavailable in this environment.',
 
   sidebarGetStarted: 'Get Started',
   sidebarCurrentFile: 'Current File',

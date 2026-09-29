@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { compileGuitarDslToHtml } from './render/previewHtml';
@@ -133,6 +134,8 @@ export function activate(context: vscode.ExtensionContext) {
       effectiveDslProbe.previewInput = effective.text;
       const htmlContent = compileGuitarDslToHtml(effective.text, {
         locale: currentLocale,
+        cspSource: webview.cspSource,
+        nonce: randomBytes(16).toString('base64'),
         pageSize: previewPageSize,
         orientation: previewOrientation,
         expandPageBreakRepeats,

@@ -150,7 +150,7 @@ bpm: 120
 | Em | 8.d 8.u 8.d 8.u 8.d 8.u 8.d |
 ```
 
-Events: `@key:`, `@tempo:` (a number, `rit.`, `accel.`, `a tempo`, `tempo primo`), `@time:`, `@feel:`, `@dynamic:`, `@mark:`, `@text:` and `@ottava:` (`8va`, `8vb`, `off`). They are notation only. Tempo changes are shown as text, and nothing is played back.
+Events: `@key:`, `@tempo:` (a number, `rit.`, `accel.`, `a tempo`, `tempo primo`), `@time:`, `@feel:`, `@dynamic:`, `@mark:`, `@text:` and `@ottava:` (`8va`, `8vb`, `off`). Numeric `@tempo:` values change Preview playback from that measure; `tempo primo` restores the header `bpm:`. `rit.`, `accel.`, `a tempo` and `feel` remain display-only and do not change playback timing. Dynamics and ottava affect notation only.
 
 ### Reusable Fragments (`let`)
 <!-- help-sources: syntax:17 -->

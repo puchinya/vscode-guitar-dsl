@@ -28,6 +28,7 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 - **View**: *Single Page*, *Spread* (two pages side by side) or *Web* (one continuous page, with manual page breaks shown as a dotted line).
 - **Paper** (A4, A3, A5, B4, B5, Letter) and **Orientation** (*Portrait*, or *Landscape*, which puts two pages on one sheet).
 - **📄 Save PDF** and the **?** Help button.
+- **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.
 
