@@ -52,6 +52,8 @@ import {
 } from './scoreEvents';
 import { resolvePlayOrder } from './playOrder';
 import type { PlayOrderDiagnosticCode, PlayOrderMeasure, PlayOrderResult } from './playOrder';
+import { lowerArrangement, scanArrangementBlockLines } from './arrangement';
+import type { ArrangementDiagnosticCode, ArrangementSection, SourceSpan } from './arrangement';
 
 export type { MelodyNote, NoteTechniques, Pitch, Syllable } from './melody';
 export type { ChordDefinition } from './chordDefinition';
@@ -219,6 +221,7 @@ export type DiagnosticCode =
   | 'unknownMeasureToken'
   | 'unsupportedContinuationLine'
   | 'repeatEndWithoutStart'
+  | ArrangementDiagnosticCode
   | PlayOrderDiagnosticCode;
 
 export interface ScoreDiagnostic {
@@ -275,6 +278,19 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   unknownMeasureToken: 'error',
   unsupportedContinuationLine: 'error',
   repeatEndWithoutStart: 'warning',
+  arrangementInvalidSyntax: 'error',
+  arrangementDuplicateBlock: 'error',
+  arrangementUnterminatedBlock: 'error',
+  arrangementUnexpectedEnd: 'error',
+  arrangementOutsideHeader: 'error',
+  arrangementEmpty: 'error',
+  arrangementDuplicateSection: 'error',
+  arrangementEmptySection: 'error',
+  arrangementUnassignedMeasures: 'error',
+  arrangementUnknownReference: 'error',
+  arrangementAmbiguousReference: 'error',
+  arrangementNavigationConflict: 'error',
+  arrangementLyricVerseUnavailable: 'error',
   playOrderMultipleNavigationJumps: 'error',
   playOrderMissingDestination: 'error',
   playOrderAmbiguousDestination: 'error',
@@ -457,6 +473,7 @@ interface MelodyGroup {
   notes: MelodyNote[];
   cellRanges: { start: number; end: number }[];
   verseCount: number;
+  sectionIndex: number | null;
 }
 
 const DIRECTIVE_LINE_RE = /^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/;
@@ -484,7 +501,8 @@ export type SourceLineKind =
  * `lyr:` line or a continuation line (see `continuesMelodyContext`). Shared with tools that scan lines cheaply
  * (the accompaniment CodeLens) so they classify exactly like `parseGuitarDsl`.
  */
-export function classifySourceLine(rawLine: string, afterMelodyLine: boolean): SourceLineKind {
+export function classifySourceLine(rawLine: string, afterMelodyLine: boolean, masked = false): SourceLineKind {
+  if (masked) return 'blank';
   if (afterMelodyLine && /^\s+\|/.test(rawLine)) return 'continuation';
   const line = rawLine.trim();
   if (!line || line.startsWith('#')) return 'blank';
@@ -513,6 +531,7 @@ export interface ParseGuitarDslOptions {
 
 export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptions): ParsedScore {
   const lines = dslContent.split(/\r?\n/);
+  const arrangementScan = scanArrangementBlockLines(lines);
 
   let title = 'Guitar Rhythm Score';
   let artist = '';
@@ -536,6 +555,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const pages: ScorePage[] = [{ pageNumber: 1, measures: [] }];
   let currentPageIndex = 0;
   let currentSection = '';
+  const sectionDefinitions: { name: string; start: number; labelSpan: SourceSpan }[] = [];
+  const melodyGroups: MelodyGroup[] = [];
+  let currentArrangementSectionIndex: number | null = null;
   const usedChordsSet = new Set<string>();
   const chordDefinitions: ChordDefinition[] = [];
   const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
@@ -579,6 +601,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     diagnostics.push({ line: lineIdx, startCol, endCol: Math.max(endCol, startCol + 1), severity: DIAGNOSTIC_SEVERITY[code], code, args });
   };
 
+  for (const diagnostic of arrangementScan.diagnostics) {
+    report(diagnostic.span.line, diagnostic.span.startCol, diagnostic.span.endCol, diagnostic.code, diagnostic.args);
+  }
+
   // `let` fragments (spec §17): every definition is parsed and resolved before the score lines, so
   // references may come before or after their definition. All state here belongs to this parse call.
   const CTX_MEASURE = 1;
@@ -599,6 +625,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const letDefinitions = new Map<string, LetDefinition>();
 
   lines.forEach((rawLine, lineIdx) => {
+    if (arrangementScan.maskedLines[lineIdx]) return;
     const trimmed = rawLine.trim();
     if (!/^let\s/.test(trimmed)) return;
     const lineStart = rawLine.indexOf(trimmed);
@@ -819,8 +846,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const line = rawLine.trim();
     // An indented `|` line right after a `mel:` / `lyr:` line (or another such line) is an attempted
     // continuation, which the syntax does not have: report it and do not read it as a measure (§6).
-    const kind = classifySourceLine(rawLine, continuableLine);
+    const kind = classifySourceLine(rawLine, continuableLine, arrangementScan.maskedLines[lineIdx]);
     continuableLine = continuesMelodyContext(kind);
+    if (arrangementScan.maskedLines[lineIdx]) continue;
     if (kind === 'continuation') {
       const start = rawLine.indexOf('|');
       report(lineIdx, start, rawLine.trimEnd().length, 'unsupportedContinuationLine');
@@ -952,6 +980,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (secMatch) {
       markBody(lineIdx);
       currentSection = secMatch[1];
+      currentArrangementSectionIndex = sectionDefinitions.length;
+      sectionDefinitions.push({
+        name: secMatch[1],
+        start: measures.length,
+        labelSpan: { line: lineIdx, startCol: lineStart, endCol: lineEnd }
+      });
       melodyCursor = measures.length;
       lastMelodyGroup = null;
       continue;
@@ -961,7 +995,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const melMatch = rawLine.match(MELODY_LINE_RE);
     if (melMatch) {
       markBody(lineIdx);
-      lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx);
+      lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx, currentArrangementSectionIndex);
+      melodyGroups.push(lastMelodyGroup);
       continue;
     }
 
@@ -1436,8 +1471,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     return c.label !== undefined ? { name: c.name, beat, label: c.label } : { name: c.name, beat };
   }
 
-  function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number): MelodyGroup {
-    const group: MelodyGroup = { notes: [], cellRanges: [], verseCount: 0 };
+  function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number, sectionIndex: number | null): MelodyGroup {
+    const group: MelodyGroup = { notes: [], cellRanges: [], verseCount: 0, sectionIndex };
     const state: MelodyTokenState = {};
     const sequence = pitchSequence++;
 
@@ -1621,7 +1656,55 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     specialMark: measure.specialMark,
     sectionName: measure.sectionName
   }));
-  const playOrder = resolvePlayOrder(playOrderInput);
+
+  let arrangementInvalid = arrangementScan.present && arrangementScan.diagnostics.length > 0;
+  let resolverInput = playOrderInput;
+  if (arrangementScan.present) {
+    let hasNavigationConflict = false;
+    for (let index = 0; index < measures.length; index++) {
+      const measure = measures[index];
+      if (!measure.repeatStart && !measure.repeatEnd && measure.bracket === undefined && measure.specialMark === undefined) continue;
+      const location = measureSourceLocations[index];
+      if (location) report(location.line, location.startCol, location.endCol, 'arrangementNavigationConflict', { measure: index + 1 });
+      hasNavigationConflict = true;
+    }
+    arrangementInvalid ||= hasNavigationConflict;
+
+    if (!arrangementInvalid) {
+      const arrangementSections: ArrangementSection[] = sectionDefinitions.map((section, index) => {
+        const end = sectionDefinitions[index + 1]?.start ?? measures.length;
+        let lyricVerseCount = Number.POSITIVE_INFINITY;
+        for (const group of melodyGroups) {
+          if (group.sectionIndex !== index || group.verseCount <= 0 || !group.notes.some(takesSyllable)) continue;
+          lyricVerseCount = Math.min(lyricVerseCount, group.verseCount);
+        }
+        return {
+          name: section.name,
+          start: section.start,
+          end,
+          labelSpan: section.labelSpan,
+          lyricVerseCount: Number.isFinite(lyricVerseCount) ? lyricVerseCount : 0
+        };
+      });
+      const firstSectionStart = sectionDefinitions[0]?.start;
+      const unassignedMeasuresSpan = measures.length > 0 && (firstSectionStart === undefined || firstSectionStart > 0)
+        ? measureSourceLocations[0]
+        : undefined;
+      const lowered = lowerArrangement(arrangementScan.entries, arrangementSections, playOrderInput, unassignedMeasuresSpan);
+      for (const diagnostic of lowered.diagnostics) {
+        report(diagnostic.span.line, diagnostic.span.startCol, diagnostic.span.endCol, diagnostic.code, diagnostic.args);
+      }
+      arrangementInvalid = !lowered.valid;
+      resolverInput = arrangementInvalid ? [] : lowered.measures;
+    } else {
+      resolverInput = [];
+    }
+  }
+
+  const resolvedPlayOrder = resolvePlayOrder(resolverInput);
+  const playOrder: PlayOrderResult = arrangementInvalid
+    ? { valid: false, occurrences: [], diagnostics: [] }
+    : resolvedPlayOrder;
   for (const playDiagnostic of playOrder.diagnostics) {
     const location = measureSourceLocations[playDiagnostic.measureIndex] ?? { line: 0, startCol: 0, endCol: 1 };
     diagnostics.push({

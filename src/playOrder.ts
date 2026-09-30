@@ -6,6 +6,8 @@ export interface PlayOrderMeasure {
   bracket?: string;
   specialMark?: string;
   sectionName?: string;
+  /** Optional per-occurrence lyric verse selected by a section arrangement. */
+  lyricVerse?: number;
 }
 
 export interface PlayOrderOccurrence {
@@ -13,6 +15,8 @@ export interface PlayOrderOccurrence {
   occurrenceIndex: number;
   /** Written-score MeasureData.measureIndex. */
   measureIndex: number;
+  /** Optional 1-based lyric verse selected for this occurrence. */
+  lyricVerse?: number;
 }
 
 export type PlayOrderDiagnosticCode =
@@ -426,7 +430,11 @@ export function resolvePlayOrder(measures: readonly PlayOrderMeasure[]): PlayOrd
         diagnostics.push(diagnostic(measures, position, 'playOrderLimitExceeded', { limit: MAX_PLAY_ORDER_OCCURRENCES }));
         return { valid: false, occurrences: [], diagnostics: sortDiagnostics(diagnostics) };
       }
-      occurrences.push({ occurrenceIndex: occurrences.length, measureIndex: measure.measureIndex });
+      occurrences.push({
+        occurrenceIndex: occurrences.length,
+        measureIndex: measure.measureIndex,
+        ...(measure.lyricVerse === undefined ? {} : { lyricVerse: measure.lyricVerse })
+      });
 
       if (postPrimaryJump && measure.specialMark === 'fine') break;
 

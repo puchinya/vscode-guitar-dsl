@@ -4,6 +4,58 @@
   "scopeName": "source.guitardsl",
   "patterns": [
     {
+      "name": "meta.arrangement.guitardsl",
+      "begin": "^\\s*(arrangement)\\s*(\\{)(?:\\s*(#.*))?$",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.arrangement.guitardsl"
+        },
+        "2": {
+          "name": "punctuation.section.block.begin.guitardsl"
+        },
+        "3": {
+          "name": "comment.line.number-sign.guitardsl"
+        }
+      },
+      "end": "^\\s*(\\})(?:\\s*(#.*))?$",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.section.block.end.guitardsl"
+        },
+        "2": {
+          "name": "comment.line.number-sign.guitardsl"
+        }
+      },
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.guitardsl",
+          "match": "^\\s*#.*$|(?<=\\s)#.*$"
+        },
+        {
+          "name": "entity.name.section.reference.guitardsl",
+          "match": "^\\s*(\\[[^\\]]+\\]|[\\p{L}_][\\p{L}\\p{N}_-]*)(?=\\(lyr=| x[0-9]+|\\s*(?:#|$))",
+          "captures": {
+            "1": {
+              "name": "entity.name.section.reference.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "meta.arrangement.lyric-verse.guitardsl",
+          "match": "\\(lyr=([0-9]+)\\)",
+          "captures": {
+            "1": {
+              "name": "constant.numeric.integer.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "keyword.operator.arrangement.repeat.guitardsl",
+          "match": " x[0-9]+"
+        }
+      ]
+    },
+    {
       "name": "meta.directive.guitardsl",
       "begin": "^\\s*(@(?i:key|tempo|bpm|time|meter|feel|dynamic|mark|text|ottava))\\s*(:)",
       "beginCaptures": {

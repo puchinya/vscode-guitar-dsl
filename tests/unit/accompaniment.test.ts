@@ -80,7 +80,7 @@ describe('accompaniment engine (Issue #101)', () => {
     it('the cheap CodeLens line scan yields exactly the engine section identity (index, name, label line)', () => {
       const docOf = (text: string) => {
         const lines = text.split(/\r?\n/);
-        return { lineCount: lines.length, lineAt: (i: number) => ({ text: lines[i] }), uri: 'doc' } as never;
+        return { lineCount: lines.length, lineAt: (i: number) => ({ text: lines[i] }), getText: () => text, uri: 'doc' } as never;
       };
       const samples = path.join(__dirname, '../../samples');
       const texts = fs.readdirSync(samples).filter(f => f.endsWith('.guitardsl')).map(f => fs.readFileSync(path.join(samples, f), 'utf8'));
@@ -88,6 +88,7 @@ describe('accompaniment engine (Issue #101)', () => {
       // Top-level constructs containing `|` are not measures (metadata, events, chord definitions, comments, let).
       texts.push(['title: A | B', 'memo: x|y', '@text: a | b', 'chord C@x = x32010', 'let r = 4.d 4.d 4.d 4.d', '# | c', '', '[Verse]', '| C | $r |', '[Chorus]', '| G |'].join('\n'));
       texts.push(['[Chorus]', '| C | 4.d 4.d 4.d 4.d |', '', '[Verse]', '| G | 4.d 4.d 4.d 4.d |', '', '[Chorus]', '| F | 4.d 4.d 4.d 4.d |', '[Empty]', '| |', '[Outro]', '| C |'].join('\n'));
+      texts.push(['[Verse]', '| C |', 'arrangement {', '[Fake]', '| G |', '}', '[Chorus]', '| D |'].join('\n'));
       for (const text of texts) {
         const want = accompanimentSections(parseGuitarDsl(text), text).filter(s => s.labelLine !== null).map(s => [s.labelLine, s.sectionIndex, s.name]);
         const got = new StrummingCodeLensProvider('en').provideCodeLenses(docOf(text)).map(l => {

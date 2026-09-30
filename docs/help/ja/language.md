@@ -28,6 +28,32 @@ time: 4/4
 | `show_rhythm` | `false` にすると、メロディのある段でリズム譜表を省略（リードシート） |
 | `chord_size`、`lyric_size`、`title_size`、`section_size`、`font_size` | 文字サイズ |
 
+### セクション編曲と出現ごとの歌詞
+<!-- help-sources: syntax:3 syntax:5 syntax:8 syntax:13 -->
+
+`arrangement { ... }` をヘッダーの後、スコア本文の前に置くと、既存のセクション見出しを並べて演奏順を指定できます。小節を複製して書く必要はありません。
+
+```guitardsl
+arrangement {
+  Intro
+  Verse
+  Chorus x2
+  Verse(lyr=2)
+}
+
+[Intro]
+| C |
+[Verse]
+| Am | F |
+mel: | a4/1 | g4/1 |
+lyr: 朝 光
+lyr: 雨 夜
+[Chorus]
+| G |
+```
+
+名前は見出しと大文字小文字・空白も含めて一致させます。空白を含む見出しは `[Verse A]` のように括弧付きで参照します。`x2` はそのセクションを2回演奏します。歌詞番を省略すると、同名セクションの出現ごとに次の番を選びます。`Verse(lyr=2)` はその出現だけ2番を選び、書面の `lyr:` 行と楽譜表示は変えません。編曲ブロックがある文書では、明示反復・volta・D.C./D.S. などのナビゲーション記号と併用できません。
+
 ### セクション・小節・小節線
 <!-- help-sources: syntax:5 syntax:6 syntax:8 -->
 
