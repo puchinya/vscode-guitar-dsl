@@ -106,4 +106,30 @@ describe('i18n - getMessages', () => {
       assert.ok(!/undefined/.test(ja) && !/undefined/.test(en), code);
     }
   });
+
+  it('formats every section-arrangement diagnostic in Japanese and English (Issue #88)', () => {
+    const codes: DiagnosticCode[] = [
+      'arrangementInvalidSyntax',
+      'arrangementDuplicateBlock',
+      'arrangementUnterminatedBlock',
+      'arrangementUnexpectedEnd',
+      'arrangementOutsideHeader',
+      'arrangementEmpty',
+      'arrangementDuplicateSection',
+      'arrangementEmptySection',
+      'arrangementUnassignedMeasures',
+      'arrangementUnknownReference',
+      'arrangementAmbiguousReference',
+      'arrangementNavigationConflict',
+      'arrangementLyricVerseUnavailable'
+    ];
+    const args = { token: 'Verse x0', value: '0', section: 'Verse', count: 2, verse: 3, measure: 4 };
+    for (const code of codes) {
+      const ja = formatDiagnostic(code, args, 'ja');
+      const en = formatDiagnostic(code, args, 'en');
+      assert.ok(ja.trim().length > 0 && en.trim().length > 0, code);
+      assert.notStrictEqual(ja, en, code);
+      assert.ok(!/undefined/.test(ja) && !/undefined/.test(en), code);
+    }
+  });
 });

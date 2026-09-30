@@ -28,6 +28,32 @@ time: 4/4
 | `show_rhythm` | `false` hides the rhythm staff where there is a melody (lead-sheet mode) |
 | `chord_size`, `lyric_size`, `title_size`, `section_size`, `font_size` | Text sizes |
 
+### Section Arrangement and Per-Occurrence Lyrics
+<!-- help-sources: syntax:3 syntax:5 syntax:8 syntax:13 -->
+
+Put one `arrangement { ... }` block after the headers and before the score body to list existing section headings in performed order. You do not rewrite or copy the measures.
+
+```guitardsl
+arrangement {
+  Intro
+  Verse
+  Chorus x2
+  Verse(lyr=2)
+}
+
+[Intro]
+| C |
+[Verse]
+| Am | F |
+mel: | a4/1 | g4/1 |
+lyr: dawn light
+lyr: rain night
+[Chorus]
+| G |
+```
+
+Names must exactly match their headings, including case and spaces. Reference a heading with spaces as `[Verse A]`. `x2` performs the section twice. When `lyr=` is omitted, each occurrence of the same section selects the next verse. `Verse(lyr=2)` selects verse 2 for that occurrence only; the written `lyr:` lines and score display stay as written. An arrangement cannot be combined with explicit repeats, voltas, or navigation marks such as D.C. and D.S.
+
 ### Sections, Measures and Barlines
 <!-- help-sources: syntax:5 syntax:6 syntax:8 -->
 

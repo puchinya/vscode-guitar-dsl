@@ -110,7 +110,7 @@ flowchart TD
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
   - 音高の数（0 / 1 / 複数）の不変条件（`RhythmItem`・`MelodyNote` 共通）: 休符・スラッシュは `pitch` も `pitches` も未定義、単音は `pitch` のみ、同時複数音（§2.15）は `pitch` 未定義で `pitches.length >= 2`。音高を扱う新しい処理は `eventPitches(event)`（`src/compiler.ts`）で 0〜複数の音高を得て、`.pitch` だけを仮定しない。
-  - `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
+- `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
   - `originalKey` / `bpm` / `keySignature` は**冒頭の**メタデータ（最後に見たイベントではない）。冒頭の拍子 `timeSignature`、フィール `feel`、弱起 `pickup?`、スコアイベント列 `events` を持つ（§2.12）。
   - `MeasureData` は `measureIndex`（全体での 0 始まり）、解決済みのコンテキスト `context: ResolvedMeasureContext`、その小節の直前に適用されるイベント `eventsBefore`、期待する長さ `expectedBeats`、`isPickup?` を持つ。描画はこれだけを参照し、DSL のイベント行を読み直さない。
   - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）、小節ごとの `rhythmSource`（リズムの記述範囲。`explicit` / `implicit` / `repeat`。詳細は §2.19）。
@@ -138,6 +138,14 @@ flowchart TD
 - `D.C.` / `D.S.` は単一消費の主ジャンプ状態で管理する。ジャンプ後は `Fine` / `to Coda` を有効にし、反復の後戻りは止めて終端 volta を選ぶ。改ページはレイアウト境界だけで、resolver の入力・反復所有関係・演奏順には含めない。既存 `repeatEndWithoutStart` 警告はページ文脈を使う compiler の構文診断として別に残す。
 - 不正または曖昧な状態は型付きエラーとして返し、部分的な出現列を公開しない。通常遷移は位置を進め、repeat back-edge は対象 block の pass を増やす。外側 repeat の再入時は外側 pass を増やしてから子 block を reset し、`D.C.` / `D.S.` と `to Coda` は一度だけ消費するため、公開入力で同一実行状態は再訪しない。状態 trie による cycle 検出は持たず、100,000 occurrence の hard cap で巨大な有限展開を制限する。
 - `%` の内容複製は既存 `expandMeasureRepeat()` が所有し、resolver は `%` の書かれた小節IDを維持する。`ParsedScore.measures` と `pages[*].measures` は表示・描画用の書かれた順序を保ち、演奏出現列で並べ替えない。
+
+#### 2.2.2 セクション編曲 (`src/arrangement.ts`)
+
+- `scanArrangementBlockLines(lines)` は入力行を同期・純粋に走査し、編曲ブロックの entry、名前と `lyr` のソース範囲、ブロック行 mask、型付き構文診断を返す。compiler は通常行分類より先に mask を適用する。伴奏セクション走査と CodeLens も同じ関数の mask を使い、ブロック内の記述をセクション見出し・小節として数えない。
+- compiler は書面小節をそのまま構築しながら、見出し定義の順序・開始小節・ラベル位置、各 `mel:` グループのセクション帰属、歌唱対象があるグループの `verseCount` を parse 呼び出し内に収集する。改ページはセクション範囲を分割しない。重複名、空範囲、先頭の無名小節、参照名の一致数をここで検証できる。
+- `lowerArrangement()` は一意のセクション範囲と entry を検証し、歌詞数を選び、元の `measureIndex` を保持した仮想線形 `PlayOrderMeasure[]` を構成する。自動選択カウンターは関数呼び出し内でセクション名ごとに独立し、展開した各出現を数える。倍率ごとの積と累計を配列確保前に検査する。不正時は空入力と位置付き診断を返す。
+- 編曲モードでは書面小節に残る反復・volta・ナビゲーション情報を仮想入力に渡さない。まず全書面小節で競合を検査し、成功した仮想入力、または失敗時の空入力のどちらか一方を `resolvePlayOrder()` に一度だけ渡す。結果は引き続き `ParsedScore.playOrder` を唯一の演奏順として保持する。`MeasureData` と melody の値は複製・書換えしない。
+- `PlayOrderMeasure`、`PlayOrderOccurrence`、必要な `PlaybackOccurrence` の `lyricVerse?` は出現にだけ属する省略可能な値である。編曲を含まない既存スコアではプロパティ自体を付けず、従来のオブジェクト形状を保つ。timeline は値を透過するだけで、Preview UI に歌詞表示は追加しない。
 
 ### 2.3 Renderer (`src/render/`)
 AST からページ SVG と Webview HTML を生成する。VS Code API に依存しない純粋関数群。
@@ -512,6 +520,7 @@ src/strummingCodeLens.ts: applyAccompanimentTransform（最新ソース → 1 �
 
 - **`src/playbackTimeline.ts`** は VS Code・DOM・Audio API に依存しない純粋層。`ParsedScore.playOrder.occurrences` を走査し、各出現の小節内拍位置を `Fraction` のまま扱うイベントタイムラインを構築する。小節長は `MeasureData.expectedBeats` を使い、秒への変換はイベント出力などの境界で行う。位置と秒の相互変換もここで行う。弱起・連符・小節境界を含めて既存の解析済み位置を使い、不正な演奏順序または解決不能なテンポでは部分タイムラインを返さない。
 - **イベント解釈** は演奏順序の各小節出現について、その小節の解決済みコンテキストを用いる。音価の不足は無音、発音開始が小節末以降のイベントは除外し、小節末を越える音価は小節境界で切る。数値テンポと有効な `tempo primo` のみが秒位置に影響する。フィールおよび `rit.` / `accel.` / `a tempo` は時間計算へ持ち込まない。スラッシュ発音は同一小節内で発音位置以前に定義された直近のコードだけを参照し、小節を越えて引き継がない。
+- `PlaybackOccurrence.lyricVerse?` は `ParsedScore.playOrder` から透過伝播する任意メタデータで、timeline の出現が選択歌詞番を保持するために使う。今回は Web Audio / Preview の描画や歌詞オーバーレイを変更しない。
 - **`src/playbackSynth.ts`** は記譜上の `Pitch` と既存 `parseChordName()` の結果を基本的なオシレーター音へ変換する。メロディ・インライン音高は記譜された実音を使い、カポを加えない。コードのルートと分数コードのベースには有効 DSL のカポ半音を加える。コードの運指・チューニング・弦フレットのモデルを追加せず、非対応のコード品質は無音にする。
 - **拡張機能ホスト** は既存の `updateWebview` 全 HTML 置換を保ち、コンパイル済みスコアと有効 DSL から新しい Preview を生成する。ホストは再生タイムラインのリアルタイムスケジューラを所有しない。`src/render/previewHtml.ts` が Preview UI とシリアライズ済み再生データを出力し、Webview がその世代に閉じたタイムライン、AudioContext、イベントノード、再生状態を所有する。
 - **Webview スケジューラ** はユーザー操作でのみ遅延生成される単一 AudioContext を使う。25ms ごとに最大 100ms 先を AudioContext の現在時刻に固定してスケジュールし、タイマー差分を積算してスコア位置を進めない。全曲を一括登録しない。Pause、Stop、Seek ではスケジューラと全ノードを停止・切断する。Preview の再構築または破棄ではさらに AudioContext を閉じる。

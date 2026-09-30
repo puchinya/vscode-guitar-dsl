@@ -10,6 +10,8 @@ export type PlaybackTimelineErrorCode = 'invalidPlayOrder' | 'unresolvedTempo';
 export interface PlaybackOccurrence {
   occurrenceIndex: number;
   measureIndex: number;
+  /** Optional 1-based lyric verse selected for this score occurrence. */
+  lyricVerse?: number;
   startBeat: Fraction;
   durationBeats: Fraction;
   startSeconds: number;
@@ -109,6 +111,7 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
     const occurrence: PlaybackOccurrence = {
       occurrenceIndex: played.occurrenceIndex,
       measureIndex: played.measureIndex,
+      ...(played.lyricVerse === undefined ? {} : { lyricVerse: played.lyricVerse }),
       startBeat: copyFraction(durationBeats),
       durationBeats: measureLength,
       startSeconds: durationSeconds,

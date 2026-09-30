@@ -16,6 +16,7 @@ import {
   uniformMeter
 } from './accompaniment';
 import { MeasureData, classifySourceLine, continuesMelodyContext, measureCellsOf, parseGuitarDsl } from './compiler';
+import { scanArrangementBlockLines } from './arrangement';
 import { AccompanimentUiMessages, SupportedLocale, getAccompanimentUiMessages } from './i18n';
 import { TimeSignature, formatTimeSignature, sameTimeSignature } from './scoreEvents';
 import { AccompanimentFamily, ScoreFeel, StrummingPatternPreset, USAGE_GROUP_ORDER } from './strummingPatterns';
@@ -47,12 +48,13 @@ export class StrummingCodeLensProvider implements vscode.CodeLensProvider {
    */
   public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const lenses: vscode.CodeLens[] = [];
+    const arrangementMask = scanArrangementBlockLines(document.getText().split(/\r?\n/)).maskedLines;
     let count = 0;
     let pending: { line: number; name: string } | undefined;
     let afterMelody = false;
     for (let i = 0; i < document.lineCount; i++) {
       const raw = document.lineAt(i).text;
-      const kind = classifySourceLine(raw, afterMelody);
+      const kind = classifySourceLine(raw, afterMelody, arrangementMask[i]);
       afterMelody = continuesMelodyContext(kind);
       if (kind === 'section') {
         pending = { line: i, name: raw.trim().slice(1, -1) };

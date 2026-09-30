@@ -5,6 +5,7 @@
 // source-preserving edit. Pure module: no VS Code, Gemini, transcription or Audio MIR dependency.
 
 import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl, rhythmItemBeats } from './compiler';
+import { scanArrangementBlockLines } from './arrangement';
 import { Fraction, ZERO, decomposeBeats, fadd, fcmp, feq, fmul, fnum, frac, fsub } from './duration';
 import { TimeSignature, beamGroupStarts, formatTimeSignature, measureBeats, parseTimeSignature, sameTimeSignature } from './scoreEvents';
 import {
@@ -552,9 +553,10 @@ export function accompanimentSections(score: ParsedScore, text: string): Accompa
     }
     sections[sections.length - 1].measures.push(m);
   }
-  const labels = text
-    .split(/\r?\n/)
-    .map((raw, line) => ({ line, match: raw.trim().match(SECTION_LABEL) }))
+  const sourceLines = text.split(/\r?\n/);
+  const arrangementMask = scanArrangementBlockLines(sourceLines).maskedLines;
+  const labels = sourceLines
+    .map((raw, line) => ({ line, match: arrangementMask[line] ? null : raw.trim().match(SECTION_LABEL) }))
     .filter(l => l.match)
     .map(l => ({ line: l.line, name: (l.match as RegExpMatchArray)[1] }));
   let from = 0;

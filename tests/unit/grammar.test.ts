@@ -8,6 +8,20 @@ const all: any[] = grammar.patterns.flatMap((p: any) => [p, ...(p.patterns ?? []
 const byName = (name: string) => all.filter(p => p.name === name);
 
 describe('grammar - advanced notation (T046)', () => {
+  it('highlights section arrangement blocks before ordinary section labels', () => {
+    const rule = grammar.patterns[0];
+    assert.strictEqual(rule.name, 'meta.arrangement.guitardsl');
+    assert.ok(new RegExp(rule.begin).test('arrangement {'));
+    assert.ok(new RegExp(rule.end).test('} # end arrangement'));
+    assert.ok(rule.patterns.some((p: any) => p.name === 'entity.name.section.reference.guitardsl'));
+    assert.ok(rule.patterns.some((p: any) => p.name === 'meta.arrangement.lyric-verse.guitardsl'));
+    assert.ok(rule.patterns.some((p: any) => p.name === 'keyword.operator.arrangement.repeat.guitardsl'));
+    const name = new RegExp(rule.patterns.find((p: any) => p.name === 'entity.name.section.reference.guitardsl').match, 'u');
+    assert.ok(name.test('Verse'));
+    assert.ok(name.test('[Verse A]'));
+    assert.ok(name.test('Aメロ'));
+  });
+
   it('highlights the new headers', () => {
     const header = new RegExp(byName('keyword.other.header.guitardsl')[0].match);
     for (const h of ['time:', 'time_signature:', 'meter:', 'feel:', 'pickup:', 'key:', 'bpm:']) assert.ok(header.test(h), h);
