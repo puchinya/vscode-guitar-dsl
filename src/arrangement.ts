@@ -66,6 +66,7 @@ const OPEN_BRACE_PREFIX = /^arrangement\s*\{/i;
 const LEGACY_OPEN_LINE = /^arrangement\s*:\s*(?:#.*)?$/i;
 const LEGACY_CLOSE_LINE = /^end_arrangement\s*(?:#.*)?$/i;
 const CLOSE_LINE = /^\}\s*(?:#.*)?$/;
+const ARRANGEMENT_DIRECTIVE_PREFIX = /^arrangement(?:\s|:|$)/i;
 const SIMPLE_NAME = /^[\p{L}_][\p{L}\p{N}_-]*$/u;
 const HEADER_LINE = /^(?:title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats?|expand_page_repeats?|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size))\s*:/i;
 
@@ -89,12 +90,26 @@ function isScoreBodyLine(line: string): boolean {
   return trimmed.includes('|');
 }
 
+function trailingCommentStart(content: string): number {
+  let inBracketedName = false;
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '[' && !inBracketedName) inBracketedName = true;
+    else if (content[i] === ']' && inBracketedName) inBracketedName = false;
+    else if (content[i] === '#' && !inBracketedName && i > 0 && /[ \t]/.test(content[i - 1])) {
+      let start = i - 1;
+      while (start > 0 && /[ \t]/.test(content[start - 1])) start--;
+      return start;
+    }
+  }
+  return -1;
+}
+
 function parseEntry(raw: string, line: number): { entry?: ArrangementEntry; diagnostic?: ArrangementDiagnostic } {
   const leading = raw.length - raw.trimStart().length;
   const content = raw.slice(leading);
   if (!content || content.startsWith('#')) return {};
 
-  const commentAt = content.search(/[ \t]+#/);
+  const commentAt = trailingCommentStart(content);
   const withoutComment = (commentAt >= 0 ? content.slice(0, commentAt) : content).trimEnd();
   const match = withoutComment.match(/^(\[[^\]]+\]|[^\s()[\]#]+)(?:\(lyr=([^()]*)\))?(?: x([^\s#]+))?$/u);
   if (!match) {
@@ -158,6 +173,7 @@ export function scanArrangementBlockLines(lines: readonly string[]): Arrangement
   let openLine: number | undefined;
   let openSpan: SourceSpan | undefined;
   let openMode: 'valid' | 'malformedBrace' | 'legacy' = 'valid';
+  let braceDepth = 0;
   let blockCount = 0;
   let blockEntries = 0;
 
@@ -172,21 +188,36 @@ export function scanArrangementBlockLines(lines: readonly string[]): Arrangement
         openLine = undefined;
         openSpan = undefined;
         openMode = 'valid';
+        braceDepth = 0;
         continue;
       }
       if (CLOSE_LINE.test(trimmed)) {
+        if (openMode !== 'legacy' && braceDepth > 1) {
+          braceDepth--;
+          continue;
+        }
         if (openMode === 'legacy') diagnostics.push({ code: 'arrangementUnexpectedEnd', span });
         else if (openMode === 'valid' && blockEntries === 0) diagnostics.push({ code: 'arrangementEmpty', span: openSpan! });
         openLine = undefined;
         openSpan = undefined;
         openMode = 'valid';
+        braceDepth = 0;
         continue;
       }
-      if (openMode !== 'valid') continue;
+      if (openMode !== 'valid') {
+        if (openMode === 'malformedBrace' && OPEN_BRACE_PREFIX.test(trimmed)) braceDepth++;
+        continue;
+      }
       if (!trimmed || trimmed.startsWith('#')) continue;
-      if (/^arrangement\b/i.test(trimmed)) {
+      if (OPEN_BRACE_PREFIX.test(trimmed)) {
         diagnostics.push({ code: 'arrangementDuplicateBlock', span });
         if (!OPEN_LINE.test(trimmed)) diagnostics.push({ code: 'arrangementInvalidSyntax', span, args: { token: trimmed } });
+        braceDepth++;
+        continue;
+      }
+      if (LEGACY_OPEN_LINE.test(trimmed)) {
+        diagnostics.push({ code: 'arrangementDuplicateBlock', span });
+        diagnostics.push({ code: 'arrangementInvalidSyntax', span, args: { token: trimmed } });
         continue;
       }
       blockEntries++;
@@ -210,7 +241,7 @@ export function scanArrangementBlockLines(lines: readonly string[]): Arrangement
       continue;
     }
 
-    if (/^arrangement\b/i.test(trimmed)) {
+    if (ARRANGEMENT_DIRECTIVE_PREFIX.test(trimmed)) {
       present = true;
       maskedLines[line] = true;
       const validOpen = OPEN_LINE.test(trimmed);
@@ -223,6 +254,7 @@ export function scanArrangementBlockLines(lines: readonly string[]): Arrangement
           openLine = line;
           openSpan = span;
           openMode = legacyOpen ? 'legacy' : 'malformedBrace';
+          braceDepth = legacyOpen ? 0 : 1;
           if (blockCount > 1) diagnostics.push({ code: 'arrangementDuplicateBlock', span });
           if (bodyStarted) diagnostics.push({ code: 'arrangementOutsideHeader', span });
         }
@@ -233,6 +265,7 @@ export function scanArrangementBlockLines(lines: readonly string[]): Arrangement
       openLine = line;
       openSpan = span;
       openMode = 'valid';
+      braceDepth = 1;
       if (blockCount > 1) diagnostics.push({ code: 'arrangementDuplicateBlock', span });
       if (bodyStarted) diagnostics.push({ code: 'arrangementOutsideHeader', span });
       continue;

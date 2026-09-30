@@ -76,6 +76,9 @@ describe('section arrangement (Issue #88)', () => {
     assert.deepStrictEqual(explicit.playOrder.occurrences.filter(o => o.measureIndex < 2).map(o => o.lyricVerse), [1, 1, 2, 2, 3, 3]);
     assert.deepStrictEqual(explicit.playOrder.occurrences.filter(o => o.measureIndex === 2).map(o => o.lyricVerse), [1, 1]);
 
+    const explicitDoesNotResetCounter = validScore(base(['Verse(lyr=3)', 'Verse']));
+    assert.deepStrictEqual(explicitDoesNotResetCounter.playOrder.occurrences.map(o => o.lyricVerse), [3, 3, 2, 2]);
+
     const explicitRepeat = validScore(base(['Verse(lyr=2) x2']));
     assert.deepStrictEqual(explicitRepeat.playOrder.occurrences.map(o => o.lyricVerse), [2, 2, 2, 2]);
   });
@@ -116,6 +119,20 @@ describe('section arrangement (Issue #88)', () => {
     ].join('\n'));
     assert.deepStrictEqual(bracketed.playOrder.occurrences.map(o => o.measureIndex), [0, 1]);
 
+    const arrangementNames = validScore([
+      'arrangement {', 'arrangement', 'arrangement-1', '[arrangement]', '[arrangement-1]', '}',
+      '[arrangement]', '| C |',
+      '[arrangement-1]', '| G |'
+    ].join('\n'));
+    assert.deepStrictEqual(arrangementNames.playOrder.occurrences.map(o => o.measureIndex), [0, 1, 0, 1]);
+
+    const hashLabelAndComment = validScore([
+      'arrangement {', '[Verse #2] # exact label comment', 'Verse # ordinary trailing comment', '}',
+      '[Verse #2]', '| C |',
+      '[Verse]', '| G |'
+    ].join('\n'));
+    assert.deepStrictEqual(hashLabelAndComment.playOrder.occurrences.map(o => o.measureIndex), [0, 1]);
+
     const unknown = parseGuitarDsl('arrangement {\nverse\n}\n[Verse]\n| C |');
     assert.ok(unknown.diagnostics.some(d => d.code === 'arrangementUnknownReference'));
     assert.deepStrictEqual(unknown.playOrder.occurrences, []);
@@ -155,9 +172,9 @@ describe('section arrangement (Issue #88)', () => {
     assert.ok(malformed.diagnostics.some(d => d.code === 'arrangementInvalidSyntax'));
     assert.deepStrictEqual(malformed.measures.map(m => m.chord), ['G']);
 
-    const nested = parseGuitarDsl('arrangement {\nVerse\narrangement {\n[Fake]\n| C |\n}\n}\n[Verse]\n| G |');
+    const nested = parseGuitarDsl('arrangement {\nVerse\narrangement {\nFake\n}\n| G |\n}\n[Verse]\n| C |');
     assert.ok(nested.diagnostics.some(d => d.code === 'arrangementDuplicateBlock'));
-    assert.deepStrictEqual(nested.measures.map(m => m.chord), ['G']);
+    assert.deepStrictEqual(nested.measures.map(m => m.chord), ['C']);
 
     const multiple = parseGuitarDsl('arrangement {\nVerse\n}\narrangement {\nVerse\n}\n[Verse]\n| C |');
     assert.ok(multiple.diagnostics.some(d => d.code === 'arrangementDuplicateBlock'));
