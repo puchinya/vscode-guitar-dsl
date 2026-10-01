@@ -1,5 +1,6 @@
 import { ChordDefinition, ChordVoicing, chordKey, splitChordKey } from './chordDefinition';
 import { getDefaultVoicing } from './chordPresets';
+import { createInstrumentModel, InstrumentModel, STANDARD_TUNING } from './instrumentModel';
 
 /**
  * Semantic chord-voicing resolution shared by the renderer, capo playability and Beginner Mode
@@ -25,21 +26,28 @@ export function resolveApplicableChordDefinition(
 }
 
 /** Preset default for the name, else the upper chord's default for a slash chord without a preset. */
-export function resolveDefaultChordVoicing(name: string): ChordVoicing | undefined {
-  const direct = getDefaultVoicing(name);
+export function resolveDefaultChordVoicing(
+  name: string,
+  instrument: InstrumentModel = createInstrumentModel()
+): ChordVoicing | undefined {
+  const direct = getDefaultVoicing(name, instrument);
   if (direct) return direct;
+  // In a non-Standard tuning an upper-chord shape is not a semantic substitute for a slash chord.
+  const isStandard = instrument.tuning.openMidi.every((pitch, index) => pitch === STANDARD_TUNING.openMidi[index]);
+  if (!isStandard) return undefined;
   const slash = name.indexOf('/');
-  return slash > 0 ? getDefaultVoicing(name.slice(0, slash)) : undefined;
+  return slash > 0 ? getDefaultVoicing(name.slice(0, slash), instrument) : undefined;
 }
 
 /** Applicable definition, then the default voicing; undefined when neither is known. */
 export function resolveChordVoicing(
   key: string,
-  definitions: readonly ChordDefinition[]
+  definitions: readonly ChordDefinition[],
+  instrument: InstrumentModel = createInstrumentModel()
 ): ResolvedChordVoicing | undefined {
   const { name, label } = splitChordKey(key);
   const own = resolveApplicableChordDefinition(key, definitions);
   if (own) return { key, name, label, voicing: own, source: 'definition' };
-  const library = resolveDefaultChordVoicing(name);
+  const library = resolveDefaultChordVoicing(name, instrument);
   return library ? { key, name, label, voicing: library, source: 'library' } : undefined;
 }

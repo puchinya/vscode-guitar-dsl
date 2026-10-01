@@ -40,7 +40,7 @@ Measures wrap onto rows automatically (4 per row by default, set with `measures_
 ### Chord Diagrams and the Chord Diagram Editor
 <!-- help-sources: extension:4A syntax:7 -->
 
-Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. The same shape is used to rate playability for capo and Beginner Mode. You can keep several voicings of the same chord with labels, such as `C@barre`.
+Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. With a non-Standard tuning, only preset shapes that sound as the requested chord are shown. Frets are relative to the capo, and capo playability and Beginner Mode use the same tuning and shape. Chord-name suggestions in the diagram editor also use the score's tuning. You can keep several voicings of the same chord with labels, such as `C@barre`.
 
 **GuitarDSL: Edit Chord Diagram** opens a visual editor. Start it from:
 
@@ -53,12 +53,12 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 ### Capo and Playability
 <!-- help-sources: extension:4 -->
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. The chords are rewritten so the song sounds the same. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
+The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
 
 ### Beginner Mode
 <!-- help-sources: extension:4 -->
 
-Turn on **Beginner mode** in the capo bar to see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The sounding key does not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
+Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
 
 ### Score Settings
 <!-- help-sources: extension:3 extension:4B -->

@@ -1,6 +1,7 @@
 // Chord editor logic independent of VS Code: editor state <-> `chord` line, and where a save goes.
 
 import { parseGuitarDsl } from './compiler';
+import { parseCapoValue } from './capo';
 import {
   Barre,
   ChordDefinition,
@@ -17,6 +18,7 @@ import {
   splitChordKey
 } from './chordDefinition';
 import { resolveChordDiagram } from './render/chordLibrary';
+import { createInstrumentModel, InstrumentModel } from './instrumentModel';
 
 /** State edited in the chord editor webview (plain JSON). */
 export interface ChordEditorState {
@@ -31,6 +33,7 @@ export interface ChordEditorState {
 
 export interface ChordEditorSession {
   state: ChordEditorState;
+  instrument: InstrumentModel;
   /** Source line of the definition being edited; undefined for a new definition. */
   line?: number;
 }
@@ -38,13 +41,14 @@ export interface ChordEditorSession {
 /** Initial editor session for a diagram key: its definition when one exists, else the resolved diagram as a new definition. */
 export function createEditorSession(text: string, key: string): ChordEditorSession {
   const score = parseGuitarDsl(text);
+  const instrument = createInstrumentModel(score.tuning, parseCapoValue(score.capo) ?? 0);
   const def = score.chordDefinitions.find(d => chordKey(d.name, d.label) === key);
   if (def) {
-    return { state: stateFromVoicing(def.name, def.label ?? '', def), line: def.line };
+    return { state: stateFromVoicing(def.name, def.label ?? '', def), line: def.line, instrument };
   }
   const { name, label } = splitChordKey(key);
-  const resolved = resolveChordDiagram(name, score.chordDefinitions);
-  return { state: stateFromVoicing(name, label ?? '', resolved.voicing) };
+  const resolved = resolveChordDiagram(name, score.chordDefinitions, instrument);
+  return { state: stateFromVoicing(name, label ?? '', resolved.voicing), instrument };
 }
 
 export function stateFromVoicing(name: string, label: string, voicing: ChordVoicing): ChordEditorState {
@@ -63,7 +67,7 @@ export type BuildLineResult =
   | { ok: false; error: ChordDefinitionError; detail: string };
 
 /** Formats the state as a `chord` line and validates it by parsing it back. */
-export function buildChordLine(state: ChordEditorState): BuildLineResult {
+export function buildChordLine(state: ChordEditorState, instrument: InstrumentModel = createInstrumentModel()): BuildLineResult {
   const autoBase = resolveBaseFret({ frets: state.frets, barres: state.barres });
   const label = state.label.trim();
   const draft = formatChordDefinition({
@@ -74,7 +78,7 @@ export function buildChordLine(state: ChordEditorState): BuildLineResult {
     fingers: state.fingers,
     barres: state.barres
   });
-  const parsed = parseChordDefinition(draft);
+  const parsed = parseChordDefinition(draft, instrument);
   if (!parsed.ok) {
     return parsed;
   }

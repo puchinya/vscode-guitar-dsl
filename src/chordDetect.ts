@@ -1,20 +1,16 @@
-// Chord name detection from a fingering (standard tuning EADGBE) and chord name helpers.
+// Chord name detection from a six-string fingering and chord name helpers.
 
 import { StringFret } from './chordDefinition';
+import { createInstrumentModel, GuitarString, InstrumentModel, noteNameToPitchClass as instrumentPitchClass, STANDARD_TUNING } from './instrumentModel';
 
-/** MIDI numbers of the open strings, 6th string first. */
-export const OPEN_STRING_MIDI = [40, 45, 50, 55, 59, 64];
+/** Compatibility export, derived from the shared standard tuning. */
+export const OPEN_STRING_MIDI = STANDARD_TUNING.openMidi;
 
 /** Root / bass spelling used for generated names. */
 export const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-const NATURAL_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-
 export function noteNameToPitchClass(note: string): number | null {
-  const m = note.match(/^([A-G])([b#]?)$/);
-  if (!m) return null;
-  const shift = m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0;
-  return (NATURAL_PC[m[1]] + shift + 12) % 12;
+  return instrumentPitchClass(note);
 }
 
 export interface ChordQuality {
@@ -77,10 +73,10 @@ export interface ChordCandidate {
 }
 
 /** MIDI pitches of the sounding strings (low to high); muted strings are skipped. */
-export function soundingPitches(frets: StringFret[]): number[] {
+export function soundingPitches(frets: StringFret[], instrument: InstrumentModel = createInstrumentModel()): number[] {
   const pitches: number[] = [];
   frets.forEach((f, i) => {
-    if (f !== 'x') pitches.push(OPEN_STRING_MIDI[i] + f);
+    if (f !== 'x') pitches.push(instrument.pitchAt((6 - i) as GuitarString, f));
   });
   return pitches;
 }
@@ -89,8 +85,15 @@ export function soundingPitches(frets: StringFret[]): number[] {
  * Ranked chord names for a fingering. Each candidate's pitch-class set equals a quality's
  * intervals (7th/9th chords may omit the 5th); a bass other than the root gives a slash chord.
  */
-export function detectChordNames(frets: StringFret[], limit = 8): ChordCandidate[] {
-  const pitches = soundingPitches(frets);
+export function detectChordNames(
+  frets: StringFret[],
+  limit = 8,
+  instrument: InstrumentModel = createInstrumentModel()
+): ChordCandidate[] {
+  // Chord-form identity is independent of the score capo. Physical sounding pitches can still
+  // be obtained with soundingPitches(frets, a capo-aware model).
+  const detectionInstrument = instrument.capo === 0 ? instrument : createInstrumentModel(instrument.tuning, 0);
+  const pitches = soundingPitches(frets, detectionInstrument);
   if (pitches.length < 2) return [];
   const bassPc = Math.min(...pitches) % 12;
   const pcs = new Set(pitches.map(p => p % 12));

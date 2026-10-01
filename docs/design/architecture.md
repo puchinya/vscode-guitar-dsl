@@ -110,7 +110,7 @@ flowchart TD
   - `RhythmItem`: 個々のリズム要素（音価 `duration`、休符フラグ `isRest`、ピッキング `down` / `up`、ゴースト `ghost`、アクセント `accent`、タイ `tie`）。
   - `MelodyNote`: メロディ音符（音高 `pitch`、音価 `value` / 拍数 `beats`、休符、タイ、番ごとの音節 `syllables`）。`MeasureData.melody` に保持し、未定義はメロディなし。
   - 音高の数（0 / 1 / 複数）の不変条件（`RhythmItem`・`MelodyNote` 共通）: 休符・スラッシュは `pitch` も `pitches` も未定義、単音は `pitch` のみ、同時複数音（§2.15）は `pitch` 未定義で `pitches.length >= 2`。音高を扱う新しい処理は `eventPitches(event)`（`src/compiler.ts`）で 0〜複数の音高を得て、`.pitch` だけを仮定しない。
-- `ParsedScore` の追加項目: 調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。
+- `ParsedScore` の追加項目: チューニング `tuning`（必須。省略時は Standard）、調号 `keySignature`（−7〜+7 / null）、`showRhythm`、`measuresPerRow`、`diagnostics`（行・列範囲・重大度・コード・引数）。`tuning:` はヘッダーで1回だけ受け付け、本文のイベントにはしない。
   - `originalKey` / `bpm` / `keySignature` は**冒頭の**メタデータ（最後に見たイベントではない）。冒頭の拍子 `timeSignature`、フィール `feel`、弱起 `pickup?`、スコアイベント列 `events` を持つ（§2.12）。
   - `MeasureData` は `measureIndex`（全体での 0 始まり）、解決済みのコンテキスト `context: ResolvedMeasureContext`、その小節の直前に適用されるイベント `eventsBefore`、期待する長さ `expectedBeats`、`isPickup?` を持つ。描画はこれだけを参照し、DSL のイベント行を読み直さない。
   - ソース位置（ソースを保ったまま書き換える処理用。描画には使わない）: `chordTokens`（小節行に書かれた各コードトークンの行とコード名部分の列範囲。`@ラベル`・長さ指定は含まない。`%` の繰り返しは含まない）、`headerLines`（ヘッダー行のキーと値の列範囲。値の範囲は行末コメント（空白 + `#` 以降）を含まない）、`firstBodyLine`（最初のセクション・小節・`mel:`/`lyr:`・改ページ行）、小節ごとの `rhythmSource`（リズムの記述範囲。`explicit` / `implicit` / `repeat`。詳細は §2.19）。
@@ -125,8 +125,9 @@ flowchart TD
   - 小節行（`|` 区切り）を行分割・トークン分解し、コード、リズム（音価・ピッキング記号・タイ等）、歌詞（`l:"..."`）を構造化。
   - 使用されているコードを自動収集する。キーは `コード名` または `コード名@ラベル`（`ParsedScore.usedChords`）。`ChordPlacement.name` は表示名（ラベルなし）で、ラベルは `ChordPlacement.label` に分けて持つ。
   - `chord` 行はヘッダーより先に判定し、`ParsedScore.chordDefinitions` に集める（重複は先勝ち）。`@ラベル` 参照と定義の照合は全行の走査後に行うため、定義と参照の前後関係は問わない。
-- **コード定義 (`src/chordDefinition.ts`)**: `chord` 行のモデル（`ChordVoicing` / `ChordDefinition`、弦インデックス 0 = 6 弦）、解析 `parseChordDefinition`（エラー理由コードを返し、例外にしない）、整形 `formatChordDefinition`（解析と往復で一致）、開始フレットの自動決定 `resolveBaseFret`、コード名パターン `CHORD_NAME_PATTERN`。コンパイラ・描画・エディタで共用し、VS Code API に依存しない。
-- **コード理論 (`src/chordDetect.ts`)**: 標準チューニングの押弦からの自動判定 `detectChordNames`（ピッチクラス集合とタイプの照合、7th・9th 系の 5 度省略、最低音による分数コード、単純な名前ほど上位）と、コード名の分解 `parseChordName`。
+- **共通フレットボード (`src/instrumentModel.ts`)**: 6弦ギターの不変・純粋モデル。Standard、Drop D、DADGAD、Open G、Open D と明示6音のチューニング、音名と MIDI ピッチクラス、カポ、物理フレットを一元管理する。押弦のフレットはカポ位置からの相対値で、実音は `openMidi + capo + fret`。範囲外入力は `RangeError` とし、MIDI 範囲への丸めはしない。標準チューニングや最大フレット等の互換定数はこのモデルから導出する。
+- **コード定義 (`src/chordDefinition.ts`)**: `chord` 行のモデル（`ChordVoicing` / `ChordDefinition`、弦インデックス 0 = 6 弦）、解析 `parseChordDefinition`（エラー理由コードを返し、例外にしない）、整形 `formatChordDefinition`（解析と往復で一致）、開始フレットの自動決定 `resolveBaseFret`、コード名パターン `CHORD_NAME_PATTERN`。フレット値・`base`・`barre` はカポ位置からの相対値。コンパイラ・描画・エディタで共用し、VS Code API に依存しない。
+- **コード理論 (`src/chordDetect.ts`)**: 共通フレットボードモデル（省略時 Standard）の押弦から自動判定 `detectChordNames`（ピッチクラス集合とタイプの照合、7th・9th 系の 5 度省略、最低音による分数コード、単純な名前ほど上位）を行い、コード名を `parseChordName` で分解する。
 - **プリセット (`src/chordPresets.ts`)**: 手書きの基本形 `CHORD_LIBRARY` と、CAGED 系の形テンプレートを 12 ルートへ平行移動したボイシング（`getPresetVoicings`）。手書き → 開放弦あり → 低いフレットの順に並べ、重複を除く。セーハは `inferBarres` で推定する。`getDefaultVoicing` がラベルなしコードの既定の押さえ方。
 
 #### 2.2.1 演奏順 resolver (`src/playOrder.ts`)
@@ -165,10 +166,10 @@ AST からページ SVG と Webview HTML を生成する。VS Code API に依存
   - 五線譜上のコード名は `notation.ts` の `renderChordName` で描く（リズム段とメロディ段で共用）。`@ラベル` は上付きの別 `<text>` として描き、戻り値の幅で次のコード名との間隔を決める。
   - 臨時記号の要否は調号と小節内の臨時記号状態から決める。♯・♭・♮ はフォントに依存しないベクターパスで描き、プレビューと PDF の同一性を保つ。
   - フォントはルート要素の `font-family`（同梱 Noto Sans JP）に統一し、要素ごとの `font-family` 指定は持たない。全テキストは `escapeXml` を通す。
-- **`chordLibrary.ts`**: ダイアグラムの解決 `resolveChordDiagram` / `resolveScoreDiagrams`。押さえ方の意味的な解決（ファイル内の定義 → ラベルなし定義 → コード名全体のプリセット → 分数コードは上のコードのプリセット）は共有リゾルバ `src/chordVoicingResolver.ts` に委ね、解決できないときだけ表示用のフォールバック形状（`xx0232`, `source: 'fallback'`）を返す。フォールバック形状は renderer の中だけに置く。
-- **共有リゾルバ `src/chordVoicingResolver.ts`**（純粋。依存方向: `chordDefinition` + `chordPresets` → `chordVoicingResolver` → renderer・`capo`・`beginnerMode`）: `resolveApplicableChordDefinition(key, definitions)`（そのキーの定義、ラベル付きキーはラベルなし定義にフォールバック。最初の定義を使う）、`resolveDefaultChordVoicing(name)`（`getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → `undefined`）、`resolveChordVoicing(key, definitions)`（定義 → 既定、`source` は `definition` / `library`、解決できなければ `undefined`）。renderer・VS Code・Webview・採譜・Audio MIR に依存しない。
-- **`chordDiagram.ts`**: 1 枚のダイアグラムの SVG（`renderChordDiagramSvg`、ダイアグラム単位座標）。楽譜ヘッダーとエディタのプレビュー・サムネイルで共用する。`notation.ts` → `layout.ts` の循環を避けるため `notation.ts` を import しない。
-- **ダイアグラム領域**: `getDiagramGrid` は解決済みダイアグラムから、ラベル行と指番号行が要るかを判定してセル高さを決める。各セルは `<g class="chord-diagram" data-chord-key>` で、プレビューのクリック対象になる（PDF には影響しない属性）。
+- **`chordLibrary.ts`**: ダイアグラムの解決 `resolveChordDiagram` / `resolveScoreDiagrams`。押さえ方の意味的な解決（ファイル内の定義 → ラベルなし定義 → コード名全体のプリセット → 分数コードは上のコードのプリセット）は共有リゾルバ `src/chordVoicingResolver.ts` に委ねる。非 Standard チューニングでは既存テンプレートを共通フレットボードモデルで鳴らし、`parseChordName` のルート・サフィックス・分数ベースと一致する形だけを残す（Standard の手書き形・順序は維持）。解決できないときだけ表示用のフォールバック形状（`xx0232`, `source: 'fallback'`）を返す。この表示用フォールバックは押さえやすさや演奏可能性の判定には使わない。
+- **共有リゾルバ `src/chordVoicingResolver.ts`**（純粋。依存方向: `instrumentModel` / `chordDefinition` / `chordPresets` → `chordVoicingResolver` → renderer・`capo`・`beginnerMode`）: `resolveApplicableChordDefinition(key, definitions)`（そのキーの定義、ラベル付きキーはラベルなし定義にフォールバック。最初の定義を使う）、`resolveDefaultChordVoicing(name, instrument?)`（`getDefaultVoicing(name, instrument)` → 分数コードは Standard の場合だけ上のコードの既定 → `undefined`）、`resolveChordVoicing(key, definitions, instrument?)`（定義 → チューニングに合う既定、`source` は `definition` / `library`、解決できなければ `undefined`）。既存 API の末尾に任意の `InstrumentModel` を追加し、省略時は Standard とする。renderer・VS Code・Webview・採譜・Audio MIR に依存しない。
+- **`chordDiagram.ts`**: 1 枚のダイアグラムの SVG（`renderChordDiagramSvg`、ダイアグラム単位座標）。楽譜ヘッダーとエディタのプレビュー・サムネイルで共用する。押弦フレットはカポ基準の相対値として描く。`notation.ts` → `layout.ts` の循環を避けるため `notation.ts` を import しない。
+- **ダイアグラム領域**: `getDiagramGrid` は解決済みダイアグラムから、ラベル行と指番号行が要るかを判定してセル高さを決める。各セルは `<g class="chord-diagram" data-chord-key>` で、プレビューのクリック対象になる（PDF には影響しない属性）。Renderer とコードエディタは `ParsedScore.tuning` と capo を同じモデルへ渡し、音名・弦・相対フレットの表示を共有する。
 - **`chordEditorHtml.ts`**: コードダイアグラムエディタ Webview の静的な HTML（文言は JSON として埋め込む）。
 - **`previewHtml.ts`** (`compileGuitarDslToHtml`):
   - ツールバー（HTML）とシート SVG 群・連続 SVG を包含する Webview HTML を構築する。表示モードは CSS（`data-display-mode`）で切り替える。
@@ -293,17 +294,17 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 **依存方向**: `chordDetect` / `chordPresets` / `chordDefinition` / `chordVoicingResolver` / `compiler` → `src/capo.ts` → 楽譜設定エディタ・プレビュー・（将来の）採譜など。`src/capo.ts` は VS Code・Webview・`src/transcription/`・`src/audioMir/` に依存しない純粋なモジュールで、単体テストの対象。
 
-- **汎用推論 API**（GuitarDSL のテキストを必要としない）:
+- **汎用推論 API**（GuitarDSL のテキストを必要としない。`CapoInferenceInput.tuning?: Tuning` を使い、省略時は Standard）:
   - `inferCapo({ sourceCapo, chords: [{ name, count? }], currentVoicings? })`: カポ 0〜12 の全候補（`capo`、`supported`、`playability`、書かれたコード名の対応 `chordMap`、不可の理由 `reason`）と推奨カポを返す。推奨は変更可能な候補のうちスコア最大、同点は小さいカポ。推奨するだけで適用はしない。`sourceCapo` が 0〜12 の整数でなければ `RangeError`（正規化しない）。
   - `evaluatePlayability(input, targetCapo)`、`transposeChordName(name, semitones)`（ルートとスラッシュのベースを `NOTE_NAMES` の綴りで移調し、サフィックスはそのまま）。
   - 書かれたコードの移調量は `-(targetCapo - sourceCapo)` 半音。`name@label` の出現はカポが変わる候補では `labeledChordVariant` で不可。
 - **弾きやすさの計算式**（この 1 か所だけに実装し、推論・エディタ・プレビューで共用）:
   - コードのコスト = `0.5 × 押弦数 + 2.5 × セーハ数 + 0.75 × max(0, 幅 − 2) + 0.25 × max(0, 最低フレット − 3) + (開放弦なしなら 1.5) + (分数コードなら 1)`。幅・最低フレットは 1 以上のフレットで計算する（なければ 0）。押さえ方が不明なら 10。
-  - 押さえ方: 共有リゾルバの `resolveDefaultChordVoicing(name)`（`getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → 不明。renderer のフォールバック形状は使わない）。元のカポの評価に限り `currentVoicings`（ファイルの `chord` 定義）を優先する。ほかのカポでは変換したカスタム押さえ方を作らない。
+  - 押さえ方: 共有リゾルバの `resolveDefaultChordVoicing(name)`（`getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing` → 不明。renderer のフォールバック形状は使わない）。チューニングは入力モデルで評価する。コード形の同定はカポ 0 で行い、物理音高を計算するときだけ実カポを加えて二重加算を避ける。元のカポの評価に限り `currentVoicings`（ファイルの `chord` 定義）を優先する。ほかのカポでは変換したカスタム押さえ方を作らない。
   - 曲のコスト = 出現回数で重み付けした平均 + `0.25 × max(0, 異なるコード数 − 4)` + `0.15 × カポ`。スコア = `round(clamp(100 − 10 × コスト, 0, 100))`。段階は 85 / 70 / 50 / 30 を境にする。出現がなければ評価なし。
-- **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、`resolveApplicableChordDefinition` で解決したファイルの定義を `currentVoicings` にする。プリセットは入れない）、`inferCapoFromDsl(text)`。
+- **GuitarDSL アダプタ**: `buildCapoInferenceInputFromScore(score)`（小節のコード配置を `name` / `name@label` ごとに数え、`resolveApplicableChordDefinition` で解決したファイルの定義を `currentVoicings` にする。プリセットは入れず、`score.tuning` を推論へ渡す）、`inferCapoFromDsl(text)`。
 - **DSL 上の候補 `inferCapoForDsl(text)`**: 汎用推論の各候補について、元のカポ以外は `planCapoTransform` まで実行し、失敗したら（定義の衝突・ラベル付きコード・構文エラー等）その候補を変更不可（`reason` = 失敗コード）にする。推奨はこの変更可能な候補から選び直す。楽譜設定エディタとプレビューのカポバーはこの結果だけを表示するため、適用できないカポは選択肢に出ない。汎用の `inferCapo` はテキストを見ないので、この検証を含まない。
-- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分（共通ヘルパー `replaceChordTokenNames(text, tokens, targetName)`。初心者モードと共用）と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
+- **ソース変換 `planCapoTransform(text, targetCapo)`**: AST を DSL に書き戻さず、`chordTokens` のコード名部分（共通ヘルパー `replaceChordTokenNames(text, tokens, targetName)`。初心者モードと共用）と `capo:` の値だけを置き換える（`capo: 0 # メモ` の行末コメント・空白・長さ指定などはバイト単位で保持）。`tuning`、`key`、メロディ、コメント、改行は維持する。`ParsedScore.capo` は行末コメントを除いた値。`capo:` がなければ最初の `key`/`original_key`/`bpm`/`tempo` 行の前、なければ本文の最初の行の前に挿入する（カポ 0 でも明示的に書く）。
   1. 元テキストを解析し、エラー診断があれば `sourceParseError`、カポが不正なら `invalidSourceCapo`、目標が不正なら `invalidTargetCapo`。
   2. カポが変わるときラベル付きコードがあれば `labeledChordVariant`、移調できないコード名は `untransposableChord`。
   3. 変わったコード名の変換先と同名のラベルなし `chord` 定義があれば `customDefinitionCollision`（その定義の押さえ方に予期せず変わるため）。定義は移調も削除もせず、使われなくなる可能性のある定義は `unusedDefinitions` / 警告 `unusedChordDefinitions` で返す。
@@ -328,9 +329,9 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 
 公開の振る舞いは `docs/specs/extension.md` §4.5 / §4B.4。DSL の構文・設定・コマンドは増やさない。
 
-**依存方向**: `compiler` / `chordDefinition` / `chordDetect` / `chordVoicingResolver` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
+**依存方向**: `compiler` / `instrumentModel` / `chordDefinition` / `chordDetect` / `chordVoicingResolver` / `capo` → `src/beginnerMode.ts`（純粋。VS Code・Webview・採譜・Audio MIR に依存しない）→ `src/previewBeginner.ts`・`src/scoreSettingsEditor.ts`・`src/extension.ts`。
 
-- **カポ候補**: `inferBeginnerModeForDsl(text, barrePolicy)` はカポ 0〜12 ごとに `planCapoTransform(text, capo)` を実行し、失敗したカポはその失敗コードで不可にする（初心者モード独自の移調はしない）。元のカポでは `resolveEffectiveDsl` と同じく元のテキストそのものを中間 DSL にする（`capo:` 行を挿入しない）。中間 DSL を解析し、異なるコードキーごとに代替を選ぶ。
+- **カポ候補**: `inferBeginnerModeForDsl(text, barrePolicy)` はカポ 0〜12 ごとに `planCapoTransform(text, capo)` を実行し、失敗したカポはその失敗コードで不可にする（初心者モード独自の移調はしない）。元のカポでは `resolveEffectiveDsl` と同じく元のテキストそのものを中間 DSL にする（`capo:` 行を挿入しない）。中間 DSL を解析し、異なるコードキーごとに代替を選ぶ。元の `ParsedScore.tuning` を候補評価・押さえ方の解決へ引き継ぐ。コード形はカポ 0 で同定し、物理音高だけ実カポを反映する。キーとメロディの実音高は変えない。
 - **押さえ方（ユーザー決定, Issue #65）**: 変換はコード名しか書き換えず `chord` 定義を追加しないため、評価する押さえ方は**最終の楽譜に描画されるもの 1 つ**に限る。renderer と同じ共有リゾルバ `resolveChordVoicing(key, definitions)`（キーの `chord` 定義、ラベル付きキーはラベルなし定義にフォールバック → `getDefaultVoicing(name)` → 分数コードは上のコードの `getDefaultVoicing`）で決める。解決できなければ（renderer ならフォールバック形状になるもの）候補にしない。`forbid` ではその押さえ方の `barres.length > 0` を除外する（絶対条件）。`getPresetVoicings` の他の押さえ方は描画されないので評価しない。
 - **代替**: そのまま（ペナルティ 0）、`BEGINNER_SUBSTITUTION_RULES`（宣言順）、`forbid` かつそのままのコードが使えない長三和音／`m` に限り `BEGINNER_BARRE_FALLBACK_RULES`（`maj7` / `m7`、2）。分数コードはベースを残す／省く（1）の組み合わせで、ペナルティは加算。ラベル付きコードはそのままのみ。置き換え先と同名のラベルなし `chord` 定義があれば除外（衝突）。選択は `chordCost + ペナルティ` 最小、同点はペナルティ、そのまま、宣言順。
 - **カポの評価**: `physicalSongCost` = 出現回数で重み付けした `chordCost` の平均 + `0.25 × max(0, 最終コードの種類 − 4)` + `0.15 × カポ`。`optimizationCost` = `physicalSongCost` + 重み付きペナルティ平均。表示する弾きやすさは `easeScore(physicalSongCost)` / `levelForScore`（ペナルティを含まない）。推奨は `optimizationCost` 最小、同点は置き換えた出現回数、置き換えたコードの種類、小さいカポの順（浮動小数の比較は 1e-9 の許容差）。`capo.ts` の計算式・推論結果は変えない。

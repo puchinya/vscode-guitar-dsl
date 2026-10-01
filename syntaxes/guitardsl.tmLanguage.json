@@ -368,7 +368,7 @@
     },
     {
       "name": "keyword.other.header.guitardsl",
-      "match": "^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
+      "match": "^(title|artist|capo|tuning|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|(?:style_)?(chord_size|lyric_size|title_size|section_size|font_size|text_size)):"
     },
     {
       "name": "meta.note-group.guitardsl",

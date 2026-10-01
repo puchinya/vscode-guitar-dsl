@@ -1,20 +1,11 @@
 import { parseChordName } from './chordDetect';
+import { pitchToMidi as instrumentPitchToMidi } from './instrumentModel';
 import type { Pitch } from './melody';
 import type { PlaybackEvent } from './playbackTimeline';
 
-const NATURAL_PITCH_CLASS: Record<Pitch['step'], number> = {
-  c: 0,
-  d: 2,
-  e: 4,
-  f: 5,
-  g: 7,
-  a: 9,
-  b: 11
-};
-
 /** Converts a scientific-pitch GuitarDSL pitch to MIDI (C4 = 60). */
 export function pitchToMidi(pitch: Pitch): number {
-  return (pitch.octave + 1) * 12 + NATURAL_PITCH_CLASS[pitch.step] + pitch.alter;
+  return instrumentPitchToMidi(pitch.step, pitch.octave, pitch.alter);
 }
 
 /** Converts a MIDI note number to frequency for the Web Audio oscillator. */

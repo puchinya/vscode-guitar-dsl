@@ -69,6 +69,21 @@ describe('i18n - getMessages', () => {
     assert.ok(formatDiagnostic('beatCountMismatch', args, 'en').includes('3 beats'));
   });
 
+  it('formats every tuning diagnostic in Japanese and English', () => {
+    const codes: DiagnosticCode[] = [
+      'invalidTuningStringCount', 'invalidTuningPitch', 'unknownTuningPreset', 'duplicateTuning', 'tuningOutsideHeader'
+    ];
+    const args = { value: 'E2 A2 H3 G3 B3', pitch: 'H3', count: '5' };
+    for (const code of codes) {
+      const ja = formatDiagnostic(code, args, 'ja');
+      const en = formatDiagnostic(code, args, 'en');
+      assert.ok(ja.trim().length > 0 && en.trim().length > 0, code);
+      assert.notStrictEqual(ja, en, code);
+      assert.ok(!/undefined/.test(ja) && !/undefined/.test(en), code);
+    }
+    assert.ok(formatDiagnostic('invalidTuningPitch', args, 'en').includes('H3'));
+  });
+
   it('formats the let fragment and note-group diagnostics in Japanese and English (Issue #72)', () => {
     const newCodes: DiagnosticCode[] = [
       'invalidLetDefinition', 'duplicateVariable', 'unknownVariable', 'cyclicVariableReference',

@@ -54,9 +54,11 @@ import { resolvePlayOrder } from './playOrder';
 import type { PlayOrderDiagnosticCode, PlayOrderMeasure, PlayOrderResult } from './playOrder';
 import { lowerArrangement, scanArrangementBlockLines } from './arrangement';
 import type { ArrangementDiagnosticCode, ArrangementSection, SourceSpan } from './arrangement';
+import { createInstrumentModel, MAX_CAPO, parseTuningValue, STANDARD_TUNING, Tuning } from './instrumentModel';
 
 export type { MelodyNote, NoteTechniques, Pitch, Syllable } from './melody';
 export type { ChordDefinition } from './chordDefinition';
+export type { Tuning } from './instrumentModel';
 export type { Feel, Ottava, ResolvedMeasureContext, ScoreEvent, TimeSignature } from './scoreEvents';
 export { parseKeySignature } from './scoreEvents';
 
@@ -193,6 +195,11 @@ export type DiagnosticCode =
   | 'invalidMeasuresPerRow'
   | 'invalidChordDefinition'
   | 'duplicateChordDefinition'
+  | 'invalidTuningStringCount'
+  | 'invalidTuningPitch'
+  | 'unknownTuningPreset'
+  | 'duplicateTuning'
+  | 'tuningOutsideHeader'
   | 'unknownChordVariant'
   | 'invalidTimeSignature'
   | 'invalidBeatGrouping'
@@ -250,6 +257,11 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   invalidMeasuresPerRow: 'warning',
   invalidChordDefinition: 'error',
   duplicateChordDefinition: 'warning',
+  invalidTuningStringCount: 'error',
+  invalidTuningPitch: 'error',
+  unknownTuningPreset: 'error',
+  duplicateTuning: 'error',
+  tuningOutsideHeader: 'error',
   unknownChordVariant: 'warning',
   invalidTimeSignature: 'error',
   invalidBeatGrouping: 'error',
@@ -406,6 +418,7 @@ export interface ParsedScore {
   title: string;
   artist: string;
   capo: string;
+  tuning: Tuning;
   originalKey: string;
   bpm: string;
   memo: string;
@@ -477,7 +490,7 @@ interface MelodyGroup {
 }
 
 const DIRECTIVE_LINE_RE = /^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/;
-const HEADER_LINE_RE = /^(title|artist|capo|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i;
+const HEADER_LINE_RE = /^(title|artist|capo|tuning|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i;
 const SECTION_LABEL_RE = /^\[([^\]]+)\]$/;
 const MELODY_LINE_RE = /^(\s*mel:)(.*)$/i;
 const LYRICS_LINE_RE = /^(\s*lyr:)(.*)$/i;
@@ -536,6 +549,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   let title = 'Guitar Rhythm Score';
   let artist = '';
   let capo = '0';
+  let tuning = STANDARD_TUNING;
+  let tuningSeen = false;
   let originalKey = 'C';
   let bpm = '90';
   let memo = '';
@@ -560,6 +575,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   let currentArrangementSectionIndex: number | null = null;
   const usedChordsSet = new Set<string>();
   const chordDefinitions: ChordDefinition[] = [];
+  const chordDefinitionLines: { text: string; line: number; startCol: number; endCol: number; key: string }[] = [];
   const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
   const chordTokens: ChordTokenSpan[] = [];
   const headerLines: HeaderLine[] = [];
@@ -882,7 +898,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (chordDefinitions.some(d => chordKey(d.name, d.label) === key)) {
           report(lineIdx, lineStart, lineEnd, 'duplicateChordDefinition', { chord: key });
         } else {
+          // The final capo header may appear after a chord definition. Recheck physical fret limits
+          // after all headers are known while preserving source-order duplicate resolution.
           chordDefinitions.push({ ...result.definition, line: lineIdx });
+          chordDefinitionLines.push({ text: line, line: lineIdx, startCol: lineStart, endCol: lineEnd, key });
         }
       }
       continue;
@@ -924,6 +943,29 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       if (key === 'title') title = val;
       else if (key === 'artist') artist = val;
       else if (key === 'capo') capo = rawValue.trim();
+      else if (key === 'tuning') {
+        if (tuningSeen) {
+          report(lineIdx, valueStart, valueStart + rawValue.length, 'duplicateTuning', { value: rawValue.trim() });
+        } else {
+          tuningSeen = true;
+          if (firstBodyLine !== undefined) {
+            report(lineIdx, valueStart, valueStart + rawValue.length, 'tuningOutsideHeader', { value: rawValue.trim() });
+          } else {
+            const parsedTuning = parseTuningValue(rawValue);
+            if (parsedTuning.ok) {
+              tuning = parsedTuning.tuning;
+            } else if (parsedTuning.reason === 'stringCount') {
+              report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidTuningStringCount', { value: rawValue.trim(), count: parsedTuning.detail });
+            } else if (parsedTuning.reason === 'invalidPitch') {
+              const pitchOffset = rawValue.indexOf(parsedTuning.detail);
+              const pitchStart = pitchOffset < 0 ? valueStart : valueStart + pitchOffset;
+              report(lineIdx, pitchStart, pitchStart + parsedTuning.detail.length, 'invalidTuningPitch', { value: rawValue.trim(), pitch: parsedTuning.detail });
+            } else {
+              report(lineIdx, valueStart, valueStart + rawValue.length, 'unknownTuningPreset', { value: rawValue.trim() });
+            }
+          }
+        }
+      }
       else if (key === 'key' || key === 'original_key') originalKey = val;
       else if (key === 'bpm' || key === 'tempo') bpm = val;
       else if (key === 'memo') memo = val;
@@ -1637,6 +1679,28 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
   }
 
+  const rawCapo = capo.trim();
+  const definitionCapo = /^[0-9]+$/.test(rawCapo) && Number(rawCapo) <= MAX_CAPO ? Number(rawCapo) : 0;
+  const definitionInstrument = createInstrumentModel(tuning, definitionCapo);
+  for (const source of chordDefinitionLines) {
+    const result = parseChordDefinition(source.text, definitionInstrument);
+    if (!result.ok) {
+      const diagnostic: ScoreDiagnostic = {
+        line: source.line,
+        startCol: source.startCol,
+        endCol: Math.max(source.endCol, source.startCol + 1),
+        severity: DIAGNOSTIC_SEVERITY.invalidChordDefinition,
+        code: 'invalidChordDefinition',
+        args: { reason: result.error, detail: result.detail }
+      };
+      const index = diagnostics.findIndex(d => d.line > source.line || (d.line === source.line && d.startCol > source.startCol));
+      if (index < 0) diagnostics.push(diagnostic);
+      else diagnostics.splice(index, 0, diagnostic);
+      const definitionIndex = chordDefinitions.findIndex(d => d.line === source.line && chordKey(d.name, d.label) === source.key);
+      if (definitionIndex >= 0) chordDefinitions.splice(definitionIndex, 1);
+    }
+  }
+
   // `name@label` references need a matching definition (definitions may appear anywhere in the file).
   const definedKeys = new Set(chordDefinitions.map(d => chordKey(d.name, d.label)));
   for (const use of chordUses) {
@@ -1841,6 +1905,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     title,
     artist,
     capo,
+    tuning,
     originalKey,
     bpm,
     memo,

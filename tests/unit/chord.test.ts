@@ -8,6 +8,7 @@ import { resolveChordDiagram } from '../../src/render/chordLibrary';
 import { renderChordDiagramSvg } from '../../src/render/chordDiagram';
 import { compileGuitarDslToSvg } from '../../src/render/svg';
 import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
+import { createInstrumentModel, parseTuningValue, STANDARD_TUNING } from '../../src/instrumentModel';
 
 function def(line: string) {
   const r = parseChordDefinition(line);
@@ -73,6 +74,15 @@ describe('chord definition - parse / format (§7.4)', () => {
       assert.strictEqual(formatChordDefinition(d), line);
       assert.deepStrictEqual(def(formatChordDefinition(d)), d);
     }
+  });
+
+  it('checks relative frets against the score capo physical-fret limit', () => {
+    const capo12 = createInstrumentModel(STANDARD_TUNING, 12);
+    assert.ok(parseChordDefinition('chord C = x,x,12,12,12,12', capo12).ok);
+    assert.strictEqual(parseChordDefinition('chord C = x,x,13,13,13,13', capo12).ok, false);
+    const parsed = parseGuitarDsl('chord C = x,x,13,13,13,13\ncapo: 12\n| C |');
+    assert.ok(parsed.diagnostics.some(d => d.code === 'invalidChordDefinition' && d.line === 0));
+    assert.strictEqual(parsed.chordDefinitions.length, 0);
   });
 });
 
@@ -244,6 +254,25 @@ describe('chord presets', () => {
     assert.strictEqual(getDefaultVoicing('Cmin')!.frets.length, 6, 'min alias');
     assert.strictEqual(getDefaultVoicing('C#m7/E'), undefined);
   });
+
+  it('keeps only forms that sound as the requested chord in alternate tunings', () => {
+    const dropDResult = parseTuningValue('Drop D');
+    const openGResult = parseTuningValue('Open G');
+    assert.ok(dropDResult.ok && openGResult.ok);
+    const dropD = createInstrumentModel(dropDResult.tuning);
+    const openG = createInstrumentModel(openGResult.tuning);
+    const dropE = getPresetVoicings('E', '', dropD);
+    assert.ok(dropE.length > 0);
+    assert.ok(!dropE.some(v => v.frets.join(',') === CHORD_LIBRARY.E.join(',')));
+    assert.ok(dropE.every(v => detectChordNames(v.frets, Infinity, dropD).some(c => c.name === 'E')));
+    const slash = resolveChordDiagram('G/B', [], dropD);
+    assert.strictEqual(slash.source, 'library');
+    assert.ok(detectChordNames(slash.voicing.frets, Infinity, dropD).some(candidate => candidate.name === 'G/B'));
+    assert.deepStrictEqual(getPresetVoicings('C', '', openG), []);
+    assert.strictEqual(resolveChordDiagram('C', [], openG).source, 'fallback');
+    assert.strictEqual(resolveChordDiagram('C', parseGuitarDsl('chord C = x32010').chordDefinitions, openG).source, 'definition');
+    assert.deepStrictEqual(getDefaultVoicing('C')!.frets, CHORD_LIBRARY.C);
+  });
 });
 
 describe('chord editor model', () => {
@@ -267,6 +296,13 @@ describe('chord editor model', () => {
     const session = createEditorSession('chord C@b = x35553 base:3\n| C@b |', 'C@b');
     assert.strictEqual(session.line, 0);
     assert.strictEqual(session.state.windowBase, 3);
+  });
+
+  it('uses the score tuning and capo when opening a new diagram', () => {
+    const session = createEditorSession('tuning: Drop D\ncapo: 2\n| E |', 'E');
+    assert.strictEqual(session.instrument.tuning.preset, 'Drop D');
+    assert.strictEqual(session.instrument.capo, 2);
+    assert.notDeepStrictEqual(session.state.frets, CHORD_LIBRARY.E);
   });
 
   it('writes base: only when the window differs from the automatic base', () => {

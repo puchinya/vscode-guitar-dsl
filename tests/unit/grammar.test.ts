@@ -24,7 +24,7 @@ describe('grammar - advanced notation (T046)', () => {
 
   it('highlights the new headers', () => {
     const header = new RegExp(byName('keyword.other.header.guitardsl')[0].match);
-    for (const h of ['time:', 'time_signature:', 'meter:', 'feel:', 'pickup:', 'key:', 'bpm:']) assert.ok(header.test(h), h);
+    for (const h of ['time:', 'time_signature:', 'meter:', 'feel:', 'pickup:', 'key:', 'bpm:', 'tuning:']) assert.ok(header.test(h), h);
   });
 
   it('has a directive rule for every score event and an invalid rule for unknown names', () => {

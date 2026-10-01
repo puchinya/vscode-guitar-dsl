@@ -23,6 +23,7 @@ import { ChordDefinition, ChordVoicing, chordKey, isValidChordName, splitChordKe
 import { parseChordName } from './chordDetect';
 import { resolveApplicableChordDefinition, resolveChordVoicing } from './chordVoicingResolver';
 import { ParsedScore, parseGuitarDsl } from './compiler';
+import { createInstrumentModel } from './instrumentModel';
 
 export type BarrePolicy = 'allow' | 'forbid';
 
@@ -169,11 +170,16 @@ interface Alternative {
 }
 
 /** Candidate final chords for one capo-transformed key, best first; empty when none is playable. */
-function alternativesFor(key: string, definitions: readonly ChordDefinition[], policy: BarrePolicy): Alternative[] {
+function alternativesFor(
+  key: string,
+  definitions: readonly ChordDefinition[],
+  policy: BarrePolicy,
+  instrument: ReturnType<typeof createInstrumentModel>
+): Alternative[] {
   const { name, label } = splitChordKey(key);
   const isSlash = (n: string) => parseChordName(n)?.bass !== undefined;
   // The voicing the final score draws (shared resolver, spec §7.3).
-  const exactVoicing = resolveChordVoicing(chordKey(name, label), definitions)?.voicing;
+  const exactVoicing = resolveChordVoicing(chordKey(name, label), definitions, instrument)?.voicing;
   const out: Alternative[] = [];
   if (allowedBy(exactVoicing, policy)) {
     out.push({ name, penalty: 0, cost: chordCost(exactVoicing, isSlash(name)), order: 0 });
@@ -201,7 +207,7 @@ function alternativesFor(key: string, definitions: readonly ChordDefinition[], p
         const target = q.upper + b.suffix;
         if (target === name) continue;
         if (!isValidChordName(target) || unlabeledDefinitions.has(target)) continue;
-        const voicing = resolveChordVoicing(target, definitions)?.voicing;
+        const voicing = resolveChordVoicing(target, definitions, instrument)?.voicing;
         if (!allowedBy(voicing, policy)) continue;
         out.push({ name: target, penalty: q.penalty + b.penalty, cost: chordCost(voicing, b.suffix !== ''), order });
       }
@@ -236,13 +242,14 @@ function evaluateCapo(sourceDsl: string, sourceCapo: number | null, capo: number
   // The source capo keeps the source text (like resolveEffectiveDsl): no `capo:` line is inserted.
   const text = capo === sourceCapo ? sourceDsl : plan.text;
   const score = parseGuitarDsl(text);
+  const instrument = createInstrumentModel(score.tuning, parseCapoValue(score.capo) ?? 0);
 
   const counts = new Map<string, number>();
   for (const key of writtenChordSequence(score)) counts.set(key, (counts.get(key) ?? 0) + 1);
   const choices: BeginnerChordChoice[] = [];
   const finalKey = new Map<string, string>();
   for (const [key, count] of counts) {
-    const best = alternativesFor(key, score.chordDefinitions, policy)[0];
+    const best = alternativesFor(key, score.chordDefinitions, policy, instrument)[0];
     if (!best) return unsupported(capo, 'noPlayableAlternative', key);
     const target = chordKey(best.name, splitChordKey(key).label);
     finalKey.set(key, target);
@@ -363,8 +370,9 @@ export function planBeginnerTransform(
     return { ok: false, code: 'transformedParseError', detail: 'chord sequence changed' };
   }
   if (policy === 'forbid') {
+    const finalInstrument = createInstrumentModel(final.tuning, parseCapoValue(final.capo) ?? 0);
     for (const key of new Set(actual)) {
-      if (!allowedBy(resolveChordVoicing(key, final.chordDefinitions)?.voicing, policy)) {
+      if (!allowedBy(resolveChordVoicing(key, final.chordDefinitions, finalInstrument)?.voicing, policy)) {
         return { ok: false, code: 'transformedParseError', detail: `barre voicing: ${key}` };
       }
     }

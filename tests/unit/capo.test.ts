@@ -3,6 +3,7 @@ import { NOTE_NAMES } from '../../src/chordDetect';
 import { getDefaultVoicing } from '../../src/chordPresets';
 import { parseGuitarDsl } from '../../src/compiler';
 import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
+import { parseTuningValue } from '../../src/instrumentModel';
 import {
   UNKNOWN_CHORD_COST,
   buildCapoInferenceInputFromScore,
@@ -129,6 +130,16 @@ describe('capo - playability formula', () => {
 
   });
 
+  it('resolves candidate forms with the score tuning and reports alternate-tuning unresolved chords', () => {
+    const parsedTuning = parseTuningValue('Open G');
+    assert.ok(parsedTuning.ok);
+    const input = buildCapoInferenceInputFromScore(parseGuitarDsl('tuning: Open G\n[Intro]\n| C |'));
+    assert.deepStrictEqual(input.tuning, parsedTuning.tuning);
+    const result = evaluatePlayability(input, 0)!;
+    assert.deepStrictEqual(result.unresolvedChords, ['C']);
+    assert.strictEqual(result.score, 0);
+  });
+
   it('PLAY-02 level thresholds', () => {
     const cases: [number, string][] = [[85, 'veryEasy'], [84, 'easy'], [70, 'easy'], [69, 'moderate'], [50, 'moderate'], [49, 'hard'], [30, 'hard'], [29, 'veryHard'], [100, 'veryEasy'], [0, 'veryHard']];
     for (const [score, level] of cases) assert.strictEqual(levelForScore(score), level, String(score));
@@ -185,6 +196,7 @@ describe('capo - GuitarDSL source transformation', () => {
     const source = [
       '# comment: B E F#',
       'title: Sample  ',
+      'tuning: Drop D  # alternate tuning',
       'key: B',
       'bpm: 100',
       '',
@@ -200,6 +212,7 @@ describe('capo - GuitarDSL source transformation', () => {
     const expected = [
       '# comment: B E F#',
       'title: Sample  ',
+      'tuning: Drop D  # alternate tuning',
       'capo: 2',
       'key: B',
       'bpm: 100',

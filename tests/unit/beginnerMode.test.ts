@@ -324,6 +324,7 @@ describe('beginnerMode - source preservation and reparse', () => {
     const source = [
       '# comment: F C',
       'title: Sample  ',
+      'tuning: Standard # preserve tuning',
       'key: C',
       'bpm: 100',
       '',
@@ -343,6 +344,17 @@ describe('beginnerMode - source preservation and reparse', () => {
     const p = plan(source, 'forbid', 0);
     assert.strictEqual(p.text, expected);
     assert.ok(p.text.includes('l:"F la"'), 'text inside lyrics is not a chord token');
+  });
+
+  it('does not treat a Standard preset shape as playable when Open G changes its sounding name', () => {
+    const source = 'tuning: Open G\n[Intro]\n| C |\n';
+    const inference = inferBeginnerModeForDsl(source, 'allow');
+    const capo0 = inference.candidates.find(candidate => candidate.capo === 0)!;
+    assert.strictEqual(capo0.supported, false);
+    assert.strictEqual(capo0.reason, 'noPlayableAlternative');
+    const plan = planBeginnerTransform(source, { barrePolicy: 'allow', targetCapo: 0 });
+    assert.ok(!plan.ok);
+    assert.strictEqual(plan.code, 'noPlayableAlternative');
   });
 
   it('BEG-26 inserts the capo header exactly like the capo transform and keeps durations', () => {

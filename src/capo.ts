@@ -6,9 +6,10 @@ import { NOTE_NAMES, parseChordName } from './chordDetect';
 import { ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { resolveApplicableChordDefinition, resolveDefaultChordVoicing } from './chordVoicingResolver';
 import { ChordTokenSpan, ParsedScore, parseGuitarDsl } from './compiler';
+import { createInstrumentModel, MAX_CAPO, STANDARD_TUNING, Tuning } from './instrumentModel';
 
 export const MIN_CAPO = 0;
-export const MAX_CAPO = 12;
+export { MAX_CAPO } from './instrumentModel';
 
 export type PlayabilityLevel = 'veryEasy' | 'easy' | 'moderate' | 'hard' | 'veryHard';
 
@@ -35,6 +36,8 @@ export interface CapoInferenceInput {
    * the untransformed source capo. Other capo positions always use standard shapes.
    */
   currentVoicings?: ReadonlyMap<string, ChordVoicing>;
+  /** Tuning used to resolve preset shapes; omitted for Standard. */
+  tuning?: Tuning;
 }
 
 export type CapoUnsupportedReason = 'untransposableChord' | 'labeledChordVariant';
@@ -147,6 +150,7 @@ function weightedChords(input: CapoInferenceInput): WeightedChord[] {
 
 function evaluateCandidate(input: CapoInferenceInput, targetCapo: number): CapoCandidate {
   const delta = targetCapo - input.sourceCapo;
+  const tuningModel = createInstrumentModel(input.tuning ?? STANDARD_TUNING, targetCapo);
   const chords = weightedChords(input);
   const chordMap = new Map<string, string>();
   for (const { name } of chords) {
@@ -171,7 +175,8 @@ function evaluateCandidate(input: CapoInferenceInput, targetCapo: number): CapoC
   for (const { name, weight } of chords) {
     const target = chordMap.get(name) as string;
     const targetName = splitChordKey(target).name;
-    const voicing = (delta === 0 ? input.currentVoicings?.get(name) : undefined) ?? resolveDefaultChordVoicing(targetName);
+    const voicing = (delta === 0 ? input.currentVoicings?.get(name) : undefined)
+      ?? resolveDefaultChordVoicing(targetName, tuningModel);
     if (!voicing) unresolved.add(target);
     totalCost += weight * chordCost(voicing, isSlashName(targetName));
     totalWeight += weight;
@@ -250,7 +255,8 @@ export function buildCapoInferenceInputFromScore(score: ParsedScore): CapoInfere
   return {
     sourceCapo,
     chords: Array.from(counts, ([name, count]) => ({ name, count })),
-    currentVoicings
+    currentVoicings,
+    tuning: score.tuning
   };
 }
 

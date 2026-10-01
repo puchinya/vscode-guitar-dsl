@@ -6,9 +6,11 @@ import { NOTE_NAMES, detectChordNames, parseChordName } from './chordDetect';
 import { ChordEditorState, buildChordLine, createEditorSession, planChordSave, stateFromVoicing } from './chordEditorModel';
 import { PRESET_QUALITIES, PRESET_ROOTS, getPresetVoicings } from './chordPresets';
 import { parseGuitarDsl } from './compiler';
+import { parseCapoValue } from './capo';
 import { ChordEditorMessages, SupportedLocale, formatChordDefinitionError, getChordEditorMessages } from './i18n';
 import { DIAGRAM_FINGER_UNIT_HEIGHT, DIAGRAM_UNIT_HEIGHT, DIAGRAM_UNIT_WIDTH, renderChordDiagramSvg } from './render/chordDiagram';
 import { renderChordEditorHtml } from './render/chordEditorHtml';
+import { createInstrumentModel, InstrumentModel } from './instrumentModel';
 
 export const EDIT_CHORD_COMMAND = 'guitardsl.editChordDiagram';
 
@@ -40,6 +42,7 @@ export class ChordEditorPanel {
   private uri!: vscode.Uri;
   private line: number | undefined;
   private initialState!: ChordEditorState;
+  private instrument: InstrumentModel = createInstrumentModel();
   private ready = false;
 
   static show(extensionUri: vscode.Uri, doc: vscode.TextDocument, key: string, locale: SupportedLocale): void {
@@ -67,6 +70,7 @@ export class ChordEditorPanel {
 
   private load(doc: vscode.TextDocument, key: string): void {
     const session = createEditorSession(doc.getText(), key);
+    this.instrument = session.instrument;
     this.uri = doc.uri;
     this.line = session.line;
     this.initialState = session.state;
@@ -114,20 +118,20 @@ export class ChordEditorPanel {
   }
 
   private postPreview(state: ChordEditorState): void {
-    const built = buildChordLine(state);
+    const built = buildChordLine(state, this.instrument);
     const voicing = { frets: state.frets, baseFret: state.windowBase, fingers: state.fingers, barres: state.barres };
     this.panel.webview.postMessage({
       type: 'preview',
       svg: diagramSvg(voicing, 2),
       line: built.ok ? built.line : '',
       error: built.ok ? '' : formatChordDefinitionError(built.error, built.detail, this.locale),
-      candidates: detectChordNames(state.frets).map(c => c.name)
+      candidates: detectChordNames(state.frets, 8, this.instrument).map(c => c.name)
     });
   }
 
   private postPresets(root: string, suffix: string): void {
     const name = root + suffix;
-    const items = getPresetVoicings(root, suffix).map(v => ({
+    const items = getPresetVoicings(root, suffix, this.instrument).map(v => ({
       state: stateFromVoicing(name, '', v),
       frets: formatFrets(v.frets),
       svg: diagramSvg(v, 1)
@@ -165,11 +169,13 @@ export type ChordSaveResult =
  * undoable WorkspaceEdit. `editingLine` is the definition being edited, if any.
  */
 export async function applyChordSave(uri: vscode.Uri, state: ChordEditorState, editingLine: number | undefined, asNew: boolean): Promise<ChordSaveResult> {
-  const built = buildChordLine(state);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const score = parseGuitarDsl(doc.getText());
+  const instrument = createInstrumentModel(score.tuning, parseCapoValue(score.capo) ?? 0);
+  const built = buildChordLine(state, instrument);
   if (!built.ok) {
     return { ok: false, error: built.error, detail: built.detail };
   }
-  const doc = await vscode.workspace.openTextDocument(uri);
   // The document may have changed since the editor opened: re-check that the edited line is still a definition.
   const current = editingLine !== undefined && editingLine < doc.lineCount && isChordDefinitionLine(doc.lineAt(editingLine).text) ? editingLine : undefined;
   const plan = planChordSave(doc.getText(), built.line, built.definition, current, asNew);
@@ -204,10 +210,12 @@ export class ChordDefinitionCodeLensProvider implements vscode.CodeLensProvider 
 
   provideCodeLenses(doc: vscode.TextDocument): vscode.CodeLens[] {
     const lenses: vscode.CodeLens[] = [];
+    const score = parseGuitarDsl(doc.getText());
+    const instrument = createInstrumentModel(score.tuning, parseCapoValue(score.capo) ?? 0);
     for (let i = 0; i < doc.lineCount; i++) {
       const text = doc.lineAt(i).text;
       if (!isChordDefinitionLine(text)) continue;
-      const parsed = parseChordDefinition(text);
+      const parsed = parseChordDefinition(text, instrument);
       if (!parsed.ok) continue;
       const key = chordKey(parsed.definition.name, parsed.definition.label);
       lenses.push(new vscode.CodeLens(doc.lineAt(i).range, {

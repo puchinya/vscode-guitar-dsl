@@ -250,6 +250,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(cleared.length, 0, 'Diagnostics should be cleared after fixing the note');
   });
 
+  test('Tuning diagnostics highlight the invalid pitch and clear after correction', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'guitardsl',
+      content: 'tuning: E2 A2 H3 G3 B3 E4\n[Intro]\n| C |\n'
+    });
+    const editor = await showAndFocus(doc);
+    const waitFor = async (predicate: (items: readonly vscode.Diagnostic[]) => boolean) => {
+      for (let i = 0; i < 50; i++) {
+        const items = vscode.languages.getDiagnostics(doc.uri);
+        if (predicate(items)) return items;
+        await settle(100);
+      }
+      return vscode.languages.getDiagnostics(doc.uri);
+    };
+    const invalid = (await waitFor(items => items.some(d => d.code === 'invalidTuningPitch')))
+      .find(d => d.code === 'invalidTuningPitch');
+    assert.ok(invalid, 'invalidTuningPitch diagnostic should be published');
+    assert.strictEqual(invalid.severity, vscode.DiagnosticSeverity.Error);
+    assert.strictEqual(invalid.range.start.line, 0);
+    assert.strictEqual(doc.getText(invalid.range), 'H3');
+    await editor.edit(edit => edit.replace(invalid.range, 'D3'));
+    assert.strictEqual((await waitFor(items => items.length === 0)).length, 0, 'diagnostics should clear after correction');
+  });
+
   test('Transcribe YouTube command should lazily open transcribe panel', async () => {
     await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
     let transcribeTab: vscode.Tab | undefined;
@@ -369,6 +393,33 @@ suite('Capo / playability (Issue #62)', () => {
     assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0, 'PDF-03 file written');
     fs.unlinkSync(target.fsPath);
     assert.strictEqual(doc.getText(), SOURCE);
+  });
+
+  test('Issue #84 alternate tuning reaches Preview and PDF while key and melody stay unchanged', async () => {
+    const source = [
+      'title: Alternate Tuning',
+      'tuning: Drop D',
+      'capo: 0',
+      'key: C',
+      '',
+      '[Intro]',
+      '| C |',
+      'mel: | c4/1 |',
+      ''
+    ].join('\n');
+    const doc = await openPreviewed(source);
+    const controller = previewCapo().getPreviewCapoController();
+    const probe = previewCapo().effectiveDslProbe;
+    assert.ok(controller.setTarget(doc, 2));
+    const expected = source.replace('capo: 0', 'capo: 2').replace('| C |', '| Bb |');
+    await waitFor(() => probe.previewInput === expected, 'Preview should retain tuning and transform only capo-relative chord names');
+    const target = tmpPdf('alternate-tuning');
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, target);
+    assert.strictEqual(probe.pdfInput, probe.previewInput, 'PDF must use the same effective DSL as Preview');
+    assert.ok(probe.pdfInput.includes('tuning: Drop D') && probe.pdfInput.includes('key: C') && probe.pdfInput.includes('mel: | c4/1 |'));
+    assert.ok(fs.existsSync(target.fsPath) && fs.statSync(target.fsPath).size > 0);
+    fs.unlinkSync(target.fsPath);
+    assert.strictEqual(doc.getText(), source, 'the temporary capo preview must not edit the document');
   });
 
   test('PREVIEW-03 source edits recompute the override; PREVIEW-04 unsupported source clears it', async () => {
