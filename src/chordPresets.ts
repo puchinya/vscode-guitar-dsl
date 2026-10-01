@@ -1,7 +1,7 @@
 // Preset voicing library (the Guitar Pro style chord library): hand-written open chords plus
 // movable CAGED shapes transposed to every root. Used for default diagrams and the chord editor.
 
-import { Barre, ChordVoicing, MAX_FRET, StringFret } from './chordDefinition';
+import { Barre, ChordVoicing, StringFret } from './chordDefinition';
 import { detectChordNames, NOTE_NAMES, parseChordName } from './chordDetect';
 import { createInstrumentModel, InstrumentModel, STANDARD_TUNING } from './instrumentModel';
 
@@ -152,19 +152,11 @@ function sameChordIdentity(candidate: string, target: string): boolean {
     (actual.bassPc !== undefined) === (expected.bassPc !== undefined) && actual.bassPc === expected.bassPc;
 }
 
-function fitsPhysicalFretLimit(voicing: ChordVoicing, instrument: InstrumentModel): boolean {
-  const maxRelativeFret = MAX_FRET - instrument.capo;
-  return voicing.frets.every(fret => fret === 'x' || fret <= maxRelativeFret) &&
-    voicing.barres.every(barre => barre.fret <= maxRelativeFret) &&
-    (voicing.baseFret === undefined || voicing.baseFret <= maxRelativeFret);
-}
-
 function matchingVoicings(voicings: ChordVoicing[], name: string, instrument: InstrumentModel): ChordVoicing[] {
-  const withinPhysicalRange = voicings.filter(voicing => fitsPhysicalFretLimit(voicing, instrument));
   // Preserve every established hand-written/default order for Standard, including legacy slash forms.
-  if (isStandardInstrument(instrument)) return withinPhysicalRange;
+  if (isStandardInstrument(instrument)) return voicings;
   const atOpenTuning = createInstrumentModel(instrument.tuning, 0);
-  return withinPhysicalRange.filter(voicing =>
+  return voicings.filter(voicing =>
     detectChordNames(voicing.frets, Infinity, atOpenTuning).some(candidate => sameChordIdentity(candidate.name, name))
   );
 }

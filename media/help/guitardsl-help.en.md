@@ -238,7 +238,7 @@ Chord names follow the pattern root + quality + optional bass, for example `C`, 
 
 #### Chord Definitions
 
-Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings:
+Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings. Invalid definition rows are ignored and do not block a later valid row with the same key. If multiple valid definitions use the same key, the first is used.
 
 ```guitardsl
 chord C       = x32010
@@ -374,7 +374,7 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Syllable count | The number of `lyr:` syllables does not match the sung notes. Use `_` to extend a syllable and `*` to skip a note. |
 | `l:"..."` together with a melody | A measure with a melody uses `lyr:` lyrics, so `l:"..."` is not drawn there. |
 | Tuning | Write `tuning:` once in the header. Use a known preset or six octave-qualified pitches, separated by spaces, from the 6th string to the 1st (for example, `D2 A2 D3 G3 A3 D4`). |
-| Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. |
+| Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. Invalid rows are ignored and do not reserve a chord name; among valid duplicates, the first is used. |
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |

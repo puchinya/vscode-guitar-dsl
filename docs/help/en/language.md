@@ -89,7 +89,7 @@ Chord names follow the pattern root + quality + optional bass, for example `C`, 
 #### Chord Definitions
 <!-- help-sources: syntax:7 -->
 
-Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings:
+Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings. Invalid definition rows are ignored and do not block a later valid row with the same key. If multiple valid definitions use the same key, the first is used.
 
 ```guitardsl
 chord C       = x32010

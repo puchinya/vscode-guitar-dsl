@@ -273,6 +273,51 @@ describe('chord presets', () => {
     assert.strictEqual(resolveChordDiagram('C', parseGuitarDsl('chord C = x32010').chordDefinitions, openG).source, 'definition');
     assert.deepStrictEqual(getDefaultVoicing('C')!.frets, CHORD_LIBRARY.C);
   });
+
+  it('keeps Standard semantic preset/default results independent of capo', () => {
+    const standardAtCapo0 = createInstrumentModel(STANDARD_TUNING, 0);
+    const standardAtCapo12 = createInstrumentModel(STANDARD_TUNING, 12);
+    const highFretPreset = listPresetNames()
+      .map(({ root, suffix }) => ({
+        root,
+        suffix,
+        name: root + suffix,
+        atCapo0: getPresetVoicings(root, suffix, standardAtCapo0)
+      }))
+      .find(({ atCapo0 }) => atCapo0.some(voicing => voicing.frets.some(fret => fret !== 'x' && fret > 12)));
+
+    assert.ok(highFretPreset, 'a generated preset exercises frets above 12');
+    const { root, suffix, name, atCapo0 } = highFretPreset;
+    assert.ok(atCapo0.some(voicing => voicing.frets.some(fret => fret !== 'x' && fret > 12)));
+    assert.deepStrictEqual(getPresetVoicings(root, suffix, standardAtCapo12), atCapo0);
+    assert.deepStrictEqual(getDefaultVoicing(name, standardAtCapo12), getDefaultVoicing(name, standardAtCapo0));
+  });
+});
+
+describe('chord definition final-context validation', () => {
+  it('does not let a definition invalid at the final capo shadow the next valid definition', () => {
+    const score = parseGuitarDsl('chord C = x,x,13,13,13,13\nchord C = x32010\ncapo: 12\n| C |');
+    const invalid = score.diagnostics.filter(diagnostic => diagnostic.code === 'invalidChordDefinition');
+    assert.strictEqual(invalid.length, 1);
+    assert.strictEqual(invalid[0].line, 0);
+    assert.strictEqual(score.diagnostics.some(diagnostic => diagnostic.code === 'duplicateChordDefinition' && diagnostic.line === 1), false);
+    assert.strictEqual(score.chordDefinitions.length, 1);
+    assert.strictEqual(score.chordDefinitions[0].line, 1);
+    assert.deepStrictEqual(score.chordDefinitions[0].frets, ['x', 3, 2, 0, 1, 0]);
+    assert.strictEqual(resolveChordDiagram('C', score.chordDefinitions).source, 'definition');
+    assert.deepStrictEqual(resolveChordDiagram('C', score.chordDefinitions).voicing.frets, ['x', 3, 2, 0, 1, 0]);
+  });
+
+  it('keeps first-valid-wins and warns for a later valid duplicate', () => {
+    const score = parseGuitarDsl('chord C = x32010\nchord C = x35553\ncapo: 0\n| C |');
+    const duplicates = score.diagnostics.filter(diagnostic => diagnostic.code === 'duplicateChordDefinition');
+    assert.strictEqual(duplicates.length, 1);
+    assert.strictEqual(duplicates[0].line, 1);
+    assert.strictEqual(duplicates[0].severity, 'warning');
+    assert.strictEqual(score.chordDefinitions.length, 1);
+    assert.strictEqual(score.chordDefinitions[0].line, 0);
+    assert.deepStrictEqual(score.chordDefinitions[0].frets, ['x', 3, 2, 0, 1, 0]);
+  });
 });
 
 describe('chord editor model', () => {

@@ -425,7 +425,7 @@ export interface ParsedScore {
   style: ScoreStyle;
   /** Diagram keys (`name` or `name@label`) in order of first use. */
   usedChords: string[];
-  /** `chord` definitions in source order (first definition of a key wins). */
+  /** `chord` definitions in source order (first valid definition of a key wins). */
   chordDefinitions: ChordDefinition[];
   measures: MeasureData[];
   playOrder: PlayOrderResult;
@@ -575,7 +575,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   let currentArrangementSectionIndex: number | null = null;
   const usedChordsSet = new Set<string>();
   const chordDefinitions: ChordDefinition[] = [];
-  const chordDefinitionLines: { text: string; line: number; startCol: number; endCol: number; key: string }[] = [];
+  const chordDefinitionLines: { text: string; line: number; startCol: number; endCol: number }[] = [];
   const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
   const chordTokens: ChordTokenSpan[] = [];
   const headerLines: HeaderLine[] = [];
@@ -890,20 +890,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Chord diagram definition: chord C@barre = x35553 base:3
     if (isChordDefinitionLine(line)) {
-      const result = parseChordDefinition(line);
-      if (!result.ok) {
-        report(lineIdx, lineStart, lineEnd, 'invalidChordDefinition', { reason: result.error, detail: result.detail });
-      } else {
-        const key = chordKey(result.definition.name, result.definition.label);
-        if (chordDefinitions.some(d => chordKey(d.name, d.label) === key)) {
-          report(lineIdx, lineStart, lineEnd, 'duplicateChordDefinition', { chord: key });
-        } else {
-          // The final capo header may appear after a chord definition. Recheck physical fret limits
-          // after all headers are known while preserving source-order duplicate resolution.
-          chordDefinitions.push({ ...result.definition, line: lineIdx });
-          chordDefinitionLines.push({ text: line, line: lineIdx, startCol: lineStart, endCol: lineEnd, key });
-        }
-      }
+      // The final tuning and capo may appear later in the file. Defer validity and duplicate
+      // ownership together so an invalid early definition cannot shadow a later valid one.
+      chordDefinitionLines.push({ text: line, line: lineIdx, startCol: lineStart, endCol: lineEnd });
       continue;
     }
 
@@ -1682,10 +1671,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const rawCapo = capo.trim();
   const definitionCapo = /^[0-9]+$/.test(rawCapo) && Number(rawCapo) <= MAX_CAPO ? Number(rawCapo) : 0;
   const definitionInstrument = createInstrumentModel(tuning, definitionCapo);
+  const validDefinitionKeys = new Set<string>();
   for (const source of chordDefinitionLines) {
     const result = parseChordDefinition(source.text, definitionInstrument);
+    let diagnostic: ScoreDiagnostic | undefined;
     if (!result.ok) {
-      const diagnostic: ScoreDiagnostic = {
+      diagnostic = {
         line: source.line,
         startCol: source.startCol,
         endCol: Math.max(source.endCol, source.startCol + 1),
@@ -1693,11 +1684,26 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         code: 'invalidChordDefinition',
         args: { reason: result.error, detail: result.detail }
       };
+    } else {
+      const key = chordKey(result.definition.name, result.definition.label);
+      if (validDefinitionKeys.has(key)) {
+        diagnostic = {
+          line: source.line,
+          startCol: source.startCol,
+          endCol: Math.max(source.endCol, source.startCol + 1),
+          severity: DIAGNOSTIC_SEVERITY.duplicateChordDefinition,
+          code: 'duplicateChordDefinition',
+          args: { chord: key }
+        };
+      } else {
+        validDefinitionKeys.add(key);
+        chordDefinitions.push({ ...result.definition, line: source.line });
+      }
+    }
+    if (diagnostic) {
       const index = diagnostics.findIndex(d => d.line > source.line || (d.line === source.line && d.startCol > source.startCol));
       if (index < 0) diagnostics.push(diagnostic);
       else diagnostics.splice(index, 0, diagnostic);
-      const definitionIndex = chordDefinitions.findIndex(d => d.line === source.line && chordKey(d.name, d.label) === source.key);
-      if (definitionIndex >= 0) chordDefinitions.splice(definitionIndex, 1);
     }
   }
 

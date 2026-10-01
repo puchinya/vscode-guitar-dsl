@@ -6,6 +6,7 @@ import {
   resolveDefaultChordVoicing
 } from '../../src/chordVoicingResolver';
 import { parseGuitarDsl } from '../../src/compiler';
+import { createInstrumentModel, parseTuningValue } from '../../src/instrumentModel';
 
 describe('chordVoicingResolver', () => {
   const defs = parseGuitarDsl('chord C = x35553\nchord C@alt = x,x,10,9,8,8').chordDefinitions;
@@ -47,6 +48,22 @@ describe('chordVoicingResolver', () => {
       assert.strictEqual(r.source, 'library');
       assert.deepStrictEqual(r.voicing, getDefaultVoicing(upper));
     }
+  });
+
+  it('RES-07 a non-Standard slash chord falls back to the upper chord in the same tuning', () => {
+    const dropDResult = parseTuningValue('Drop D');
+    assert.ok(dropDResult.ok);
+    const dropD = createInstrumentModel(dropDResult.tuning);
+    const slash = 'F/A';
+    assert.strictEqual(getDefaultVoicing(slash, dropD), undefined, 'no Drop D-valid dedicated F/A preset');
+    const upper = getDefaultVoicing('F', dropD);
+    assert.ok(upper, 'F has a Drop D-valid default');
+
+    assert.deepStrictEqual(resolveDefaultChordVoicing(slash, dropD), upper);
+    const resolved = resolveChordVoicing(slash, [], dropD);
+    assert.strictEqual(resolved?.source, 'library');
+    assert.deepStrictEqual(resolved?.voicing, upper);
+    assert.strictEqual(resolveDefaultChordVoicing('C13/E', dropD), undefined, 'unknown upper chord remains unresolved');
   });
 
   it('RES-05 an unknown chord or unknown upper chord stays unresolved', () => {

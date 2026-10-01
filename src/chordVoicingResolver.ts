@@ -1,6 +1,6 @@
 import { ChordDefinition, ChordVoicing, chordKey, splitChordKey } from './chordDefinition';
 import { getDefaultVoicing } from './chordPresets';
-import { createInstrumentModel, InstrumentModel, STANDARD_TUNING } from './instrumentModel';
+import { createInstrumentModel, InstrumentModel } from './instrumentModel';
 
 /**
  * Semantic chord-voicing resolution shared by the renderer, capo playability and Beginner Mode
@@ -32,9 +32,6 @@ export function resolveDefaultChordVoicing(
 ): ChordVoicing | undefined {
   const direct = getDefaultVoicing(name, instrument);
   if (direct) return direct;
-  // In a non-Standard tuning an upper-chord shape is not a semantic substitute for a slash chord.
-  const isStandard = instrument.tuning.openMidi.every((pitch, index) => pitch === STANDARD_TUNING.openMidi[index]);
-  if (!isStandard) return undefined;
   const slash = name.indexOf('/');
   return slash > 0 ? getDefaultVoicing(name.slice(0, slash), instrument) : undefined;
 }
