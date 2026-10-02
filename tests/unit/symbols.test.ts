@@ -1,5 +1,31 @@
 import * as assert from 'assert';
-import { formatMeasureSummary } from '../../src/symbols';
+import type * as vscode from 'vscode';
+import { formatMeasureSummary, GuitarDslDocumentSymbolProvider } from '../../src/symbols';
+
+function mockTextDocument(source: string): vscode.TextDocument {
+  const lines = source.split(/\r?\n/);
+  return {
+    lineCount: lines.length,
+    lineAt(line: number) {
+      const text = lines[line];
+      return {
+        text,
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: text.length }
+        }
+      };
+    }
+  } as unknown as vscode.TextDocument;
+}
+
+function metadataDetails(source: string): Map<string, string> {
+  const symbols = new GuitarDslDocumentSymbolProvider()
+    .provideDocumentSymbols(mockTextDocument(source)) as vscode.DocumentSymbol[];
+  const metadata = symbols.find(symbol => symbol.name === 'Metadata');
+  assert.ok(metadata);
+  return new Map(metadata.children.map(symbol => [symbol.name, symbol.detail]));
+}
 
 describe('symbols - formatMeasureSummary', () => {
   it('should extract chord names from measure line', () => {
@@ -42,5 +68,18 @@ describe('symbols - formatMeasureSummary', () => {
     const line = 'No bars here';
     const summary = formatMeasureSummary(line);
     assert.strictEqual(summary, '| No bars here |');
+  });
+});
+
+describe('symbols - metadata header details', () => {
+  it('omits trailing comments while preserving sharp keys', () => {
+    const details = metadataDetails('title: Wind Song # note\nkey: F# # note');
+
+    assert.strictEqual(details.get('title'), 'Wind Song');
+    assert.strictEqual(details.get('key'), 'F#');
+  });
+
+  it('preserves an attached hash in metadata detail', () => {
+    assert.strictEqual(metadataDetails('title: Song#1').get('title'), 'Song#1');
   });
 });

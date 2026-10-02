@@ -14,7 +14,7 @@
 
 | 機能区分 | 機能名 / 構文 | ステータス | 備考 |
 |---|---|:---:|---|
-| **メタデータ** | `title`, `artist`, `capo`, `tuning`, `key`, `bpm` 等のパース | ✅ 完了 | `tuning:` は5つの標準プリセットまたは明示6音を受け付け、省略・不正値は Standard に回復 |
+| **メタデータ** | `title`, `artist`, `capo`, `tuning`, `key`, `bpm` 等のパース | ✅ 完了 | `src/headerValue.ts::splitHeaderValue` が区切り規則に一致する行末コメントをメタデータ値から除外。`tuning:` は5つの標準プリセットまたは明示6音を受け付け、省略・不正値は Standard に回復 |
 | | スタイルカスタマイズ（`style_chord_size` 等） | ✅ 完了 | フォントサイズ等のスタイル上書きに対応 |
 | | 表示設定（`show_rhythm`, `measures_per_row`） | ✅ 完了 | リードシートモード、1段あたり小節数 1〜8 |
 | | 冒頭の拍子・フィール・弱起（`time` / `feel` / `pickup`） | ✅ 完了 | 任意の拍子（1〜32 / 1・2・4・8・16、拍のグループ）、弱起と最終小節の補完 |
@@ -84,7 +84,7 @@
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
-| **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ、セクション、小節コード要約の階層化 |
+| **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
 | | Language Configuration | ✅ 完了 | コメント記号、括弧自動閉じ |
 | **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |

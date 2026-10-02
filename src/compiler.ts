@@ -18,6 +18,7 @@ import {
   parseRhythmDurationDetailed,
   tupletGroups
 } from './duration';
+import { splitHeaderValue } from './headerValue';
 import {
   MelodyNote,
   MelodyTokenState,
@@ -923,84 +924,81 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const headerMatch = line.match(HEADER_LINE_RE);
     if (headerMatch) {
       const key = headerMatch[1].toLowerCase().replace(/^style_/, '');
-      const val = headerMatch[2].trim();
-      // Value range without a trailing comment (whitespace + `#`, spec §2.3).
-      const inlineComment = headerMatch[2].search(/\s+#/);
-      const rawValue = inlineComment >= 0 ? headerMatch[2].slice(0, inlineComment) : headerMatch[2];
+      const parts = splitHeaderValue(headerMatch[2]);
       const valueStart = lineEnd - headerMatch[2].length;
-      headerLines.push({ key: headerMatch[1].toLowerCase(), line: lineIdx, valueStart, valueEnd: valueStart + rawValue.length });
-      if (key === 'title') title = val;
-      else if (key === 'artist') artist = val;
-      else if (key === 'capo') capo = rawValue.trim();
+      headerLines.push({ key: headerMatch[1].toLowerCase(), line: lineIdx, valueStart, valueEnd: valueStart + parts.source.length });
+      if (key === 'title') title = parts.value;
+      else if (key === 'artist') artist = parts.value;
+      else if (key === 'capo') capo = parts.value;
       else if (key === 'tuning') {
         if (tuningSeen) {
-          report(lineIdx, valueStart, valueStart + rawValue.length, 'duplicateTuning', { value: rawValue.trim() });
+          report(lineIdx, valueStart, valueStart + parts.source.length, 'duplicateTuning', { value: parts.value });
         } else {
           tuningSeen = true;
           if (firstBodyLine !== undefined) {
-            report(lineIdx, valueStart, valueStart + rawValue.length, 'tuningOutsideHeader', { value: rawValue.trim() });
+            report(lineIdx, valueStart, valueStart + parts.source.length, 'tuningOutsideHeader', { value: parts.value });
           } else {
-            const parsedTuning = parseTuningValue(rawValue);
+            const parsedTuning = parseTuningValue(parts.value);
             if (parsedTuning.ok) {
               tuning = parsedTuning.tuning;
             } else if (parsedTuning.reason === 'stringCount') {
-              report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidTuningStringCount', { value: rawValue.trim(), count: parsedTuning.detail });
+              report(lineIdx, valueStart, valueStart + parts.source.length, 'invalidTuningStringCount', { value: parts.value, count: parsedTuning.detail });
             } else if (parsedTuning.reason === 'invalidPitch') {
-              const pitchOffset = rawValue.indexOf(parsedTuning.detail);
+              const pitchOffset = parts.source.indexOf(parsedTuning.detail);
               const pitchStart = pitchOffset < 0 ? valueStart : valueStart + pitchOffset;
-              report(lineIdx, pitchStart, pitchStart + parsedTuning.detail.length, 'invalidTuningPitch', { value: rawValue.trim(), pitch: parsedTuning.detail });
+              report(lineIdx, pitchStart, pitchStart + parsedTuning.detail.length, 'invalidTuningPitch', { value: parts.value, pitch: parsedTuning.detail });
             } else {
-              report(lineIdx, valueStart, valueStart + rawValue.length, 'unknownTuningPreset', { value: rawValue.trim() });
+              report(lineIdx, valueStart, valueStart + parts.source.length, 'unknownTuningPreset', { value: parts.value });
             }
           }
         }
       }
-      else if (key === 'key' || key === 'original_key') originalKey = val;
-      else if (key === 'bpm' || key === 'tempo') bpm = val;
-      else if (key === 'memo') memo = val;
+      else if (key === 'key' || key === 'original_key') originalKey = parts.value;
+      else if (key === 'bpm' || key === 'tempo') bpm = parts.value;
+      else if (key === 'memo') memo = parts.value;
       else if (key === 'time' || key === 'time_signature' || key === 'meter') {
-        const ts = parseTimeSignature(rawValue);
+        const ts = parseTimeSignature(parts.value);
         if (ts.ok) timeSignature = ts.value;
-        else report(lineIdx, valueStart, valueStart + rawValue.length, ts.code, { directive: headerMatch[1], value: rawValue.trim() });
+        else report(lineIdx, valueStart, valueStart + parts.source.length, ts.code, { directive: headerMatch[1], value: parts.value });
       } else if (key === 'feel') {
-        const f = parseFeel(rawValue);
+        const f = parseFeel(parts.value);
         if (f) feel = f;
-        else report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidFeel', { directive: headerMatch[1], value: rawValue.trim() });
+        else report(lineIdx, valueStart, valueStart + parts.source.length, 'invalidFeel', { directive: headerMatch[1], value: parts.value });
       } else if (key === 'pickup') {
-        const v = parseNoteValue(rawValue.trim());
-        if (v) pickup = { value: v.beats, line: lineIdx, startCol: valueStart, endCol: valueStart + rawValue.length };
-        else report(lineIdx, valueStart, valueStart + rawValue.length, 'invalidPickup', { value: rawValue.trim() });
+        const v = parseNoteValue(parts.value);
+        if (v) pickup = { value: v.beats, line: lineIdx, startCol: valueStart, endCol: valueStart + parts.source.length };
+        else report(lineIdx, valueStart, valueStart + parts.source.length, 'invalidPickup', { value: parts.value });
       }
       else if (key.startsWith('expand_page')) {
-        const v = val.toLowerCase();
+        const v = parts.value.toLowerCase();
         if (['false', 'off', 'no', '0'].includes(v)) expandPageBreakRepeats = false;
         else if (['true', 'on', 'yes', '1'].includes(v)) expandPageBreakRepeats = true;
       } else if (key === 'show_rhythm' || key === 'rhythm') {
-        const v = val.toLowerCase();
+        const v = parts.value.toLowerCase();
         if (['false', 'off', 'no', '0'].includes(v)) showRhythm = false;
         else if (['true', 'on', 'yes', '1'].includes(v)) showRhythm = true;
       } else if (key === 'measures_per_row' || key === 'bars_per_row') {
-        const n = Number(val);
+        const n = Number(parts.value);
         if (Number.isInteger(n) && n >= 1 && n <= MAX_MEASURES_PER_ROW) {
           measuresPerRow = n;
         } else {
           measuresPerRow = DEFAULT_MEASURES_PER_ROW;
-          report(lineIdx, lineStart, lineEnd, 'invalidMeasuresPerRow', { value: val });
+          report(lineIdx, lineStart, lineEnd, 'invalidMeasuresPerRow', { value: parts.value });
         }
       } else if (key === 'chord_size') {
-        const n = parseFloat(val);
+        const n = parseFloat(parts.value);
         if (!isNaN(n) && n > 0) style.chordSize = n;
       } else if (key === 'lyric_size') {
-        const n = parseFloat(val);
+        const n = parseFloat(parts.value);
         if (!isNaN(n) && n > 0) style.lyricSize = n;
       } else if (key === 'title_size') {
-        const n = parseFloat(val);
+        const n = parseFloat(parts.value);
         if (!isNaN(n) && n > 0) style.titleSize = n;
       } else if (key === 'section_size') {
-        const n = parseFloat(val);
+        const n = parseFloat(parts.value);
         if (!isNaN(n) && n > 0) style.sectionSize = n;
       } else if (key === 'font_size') {
-        const n = parseFloat(val);
+        const n = parseFloat(parts.value);
         if (!isNaN(n) && n > 0) style.fontSize = n;
       }
       continue;

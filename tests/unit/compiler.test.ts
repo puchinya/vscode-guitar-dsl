@@ -51,6 +51,105 @@ describe('compiler - parseGuitarDsl', () => {
     });
   });
 
+  describe('metadata end-of-line comments', () => {
+    it('strips comments from textual header values', () => {
+      const parsed = parseGuitarDsl([
+        'title: Wind Song # visible note',
+        'artist: Someone # credit note',
+        'memo: memo text # internal note'
+      ].join('\n'));
+
+      assert.strictEqual(parsed.title, 'Wind Song');
+      assert.strictEqual(parsed.artist, 'Someone');
+      assert.strictEqual(parsed.memo, 'memo text');
+    });
+
+    it('preserves sharp values in keys and tuning pitches before comments', () => {
+      const sharpKey = parseGuitarDsl('key: F# # key note');
+      const minorSharpKey = parseGuitarDsl('key: F#m # key note');
+      const sharpOriginalKey = parseGuitarDsl('original_key: C# # original note');
+
+      assert.strictEqual(sharpKey.originalKey, 'F#');
+      assert.strictEqual(minorSharpKey.originalKey, 'F#m');
+      assert.strictEqual(sharpOriginalKey.originalKey, 'C#');
+      for (const pitch of ['C#4', 'c#4']) {
+        const tuning = parseGuitarDsl(`tuning: E2 A2 D3 G3 ${pitch} E4 # tuning note`);
+        assert.deepStrictEqual(tuning.tuning.openMidi, [40, 45, 50, 55, 61, 64]);
+        assert.deepStrictEqual(tuning.diagnostics, []);
+      }
+    });
+
+    it('strips comments before parsing all other metadata families', () => {
+      const withComments = [
+        'capo: 2 # capo',
+        'bpm: 120 # tempo',
+        'show_rhythm: off # display',
+        'measures_per_row: 6 # layout',
+        'expand_page_break_repeats: off # page repeat',
+        'style_font_size: 14 # size',
+        'time: 3/4 # meter',
+        'feel: swing # feel',
+        'pickup: 8+8 # pickup'
+      ];
+      const withoutComments = [
+        'capo: 2',
+        'bpm: 120',
+        'show_rhythm: off',
+        'measures_per_row: 6',
+        'expand_page_break_repeats: off',
+        'style_font_size: 14',
+        'time: 3/4',
+        'feel: swing',
+        'pickup: 8+8'
+      ];
+      const commented = parseGuitarDsl(withComments.join('\n'));
+      const plain = parseGuitarDsl(withoutComments.join('\n'));
+      const semanticValues = (score: ReturnType<typeof parseGuitarDsl>) => ({
+        capo: score.capo,
+        bpm: score.bpm,
+        showRhythm: score.showRhythm,
+        measuresPerRow: score.measuresPerRow,
+        expandPageBreakRepeats: score.expandPageBreakRepeats,
+        style: score.style,
+        timeSignature: score.timeSignature,
+        feel: score.feel,
+        pickup: score.pickup
+      });
+
+      assert.deepStrictEqual(semanticValues(commented), semanticValues(plain));
+      assert.deepStrictEqual(commented.diagnostics, []);
+    });
+
+    it('starts comments only at the beginning of a value or after a space or tab', () => {
+      assert.strictEqual(parseGuitarDsl('title: Song#1').title, 'Song#1');
+      assert.strictEqual(parseGuitarDsl('title: Song #1').title, 'Song');
+      assert.strictEqual(parseGuitarDsl('title: Song\t# tab note').title, 'Song');
+    });
+
+    it('treats a comment-only header value as empty', () => {
+      assert.strictEqual(parseGuitarDsl('memo: # note').memo, '');
+    });
+
+    it('keeps the whole-line range for invalid measures_per_row values', () => {
+      const input = 'measures_per_row: 0';
+      const diagnostic = parseGuitarDsl(input).diagnostics.find(item => item.code === 'invalidMeasuresPerRow');
+
+      assert.ok(diagnostic);
+      assert.strictEqual(diagnostic.code, 'invalidMeasuresPerRow');
+      assert.strictEqual(diagnostic.startCol, 0);
+      assert.strictEqual(diagnostic.endCol, input.length);
+    });
+
+    it('excludes comment separators from the header source span', () => {
+      const source = 'key:   A   # original';
+      const header = parseGuitarDsl(source).headerLines.find(line => line.key === 'key');
+
+      assert.ok(header);
+      assert.strictEqual(source.slice(header.valueStart, header.valueEnd), 'A');
+      assert.strictEqual(source[header.valueEnd], ' ');
+    });
+  });
+
   describe('Tuning header parsing', () => {
     it('defaults to Standard and accepts presets or six explicit pitches with trailing comments', () => {
       assert.deepStrictEqual(parseGuitarDsl('').tuning, STANDARD_TUNING);
