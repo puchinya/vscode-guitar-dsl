@@ -983,7 +983,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           measuresPerRow = n;
         } else {
           measuresPerRow = DEFAULT_MEASURES_PER_ROW;
-          report(lineIdx, valueStart, valueStart + parts.source.length, 'invalidMeasuresPerRow', { value: parts.value });
+          report(lineIdx, lineStart, lineEnd, 'invalidMeasuresPerRow', { value: parts.value });
         }
       } else if (key === 'chord_size') {
         const n = parseFloat(parts.value);

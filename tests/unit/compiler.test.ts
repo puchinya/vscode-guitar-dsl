@@ -130,6 +130,16 @@ describe('compiler - parseGuitarDsl', () => {
       assert.strictEqual(parseGuitarDsl('memo: # note').memo, '');
     });
 
+    it('keeps the whole-line range for invalid measures_per_row values', () => {
+      const input = 'measures_per_row: 0';
+      const diagnostic = parseGuitarDsl(input).diagnostics.find(item => item.code === 'invalidMeasuresPerRow');
+
+      assert.ok(diagnostic);
+      assert.strictEqual(diagnostic.code, 'invalidMeasuresPerRow');
+      assert.strictEqual(diagnostic.startCol, 0);
+      assert.strictEqual(diagnostic.endCol, input.length);
+    });
+
     it('excludes comment separators from the header source span', () => {
       const source = 'key:   A   # original';
       const header = parseGuitarDsl(source).headerLines.find(line => line.key === 'key');
