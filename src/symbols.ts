@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { splitHeaderValue } from './headerValue';
 
 const CHORD_REGEX = /^[A-G][b#]?(?:maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(?:\/[A-G][b#]?)?(?::[0-9]+(?:\.[0-9]+)?)?$/;
 
@@ -65,10 +66,10 @@ export class GuitarDslDocumentSymbolProvider implements vscode.DocumentSymbolPro
       const headerMatch = text.match(/^(title|artist|capo|key|original_key|tempo|bpm|memo|time|time_signature|meter|feel|pickup|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size|text_size)):\s*(.*)$/i);
       if (headerMatch) {
         const key = headerMatch[1];
-        const val = headerMatch[2].trim();
+        const { value } = splitHeaderValue(headerMatch[2]);
         const propSymbol = new vscode.DocumentSymbol(
           key,
-          val,
+          value,
           vscode.SymbolKind.Property,
           line.range,
           line.range

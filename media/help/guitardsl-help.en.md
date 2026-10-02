@@ -155,11 +155,13 @@ You can change key, tempo, time signature, feel and ottava in the middle of a so
 
 ## GuitarDSL Language
 
-GuitarDSL is line-based. Blank lines are ignored, and `#` starts a comment, either on a whole line or at the end of a line. A document usually has a **header** (song information) followed by the **score** (section headings and measure lines).
+GuitarDSL is line-based. Blank lines are ignored. Comment text from `#` to the end of the line is ignored where the current syntax recognizes a comment marker, either on a whole line or at the end of a line. A document usually has a **header** (song information) followed by the **score** (section headings and measure lines).
 
 ### Headers
 
 Headers are written as `key: value`. Header names are case-insensitive.
+
+In metadata values, the first `#` starts a comment when it is the first character of the value or follows a space or tab. The separator whitespace is excluded from the value, while a `#` attached directly to text remains part of it (`key: F# # note` has value `F#`; `title: Song#1` stays `Song#1`; `title: Song #1` has value `Song`).
 
 ```guitardsl
 title: Wind Compass
