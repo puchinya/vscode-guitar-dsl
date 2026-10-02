@@ -576,6 +576,72 @@ describe('transcription - serializer', () => {
     assert.strictEqual(errors.length, 0);
   });
 
+  it('normalizes only joining small kana and reparses the emitted syllables without alignment warnings', () => {
+    const lyrics = ['き', 'ょ', 'っ', 'ー', 'ヶ'];
+    const durations = ['8', '8', '8', '8', '2'];
+    const song: TranscribedSong = {
+      key: 'C',
+      bpm: 120,
+      timeSignature: { numerator: 4, denominator: 4 },
+      sections: [
+        {
+          name: 'Verse',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '1' }],
+              rhythm: durations.map(duration => ({ duration })),
+              melody: lyrics.map((lyric, index) => ({
+                pitch: ['c4', 'd4', 'e4', 'f4', 'g4'][index],
+                duration: durations[index],
+                lyric
+              }))
+            }
+          ]
+        }
+      ]
+    };
+
+    const dsl = serializeSongToGuitarDsl(song);
+    assert.ok(dsl.includes('lyr: きょ っ ー ヶ _'));
+
+    const parsed = parseGuitarDsl(dsl);
+    assert.deepStrictEqual(parsed.diagnostics, []);
+    assert.deepStrictEqual(
+      parsed.measures[0].melody!.map(note => note.syllables[0]?.extend ? '_' : note.syllables[0]?.text),
+      ['きょ', 'っ', 'ー', 'ヶ', '_']
+    );
+  });
+
+  it('groups multi-character semantic lyrics as one DSL syllable without double-wrapping valid groups', () => {
+    const songWithLyric = (lyric: string): TranscribedSong => ({
+      key: 'C',
+      bpm: 120,
+      timeSignature: { numerator: 4, denominator: 4 },
+      sections: [
+        {
+          name: 'Verse',
+          measures: [
+            {
+              chords: [{ name: 'C', duration: '1' }],
+              rhythm: [{ duration: '1' }],
+              melody: [{ pitch: 'c4', duration: '1', lyric }]
+            }
+          ]
+        }
+      ]
+    });
+
+    const dsl = serializeSongToGuitarDsl(songWithLyric('きょう'));
+    assert.ok(dsl.includes('lyr: (きょう)'));
+    const parsed = parseGuitarDsl(dsl);
+    assert.deepStrictEqual(parsed.diagnostics, []);
+    assert.strictEqual(parsed.measures[0].melody![0].syllables[0]?.text, 'きょう');
+
+    const alreadyGroupedDsl = serializeSongToGuitarDsl(songWithLyric('(きょう)'));
+    assert.ok(alreadyGroupedDsl.includes('lyr: (きょう)'));
+    assert.ok(!alreadyGroupedDsl.includes('lyr: ((きょう))'));
+  });
+
   it('compresses identical repeated sections with repeat barlines and multiple lyr lines when compressRepeats is true', () => {
     const song: TranscribedSong = {
       key: 'C',

@@ -19,6 +19,22 @@ function svgOf(dsl: string): string {
 }
 
 describe('render - melody systems', () => {
+  it('renders spaced and space-free variants of the exact #76 lyrics identically', () => {
+    const spaced = [
+      'key: C',
+      '| C  | 8.d 8.u 4.d 8.d 8.u 4.d |',
+      '| G  | % |',
+      'mel: | r/8 e4/8 e g a g e d | d4/8 d e d c/4 r/4 |',
+      'lyr: | あさの ひかりを      | あびなが ら         |'
+    ].join('\n');
+    const spaceFree = spaced.replace(
+      'lyr: | あさの ひかりを      | あびなが ら         |',
+      'lyr: | あさのひかりを | あびながら |'
+    );
+
+    assert.strictEqual(svgOf(spaced), svgOf(spaceFree));
+  });
+
   it('keeps rhythm-only systems at the original height', () => {
     const score = parseGuitarDsl('| C | 4.d 4.d 4.d 4.d |');
     assert.strictEqual(getSystemGeometry(score.measures, score).unitHeight, SYSTEM_UNIT_HEIGHT);

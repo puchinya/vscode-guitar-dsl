@@ -284,10 +284,19 @@ export type LyricItem =
   | { kind: 'skip' }
   | { kind: 'bar' };
 
-// Small kana, sokuon (っ) and chouon (ー) that join the preceding character into one mora.
-const SMALL_KANA = new Set('ゃゅょぁぃぅぇぉゎっヵヶャュョァィゥェォヮッー'.split(''));
+// Exactly the small kana that §13.2 joins to the preceding Japanese syllable.
+const JOINING_SMALL_KANA = new Set('ゃゅょぁぃぅぇぉゎャュョァィゥェォヮ');
 // Punctuation that attaches to the preceding syllable instead of taking a note.
 const TRAILING_PUNCT = new Set('、。，．！？!?,.」』)）'.split(''));
+const JAPANESE_LYRIC_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+export function isJoiningSmallKana(ch: string): boolean {
+  return JOINING_SMALL_KANA.has(ch);
+}
+
+function isJapaneseLyricChar(ch: string): boolean {
+  return JAPANESE_LYRIC_CHAR.test(ch);
+}
 
 function isAsciiWordChar(ch: string): boolean {
   return /[A-Za-z0-9'’\-]/.test(ch);
@@ -304,108 +313,84 @@ export function tokenizeLyrics(text: string): LyricItem[] {
       continue;
     }
 
-    const trimmed = seg.trim();
-    if (!trimmed) continue;
+    const chars = Array.from(seg);
+    let lastSyllableIndex: number | null = null;
+    let lastJapaneseSyllableIndex: number | null = null;
+    let i = 0;
 
-    // When the segment contains whitespace between tokens, whitespace delimits syllables.
-    const hasSpace = /\s/.test(trimmed);
+    const pushSyllable = (value: string, hyphenToNext = false, japanese = false) => {
+      items.push({ kind: 'syllable', text: value, hyphenToNext });
+      lastSyllableIndex = items.length - 1;
+      lastJapaneseSyllableIndex = japanese ? lastSyllableIndex : null;
+    };
 
-    if (hasSpace) {
-      const chars = Array.from(trimmed);
-      let i = 0;
-      while (i < chars.length) {
-        const ch = chars[i];
-        if (/\s/.test(ch)) {
-          i++;
-          continue;
+    while (i < chars.length) {
+      const ch = chars[i];
+      if (/\s/.test(ch)) {
+        lastSyllableIndex = null;
+        lastJapaneseSyllableIndex = null;
+        i++;
+        continue;
+      }
+      if (ch === '_') {
+        items.push({ kind: 'extend' });
+        lastSyllableIndex = null;
+        lastJapaneseSyllableIndex = null;
+        i++;
+        continue;
+      }
+      if (ch === '*') {
+        items.push({ kind: 'skip' });
+        lastSyllableIndex = null;
+        lastJapaneseSyllableIndex = null;
+        i++;
+        continue;
+      }
+      if (ch === '(' || ch === '（') {
+        const close = ch === '(' ? ')' : '）';
+        let j = i + 1;
+        let group = '';
+        while (j < chars.length && chars[j] !== close) {
+          group += chars[j];
+          j++;
         }
-        if (ch === '_') {
-          items.push({ kind: 'extend' });
-          i++;
-          continue;
-        }
-        if (ch === '*') {
-          items.push({ kind: 'skip' });
-          i++;
-          continue;
-        }
-        if (ch === '(' || ch === '（') {
-          const close = ch === '(' ? ')' : '）';
-          let j = i + 1;
-          let group = '';
-          while (j < chars.length && chars[j] !== close) {
-            group += chars[j];
-            j++;
-          }
-          items.push({ kind: 'syllable', text: group.trim(), hyphenToNext: false });
-          i = j + 1;
-          continue;
-        }
+        pushSyllable(group.trim());
+        lastJapaneseSyllableIndex = null;
+        i = j < chars.length ? j + 1 : j;
+        continue;
+      }
 
+      if (isAsciiWordChar(ch)) {
         let word = '';
-        while (i < chars.length && !/\s/.test(chars[i]) && chars[i] !== '(' && chars[i] !== '（') {
+        while (i < chars.length && (isAsciiWordChar(chars[i]) || TRAILING_PUNCT.has(chars[i]))) {
           word += chars[i];
           i++;
         }
-        if (word === '_') {
-          items.push({ kind: 'extend' });
-        } else if (word === '*') {
-          items.push({ kind: 'skip' });
-        } else if (word.length > 0) {
-          const hyphen = word.length > 1 && word.endsWith('-');
-          items.push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen });
+        const hyphen = word.length > 1 && word.endsWith('-');
+        pushSyllable(hyphen ? word.slice(0, -1) : word, hyphen);
+        continue;
+      }
+
+      if (TRAILING_PUNCT.has(ch) && lastSyllableIndex !== null) {
+        const previous = items[lastSyllableIndex];
+        if (previous.kind === 'syllable') {
+          previous.text += ch;
+          i++;
+          continue;
         }
       }
-    } else {
-      // Unspaced text: split character by character with small kana / ー / っ joining
-      const chars = Array.from(trimmed);
-      let i = 0;
-      while (i < chars.length) {
-        const ch = chars[i];
-        if (ch === '_') {
-          items.push({ kind: 'extend' });
+
+      if (isJoiningSmallKana(ch) && lastJapaneseSyllableIndex !== null) {
+        const previous = items[lastJapaneseSyllableIndex];
+        if (previous.kind === 'syllable') {
+          previous.text += ch;
           i++;
           continue;
         }
-        if (ch === '*') {
-          items.push({ kind: 'skip' });
-          i++;
-          continue;
-        }
-        if (ch === '(' || ch === '（') {
-          const close = ch === '(' ? ')' : '）';
-          let j = i + 1;
-          let group = '';
-          while (j < chars.length && chars[j] !== close) {
-            group += chars[j];
-            j++;
-          }
-          items.push({ kind: 'syllable', text: group.trim(), hyphenToNext: false });
-          i = j + 1;
-          continue;
-        }
-
-        if (isAsciiWordChar(ch)) {
-          let word = '';
-          while (i < chars.length && (isAsciiWordChar(chars[i]) || TRAILING_PUNCT.has(chars[i]))) {
-            word += chars[i];
-            i++;
-          }
-          const hyphen = word.length > 1 && word.endsWith('-');
-          items.push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen });
-          continue;
-        }
-
-        if ((SMALL_KANA.has(ch) || TRAILING_PUNCT.has(ch)) && items.length > 0 && items[items.length - 1].kind === 'syllable') {
-          const prev = items[items.length - 1] as { kind: 'syllable'; text: string };
-          prev.text += ch;
-          i++;
-          continue;
-        }
-
-        items.push({ kind: 'syllable', text: ch, hyphenToNext: false });
-        i++;
       }
+
+      pushSyllable(ch, false, isJapaneseLyricChar(ch));
+      i++;
     }
   }
 
