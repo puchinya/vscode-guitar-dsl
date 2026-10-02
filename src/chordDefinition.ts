@@ -1,18 +1,19 @@
 // Chord diagram definitions (spec §7.4): `chord <Name>[@<label>] = <frets> [base:n] [fingers:...] [barre:f[:a-b]]`.
 // Model, parser and formatter shared by the compiler, the renderer and the chord editor.
 
+import { createInstrumentModel, InstrumentModel, MAX_FRET, STRING_COUNT } from './instrumentModel';
+export { MAX_FRET, STRING_COUNT } from './instrumentModel';
+
 export const CHORD_NAME_PATTERN = '[A-G][b#]?(?:maj|m|min|aug|dim|sus[24]|add9|[0-9]+)*(?:\\/[A-G][b#]?)?';
 export const CHORD_LABEL_PATTERN = '[A-Za-z0-9_]+';
 
 const CHORD_NAME_RE = new RegExp(`^${CHORD_NAME_PATTERN}$`);
 const CHORD_LABEL_RE = new RegExp(`^${CHORD_LABEL_PATTERN}$`);
 
-export const STRING_COUNT = 6;
 /** Number of frets drawn in a diagram. */
 export const DIAGRAM_FRET_WINDOW = 5;
-export const MAX_FRET = 24;
 
-/** Fret of one string: 'x' = muted, 0 = open, n = absolute fret. */
+/** Fret of one string: 'x' = muted, 0 = open at capo, n = fret relative to capo. */
 export type StringFret = number | 'x';
 export type Finger = '1' | '2' | '3' | '4' | 'T';
 
@@ -69,7 +70,10 @@ export function isChordDefinitionLine(line: string): boolean {
   return /^chord\s/i.test(line.trim());
 }
 
-export function parseChordDefinition(line: string): ChordDefinitionParseResult {
+export function parseChordDefinition(
+  line: string,
+  instrument: InstrumentModel = createInstrumentModel()
+): ChordDefinitionParseResult {
   const m = line.trim().match(/^chord\s+([^\s=]+)\s*=\s*(.*)$/i);
   if (!m) {
     return { ok: false, error: 'syntax', detail: line.trim() };
@@ -91,6 +95,10 @@ export function parseChordDefinition(line: string): ChordDefinitionParseResult {
   if (!frets) {
     return { ok: false, error: 'frets', detail: tokens[0] };
   }
+  const outOfPhysicalRange = frets.find(fret => fret !== 'x' && instrument.capo + fret > MAX_FRET);
+  if (outOfPhysicalRange !== undefined) {
+    return { ok: false, error: 'frets', detail: String(outOfPhysicalRange) };
+  }
 
   const voicing: ChordVoicing = { frets, barres: [] };
   const barreSpecs: { fret: number; range?: [number, number]; token: string }[] = [];
@@ -103,7 +111,7 @@ export function parseChordDefinition(line: string): ChordDefinitionParseResult {
     const val = opt[2];
     if (key === 'base') {
       const n = Number(val);
-      if (!Number.isInteger(n) || n < 1 || n > MAX_FRET) {
+      if (!Number.isInteger(n) || n < 1 || instrument.capo + n > MAX_FRET) {
         return { ok: false, error: 'base', detail: tok };
       }
       voicing.baseFret = n;
@@ -125,6 +133,9 @@ export function parseChordDefinition(line: string): ChordDefinitionParseResult {
   }
 
   for (const spec of barreSpecs) {
+    if (instrument.capo + spec.fret > MAX_FRET) {
+      return { ok: false, error: 'barre', detail: spec.token };
+    }
     const barre = resolveBarre(frets, spec.fret, spec.range);
     if (!barre) {
       return { ok: false, error: 'barre', detail: spec.token };

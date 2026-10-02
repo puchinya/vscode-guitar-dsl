@@ -11,6 +11,7 @@ Headers are written as `key: value`. Header names are case-insensitive.
 ```guitardsl
 title: Wind Compass
 artist: GuitarDSL Original
+tuning: DADGAD
 capo: 2
 key: D
 bpm: 104
@@ -21,6 +22,7 @@ time: 4/4
 |---|---|
 | `title`, `artist` | Shown at the top of page 1 |
 | `capo` | Capo fret (0–12 for capo tools). Chord names are the **shapes you play**. |
+| `tuning` | Guitar tuning: `Standard`, `Drop D`, `DADGAD`, `Open G`, `Open D`, or six space-separated pitches from the 6th string to the 1st (for example, `D2 A2 D3 G3 A3 D4`). Defaults to `Standard`. |
 | `key` (`original_key`) | The **sounding** key. It sets the melody key signature. |
 | `bpm` (`tempo`) | Tempo shown in the header |
 | `time`, `feel`, `pickup` | Starting time signature, feel (`straight` / `swing` / `shuffle`) and pickup length |
@@ -87,7 +89,7 @@ Chord names follow the pattern root + quality + optional bass, for example `C`, 
 #### Chord Definitions
 <!-- help-sources: syntax:7 -->
 
-Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open, a number = fret. Add `@label` to keep several voicings:
+Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings. Invalid definition rows are ignored and do not block a later valid row with the same key. If multiple valid definitions use the same key, the first is used.
 
 ```guitardsl
 chord C       = x32010

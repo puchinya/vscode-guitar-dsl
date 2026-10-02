@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
+import { STANDARD_TUNING } from '../../src/instrumentModel';
 
 describe('compiler - parseGuitarDsl', () => {
   describe('Metadata parsing', () => {
@@ -47,6 +48,50 @@ describe('compiler - parseGuitarDsl', () => {
       assert.strictEqual(parsed.capo, '0');
       assert.strictEqual(parsed.originalKey, 'C');
       assert.strictEqual(parsed.bpm, '90');
+    });
+  });
+
+  describe('Tuning header parsing', () => {
+    it('defaults to Standard and accepts presets or six explicit pitches with trailing comments', () => {
+      assert.deepStrictEqual(parseGuitarDsl('').tuning, STANDARD_TUNING);
+      for (const preset of ['Standard', 'Drop D', 'DADGAD', 'Open G', 'Open D']) {
+        const score = parseGuitarDsl(`tuning: ${preset}\r\n[Intro]\r\n| C |`);
+        assert.strictEqual(score.tuning.preset, preset);
+        assert.deepStrictEqual(score.diagnostics, []);
+      }
+      const explicit = parseGuitarDsl('tuning: E2 A2 D3 G3 Bb3 E4  # explicit tuning\r\n[Intro]\r\n| C |');
+      assert.deepStrictEqual(explicit.tuning.openMidi, [40, 45, 50, 55, 58, 64]);
+      assert.deepStrictEqual(explicit.diagnostics, []);
+    });
+
+    it('keeps the first value and recovers to Standard when the first tuning is invalid', () => {
+      const score = parseGuitarDsl('tuning: Unknown\ntuning: Drop D\n[Intro]\n| C |');
+      assert.deepStrictEqual(score.tuning, STANDARD_TUNING);
+      assert.deepStrictEqual(score.diagnostics.map(d => d.code), ['unknownTuningPreset', 'duplicateTuning']);
+      assert.deepStrictEqual(score.diagnostics.map(d => d.severity), ['error', 'error']);
+    });
+
+    it('validates pitches before the string count and reports precise header diagnostics', () => {
+      const score = parseGuitarDsl('tuning: E2 A2 H3 G3 B3\r\n[Intro]\r\n| C |');
+      assert.deepStrictEqual(score.tuning, STANDARD_TUNING);
+      assert.strictEqual(score.diagnostics[0].code, 'invalidTuningPitch');
+      assert.deepStrictEqual(
+        [score.diagnostics[0].line, score.diagnostics[0].startCol, score.diagnostics[0].endCol, score.diagnostics[0].severity],
+        [0, 14, 16, 'error']
+      );
+      const count = parseGuitarDsl('tuning: E2 A2 D3 G3 B3\n[Intro]\n| C |');
+      assert.strictEqual(count.diagnostics[0].code, 'invalidTuningStringCount');
+      const invalid = parseGuitarDsl('tuning: E2 A2 D3 G3 F##4 E4\n[Intro]\n| C |');
+      assert.strictEqual(invalid.diagnostics[0].code, 'invalidTuningPitch');
+    });
+
+    it('rejects repeated and body-level headers while keeping @tuning an invalid event', () => {
+      const outside = parseGuitarDsl('[Intro]\ntuning: Open G\n@tuning: Drop D\n| C |');
+      assert.deepStrictEqual(outside.tuning, STANDARD_TUNING);
+      assert.deepStrictEqual(outside.diagnostics.map(d => d.code), ['tuningOutsideHeader', 'invalidScoreEvent']);
+      const duplicate = parseGuitarDsl('tuning: Drop D\ntuning: Open G\n[Intro]\n| C |');
+      assert.strictEqual(duplicate.tuning.preset, 'Drop D');
+      assert.strictEqual(duplicate.diagnostics[0].code, 'duplicateTuning');
     });
   });
 

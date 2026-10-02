@@ -19,7 +19,8 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Too many `mel:` cells | There are more melody cells than measures without a melody above them in the same section. |
 | Syllable count | The number of `lyr:` syllables does not match the sung notes. Use `_` to extend a syllable and `*` to skip a note. |
 | `l:"..."` together with a melody | A measure with a melody uses `lyr:` lyrics, so `l:"..."` is not drawn there. |
-| Chord definition | Six fret values from the 6th string to the 1st, and all fretted notes within 5 frets of the start fret. |
+| Tuning | Write `tuning:` once in the header. Use a known preset or six octave-qualified pitches, separated by spaces, from the 6th string to the 1st (for example, `D2 A2 D3 G3 A3 D4`). |
+| Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. Invalid rows are ignored and do not reserve a chord name; among valid duplicates, the first is used. |
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |

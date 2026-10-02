@@ -81,7 +81,7 @@ Measures wrap onto rows automatically (4 per row by default, set with `measures_
 
 ### Chord Diagrams and the Chord Diagram Editor
 
-Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. The same shape is used to rate playability for capo and Beginner Mode. You can keep several voicings of the same chord with labels, such as `C@barre`.
+Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. With a non-Standard tuning, only preset shapes that sound as the requested chord are shown. Frets are relative to the capo, and capo playability and Beginner Mode use the same tuning and shape. Chord-name suggestions in the diagram editor also use the score's tuning. You can keep several voicings of the same chord with labels, such as `C@barre`.
 
 **GuitarDSL: Edit Chord Diagram** opens a visual editor. Start it from:
 
@@ -93,11 +93,11 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 
 ### Capo and Playability
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. The chords are rewritten so the song sounds the same. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
+The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
 
 ### Beginner Mode
 
-Turn on **Beginner mode** in the capo bar to see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The sounding key does not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
+Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
 
 ### Score Settings
 
@@ -164,6 +164,7 @@ Headers are written as `key: value`. Header names are case-insensitive.
 ```guitardsl
 title: Wind Compass
 artist: GuitarDSL Original
+tuning: DADGAD
 capo: 2
 key: D
 bpm: 104
@@ -174,6 +175,7 @@ time: 4/4
 |---|---|
 | `title`, `artist` | Shown at the top of page 1 |
 | `capo` | Capo fret (0–12 for capo tools). Chord names are the **shapes you play**. |
+| `tuning` | Guitar tuning: `Standard`, `Drop D`, `DADGAD`, `Open G`, `Open D`, or six space-separated pitches from the 6th string to the 1st (for example, `D2 A2 D3 G3 A3 D4`). Defaults to `Standard`. |
 | `key` (`original_key`) | The **sounding** key. It sets the melody key signature. |
 | `bpm` (`tempo`) | Tempo shown in the header |
 | `time`, `feel`, `pickup` | Starting time signature, feel (`straight` / `swing` / `shuffle`) and pickup length |
@@ -236,7 +238,7 @@ Chord names follow the pattern root + quality + optional bass, for example `C`, 
 
 #### Chord Definitions
 
-Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open, a number = fret. Add `@label` to keep several voicings:
+Use `chord` lines to define diagram shapes. Frets are listed from the 6th string to the 1st: `x` = muted, `0` = open at the capo, and a number = frets relative to the capo. For example, with `capo: 2`, `0` means the physical 2nd fret. Fretted notes can reach physical fret 24, including the capo. Add `@label` to keep several voicings. Invalid definition rows are ignored and do not block a later valid row with the same key. If multiple valid definitions use the same key, the first is used.
 
 ```guitardsl
 chord C       = x32010
@@ -371,7 +373,8 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Too many `mel:` cells | There are more melody cells than measures without a melody above them in the same section. |
 | Syllable count | The number of `lyr:` syllables does not match the sung notes. Use `_` to extend a syllable and `*` to skip a note. |
 | `l:"..."` together with a melody | A measure with a melody uses `lyr:` lyrics, so `l:"..."` is not drawn there. |
-| Chord definition | Six fret values from the 6th string to the 1st, and all fretted notes within 5 frets of the start fret. |
+| Tuning | Write `tuning:` once in the header. Use a known preset or six octave-qualified pitches, separated by spaces, from the 6th string to the 1st (for example, `D2 A2 D3 G3 A3 D4`). |
+| Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. Invalid rows are ignored and do not reserve a chord name; among valid duplicates, the first is used. |
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
 | Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
