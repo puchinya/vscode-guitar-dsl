@@ -135,7 +135,7 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **776 / 776 件 PASS** (0 failures)
+- **テスト実行結果**: **791 / 791 件 PASS** (0 failures)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
