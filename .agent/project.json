@@ -24,13 +24,20 @@
   "branch": {
     "prefix": "feature",
     "max_slug_length": 48,
+    "cleanup_on_switch": [
+      "out"
+    ],
     "required_checks": [
       "agent-required-check"
     ]
   },
   "milestones": {
-    "enabled": false,
-    "version_source": "auto"
+    "mode": "required",
+    "version_source": {
+      "type": "json",
+      "path": "package.json",
+      "field": "version"
+    }
   },
   "hooks": {
     "branch_switch": [],

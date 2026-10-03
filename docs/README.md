@@ -13,6 +13,6 @@ Choose the source that owns the question, then read only the relevant category R
 | Derived user Help | [`help/README.md`](help/README.md) |
 | Human project overview | [`../docs_only_human/issue-driven-development-workflow.md`](../docs_only_human/issue-driven-development-workflow.md) |
 
-The `ai-agent-workflow` plugin owns shared Issue workflow procedures. This repository retains project-specific policy, documentation authority, technical guides, and verification instructions in the locations above.
+[`../AGENTS.md`](../AGENTS.md) defines project document authority, Help/AI synchronization, and technical-guide routing.
 
-The document dependency direction and Help/AI synchronization rules are defined in [`../AGENTS.md`](../AGENTS.md).
+The document dependency direction is defined there as well.

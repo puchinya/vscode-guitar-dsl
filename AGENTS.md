@@ -1,6 +1,6 @@
 # vscode-guitar-dsl project policy
 
-The installed `ai-agent-workflow` plugin is the sole authority for the common requirements, design, implementation, checkpoint, evidence, self-review, and delivery workflow. This repository keeps only project-specific policy and technical guidance. Do not recreate common workflow procedures here.
+Milestone and branch lifecycle policy is declared in `.agent/project.json` and executed by the installed `ai-agent-workflow` plugin. This repository does not keep lifecycle scripts or duplicate common workflow procedures.
 
 The plugin package and its Python runtime are installed per user. This checkout only enables the already-installed plugin through `.codex/config.toml` and `.claude/settings.json`.
 
@@ -23,14 +23,9 @@ User Help in `docs/help/` and `media/help/` is derived from `docs/specs/` and `p
 
 AI reference assets are generated from the canonical syntax spec. Use `npm run check:ai` as the gate; do not hand-edit generated copies.
 
-## Project helpers
-
-- Assign the package-version milestone with `scripts/project/ensure-version-milestone.sh <issue>` or `.ps1` on PowerShell.
-- Create or switch a source branch with `scripts/project/start-feature-branch.sh <issue> <description>` or `.ps1` on PowerShell. Its output is the branch naming authority. An actual branch switch removes stale `out/` compilation artifacts; do not clean them when already on the requested branch.
-
 ## Verification and repository operations
 
-[`docs/agents/testing.md`](docs/agents/testing.md) is the verification command authority. For extension changes, the mandatory gate is `npm run compile` and `npm test`; packaging changes also require `npm run vscode:prepublish` and `npx @vscode/vsce ls` as specified there. Record checks that were not run accurately.
+`.agent/project.json` is the machine authority for configured verification hooks. [`docs/agents/testing.md`](docs/agents/testing.md) contains project testing guidance and verification commands.
 
 Use `gh` for GitHub Issues, PRs, labels, comments, reviews, and Actions; use `git` for local branch, staging, commit, and push operations. For multiline GitHub Markdown, use `--body-file` with real newline characters. For visual rendering changes, generate and verify a rendered preview and attach the image evidence to the owning Issue.
 
