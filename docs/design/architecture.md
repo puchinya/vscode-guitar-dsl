@@ -239,7 +239,7 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
 - **`harmonyRefinement.ts`**:
   - ハーモニー観測 IR（`HarmonyRefinement`）と検証 IR（`HarmonyVerification`）の型・JSON Schema・検証。検証内容は、tick 0 必須、厳密昇順、候補 1〜3、信頼度が非増加、セクション・小節の形状一致、capo フィールドの禁止。
   - `findAmbiguousEvents`: 曖昧な変化点を抽出する（最上位 < 0.78、または 1 位と 2 位の差 < 0.18）。
-  - `applyVerification`: 検証結果を反映する。候補外の選択や欠落は、最上位候補に戻す。
+  - `chooseChords`: 曖昧なイベントについて、同じ section/measure/tick16 を指し、提示候補のいずれかと一致する verified `selectedName` だけを採用する。検証結果の欠落・候補外・利用不能時は最上位候補へフォールバックし、非曖昧イベントも最上位候補を使う。
   - `harmonyToChordEvents`: tick 差から `beatsToDurationString` でコード長を算出する。調性による置換は行わない。
 - **`capoOptimizer.ts`**:
   - `transposeChordName`: ルートとスラッシュベースを半音移調する。クオリティは保持する。
@@ -247,20 +247,17 @@ Gemini API の動画理解機能を介して YouTube 音源から構造化 Music
   - `applyCapo`: コードをプレイ形へ移調し、`key` は実音のまま維持する。
 - **`grooveOptimizer.ts`**:
   - グルーヴ観測 IR（`GrooveRefinement`）: 小節ごとに `grid`、`style`、`attacks`、`accents?`、`sustainFromPrevious?`、`confidence` を持つ。型・Schema・検証を含む。
-  - 候補は、観測リズム 1 件と、次の 2 条件を満たすプリセット（`STRUMMING_PATTERN_PRESETS`）。
-    - 全打点がグリッドに正確に乗る。
-    - 奏法が一致する。`arpeggio` カテゴリは arpeggio、`ballad` カテゴリは sustain、それ以外は strum に対応する。
-  - 観測候補の ID は、奏法・グリッド・打点・アクセントのシグネチャとし、同一シグネチャなら遷移コストは 0。系統は次のとおり。
-    - arpeggio → `arpeggio`
-    - sustain → `ballad`
-    - strum → グリッド 8 は `8beat`、12 は `triplet`、16 は `16beat`
-  - アルペジオの観測候補には、アルペジオ系プリセットと同様にストローク方向を付けない。
-  - 観測候補の方向は、最も粗いグリッドの振り子規則で付ける。先頭の空きは休符にする。ただし `sustainFromPrevious` が有効な場合は、前小節の最後のストロークに `.t` を付けて延長として扱う。
-  - コストとタイブレーク:
-    - 局所コスト: `10·打点差 + 3·アクセント差`（観測候補は `max(0, 0.85 − conf)·40`）
-    - 遷移コスト: 同一 ID 0、同系統 2、異系統 6
-    - 同点時: プリセット優先 → 宣言順 → 観測候補
-  - セクション単位の DP で最適化する。状態はセクションをまたがない。
+  - 候補は観測リズムと、`presetStyle(preset) === measure.style` を満たすプリセットから作る。`rolled` プリセットはスタイル判定上 `arpeggio` として扱い、他のプリセットは宣言されたスタイルを使う。打点が観測 `grid` にすべて正確に乗り、パターンが 4 拍を満たすことも必要。
+  - 観測候補の family は次のように決める:
+    - `arpeggio` → `arpeggio`
+    - `sustain` → `sustain`
+    - `strum` + grid 8 → `eighth`
+    - `strum` + grid 12 → `triplet`
+    - `strum` + grid 16 → `sixteenth`
+  - プリセット候補はカタログに宣言された `AccompanimentFamily`（`quarter`、`eighth`、`sixteenth`、`shuffle`、`swing`、`triplet`、`sustain`、`arpeggio`、`rolled`）を保持する。遷移コストは候補の実際の family を比較し、同一 ID は 0、同一 family は 2、異なる family は 6 とする。
+  - アルペジオの観測候補には、アルペジオ系プリセットと同様にストローク方向を付けない。その他の観測候補の方向は、最も粗いグリッドの振り子規則で付ける。先頭の空きは休符にする。ただし `sustainFromPrevious` が有効な場合は、前小節の最後のストロークに `.t` を付けて延長として扱う。
+  - 局所コストは `10·打点差 + 3·アクセント差`（観測候補は `max(0, 0.85 − conf)·40`）。同一プリセット ID の遷移コストは 0、同一 family は 2、異なる family は 6 とする。同点時はプリセット優先 → 宣言順 → 観測候補の順に選ぶ。
+  - セクション単位の DP で最適化し、状態はセクションをまたがない。
 - **`pipeline.ts`**:
   - `runTranscriptionPipeline` の処理順:
     1. ベースライン
@@ -660,7 +657,9 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor User as ユーザー
-    participant Ext as extension.ts (SecretStorage / UI)
+    participant Ext as extension.ts
+    participant Panel as TranscribePanel
+    participant Web as Webview
     participant YT as transcription/youtube.ts
     participant Pipe as transcription/pipeline.ts
     participant Gem as transcription/gemini.ts (@google/genai)
@@ -670,42 +669,49 @@ sequenceDiagram
     participant Editor as 新規エディタ (未保存)
 
     User->>Ext: guitardsl.transcribeYouTube
-    Ext->>Ext: SecretStorage から API キー取得
-    alt API キー未登録
-        Ext->>User: showInputBox (password: true)
-        User-->>Ext: API キー入力 (SecretStorage に保存)
-    end
-    Ext->>User: showInputBox (YouTube URL 入力)
-    User-->>Ext: URL 入力
-    Ext->>YT: isValidYouTubeUrl(url)
-    alt URL 不正
-        YT-->>Ext: false
-        Ext->>User: showErrorMessage (URL エラー)
-    else URL 妥当
-        Ext->>Ext: window.withProgress
-        Ext->>Pipe: runTranscriptionPipeline(key, url, model, options)
-        Pipe->>Gem: runBaselinePass (video + prompt, store)
-        Gem->>Model: validateBaselineSong(json)
-        Gem-->>Pipe: { song, interactionId }
-        Pipe->>Gem: harmony follow-up (previous_interaction_id)
-        opt 曖昧なコードあり
-            Pipe->>Gem: verification follow-up (候補からの選択のみ)
+    Ext->>Panel: createOrShow (新規作成または既存を再表示)
+    Panel->>Panel: SecretStorage を読む
+    Panel-->>Web: saved-key flag を含む HTML (キー値は含めない)
+    User->>Web: URL / キー / オプション
+    Web->>Panel: startTranscription(options)
+    Panel->>Panel: 入力キーまたは保存済みキーを取得・必要なら保存
+    alt API キーなし
+        Panel-->>Web: postMessage(error)
+    else API キーあり
+        Panel->>YT: isValidYouTubeUrl(url)
+        alt URL 不正
+            Panel-->>Web: postMessage(error)
+        else URL が有効
+            Panel->>Pipe: runTranscriptionPipeline(options, onStage)
+            Pipe-->>Panel: onStage(stage)
+            Panel-->>Web: postMessage(ローカライズ済み進捗)
+            Pipe->>Gem: runBaselinePass (video + prompt, store)
+            Gem->>Model: validateBaselineSong(json)
+            Gem-->>Pipe: { song, interactionId }
+            Pipe->>Gem: harmony follow-up (previous_interaction_id)
+            opt 曖昧なコードあり
+                Pipe->>Gem: verification follow-up (候補から選択)
+            end
+            alt 伴奏パターン = 自動
+                Pipe->>Gem: groove follow-up (previous_interaction_id)
+                Pipe->>Pipe: grooveOptimizer (セクション単位 DP)
+            else 明示プリセット
+                Pipe->>Pipe: プリセットのリズムを全小節へ
+            end
+            Pipe->>Pipe: capoOptimizer / BPM 上書き
+            Pipe->>Model: validateTranscribedSong(song) 厳格
+            Pipe-->>Panel: TranscribedSong
+            Panel->>Ser: serializeSongToGuitarDsl(song)
+            Ser->>Comp: parseGuitarDsl(text) 検証
+            Comp-->>Ser: diagnostics (エラー 0 件)
+            Ser-->>Panel: dslText
+            alt DSL にエラーがある
+                Panel-->>Web: postMessage(error)、生成文書なし
+            else 有効な GuitarDSL
+                Panel->>Editor: openTextDocument({ language: 'guitardsl', content })
+                Panel->>User: showTextDocument(doc)
+            end
         end
-        alt 伴奏パターン = 自動
-            Pipe->>Gem: groove follow-up (previous_interaction_id)
-            Pipe->>Pipe: grooveOptimizer (セクション単位 DP)
-        else 明示プリセット
-            Pipe->>Pipe: プリセットのリズムを全小節へ
-        end
-        Pipe->>Pipe: capoOptimizer / BPM 上書き
-        Pipe->>Model: validateTranscribedSong(song) 厳格
-        Pipe-->>Ext: TranscribedSong
-        Ext->>Ser: serializeSongToGuitarDsl(song)
-        Ser->>Comp: parseGuitarDsl(text) 検証
-        Comp-->>Ser: diagnostics (エラー 0 件)
-        Ser-->>Ext: dslText
-        Ext->>Editor: openTextDocument({ language: 'guitardsl', content })
-        Ext->>User: showTextDocument(doc)
     end
 ```
 
