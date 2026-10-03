@@ -337,7 +337,7 @@ key: C
 | C  | 8.d 8.u 4.d 8.d 8.u 4.d |
 | G  | % |
 mel: | r/8 e4/8 e g a g e d | d4/8 d e d c/4 r/4 |
-lyr: | あさのひかりを | あびながら |
+lyr: | あさの ひかりを | あびなが ら |
 ```
 
 奏法は、長さの後に波括弧で書きます: `{hammer}`、`{pull}`、`{slide}`、`{gliss}`、`{bend:1}`、`{vibrato}`、`{staccato}`、`{tenuto}`、`{fermata}`、`{breath}`、`{grace}`、`{slur-start}`、`{slur-end}`、`{pm}`、`{let-ring}`。

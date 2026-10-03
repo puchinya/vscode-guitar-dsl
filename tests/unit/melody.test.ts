@@ -102,9 +102,50 @@ describe('compiler - melody (mel:)', () => {
 });
 
 describe('compiler - syllable lyrics (lyr:)', () => {
-  it('splits lyrics by whitespace, preserving syllables like small kana and ー / っ in each token', () => {
-    const texts = tokenizeLyrics('しゃ ぼ ん だ ま  きょ う  がっ こー').map(i => (i.kind === 'syllable' ? i.text : i.kind));
-    assert.deepStrictEqual(texts, ['しゃ', 'ぼ', 'ん', 'だ', 'ま', 'きょ', 'う', 'がっ', 'こー']);
+  it('tokenizes Japanese lyrics the same with or without formatting whitespace', () => {
+    const spaced = tokenizeLyrics('あさの ひかりを')
+      .filter(i => i.kind === 'syllable')
+      .map(i => i.text);
+    const unspaced = tokenizeLyrics('あさのひかりを')
+      .filter(i => i.kind === 'syllable')
+      .map(i => i.text);
+
+    assert.deepStrictEqual(spaced, ['あ', 'さ', 'の', 'ひ', 'か', 'り', 'を']);
+    assert.deepStrictEqual(spaced, unspaced);
+  });
+
+  it('joins only the §13.2 small kana and keeps sokuon, chouon, ヵ, and ヶ independent', () => {
+    const texts = tokenizeLyrics('しゃぼんだま きょう がっこー キャッカー ヵヶ')
+      .filter(i => i.kind === 'syllable')
+      .map(i => i.text);
+    assert.deepStrictEqual(texts, [
+      'しゃ', 'ぼ', 'ん', 'だ', 'ま', 'きょ', 'う', 'が', 'っ', 'こ', 'ー',
+      'キャ', 'ッ', 'カ', 'ー', 'ヵ', 'ヶ'
+    ]);
+  });
+
+  it('breaks Japanese adjacency at spaces and lyric controls while preserving punctuation', () => {
+    const items = tokenizeLyrics('きょ き ょ き_ょ き*ょ (き)ょ | きょ あ、 ひ。');
+    assert.deepStrictEqual(items.map(i => (i.kind === 'syllable' ? i.text : i.kind)), [
+      'きょ', 'き', 'ょ', 'き', 'extend', 'ょ', 'き', 'skip', 'ょ', 'き', 'ょ',
+      'bar', 'きょ', 'あ、', 'ひ。'
+    ]);
+  });
+
+  it('assigns the exact §12.5 spaced example to 7 + 5 sung notes without diagnostics', () => {
+    const score = parseGuitarDsl([
+      'key: C',
+      '| C  | 8.d 8.u 4.d 8.d 8.u 4.d |',
+      '| G  | % |',
+      'mel: | r/8 e4/8 e g a g e d | d4/8 d e d c/4 r/4 |',
+      'lyr: | あさの ひかりを      | あびなが ら         |'
+    ].join('\n'));
+    const firstBar = score.measures[0].melody!.filter(n => !n.isRest).map(n => n.syllables[0]?.text);
+    const secondBar = score.measures[1].melody!.filter(n => !n.isRest).map(n => n.syllables[0]?.text);
+
+    assert.deepStrictEqual(score.diagnostics, []);
+    assert.deepStrictEqual(firstBar, ['あ', 'さ', 'の', 'ひ', 'か', 'り', 'を']);
+    assert.deepStrictEqual(secondBar, ['あ', 'び', 'な', 'が', 'ら']);
   });
 
   it('handles groups, melisma, skip, English hyphens and bars', () => {

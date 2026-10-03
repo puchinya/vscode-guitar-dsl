@@ -3,7 +3,7 @@
 
 import { TranscribedSong, Section, Measure, RhythmEvent, MelodyEvent } from './model';
 import { parseGuitarDsl } from '../compiler';
-import { tokenizeLyrics } from '../melody';
+import { isJoiningSmallKana, tokenizeLyrics } from '../melody';
 import { getPresetById } from '../strummingPatterns';
 
 function formatRhythmToken(r: RhythmEvent): string {
@@ -56,16 +56,24 @@ function isSameMelody(a: MelodyEvent[], b: MelodyEvent[]): boolean {
 }
 
 function normalizeRawSyllables(syllables: string[]): string[] {
-  const SMALL_KANA_SET = new Set('ゃゅょぁぃぅぇぉゎっヵヶャュョァィゥェォヮッー'.split(''));
   const merged: string[] = [];
   for (const s of syllables) {
-    if (s.length === 1 && SMALL_KANA_SET.has(s) && merged.length > 0) {
+    if (isJoiningSmallKana(s) && merged.length > 0) {
       merged[merged.length - 1] += s;
     } else {
       merged.push(s);
     }
   }
   return merged;
+}
+
+function formatLyricDslToken(text: string): string {
+  if (text === '_' || text === '*') return text;
+
+  const items = tokenizeLyrics(text);
+  if (items.length === 1 && items[0].kind === 'syllable') return text;
+
+  return `(${text})`;
 }
 
 function extractFinalSyllables(measure: Measure, sungNotesCount: number, lyricIdx = 0): string[] {
@@ -209,20 +217,20 @@ export function serializeSongToGuitarDsl(song: TranscribedSong, options?: Serial
         if (sungNotes.length > 0) {
           const syls1 = extractFinalSyllables(measure, sungNotes.length, 0);
           if (syls1.length > 0) {
-            lines.push(`lyr: ${syls1.join(' ')}`);
+            lines.push(`lyr: ${syls1.map(formatLyricDslToken).join(' ')}`);
           }
 
           if (doCompress && nextSection) {
             const measure2 = nextSection.measures[mIdx];
             const syls2 = extractFinalSyllables(measure2, sungNotes.length, 0);
             if (syls2.length > 0) {
-              lines.push(`lyr: ${syls2.join(' ')}`);
+              lines.push(`lyr: ${syls2.map(formatLyricDslToken).join(' ')}`);
             }
           } else if (Array.isArray(measure.lyrics) && measure.lyrics.length > 1) {
             for (let v = 1; v < measure.lyrics.length; v++) {
               const sylsV = extractFinalSyllables(measure, sungNotes.length, v);
               if (sylsV.length > 0) {
-                lines.push(`lyr: ${sylsV.join(' ')}`);
+                lines.push(`lyr: ${sylsV.map(formatLyricDslToken).join(' ')}`);
               }
             }
           }
