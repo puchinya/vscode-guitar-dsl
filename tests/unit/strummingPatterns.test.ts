@@ -5,11 +5,14 @@ import {
   StrummingPatternPreset,
   USAGE_GROUP_ORDER,
   getPresetById,
-  parseRhythmPattern
+  parsePresetStrokes,
+  parseRhythmPattern,
+  replaceMeasureLineRhythm,
+  replaceRhythmInDsl
 } from '../../src/strummingPatterns';
 import { classifySyncopation, patternEvents, presetProblems, strokeDirectionProblem, timeSignatureOf } from '../../src/accompaniment';
 import { parseGuitarDsl } from '../../src/compiler';
-import { feq, frac } from '../../src/duration';
+import { feq, frac, parseRhythmDuration } from '../../src/duration';
 import { measureBeats } from '../../src/scoreEvents';
 import { compileGuitarDslToSvg } from '../../src/render/svg';
 
@@ -332,6 +335,27 @@ bpm: 120
       assert.ok(svg.includes('<svg'));
       assert.ok(svg.includes('class="notehead"')); // notehead for c3/8
       assert.ok(svg.includes('fill="none" stroke="#000" stroke-width="1.3"')); // arpeggio wavy sign
+    });
+  });
+
+  describe('parsePresetStrokes', () => {
+    it('splits durations and modifiers', () => {
+      assert.deepStrictEqual(parsePresetStrokes('4.d 8.u.a 8t.d.g 4.u.t 1.arp 8'), [
+        { duration: '4', direction: 'd' },
+        { duration: '8', direction: 'u', accent: true },
+        { duration: '8t', direction: 'd', ghost: true },
+        { duration: '4', direction: 'u', tie: true },
+        { duration: '1', arpeggio: true },
+        { duration: '8' }
+      ]);
+    });
+
+    it('parses every preset into valid rhythm durations', () => {
+      for (const preset of STRUMMING_PATTERN_PRESETS) {
+        for (const stroke of parsePresetStrokes(preset.pattern)) {
+          assert.ok(parseRhythmDuration(stroke.duration), `${preset.id}: ${stroke.duration}`);
+        }
+      }
     });
   });
 });

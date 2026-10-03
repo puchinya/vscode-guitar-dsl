@@ -1,10 +1,11 @@
 import * as assert from 'assert';
-import { validateTranscribedSong, TranscribedSong } from '../../src/transcription/model';
+import { validateTranscribedSong, validateBaselineSong, repairMelodyTiming, beatsToDurationString, TranscribedSong } from '../../src/transcription/model';
 import { serializeSongToGuitarDsl } from '../../src/transcription/serializer';
 import { TranscribePanel } from '../../src/transcription/transcribePanel';
 import { FAMILY_ORDER, STRUMMING_PATTERN_PRESETS, getPresetById } from '../../src/strummingPatterns';
 import { extractYouTubeVideoId, isValidYouTubeUrl, normalizeYouTubeUrl } from '../../src/transcription/youtube';
-import { transcribeWithGemini, GeminiClientLike, DEFAULT_GEMINI_MODEL } from '../../src/transcription/gemini';
+import { runBaselinePass, GeminiClientLike, DEFAULT_GEMINI_MODEL } from '../../src/transcription/gemini';
+import { frac } from '../../src/duration';
 import { parseGuitarDsl } from '../../src/compiler';
 
 describe('transcription - model & semantic validation', () => {
@@ -220,7 +221,7 @@ describe('transcription - model & semantic validation', () => {
     }
   });
 
-  it('rejects melody totals that do not equal 4 beats when autoRepair is false', () => {
+  it('rejects melody totals that do not equal 4 beats', () => {
     const input = {
       ...baseValidSong,
       sections: [
@@ -243,7 +244,7 @@ describe('transcription - model & semantic validation', () => {
     }
   });
 
-  it('auto-repairs melody with 3.5 beats by padding with an 8th rest when autoRepair is true', () => {
+  it('baseline validation repairs melody with 3.5 beats by padding with an 8th rest', () => {
     const input = {
       ...baseValidSong,
       sections: [
@@ -268,7 +269,7 @@ describe('transcription - model & semantic validation', () => {
         }
       ]
     };
-    const res = validateTranscribedSong(input, { autoRepair: true });
+    const res = validateBaselineSong(input);
     assert.strictEqual(res.valid, true);
     if (res.valid) {
       const mel = res.song.sections[0].measures[0].melody!;
@@ -279,7 +280,7 @@ describe('transcription - model & semantic validation', () => {
     }
   });
 
-  it('auto-repairs rhythm and chords when autoRepair is true', () => {
+  it('never repairs chords or rhythm: short chord/rhythm measures are rejected', () => {
     const input = {
       ...baseValidSong,
       sections: [
@@ -287,9 +288,7 @@ describe('transcription - model & semantic validation', () => {
           name: 'Chorus',
           measures: [
             {
-              // Chords missing duration for full 4 beats
-              chords: [{ name: 'C', duration: '2' }],
-              // Rhythm totaling only 3 beats
+              chords: [{ name: 'C', duration: '1' }],
               rhythm: [
                 { duration: '4', direction: 'd' },
                 { duration: '4', direction: 'u' },
@@ -300,13 +299,67 @@ describe('transcription - model & semantic validation', () => {
         }
       ]
     };
-    const res = validateTranscribedSong(input, { autoRepair: true });
+    const res = validateTranscribedSong(input);
+    assert.strictEqual(res.valid, false);
+    if (!res.valid) {
+      assert.ok(res.error.includes('Rhythm durations'));
+    }
+  });
+
+  it('baseline validation keeps structure/melody and drops chord and rhythm context', () => {
+    const input = {
+      ...baseValidSong,
+      capo: 3,
+      sections: [
+        {
+          name: 'Verse',
+          measures: [
+            { chords: [{ name: 'C', duration: '2' }], rhythm: [{ duration: '4' }], melody: [{ pitch: 'c4', duration: '1', lyric: 'あ' }], lyrics: 'あ' },
+            { melody: [{ pitch: 'r', duration: '1' }] }
+          ]
+        }
+      ]
+    };
+    const res = validateBaselineSong(input);
     assert.strictEqual(res.valid, true);
     if (res.valid) {
-      const meas = res.song.sections[0].measures[0];
-      assert.strictEqual(meas.chords[0].duration, '1');
-      assert.strictEqual(meas.rhythm.length, 4);
+      const [m1, m2] = res.song.sections[0].measures;
+      assert.deepStrictEqual(m1.chords, []);
+      assert.deepStrictEqual(m1.rhythm, []);
+      assert.strictEqual(m1.melody![0].lyric, 'あ');
+      assert.strictEqual(m1.lyrics, 'あ');
+      assert.strictEqual(m2.melody!.length, 1);
+      assert.strictEqual(res.song.capo, undefined);
     }
+  });
+
+  it('repairMelodyTiming trims an excess and leaves an exact measure unchanged', () => {
+    const trimmed = repairMelodyTiming([{ pitch: 'c4', duration: '2' }, { pitch: 'd4', duration: '2' }, { pitch: 'e4', duration: '4' }]);
+    assert.deepStrictEqual(trimmed.map(n => n.duration), ['2', '2']);
+    const exact = [{ pitch: 'c4', duration: '1' }];
+    assert.deepStrictEqual(repairMelodyTiming(exact), exact);
+  });
+
+  it('accepts manual capo 12 in strict validation', () => {
+    const res = validateTranscribedSong({ ...baseValidSong, capo: 12 });
+    assert.strictEqual(res.valid, true);
+    if (res.valid) assert.strictEqual(res.song.capo, 12);
+  });
+
+  it('beatsToDurationString produces dot-free additive and triplet values', () => {
+    assert.strictEqual(beatsToDurationString(frac(4)), '1');
+    assert.strictEqual(beatsToDurationString(frac(2)), '2');
+    assert.strictEqual(beatsToDurationString(frac(1)), '4');
+    assert.strictEqual(beatsToDurationString(frac(1, 2)), '8');
+    assert.strictEqual(beatsToDurationString(frac(1, 4)), '16');
+    assert.strictEqual(beatsToDurationString(frac(3, 2)), '4+8');
+    assert.strictEqual(beatsToDurationString(frac(5, 2)), '2+8');
+    assert.strictEqual(beatsToDurationString(frac(3)), '2+4');
+    assert.strictEqual(beatsToDurationString(frac(5, 4)), '4+16');
+    assert.strictEqual(beatsToDurationString(frac(1, 3)), '8t');
+    assert.strictEqual(beatsToDurationString(frac(2, 3)), '4t');
+    assert.strictEqual(beatsToDurationString(frac(5, 3)), '4+4t');
+    assert.strictEqual(beatsToDurationString(frac(1, 5)), null);
   });
 
   it('rejects invalid melody pitch', () => {
@@ -396,7 +449,7 @@ describe('transcription - serializer', () => {
   it('S002 a selected accompaniment preset must exist and match the song meter; no silent fallback (Issue #101 D1)', () => {
     const dsl = serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'rock_4_4_eighth_full' });
     assert.ok(dsl.includes('| G/2 D/F#/2 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |'), dsl);
-    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: '8beat_standard' }), /Unknown accompaniment preset: 8beat_standard/);
+    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'missing_preset' }), /Unknown accompaniment preset: missing_preset/);
     assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'waltz_3_4_eighth_flow' }), /is 3\/4; the transcription is 4\/4/);
     assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'compound_6_8_full' }), /is 6\/8/);
   });
@@ -412,6 +465,32 @@ describe('transcription - serializer', () => {
 
   it('S003 without a preset the automatic rhythm path is unchanged', () => {
     assert.strictEqual(serializeSongToGuitarDsl(sampleSong, { strummingPresetId: undefined }), serializeSongToGuitarDsl(sampleSong));
+  });
+
+  it('identifies YouTube transcription as Experimental and warns that output is a draft', () => {
+    const expected = {
+      ja: {
+        title: 'YouTubeから自動採譜（実験的）',
+        heading: 'YouTube 音源から自動採譜（実験的）',
+        warning: 'この機能は実験的です。生成結果には誤ったコード、リズム、メロディ、歌詞、BPM などが含まれる可能性があります。結果を下書きとして扱い、必ず確認・修正してください。'
+      },
+      en: {
+        title: 'Transcribe from YouTube (Experimental)',
+        heading: 'Transcribe from YouTube (Experimental)',
+        warning: 'This feature is experimental. The generated score may contain incorrect chords, rhythm, melody, lyrics, BPM, or other musical details. Treat the result as a draft and review/correct it before use.'
+      }
+    } as const;
+
+    for (const locale of ['ja', 'en'] as const) {
+      const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });
+      assert.ok(html.includes(`<title>${expected[locale].title}</title>`));
+      assert.ok(html.includes(`<h2>${expected[locale].heading}</h2>`));
+      assert.ok(html.includes(expected[locale].warning));
+      assert.match(html, /<div class="desc">[^]*?<\/div>\s*<div class="experimental-warning" role="note">/);
+      assert.ok(html.includes('id="youtubeUrl"'), 'the URL control remains available');
+      assert.ok(html.includes('id="btnStart"'), 'the start control remains available');
+      assert.ok(html.includes('var(--vscode-inputValidation-warningBackground'), 'the warning uses VS Code theme variables');
+    }
   });
 
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
@@ -774,6 +853,7 @@ describe('transcription - Gemini adapter (mocked)', () => {
         create: async (params: any) => {
           capturedParams = params;
           return {
+            id: 'int-1',
             status: 'completed',
             output_text: JSON.stringify(validSongIR)
           };
@@ -781,8 +861,7 @@ describe('transcription - Gemini adapter (mocked)', () => {
       }
     };
 
-    const song = await transcribeWithGemini({
-      apiKey: 'test-key',
+    const { song, interactionId } = await runBaselinePass({
       youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       model: 'gemini-3.8-flash',
       client: mockClient
@@ -790,37 +869,47 @@ describe('transcription - Gemini adapter (mocked)', () => {
 
     assert.strictEqual(song.title, 'Mocked Song');
     assert.strictEqual(song.key, 'C');
+    assert.strictEqual(interactionId, 'int-1');
     assert.strictEqual(capturedParams.model, 'gemini-3.8-flash');
+    assert.strictEqual(capturedParams.store, true);
     assert.strictEqual(capturedParams.input[0].type, 'video');
     assert.strictEqual(capturedParams.input[0].uri, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    assert.strictEqual(capturedParams.input[0].processing, 'agentic');
+    assert.strictEqual(capturedParams.previous_interaction_id, undefined);
   });
 
-  it('uses default model if not specified', async () => {
+  it('omits agentic processing for models not known to support it', async () => {
     let capturedModel: string | undefined;
+    let capturedProcessing: unknown = 'unset';
     const mockClient: GeminiClientLike = {
       interactions: {
         create: async (params: any) => {
           capturedModel = params.model;
+          capturedProcessing = params.input[0].processing;
           return {
+            id: 'int-1',
             output_text: JSON.stringify(validSongIR)
           };
         }
       }
     };
 
-    await transcribeWithGemini({
-      apiKey: 'test-key',
+    await runBaselinePass({
       youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ',
+      model: 'gemini-2.5-pro',
       client: mockClient
     });
 
-    assert.strictEqual(capturedModel, DEFAULT_GEMINI_MODEL);
+    assert.strictEqual(capturedModel, 'gemini-2.5-pro');
+    assert.strictEqual(capturedProcessing, undefined);
+    assert.ok(DEFAULT_GEMINI_MODEL);
   });
 
   it('extracts text from steps fallback if output_text is omitted', async () => {
     const mockClient: GeminiClientLike = {
       interactions: {
         create: async () => ({
+          id: 'int-1',
           status: 'completed',
           steps: [
             {
@@ -837,8 +926,8 @@ describe('transcription - Gemini adapter (mocked)', () => {
       }
     };
 
-    const song = await transcribeWithGemini({
-      apiKey: 'test-key',
+    const { song } = await runBaselinePass({
+      model: DEFAULT_GEMINI_MODEL,
       youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       client: mockClient
     });
@@ -856,8 +945,8 @@ describe('transcription - Gemini adapter (mocked)', () => {
     };
 
     try {
-      await transcribeWithGemini({
-        apiKey: 'secret_key_12345',
+      await runBaselinePass({
+        model: DEFAULT_GEMINI_MODEL,
         youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         client: mockClient
       });
@@ -878,8 +967,8 @@ describe('transcription - Gemini adapter (mocked)', () => {
     };
 
     try {
-      await transcribeWithGemini({
-        apiKey: 'key',
+      await runBaselinePass({
+        model: DEFAULT_GEMINI_MODEL,
         youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         client: mockClient
       });
@@ -893,6 +982,7 @@ describe('transcription - Gemini adapter (mocked)', () => {
     const mockClient: GeminiClientLike = {
       interactions: {
         create: async () => ({
+          id: 'int-1',
           output_text: 'Sorry, I cannot transcribe this video.'
         })
       }
@@ -900,8 +990,8 @@ describe('transcription - Gemini adapter (mocked)', () => {
 
     await assert.rejects(
       async () => {
-        await transcribeWithGemini({
-          apiKey: 'key',
+        await runBaselinePass({
+          model: DEFAULT_GEMINI_MODEL,
           youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
           client: mockClient
         });

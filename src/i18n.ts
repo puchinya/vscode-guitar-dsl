@@ -199,7 +199,7 @@ export const MESSAGES_JA: Messages = {
   sidebarEditCapo: 'カポ / 弾きやすさを編集',
   sidebarChangeAccompaniment: '伴奏パターンを変更',
   sidebarExportPdf: 'PDF出力 / 印刷',
-  sidebarTranscribeYouTube: 'YouTubeから採譜',
+  sidebarTranscribeYouTube: 'YouTubeから採譜（実験的）',
   sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
   templatePickPlaceholder: '新しい GuitarDSL ドキュメントのテンプレートを選択',
   templates: {
@@ -366,7 +366,7 @@ export const MESSAGES_EN: Messages = {
   sidebarEditCapo: 'Edit Capo / Playability',
   sidebarChangeAccompaniment: 'Change Accompaniment Pattern',
   sidebarExportPdf: 'Export PDF / Print',
-  sidebarTranscribeYouTube: 'Transcribe from YouTube',
+  sidebarTranscribeYouTube: 'Transcribe from YouTube (Experimental)',
   sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
   templatePickPlaceholder: 'Choose a template for the new GuitarDSL document',
   templates: {

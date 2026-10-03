@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import { SupportedLocale, getAccompanimentUiMessages, getMessages } from '../i18n';
 import { isValidYouTubeUrl } from './youtube';
-import { transcribeWithGemini } from './gemini';
+import { TranscriptionStage, runTranscriptionPipeline } from './pipeline';
 import { serializeSongToGuitarDsl } from './serializer';
 import { parseGuitarDsl } from '../compiler';
 import { AccompanimentFamily, FAMILY_ORDER, STRUMMING_PATTERN_PRESETS, StrummingPatternPreset } from '../strummingPatterns';
@@ -42,7 +42,7 @@ export class TranscribePanel {
       return TranscribePanel.currentPanel;
     }
 
-    const title = locale === 'ja' ? 'YouTubeから自動採譜' : 'Transcribe from YouTube';
+    const title = locale === 'ja' ? 'YouTubeから自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)';
     const panel = vscode.window.createWebviewPanel(
       'guitardslTranscribe',
       title,
@@ -150,25 +150,41 @@ export class TranscribePanel {
       return;
     }
 
-    this.panel.webview.postMessage({ type: 'transcribing' });
+    const stageText: Record<TranscriptionStage, string> = isJa
+      ? {
+          baseline: 'GeminiでYouTube音源を解析中... (曲構成・メロディ・歌詞)',
+          harmony: 'コード進行を精査中...',
+          verification: '判定の曖昧なコードを再確認中...',
+          groove: 'ストロークのリズムを解析中...',
+          finalizing: 'ストローク・カポを最適化中...'
+        }
+      : {
+          baseline: 'Analyzing YouTube audio with Gemini (structure, melody, lyrics)...',
+          harmony: 'Refining the chord progression...',
+          verification: 'Re-checking ambiguous chords...',
+          groove: 'Analyzing the strumming rhythm...',
+          finalizing: 'Optimizing strumming and capo...'
+        };
+    this.panel.webview.postMessage({ type: 'transcribing', text: stageText.baseline });
 
     try {
-      const song = await transcribeWithGemini({
+      const bpm = options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300
+        ? options.bpmValue
+        : undefined;
+      const capo = options.capoMode === 'manual' && options.capoValue !== undefined && Number.isInteger(options.capoValue) && options.capoValue >= 0 && options.capoValue <= 12
+        ? options.capoValue
+        : undefined;
+
+      const song = await runTranscriptionPipeline({
         apiKey,
         youtubeUrl: url,
         model: options.model,
-        beatType: options.beatType
+        beatType: options.beatType,
+        strummingPresetId: options.strummingPresetId,
+        bpm,
+        capo,
+        onStage: stage => this.panel.webview.postMessage({ type: 'transcribing', text: stageText[stage] })
       });
-
-      // Override BPM if manually specified
-      if (options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300) {
-        song.bpm = Math.round(options.bpmValue);
-      }
-
-      // Override Capo if manually specified
-      if (options.capoMode === 'manual' && options.capoValue !== undefined && options.capoValue >= 0 && options.capoValue <= 12) {
-        song.capo = options.capoValue;
-      }
 
       const dslText = serializeSongToGuitarDsl(song, {
         compressRepeats: options.compressRepeats,
@@ -220,7 +236,7 @@ export class TranscribePanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${isJa ? 'YouTubeから自動採譜' : 'Transcribe from YouTube'}</title>
+  <title>${isJa ? 'YouTubeから自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)'}</title>
   <style>
     :root {
       --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -245,6 +261,14 @@ export class TranscribePanel {
       color: var(--vscode-descriptionForeground, #888);
       font-size: 0.9em;
       margin-bottom: 24px;
+    }
+    .experimental-warning {
+      color: var(--vscode-editorWarning-foreground, var(--vscode-foreground));
+      background-color: var(--vscode-inputValidation-warningBackground, var(--vscode-editorWidget-background));
+      border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border));
+      border-radius: 4px;
+      padding: 12px 14px;
+      margin: -12px 0 24px;
     }
     .section-title {
       font-weight: 600;
@@ -372,8 +396,9 @@ export class TranscribePanel {
   </style>
 </head>
 <body>
-  <h2>🎸 ${isJa ? 'YouTube 音源から自動採譜' : 'Transcribe from YouTube'}</h2>
+  <h2>${isJa ? 'YouTube 音源から自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)'}</h2>
   <div class="desc">${isJa ? 'Gemini AI を使用してYouTubeの動画からコード、ストロークリズム、メロディ五線譜、歌詞を解析し、GuitarDSL楽譜を自動生成します。' : 'Uses Gemini AI to transcribe guitar chords, strumming rhythms, vocal melody, and lyrics from YouTube into GuitarDSL.'}</div>
+  <div class="experimental-warning" role="note">${isJa ? 'この機能は実験的です。生成結果には誤ったコード、リズム、メロディ、歌詞、BPM などが含まれる可能性があります。結果を下書きとして扱い、必ず確認・修正してください。' : 'This feature is experimental. The generated score may contain incorrect chords, rhythm, melody, lyrics, BPM, or other musical details. Treat the result as a draft and review/correct it before use.'}</div>
 
   <div class="field-group">
     <label for="youtubeUrl">${isJa ? 'YouTube 動画 URL' : 'YouTube Video URL'} <span style="color:#e74c3c">*</span></label>
@@ -562,7 +587,7 @@ export class TranscribePanel {
       if (msg.type === 'transcribing') {
         statusBox.className = 'status-box loading';
         statusBox.style.display = 'flex';
-        statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+        statusText.textContent = msg.text || '${isJa ? 'GeminiでYouTube音源を解析中...' : 'Analyzing YouTube audio with Gemini...'}';
         btnStart.disabled = true;
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {

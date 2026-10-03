@@ -283,6 +283,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       if (!transcribeTab) await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.ok(transcribeTab, 'Transcribe webview tab should be open');
+    assert.ok(transcribeTab.label.includes('Experimental') || transcribeTab.label.includes('実験的'), 'the opened webview tab identifies the feature as Experimental');
   });
 });
 

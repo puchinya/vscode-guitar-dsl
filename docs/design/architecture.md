@@ -215,20 +215,58 @@ VS Codeのエディタコアにおけるリアルタイムな字句ハイライ�
 | Webview → Ext | `save` / `close` | 保存（`asNew`）、パネルを閉じる |
 | Ext → Webview | `status` | 保存結果・エラー、編集中表示 |
 
-### 2.8 YouTube 採譜サブシステム (`src/transcription/`)
+### 2.8 YouTube 採譜サブシステム（実験的、`src/transcription/`）
 Gemini API の動画理解機能を介して YouTube 音源から構造化 Music IR を抽出し、決定論的に GuitarDSL へ変換する独立モジュール群。VS Code 拡張機能コア以外（コンパイラ・レンダラ・PDF）からは独立し、Gemini SDK はこのサブシステム内に隠蔽される。
+
+**実験的分類と精度境界**: Gemini による動画解釈が不確実な根拠情報源となる。#45 の専用ハーモニー／グルーヴパスと決定論的なローカル最適化は結果の一貫性を高めるが、録音に対する音楽的正しさを証明しない。Music IR の意味検証、シリアライズ、`parseGuitarDsl` は構造的な妥当性を確立するもので、推定したコード、リズム、メロディ、歌詞、BPM、形式の正しさは保証しない。受け入れ済みの実音精度ベンチマークや閾値がないため、このサブシステムは実験的のままとする。より強い品質の約束は、評価証拠と受け入れ基準を定める別途承認済み要件を必要とする。
 
 - **`model.ts`**:
   - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。カポ（`capo`）、小節歌詞（`lyrics`）、およびメロディ音符ごとの音節歌詞（`lyric`）をサポート。
   - Gemini Structured Output 用の JSON Schema（`MUSIC_IR_JSON_SCHEMA`）。
-  - 純粋なセマンティックバリデーション（`validateTranscribedSong`）：BPM 30..300、キー・コード・ピッチの構文適合性、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。不正データはシリアライザへ渡さず排除。
+  - ベースライン検証（`validateBaselineSong`）: メタ情報、セクション・小節構造、メロディ、歌詞を検証する。ベースラインのコード・リズムは精緻化で置き換えるため文脈扱いとし、拍数は検証しない。メロディ（のみ）は `repairMelodyTiming` で 4 拍に補完・切り詰めする。
+  - 最終検証（`validateTranscribedSong`）: BPM 30..300、キー・コード・ピッチの構文適合性、カポ 0..12、4/4 拍子限定、各小節内合計 4 拍の厳密一致（`duration.ts` の有理数検証）。コード・リズムの自動補修は行わず、不正データは拒否する。
+  - `beatsToDurationString`: 拍数（有理数）から GuitarDSL 音価文字列を生成する（付点を使わず `+` で連結。3 連の端数は `8t`/`4t`）。コード長とリズム長の算出で共用する。
+  - `RhythmEvent.arpeggio` は `.arp` 修飾子を表す（明示プリセットのアルペジオ用）。
 - **`youtube.ts`**:
   - YouTube URL の形式検証（`isValidYouTubeUrl`）および ID 抽出等の純粋ヘルパー関数群。
   - HTTPS かつ `youtube.com` / `www.youtube.com` / `youtu.be` のみを許可。
 - **`gemini.ts`**:
-  - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。
-  - 固定プロンプト（全セクション・全小節の完全書き起こし、推奨カポ設定、音節歌詞の指定を含む）、YouTube 動画 URI（`{ type: "video", uri }`）、および Music IR JSON Schema を指定してリクエストを送信。
-  - レスポンスのテキスト抽出、JSON パース、および `model.ts` によるセマンティック検証を実行。API キーや生レスポンスはログ出力しない。
+  - `@google/genai` の `interactions.create` を用いた Gemini アダプタ。SDK 依存はこのファイルに閉じる。
+  - `createStructuredInteraction`: 1 回の構造化呼び出しを行い、`{ id, json }` を返す。`store: true` と `response_format`（JSON Schema）を毎回指定し、後続呼び出しでは `previous_interaction_id` を付ける。
+  - `runBaselinePass`: 固定プロンプト、YouTube 動画 URI、Music IR JSON Schema で呼び出す。戻り値は `{ song, interactionId }`。`gemini-3.8-flash` / `3.7-flash` / `3.6-flash` / `3.5-flash-lite` では、動画入力に `processing: 'agentic'` を付ける。
+  - ハーモニー・検証・グルーヴ用のプロンプトビルダー。後続プロンプトには、ベースラインの骨格（セクション名、小節数、小節ごとの歌詞の手がかり）を JSON で埋め込む。
+  - API キー、インタラクション内容、生レスポンスはログ出力しない。
+- **`harmonyRefinement.ts`**:
+  - ハーモニー観測 IR（`HarmonyRefinement`）と検証 IR（`HarmonyVerification`）の型・JSON Schema・検証。検証内容は、tick 0 必須、厳密昇順、候補 1〜3、信頼度が非増加、セクション・小節の形状一致、capo フィールドの禁止。
+  - `findAmbiguousEvents`: 曖昧な変化点を抽出する（最上位 < 0.78、または 1 位と 2 位の差 < 0.18）。
+  - `chooseChords`: 曖昧なイベントについて、同じ section/measure/tick16 を指し、提示候補のいずれかと一致する verified `selectedName` だけを採用する。検証結果の欠落・候補外・利用不能時は最上位候補へフォールバックし、非曖昧イベントも最上位候補を使う。
+  - `harmonyToChordEvents`: tick 差から `beatsToDurationString` でコード長を算出する。調性による置換は行わない。
+- **`capoOptimizer.ts`**:
+  - `transposeChordName`: ルートとスラッシュベースを半音移調する。クオリティは保持する。
+  - `chooseCapo`: 手動値はそのまま使う。自動時は 0..7 を `getDefaultVoicing` ベースのスコアで評価する（声部配置が未定義のスラッシュコードは分子のコードで採点）。同点は低いカポを選ぶ。
+  - `applyCapo`: コードをプレイ形へ移調し、`key` は実音のまま維持する。
+- **`grooveOptimizer.ts`**:
+  - グルーヴ観測 IR（`GrooveRefinement`）: 小節ごとに `grid`、`style`、`attacks`、`accents?`、`sustainFromPrevious?`、`confidence` を持つ。型・Schema・検証を含む。
+  - 候補は観測リズムと、`presetStyle(preset) === measure.style` を満たすプリセットから作る。`rolled` プリセットはスタイル判定上 `arpeggio` として扱い、他のプリセットは宣言されたスタイルを使う。打点が観測 `grid` にすべて正確に乗り、パターンが 4 拍を満たすことも必要。
+  - 観測候補の family は次のように決める:
+    - `arpeggio` → `arpeggio`
+    - `sustain` → `sustain`
+    - `strum` + grid 8 → `eighth`
+    - `strum` + grid 12 → `triplet`
+    - `strum` + grid 16 → `sixteenth`
+  - プリセット候補はカタログに宣言された `AccompanimentFamily`（`quarter`、`eighth`、`sixteenth`、`shuffle`、`swing`、`triplet`、`sustain`、`arpeggio`、`rolled`）を保持する。遷移コストは候補の実際の family を比較し、同一 ID は 0、同一 family は 2、異なる family は 6 とする。
+  - アルペジオの観測候補には、アルペジオ系プリセットと同様にストローク方向を付けない。その他の観測候補の方向は、最も粗いグリッドの振り子規則で付ける。先頭の空きは休符にする。ただし `sustainFromPrevious` が有効な場合は、前小節の最後のストロークに `.t` を付けて延長として扱う。
+  - 局所コストは `10·打点差 + 3·アクセント差`（観測候補は `max(0, 0.85 − conf)·40`）。同一プリセット ID の遷移コストは 0、同一 family は 2、異なる family は 6 とする。同点時はプリセット優先 → 宣言順 → 観測候補の順に選ぶ。
+  - セクション単位の DP で最適化し、状態はセクションをまたがない。
+- **`pipeline.ts`**:
+  - `runTranscriptionPipeline` の処理順:
+    1. ベースライン
+    2. ハーモニー（形状不正時は 1 回だけ再要求）
+    3. 必要時のみ検証
+    4. グルーヴ＋DP、または明示プリセットの適用
+    5. BPM・カポの上書き
+    6. 最終検証
+  - VS Code 非依存。進捗は `onStage` コールバックで通知する。
 - **`serializer.ts`**:
   - バリデーション済み Music IR を決定論的な GuitarDSL テキストへ変換（`serializeSongToGuitarDsl`）。VS Code 非依存。
   - 前小節と同一パターンの繰り返しにおける `%`（小節リピート）記法や `mel: | % |` の活用、メロディ音符ごとの音節歌詞（`lyr:`）の出力をサポート。
@@ -619,8 +657,11 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor User as ユーザー
-    participant Ext as extension.ts (SecretStorage / UI)
+    participant Ext as extension.ts
+    participant Panel as TranscribePanel
+    participant Web as Webview
     participant YT as transcription/youtube.ts
+    participant Pipe as transcription/pipeline.ts
     participant Gem as transcription/gemini.ts (@google/genai)
     participant Model as transcription/model.ts
     participant Ser as transcription/serializer.ts
@@ -628,30 +669,49 @@ sequenceDiagram
     participant Editor as 新規エディタ (未保存)
 
     User->>Ext: guitardsl.transcribeYouTube
-    Ext->>Ext: SecretStorage から API キー取得
-    alt API キー未登録
-        Ext->>User: showInputBox (password: true)
-        User-->>Ext: API キー入力 (SecretStorage に保存)
-    end
-    Ext->>User: showInputBox (YouTube URL 入力)
-    User-->>Ext: URL 入力
-    Ext->>YT: isValidYouTubeUrl(url)
-    alt URL 不正
-        YT-->>Ext: false
-        Ext->>User: showErrorMessage (URL エラー)
-    else URL 妥当
-        Ext->>Ext: window.withProgress
-        Ext->>Gem: transcribeWithGemini(key, url, model)
-        Gem->>Gem: interactions.create({ input: [video, prompt], response_format })
-        Gem->>Model: validateTranscribedSong(json)
-        Model-->>Gem: validated IR
-        Gem-->>Ext: TranscribedSong
-        Ext->>Ser: serializeSongToGuitarDsl(song)
-        Ser->>Comp: parseGuitarDsl(text) 検証
-        Comp-->>Ser: diagnostics (エラー 0 件)
-        Ser-->>Ext: dslText
-        Ext->>Editor: openTextDocument({ language: 'guitardsl', content })
-        Ext->>User: showTextDocument(doc)
+    Ext->>Panel: createOrShow (新規作成または既存を再表示)
+    Panel->>Panel: SecretStorage を読む
+    Panel-->>Web: saved-key flag を含む HTML (キー値は含めない)
+    User->>Web: URL / キー / オプション
+    Web->>Panel: startTranscription(options)
+    Panel->>Panel: 入力キーまたは保存済みキーを取得・必要なら保存
+    alt API キーなし
+        Panel-->>Web: postMessage(error)
+    else API キーあり
+        Panel->>YT: isValidYouTubeUrl(url)
+        alt URL 不正
+            Panel-->>Web: postMessage(error)
+        else URL が有効
+            Panel->>Pipe: runTranscriptionPipeline(options, onStage)
+            Pipe-->>Panel: onStage(stage)
+            Panel-->>Web: postMessage(ローカライズ済み進捗)
+            Pipe->>Gem: runBaselinePass (video + prompt, store)
+            Gem->>Model: validateBaselineSong(json)
+            Gem-->>Pipe: { song, interactionId }
+            Pipe->>Gem: harmony follow-up (previous_interaction_id)
+            opt 曖昧なコードあり
+                Pipe->>Gem: verification follow-up (候補から選択)
+            end
+            alt 伴奏パターン = 自動
+                Pipe->>Gem: groove follow-up (previous_interaction_id)
+                Pipe->>Pipe: grooveOptimizer (セクション単位 DP)
+            else 明示プリセット
+                Pipe->>Pipe: プリセットのリズムを全小節へ
+            end
+            Pipe->>Pipe: capoOptimizer / BPM 上書き
+            Pipe->>Model: validateTranscribedSong(song) 厳格
+            Pipe-->>Panel: TranscribedSong
+            Panel->>Ser: serializeSongToGuitarDsl(song)
+            Ser->>Comp: parseGuitarDsl(text) 検証
+            Comp-->>Ser: diagnostics (エラー 0 件)
+            Ser-->>Panel: dslText
+            alt DSL にエラーがある
+                Panel-->>Web: postMessage(error)、生成文書なし
+            else 有効な GuitarDSL
+                Panel->>Editor: openTextDocument({ language: 'guitardsl', content })
+                Panel->>User: showTextDocument(doc)
+            end
+        end
     end
 ```
 

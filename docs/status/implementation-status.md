@@ -58,7 +58,7 @@
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
 | | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレット、プレビューのカポバー「編集…」。セクション方式の楽譜設定エディタ（カポ / 弾きやすさ、初心者モード、移調） |
-| | `guitardsl.transcribeYouTube` (YouTube自動採譜) | ✅ 完了 | コマンドパレットのみ。Gemini API経由でMusic IR取得・バリデーション・DSL生成・新規エディタ表示 |
+| | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ新規エディタを開く。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、非実験的な分類を支える根拠がなく、生成結果は下書きとして要確認 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
@@ -69,7 +69,7 @@
 | **設定** | `guitardsl.gemini.model`, `guitardsl.transcription.compressRepeats`, `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
 | **ヘルプ同期** | `docs/help/` → `media/help/`（`generate:help` / `check:help`） | ✅ 完了 | 仕様セクションの割り当てとダイジェスト、見出しごとの `help-sources` による本文の所有、コマンド・設定の仕様との一致、NLS、生成物の最新性を `npm test` で検査。コマンド・設定一覧は `package.json` から生成 |
 | **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入。倍音の差し引き {3,5,6} と 7th ゲートで maj7/7 への偏りを抑制）、拍は学習済みモデル Beat This! small（ONNX を tract で推論、最大 2 Worker で並列。拍が得られなければ従来方式に切り替え）、ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／ギター以外のドラム無し音源（ピアノ・ストリングス・パッド）では倍・半分テンポの選択を誤りやすい（#59）／5 分の曲の解析に約 45 秒・ピーク約 1.5 GB（M1）／ファンク・ジャズ等のテンションの多い和音のルート精度が低い／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
-| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | ✅ 完了 | 4/4拍子限定、決定論的シリアライズ、有理数による小節4拍検証、SecretStorage保護 |
+| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | 🧪 実験的 | 4/4 限定、構造検証・決定論的シリアライズ・DSL パース検証は実装済み。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化するが、実音の精度は未検証で非実験的な分類を支える根拠がない。生成結果は下書きとして要確認 |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | スコアの調弦・カポでプリセット照合と自動判定。Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
 | **カポ推論・弾きやすさ** | `src/capo.ts`（汎用推論 API、弾きやすさ、ソースを保つカポ変換、有効 DSL） | ✅ 完了 | 純粋モジュール（VS Code・採譜に非依存）。候補 0〜12、スコアの調弦で各カポの形を解決。推奨は最高スコア・同点は小さいカポ。ラベル付きコード・定義との衝突は変換不可。採譜への組み込みは未実施 |
 | **初心者モード** | `src/beginnerMode.ts`（カポ + 簡単なコードへの置き換え）、`src/previewBeginner.ts`、楽譜設定の `beginner` セクション | ✅ 完了 | スコアの調弦を原曲と変換後の評価に保持。バレーコード許可／使用しない（絶対条件）、置き換えは固定の規則のみ。評価する押さえ方は描画されるもの（`chord` 定義または既定の押さえ方）だけ。既定の押さえ方がセーハの長三和音／短三和音は `forbid` で `maj7` / `m7` へ置き換え、両方セーハ（例 `Bm`）はそのカポで不可 |
