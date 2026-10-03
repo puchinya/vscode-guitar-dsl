@@ -4,7 +4,7 @@ set -euo pipefail
 # Create or switch to a source-code feature branch associated with one Issue.
 #
 # Usage:
-#   scripts/agent/start-feature-branch.sh 123 "graphics path"
+#   scripts/project/start-feature-branch.sh 123 "graphics path"
 #
 # The branch is created from the current remote default branch:
 #   feature/123-graphics-path

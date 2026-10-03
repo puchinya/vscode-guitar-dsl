@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "initialized": true,
+  "project_name": "vscode-guitar-dsl",
+  "components": [
+    {
+      "id": "extension",
+      "roots": [
+        "."
+      ],
+      "stacks": [
+        "javascript"
+      ],
+      "application_types": [
+        "desktop-gui"
+      ],
+      "targets": [],
+      "hooks": {
+        "verify_quick": [],
+        "verify_final": []
+      }
+    }
+  ],
+  "branch": {
+    "prefix": "feature",
+    "max_slug_length": 48,
+    "required_checks": [
+      "agent-required-check"
+    ]
+  },
+  "milestones": {
+    "enabled": false,
+    "version_source": "auto"
+  },
+  "hooks": {
+    "branch_switch": [],
+    "verify_quick": [
+      "npm run compile",
+      "npm run test:unit"
+    ],
+    "verify_final": [
+      "npm run compile",
+      "npm test",
+      "npm run vscode:prepublish",
+      "npx @vscode/vsce ls"
+    ]
+  }
+}

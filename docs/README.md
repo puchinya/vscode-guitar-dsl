@@ -1,18 +1,18 @@
 # vscode-guitar-dsl documentation router
 
-vscode-guitar-dsl の永続ドキュメントは、答える質問ごとに責務を分ける。
+Choose the source that owns the question, then read only the relevant category README and sections.
 
 | Need | Start here |
 |---|---|
-| 言語構文（GuitarDSL）、コマンド仕様、拡張機能の外部振る舞い | [`specs/README.md`](specs/README.md) |
-| 内部アーキテクチャ（コンパイラ、Webview、TextMate文法定義） | [`design/README.md`](design/README.md) |
-| 現在の実装状況、機能対応状況、検証状態 | [`status/README.md`](status/README.md) |
-| 拡張機能実装時の技術ルール・検証コマンド | [`agents/`](agents/) |
-| Issue phase workflow | [`agent-workflow/`](agent-workflow/) |
-| 組み込みヘルプの編集元（仕様から派生したユーザー向け文書。規範ではない） | [`help/README.md`](help/README.md) |
+| GuitarDSL syntax, command specifications, extension behavior | [`specs/README.md`](specs/README.md) |
+| Internal architecture | [`design/README.md`](design/README.md) |
+| Current implementation and verification status | [`status/README.md`](status/README.md) |
+| Extension technical rules | [`agents/extension.md`](agents/extension.md) |
+| Verification commands | [`agents/testing.md`](agents/testing.md) |
+| Project policy and document authority | [`../AGENTS.md`](../AGENTS.md) |
+| Derived user Help | [`help/README.md`](help/README.md) |
+| Human project overview | [`../docs_only_human/issue-driven-development-workflow.md`](../docs_only_human/issue-driven-development-workflow.md) |
 
-通常はこのREADMEからcategory READMEを選び、そこから対象文書を1～少数だけ読む。
-全spec/design/statusを最初から横断してはならない。
+The `ai-agent-workflow` plugin owns shared Issue workflow procedures. This repository retains project-specific policy, documentation authority, technical guides, and verification instructions in the locations above.
 
-文書の依存方向とコード変更時の同期規則はルートの [`AGENTS.md`](../AGENTS.md) を正本とする。
-人間向けのworkflow overviewは [`docs_only_human/issue-driven-development-workflow.md`](../docs_only_human/issue-driven-development-workflow.md) にある。
+The document dependency direction and Help/AI synchronization rules are defined in [`../AGENTS.md`](../AGENTS.md).

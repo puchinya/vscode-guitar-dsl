@@ -5,8 +5,8 @@ set -euo pipefail
 # When an Issue number is supplied, also assign that Issue to the Milestone.
 #
 # Usage:
-#   scripts/agent/ensure-version-milestone.sh
-#   scripts/agent/ensure-version-milestone.sh 123
+#   scripts/project/ensure-version-milestone.sh
+#   scripts/project/ensure-version-milestone.sh 123
 #
 # stdout contains only the resolved milestone title, making the command usable
 # from another script. Informational messages are written to stderr.
