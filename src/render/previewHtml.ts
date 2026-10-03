@@ -127,10 +127,22 @@ ${cspMeta}
     color: #cccccc;
     user-select: none;
   }
+  .toolbar-scroll {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
   .toolbar-left, .toolbar-center, .toolbar-right {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 0 0 auto;
+  }
+  .toolbar-right {
+    white-space: nowrap;
   }
   .playback-toolbar {
     position: fixed;
@@ -400,29 +412,31 @@ ${cspMeta}
 </head>
 <body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"${capoBar ? ' class="has-capo-bar"' : ''}>
   <div class="toolbar-container">
-    <div class="toolbar-left">
-      <span class="toolbar-label">${escapeXml(msgs.uiView)}</span>
-      <div class="segmented-control">
-        <button class="tool-btn active" data-mode="single" title="${escapeXml(msgs.uiSinglePageTitle)}">${escapeXml(msgs.uiSinglePage)}</button>
-        <button class="tool-btn" data-mode="spread" title="${escapeXml(msgs.uiSpreadTitle)}">${escapeXml(msgs.uiSpread)}</button>
-        <button class="tool-btn" data-mode="web" title="${escapeXml(msgs.uiWebTitle)}">${escapeXml(msgs.uiWeb)}</button>
+    <div class="toolbar-scroll">
+      <div class="toolbar-left">
+        <span class="toolbar-label">${escapeXml(msgs.uiView)}</span>
+        <div class="segmented-control">
+          <button class="tool-btn active" data-mode="single" title="${escapeXml(msgs.uiSinglePageTitle)}">${escapeXml(msgs.uiSinglePage)}</button>
+          <button class="tool-btn" data-mode="spread" title="${escapeXml(msgs.uiSpreadTitle)}">${escapeXml(msgs.uiSpread)}</button>
+          <button class="tool-btn" data-mode="web" title="${escapeXml(msgs.uiWebTitle)}">${escapeXml(msgs.uiWeb)}</button>
+        </div>
       </div>
-    </div>
 
-    <div class="toolbar-center">
-      <span class="toolbar-label">${escapeXml(msgs.uiPaper)}</span>
-      <select id="select-page-size" class="tool-select" title="${escapeXml(msgs.uiPaperTitle)}">
-        <option value="A4" selected>A4 (210×297mm)</option>
-        <option value="A3">A3 (297×420mm)</option>
-        <option value="A5">A5 (148×210mm)</option>
-        <option value="B4">B4 (250×353mm)</option>
-        <option value="B5">B5 (176×250mm)</option>
-        <option value="Letter">Letter (8.5×11")</option>
-      </select>
-      <span class="toolbar-label" style="margin-left: 8px;">${escapeXml(msgs.uiOrientation)}</span>
-      <div class="segmented-control">
-        <button class="tool-btn active" data-orientation="portrait" title="${escapeXml(msgs.uiPortraitTitle)}">${escapeXml(msgs.uiPortrait)}</button>
-        <button class="tool-btn" data-orientation="landscape" title="${escapeXml(msgs.uiLandscapeTitle)}">${escapeXml(msgs.uiLandscape)}</button>
+      <div class="toolbar-center">
+        <span class="toolbar-label">${escapeXml(msgs.uiPaper)}</span>
+        <select id="select-page-size" class="tool-select" title="${escapeXml(msgs.uiPaperTitle)}">
+          <option value="A4" selected>A4 (210×297mm)</option>
+          <option value="A3">A3 (297×420mm)</option>
+          <option value="A5">A5 (148×210mm)</option>
+          <option value="B4">B4 (250×353mm)</option>
+          <option value="B5">B5 (176×250mm)</option>
+          <option value="Letter">Letter (8.5×11")</option>
+        </select>
+        <span class="toolbar-label" style="margin-left: 8px;">${escapeXml(msgs.uiOrientation)}</span>
+        <div class="segmented-control">
+          <button class="tool-btn active" data-orientation="portrait" title="${escapeXml(msgs.uiPortraitTitle)}">${escapeXml(msgs.uiPortrait)}</button>
+          <button class="tool-btn" data-orientation="landscape" title="${escapeXml(msgs.uiLandscapeTitle)}">${escapeXml(msgs.uiLandscape)}</button>
+        </div>
       </div>
     </div>
 
