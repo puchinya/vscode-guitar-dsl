@@ -14,5 +14,3 @@ Choose the source that owns the question, then read only the relevant category R
 | Human project overview | [`../docs_only_human/issue-driven-development-workflow.md`](../docs_only_human/issue-driven-development-workflow.md) |
 
 [`../AGENTS.md`](../AGENTS.md) defines project document authority, Help/AI synchronization, and technical-guide routing.
-
-The document dependency direction is defined there as well.
