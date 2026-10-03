@@ -8,7 +8,7 @@ Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view
 
 - **Get Started**: **New from Template** (Basic Chord Song, Melody Example or Lead Sheet Example), **Open Sample** (five bundled samples), **Open Preview to the Side** and **Open Help**. Templates and samples open as editable untitled documents, so no original file changes. Save them under any name.
 - **Current File**: when the active editor holds a GuitarDSL file, the actions for that file: preview, chord diagram editing, score settings, capo / playability, accompaniment pattern and PDF export. When no GuitarDSL file is active, it shows a hint only.
-- **Tools**: YouTube transcription and local audio transcription (experimental).
+- **Tools**: YouTube transcription and local audio transcription (both experimental).
 
 The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
 
@@ -88,10 +88,12 @@ You choose in two steps. First pick a category that fits the meter: 8-beat, 16-b
 - Measures are left alone when a change would alter the meaning of a `%`, or when they contain inline notes.
 - The change is a single undoable edit.
 
-### YouTube Transcription (Gemini)
+### YouTube Transcription (Gemini, Experimental)
 <!-- help-sources: extension:3 -->
 
-**GuitarDSL: Transcribe from YouTube** sends a public YouTube URL to Google Gemini and opens a new, unsaved GuitarDSL document with chords, rhythm and melody. It supports 4/4 songs only. Besides **Auto**, you can pick an accompaniment pattern: first a category, then one of its 4/4 patterns (patterns that need a swing or shuffle feel are not offered). It needs a Gemini API key, which is stored in VS Code's secret storage. Manage the key with **GuitarDSL: Set Gemini API Key** and **GuitarDSL: Clear Gemini API Key**. The model is chosen by the `guitardsl.gemini.model` setting. This feature uses the network, and existing files are never overwritten.
+**GuitarDSL: Transcribe from YouTube (Experimental)** sends a public YouTube URL to Google Gemini and opens a new, unsaved GuitarDSL document with chords, rhythm and melody. It supports 4/4 songs only. Besides **Auto**, you can pick an accompaniment pattern: first a category, then one of its 4/4 patterns (patterns that need a swing or shuffle feel are not offered). It needs a Gemini API key, which is stored in VS Code's secret storage. Manage the key with **GuitarDSL: Set Gemini API Key** and **GuitarDSL: Clear Gemini API Key**. The model is chosen by the `guitardsl.gemini.model` setting. This feature uses the network, and existing files are never overwritten.
+
+The generated score must pass structural validation before it opens, but that does not establish musical correctness. Chords, rhythm, melody, lyrics, BPM, section boundaries and other inferred details may be wrong. Treat the result as a draft and review and correct it before use.
 
 ### Local Audio Transcription (Experimental)
 <!-- help-sources: extension:3 -->

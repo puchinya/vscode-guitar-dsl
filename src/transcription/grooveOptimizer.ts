@@ -4,7 +4,7 @@
 // Pure module independent of VS Code APIs and Gemini SDK.
 
 import { ZERO, fadd, feq, frac, parseRhythmDuration } from '../duration';
-import { STRUMMING_PATTERN_PRESETS, StrummingPatternPreset, parsePresetStrokes } from '../strummingPatterns';
+import { AccompanimentFamily, STRUMMING_PATTERN_PRESETS, StrummingPatternPreset, parsePresetStrokes } from '../strummingPatterns';
 import { RhythmEvent, beatsToDurationString } from './model';
 import { SongShape } from './harmonyRefinement';
 
@@ -150,7 +150,7 @@ export interface GrooveMask {
 
 interface Candidate {
   id: string;
-  family: string;
+  family: AccompanimentFamily;
   /** Tie-break order: declaration index for presets, presets.length for the observed candidate. */
   order: number;
   localCost: number;
@@ -167,15 +167,14 @@ const OBSERVED_PENALTY_WEIGHT = 40;
 const EPSILON = 1e-9;
 
 function presetStyle(preset: StrummingPatternPreset): GrooveStyle {
-  if (preset.category === 'arpeggio') return 'arpeggio';
-  if (preset.category === 'ballad') return 'sustain';
-  return 'strum';
+  // The refinement schema groups rolled chords with the closest observed non-strum style.
+  return preset.style === 'rolled' ? 'arpeggio' : preset.style;
 }
 
-function observedFamily(measure: GrooveMeasure): string {
+function observedFamily(measure: GrooveMeasure): AccompanimentFamily {
   if (measure.style === 'arpeggio') return 'arpeggio';
-  if (measure.style === 'sustain') return 'ballad';
-  return measure.grid === 12 ? 'triplet' : measure.grid === 8 ? '8beat' : '16beat';
+  if (measure.style === 'sustain') return 'sustain';
+  return measure.grid === 12 ? 'triplet' : measure.grid === 8 ? 'eighth' : 'sixteenth';
 }
 
 /**
@@ -281,7 +280,7 @@ function candidatesFor(measure: GrooveMeasure): Candidate[] {
     if (!mask) return;
     candidates.push({
       id: preset.id,
-      family: preset.category,
+      family: preset.family,
       order,
       localCost: presetLocalCost(mask, measure),
       events: parsePresetStrokes(preset.pattern)

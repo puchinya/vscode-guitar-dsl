@@ -54,6 +54,20 @@ describe('GuitarDslSidebarProvider', () => {
     assert.deepStrictEqual(commandsOf(section(p, 'tools')), ['guitardsl.transcribeYouTube', 'guitardsl.transcribeAudio']);
   });
 
+  it('keeps the YouTube command identity and labels it Experimental in both locales', () => {
+    const expectedLabels = {
+      en: 'Transcribe from YouTube (Experimental)',
+      ja: 'YouTubeから採譜（実験的）'
+    } as const;
+    for (const locale of ['en', 'ja'] as const) {
+      const p = provider(locale);
+      const item = section(p, 'tools').find(candidate => candidate.kind === 'command' && candidate.command === 'guitardsl.transcribeYouTube');
+      assert.ok(item, `${locale} YouTube command remains in Tools`);
+      assert.strictEqual(item?.label, expectedLabels[locale]);
+      assert.strictEqual(item?.command, 'guitardsl.transcribeYouTube');
+    }
+  });
+
   it('active GuitarDSL file: Current File exposes six actions targeting the active URI', () => {
     const uri = { toString: () => 'file:///song.guitardsl' };
     activeDoc = { uri };
@@ -117,6 +131,13 @@ describe('GuitarDslSidebarProvider', () => {
 describe('Sidebar package contributions', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const nls = ['package.nls.json', 'package.nls.ja.json'].map(f => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+
+  it('uses the exact Experimental command titles and Gemini model descriptions in both locales', () => {
+    assert.strictEqual(nls[0]['command.transcribeYouTube.title'], 'GuitarDSL: Transcribe from YouTube (Experimental)');
+    assert.strictEqual(nls[1]['command.transcribeYouTube.title'], 'GuitarDSL: YouTubeから採譜（実験的）');
+    assert.strictEqual(nls[0]['config.geminiModel.description'], 'Gemini model to use for experimental YouTube audio transcription.');
+    assert.strictEqual(nls[1]['config.geminiModel.description'], 'YouTube 音源の実験的な自動採譜に使用する Gemini モデル。');
+  });
 
   it('contributes the activation event, commands, a single Tree View and the Activity Bar container', () => {
     assert.ok(pkg.activationEvents.includes('onView:guitardsl.sidebar'));

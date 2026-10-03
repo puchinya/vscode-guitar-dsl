@@ -176,10 +176,10 @@ describe('transcription - pipeline (mocked Gemini)', () => {
 
   it('skips the groove call entirely for an explicit preset', async () => {
     const { client, calls } = mockClient([() => baselineJson, () => harmonyJson(false)]);
-    const song = await run(client, { strummingPresetId: 'arpeggiato_whole' });
+    const song = await run(client, { strummingPresetId: 'roll_4_4_whole' });
     assert.strictEqual(calls.length, 2);
     assert.deepStrictEqual(song.sections[0].measures[0].rhythm, [{ duration: '1', arpeggio: true }]);
-    const dsl = serializeSongToGuitarDsl(song, { strummingPresetId: 'arpeggiato_whole' });
+    const dsl = serializeSongToGuitarDsl(song, { strummingPresetId: 'roll_4_4_whole' });
     assert.ok(dsl.includes('1.arp'));
     assertCompiles(dsl);
   });

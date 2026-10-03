@@ -215,8 +215,10 @@ VS Codeのエディタコアにおけるリアルタイムな字句ハイライ�
 | Webview → Ext | `save` / `close` | 保存（`asNew`）、パネルを閉じる |
 | Ext → Webview | `status` | 保存結果・エラー、編集中表示 |
 
-### 2.8 YouTube 採譜サブシステム (`src/transcription/`)
+### 2.8 YouTube 採譜サブシステム（実験的、`src/transcription/`）
 Gemini API の動画理解機能を介して YouTube 音源から構造化 Music IR を抽出し、決定論的に GuitarDSL へ変換する独立モジュール群。VS Code 拡張機能コア以外（コンパイラ・レンダラ・PDF）からは独立し、Gemini SDK はこのサブシステム内に隠蔽される。
+
+**実験的分類と精度境界**: Gemini による動画解釈が不確実な根拠情報源となる。#45 の専用ハーモニー／グルーヴパスと決定論的なローカル最適化は結果の一貫性を高めるが、録音に対する音楽的正しさを証明しない。Music IR の意味検証、シリアライズ、`parseGuitarDsl` は構造的な妥当性を確立するもので、推定したコード、リズム、メロディ、歌詞、BPM、形式の正しさは保証しない。受け入れ済みの実音精度ベンチマークや閾値がないため、このサブシステムは実験的のままとする。より強い品質の約束は、評価証拠と受け入れ基準を定める別途承認済み要件を必要とする。
 
 - **`model.ts`**:
   - Music IR v1 のデータモデル（`TranscribedSong`, `Section`, `Measure`, `ChordEvent`, `RhythmEvent`, `MelodyEvent`）。カポ（`capo`）、小節歌詞（`lyrics`）、およびメロディ音符ごとの音節歌詞（`lyric`）をサポート。

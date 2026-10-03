@@ -1,7 +1,7 @@
 // Music IR v1 data models, JSON schema and semantic validation for transcription.
 // Pure module independent of VS Code APIs and Gemini SDK.
 
-import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, isDyadic, TRIPLET, parseNoteValue, parseRhythmDuration } from '../duration';
+import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, TRIPLET, parseNoteValue, parseRhythmDuration } from '../duration';
 import { parseKeySignature } from '../compiler';
 import { isValidChordName } from '../chordDefinition';
 
@@ -161,7 +161,7 @@ export function beatsToDurationString(beats: Fraction): string | null {
   if (beats.n <= 0) return null;
   let dyadic = beats;
   let tripletTerm: string | undefined;
-  if (!isDyadic(beats)) {
+  if (!hasDyadicDenominator(beats)) {
     const whole = frac(Math.floor(beats.n / beats.d));
     const rem = fsub(beats, whole);
     if (feq(rem, frac(1, 3))) tripletTerm = '8t';
@@ -183,6 +183,12 @@ export function beatsToDurationString(beats: Fraction): string | null {
   }
   if (tripletTerm) terms.push(tripletTerm);
   return terms.join('+');
+}
+
+function hasDyadicDenominator(value: Fraction): boolean {
+  let denominator = value.d;
+  while (denominator > 1 && denominator % 2 === 0) denominator /= 2;
+  return denominator === 1;
 }
 
 /**

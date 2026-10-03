@@ -70,7 +70,7 @@
 | `guitardsl.editChordDiagram` | `GuitarDSL: Edit Chord Diagram` | コマンドパレット、`chord` 行の CodeLens、プレビューのダイアグラムクリック | - |
 | `guitardsl.editScoreSettings` | `GuitarDSL: Edit Score Settings` | コマンドパレット | - |
 | `guitardsl.editCapo` | `GuitarDSL: Edit Capo / Playability` | コマンドパレット、プレビューのカポバー「編集…」 | - |
-| `guitardsl.transcribeYouTube` | `GuitarDSL: Transcribe from YouTube` | コマンドパレット | - |
+| `guitardsl.transcribeYouTube` | `GuitarDSL: Transcribe from YouTube (Experimental)` | コマンドパレット | - |
 | `guitardsl.setGeminiApiKey` | `GuitarDSL: Set Gemini API Key` | コマンドパレット | - |
 | `guitardsl.clearGeminiApiKey` | `GuitarDSL: Clear Gemini API Key` | コマンドパレット | - |
 | `guitardsl.transcribeAudio` | `GuitarDSL: Transcribe Local Audio (Experimental)` | コマンドパレット | - |
@@ -127,8 +127,10 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
 - **CodeLens**: 構文が正しい各 `chord` 定義行の上に「ダイアグラムを編集」を表示し、そのキーでこのコマンドを実行する。構文エラーの行には表示しない。
 - **プレビュー**: プレビューのダイアグラムをクリックすると、そのダイアグラムのキーでこのコマンドを実行する。
 
-### 3.4 `guitardsl.transcribeYouTube`
+### 3.4 `guitardsl.transcribeYouTube`（実験的）
 Gemini API の動画理解機能を活用し、YouTube の公開動画 URL から GuitarDSL 楽譜（コード、リズム、メロディ）を自動採譜して新しいエディタタブ（未保存ドキュメント）に開く。
+
+この機能は実験的な機能として提供する。出力は必ず下書きとして扱い、利用前に人が確認・修正する。構造検証の成功は、採譜内容が音楽的に正しいことを意味しない。実音に対する精度保証や品質 SLA は設けない。実験的の分類を変更するには、受け入れ可能な実音評価の証拠と基準を定める別の承認済み要件が必要となる。
 
 - **実行コンテキスト**: コマンドパレットのみ。
 - **前提条件・認証**:
@@ -139,7 +141,10 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   2. 入力値は HTTPS かつ `youtube.com`、`www.youtube.com`、`youtu.be` のみを受け付ける。不正な URL は API 呼び出し前に拒絶する。
 - **実行と進捗表示**:
   1. `window.withProgress` により進捗通知を表示。
-  2. Gemini API（`@google/genai` の `interactions.create`）へ固定プロンプト、YouTube URL、および JSON Schema（Music IR）を送信。
+  2. `runTranscriptionPipeline` が Gemini API（`@google/genai` の `interactions.create`）でベースラインを取得し、固定プロンプト、YouTube URL、および JSON Schema（Music IR）を使う。
+     - ベースラインは曲の構成と文脈を提供する。専用のハーモニー後続パスでコード候補を精緻化し、曖昧さの基準に達した場合だけ、候補を限定した検証パスを実行する。
+     - 伴奏が自動の場合はグルーヴ観測を取得し、決定論的なローカル最適化でセクションごとのリズムを選ぶ。明示プリセットはグルーヴ要求を省略してハード上書きとして扱う。カポ最適化もローカルで決定論的に行う。
+     - 最終検証は厳格に行い、コードやリズムなどの音楽内容を補修して成功扱いにはしない。
   3. 受信したレスポンスの構造バリデーションおよびセマンティックバリデーション（BPM 30..300、4/4 拍子、各小節内合計 4 拍、コード名・音高妥当性、カポ・歌詞・音節）を実施。
   4. バリデーション済み IR を純粋シリアライザにより決定論的 GuitarDSL テキストへ変換。推奨カポ設定（`capo:`）、同一パターンの繰り返し（`%` 記号）、およびメロディ音符ごとの音節歌詞（`lyr:`）を活用して出力。
      - 採譜パネルの伴奏パターン指定: 「自動」（既定。採譜したリズムを使う）または正規プリセットカタログ（§8.7.1）の **4/4 で、ストレートのフィールで使えるプリセット**（`feelCompatibility` が `any` または `straight` を含む）**だけ**を、ファミリー → パターンの 2 段階で選べる。採譜結果は `feel:` を書かない（ストレート）ためである。58 件を 1 つの一覧に並べず、4/4 以外や Swing などのフィールが必要なプリセットは表示しない。
@@ -200,7 +205,7 @@ Gemini API キーを設定・更新する。
 
 | 設定キー | 型 | デフォルト値 | 説明 |
 |---|---|---|---|
-| `guitardsl.gemini.model` | `string` | `"gemini-3.8-flash"` | YouTube 音源の自動採譜に使用する Gemini モデル名。 |
+| `guitardsl.gemini.model` | `string` | `"gemini-3.8-flash"` | YouTube 音源の実験的な自動採譜に使用する Gemini モデル。 |
 | `guitardsl.transcription.compressRepeats` | `boolean` | `false` | YouTube 自動採譜パネルの「反復の圧縮」オプションの初期値。有効にすると、コードとメロディが一致する連続セクションを反復記号（`\|: :\|`）と複数行歌詞に圧縮して出力する。 |
 | `guitardsl.expandPageBreakRepeats` | `boolean` | `true` | プレビューおよび PDF 出力で、ページ先頭の小節が小節リピート記号（`%`）の場合に展開して前小節の内容を表示する。 |
 
@@ -478,7 +483,7 @@ Preview の HTML ツールバーに再生操作を表示する。再生操作は
    4. `Open Help` → `guitardsl.openHelp`
 2. **Current File**（初期状態で展開。§4C.3）
 3. **Tools**（初期状態で折りたたみ）
-   1. `Transcribe from YouTube` → `guitardsl.transcribeYouTube`
+   1. `Transcribe from YouTube (Experimental)` → `guitardsl.transcribeYouTube`
    2. `Transcribe Local Audio (Experimental)` → `guitardsl.transcribeAudio`
 
 ヘルプの内容はサイドバーに複製せず、`guitardsl.openHelp` で開く。
@@ -602,6 +607,7 @@ Preview の HTML ツールバーに再生操作を表示する。再生操作は
 - プレビューのカポバー（カポ、弾きやすさ、5 段階名、推奨、プレビューのみ、DSLに適用、編集…）、楽譜設定エディタの全ラベル・ボタン（移調セクションを含む）、変更・移調できない理由、一時変更解除・適用結果・未使用定義の通知をロケールに従ってローカライズする。
 
 ### 6.6 YouTube 自動採譜メッセージのローカライズ
+- コマンドパレット、サイドバー、パネルタイトルと HTML title、パネル見出しに Experimental の分類を日本語・英語で表示する。パネルの説明直後に、音楽的な詳細が誤る可能性と下書きの確認・修正を伝える、常時表示・非ブロッキングの警告をローカライズして表示する。
 - YouTube URL 入力ボックス、API キー入力プロンプト、進捗メッセージ、および各種エラー通知メッセージ（API エラー、URL 不正、バリデーション失敗等）をロケールに従ってローカライズする。
 
 ### 6.7 ヘルプのローカライズ

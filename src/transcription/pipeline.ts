@@ -117,7 +117,7 @@ function presetRhythm(presetId: string): RhythmEvent[] {
  */
 export async function runTranscriptionPipeline(options: TranscriptionPipelineOptions): Promise<TranscribedSong> {
   const model = options.model?.trim() || DEFAULT_GEMINI_MODEL;
-  const client = options.client ?? createGeminiClient(options.apiKey);
+  const client = options.client ?? await createGeminiClient(options.apiKey);
   const beatType = options.beatType ?? 'auto';
   const explicitPreset = options.strummingPresetId && options.strummingPresetId !== 'auto' ? options.strummingPresetId : undefined;
 

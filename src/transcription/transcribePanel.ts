@@ -42,7 +42,7 @@ export class TranscribePanel {
       return TranscribePanel.currentPanel;
     }
 
-    const title = locale === 'ja' ? 'YouTubeから自動採譜' : 'Transcribe from YouTube';
+    const title = locale === 'ja' ? 'YouTubeから自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)';
     const panel = vscode.window.createWebviewPanel(
       'guitardslTranscribe',
       title,
@@ -236,7 +236,7 @@ export class TranscribePanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${isJa ? 'YouTubeから自動採譜' : 'Transcribe from YouTube'}</title>
+  <title>${isJa ? 'YouTubeから自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)'}</title>
   <style>
     :root {
       --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -261,6 +261,14 @@ export class TranscribePanel {
       color: var(--vscode-descriptionForeground, #888);
       font-size: 0.9em;
       margin-bottom: 24px;
+    }
+    .experimental-warning {
+      color: var(--vscode-editorWarning-foreground, var(--vscode-foreground));
+      background-color: var(--vscode-inputValidation-warningBackground, var(--vscode-editorWidget-background));
+      border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border));
+      border-radius: 4px;
+      padding: 12px 14px;
+      margin: -12px 0 24px;
     }
     .section-title {
       font-weight: 600;
@@ -388,8 +396,9 @@ export class TranscribePanel {
   </style>
 </head>
 <body>
-  <h2>🎸 ${isJa ? 'YouTube 音源から自動採譜' : 'Transcribe from YouTube'}</h2>
+  <h2>${isJa ? 'YouTube 音源から自動採譜（実験的）' : 'Transcribe from YouTube (Experimental)'}</h2>
   <div class="desc">${isJa ? 'Gemini AI を使用してYouTubeの動画からコード、ストロークリズム、メロディ五線譜、歌詞を解析し、GuitarDSL楽譜を自動生成します。' : 'Uses Gemini AI to transcribe guitar chords, strumming rhythms, vocal melody, and lyrics from YouTube into GuitarDSL.'}</div>
+  <div class="experimental-warning" role="note">${isJa ? 'この機能は実験的です。生成結果には誤ったコード、リズム、メロディ、歌詞、BPM などが含まれる可能性があります。結果を下書きとして扱い、必ず確認・修正してください。' : 'This feature is experimental. The generated score may contain incorrect chords, rhythm, melody, lyrics, BPM, or other musical details. Treat the result as a draft and review/correct it before use.'}</div>
 
   <div class="field-group">
     <label for="youtubeUrl">${isJa ? 'YouTube 動画 URL' : 'YouTube Video URL'} <span style="color:#e74c3c">*</span></label>

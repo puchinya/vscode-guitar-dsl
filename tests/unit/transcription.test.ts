@@ -449,7 +449,7 @@ describe('transcription - serializer', () => {
   it('S002 a selected accompaniment preset must exist and match the song meter; no silent fallback (Issue #101 D1)', () => {
     const dsl = serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'rock_4_4_eighth_full' });
     assert.ok(dsl.includes('| G/2 D/F#/2 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |'), dsl);
-    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: '8beat_standard' }), /Unknown accompaniment preset: 8beat_standard/);
+    assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'missing_preset' }), /Unknown accompaniment preset: missing_preset/);
     assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'waltz_3_4_eighth_flow' }), /is 3\/4; the transcription is 4\/4/);
     assert.throws(() => serializeSongToGuitarDsl(sampleSong, { strummingPresetId: 'compound_6_8_full' }), /is 6\/8/);
   });
@@ -465,6 +465,32 @@ describe('transcription - serializer', () => {
 
   it('S003 without a preset the automatic rhythm path is unchanged', () => {
     assert.strictEqual(serializeSongToGuitarDsl(sampleSong, { strummingPresetId: undefined }), serializeSongToGuitarDsl(sampleSong));
+  });
+
+  it('identifies YouTube transcription as Experimental and warns that output is a draft', () => {
+    const expected = {
+      ja: {
+        title: 'YouTubeから自動採譜（実験的）',
+        heading: 'YouTube 音源から自動採譜（実験的）',
+        warning: 'この機能は実験的です。生成結果には誤ったコード、リズム、メロディ、歌詞、BPM などが含まれる可能性があります。結果を下書きとして扱い、必ず確認・修正してください。'
+      },
+      en: {
+        title: 'Transcribe from YouTube (Experimental)',
+        heading: 'Transcribe from YouTube (Experimental)',
+        warning: 'This feature is experimental. The generated score may contain incorrect chords, rhythm, melody, lyrics, BPM, or other musical details. Treat the result as a draft and review/correct it before use.'
+      }
+    } as const;
+
+    for (const locale of ['ja', 'en'] as const) {
+      const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });
+      assert.ok(html.includes(`<title>${expected[locale].title}</title>`));
+      assert.ok(html.includes(`<h2>${expected[locale].heading}</h2>`));
+      assert.ok(html.includes(expected[locale].warning));
+      assert.match(html, /<div class="desc">[^]*?<\/div>\s*<div class="experimental-warning" role="note">/);
+      assert.ok(html.includes('id="youtubeUrl"'), 'the URL control remains available');
+      assert.ok(html.includes('id="btnStart"'), 'the start control remains available');
+      assert.ok(html.includes('var(--vscode-inputValidation-warningBackground'), 'the warning uses VS Code theme variables');
+    }
   });
 
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {

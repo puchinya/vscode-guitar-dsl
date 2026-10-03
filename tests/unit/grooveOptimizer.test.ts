@@ -57,22 +57,22 @@ describe('transcription - groove optimizer', () => {
 
   describe('preset normalization', () => {
     it('normalizes presets to attack/accent masks on the grid', () => {
-      assert.deepStrictEqual(presetMask(getPresetById('8beat_standard')!, 8), { attacks: [0, 2, 3, 4, 5, 6], accents: [] });
-      assert.deepStrictEqual(presetMask(getPresetById('8beat_standard')!, 16), { attacks: [0, 4, 6, 8, 10, 12], accents: [] });
-      assert.deepStrictEqual(presetMask(getPresetById('8beat_accent')!, 8), { attacks: ALL_EIGHTHS, accents: [2, 6] });
-      assert.deepStrictEqual(presetMask(getPresetById('16beat_standard')!, 16), { attacks: [0, 4, 6, 7, 8, 10, 12, 14], accents: [] });
-      assert.deepStrictEqual(presetMask(getPresetById('triplet_slow_rock')!, 12), { attacks: [0, 2, 3, 5, 6, 8, 9, 11], accents: [] });
-      assert.deepStrictEqual(presetMask(getPresetById('ballad_whole')!, 8), { attacks: [0], accents: [] });
+      assert.deepStrictEqual(presetMask(getPresetById('folk_4_4_eighth_classic')!, 8), { attacks: [0, 2, 3, 4, 5, 6], accents: [] });
+      assert.deepStrictEqual(presetMask(getPresetById('folk_4_4_eighth_classic')!, 16), { attacks: [0, 4, 6, 8, 10, 12], accents: [] });
+      assert.deepStrictEqual(presetMask(getPresetById('rock_4_4_eighth_backbeat')!, 8), { attacks: ALL_EIGHTHS, accents: [2, 6] });
+      assert.deepStrictEqual(presetMask(getPresetById('jpop_4_4_sixteenth_singer_songwriter')!, 16), { attacks: [0, 2, 4, 6, 7, 8, 10, 12, 14, 15], accents: [] });
+      assert.deepStrictEqual(presetMask(getPresetById('blues_4_4_shuffle_basic')!, 12), { attacks: [0, 2, 3, 5, 6, 8, 9, 11], accents: [] });
+      assert.deepStrictEqual(presetMask(getPresetById('sustain_4_4_whole')!, 8), { attacks: [0], accents: [] });
     });
 
     it('marks presets that cannot land exactly on the grid as incompatible', () => {
-      assert.strictEqual(presetMask(getPresetById('16beat_standard')!, 8), null);
-      assert.strictEqual(presetMask(getPresetById('triplet_slow_rock')!, 16), null);
-      assert.strictEqual(presetMask(getPresetById('8beat_standard')!, 12), null);
+      assert.strictEqual(presetMask(getPresetById('jpop_4_4_sixteenth_singer_songwriter')!, 8), null);
+      assert.strictEqual(presetMask(getPresetById('blues_4_4_shuffle_basic')!, 16), null);
+      assert.strictEqual(presetMask(getPresetById('folk_4_4_eighth_classic')!, 12), null);
     });
 
     it('counts accent differences only when accents were reported', () => {
-      const mask = presetMask(getPresetById('8beat_accent')!, 8)!;
+      const mask = presetMask(getPresetById('rock_4_4_eighth_backbeat')!, 8)!;
       assert.strictEqual(presetLocalCost(mask, gm({ attacks: ALL_EIGHTHS })), 0);
       assert.strictEqual(presetLocalCost(mask, gm({ attacks: ALL_EIGHTHS, accents: [] })), 6);
       assert.strictEqual(presetLocalCost(mask, gm({ attacks: [0, 2, 4, 6] })), 40);
@@ -135,10 +135,10 @@ describe('transcription - groove optimizer', () => {
 
     it('snaps a low-confidence noisy observation to the closest stable preset (declaration order on ties)', () => {
       const [choice] = optimizeSection([gm({ attacks: [0, 2, 3, 4, 6], confidence: 0.3 })]);
-      assert.strictEqual(choice.id, '8beat_standard');
+      assert.strictEqual(choice.id, 'strum_4_4_quarter_basic');
       assert.deepStrictEqual(choice.events, [
-        { duration: '4', direction: 'd' }, { duration: '8', direction: 'd' }, { duration: '8', direction: 'u' },
-        { duration: '8', direction: 'd' }, { duration: '8', direction: 'u' }, { duration: '4', direction: 'd' }
+        { duration: '4', direction: 'd' }, { duration: '4', direction: 'd' },
+        { duration: '4', direction: 'd' }, { duration: '4', direction: 'd' }
       ]);
     });
 
@@ -151,12 +151,12 @@ describe('transcription - groove optimizer', () => {
         middle,
         gm({ measureIndex: 2, attacks: ALL_EIGHTHS, accents: [] })
       ]).map(c => c.id);
-      assert.deepStrictEqual(ids, ['8beat_alternate', '8beat_alternate', '8beat_alternate']);
+       assert.deepStrictEqual(ids, ['rock_4_4_eighth_full', 'rock_4_4_eighth_full', 'rock_4_4_eighth_full']);
     });
 
     it('chooses arpeggio presets for arpeggio observations', () => {
       const [choice] = optimizeSection([gm({ style: 'arpeggio', attacks: ALL_EIGHTHS, confidence: 0.5 })]);
-      assert.strictEqual(choice.id, 'arpeggio_8beat');
+      assert.strictEqual(choice.id, 'arp_4_4_eighth');
     });
 
     it('does not carry DP state across a section boundary', () => {
@@ -167,7 +167,7 @@ describe('transcription - groove optimizer', () => {
           { sectionIndex: 1, measures: [lone] }
         ]
       });
-      // With carried state the second section would stay on 8beat_alternate (3 < 2 + 2).
+      // With carried state the second section would stay on rock_4_4_eighth_full (3 < 2 + 2).
       assert.deepStrictEqual(result[1][0], observedEvents(lone));
     });
 
