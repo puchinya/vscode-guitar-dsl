@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "ai-agent-workflow@ai-agent-workflow": true
+  }
+}

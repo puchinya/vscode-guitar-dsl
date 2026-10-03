@@ -1,127 +1,36 @@
-# AGENTS.md
+# vscode-guitar-dsl project policy
 
-This is the repository-wide entry point for AI coding agents, including Codex and Claude Code. `CLAUDE.md` is only a Claude Code router and must defer to this file for shared rules.
+Milestone and branch lifecycle policy is declared in `.agent/project.json` and executed by the installed `ai-agent-workflow` plugin. This repository does not keep lifecycle scripts or duplicate common workflow procedures.
 
-## Mandatory task bootstrap
-
-Before agent-local planning, TODO creation, broad repository investigation, or editing repository-controlled files, classify the user's requested end result.
-
-For every repository-changing task:
-
-1. If the user identified an Issue or Pull Request, use it. Otherwise perform only the minimal GitHub lookup needed to find an existing owner.
-2. If no Issue owns the request, read `docs/agent-workflow/requirements.md`, create the Issue with `phase:requirements`, and run the platform `scripts/agent/ensure-version-milestone.* <issue-number>` helper before normal planning or detailed investigation.
-3. If an Issue exists, determine the active phase from Issue labels / PR state and read only that phase workflow document.
-4. Only after Issue ownership and the required workflow entry step may normal planning, detailed investigation, design, or repository editing begin.
-
-Research-only work does not require an Issue unless requested. If research becomes an approved repository change, run this bootstrap before continuing repository-changing work.
-
-Use `gh` for GitHub Issue/PR/label/milestone/comment/review/Actions operations and `git` for local branch/staging/commit/push operations.
-
-GitHub Markdown transport invariant:
-- Multiline Markdown MUST use `--body-file` when supported.
-- The body source MUST contain real newline characters.
-- `--body` is only for genuinely single-line text.
-- Never encode intended line breaks as literal \n.
-
-Issue image evidence:
-- Useful/required image evidence SHOULD be attached to the owning Issue with `gh --attach`.
-- For tasks affecting visual rendering or UI (such as score slash notation, beam/rest rendering, SVG output, or webview display), generating, presenting, and attaching rendered preview image evidence (SVG or PNG) is **MANDATORY**.
-- This workflow uses Issue attachments for images only.
-- Required image uploads must be verified after publication.
-
-## Instruction input modes
-
-Repository-changing work has two input modes:
-
-- **Direct request**: follow the normal requirements -> design -> implementation -> review flow.
-- **Supplied Implementation Contract**: treat it as a compressed handoff, not a workflow bypass. Associate it with the owning Issue and verify compatibility with approved repository authority. After Issue ownership exists and before detailed implementation work, save the exact contract with `scripts/agent/save-implementation-contract.*`. Do not broadly re-derive decisions already resolved by a compatible approved contract unless repository evidence conflicts.
-
-If a local contract mirror exists, re-read it after context compaction/session resume and before final complete-diff self-review. The Issue/spec/design hierarchy remains authoritative if the contract conflicts.
-
-## Compact workflow routing
-
-Read only the active workflow document:
-
-| State | Workflow |
-|---|---|
-| new request / `phase:requirements` | `docs/agent-workflow/requirements.md` |
-| `phase:design` | `docs/agent-workflow/design.md` |
-| `phase:ready` / `phase:implementation` | `docs/agent-workflow/implementation.md` |
-| `phase:review` / open PR | `docs/agent-workflow/review.md` |
-
-Read `docs/agent-workflow/checkpoint.md` only for pause/resume and `docs/agent-workflow/evidence.md` only for evidence capture.
-
-For compact Git/GitHub routing state, use `scripts/agent/agent-context.* <issue-number>` instead of reconstructing the same state through many separate commands.
+The plugin package and its Python runtime are installed per user. This checkout only enables the already-installed plugin through `.codex/config.toml` and `.claude/settings.json`.
 
 ## Document authority
 
 | Source | Authority |
 |---|---|
-| `docs/specs/` | normative public contract (DSL syntax, extension behaviors) |
-| `docs/design/` | durable internal architecture (compiler, webview, grammar) |
-| `package.json`, `language-configuration.json`, `syntaxes/` | extension contribution points & grammar declarations |
+| `docs/specs/` | Public GuitarDSL syntax and extension behavior |
+| `docs/design/` | Durable internal architecture |
+| `package.json`, `language-configuration.json`, `syntaxes/` | Extension contributions and grammar |
 | `src/` | TypeScript implementation |
-| `docs/status/` | concise current implementation / verification state |
-| `docs/agents/` | technical working rules |
-| `docs/agent-workflow/` | Issue phase workflow |
+| `docs/status/` | Current implementation and verification status |
+| `docs/agents/` | Project technical rules |
 
-Dependency direction is:
+Start document lookup at [`docs/README.md`](docs/README.md), then the relevant category README and only the needed sections. Do not change a spec to match a bug. If implementation exposes a missing or contradictory public contract or material architecture decision, return to the Issue requirements/design workflow before deciding it in code.
 
-```text
-specs -> design -> code -> status
-```
+## Help and AI asset synchronization
 
-User Help (`docs/help/` → generated `media/help/`) is derived from `docs/specs/` and `package.json`; it is never an authority. For any user-facing feature, command, setting, or GuitarDSL syntax addition/change/removal, assess Help impact: update/review the Help pages and refresh the reviewed section digest in `docs/help/help-manifest.json` (a refresh is required even when the wording needs no change). `npm run check:help` is the mechanical gate; see `docs/help/README.md`.
+User Help in `docs/help/` and `media/help/` is derived from `docs/specs/` and `package.json`, not an authority. For a user-facing feature, command, setting, or GuitarDSL syntax change, review Help and refresh the reviewed source digest in `docs/help/help-manifest.json`, even when wording stays the same. Use `npm run check:help` as the gate.
 
-Do not change a spec to match a bug. Do not use status to decide desired behavior or architecture. If implementation exposes a missing/contradictory contract or a material architecture decision, return to the Issue requirements/design gate before deciding it in code.
+AI reference assets are generated from the canonical syntax spec. Use `npm run check:ai` as the gate; do not hand-edit generated copies.
 
-Start document lookup at `docs/README.md`, then one category README, then only the relevant document sections/symbols.
+## Verification and repository operations
 
-## Context invariant
+`.agent/project.json` is the machine authority for configured verification hooks. [`docs/agents/testing.md`](docs/agents/testing.md) contains project testing guidance and verification commands.
 
-Keep an Issue-scoped working set: owning Issue/PR, active phase workflow, relevant routed spec/design/status sections, target symbols/tests/dependencies, and current relevant diff.
+Use `gh` for GitHub Issues, PRs, labels, comments, reviews, and Actions; use `git` for local branch, staging, commit, and push operations. For multiline GitHub Markdown, use `--body-file` with real newline characters. For visual rendering changes, generate and verify a rendered preview and attach the image evidence to the owning Issue.
 
-Use bounded search/ranges/diffs. Do not scan all specs/design/status, repeatedly reread unchanged whole files, or paste full logs into active context. Put retained raw logs under `.agent-state/issues/<issue>/logs/`.
+## Technical guides and communication
 
-`docs/status/` is current-state navigation, not an evidence/history archive. Detailed investigation and historical verification belong in Issue/PR/evidence artifacts.
-
-Do not load `docs_only_human/` during ordinary Agent work; it is human overview material and is not an Agent authority.
-
-Provider-specific context compressors such as RTK or context-mode may be used, but repository correctness must not depend on them.
-
-## Branch and build artifact invariant
-
-For source-code changes, use `scripts/agent/start-feature-branch.sh` or `.ps1`; its output is the source branch naming authority. Do not handcraft an alternate source branch merely to choose another prefix.
-
-**An actual branch switch deletes stale `out/` compilation artifacts.** This prevents stale JavaScript outputs from lingering across branches. When already on the requested branch, do not clean solely for branch setup.
-
-Documentation/workflow-only tasks may use the repository's existing `docs/` or `agent/` branch allowance.
-
-## Verification and live-runtime boundary
-
-For every extension-affecting task, the complete mandatory verification gate in `docs/agents/testing.md` must pass before PR delivery and after stable review remediation:
-1. `npm run compile` must succeed with zero TypeScript errors.
-2. Extension contributions in `package.json` and TextMate grammars in `syntaxes/` must be syntactically valid.
-
-Use focused checks during iteration and the complete mandatory gate once changes are stable; focused iteration never replaces the final gate.
-
-## Delivery gate
-
-Implementation is not complete at edit, test, commit, or push.
-
-Before implementation-phase completion is reported, changes must be committed and pushed, a PR with `Closes #<issue-number>` must exist, the Issue must be in `phase:review`, and `docs/agent-workflow/review.md` must have been entered. If delivery/transition fails, report the exact blocker rather than claiming completion.
-
-Overall Issue completion remains merge-gated by the review workflow.
-
-Every implementation has a task-specific effective Reviewer Checklist fixed before editing. Final delivery requires item-by-item PASS/FAIL/N/A results with concrete evidence bound to the reviewed committed HEAD; pending, failed, stale, or incomplete self-review blocks delivery. Details live in `docs/agent-workflow/implementation.md`.
-
-## Technical guides
-
-Read only the guide relevant to the task:
-
-- Extension architecture: `docs/agents/extension.md`
-- Testing / verification: `docs/agents/testing.md`
-
-## Communication
-
-Ask user questions in Japanese.
+- Read [`docs/agents/extension.md`](docs/agents/extension.md) for extension architecture.
+- Read [`docs/agents/testing.md`](docs/agents/testing.md) for tests and verification.
+- Ask user questions in Japanese.
