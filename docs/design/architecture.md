@@ -174,6 +174,8 @@ AST からページ SVG と Webview HTML を生成する。VS Code API に依存
 - **`previewHtml.ts`** (`compileGuitarDslToHtml`):
   - ツールバー（HTML）とシート SVG 群・連続 SVG を包含する Webview HTML を構築する。表示モードは CSS（`data-display-mode`）で切り替える。
   - `fontUris` 指定時は `@font-face` で同梱フォントを読み込む。
+  - Preview 上部のツールバーは高さ 48 px の固定 1 行とする。`.toolbar-scroll` が `.toolbar-left` と `.toolbar-center` の設定群を所有して横スクロールし、ヘルプ/PDF の `.toolbar-right` はその領域の外で右端に残す。
+  - 幅への対応は CSS のみで行う。Playback toolbar は `top: 48px` の独立した行のままにし、上下のオフセットを変えない。
 
 ### 2.4 PDF Exporter (`src/pdf.ts`)
 - `renderScorePdf()`: `renderScoreSheets()` の SVG を `svg-to-pdfkit` で pdfkit のページへ描画する（1 シート = 1 ページ、ベクター）。

@@ -205,6 +205,7 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(defaultHtml.includes('>Orientation<'));
     assert.ok(defaultHtml.includes('>Portrait<'));
     assert.ok(defaultHtml.includes('>Landscape<'));
+    assert.ok(defaultHtml.includes(' Help</button>'));
     assert.ok(defaultHtml.includes('>📄 Save PDF<'));
 
     const enHtml = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
@@ -223,6 +224,7 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(jaHtml.includes('>向き<'));
     assert.ok(jaHtml.includes('>縦<'));
     assert.ok(jaHtml.includes('>横（見開き）<'));
+    assert.ok(jaHtml.includes(' ヘルプ</button>'));
     assert.ok(jaHtml.includes('>📄 PDF保存<'));
   });
 
@@ -232,6 +234,60 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(frHtml.includes('>View<'));
     assert.ok(frHtml.includes('>Single Page<'));
     assert.ok(frHtml.includes('>📄 Save PDF<'));
+  });
+});
+
+describe('render - narrow Preview toolbar', () => {
+  it('keeps settings scrollable and actions outside the scroll region', () => {
+    const html = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
+    const toolbarStart = html.indexOf('<div class="toolbar-container">');
+    const scrollStart = html.indexOf('<div class="toolbar-scroll">', toolbarStart);
+    const leftStart = html.indexOf('<div class="toolbar-left">', scrollStart);
+    const centerStart = html.indexOf('<div class="toolbar-center">', scrollStart);
+    const scrollEnd = html.indexOf('    </div>\n\n    <div class="toolbar-right">', centerStart);
+    const rightStart = html.indexOf('<div class="toolbar-right">', scrollEnd);
+
+    assert.ok(toolbarStart >= 0, 'Preview top toolbar exists');
+    assert.ok(scrollStart > toolbarStart, 'scroll region is inside the top toolbar');
+    assert.ok(leftStart > scrollStart && leftStart < scrollEnd, 'View controls are inside the scroll region');
+    assert.ok(centerStart > leftStart && centerStart < scrollEnd, 'Paper and orientation controls are inside the scroll region');
+    assert.ok(scrollEnd > centerStart, 'scroll region closes before the right action group');
+    assert.ok(rightStart > scrollEnd, 'right actions follow and are outside the scroll region');
+
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
+    assert.ok(css, 'Preview HTML contains its toolbar styles');
+    const toolbarRule = css.match(/\.toolbar-container\s*\{([^}]*)\}/)?.[1];
+    assert.ok(toolbarRule, 'top toolbar has a dedicated CSS rule');
+    assert.match(toolbarRule, /height:\s*48px;/);
+    const scrollRule = css.match(/\.toolbar-scroll\s*\{([^}]*)\}/)?.[1];
+    assert.ok(scrollRule, 'scroll region has a dedicated CSS rule');
+    assert.match(scrollRule, /display:\s*flex;/);
+    assert.match(scrollRule, /align-items:\s*center;/);
+    assert.match(scrollRule, /flex:\s*1 1 auto;/);
+    assert.match(scrollRule, /min-width:\s*0;/);
+    assert.match(scrollRule, /overflow-x:\s*auto;/);
+    assert.match(scrollRule, /overflow-y:\s*hidden;/);
+
+    const groupRule = css.match(/\.toolbar-left,\s*\.toolbar-center,\s*\.toolbar-right\s*\{([^}]*)\}/)?.[1];
+    assert.ok(groupRule, 'toolbar control groups share a CSS rule');
+    assert.match(groupRule, /flex:\s*0 0 auto;/, 'toolbar groups do not shrink');
+    const rightRule = css.match(/(?:^|\n)\s*\.toolbar-right\s*\{([^}]*)\}/)?.[1];
+    assert.ok(rightRule, 'right action group has a dedicated CSS rule');
+    assert.match(rightRule, /white-space:\s*nowrap;/);
+  });
+
+  it('preserves localized, accessible Help and PDF actions', () => {
+    for (const { locale, help, pdf } of [
+      { locale: 'en', help: 'Help', pdf: '📄 Save PDF' },
+      { locale: 'ja', help: 'ヘルプ', pdf: '📄 PDF保存' }
+    ]) {
+      const html = compileGuitarDslToHtml(sampleDsl, { locale });
+      assert.ok(html.includes(` ${help}</button>`), `${locale} Help label remains present`);
+      assert.ok(html.includes(`>${pdf}</button>`), `${locale} PDF label remains present`);
+      assert.ok(html.indexOf('id="btn-save-pdf"') > html.indexOf('id="btn-help"'), `${locale} Help precedes Save PDF`);
+      assert.match(html, /id="btn-help" type="button" title="[^"]+" aria-label="[^"]+"/);
+      assert.match(html, /id="btn-save-pdf" title="[^"]+"/);
+    }
   });
 });
 
