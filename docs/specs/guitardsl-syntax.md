@@ -1,4 +1,11 @@
+<!-- agent-doc-type: specification -->
+<!-- agent-doc-schema: 2 -->
+
 # GuitarDSL 言語構文仕様書 (GuitarDSL Syntax Specification)
+
+- Status: Current
+- Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related design: [Design index](../design/README.md), [Language and score processing](../design/language-and-score-processing.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md)
 
 本書は、ギター弾き語りおよびアコースティックギターストローク譜向けドメイン特化言語 **GuitarDSL** の言語構文、字句規則、およびレンダリング仕様を定義する規範的仕様書（Normative Public Contract）である。
 
@@ -11,6 +18,34 @@ GuitarDSL は、五線譜・リズムスラッシュ・ピッキング記号（�
 - **ファイル拡張子**: `.guitardsl`, `.gdsl`
 - **文字エンコーディング**: UTF-8
 - **言語種別**: 行指向の宣言的テキストフォーマット
+
+### Purpose
+
+本書は、GuitarDSL 文書の字句、構造、構文要素、意味、および描画に関する公開言語契約を定義する。
+
+### Scope
+
+対象は UTF-8 の `.guitardsl` / `.gdsl` 文書と §2–§18 に記載する解析および描画規則である。VS Code 固有のコマンドや UI 動作は[拡張機能仕様](extension.md)が所有する。
+
+### Normative requirements
+
+§2–§18 の構文規則、意味、制約、例、およびレンダリング要件を規範要件とする。本 Schema 2 化では既存の言語ルールや番号付きトップレベル節を変更しない。
+
+### Observable behavior
+
+適合する実装は本書の構文を読み取り、規定された診断・スコア表現・描画結果を生成する。構文要素ごとの入出力と表示規則は各節で定義する。
+
+### Error and boundary behavior
+
+不正、未対応、または境界外の入力の扱いは、各構文節と例に記載された規則に従う。拡張機能 UI や外部サービスの失敗境界は本書の対象外であり、拡張機能仕様が所有する。
+
+### Security and privacy
+
+この文書が定義するのはテキスト言語の構文と意味であり、ネットワークアクセスや資格情報の取り扱いは定義しない。拡張機能による外部サービスとの連携は[拡張機能仕様](extension.md)の対象である。
+
+### Verification strategy
+
+構文例と完全なサンプルをパーサー・診断・描画の適合確認に用いる。内部の解析・スコア処理経路は[言語とスコア処理設計](../design/language-and-score-processing.md)、表示経路は[プレビュー・描画設計](../design/preview-rendering-and-export.md)を参照する。
 
 ---
 

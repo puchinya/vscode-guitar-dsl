@@ -22,7 +22,7 @@
       "source": "syntax",
       "section": "1",
       "helpPage": "about",
-      "reviewedSourceSha256": "029e3d0ff456c465fe70f6a9fb6d744a1afe0277203cc0aa75541bd57616c273"
+      "reviewedSourceSha256": "851ced08e2e185f878340577fcf8ecc2e37c8d687afcb992d0bdf7e70a393599"
     },
     {
       "source": "syntax",
@@ -130,7 +130,7 @@
       "source": "extension",
       "section": "1",
       "helpPage": "about",
-      "reviewedSourceSha256": "26eb1243fec6a3b88a8896dc34a144c66978438ff42456057b356d091d528944"
+      "reviewedSourceSha256": "f3c91067c54b550797473bdc7bddf4ac077896a2704c14c967a3f057b706156c"
     },
     {
       "source": "extension",
