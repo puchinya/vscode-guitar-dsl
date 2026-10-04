@@ -5,7 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
-- Related design: [Design index](../design/README.md), [Language and score processing](../design/language-and-score-processing.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md)
+- Related design: [Design index](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/README.md), [Language and score processing](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/language-and-score-processing.md), [Preview, rendering, and export](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/preview-rendering-and-export.md), [Score editing](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/score-editing.md), [Audio transcription](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/audio-transcription.md)
 
 本書は、ギター弾き語りおよびアコースティックギターストローク譜向けドメイン特化言語 **GuitarDSL** の言語構文、字句規則、およびレンダリング仕様を定義する規範的仕様書（Normative Public Contract）である。
 
@@ -25,7 +25,7 @@ GuitarDSL は、五線譜・リズムスラッシュ・ピッキング記号（�
 
 ### Scope
 
-対象は UTF-8 の `.guitardsl` / `.gdsl` 文書と §2–§18 に記載する解析および描画規則である。VS Code 固有のコマンドや UI 動作は[拡張機能仕様](extension.md)が所有する。
+対象は UTF-8 の `.guitardsl` / `.gdsl` 文書と §2–§18 に記載する解析および描画規則である。VS Code 固有のコマンドや UI 動作は[拡張機能仕様](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/specs/extension.md)が所有する。
 
 ### Normative requirements
 
@@ -41,11 +41,11 @@ GuitarDSL は、五線譜・リズムスラッシュ・ピッキング記号（�
 
 ### Security and privacy
 
-この文書が定義するのはテキスト言語の構文と意味であり、ネットワークアクセスや資格情報の取り扱いは定義しない。拡張機能による外部サービスとの連携は[拡張機能仕様](extension.md)の対象である。
+この文書が定義するのはテキスト言語の構文と意味であり、ネットワークアクセスや資格情報の取り扱いは定義しない。拡張機能による外部サービスとの連携は[拡張機能仕様](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/specs/extension.md)の対象である。
 
 ### Verification strategy
 
-構文例と完全なサンプルをパーサー・診断・描画の適合確認に用いる。内部の解析・スコア処理経路は[言語とスコア処理設計](../design/language-and-score-processing.md)、表示経路は[プレビュー・描画設計](../design/preview-rendering-and-export.md)を参照する。
+構文例と完全なサンプルをパーサー・診断・描画の適合確認に用いる。内部の解析・スコア処理経路は[言語とスコア処理設計](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/language-and-score-processing.md)、表示経路は[プレビュー・描画設計](https://github.com/puchinya/vscode-guitar-dsl/blob/main/docs/design/preview-rendering-and-export.md)を参照する。
 
 ---
 

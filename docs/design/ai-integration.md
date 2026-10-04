@@ -43,14 +43,14 @@ VS Code 標準 Agent / Chat から利用される GuitarDSL Skill、指示、言
 
 1. VS Code Agent が Skill / instruction を読み、選択した TextDocument を tool adapter に渡す。
 2. 読み取り専用 tool は明示 `path` があればその絶対パスだけを開き、省略時はアクティブ → 表示中 → 最後にアクティブ → 開いている GuitarDSL 文書の順に解決する。変更 tool は `uri` と `path` のどちらか一つを必須とし、その入力だけで対象を固定する。
-3. `prepareInvocation` は入力から確認用の対象・操作を構成し、副作用やエディター状態参照を行わない。VS Code が確認操作を許可したあとで、`src/ai/tools.ts` は対象文書を開き、deterministic domain API に処理を委譲する。
+3. `prepareInvocation` の処理は tool 種別で異なる。読み取り専用 tool は明示 `path` がない場合、`targetLabel()` が現在の editor / document state を参照して進捗表示用ラベルを作ることがあるが、ラベル作成のために文書を開いたり変更したりしない。実際の読み取り対象は `invoke` が文書解決規則に従ってあらためて解決する。変更 tool は `prepareMutation()` が明示された `uri` または絶対 `path` と操作入力だけから確認対象・操作を構成する。この処理は副作用がなく、エディター状態を参照しない。VS Code が確認操作を許可した後、変更 tool の `invoke` はその明示対象だけを解決して編集し、deterministic domain API に処理を委譲する。
 4. 読み取り結果または構造化された計画・診断を JSON テキストとして返す。失敗も `ok: false` と tool 固有 code で表す。
 5. 変更 tool は実行時点の最新ソースから変換を計算し、成功時は一つの取り消し可能な編集を適用して再検証する。変換後 DSL 全文は返さず、任意のモデル生成テキストを置換として受け取らない。
 6. 伴奏適用の唯一の入力例外は、エンジンが検証する一小節分の rhythm DSL plan である。適用は `MeasureData.rhythmSource` のソース範囲に限り、コード、歌詞、`%` の展開結果を変更しない。
 
 新曲作成の指示は、新しく確立した文書へ対象を固定し、validate → analyze → apply → validate の順に tool を使わせる。既存文書を編集する際にのみ、読み取り tool の暗黙解決を使用できる。
 
-`prepareInvocation` は副作用なしの対象解決・説明準備を行う。モデル処理の所有者は VS Code、文書テキストの所有者は VS Code TextDocument、音楽・構文変換の所有者は deterministic domain module である。
+読み取り専用 tool の `prepareInvocation` は、`path` 省略時に進捗ラベルのためだけにエディター状態を参照でき、実際の読み取り対象は `invoke` で再解決する。変更 tool の `prepareInvocation` は明示入力だけから副作用なしに確認文を構成し、`invoke` は同じ `uri` / `path` が指定する対象だけを編集する。モデル処理の所有者は VS Code、文書テキストの所有者は VS Code TextDocument、音楽・構文変換の所有者は deterministic domain module である。
 
 ## Failure handling
 
