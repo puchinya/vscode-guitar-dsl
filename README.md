@@ -21,10 +21,64 @@
 ## 動作環境
 - VS Code 1.109 以降（Agent Skill の提供に必要な最小バージョン。以前の最小バージョンは 1.85 でした）
 
+## 開発環境の準備
+
+### 拡張機能の開発
+- Git
+- Node.js 22.x と npm（CI と同じバージョンを推奨）
+- VS Code 1.109 以降（拡張機能開発ホストの起動に使用）
+
+### GitHubで作業する場合
+
+Issue、Pull Request、Actions の確認・操作には [GitHub CLI (`gh`)](https://cli.github.com/) を使います。インストール方法は[公式ガイド](https://cli.github.com/manual/installation)を参照し、GitHubアカウントで認証してください:
+
+```bash
+gh auth login
+gh auth status
+```
+
+### Codex / Claude Codeで作業する場合
+
+このリポジトリはIssue起点の作業に `ai-agent-workflow` を使います。プラグインとPythonランタイムはユーザー環境にインストールします。このチェックアウトでは既存の `.codex/config.toml` と `.claude/settings.json` がプラグインを有効にします。
+
+Codexではマーケットプレイスを登録し、Codexの `/plugins` 画面から `ai-agent-workflow` をインストールします。マーケットプレイス登録コマンドは[Codex公式ガイド](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli)を参照してください:
+
+```bash
+codex plugin marketplace add puchinya/ai-agent-workflow@v0.4.0
+```
+
+Claude Codeでは、次のコマンドでマーケットプレイスとプラグインを登録します:
+
+```bash
+claude plugin marketplace add puchinya/ai-agent-workflow#v0.4.0
+claude plugin install ai-agent-workflow@ai-agent-workflow
+```
+
+ワークフローCLIには Python 3.10 以降が必要です。Codexを使う場合は次のコマンドでインストールし、バージョンを確認してください。Claude Codeではインストール先を `dist/claude` に置き換えます:
+
+```bash
+python3 -m pip install --user --upgrade "git+https://github.com/puchinya/ai-agent-workflow.git@v0.4.0#subdirectory=dist/openai"
+python3 -m agent_workflow --version  # 0.4.0 と表示されること
+```
+
+### ローカル音源採譜を開発する場合（任意）
+
+Audio MIR の WASM ビルドには [rustup](https://rustup.rs/) の Rust ツールチェーン、`wasm32-unknown-unknown` ターゲット、[`wasm-pack`](https://rustwasm.github.io/wasm-pack/) が必要です。ターゲットは次のコマンドで追加できます:
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+macOSでHomebrew版Rustがrustupより先に選ばれ、WASMターゲットが見つからない場合は、rustupを優先して `vscode:prepublish` を実行します:
+
+```bash
+PATH="$HOME/.cargo/bin:$PATH" npm run vscode:prepublish
+```
+
 ## 使い方・開発
 1. 依存ライブラリのインストール:
    ```bash
-   npm install
+   npm ci
    ```
 2. TypeScript のビルド:
    ```bash
