@@ -51,7 +51,7 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# Agent workflow state (scripts/agent/* write Issue-scoped mirrors, logs, self-review)
+# Agent workflow local state (the shared runtime is installed per user)
 .agent-state/
 
 # Audio MIR (Rust/WASM) build output

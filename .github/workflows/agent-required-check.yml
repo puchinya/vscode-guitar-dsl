@@ -1,0 +1,36 @@
+name: agent-required-check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-required-check:
+    name: agent-required-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Check Help synchronization
+        run: npm run check:help
+
+      - name: Check AI documentation synchronization
+        run: npm run check:ai
+
+      - name: Run unit tests
+        run: npm run test:unit

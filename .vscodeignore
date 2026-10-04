@@ -1,8 +1,13 @@
 # Development / agent state
+.agent/**
 .agent-state/**
+.agents/**
+.codex/**
+.claude/**
+.claude-plugin/**
+.github/**
 .vscode/**
 .vscode-test/**
-.github/**
 .gitignore
 
 # Sources, tests and build helpers (the extension runs from out/)
@@ -10,6 +15,7 @@ src/**
 tests/**
 out/tests/**
 scripts/**
+plugins/**
 **/tsconfig.json
 **/*.ts
 **/*.map
