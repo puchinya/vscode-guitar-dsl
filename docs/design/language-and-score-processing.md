@@ -35,7 +35,7 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 - `ParsedScore` は曲のメタデータ、使用コード、ページ、スタイル、書面小節、診断、および必要に応じた演奏順をまとめる。`pagebreak` は `ScorePage` を分ける。Renderer は解決済みの `MeasureData.context` / `eventsBefore` を使い、イベント行を読み直さない。
 - 冒頭ヘッダー由来の `originalKey`、`bpm`、`keySignature` と、本文で変化する解決済み小節コンテキストは別の役割を持つ。`tuning` は score-level 値であり、本文イベントではない。
 - `MeasureData.measureIndex` は記譜順の識別子である。`PlayOrderOccurrence` はその index を参照して出現を表し、`ParsedScore.measures` やページ内小節を並べ替えない。反復解決は不正・曖昧な展開で部分列を返さず、展開数には hard cap がある。
-- 小節・メロディのコード名や音高のソース範囲は変換機能が元テキストを保持するために使う。Renderer 用モデルにソース位置を混在させず、各トークンの部分置換は元の改行・空白・コメント・歌詞を保つ経路で行う。
+- `ParsedScore` / `MeasureData` は、ソースを保つ変換に必要なメタデータを保持する。例として `MeasureData.rhythmSource`、`ParsedScore.chordTokens`、`ParsedScore.headerLines`、`ParsedScore.pitchTokens` がある。Renderer は同じスコアモデルを消費しても、これらのソース位置を描画上の意味づけには使わない。トークン単位の変換はこれらの範囲を使い、無関係な空白・コメント・改行コード・歌詞・その他のテキストを保持する。
 
 ### イベント、断片、音符の処理境界
 
@@ -55,7 +55,7 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 3. `resolvePlayOrder()` の結果は `ParsedScore.playOrder` に属する。各出現は元の小節 index を参照し、`MeasureData` を複製・並べ替えしない。
 4. Renderer は書かれたスコア構造を消費する。Preview playback など演奏順が必要な機能は `playOrder` を消費する。
 
-元テキストは TextDocument が所有し、Compiler の出力は導出データである。ソース位置を必要とする変換は、公開スコアモデルに不要な位置情報を追加せず、解析・診断境界で管理する。
+元テキストの正本は TextDocument が所有し、Compiler の出力は導出データである。既存の `ParsedScore` / `MeasureData` の公開ソースメタデータは保持され、ソースを保つ変換で使われる。一方、演奏順診断をソース位置へ対応付ける `MeasureSourceLocation` など、診断マッピングだけに使う位置情報は parser 内部に留める。resolver の診断だけを理由に、その内部位置情報を公開モデルへ追加しない。
 
 ## Failure handling
 

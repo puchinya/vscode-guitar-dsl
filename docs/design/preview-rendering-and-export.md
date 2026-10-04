@@ -60,7 +60,7 @@ Compiler 診断、レイアウト・SVG 生成、フォント初期化、PDF 書
 
 ## Alternatives considered
 
-既存資料にはページ SVG / 連続 SVG と Webview / PDF の分担が記録されているが、Canvas 等の比較検討や全選定根拠は残っていない。PDF 実行境界の既存資料間の矛盾は[Architecture の open question](architecture.md#open-questions)として残し、本書では解決済みと扱わない。
+既存資料にはページ SVG / 連続 SVG と Webview / PDF の分担が記録されているが、Canvas 等の比較検討や全選定根拠は残っていない。
 
 ## Verification strategy
 

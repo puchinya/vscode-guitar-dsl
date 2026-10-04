@@ -47,7 +47,6 @@ flowchart LR
 
 ### Open questions
 
-- PDF の実行境界に既存資料の記述差がある。以前の全体概要には外部ブラウザー経由とする説明がある一方、`src/pdf.ts` の設計は `pdfkit` / `svg-to-pdfkit` を用いた拡張機能プロセス内の生成と記述している。現行の規範的な実行境界を確認し、古い説明の扱いを決める必要がある。本書では一方を新たな契約として確定しない。
 - 対象 OS と VS Code 最小バージョン以外のデスクトップアプリケーション・プロファイル（アクセシビリティ、配布・更新経路、クラッシュ報告、オフライン要件など）は、既存資料で全項目が確定していない。根拠が揃うまで本書では補完しない。
 
 ## Data flow and ownership
@@ -59,6 +58,8 @@ flowchart LR
 | ページ / SVG / HTML | layout・Renderer | Preview Webview、PDF exporter |
 | Music IR (`TranscribedSong`) | 採譜アダプター | validator、serializer、文書挿入フロー |
 | AI tool 入出力 | VS Code Agent / Chat と tool adapter | 既存のドメイン API。会話・モデル選択は拡張機能外が所有する |
+
+PDF は `src/pdf.ts` 内でページ SVG からブラウザーを使わずプロセス内生成する。Extension Core は保存先を選び、書き出し成功後にユーザーが完成ファイルを開く操作を担う。PDF 生成経路の詳細は[プレビュー・描画・PDF設計](preview-rendering-and-export.md)を参照する。
 
 各機能固有の制御・状態の流れは[対応する機能設計書](README.md#architecture)に記録する。
 
