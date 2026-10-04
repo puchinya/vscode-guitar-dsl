@@ -19,9 +19,9 @@
 |---|---|---|
 | [拡張機能仕様 §1–§2](../specs/extension.md) | 拡張機能の全体、VS Code 言語貢献 | [Architecture](architecture.md), [VS Code editor experience](vscode-editor-experience.md) |
 | [拡張機能仕様 §3.1–§3.2、§4、§4.6](../specs/extension.md) | プレビュー、レンダリング、PDF、再生 | [Preview, rendering, and export](preview-rendering-and-export.md) |
-| [拡張機能仕様 §3.3、§3.9–§3.10、§4.4–§4B](../specs/extension.md) | コードダイアグラム、楽譜設定、カポ、初心者モード、移調、伴奏 | [Score editing](score-editing.md) |
+| [拡張機能仕様 §3.3、§3.9–§3.10、§4.4、§4A–§4B](../specs/extension.md) | コードダイアグラム、楽譜設定、カポ、初心者モード、移調、伴奏 | [Score editing](score-editing.md) |
 | [拡張機能仕様 §3.4、§3.8](../specs/extension.md) | YouTube / ローカル音声の採譜 | [Audio transcription](audio-transcription.md) |
-| [拡張機能仕様 §3.5–§3.7、§3.11–§3.13、§4C–§7](../specs/extension.md) | キー設定、コマンド、サイドバー、診断、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md), [AI integration](ai-integration.md) |
+| [拡張機能仕様 §3.5–§3.7、§3.11–§3.13、§4C–§5A、§6–§7](../specs/extension.md) | キー設定、コマンド、サイドバー、診断、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md), [AI integration](ai-integration.md) |
 | [拡張機能仕様 §8](../specs/extension.md) | VS Code AI skills、instructions、tools | [AI integration](ai-integration.md) |
 | [言語構文仕様 §1–§10、§12–§13、§15–§18](../specs/guitardsl-syntax.md) | 言語構文、スコアイベント、音符と歌詞、再利用フラグメント | [Language and score processing](language-and-score-processing.md) |
 | [言語構文仕様 §11、§14](../specs/guitardsl-syntax.md) | レンダリング、レイアウト、表示設定 | [Preview, rendering, and export](preview-rendering-and-export.md), [Language and score processing](language-and-score-processing.md) |
