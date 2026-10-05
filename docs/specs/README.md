@@ -1,16 +1,41 @@
+<!-- agent-doc-type: specification -->
+<!-- agent-doc-schema: 2 -->
+
 # 仕様書 (Specifications)
+
+- Status: Current
+- Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related design: [Design document index](../design/README.md)
+
+## Purpose
 
 このディレクトリは、**GuitarDSL** 言語構文および拡張機能の外部仕様に関する規範的ドキュメント（Normative Public Contract）を管理します。
 
-## 仕様書一覧
+## Scope
+
+この索引は仕様の所有者を案内します。製品要件の正本は [拡張機能仕様](extension.md) と [言語構文仕様](guitardsl-syntax.md) です。
+
+## Normative requirements
+
+実装変更と機能追加は、次の仕様に準拠します。この索引自体は独立した言語規則や拡張機能動作を定義しません。
 
 | ドキュメント | 概要 |
 |---|---|
-| [`extension.md`](extension.md) | VS Code 拡張機能仕様書（コマンド、エディタ連携、プレビューUI、PDFエクスポート、アウトライン仕様） |
-| [`guitardsl-syntax.md`](guitardsl-syntax.md) | GuitarDSL 言語構文仕様書（メタデータ、セクション、小節線、コード、リズム、歌詞、描画規則） |
+| [拡張機能仕様](extension.md) | コマンド、エディタ連携、プレビュー、PDFエクスポート、アウトライン、採譜、AI 連携 |
+| [GuitarDSL 言語構文仕様](guitardsl-syntax.md) | メタデータ、セクション、小節線、コード、リズム、歌詞、スコアイベント、描画規則 |
 
-## ドキュメントの位置づけ
+## Observable behavior
 
-`AGENTS.md` の規定に従い、`docs/specs/` は言語構文および拡張機能の外部振る舞いにおける最高位の合意仕様です。
-実装の変更や機能追加は、この仕様書に準拠して行われます。
-内部アーキテクチャ（コンパイラ・Webview・パーサー設計）については [`docs/design/`](../design/)、現在の実装進捗は [`docs/status/`](../status/) を参照してください。
+拡張機能のユーザー向け動作は [拡張機能仕様](extension.md) が所有し、テキスト形式と描画規則は [言語構文仕様](guitardsl-syntax.md) が所有します。
+
+## Error and boundary behavior
+
+エラー、診断、入力境界の規範は各仕様の対応節にあります。この索引では新しいエラー動作を定義しません。
+
+## Security and privacy
+
+拡張機能のキー管理、外部サービス、ローカル処理の境界は [拡張機能仕様](extension.md) に記載します。言語構文の規則は [言語構文仕様](guitardsl-syntax.md) に記載します。
+
+## Verification strategy
+
+Schema 2 の所有者とリンクは `python -m agent_workflow validate-docs` で検証します。Help と AI 参照の同期は `npm run check:help` と `npm run check:ai` で確認します。

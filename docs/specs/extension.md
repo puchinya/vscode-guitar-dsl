@@ -1,4 +1,11 @@
+<!-- agent-doc-type: specification -->
+<!-- agent-doc-schema: 2 -->
+
 # GuitarDSL 拡張機能仕様書 (GuitarDSL Extension Specification)
+
+- Status: Current
+- Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
 
@@ -12,6 +19,34 @@
 - **表示名 (Display Name)**: `GuitarDSL Previewer`
 - **対象プラットフォーム**: VS Code `^1.109.0` 以上（macOS, Windows, Linux）。1.109.0 は拡張機能が提供する Agent Skill（§8）に必要な最小バージョンである（旧最小バージョン `^1.85.0` からの互換性変更）。
 - **AI 連携**: VS Code 標準の Agent / Chat 向けに、Skill・対象限定の指示・言語モデルツールを任意機能として提供する（§8）。AI 連携を使わない場合も、他のすべての機能は AI モデルやチャットプロバイダなしで動作する。
+
+### Purpose
+
+本書は、GuitarDSL Previewer が VS Code に提供する機能と、ユーザーおよび VS Code から観測できる動作の規範的契約を定義する。
+
+### Scope
+
+対象は言語貢献、コマンド、プレビューとエディター UI、診断、ローカライズ、Help 同期、および VS Code AI 連携である。GuitarDSL のテキスト構文と描画規則は[言語構文仕様](guitardsl-syntax.md)が所有する。
+
+### Normative requirements
+
+本書の既存各節に記載されたコマンド、入力制約、出力、エラー、境界条件を規範要件とする。この Schema 2 化では、それらの要件、例、および既存の番号付きトップレベル節を変更しない。
+
+### Observable behavior
+
+ユーザーが利用できる拡張機能の振る舞いは §2–§8 に定義する。機能別の内部構成は[エディター体験設計](../design/vscode-editor-experience.md)、[プレビュー設計](../design/preview-rendering-and-export.md)、[編集設計](../design/score-editing.md)、[採譜設計](../design/audio-transcription.md)、[AI 連携設計](../design/ai-integration.md)を参照する。
+
+### Error and boundary behavior
+
+診断と入力境界は §5A、コマンドおよびプレビューの失敗時動作は各コマンド・機能節に定義する。YouTube 採譜、ローカル音声採譜、AI 連携の外部境界と失敗条件はそれぞれ §3.4、§3.8、§8 が所有する。
+
+### Security and privacy
+
+外部サービス、資格情報、およびモデル利用の境界は §3.4–§3.8 と §8 に定義する。YouTube 採譜の API キー管理、ローカル音声処理、および VS Code が所有するモデル実行の責務を各節の契約に従って扱う。
+
+### Verification strategy
+
+各節の動作は対応する自動検証と[機能別設計書](../design/README.md)に記録した検証対象で確認する。Help と AI 参照資産の同期は本書 §7 とリポジトリの `check:help` / `check:ai` を適用する。
 
 ---
 
