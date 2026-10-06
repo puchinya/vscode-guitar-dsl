@@ -40,6 +40,7 @@ import {
   DEFAULT_TITLE_SIZE
 } from './layout';
 import { renderMelodyStaff } from './melodyStaff';
+import { renderTabStaff } from './tabStaff';
 import {
   FETA_TREBLE_CLEF_PATH,
   RenderContext,
@@ -175,7 +176,22 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   const prefix = systemPrefix(ctx, row.measures[0], row.isFirstSystem);
   const spans = newRowSpanCollector();
   let content: string;
-  if (geometry.kind === 'rhythm') {
+  if (geometry.containsTab) {
+    const hasMelody = row.measures.some(measure => measure.melody !== undefined);
+    content = hasMelody
+      ? renderMelodyStaff(row.measures, ctx, {
+          isFirstSystem: row.isFirstSystem,
+          geometry,
+          includeRhythmColumns: geometry.kind === 'melody',
+          prefix,
+          spans
+        })
+      : renderSystemSvgContent(row.measures, ctx, { drawHeader: true, drawTimeSignature: false, prefix, spans, drawStaff: false, drawRhythmContent: false });
+    content += `<g transform="translate(0, ${fmt(geometry.tabOffset)})">${renderTabStaff(row.measures, ctx, geometry, prefix)}</g>`;
+    if (geometry.rhythmRendered) {
+      content += `<g transform="translate(0, ${fmt(geometry.finalRhythmOffset)})">${renderSystemSvgContent(row.measures, ctx, { drawHeader: false, drawTimeSignature: true, prefix, spans })}</g>`;
+    }
+  } else if (geometry.kind === 'rhythm') {
     content = renderSystemSvgContent(row.measures, ctx, { drawHeader: true, drawTimeSignature: true, prefix, spans });
   } else {
     // Melody system: melody staff + syllable lyrics on top, then (unless lead sheet) the rhythm staff shifted down.
@@ -293,6 +309,10 @@ interface RhythmStaffOptions {
   drawTimeSignature: boolean;
   prefix: SystemPrefix;
   spans: RowSpanCollector;
+  /** Omit the standard five-line staff while reusing the score header and barline labels. */
+  drawStaff?: boolean;
+  /** Omit slash / inline rhythm content when rendering only shared score headers. */
+  drawRhythmContent?: boolean;
 }
 
 /** All rhythm items of the score in order (inline-note connections / slurs / spans across systems). */
@@ -317,14 +337,16 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
   const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
 
   let staveSvg = '';
-  staveLines.forEach(y => {
-    staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
-  });
-  staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+  if (opts.drawStaff !== false) {
+    staveLines.forEach(y => {
+      staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
+    });
+    staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+  }
 
   // Treble clef appears at the start of every system row (standard musical notation convention)
-  let clefSvg = `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
-  if (opts.drawTimeSignature) {
+  let clefSvg = opts.drawStaff === false ? '' : `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
+  if (opts.drawStaff !== false && opts.drawTimeSignature) {
     clefSvg += renderTimeSignature(opts.prefix, staveY);
   }
 
@@ -339,6 +361,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
     const bEnd = bx + actualBarWidth;
 
     // Barline
+    if (opts.drawStaff !== false || opts.drawRhythmContent !== false) {
     if (m.repeatEnd) {
       barsSvg += `<circle cx="${bEnd - 12}" cy="${staveLines[1] + 4}" r="2" fill="#000"/>`;
       barsSvg += `<circle cx="${bEnd - 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
@@ -359,6 +382,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       barsSvg += `<line x1="${bx + 5}" y1="${staveLines[0]}" x2="${bx + 5}" y2="${staveLines[4]}" stroke="#000" stroke-width="1.2"/>`;
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[1] + 4}" r="2" fill="#000"/>`;
       barsSvg += `<circle cx="${bx + 12}" cy="${staveLines[2] + 4}" r="2" fill="#000"/>`;
+    }
     }
 
     // Volta Bracket ([1.], [2.], etc.)
@@ -395,6 +419,8 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
 
     // The measure lyric is replaced by syllable lyrics when the measure has a melody (spec §9.2).
     const measureLyric = m.melody ? '' : m.lyric;
+
+    if (opts.drawRhythmContent === false) return;
 
     if (m.isMeasureRepeat) {
       // Chords (placed clearly above: baseline at y = 33)
@@ -827,8 +853,10 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
     }
   });
 
-  barsSvg += renderInlineConnections(inlineAt, ctx);
-  collectRhythmSpans(spanEntries, measures, ctx, opts.spans);
+  if (opts.drawRhythmContent !== false) {
+    barsSvg += renderInlineConnections(inlineAt, ctx);
+    collectRhythmSpans(spanEntries, measures, ctx, opts.spans);
+  }
 
   return `
     ${staveSvg}
@@ -883,4 +911,3 @@ function renderSectionLabel(name: string, bx: number, sectionSize: number): stri
         <text x="${bx + 10}" y="${sectionSize + 3.5}" font-size="${sectionSize}" font-weight="bold">${escapeXml(name)}</text>
       `;
 }
-

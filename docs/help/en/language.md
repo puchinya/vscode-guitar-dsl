@@ -29,7 +29,7 @@ time: 4/4
 | `bpm` (`tempo`) | Tempo shown in the header |
 | `time`, `feel`, `pickup` | Starting time signature, feel (`straight` / `swing` / `shuffle`) and pickup length |
 | `measures_per_row` | Measures per row, 1–8 (default 4) |
-| `show_rhythm` | `false` hides the rhythm staff where there is a melody (lead-sheet mode) |
+| `show_rhythm` | `false` hides the rhythm staff where there is a melody; TAB keeps its own rhythm |
 | `chord_size`, `lyric_size`, `title_size`, `section_size`, `font_size` | Text sizes |
 
 ### Section Arrangement and Per-Occurrence Lyrics
@@ -156,6 +156,28 @@ lyr: | the morn- ing light is shin- ing | on the road a- head |
 ```
 
 Techniques go in braces after the length: `{hammer}`, `{pull}`, `{slide}`, `{gliss}`, `{bend:1}`, `{vibrato}`, `{staccato}`, `{tenuto}`, `{fermata}`, `{breath}`, `{grace}`, `{slur-start}`, `{slur-end}`, `{pm}`, `{let-ring}`.
+
+### Guitar TAB
+<!-- help-sources: syntax:17 syntax:19 -->
+
+Use `tab:` (or `tab[1]:`) to write guitar positions directly. TAB is independent of `mel:`; you can use either staff or both. String 1 is the highest string and string 6 is the lowest. Frets are relative to the capo, so `0` is the capo position. Tuning and capo determine sounding pitches through the score's guitar model.
+
+```guitardsl
+tuning: Drop D
+capo: 2
+| D | G | A | D |
+tab: | 6f0/4 6f2 5f0 5f2 | [6f3,5f2,4f0]/4 6x/4 r/2 | 3f5{hammer}/8 3f7 2f5{bend(amount=1)}/2 1f0/4 | 6f0~/2 6f0/2 |
+lyr: | low down open up | chord hit | rise then bend now | hold |
+```
+
+- A note is `<string>f<fret>` (`2f5`); `6x` is a dead note. A chord such as `[6f3,5f2,4f0]` attacks several strings together. A rest is `r`. Each string may appear at most once in a chord.
+- The first beat in each `tab:` line needs a duration such as `/4`, `/8`, `/2`, or `/1`. Later beats inherit the previous beat's duration, including chords and rests. TAB uses the same dotted and tuplet duration syntax as the rest of GuitarDSL.
+- Put note effects directly after a TAB note: `{hammer}`, `{pull}`, `{slide}`, `{gliss}`, `{bend(amount=1)}`, `{vibrato}`, `{pm}`, `{let-ring}`. Put beat effects after the duration with `!{...}`, for example `[6f3,5f2]/4!{pm}`. Note effects are `hammer`, `pull`, `slide`, `gliss`, `bend(amount=number)`, `vibrato`, `pm`, and `let-ring`; beat effects are `pm` and `let-ring`.
+- Put `~` after an individual note to tie that string to the same fret in the next sounding beat, for example `[6f3~,5f2]/2`. Connections such as hammer and pull target the next TAB beat on the same string.
+- `let` fragments can hold TAB sequences and `$name` reuses them. Each fragment has its own duration inheritance; ties and connections started inside it must finish there. In a TAB measure cell, `%` repeats the previous TAB measure. Consecutive `lyr:` lines after TAB add verses; one chord or attacked beat takes one lyric slot, while rests and tie-only beats take none.
+- `tab[2]:`, `tab[3]:`, and `tab[4]:` are reserved and unsupported in this release. The current subset does not include advanced Guitar Pro 8 effects. Capo, transpose, and beginner-mode source transforms report TAB as unsupported until TAB-aware transforms are defined; editing `capo:` or `tuning:` in the source remains valid.
+
+When a row contains TAB, the six-line staff is marked `TAB` and rendered below melody and its lyrics. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
 
 ### Key Signature and Display Options
 <!-- help-sources: syntax:14 -->

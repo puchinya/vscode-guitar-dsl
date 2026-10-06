@@ -630,6 +630,37 @@ suite('Beginner Mode (Issue #65)', () => {
     assert.strictEqual(await exportPdf(doc, 'cleared'), unsolvable, 'no stale transformed PDF');
   });
 
+  test('TAB-E2E-01 transform guards reset Preview overrides and keep Preview and PDF on source', async () => {
+    const tabSource = [
+      'title: Beginner TAB Test',
+      'key: C',
+      '',
+      '[Intro]',
+      '| C | G | Am | F |',
+      'tab: | 6f0/1 | 6f2/1 | 5f0/1 | 5f2/1 |',
+      ''
+    ].join('\n');
+
+    const capoDoc = await openPreviewed(SOURCE);
+    assert.ok(capo().setTarget(capoDoc, 2));
+    await replaceAll(capoDoc, tabSource);
+    await waitFor(() => probe().previewInput === tabSource, 'TAB source is rendered after capo override reset');
+    assert.strictEqual(capo().getState(), undefined);
+    assert.strictEqual(capo().resolve(capoDoc).text, tabSource, 'capo failure does not return a partial rewrite');
+    assert.ok(capo().resolve(capoDoc).capo.warning, 'capo reset warning is retained');
+    assert.strictEqual(await exportPdf(capoDoc, 'tab-capo-reset'), tabSource, 'PDF uses the unmodified TAB source');
+
+    const beginnerDoc = await openPreviewed(SOURCE);
+    assert.ok(beginner().enable(beginnerDoc));
+    await replaceAll(beginnerDoc, tabSource);
+    await waitFor(() => probe().previewInput === tabSource, 'TAB source is rendered after Beginner Mode reset');
+    assert.strictEqual(beginner().getState(), undefined);
+    assert.ok(beginner().currentNotice(), 'Beginner Mode reset warning is retained');
+    const effective = previewBeginner().resolvePreviewEffectiveDsl(beginnerDoc, beginner(), capo());
+    assert.strictEqual(effective.text, tabSource, 'effective DSL never contains a partial Beginner Mode rewrite');
+    assert.strictEqual(await exportPdf(beginnerDoc, 'tab-beginner-reset'), tabSource, 'PDF uses the unmodified TAB source');
+  });
+
   test('BEG-E2E-04 switching documents, closing the document and closing the preview clear the state', async () => {
     const doc = await openPreviewed(SOURCE);
     assert.ok(beginner().enable(doc));

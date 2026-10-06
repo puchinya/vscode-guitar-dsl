@@ -64,6 +64,18 @@ describe('let fragments - definitions and references', () => {
     assert.deepStrictEqual(score.measures[0].melody!.map(pitchText), ['e4', 'g4', 'a4', 'g4', '']);
   });
 
+  it('keeps a shared `r/8` fragment valid in mel: and tab: contexts', () => {
+    const score = parseGuitarDsl([
+      'let rest = r/8',
+      '| C |',
+      'mel: | c4/8 $rest d e f g a b |',
+      'tab: | 6f0/8 $rest 6f1 6f2 6f3 6f4 6f5 6f6 |'
+    ].join('\n'));
+    assert.deepStrictEqual(score.diagnostics, []);
+    assert.strictEqual(score.measures[0].melody?.[1].isRest, true);
+    assert.strictEqual(score.measures[0].tabVoices?.[0].beats[1].isRest, true);
+  });
+
   it('accepts a rhythm + note fragment in a measure (5)', () => {
     const score = parseGuitarDsl(['let picking = 8.d c4/8 e g 8.u', '| C | $picking 4.d 4.d 4.d |'].join('\n'));
     assert.deepStrictEqual(score.diagnostics.map(d => d.code), ['beatCountMismatch']);

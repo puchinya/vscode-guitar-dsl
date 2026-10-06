@@ -56,6 +56,19 @@ import type { PlayOrderDiagnosticCode, PlayOrderMeasure, PlayOrderResult } from 
 import { lowerArrangement, scanArrangementBlockLines } from './arrangement';
 import type { ArrangementDiagnosticCode, ArrangementSection, SourceSpan } from './arrangement';
 import { createInstrumentModel, MAX_CAPO, parseTuningValue, STANDARD_TUNING, Tuning } from './instrumentModel';
+import {
+  parseTabCell,
+  parseTabLinePrefix,
+  splitTabCells,
+  tokenizeTabItems
+} from './tab';
+import type {
+  ParsedTabBeat,
+  TabBeat,
+  TabDiagnosticCode,
+  TabNote,
+  TabVoiceMeasure
+} from './tab';
 
 export type { MelodyNote, NoteTechniques, Pitch, Syllable } from './melody';
 export type { ChordDefinition } from './chordDefinition';
@@ -163,6 +176,8 @@ export interface MeasureData {
   lyric: string;
   /** Melody assigned by a `mel:` line; undefined when the measure has no melody. */
   melody?: MelodyNote[];
+  /** TAB voice measures assigned from an independent `tab:` source group. */
+  tabVoices?: readonly TabVoiceMeasure[];
   /** Global zero-based measure index. */
   measureIndex: number;
   /** Musical context in effect for this measure (after `eventsBefore`). */
@@ -229,6 +244,7 @@ export type DiagnosticCode =
   | 'unknownMeasureToken'
   | 'unsupportedContinuationLine'
   | 'repeatEndWithoutStart'
+  | TabDiagnosticCode
   | ArrangementDiagnosticCode
   | PlayOrderDiagnosticCode;
 
@@ -291,6 +307,18 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   unknownMeasureToken: 'error',
   unsupportedContinuationLine: 'error',
   repeatEndWithoutStart: 'warning',
+  invalidTabToken: 'error',
+  unsupportedTabVoice: 'error',
+  invalidTabString: 'error',
+  invalidTabFret: 'error',
+  duplicateTabString: 'error',
+  tabRepeatWithoutPrevious: 'error',
+  invalidTabEffect: 'error',
+  invalidTabEffectScope: 'error',
+  invalidTabConnection: 'warning',
+  danglingTabConnection: 'warning',
+  invalidTabTie: 'error',
+  tooManyTabMeasures: 'error',
   arrangementInvalidSyntax: 'error',
   arrangementDuplicateBlock: 'error',
   arrangementUnterminatedBlock: 'error',
@@ -490,11 +518,25 @@ interface MelodyGroup {
   sectionIndex: number | null;
 }
 
+interface TabSourceGroup {
+  voice: number;
+  line: number;
+  startCol: number;
+  cells: ReturnType<typeof splitTabCells>;
+  lyrics: { text: string; line: number; startCol: number; endCol: number }[];
+  assignedCells: { measureIndex: number; beatIndices: number[] }[];
+}
+
 const DIRECTIVE_LINE_RE = /^(\s*@)([A-Za-z_]+)(\s*:)(.*)$/;
 const HEADER_LINE_RE = /^(title|artist|capo|tuning|key|original_key|tempo|bpm|memo|show_rhythm|rhythm|measures_per_row|bars_per_row|time|time_signature|meter|feel|pickup|expand_page_break_repeats|expand_page_break_repeat|expand_page_repeats|expand_page_repeat|(?:style_)?(?:chord_size|lyric_size|title_size|section_size|font_size)):\s*(.*)$/i;
 const SECTION_LABEL_RE = /^\[([^\]]+)\]$/;
 const MELODY_LINE_RE = /^(\s*mel:)(.*)$/i;
 const LYRICS_LINE_RE = /^(\s*lyr:)(.*)$/i;
+
+function isTabFragmentToken(token: string): boolean {
+  return /^\d+[fx]/i.test(token)
+    || /^\[(?:\s*\d+(?:f\d+|x)\s*,){1,}/i.test(token);
+}
 
 export type SourceLineKind =
   | 'continuation'
@@ -506,6 +548,7 @@ export type SourceLineKind =
   | 'header'
   | 'section'
   | 'melody'
+  | 'tab'
   | 'lyrics'
   | 'measure'
   | 'other';
@@ -526,13 +569,14 @@ export function classifySourceLine(rawLine: string, afterMelodyLine: boolean, ma
   if (DIRECTIVE_LINE_RE.test(rawLine)) return 'directive';
   if (HEADER_LINE_RE.test(line)) return 'header';
   if (SECTION_LABEL_RE.test(line)) return 'section';
+  if (parseTabLinePrefix(rawLine)) return 'tab';
   if (MELODY_LINE_RE.test(rawLine)) return 'melody';
   if (LYRICS_LINE_RE.test(rawLine)) return 'lyrics';
   return line.includes('|') ? 'measure' : 'other';
 }
 
 /** Whether a line of this kind lets the next indented `|` line be a (reported) continuation. */
-export const continuesMelodyContext = (kind: SourceLineKind): boolean => kind === 'continuation' || kind === 'melody' || kind === 'lyrics';
+export const continuesMelodyContext = (kind: SourceLineKind): boolean => kind === 'continuation' || kind === 'melody' || kind === 'tab' || kind === 'lyrics';
 
 /** Non-empty measure cells of a measure line; the line yields a measure per cell (after chord/rhythm merging). */
 export function measureCellsOf(rawLine: string): string[] {
@@ -573,6 +617,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   let currentSection = '';
   const sectionDefinitions: { name: string; start: number; labelSpan: SourceSpan }[] = [];
   const melodyGroups: MelodyGroup[] = [];
+  const tabGroups: TabSourceGroup[] = [];
   let currentArrangementSectionIndex: number | null = null;
   const usedChordsSet = new Set<string>();
   const chordDefinitions: ChordDefinition[] = [];
@@ -602,6 +647,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   interface NoteLocation { line: number; startCol: number; endCol: number }
   const melodyLocations = new WeakMap<MelodyNote, NoteLocation>();
   const inlineLocations = new WeakMap<RhythmItem, NoteLocation>();
+  const tabNoteLocations = new WeakMap<TabNote, NoteLocation>();
   const newMeasure = (fields: Omit<MeasureData, 'measureIndex' | 'context' | 'eventsBefore' | 'expectedBeats'>): MeasureData => ({
     ...fields,
     measureIndex: measures.length,
@@ -613,6 +659,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   // Index of the first measure that has not received a melody yet (§12.3).
   let melodyCursor = 0;
   let lastMelodyGroup: MelodyGroup | null = null;
+  let lastLyricTarget: { kind: 'melody'; group: MelodyGroup } | { kind: 'tab'; group: TabSourceGroup } | null = null;
 
   const report = (lineIdx: number, startCol: number, endCol: number, code: DiagnosticCode, args?: Record<string, string | number>) => {
     diagnostics.push({ line: lineIdx, startCol, endCol: Math.max(endCol, startCol + 1), severity: DIAGNOSTIC_SEVERITY[code], code, args });
@@ -626,7 +673,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   // references may come before or after their definition. All state here belongs to this parse call.
   const CTX_MEASURE = 1;
   const CTX_MELODY = 2;
-  type FragmentEvent = { kind: 'rhythm'; item: RhythmItem } | { kind: 'note'; note: MelodyNote };
+  const CTX_TAB = 4;
+  type FragmentEvent = { kind: 'rhythm'; item: RhythmItem } | { kind: 'note'; note: MelodyNote } | { kind: 'tab'; beat: ParsedTabBeat } | { kind: 'dualRest'; beat: ParsedTabBeat; note: MelodyNote };
   interface FragmentEntry { event: FragmentEvent; loc: NoteLocation; token: string }
   interface FragmentElement { entry?: FragmentEntry; ref?: string; ctx: number; loc: NoteLocation; token: string }
   interface LetDefinition {
@@ -664,6 +712,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
     // Single notes inherit only inside this definition, starting from an empty state (no default octave).
     const state: MelodyTokenState = {};
+    let tabFragmentDuration: TabBeat['duration'] | undefined;
     // The first pitched single note (a grace note included) writes its own octave and length: a rest or a
     // note group before it does not establish them (spec §17.4).
     let firstSingle = true;
@@ -684,6 +733,57 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       } else if (tok.startsWith('$')) {
         if (VARIABLE_NAME.test(tok.slice(1))) def.elements.push({ ref: tok.slice(1), ctx: 0, loc, token: tok });
         else fail('invalidVariableValue', { name, token: tok, reason: 'token' });
+      } else if (isTabFragmentToken(tok)) {
+        const parsed = parseTabCell({ text: tok, startCol: col, endCol: col + tok.length });
+        for (const issue of parsed.issues) {
+          report(lineIdx, issue.startCol, issue.endCol, issue.code as DiagnosticCode, issue.args ? { ...issue.args } : undefined);
+          def.invalid = true;
+        }
+        const beat = parsed.beats[0];
+        if (!beat || parsed.beats.length !== 1) {
+          fail('invalidVariableValue', { name, token: tok, reason: 'token' });
+          continue;
+        }
+        const duration = beat.duration ?? tabFragmentDuration;
+        if (!duration) {
+          report(lineIdx, loc.startCol, loc.endCol, 'missingInitialOctaveOrLength', { token: tok });
+          def.invalid = true;
+          continue;
+        }
+        tabFragmentDuration = duration;
+        def.elements.push({
+          entry: { event: { kind: 'tab', beat: { ...beat, duration } }, loc, token: tok },
+          ctx: CTX_TAB,
+          loc,
+          token: tok
+        });
+      } else if (/^r(?:\/|:|$)/i.test(tok)) {
+        // `r/8` is also the established melody-rest spelling. Keep its meaning context-sensitive
+        // so adding TAB fragments does not make existing melody-only `let` definitions TAB-only.
+        const melodyRest = parseMelodyToken(tok, state);
+        const parsedTab = parseTabCell({ text: tok, startCol: col, endCol: col + tok.length });
+        if (typeof melodyRest === 'string') {
+          fail(melodyRest, { token: tok });
+          continue;
+        }
+        if (parsedTab.issues.length > 0 || parsedTab.beats.length !== 1 || !parsedTab.beats[0].isRest) {
+          fail('invalidVariableValue', { name, token: tok, reason: 'token' });
+          continue;
+        }
+        const beat = parsedTab.beats[0];
+        const duration = beat.duration ?? tabFragmentDuration;
+        if (!duration) {
+          // Without a fragment-local TAB duration the token remains a valid melody rest only.
+          def.elements.push({ entry: { event: { kind: 'note', note: melodyRest }, loc, token: tok }, ctx: CTX_MELODY, loc, token: tok });
+          continue;
+        }
+        tabFragmentDuration = duration;
+        def.elements.push({
+          entry: { event: { kind: 'dualRest', beat: { ...beat, duration }, note: melodyRest }, loc, token: tok },
+          ctx: CTX_MELODY | CTX_TAB,
+          loc,
+          token: tok
+        });
       } else if (tok.startsWith('[')) {
         const parsed = parseNoteGroupToken(tok);
         if (typeof parsed === 'string') {
@@ -738,7 +838,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   function resolveLet(def: LetDefinition): FragmentEntry[] | null {
     if (def.state === 2) return def.invalid ? null : def.entries;
     def.state = 1;
-    let ctx = CTX_MEASURE | CTX_MELODY;
+    let ctx = CTX_MEASURE | CTX_MELODY | CTX_TAB;
     const entries: FragmentEntry[] = [];
     for (const el of def.elements) {
       if (el.ref === undefined) {
@@ -785,10 +885,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'invalidVariableValue', { name: def.name, token: entry.token, reason });
       ok = false;
     };
-    const items = entries.map(e => (e.event.kind === 'rhythm' ? e.event.item : e.event.note));
+    const nonTabEntries = entries.filter((e): e is FragmentEntry & { event: Exclude<FragmentEvent, { kind: 'tab' }> } => e.event.kind !== 'tab');
+    const items = nonTabEntries.map(e => e.event.kind === 'rhythm' ? e.event.item : e.event.note);
     let openSlur: FragmentEntry | undefined;
     items.forEach((item, i) => {
-      const entry = entries[i];
+      const entry = nonTabEntries[i];
       const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
       if (tied) {
         // The tie continues into the very next event, which must be a valid target inside the fragment:
@@ -819,6 +920,31 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
     });
     if (openSlur) fail(openSlur, 'openSlur');
+
+    const tabEntries = entries.filter(e => e.event.kind === 'tab');
+    tabEntries.forEach((entry, i) => {
+      if (entry.event.kind !== 'tab') return;
+      for (const note of entry.event.beat.notes) {
+        const connections = note.effects.filter(effect => ['hammer', 'pull', 'slide', 'gliss'].includes(effect.name));
+        if (!note.tieToNext && connections.length === 0) continue;
+        let next: ParsedTabBeat | undefined;
+        for (let j = i + 1; j < tabEntries.length; j++) {
+          const event = tabEntries[j].event;
+          if (event.kind === 'tab' && !event.beat.isRest && event.beat.notes.length > 0) {
+            next = event.beat;
+            break;
+          }
+        }
+        if (note.tieToNext) {
+          const target = next?.notes.find(candidate => candidate.string === note.string);
+          if (!target || target.dead || target.fret !== note.fret) fail(entry, 'openTie');
+        }
+        if (connections.length > 0) {
+          const target = next?.notes.find(candidate => candidate.string === note.string);
+          if (!target || target.dead) fail(entry, 'danglingConnection');
+        }
+      }
+    });
     return ok;
   }
 
@@ -837,10 +963,13 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
     if (def.invalid) return null;
     if (!(def.ctx & ctx)) {
-      report(lineIdx, col, col + tok.length, 'variableContextMismatch', { name, context: ctx === CTX_MELODY ? 'melody' : 'measure' });
+      report(lineIdx, col, col + tok.length, 'variableContextMismatch', { name, context: ctx === CTX_MELODY ? 'melody' : ctx === CTX_TAB ? 'tab' : 'measure' });
       return null;
     }
-    return def.entries.map(e => e.event);
+    return def.entries.map(e => {
+      if (e.event.kind !== 'dualRest') return e.event;
+      return ctx === CTX_TAB ? { kind: 'tab', beat: e.event.beat } : { kind: 'note', note: e.event.note };
+    });
   }
 
   /** `$name` of a valid definition usable in a measure cell (counts as rhythm content for the cell merge). */
@@ -865,6 +994,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     // continuation, which the syntax does not have: report it and do not read it as a measure (§6).
     const kind = classifySourceLine(rawLine, continuableLine, arrangementScan.maskedLines[lineIdx]);
     continuableLine = continuesMelodyContext(kind);
+    if (lastLyricTarget?.kind === 'tab' && kind !== 'lyrics') lastLyricTarget = null;
     if (arrangementScan.maskedLines[lineIdx]) continue;
     if (kind === 'continuation') {
       const start = rawLine.indexOf('|');
@@ -886,6 +1016,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
       melodyCursor = measures.length;
       lastMelodyGroup = null;
+      lastLyricTarget = null;
       continue;
     }
 
@@ -1017,6 +1148,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       });
       melodyCursor = measures.length;
       lastMelodyGroup = null;
+      lastLyricTarget = null;
       continue;
     }
 
@@ -1026,6 +1158,32 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       markBody(lineIdx);
       lastMelodyGroup = parseMelodyLine(rawLine, melMatch[1].length, lineIdx, currentArrangementSectionIndex);
       melodyGroups.push(lastMelodyGroup);
+      lastLyricTarget = { kind: 'melody', group: lastMelodyGroup };
+      continue;
+    }
+
+    // TAB rows are collected before score measures are finalized; assignment and pitch resolution happen
+    // later, after all tuning/capo headers and measure contexts are known.
+    const tabPrefix = parseTabLinePrefix(rawLine);
+    if (tabPrefix) {
+      markBody(lineIdx);
+      if (tabPrefix.voice !== 1) {
+        report(lineIdx, lineStart, lineStart + tabPrefix.bodyStart, 'unsupportedTabVoice', { voice: tabPrefix.voice });
+        lastLyricTarget = null;
+        lastMelodyGroup = null;
+        continue;
+      }
+      const group: TabSourceGroup = {
+        voice: tabPrefix.voice,
+        line: lineIdx,
+        startCol: tabPrefix.bodyStart,
+        cells: splitTabCells(rawLine, tabPrefix.bodyStart),
+        lyrics: [],
+        assignedCells: []
+      };
+      tabGroups.push(group);
+      lastLyricTarget = { kind: 'tab', group };
+      lastMelodyGroup = null;
       continue;
     }
 
@@ -1033,7 +1191,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     const lyrMatch = rawLine.match(LYRICS_LINE_RE);
     if (lyrMatch) {
       markBody(lineIdx);
-      if (!lastMelodyGroup) {
+      if (lastLyricTarget?.kind === 'tab') {
+        lastLyricTarget.group.lyrics.push({ text: lyrMatch[2], line: lineIdx, startCol: rawLine.indexOf(lyrMatch[2]), endCol: lineEnd });
+      } else if (lastLyricTarget?.kind === 'melody' && lastMelodyGroup) {
+        assignLyrics(lastMelodyGroup, lyrMatch[2], lineIdx, rawLine.indexOf(lyrMatch[2]), lineEnd);
+      } else if (!lastMelodyGroup) {
         report(lineIdx, lineStart, lineEnd, 'lyricsWithoutMelody');
       } else {
         assignLyrics(lastMelodyGroup, lyrMatch[2], lineIdx, lineStart, lineEnd);
@@ -1196,7 +1358,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               const item = cloneData(ev.item);
               rhythms.push(item);
               runningBeat = fadd(runningBeat, rhythmBeatsFraction(item.duration));
-            } else {
+            } else if (ev.kind === 'note') {
               const item = inlineItem(cloneData(ev.note));
               rhythms.push(item);
               inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
@@ -1714,6 +1876,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   resolveMeasures();
+  compileTabGroups();
   validateConnections();
 
   const playOrderInput: PlayOrderMeasure[] = measures.map(measure => ({
@@ -1851,6 +2014,228 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   /** Connection targets, slurs and grace notes (spec §12.2.1) over the melody and the inline-note sequences. */
+  function compileTabGroups() {
+    const byMeasure = new Map<number, TabBeat[]>();
+    let cursor = 0;
+    const cloneMeasure = (source: TabVoiceMeasure): TabVoiceMeasure => ({
+      voice: source.voice,
+      beats: source.beats.map(beat => ({
+        ...beat,
+        duration: { ...beat.duration, beats: { ...beat.duration.beats }, parts: beat.duration.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) },
+        notes: beat.notes.map(note => ({ ...note, effects: note.effects.map(effect => ({ ...effect, args: { ...effect.args } })) })),
+        effects: beat.effects.map(effect => ({ ...effect, args: { ...effect.args } })),
+        syllables: [...beat.syllables]
+      }))
+    });
+    const cloneEffects = (effects: ParsedTabBeat['effects']) => effects.map(effect => ({ ...effect, args: { ...effect.args } }));
+
+    const nextUnassigned = () => {
+      while (cursor < measures.length && measures[cursor].tabVoices?.some(voice => voice.voice === 1)) cursor++;
+      return cursor < measures.length ? cursor : -1;
+    };
+
+    for (const group of tabGroups) {
+      let inheritedDuration: TabBeat['duration'] | undefined;
+      for (const cell of group.cells) {
+        const measureIndex = nextUnassigned();
+        if (measureIndex < 0) {
+          report(group.line, cell.startCol, cell.endCol, 'tooManyTabMeasures', { count: group.cells.length, available: measures.length });
+          continue;
+        }
+        cursor = measureIndex + 1;
+        const targetMeasure = measures[measureIndex];
+        const parsed = parseTabCell(cell);
+        if (parsed.isRepeat) {
+          const previous = measures[measureIndex - 1]?.tabVoices?.find(voice => voice.voice === 1);
+          if (!previous) {
+            report(group.line, cell.startCol, cell.endCol, 'tabRepeatWithoutPrevious');
+            continue;
+          }
+          const cloned = cloneMeasure(previous);
+          targetMeasure.tabVoices = [cloned];
+          byMeasure.set(measureIndex, [...cloned.beats]);
+          group.assignedCells.push({ measureIndex, beatIndices: cloned.beats.map((_beat, index) => index) });
+          continue;
+        }
+
+        const beats: TabBeat[] = [];
+        let total = frac(0);
+        const tokenized = tokenizeTabItems(cell.text);
+        for (const token of tokenized) {
+          const tokenStart = cell.startCol + token.start;
+          if (token.text === '%') {
+            report(group.line, tokenStart, tokenStart + token.text.length, 'invalidTabToken', { token: token.text });
+            continue;
+          }
+          let parsedBeats: ParsedTabBeat[] = [];
+          if (token.text.startsWith('$')) {
+            const fragment = useFragment(token.text, group.line, tokenStart, CTX_TAB);
+            if (!fragment) continue;
+            parsedBeats = fragment.flatMap(event => {
+              if (event.kind !== 'tab') return [];
+              const delta = tokenStart - event.beat.startCol;
+              return [{
+                ...event.beat,
+                startCol: tokenStart,
+                endCol: tokenStart + token.text.length,
+                notes: event.beat.notes.map(note => ({ ...note, startCol: note.startCol + delta, endCol: note.endCol + delta }))
+              }];
+            });
+          } else {
+            const tokenCell = { text: token.text, startCol: tokenStart, endCol: tokenStart + token.text.length };
+            const parsedToken = parseTabCell(tokenCell);
+            for (const issue of parsedToken.issues) {
+              report(group.line, issue.startCol, issue.endCol, issue.code as DiagnosticCode, issue.args ? { ...issue.args } : undefined);
+            }
+            parsedBeats = [...parsedToken.beats];
+          }
+          for (const sourceBeat of parsedBeats) {
+            const duration = sourceBeat.duration ?? inheritedDuration;
+            if (!duration) {
+              report(group.line, sourceBeat.startCol, sourceBeat.endCol, 'missingInitialOctaveOrLength', { token: token.text });
+              continue;
+            }
+            if (!token.text.startsWith('$')) inheritedDuration = duration;
+            total = fadd(total, duration.beats);
+            const counts = new Map<number, number>();
+            sourceBeat.notes.forEach(note => counts.set(note.string, (counts.get(note.string) ?? 0) + 1));
+            const notes: TabNote[] = [];
+            if (!sourceBeat.isRest) {
+              for (const sourceNote of sourceBeat.notes) {
+                if (sourceNote.string < 1 || sourceNote.string > 6 || counts.get(sourceNote.string) !== 1) continue;
+                if (!sourceNote.dead && (sourceNote.fret === undefined || sourceNote.fret > 24 - definitionCapo)) {
+                  report(group.line, sourceNote.startCol + String(sourceNote.string).length + 1, sourceNote.endCol, 'invalidTabFret', { fret: sourceNote.fret ?? -1 });
+                  continue;
+                }
+                let soundingPitch: number | undefined;
+                if (!sourceNote.dead && sourceNote.fret !== undefined) {
+                  try {
+                    soundingPitch = definitionInstrument.pitchAt(sourceNote.string as TabNote['string'], sourceNote.fret);
+                  } catch {
+                    report(group.line, sourceNote.startCol, sourceNote.endCol, 'invalidTabFret', { fret: sourceNote.fret });
+                    continue;
+                  }
+                }
+                const note: TabNote = {
+                  string: sourceNote.string as TabNote['string'],
+                  ...(sourceNote.fret === undefined ? {} : { fret: sourceNote.fret }),
+                  dead: sourceNote.dead,
+                  ...(soundingPitch === undefined ? {} : { soundingPitch }),
+                  tieToNext: sourceNote.tieToNext,
+                  effects: cloneEffects(sourceNote.effects)
+                };
+                tabNoteLocations.set(note, { line: group.line, startCol: sourceNote.startCol, endCol: sourceNote.endCol });
+                notes.push(note);
+              }
+            }
+            beats.push({ isRest: sourceBeat.isRest, notes, duration, effects: cloneEffects(sourceBeat.effects), syllables: [] });
+          }
+        }
+        targetMeasure.tabVoices = [{ voice: 1, beats }];
+        byMeasure.set(measureIndex, beats);
+        group.assignedCells.push({ measureIndex, beatIndices: beats.map((_beat, index) => index) });
+        if (beats.length > 0 && !feq(total, targetMeasure.expectedBeats)) {
+          report(group.line, cell.startCol, cell.endCol, 'beatCountMismatch', { beats: formatBeats(total), expected: formatBeats(targetMeasure.expectedBeats) });
+        }
+      }
+    }
+
+    validateTabConnections(byMeasure);
+    for (const group of tabGroups) assignTabLyrics(group, byMeasure);
+  }
+
+  function validateTabConnections(byMeasure: Map<number, TabBeat[]>) {
+    const positions = measures.flatMap((measure, measureIndex) => (byMeasure.get(measureIndex) ?? []).map((beat, beatIndex) => ({ measureIndex, beatIndex, beat })));
+    const findNextSoundingBeat = (positionIndex: number) => {
+      for (let index = positionIndex + 1; index < positions.length; index++) {
+        const beat = positions[index].beat;
+        if (!beat.isRest && beat.notes.length > 0) return index;
+      }
+      return -1;
+    };
+    positions.forEach((position, positionIndex) => {
+      for (const note of position.beat.notes) {
+        const loc = noteAtTab(note);
+        if (!loc) continue;
+        if (note.tieToNext) {
+          const nextIndex = findNextSoundingBeat(positionIndex);
+          const target = nextIndex < 0 ? undefined : positions[nextIndex].beat.notes.find(candidate => candidate.string === note.string);
+          if (!target || target.dead || target.fret !== note.fret) {
+            report(loc.line, loc.startCol, loc.endCol, 'invalidTabTie', { string: note.string, fret: note.fret ?? -1 });
+          }
+        }
+        for (const effect of note.effects) {
+          if (!['hammer', 'pull', 'slide', 'gliss'].includes(effect.name)) continue;
+          let target: TabNote | undefined;
+          let otherAttack = false;
+          for (let index = positionIndex + 1; index < positions.length; index++) {
+            const beat = positions[index].beat;
+            if (beat.isRest || beat.notes.length === 0) continue;
+            const sameString = beat.notes.find(candidate => candidate.string === note.string);
+            if (sameString) { target = sameString; break; }
+            otherAttack = true;
+          }
+          if (!target || target.dead) {
+            report(loc.line, loc.startCol, loc.endCol, otherAttack ? 'invalidTabConnection' : 'danglingTabConnection', { technique: effect.name, string: note.string });
+          }
+        }
+      }
+    });
+  }
+
+  function assignTabLyrics(group: TabSourceGroup, byMeasure: Map<number, TabBeat[]>) {
+    const flattened = group.assignedCells.flatMap(cell => cell.beatIndices.map(beatIndex => ({
+      measureIndex: cell.measureIndex,
+      beatIndex,
+      beat: byMeasure.get(cell.measureIndex)?.[beatIndex]
+    }))).filter((entry): entry is { measureIndex: number; beatIndex: number; beat: TabBeat } => entry.beat !== undefined);
+    const takesSlot = (at: number, note: TabNote) => {
+      if (note.dead) return true;
+      for (let index = at - 1; index >= 0; index--) {
+        const previous = flattened[index].beat;
+        if (previous.isRest || previous.notes.length === 0) continue;
+        const linked = previous.notes.find(candidate => candidate.string === note.string);
+        return !(linked?.tieToNext && linked.fret === note.fret);
+      }
+      return true;
+    };
+    for (const lyric of group.lyrics) {
+      const items = tokenizeLyrics(lyric.text);
+      const sung = flattened.map((entry, index) => ({ entry, index })).filter(({ entry, index }) =>
+        !entry.beat.isRest && entry.beat.notes.some(note => takesSlot(index, note))
+      );
+      let cursor = 0;
+      let consumed = 0;
+      for (const item of items) {
+        if (item.kind === 'bar') continue;
+        consumed++;
+        const slot = sung[cursor++];
+        if (!slot) continue;
+        const syllables = [...slot.entry.beat.syllables];
+        const verse = group.lyrics.indexOf(lyric);
+        const text = item.kind === 'syllable' ? item.text + (item.hyphenToNext ? '-' : '') : '';
+        syllables[verse] = text;
+        const updated = { ...slot.entry.beat, syllables };
+        const beats = byMeasure.get(slot.entry.measureIndex)!;
+        beats[slot.entry.beatIndex] = updated;
+        slot.entry.beat = updated;
+      }
+      if (consumed !== sung.length) {
+        report(lyric.line, lyric.startCol, lyric.endCol, 'syllableCountMismatch', { syllables: consumed, notes: sung.length });
+      }
+    }
+    for (const cell of group.assignedCells) {
+      const beats = byMeasure.get(cell.measureIndex) ?? [];
+      const voice = measures[cell.measureIndex].tabVoices?.find(item => item.voice === 1);
+      if (voice) measures[cell.measureIndex].tabVoices = [{ ...voice, beats }];
+    }
+  }
+
+  function noteAtTab(note: TabNote): NoteLocation | undefined {
+    return tabNoteLocations.get(note);
+  }
+
+  /** Connection targets, slurs and grace notes (spec §12.2.1) over the melody and the inline-note sequences. */
   function validateConnections() {
     const melody = measures.flatMap(m => (m.melody ?? []).map(n => ({ n, loc: melodyLocations.get(n), measure: m })));
     const inline = measures.flatMap(m => (m.isMeasureRepeat ? [] : m.rhythms).map(r => ({ n: r, loc: inlineLocations.get(r), measure: m })));
@@ -1968,6 +2353,16 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
   const chord = measure.chord || source?.chord || (chords[0]?.name ?? '');
 
   const clonePitches = (n: MelodyNote) => (n.pitches ? { pitches: n.pitches.map(p => ({ ...p })) } : {});
+  const tabVoices = measure.tabVoices?.map(voice => ({
+    voice: voice.voice,
+    beats: voice.beats.map(beat => ({
+      ...beat,
+      duration: { ...beat.duration, parts: beat.duration.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) },
+      notes: beat.notes.map(note => ({ ...note, effects: note.effects.map(effect => ({ ...effect, args: { ...effect.args } })) })),
+      effects: beat.effects.map(effect => ({ ...effect, args: { ...effect.args } })),
+      syllables: [...beat.syllables]
+    }))
+  }));
   const melody = measure.melody
     ? measure.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, ...clonePitches(n) }))
     : (source?.melody ? source.melody.map(n => ({ ...n, pitch: n.pitch ? { ...n.pitch } : undefined, ...clonePitches(n), tiedFromPrev: false, syllables: [] })) : undefined);
@@ -1979,7 +2374,8 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
     isMeasureRepeat: false,
     expandedFromRepeat: true,
     rhythms,
-    melody
+    melody,
+    ...(tabVoices ? { tabVoices } : {})
   };
 }
 

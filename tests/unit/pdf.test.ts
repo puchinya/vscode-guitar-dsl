@@ -45,6 +45,12 @@ describe('pdf - browser-free export', () => {
     }
   });
 
+  it('exports TAB from the shared page SVG path', async () => {
+    const pdf = await renderScorePdf('| C |\ntab: | [6f3,5f2,4f0]/1 |', 'A4', 'portrait', fonts);
+    assert.strictEqual(pdf.subarray(0, 5).toString('latin1'), '%PDF-');
+    assert.strictEqual(countPages(pdf), 1);
+  });
+
   it('should set Author metadata when artist is given', async () => {
     const pdf = await renderScorePdf('artist: Someone\n| C |', 'A4', 'portrait', fonts);
     assert.ok(pdf.toString('latin1').includes('/Author'));

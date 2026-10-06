@@ -22,13 +22,13 @@
       "source": "syntax",
       "section": "1",
       "helpPage": "about",
-      "reviewedSourceSha256": "cc12441a6a618eaf6eac8b5ea6cf263f9f71dc8bc78dab7e652146de8d40ff06"
+      "reviewedSourceSha256": "004f91c61b8955b682272713dc148effa1f117bc12e16f8f0db09887fc0ea6e7"
     },
     {
       "source": "syntax",
       "section": "2",
       "helpPage": "language",
-      "reviewedSourceSha256": "db16ef1fd20053891c6cea87f3e3dafa03855ea41d8a63612db0a56225f7401e"
+      "reviewedSourceSha256": "cac32ded2de5476883adab84ebf909f1454234aa6b021b3706cd8a20bd38f0ff"
     },
     {
       "source": "syntax",
@@ -82,7 +82,7 @@
       "source": "syntax",
       "section": "11",
       "helpPage": "language",
-      "reviewedSourceSha256": "cf62749cb6f67385ff6f7d61fb3c3d231ac71da2219011883bc08650d0f73479"
+      "reviewedSourceSha256": "e40d4b0bec5d8cdd852de40c2cbd80214df4e62999ba63366a2518a9d8b133ce"
     },
     {
       "source": "syntax",
@@ -94,7 +94,7 @@
       "source": "syntax",
       "section": "13",
       "helpPage": "language",
-      "reviewedSourceSha256": "35852e6368c29d0029347a46922c7fd622516cb1baf334264e058604ef250722"
+      "reviewedSourceSha256": "41ac862c2f6fe19b1028ae1d6ca6b58adc63748955cd6b9e10effe7dc04c1312"
     },
     {
       "source": "syntax",
@@ -118,13 +118,19 @@
       "source": "syntax",
       "section": "17",
       "helpPage": "language",
-      "reviewedSourceSha256": "b0a8dc11b3e211737b4c26ac6efac62b5d93e3060247a4cadcbdf91d4cb118f3"
+      "reviewedSourceSha256": "89b32d51e71f7767eb2ac9e8d6409e6159eebad79ff1b7083cd711381dced533"
     },
     {
       "source": "syntax",
       "section": "18",
       "helpPage": "language",
       "reviewedSourceSha256": "eba3f691d7ec9b4e07ddece1d44abee5e7c01e161161966d90251e52e0d66310"
+    },
+    {
+      "source": "syntax",
+      "section": "19",
+      "helpPage": "language",
+      "reviewedSourceSha256": "01b780115a08f86fb0e1f2360ca78a99b21a225c5a611037103617e841dfd766"
     },
     {
       "source": "extension",
@@ -148,13 +154,13 @@
       "source": "extension",
       "section": "4",
       "helpPage": "features",
-      "reviewedSourceSha256": "90db9212fc220b623341902046cd59f8e11f1b5649a754065e8111405e9d1af5"
+      "reviewedSourceSha256": "4c6da53791fa0522397e1f072a9515690c2757daa0beab22e9c5d883d44f9844"
     },
     {
       "source": "extension",
       "section": "4B",
       "helpPage": "features",
-      "reviewedSourceSha256": "9ad86a5b136098bfbc1393a0549ebe2051087a647b8d6449ba2e81de94dd4c9c"
+      "reviewedSourceSha256": "0b954109c2f756f13eb1c7b34f3bd3cce341f20cb69baec662d44ef3b2ea3a5e"
     },
     {
       "source": "extension",

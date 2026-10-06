@@ -7,6 +7,7 @@ import { ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chord
 import { resolveApplicableChordDefinition, resolveDefaultChordVoicing } from './chordVoicingResolver';
 import { ChordTokenSpan, ParsedScore, parseGuitarDsl } from './compiler';
 import { createInstrumentModel, MAX_CAPO, STANDARD_TUNING, Tuning } from './instrumentModel';
+import { scoreHasTab } from './tab';
 
 export const MIN_CAPO = 0;
 export { MAX_CAPO } from './instrumentModel';
@@ -276,7 +277,8 @@ export type CapoTransformFailureCode =
   | 'untransposableChord'
   | 'labeledChordVariant'
   | 'customDefinitionCollision'
-  | 'transformedParseError';
+  | 'transformedParseError'
+  | 'tabTransformUnsupported';
 
 /** Non-blocking notes; `unusedChordDefinitions` lists custom definitions no longer referenced. */
 export type CapoTransformWarning = 'unusedChordDefinitions';
@@ -375,6 +377,13 @@ export function planCapoTransform(dslText: string, targetCapo: number): CapoTran
   }
   if (!isValidCapo(targetCapo)) {
     return { ok: false, code: 'invalidTargetCapo', detail: String(targetCapo) };
+  }
+  if (scoreHasTab(score)) {
+    if (targetCapo === sourceCapo) {
+      const chordMap = new Map(writtenChordSequence(score).map(key => [key, key] as [string, string]));
+      return { ok: true, sourceCapo, targetCapo, text: dslText, warnings: [], unusedDefinitions: [], chordMap };
+    }
+    return { ok: false, code: 'tabTransformUnsupported' };
   }
   const delta = targetCapo - sourceCapo;
   const tokens = score.chordTokens ?? [];
@@ -486,8 +495,10 @@ export type EffectiveDslResult =
  */
 export function resolveEffectiveDsl(sourceDsl: string, targetCapo: number | undefined): EffectiveDslResult {
   if (targetCapo === undefined) return { ok: true, text: sourceDsl, transformed: false };
-  const sourceCapo = parseCapoValue(parseGuitarDsl(sourceDsl).capo);
+  const score = parseGuitarDsl(sourceDsl);
+  const sourceCapo = parseCapoValue(score.capo);
   if (sourceCapo !== null && sourceCapo === targetCapo) return { ok: true, text: sourceDsl, transformed: false };
+  if (scoreHasTab(score)) return { ok: false, code: 'tabTransformUnsupported' };
   const plan = planCapoTransform(sourceDsl, targetCapo);
   return plan.ok ? { ok: true, text: plan.text, transformed: true } : { ok: false, code: plan.code, detail: plan.detail };
 }

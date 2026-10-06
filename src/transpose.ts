@@ -6,6 +6,7 @@ import { chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { CapoTransformFailureCode, inferCapoForDsl, parseCapoValue, planCapoTransform, transposeChordName } from './capo';
 import { ParsedScore, Pitch, eventPitches, parseGuitarDsl } from './compiler';
 import { PitchStep } from './melody';
+import { scoreHasTab } from './tab';
 
 export const MIN_SEMITONES = -11;
 export const MAX_SEMITONES = 11;
@@ -175,6 +176,7 @@ export function planSoundingTranspose(text: string, semitones: number): Transpos
   if (semitones === 0) {
     return { ok: true, semitones, text, sourceKey: score.originalKey, targetKey: score.originalKey, sourceCapo, targetCapo: sourceCapo, chordMap: identity, warnings: [], unusedDefinitions: [] };
   }
+  if (scoreHasTab(score)) return { ok: false, code: 'tabTransformUnsupported', stage: 'transpose' };
 
   const lines = text.split(/\r?\n/);
   const edits: Edit[] = [];

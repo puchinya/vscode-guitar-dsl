@@ -34,6 +34,8 @@ At narrow widths, the View, Paper and Orientation settings can scroll horizontal
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.
 
+Rows with `tab:` or `tab[1]:` show the six-string TAB staff below any melody and melody lyrics. TAB carries its own rhythm, so an implicit slash-rhythm staff is omitted; explicitly authored rhythm is shown when `show_rhythm: true`. TAB and PDF use the same page SVG rendering path.
+
 ### PDF Export
 <!-- help-sources: extension:3 extension:4 -->
 
@@ -55,12 +57,12 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 ### Capo and Playability
 <!-- help-sources: extension:4 -->
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
+The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
 
 ### Beginner Mode
 <!-- help-sources: extension:4 -->
 
-Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
+Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview. Beginner transforms are unsupported for scores with TAB until they can preserve explicit string/fret positions.
 
 ### Score Settings
 <!-- help-sources: extension:3 extension:4B -->
@@ -71,7 +73,7 @@ Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning a
 - **Beginner Mode**: the settings and chord substitutions described above.
 - **Transpose**: transposes the whole song by −11 to +11 semitones or to a target key. This changes the sounding key, melody and chords. The capo can stay the same, follow the recommendation, or be set to a value you choose.
 
-Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same panel at the capo section.
+Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same panel at the capo section. For a score with TAB, source-changing capo and transpose operations are reported as unsupported; the transform does not partially rewrite the document.
 
 ### Change Accompaniment Pattern
 <!-- help-sources: extension:3 -->
