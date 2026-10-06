@@ -15,11 +15,12 @@ import {
   renderTieArc,
   renderTimeSignature
 } from './notation';
-import { renderBend, renderGliss, renderHammerPull, renderSlide, renderVibrato } from './technique';
+import { renderBend, renderGliss, renderHammerPull, renderSlide, renderSpan, renderVibrato } from './technique';
 
 const TAB_LINE_COUNT = 6;
-const NUMBER_SIZE = 12;
+const NUMBER_SIZE = 10;
 const NUMBER_GAP = 4;
+const TAB_STAFF_LEFT_X = 25;
 
 interface BeatPosition {
   measureIndex: number;
@@ -42,22 +43,22 @@ export function renderTabStaff(
   geometry: SystemGeometry,
   prefix: SystemPrefix
 ): string {
-  const top = geometry.tabOffset;
+  const top = 0;
   const lineGap = geometry.tabStaffHeight / (TAB_LINE_COUNT - 1);
   const tabBottom = geometry.tabStaffHeight;
-  const lineYs = Array.from({ length: TAB_LINE_COUNT }, (_unused, index) => top + index * lineGap);
-  const restStaffLines = Array.from({ length: 5 }, (_unused, index) => top + lineGap / 2 + index * lineGap);
-  const restMidY = top + tabBottom / 2;
-  const xStart = ctx.startX;
+  const lineYs = Array.from({ length: TAB_LINE_COUNT }, (_unused, index) => index * lineGap);
+  const restStaffLines = Array.from({ length: 5 }, (_unused, index) => lineGap / 2 + index * lineGap);
+  const restMidY = tabBottom / 2;
+  const xStart = TAB_STAFF_LEFT_X;
   const xEnd = ctx.totalWidth - 5;
   let out = '';
 
   for (let stringIndex = 0; stringIndex < lineYs.length; stringIndex++) {
     const y = lineYs[stringIndex];
-    out += `<line class="tab-string-line" data-string="${stringIndex + 1}" x1="${fmt(xStart)}" y1="${fmt(y)}" x2="${fmt(xEnd)}" y2="${fmt(y)}" stroke="#000" stroke-width="${stringIndex === 0 || stringIndex === 5 ? '1.2' : '0.9'}"/>`;
+    out += `<line class="tab-string-line" data-string="${stringIndex + 1}" x1="${fmt(xStart)}" y1="${fmt(y)}" x2="${fmt(xEnd)}" y2="${fmt(y)}" stroke="#000" stroke-width="0.9"/>`;
   }
-  out += `<text class="tab-label tab-clef" x="${fmt(ctx.startX - 42)}" y="${fmt(top + tabBottom / 2 + 7)}" font-family="serif" font-size="20" font-weight="bold" text-anchor="middle">TAB</text>`;
-  out += renderTimeSignature(prefix, top - 1);
+  out += `<g class="tab-clef"><text class="tab-clef-letter" x="37" y="11" font-size="10.5" font-weight="700" text-anchor="middle">T</text><text class="tab-clef-letter" x="37" y="30" font-size="10.5" font-weight="700" text-anchor="middle">A</text><text class="tab-clef-letter" x="37" y="49" font-size="10.5" font-weight="700" text-anchor="middle">B</text></g>`;
+  out += renderTimeSignature(prefix, top, 10);
 
   const rowMeasures = new Set(measures.map(measure => measure.measureIndex));
   const rowPositionByBeat = new Map<string, BeatPosition>();
@@ -84,7 +85,7 @@ export function renderTabStaff(
         ? undefined
         : beat.duration.parts.map(formatNoteValuePart).join('+');
       const part = normalizedPart ?? fallbackRhythmPart(beat.duration.parts);
-      const position: BeatPosition = { measureIndex: measure.measureIndex, localMeasure, beatIndex, globalIndex: globalIndex++, beat, offset: { ...offset }, x, measureEnd: bx + width - inset, part, durationLabel, stemX: x + 5 };
+      const position: BeatPosition = { measureIndex: measure.measureIndex, localMeasure, beatIndex, globalIndex: globalIndex++, beat, offset: { ...offset }, x, measureEnd: bx + width - inset, part, durationLabel, stemX: x + maxFretMarkWidth(beat) / 2 + 2 };
       offset = fadd(offset, beat.duration.beats);
       return position;
     });
@@ -117,13 +118,20 @@ export function renderTabStaff(
       }
     }
     for (const position of positions) {
-      if (position.beat.isRest || position.part.base === 1) continue;
-      out += `<line class="tab-stem" x1="${fmt(position.stemX)}" y1="${fmt(top - 1)}" x2="${fmt(position.stemX)}" y2="${fmt(top - 18)}" stroke="#000" stroke-width="1.1"/>`;
+      if (position.beat.isRest) continue;
+      const stemTop = position.part.base === 2 ? top - 9 : top - 18;
+      const stemKind = position.part.base === 2 ? 'short' : 'full';
+      if (position.part.base !== 1) {
+        const markRight = position.x + maxFretMarkWidth(position.beat) / 2;
+        out += `<g class="tab-stem-${stemKind}"><line class="tab-stem" data-stem-kind="${stemKind}" x1="${fmt(position.stemX)}" data-mark-right="${fmt(markRight)}" y1="${fmt(top - 1)}" x2="${fmt(position.stemX)}" y2="${fmt(stemTop)}" stroke="#000" stroke-width="1.1"/></g>`;
+      }
       if (position.part.base >= 8 && !beamed.has(position)) {
         out += renderFlags(position.part.base as NoteBase, position.stemX, top - 18);
       }
       if (position.part.dotted) {
-        out += `<circle class="tab-duration-dot" cx="${fmt(position.stemX + 2)}" cy="${fmt(top - 20)}" r="1.25" fill="#000"/>`;
+        const dotX = position.stemX + 2;
+        const dotY = position.part.base === 1 ? top - 5 : stemTop - 1;
+        out += `<circle class="tab-duration-dot" cx="${fmt(dotX)}" cy="${fmt(dotY)}" r="1.25" fill="#000"/>`;
       }
     }
     const tupletHeads = positions.map(position => ({ position, part: position.part }));
@@ -149,12 +157,13 @@ export function renderTabStaff(
       const y = lineYs[note.string - 1];
       const label = note.dead ? 'x' : String(note.fret ?? 0);
       const labelWidth = estimateTextWidth(label, NUMBER_SIZE, true);
-      out += `<text class="tab-fret" data-string="${note.string}" x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="2.5">${escapeXml(label)}</text>`;
+      out += `<rect class="tab-fret-mask" data-string="${note.string}" data-mark-width="${fmt(labelWidth)}" x="${fmt(position.x - (labelWidth + 3) / 2)}" y="${fmt(y - 1.8)}" width="${fmt(labelWidth + 3)}" height="3.6" fill="#fff"/>`;
+      out += `<text class="tab-fret" data-string="${note.string}" x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="600" text-anchor="middle">${escapeXml(label)}</text>`;
       out += renderNoteEffects(note.effects, position, y, labelWidth);
     }
-    out += renderBeatEffects(position.beat.effects, position, rowEntries.filter(entry => entry.measureIndex === position.measureIndex), top);
   }
 
+  out += renderBeatEffectSpans(rowEntries, allEntries, rowPositionByBeat, xStart, xEnd, tabBottom + 6);
   out += renderTabConnections(ctx, measures, rowPositionByBeat, allEntries, lineYs, xStart, xEnd);
   out += renderTabLyrics(rowEntries, geometry);
   return `<g class="tab-staff">${out}</g>`;
@@ -171,13 +180,13 @@ function spreadCollisions(positions: BeatPosition[], min: number, max: number): 
     const beforeWidth = beatLabelWidth(before.beat);
     const currentWidth = beatLabelWidth(current.beat);
     current.x = Math.max(current.x, before.x + Math.max(9, (beforeWidth + currentWidth) / 2 + NUMBER_GAP));
-    current.stemX = current.x + 5;
+    current.stemX = current.x + maxFretMarkWidth(current.beat) / 2 + 2;
   }
   if (positions.length === 0) return;
   const shift = Math.min(0, max - positions[positions.length - 1].x);
   positions.forEach(position => {
     position.x = Math.max(min, position.x + shift);
-    position.stemX = position.x + 5;
+    position.stemX = position.x + maxFretMarkWidth(position.beat) / 2 + 2;
   });
 }
 
@@ -185,7 +194,19 @@ function beatLabelWidth(beat: TabBeat): number {
   const durationLabel = singlePartDuration(beat.duration.parts, beat.duration.beats) || beat.duration.parts.length < 2
     ? 0
     : estimateTextWidth(beat.duration.parts.map(formatNoteValuePart).join('+'), 6.5, false);
-  return Math.max(durationLabel, ...beat.notes.map(note => estimateTextWidth(note.dead ? 'x' : String(note.fret ?? 0), NUMBER_SIZE, true)));
+  return Math.max(durationLabel, maxFretMarkWidth(beat));
+}
+
+function maxFretMarkWidth(beat: TabBeat): number {
+  return beat.notes.reduce((width, note) => Math.max(width, tabMarkWidth(note)), 0);
+}
+
+function tabMarkWidth(note: TabNote): number {
+  return estimateTextWidth(note.dead ? 'x' : String(note.fret ?? 0), NUMBER_SIZE, true);
+}
+
+function tabMarkHalfWidth(note: TabNote): number {
+  return tabMarkWidth(note) / 2;
 }
 
 function singlePartDuration(parts: readonly NoteValuePart[], beats: Fraction): NoteValuePart | undefined {
@@ -219,11 +240,21 @@ function beamGroupKey(measure: MeasureData, position: BeatPosition): number {
 }
 
 function renderTabBarline(measure: MeasureData, left: number, right: number, top: number, bottom: number): string {
-  const width = measure.finalEnd || measure.repeatEnd ? 2.5 : 1.1;
-  let out = `<line class="tab-barline" x1="${fmt(right)}" y1="${fmt(top)}" x2="${fmt(right)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="${width}"/>`;
+  const line = (cls: string, x: number, width: number) => `<line class="${cls}" x1="${fmt(x)}" y1="${fmt(top)}" x2="${fmt(x)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="${width}"/>`;
+  const repeatDots = (x: number) => `<circle class="tab-repeat-dot" cx="${fmt(x)}" cy="15" r="2" fill="#000"/><circle class="tab-repeat-dot" cx="${fmt(x)}" cy="35" r="2" fill="#000"/>`;
+  let out = '';
+  if (measure.repeatEnd) {
+    out += repeatDots(right - 12);
+    out += line('tab-repeat-end-thin', right - 5, 1.2) + line('tab-repeat-end-thick', right, 3);
+  } else if (measure.finalEnd) {
+    out += line('tab-final-end-thin', right - 5, 1.2) + line('tab-final-end-thick', right, 3);
+  } else if (measure.doubleEnd) {
+    out += line('tab-double-end', right - 5, 1.2) + line('tab-double-end', right, 1.2);
+  } else {
+    out += line('tab-barline', right, 1.2);
+  }
   if (measure.repeatStart) {
-    out += `<line class="tab-repeat-start" x1="${fmt(left)}" y1="${fmt(top)}" x2="${fmt(left)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="2.5"/>`;
-    out += `<line x1="${fmt(left + 4)}" y1="${fmt(top)}" x2="${fmt(left + 4)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1"/>`;
+    out += line('tab-repeat-start-thick', left, 3) + line('tab-repeat-start-thin', left + 5, 1.2) + repeatDots(left + 12);
   }
   return out;
 }
@@ -232,30 +263,66 @@ function renderNoteEffects(effects: readonly TabEffectCall[], position: BeatPosi
   let out = '';
   for (const effect of effects) {
     if (effect.name === 'bend' && typeof effect.args.amount === 'number') {
-      out += renderBend(position.x - labelWidth / 2, y - 2, y - 25, effect.args.amount);
+      out += renderBend(position.x + labelWidth / 2 + NUMBER_GAP - 6, y - 2, y - 25, effect.args.amount);
     } else if (effect.name === 'vibrato') {
       out += renderVibrato(position.x + labelWidth / 2 + 4, position.x + labelWidth / 2 + 17, y - 5);
     } else if (effect.name === 'pm' || effect.name === 'let-ring') {
-      out += renderRangeMark(effect.name, position.x, position.x + Math.max(12, labelWidth + 8), position.x, y - 7);
+      const localX = position.x + labelWidth / 2 + NUMBER_GAP;
+      const label = effect.name === 'pm' ? 'P.M.' : 'let ring';
+      out += `<text class="tab-note-effect" x="${fmt(localX)}" y="${fmt(y - 6)}" font-size="5.5" font-style="italic">${label}</text>`;
     }
   }
   return out;
 }
 
-function renderBeatEffects(effects: readonly TabEffectCall[], position: BeatPosition, positions: BeatPosition[], top: number): string {
+function renderBeatEffectSpans(
+  rowPositions: BeatPosition[],
+  allEntries: { measureIndex: number; beatIndex: number; beat: TabBeat }[],
+  positionByBeat: Map<string, BeatPosition>,
+  xStart: number,
+  xEnd: number,
+  y: number
+): string {
   let out = '';
-  for (const effect of effects) {
-    if (effect.name !== 'pm' && effect.name !== 'let-ring') continue;
-    const next = positions[position.beatIndex + 1];
-    const end = next?.x ?? position.measureEnd;
-    out += renderRangeMark(effect.name, position.x, end, (position.x + end) / 2, top - 7);
+  const rowGlobalIndexes = new Set(rowPositions.map(position => position.globalIndex));
+  for (const name of ['pm', 'let-ring'] as const) {
+    const affected = allEntries.map((entry, index) => ({ ...entry, index }))
+      .filter(entry => !entry.beat.isRest && entry.beat.effects.some(effect => effect.name === name));
+    const runs: typeof affected[] = [];
+    for (const entry of affected) {
+      const last = runs[runs.length - 1];
+      if (last && last[last.length - 1].index === entry.index - 1) last.push(entry);
+      else runs.push([entry]);
+    }
+    for (const run of runs) {
+      const inRow = run.filter(entry => {
+        const position = positionByBeat.get(`${entry.measureIndex}:${entry.beatIndex}`);
+        return position && rowGlobalIndexes.has(position.globalIndex);
+      });
+      if (inRow.length === 0) continue;
+      const first = inRow[0];
+      const last = inRow[inRow.length - 1];
+      const startPosition = positionByBeat.get(`${first.measureIndex}:${first.beatIndex}`)!;
+      const endPosition = positionByBeat.get(`${last.measureIndex}:${last.beatIndex}`)!;
+      const runStartsBefore = run[0].index < first.index;
+      const runContinuesAfter = run[run.length - 1].index > last.index;
+      const afterIndex = last.index + 1;
+      const after = allEntries[afterIndex];
+      const afterPosition = after ? positionByBeat.get(`${after.measureIndex}:${after.beatIndex}`) : undefined;
+      const endX = afterPosition?.globalIndex !== undefined && rowGlobalIndexes.has(afterPosition.globalIndex)
+        ? afterPosition.x
+        : endPosition.measureEnd;
+      out += renderSpan(
+        `tab-effect-span tab-effect-${name}`,
+        name === 'pm' ? 'P.M.' : 'let ring',
+        startPosition.x,
+        Math.min(xEnd, Math.max(xStart, endX)),
+        y,
+        { continuedFrom: runStartsBefore, continuesTo: runContinuesAfter, hookDown: true }
+      );
+    }
   }
   return out;
-}
-
-function renderRangeMark(name: 'pm' | 'let-ring', x1: number, x2: number, labelX: number, y: number): string {
-  const label = name === 'pm' ? 'P.M.' : 'let ring';
-  return `<g class="tab-effect-range tab-effect-${name}"><text x="${fmt(labelX)}" y="${fmt(y)}" font-size="6.5" font-style="italic" text-anchor="middle">${label}</text><path d="M ${fmt(x1)},${fmt(y + 2)} v 3 H ${fmt(x2)} v -3" fill="none" stroke="#000" stroke-width="0.8"/></g>`;
 }
 
 function renderTabConnections(
@@ -286,15 +353,24 @@ function renderTabConnections(
       const targetPosition = tieTarget ? rowPositions.get(`${tieTarget.measureIndex}:${tieTarget.beatIndex}`) : undefined;
       if (note.tieToNext && tieTarget) {
         const toX = targetPosition?.x ?? xEnd - 4;
-        out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(fromX + 5, toX - 5, y - 5, false)}</g>`;
+        const targetNote = tieTarget.beat.notes.find(candidate => candidate.string === note.string);
+        const fromEdge = fromX + tabMarkHalfWidth(note) + NUMBER_GAP;
+        const toEdge = toX - (targetNote ? tabMarkHalfWidth(targetNote) : 0) - NUMBER_GAP;
+        out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(fromEdge, toEdge, y - 5, false)}</g>`;
       }
       for (const effect of note.effects) {
         if (!['hammer', 'pull', 'slide', 'gliss'].includes(effect.name) || !connectionTarget) continue;
         const connectionPosition = rowPositions.get(`${connectionTarget.measureIndex}:${connectionTarget.beatIndex}`);
         const toX = connectionPosition?.x ?? xEnd - 4;
-        if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, fromX + 5, toX - 5, y - 6, false);
-        else if (effect.name === 'slide') out += renderSlide(fromX + 5, y - 4, toX - 5, y - 4);
-        else out += renderGliss(fromX + 5, y - 4, toX - 5, y - 4);
+        const targetNote = connectionTarget.beat.notes.find(candidate => candidate.string === note.string);
+        const fromEdge = fromX + tabMarkHalfWidth(note) + NUMBER_GAP;
+        const toEdge = toX - (targetNote ? tabMarkHalfWidth(targetNote) : 0) - NUMBER_GAP;
+        const targetFret = targetNote?.fret ?? note.fret ?? 0;
+        const y1 = targetFret > (note.fret ?? 0) ? y + 3 : targetFret < (note.fret ?? 0) ? y - 3 : y;
+        const y2 = targetFret > (note.fret ?? 0) ? y - 3 : targetFret < (note.fret ?? 0) ? y + 3 : y;
+        if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, fromEdge, toEdge, y - 6, false);
+        else if (effect.name === 'slide') out += renderSlide(fromEdge, y1, toEdge, y2);
+        else out += renderGliss(fromEdge, y1, toEdge, y2);
       }
     }
   }
@@ -312,16 +388,23 @@ function renderTabConnections(
         const y = lineYs[note.string - 1];
         const tieResolution = note.tieToNext ? resolveTabLinkTarget(allBeats, sourceIndex, note, 'tie') : undefined;
         if (tieResolution?.status === 'valid' && tieResolution.targetIndex === currentIndex) {
-          out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(xStart + 3, position.x - 5, y - 5, false)}</g>`;
+          const targetNote = current.beat.notes.find(candidate => candidate.string === note.string);
+          const toEdge = position.x - (targetNote ? tabMarkHalfWidth(targetNote) : 0) - NUMBER_GAP;
+          out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(xStart + 3, toEdge, y - 5, false)}</g>`;
         }
         const hasConnection = note.effects.some(effect => ['hammer', 'pull', 'slide', 'gliss'].includes(effect.name));
         const connectionResolution = hasConnection ? resolveTabLinkTarget(allBeats, sourceIndex, note, 'connection') : undefined;
         if (connectionResolution?.status !== 'valid' || connectionResolution.targetIndex !== currentIndex) continue;
         for (const effect of note.effects) {
           if (!['hammer', 'pull', 'slide', 'gliss'].includes(effect.name)) continue;
-          if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, xStart + 3, position.x - 5, y - 6, false);
-          else if (effect.name === 'slide') out += renderSlide(xStart + 3, y - 4, position.x - 5, y - 4);
-          else out += renderGliss(xStart + 3, y - 4, position.x - 5, y - 4);
+          const targetNote = current.beat.notes.find(candidate => candidate.string === note.string);
+          const toEdge = position.x - (targetNote ? tabMarkHalfWidth(targetNote) : 0) - NUMBER_GAP;
+          const targetFret = targetNote?.fret ?? note.fret ?? 0;
+          const y1 = targetFret > (note.fret ?? 0) ? y + 3 : targetFret < (note.fret ?? 0) ? y - 3 : y;
+          const y2 = targetFret > (note.fret ?? 0) ? y - 3 : targetFret < (note.fret ?? 0) ? y + 3 : y;
+          if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, xStart + 3, toEdge, y - 6, false);
+          else if (effect.name === 'slide') out += renderSlide(xStart + 3, y1, toEdge, y2);
+          else out += renderGliss(xStart + 3, y1, toEdge, y2);
         }
       }
     }
@@ -333,8 +416,9 @@ function renderTabLyrics(entries: BeatPosition[], geometry: SystemGeometry): str
   let out = '';
   const verseCount = Math.max(0, ...entries.map(position => position.beat.syllables.length));
   const lyricSize = 10;
+  const localLyricBaseline = geometry.tabLyricBaseline - geometry.tabOffset;
   for (let verse = 0; verse < verseCount; verse++) {
-    const baseline = geometry.tabLyricBaseline + verse * geometry.tabLyricLineHeight;
+    const baseline = localLyricBaseline + verse * geometry.tabLyricLineHeight;
     let lastEnd: number | null = null;
     let pendingHyphenFrom: number | null = null;
     for (const position of entries) {

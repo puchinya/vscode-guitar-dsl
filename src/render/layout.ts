@@ -54,7 +54,8 @@ const MELODY_NO_LYRIC_BOTTOM = MELODY_STAVE_BOTTOM + 22;
 // The rhythm drawing starts at its accent row (y = 38) and ends at the system height (140).
 const RHYTHM_BLOCK_TOP = 36;
 const LEAD_SHEET_BOTTOM_PADDING = 6;
-const TAB_STAFF_HEIGHT = 60;
+const TAB_STAFF_HEIGHT = 50;
+const TAB_LYRIC_BASELINE_GAP = 22;
 // Upper limit of the melody technique marks (melodyStaff.ts MARK_CEILING).
 const MELODY_MARK_CEILING = 42;
 
@@ -442,8 +443,9 @@ export function getSystemGeometry(measures: MeasureData[], score: GeometryScore)
         for (const beat of voice.beats) tabVerseCount = Math.max(tabVerseCount, beat.syllables.length);
       }
     }
-    const tabOffset = hasMelody ? Math.max(melodyBottom + 16, MELODY_STAVE_BOTTOM + 50) : 60;
-    const tabLyricBaseline = tabOffset + TAB_STAFF_HEIGHT + 30;
+    // Leave room above TAB for its rhythm and technique marks while keeping the system geometry authoritative.
+    const tabOffset = hasMelody ? Math.max(melodyBottom + 34, MELODY_STAVE_BOTTOM + 68) : 78;
+    const tabLyricBaseline = tabOffset + TAB_STAFF_HEIGHT + TAB_LYRIC_BASELINE_GAP;
     const tabEnd = tabVerseCount > 0
       ? tabLyricBaseline + (tabVerseCount - 1) * lineHeight + 8
       : tabOffset + TAB_STAFF_HEIGHT + 20;

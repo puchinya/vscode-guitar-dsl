@@ -149,19 +149,21 @@ export function renderSystemKeySignature(prefix: SystemPrefix, staveBottom: numb
 }
 
 /** Stacked time signature digits (first system / meter change). One-digit values keep the original left-aligned layout. */
-export function renderTimeSignature(prefix: SystemPrefix, staveTop: number): string {
+export function renderTimeSignature(prefix: SystemPrefix, staveTop: number, staffSpace = 8): string {
   const ts = prefix.timeSignature;
   if (!ts) return '';
   const tx = PREFIX_X + 4 + prefix.keyWidth;
   const num = String(ts.numerator);
   const den = String(ts.denominator);
+  const numeratorY = fmt(staveTop + staffSpace * 1.75);
+  const denominatorY = fmt(staveTop + staffSpace * 3.75);
   if (num.length === 1 && den.length === 1) {
-    return `<text class="time-signature" x="${tx}" y="${staveTop + 14}" font-size="14" font-weight="bold">${num}</text>`
-      + `<text class="time-signature" x="${tx}" y="${staveTop + 30}" font-size="14" font-weight="bold">${den}</text>`;
+    return `<text class="time-signature" x="${tx}" y="${numeratorY}" font-size="14" font-weight="bold">${num}</text>`
+      + `<text class="time-signature" x="${tx}" y="${denominatorY}" font-size="14" font-weight="bold">${den}</text>`;
   }
   const cx = tx + (WIDE_TIME_SIGNATURE_RESERVE - 12) / 2;
-  return `<text class="time-signature" x="${fmt(cx)}" y="${staveTop + 14}" font-size="14" font-weight="bold" text-anchor="middle">${num}</text>`
-    + `<text class="time-signature" x="${fmt(cx)}" y="${staveTop + 30}" font-size="14" font-weight="bold" text-anchor="middle">${den}</text>`;
+  return `<text class="time-signature" x="${fmt(cx)}" y="${numeratorY}" font-size="14" font-weight="bold" text-anchor="middle">${num}</text>`
+    + `<text class="time-signature" x="${fmt(cx)}" y="${denominatorY}" font-size="14" font-weight="bold" text-anchor="middle">${den}</text>`;
 }
 
 /** Length of a measure's bar in quarter beats (its time signature, not the pickup length). */
