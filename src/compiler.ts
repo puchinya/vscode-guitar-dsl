@@ -32,6 +32,7 @@ import {
   takesSyllable,
   tokenizeLyrics
 } from './melody';
+import type { Syllable } from './melody';
 import { CHORD_LABEL_PATTERN, CHORD_NAME_PATTERN, ChordDefinition, chordKey, isChordDefinitionLine, parseChordDefinition } from './chordDefinition';
 import {
   DEFAULT_FEEL,
@@ -59,6 +60,7 @@ import { createInstrumentModel, MAX_CAPO, parseTuningValue, STANDARD_TUNING, Tun
 import {
   parseTabCell,
   parseTabLinePrefix,
+  resolveTabLinkTarget,
   splitTabCells,
   tokenizeTabItems
 } from './tab';
@@ -922,26 +924,20 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (openSlur) fail(openSlur, 'openSlur');
 
     const tabEntries = entries.filter(e => e.event.kind === 'tab');
+    const tabBeats = tabEntries.map(entry => entry.event.kind === 'tab' ? entry.event.beat : undefined)
+      .filter((beat): beat is ParsedTabBeat => beat !== undefined);
     tabEntries.forEach((entry, i) => {
       if (entry.event.kind !== 'tab') return;
       for (const note of entry.event.beat.notes) {
         const connections = note.effects.filter(effect => ['hammer', 'pull', 'slide', 'gliss'].includes(effect.name));
         if (!note.tieToNext && connections.length === 0) continue;
-        let next: ParsedTabBeat | undefined;
-        for (let j = i + 1; j < tabEntries.length; j++) {
-          const event = tabEntries[j].event;
-          if (event.kind === 'tab' && !event.beat.isRest && event.beat.notes.length > 0) {
-            next = event.beat;
-            break;
-          }
-        }
         if (note.tieToNext) {
-          const target = next?.notes.find(candidate => candidate.string === note.string);
-          if (!target || target.dead || target.fret !== note.fret) fail(entry, 'openTie');
+          const result = resolveTabLinkTarget(tabBeats, i, note, 'tie');
+          if (result.status !== 'valid') fail(entry, result.status === 'dangling' ? 'openTie' : 'tieTarget');
         }
         if (connections.length > 0) {
-          const target = next?.notes.find(candidate => candidate.string === note.string);
-          if (!target || target.dead) fail(entry, 'danglingConnection');
+          const result = resolveTabLinkTarget(tabBeats, i, note, 'connection');
+          if (result.status !== 'valid') fail(entry, result.status === 'dangling' ? 'danglingConnection' : 'connectionTarget');
         }
       }
     });
@@ -2024,7 +2020,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         duration: { ...beat.duration, beats: { ...beat.duration.beats }, parts: beat.duration.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) },
         notes: beat.notes.map(note => ({ ...note, effects: note.effects.map(effect => ({ ...effect, args: { ...effect.args } })) })),
         effects: beat.effects.map(effect => ({ ...effect, args: { ...effect.args } })),
-        syllables: [...beat.syllables]
+        syllables: beat.syllables.map(syllable => syllable ? { ...syllable } : null)
       }))
     });
     const cloneEffects = (effects: ParsedTabBeat['effects']) => effects.map(effect => ({ ...effect, args: { ...effect.args } }));
@@ -2103,8 +2099,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             if (!sourceBeat.isRest) {
               for (const sourceNote of sourceBeat.notes) {
                 if (sourceNote.string < 1 || sourceNote.string > 6 || counts.get(sourceNote.string) !== 1) continue;
-                if (!sourceNote.dead && (sourceNote.fret === undefined || sourceNote.fret > 24 - definitionCapo)) {
-                  report(group.line, sourceNote.startCol + String(sourceNote.string).length + 1, sourceNote.endCol, 'invalidTabFret', { fret: sourceNote.fret ?? -1 });
+                if (!sourceNote.dead && sourceNote.fret === undefined) {
+                  report(group.line, sourceNote.startCol + String(sourceNote.string).length + 1, sourceNote.endCol, 'invalidTabFret', { fret: -1 });
                   continue;
                 }
                 let soundingPitch: number | undefined;
@@ -2146,37 +2142,22 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
   function validateTabConnections(byMeasure: Map<number, TabBeat[]>) {
     const positions = measures.flatMap((measure, measureIndex) => (byMeasure.get(measureIndex) ?? []).map((beat, beatIndex) => ({ measureIndex, beatIndex, beat })));
-    const findNextSoundingBeat = (positionIndex: number) => {
-      for (let index = positionIndex + 1; index < positions.length; index++) {
-        const beat = positions[index].beat;
-        if (!beat.isRest && beat.notes.length > 0) return index;
-      }
-      return -1;
-    };
+    const beats = positions.map(position => position.beat);
     positions.forEach((position, positionIndex) => {
       for (const note of position.beat.notes) {
         const loc = noteAtTab(note);
         if (!loc) continue;
         if (note.tieToNext) {
-          const nextIndex = findNextSoundingBeat(positionIndex);
-          const target = nextIndex < 0 ? undefined : positions[nextIndex].beat.notes.find(candidate => candidate.string === note.string);
-          if (!target || target.dead || target.fret !== note.fret) {
+          const result = resolveTabLinkTarget(beats, positionIndex, note, 'tie');
+          if (result.status !== 'valid') {
             report(loc.line, loc.startCol, loc.endCol, 'invalidTabTie', { string: note.string, fret: note.fret ?? -1 });
           }
         }
         for (const effect of note.effects) {
           if (!['hammer', 'pull', 'slide', 'gliss'].includes(effect.name)) continue;
-          let target: TabNote | undefined;
-          let otherAttack = false;
-          for (let index = positionIndex + 1; index < positions.length; index++) {
-            const beat = positions[index].beat;
-            if (beat.isRest || beat.notes.length === 0) continue;
-            const sameString = beat.notes.find(candidate => candidate.string === note.string);
-            if (sameString) { target = sameString; break; }
-            otherAttack = true;
-          }
-          if (!target || target.dead) {
-            report(loc.line, loc.startCol, loc.endCol, otherAttack ? 'invalidTabConnection' : 'danglingTabConnection', { technique: effect.name, string: note.string });
+          const result = resolveTabLinkTarget(beats, positionIndex, note, 'connection');
+          if (result.status !== 'valid') {
+            report(loc.line, loc.startCol, loc.endCol, result.status === 'dangling' ? 'danglingTabConnection' : 'invalidTabConnection', { technique: effect.name, string: note.string });
           }
         }
       }
@@ -2213,8 +2194,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (!slot) continue;
         const syllables = [...slot.entry.beat.syllables];
         const verse = group.lyrics.indexOf(lyric);
-        const text = item.kind === 'syllable' ? item.text + (item.hyphenToNext ? '-' : '') : '';
-        syllables[verse] = text;
+        const syllable: Syllable | null = item.kind === 'syllable'
+          ? { text: item.text, hyphenToNext: item.hyphenToNext, extend: false }
+          : item.kind === 'extend'
+            ? { text: '', hyphenToNext: false, extend: true }
+            : null;
+        syllables[verse] = syllable;
         const updated = { ...slot.entry.beat, syllables };
         const beats = byMeasure.get(slot.entry.measureIndex)!;
         beats[slot.entry.beatIndex] = updated;
@@ -2222,6 +2207,31 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
       if (consumed !== sung.length) {
         report(lyric.line, lyric.startCol, lyric.endCol, 'syllableCountMismatch', { syllables: consumed, notes: sung.length });
+      }
+      if (items.some(item => item.kind === 'bar')) {
+        const segments: number[] = [];
+        let count = 0;
+        let seenContent = false;
+        for (const item of items) {
+          if (item.kind === 'bar') {
+            if (seenContent) segments.push(count);
+            count = 0;
+            seenContent = false;
+          } else {
+            count++;
+            seenContent = true;
+          }
+        }
+        if (seenContent) segments.push(count);
+        const expected = group.assignedCells.map(cell => {
+          const cellBeatIndexes = new Set(cell.beatIndices);
+          return flattened.reduce((total, entry, index) => {
+          if (entry.measureIndex !== cell.measureIndex || !cellBeatIndexes.has(entry.beatIndex)) return total;
+          return total + (!entry.beat.isRest && entry.beat.notes.some(note => takesSlot(index, note)) ? 1 : 0);
+          }, 0);
+        });
+        const matches = segments.length === expected.length && segments.every((value, index) => value === expected[index]);
+        if (!matches) report(lyric.line, lyric.startCol, lyric.endCol, 'lyricBarMismatch');
       }
     }
     for (const cell of group.assignedCells) {
@@ -2360,7 +2370,7 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
       duration: { ...beat.duration, parts: beat.duration.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) },
       notes: beat.notes.map(note => ({ ...note, effects: note.effects.map(effect => ({ ...effect, args: { ...effect.args } })) })),
       effects: beat.effects.map(effect => ({ ...effect, args: { ...effect.args } })),
-      syllables: [...beat.syllables]
+      syllables: beat.syllables.map(syllable => syllable ? { ...syllable } : null)
     }))
   }));
   const melody = measure.melody

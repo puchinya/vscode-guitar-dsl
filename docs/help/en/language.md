@@ -177,7 +177,7 @@ lyr: | low down open up | chord hit | rise then bend now | hold |
 - `let` fragments can hold TAB sequences and `$name` reuses them. Each fragment has its own duration inheritance; ties and connections started inside it must finish there. In a TAB measure cell, `%` repeats the previous TAB measure. Consecutive `lyr:` lines after TAB add verses; one chord or attacked beat takes one lyric slot, while rests and tie-only beats take none.
 - `tab[2]:`, `tab[3]:`, and `tab[4]:` are reserved and unsupported in this release. The current subset does not include advanced Guitar Pro 8 effects. Capo, transpose, and beginner-mode source transforms report TAB as unsupported until TAB-aware transforms are defined; editing `capo:` or `tuning:` in the source remains valid.
 
-When a row contains TAB, the six-line staff is marked `TAB` and rendered below melody and its lyrics. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
+When a row contains TAB, a prominent `TAB` mark sits at the left of the six-line staff, with enough spacing to read fret numbers on adjacent strings. It is rendered below melody and its lyrics when present. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
 
 ### Key Signature and Display Options
 <!-- help-sources: syntax:14 -->

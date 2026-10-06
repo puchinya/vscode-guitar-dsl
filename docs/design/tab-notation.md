@@ -61,7 +61,7 @@ export interface TabBeat {
   readonly notes: readonly TabNote[];
   readonly duration: NoteValue;
   readonly effects: readonly TabEffectCall[];
-  readonly syllables: readonly string[];
+  readonly syllables: readonly (Syllable | null)[]; // Syllable is reused from src/melody.ts
 }
 export interface TabVoiceMeasure {
   readonly voice: TabVoiceNumber;
@@ -89,19 +89,19 @@ The parse pipeline structurally tokenizes brackets and effect-call parentheses, 
 
 Generic effect-call grammar is separated from the typed #89 vocabulary. `{...}` directly attached to `TabNote` is always note scope; `!{...}` following a beat duration or an inheriting beat is always beat scope. No rule infers scope from effect name or whether the duration is present. Unknown effect names and unsupported scope/schema combinations are diagnosed rather than preserved opaquely.
 
-Note effects for #89 are hammer, pull, slide, gliss, bend with numeric `amount`, vibrato, PM, and let-ring. Beat effects are PM and let-ring. Connection markers resolve to the next non-rest beat in the same voice containing the same string, including across measures. Invalid or dangling connections warn and do not block rendering. Ties are per note: a marked note must find the immediately following sounding beat in the same voice with identical string and fret, otherwise it is an error. No tie/connection crosses a let-definition boundary.
+Note effects for #89 are hammer, pull, slide, gliss, bend with numeric `amount`, vibrato, PM, and let-ring. Beat effects are PM and let-ring. `resolveTabLinkTarget()` in `src/tab.ts` is the shared pure target resolver used by normal Compiler validation, fragment-boundary validation, and rendering. Connections skip rests, empty beats, and sounding beats without the source string; the first later sounding beat containing that string is the candidate and must not be dead. Ties skip rests and empty beats but inspect only the immediately following sounding beat; it must contain the same non-dead string and fret. Invalid or dangling links are diagnosed and never drawn. No tie/connection crosses a let-definition boundary.
 
 ### Repeats, fragments, and lyrics
 
 Existing `let` resolution owns nesting, cycle/error reporting, and deep expansion per use. Context inference gives TAB-only fragments the TAB context and reports existing context mismatch behavior when elements have no common context. Each fragment has independent beat-duration inheritance; it neither reads the caller's duration state nor leaks its final state back. `%` remains invalid in a fragment. Open connections and ties started inside a fragment must terminate within that fragment.
 
-In TAB source, `%` is a complete prior-measure repeat for the same voice and must be the only musical item in its cell. It clones compiled TAB semantics deeply and never means a repeated beat. `lyr:` attaches to the immediately preceding melody or TAB source group. A chord consumes one lyric slot, a rest and a tie-only continuation beat consume none, and any beat with a new attack consumes one slot. Existing syllabification, skipped/extended syllables, verse selection, and boundary diagnostics remain shared.
+In TAB source, `%` is a complete prior-measure repeat for the same voice and must be the only musical item in its cell. It clones compiled TAB semantics deeply and never means a repeated beat. `lyr:` attaches to the immediately preceding melody or TAB source group. A chord consumes one lyric slot, a rest and a tie-only continuation beat consume none, and any beat with a new attack consumes one slot. TAB stores the existing `Syllable | null` model: text and hyphenation are preserved, `_` is an extending syllable, and `*` is a skipped slot. Optional lyric bar markers are checked per assigned TAB measure cell with the existing `lyricBarMismatch` diagnostic.
 
 ### Layout and renderer
 
-`src/render/layout.ts::layoutScore()` owns system layout and extends `SystemGeometry` with: TAB presence; TAB block vertical offset; TAB lyric baseline, line height, and verse count; whether rhythm is actually rendered; final rhythm offset; and total unit height. The TAB-containing block order is header/section/chord labels, optional melody plus its lyrics, TAB plus TAB lyrics, optional explicit rhythm, dynamics/lower lanes. A default or implicit rhythm must not create a redundant slash staff under TAB. No-TAB `SystemKind` behavior and geometry stay valid.
+`src/render/layout.ts::layoutScore()` owns system layout and extends `SystemGeometry` with: TAB presence; TAB block vertical offset and staff height; TAB lyric baseline, line height, and verse count; whether rhythm is actually rendered; final rhythm offset; and total unit height. The TAB-containing block order is header/section/chord labels, optional melody plus its lyrics, TAB plus TAB lyrics, optional explicit rhythm, dynamics/lower lanes. A default or implicit rhythm must not create a redundant slash staff under TAB. No-TAB `SystemKind` behavior and geometry stay valid.
 
-Pure `src/render/tabStaff.ts` consumes compiled `TabVoiceMeasure`, `SystemGeometry`, and existing render primitives. It draws six lines, numeric frets and dead `x`, rests and readable common rhythm marks, simultaneous notes at the same x, and compiled effects/ties. Horizontal placement comes from exact accumulated beat fractions. It does not re-parse source, derive pitch, resolve duplicates, repair data, infer effects, or choose a string/fret.
+Pure `src/render/tabStaff.ts` consumes compiled `TabVoiceMeasure`, `SystemGeometry`, and existing render primitives. It draws six evenly spaced lines, a prominent clef-like `TAB` label, readable numeric frets and dead `x`, rests and common rhythm marks, simultaneous notes at the same x, and compiled effects/ties. Layout owns staff height so fret digits on adjacent strings remain legible and lyrics clear the staff. Horizontal placement comes from exact accumulated beat fractions. It does not re-parse source, derive pitch, resolve duplicates, repair data, infer effects, or choose a string/fret.
 
 `src/render/svg.ts::renderScoreSheets()` and `renderContinuousSvg()` integrate the TAB helper using layout-owned geometry. Preview and PDF share page SVGs. `src/pdf.ts` stays a consumer of `renderScoreSheets()` and has no TAB-specific renderer or layout constants.
 

@@ -1,5 +1,6 @@
 import { Fraction, NoteValue, frac, parseNoteValueDetailed } from './duration';
 import { GuitarString } from './instrumentModel';
+import type { Syllable } from './melody';
 
 export type TabVoiceNumber = 1 | 2 | 3 | 4;
 
@@ -24,7 +25,7 @@ export interface TabBeat {
   readonly notes: readonly TabNote[];
   readonly duration: NoteValue;
   readonly effects: readonly TabEffectCall[];
-  readonly syllables: readonly string[];
+  readonly syllables: readonly (Syllable | null)[];
 }
 
 export interface TabVoiceMeasure {
@@ -93,6 +94,45 @@ export interface ResolvedTabBeats {
   readonly beats: readonly TabBeat[];
   readonly lastDuration?: NoteValue;
   readonly issues: readonly TabSyntaxIssue[];
+}
+
+export type TabLinkKind = 'tie' | 'connection';
+
+export type TabLinkResolution<N> =
+  | { readonly status: 'valid'; readonly targetIndex: number; readonly note: N }
+  | { readonly status: 'invalid' }
+  | { readonly status: 'dangling' };
+
+/** Resolve a TAB tie/connection target over one voice's beat sequence. */
+export function resolveTabLinkTarget<
+  N extends { readonly string: number; readonly fret?: number; readonly dead: boolean },
+  B extends { readonly isRest: boolean; readonly notes: readonly N[] }
+>(
+  beats: readonly B[],
+  sourceIndex: number,
+  sourceNote: N,
+  kind: TabLinkKind
+): TabLinkResolution<N> {
+  let sawFollowingSoundingBeat = false;
+  for (let index = sourceIndex + 1; index < beats.length; index++) {
+    const beat = beats[index];
+    if (beat.isRest || beat.notes.length === 0) continue;
+    sawFollowingSoundingBeat = true;
+
+    if (kind === 'tie') {
+      const target = beat.notes.find(note => note.string === sourceNote.string);
+      if (!target || sourceNote.dead || target.dead || sourceNote.fret === undefined || target.fret !== sourceNote.fret) {
+        return { status: 'invalid' };
+      }
+      return { status: 'valid', targetIndex: index, note: target };
+    }
+
+    const target = beat.notes.find(note => note.string === sourceNote.string);
+    if (!target) continue;
+    if (sourceNote.dead || target.dead) return { status: 'invalid' };
+    return { status: 'valid', targetIndex: index, note: target };
+  }
+  return kind === 'tie' && sawFollowingSoundingBeat ? { status: 'invalid' } : { status: 'dangling' };
 }
 
 const NOTE_EFFECTS = new Set(['hammer', 'pull', 'slide', 'gliss', 'bend', 'vibrato', 'pm', 'let-ring']);
