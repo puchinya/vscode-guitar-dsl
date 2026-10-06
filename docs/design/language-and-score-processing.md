@@ -19,6 +19,7 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 | 構文、文書構造、ヘッダー、セクション、小節、コード、リズム | 言語構文仕様 §1–§8 |
 | 歌詞、改ページ、音符・音節歌詞、表示設定 | 言語構文仕様 §9–§14 |
 | スコアイベント、再利用フラグメント、同時複数音 | 言語構文仕様 §16–§18 |
+| 位置優先 TAB と TAB 歌詞、奏法、タイ、声部 | 言語構文仕様 §19 / [TAB notation](tab-notation.md) |
 | 解析結果を使う拡張機能の診断境界 | 拡張機能仕様 §5A |
 
 ## Architecture
@@ -47,6 +48,16 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 ### 決定論的ハーモニー分析
 
 `src/harmonicAnalysis.ts` は純粋・同期の分析 API で、VS Code、描画、AI、ネットワークに依存しない。入力は `ParsedScore.measures` の記譜順であり、`playOrder` を再解決しない。コード記号解析は `src/chordDetect.ts` の `parseChordName()` / quality 定義を再利用し、機能分類は分析モジュールが所有する。カポはルート・ベースの実音 pitch class に反映しつつ記号表記を保持する。未知または曖昧なコードは構造化結果として示し、他の小節を中断しない。カデンツ評価範囲は曲末とセクション境界に限定される。
+
+### TAB domain processing (Issue #89)
+
+`tab:` is an independent, position-first score source. `tab:` and `tab[1]:` populate voice 1; the durable `TabVoiceNumber` and `TabVoiceMeasure` reserve voices 1–4, while voices 2–4 produce `unsupportedTabVoice` and are not partially compiled or rendered. A TAB-specific cursor assigns each bar cell to the earliest measure without that voice, independently of the melody cursor.
+
+`src/tab.ts` owns pure TAB types and structural note/effect token helpers. `MeasureData.tabVoices` contains `TabVoiceMeasure[]`, each with `TabBeat[]`, each with `TabNote[]`. `TabBeat.duration` is the existing `NoteValue`; no parallel TAB rhythm model is allowed. Compiler builds one final-header `InstrumentModel`, resolves every normal position with `pitchAt(string, relativeFret)`, and retains explicit string/fret even when another string can sound the same pitch. Dead notes have no pitch.
+
+Effect structure is parsed generically, then semantic validation enforces the #89 names, scopes, and argument schemas. Note `{...}` and beat `!{...}` scope are fixed by syntax. Per-note ties require the immediately following sounding same-string/same-fret beat. Hammer, pull, slide and gliss resolve same-string targets in the same voice; invalid/dangling connections warn, ties fail. `let` inheritance and open links stop at fragment boundaries; `%` copies a preceding complete TAB measure only. Lyrics attach by source group and use one slot per attacked TAB beat.
+
+`scoreHasTab(ParsedScore)` is the shared semantic predicate for transforms. A non-identity capo or transpose, and all beginner chord substitution on TAB, return `tabTransformUnsupported` before edits. Compiler and semantic helpers remain independent of rendering.
 
 ## Data flow and ownership
 

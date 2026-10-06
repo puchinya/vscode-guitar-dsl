@@ -5,7 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
-- Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md)
+- Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
 
@@ -414,6 +414,13 @@ Preview の HTML ツールバーに再生操作を表示する。再生操作は
 - **再生不可**: 演奏順序が不正な場合、または演奏位置のテンポを解決できない場合は部分再生せず、Preview に理由を表示する。
 - 新しい VS Code コマンドや設定は追加しない。再生音は Web Audio によるオフライン合成で、ネットワークやサンプルを使用しない。
 
+### 4.7 TAB プレビュー、レイアウト、PDF
+
+- `tab:` または `tab[1]:` が割り当てられているスコアは、6弦の TAB 譜表を Preview に描画する。TAB は `mel:` に対応する注釈ではなく独立した譜表であり、両方がある段ではそれぞれの歌詞を各譜表の下に表示する。
+- TAB を含む段は、ヘッダー・セクション・コードラベル、メロディ譜表と歌詞（あれば）、TAB 譜表と歌詞、表示設定が有効で明示的なリズム内容がある場合のリズム譜表、強弱・下段レーンの順に配置する。TAB 自身の音価だけを理由に既定のリズムスラッシュ譜表を重複表示しない。明示リズムと TAB は共存できる。
+- TAB を含まない段の既存レイアウトは変わらない。ページ Preview と PDF は `renderScoreSheets()` が生成する同じページ SVG を使い、PDF 専用 TAB 描画を持たない。
+- この Issue では TAB の意味音高をコンパイルするが、TAB 再生、TAB から五線譜を生成する機能、およびメロディから TAB を生成する機能は提供しない。
+
 ## 4B. 楽譜設定エディタ (Score Settings Editor)
 
 楽曲全体の設定をまとめて編集する Webview パネル。セクション（タブ）単位で構成し、今後カポ以外の設定のセクションを追加できる。現在のセクションは「カポ / 弾きやすさ」、「初心者モード」、「移調」。
@@ -457,6 +464,13 @@ Preview の HTML ツールバーに再生操作を表示する。再生操作は
 - 移調はドキュメントを書き換える一回限りの操作であり、プレビューだけの一時的な移調は提供しない。プレビューのカポ一時変更（§4.4）・初心者モード（§4.5）は、適用後のドキュメントのテキストから計算し直される。
 
 ---
+
+### 4B.6 TAB を含む文書の変換制限
+
+- 明示 TAB 位置に対応した変換がない間、TAB を含む文書への非同一 capo 変更、非ゼロ実音移調、または初心者モードのコード置換は `tabTransformUnsupported` として失敗する。失敗は文書編集前に確定し、部分書き換えをしない。
+- 同一 capo、0 半音移調、および要求した capo / 音高が変わらない恒等変換は既存の恒等結果を許可する。初心者モードのコード置換を要求した TAB 文書は、capo が同じでも失敗する。
+- Preview の一時 capo / 移調 / 初心者モード変換も同じ失敗を表示し、既存の警告・リセット動作で元の DSL を使う。部分変換した TAB を生成しない。
+- 読み取り専用のコード弾きやすさ分析は継続できる。ただし非同一変換が必要な候補は既存の候補サポート欄で非対応として返す。手編集による `capo:` と `tuning:` の変更は有効で、InstrumentModel による TAB の実音解釈を変える。
 
 ## 4A. コードダイアグラムエディタ (Chord Diagram Editor)
 

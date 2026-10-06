@@ -17,7 +17,9 @@
 | 仕様上の要件 | 対象 |
 |---|---|
 | 表示・レイアウト規則、調号・表示設定 | 言語構文仕様 §11、§14 |
+| 六線 TAB、TAB 歌詞、明示リズムとの同居 | 言語構文仕様 §19 / [TAB notation](tab-notation.md) |
 | プレビュー更新、UI、レンダリング、一時カポ・初心者表示 | 拡張機能仕様 §3.1、§4、§4.4–§4.5 |
+| TAB Preview、PDF 同一性、変換制限 | 拡張機能仕様 §4.7、§4B.6 |
 | PDF と Preview playback | 拡張機能仕様 §3.2、§4.6 |
 
 ## Architecture
@@ -44,6 +46,12 @@ PDF は Preview で選ばれた有効 DSL を受け取り、ページ SVG をベ
 
 再生タイムラインは `ParsedScore.playOrder` の出現順と音価からイベント時刻とソース小節の対応を作る。Preview が新しい HTML に再構築されると再生は停止して先頭に戻る。Play / Pause / Resume / Stop / Seek と有限の先読みを Web Audio の `AudioContext` 時計で扱い、Pause は位置を保持する。Count-in は先頭からの Play の直前だけ鳴り、Resume と先頭以外の Seek では省略する。編集・有効 DSL 変更・レイアウト再構築・文書切替・Panel 破棄時は予約済み音源を停止する。
 
+### TAB geometry and SVG (Issue #89)
+
+`layoutScore()` remains the sole owner of row and vertical placement. `SystemGeometry` explicitly reports TAB presence and block offset; TAB lyric baseline, line height and verse count; whether an explicit rhythm staff is rendered and its final offset; and total `unitHeight`. A TAB row orders its blocks as header/section/chord labels, optional melody plus melody lyrics, TAB plus TAB lyrics, optional explicit rhythm, then dynamics/lower lanes. The rhythm staff appears only when `show_rhythm` is true and the row contains explicitly authored rhythm. TAB's own/default duration does not create a redundant slash staff. Systems without TAB retain current geometry and rendering behavior.
+
+`render/tabStaff.ts` consumes compiled TAB semantics and `SystemGeometry`; it does not parse source, re-resolve pitch, or calculate positions from tuning. `render/svg.ts` includes it in the existing page and continuous SVG routes. The page SVG supplied to Preview is the same page SVG supplied to `src/pdf.ts`; PDF has no TAB-specific rendering or layout path.
+
 ## Data flow and ownership
 
 | フロー | 変換 | 結果の所有者 |
@@ -55,6 +63,8 @@ PDF は Preview で選ばれた有効 DSL を受け取り、ページ SVG をベ
 プレビューでの一時カポや初心者モードは、対象の有効 DSL / UI モデルをホストが解決して描画へ渡す。正式な保存変換と一時表示変換の契約は拡張機能仕様に従う。
 
 ## Failure handling
+
+For TAB source, Preview does not synthesize an effective DSL by applying a non-identity capo, transpose, or beginner chord substitution. Transform services return `tabTransformUnsupported`; Preview follows its existing warning/reset path and renders the original source. No partial rewrite is displayed. Identity requests remain valid when both pitch and capo are unchanged.
 
 Compiler 診断、レイアウト・SVG 生成、フォント初期化、PDF 書き込み、Webview メッセージ、再生状態はそれぞれの担当層で扱う。PDF のフォント読み込み失敗を無視して代替フォントで続行すると文字化けし得るため、現在の設計は描画前にフォントを明示的に読み込む。その他の失敗時に表示する文言や部分描画規則は仕様・実装を参照し、ここでは追加しない。
 
