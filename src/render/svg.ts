@@ -51,6 +51,7 @@ import {
   escapeXml,
   fmt,
   getRenderContext,
+  leadSheetBeatColumns,
   measureBounds,
   renderAccidental,
   renderArpeggioSign,
@@ -210,9 +211,16 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   const lanes = renderRowLanes(row, ctx, spans);
   const shift = geometry.annotationTop - geometry.lift;
   const body = shift !== 0 ? `<g transform="translate(0, ${fmt(shift)})">${content}</g>` : content;
+  const includeRhythmColumns = geometry.kind === 'rhythm' || geometry.kind === 'melody' || geometry.rhythmRendered;
   const measureAnchors = row.measures.map((measure, index) => {
     const { bx, width } = measureBounds(ctx, row.measures.length, index);
-    return `<rect class="playback-measure-anchor" data-measure-index="${measure.measureIndex}" x="${fmt(bx)}" y="0" width="${fmt(width)}" height="${fmt(geometry.unitHeight)}" fill="none" pointer-events="none"/>`;
+    const columns = geometry.kind === 'leadSheet' && !geometry.containsTab && !measure.melody
+      ? leadSheetBeatColumns(measure.context.timeSignature, bx, width)
+      : computeMeasureColumns(measure, bx, width, includeRhythmColumns).columns;
+    const playbackColumns = columns
+      .map(({ beat, x }) => `${fmt(beat, 8)}:${fmt(x)}`)
+      .join(';');
+    return `<rect class="playback-measure-anchor" data-measure-index="${measure.measureIndex}" data-playback-duration-beats="${fmt(fnum(measure.expectedBeats), 8)}" data-playback-columns="${playbackColumns}" x="${fmt(bx)}" y="0" width="${fmt(width)}" height="${fmt(geometry.unitHeight)}" fill="none" pointer-events="none"/>`;
   }).join('');
   return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${body}</g>\n`;
 }

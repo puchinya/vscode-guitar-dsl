@@ -25,6 +25,7 @@ import {
   groupHeadOffsets,
   groupStemUp,
   keyAlter,
+  leadSheetBeatColumns,
   ledgerLinePositions,
   measureBounds,
   renderAccidental,
@@ -196,9 +197,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       if (leadSheet) {
         // Beat slashes on the melody staff for measures without melody (spec §14.2): one per beat unit
         // (4/4: four quarters), or one per beat group in an eighth / sixteenth meter.
-        const count = ts.denominator >= 8 ? ts.groups.length : ts.numerator;
-        for (let beat = 0; beat < count; beat++) {
-          const x = bx + 14 + (beat + 0.5) * ((width - 28) / count);
+        for (const { x } of leadSheetBeatColumns(ts, bx, width)) {
           out += `<polygon points="${fmt(x - 5.5)},${MID_Y + 7} ${fmt(x)},${MID_Y + 7} ${fmt(x + 6.5)},${MID_Y - 7} ${fmt(x + 1)},${MID_Y - 7}" fill="#000"/>`;
         }
         if (m.lyric) {

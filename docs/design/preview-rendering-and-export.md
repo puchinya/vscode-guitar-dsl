@@ -62,7 +62,7 @@ Measure Loop は現在の occurrence 全体、Section Loop は現在 occurrence 
 
 Count-in は Practice OFF では #90 の互換動作（停止中かつ score time 0 からの Play のみ）。Practice ON では停止中の Play を seek/loop start から開始するときも、実際の開始位置を含む occurrence の meter/tempo で 1 小節分を鳴らす。pickup も meter 一小節分を使う。Resume、running Seek、速度変更、Practice toggle に伴う再同期、loop wrap では再カウントしない。Metronome は既存の group/accent semantics を保ち、速度・loop に追従して live toggle できる。
 
-`renderSystem()` は既存 `measureBounds()` と `row.geometry.unitHeight` から、書かれた小節ごとの不可視 `playback-measure-anchor` rect を SVG に出す。各 rect は `data-measure-index` と system-local x/y/width/height を持ち、`fill="none"`、`pointer-events="none"` とする。ページ SVG と連続 SVG に metadata が含まれても PDF の可視差分はない。Webview は表示中の SVG copy の anchor のみを使い、runtime で highlight と playhead を追加・削除する。runtime overlay は SVG / PDF に恒久描画しない。
+`renderSystem()` は既存 `measureBounds()` と `row.geometry.unitHeight` から、書かれた小節ごとの不可視 `playback-measure-anchor` rect を SVG に出す。各 rect は `data-measure-index` と system-local x/y/width/height を持ち、`fill="none"`、`pointer-events="none"` とする。`data-playback-duration-beats` は実際の小節拍数、`data-playback-columns` は描画に使うのと同じ `computeMeasureColumns()` の拍・x 座標を記録する。メロディなしの Lead Sheet の beat slash は描画と同じ列ヘルパーで記録する。Webview はこの列で再生ヘッドを補間し、記譜された開始拍では音符・リズム符の x に一致させる。列の間はスコア時刻に沿って進み、最後の列から小節末までは小節右端へ進む。ページ SVG と連続 SVG に metadata が含まれても PDF の可視差分はない。Webview は表示中の SVG copy の anchor のみを使い、runtime で highlight と playhead を追加・削除する。runtime overlay は SVG / PDF に恒久描画しない。
 
 Playback 中は Practice OFF でも現在の書かれた小節と縦 playhead を表示する。Pause は固定し、Seek は即座に移し、Count-in は開始位置を示し、loop wrap は loop start へ移す。Stop では隠し、自然終了では最終位置を保持する。Single / Spread / Web は可視 anchor のみ選び、非表示 SVG copy には overlay を付けない。
 

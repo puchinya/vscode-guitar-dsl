@@ -779,6 +779,41 @@ ${cspMeta}
         window.scrollTo(0, target);
       }
 
+      function playbackColumnX(anchor, beat, durationBeats, progress, x, width) {
+        const serialized = anchor.getAttribute('data-playback-columns') || '';
+        const columns = serialized.split(';').map(value => {
+          const parts = value.split(':');
+          return { beat: Number(parts[0]), x: Number(parts[1]) };
+        }).filter(column => Number.isFinite(column.beat) && Number.isFinite(column.x));
+        if (columns.length === 0 || !Number.isFinite(durationBeats) || durationBeats <= 0) {
+          return x + width * progress;
+        }
+
+        const targetBeat = Math.max(0, Math.min(durationBeats, beat));
+        const exact = columns.find(column => Math.abs(column.beat - targetBeat) < 0.00001);
+        if (exact) return exact.x;
+
+        const nextIndex = columns.findIndex(column => column.beat > targetBeat);
+        if (nextIndex === 0) {
+          const next = columns[0];
+          const span = next.beat;
+          const amount = span > 0 ? Math.max(0, Math.min(1, targetBeat / span)) : 1;
+          return x + (next.x - x) * amount;
+        }
+        if (nextIndex > 0) {
+          const previous = columns[nextIndex - 1];
+          const next = columns[nextIndex];
+          const span = next.beat - previous.beat;
+          const amount = span > 0 ? Math.max(0, Math.min(1, (targetBeat - previous.beat) / span)) : 0;
+          return previous.x + (next.x - previous.x) * amount;
+        }
+
+        const last = columns[columns.length - 1];
+        const span = durationBeats - last.beat;
+        const amount = span > 0 ? Math.max(0, Math.min(1, (targetBeat - last.beat) / span)) : 1;
+        return last.x + (x + width - last.x) * amount;
+      }
+
       function updateScoreOverlay() {
         if (!overlayVisible || disposed) {
           removeScoreOverlay();
@@ -819,7 +854,9 @@ ${cspMeta}
         const progress = occurrence.durationSeconds > 0
           ? Math.max(0, Math.min(1, (shownTime - occurrence.startSeconds) / occurrence.durationSeconds))
           : 0;
-        const playheadX = x + width * progress;
+        const durationBeats = Number(anchor.getAttribute('data-playback-duration-beats'));
+        const beat = durationBeats * progress;
+        const playheadX = playbackColumnX(anchor, beat, durationBeats, progress, x, width);
         for (const [name, value] of Object.entries({ x, y, width, height })) {
           overlayHighlight.setAttribute(name, String(value));
         }

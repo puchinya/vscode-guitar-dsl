@@ -78,6 +78,7 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 Turn on **Practice** in the Playback row to show the Practice controls. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo.
 
 - **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
+- During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.
 - **Loop** can repeat the current measure, the contiguous performed measures carrying the current section name, or an A/B range. Choose **Section** on a measure with a section name. **A** records the current playback position and clears B; **B** must be later than A. **Clear** removes the loop and both points. Loop ranges include A and stop before B.
 - With **Count-in** enabled, starting Practice playback from a non-zero position plays one measure of count-in using that performed measure's meter and tempo. Count-in follows Practice speed and does not repeat on each loop.
 - **Follow** keeps the active measure in view by scrolling the Preview. Scrolling or navigating manually in the Preview turns Follow off. It does not move the source editor's selection or cursor.

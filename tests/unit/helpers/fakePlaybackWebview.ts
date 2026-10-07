@@ -215,6 +215,8 @@ export interface FakePlaybackWebview {
   readonly scrollY: number;
   readonly savedWebviewState: unknown;
   element(id: string): FakeElement;
+  playbackAnchor(measureIndex: number): FakeElement | undefined;
+  playbackPlayheadX(): number | null;
 }
 
 export function createFakePlaybackWebview(html: string, restoredState?: unknown): FakePlaybackWebview {
@@ -391,6 +393,12 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       const className = child.getAttribute('class') ?? '';
       return className === 'playback-highlight' || className === 'playback-playhead';
     }).length, 0),
+    playbackAnchor: (measureIndex) => anchors.find(anchor => Number(anchor.getAttribute('data-measure-index')) === measureIndex),
+    playbackPlayheadX: () => {
+      const playhead = systemElements.flatMap(system => system.children).find(child => child.getAttribute('class') === 'playback-playhead');
+      const x = playhead?.getAttribute('x1');
+      return x === null || x === undefined ? null : Number(x);
+    },
     activeOscillators: () => allOscillators().filter((oscillator) => !oscillator.disconnected && !oscillator.ended),
     scheduledOscillators: allOscillators,
     get audioContextCount() { return contexts.length; },

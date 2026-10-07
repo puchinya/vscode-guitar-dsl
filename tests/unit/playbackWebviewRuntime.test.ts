@@ -17,6 +17,26 @@ const PICKUP_SCORE = [
   'mel: | c4/8 d4/8 |'
 ].join('\n');
 
+const IRREGULAR_RHYTHM_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  '| C | 4.d 8 4 8 4 |'
+].join('\n');
+
+const IRREGULAR_MELODY_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  '| C |',
+  'mel: | c4/4 d4/8 e4/8 f4/2 |'
+].join('\n');
+
+const LEAD_SHEET_RHYTHM_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  'show_rhythm: false',
+  '| C | 4.d 8 4 8 4 |'
+].join('\n');
+
 const SECTION_SCORE = [
   'bpm: 120',
   'time: 4/4',
@@ -45,6 +65,38 @@ function countCountInFrequencies(runtime: FakePlaybackWebview): number {
     const frequency = oscillator.frequency.value;
     return Math.abs(frequency - 700) < 0.01 || Math.abs(frequency - 1000) < 0.01;
   }).length;
+}
+
+async function assertPlayheadAlignsWithOnsets(runtime: FakePlaybackWebview): Promise<void> {
+  const occurrence = runtime.playbackData.occurrences[0];
+  assert.ok(occurrence);
+  const anchor = runtime.playbackAnchor(occurrence!.measureIndex);
+  assert.ok(anchor);
+
+  const durationBeats = Number(anchor!.getAttribute('data-playback-duration-beats'));
+  const columns = (anchor!.getAttribute('data-playback-columns') ?? '').split(';').map(value => {
+    const [beat, x] = value.split(':').map(Number);
+    return { beat, x };
+  });
+  const onsetColumns = columns.filter(column => column.beat > 0);
+  assert.ok(onsetColumns.length > 1, 'the renderer exports multiple notation onset columns');
+
+  await runtime.click('btn-play');
+  for (const column of onsetColumns) {
+    const onsetSeconds = occurrence!.startSeconds + occurrence!.durationSeconds * column.beat / durationBeats;
+    runtime.setRange('playback-seek', onsetSeconds);
+    await runtime.change('playback-seek');
+    runtime.runAnimationFrames();
+    closeEnough(runtime.playbackPlayheadX() ?? NaN, column.x, 0.001);
+  }
+
+  const [left, right] = columns;
+  const betweenBeat = (left.beat + right.beat) / 2;
+  const betweenSeconds = occurrence!.startSeconds + occurrence!.durationSeconds * betweenBeat / durationBeats;
+  runtime.setRange('playback-seek', betweenSeconds);
+  await runtime.change('playback-seek');
+  runtime.runAnimationFrames();
+  closeEnough(runtime.playbackPlayheadX() ?? NaN, (left.x + right.x) / 2, 0.001);
 }
 
 describe('Preview production Webview runtime', () => {
@@ -130,6 +182,18 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.intervalCount, 1, 'seek reuses one scheduler interval');
     closeEnough(Number(runtime.element('playback-seek').value), 1);
     assert.ok(runtime.scheduledOscillators().every((node) => node.disconnected || (node.startAt ?? -Infinity) >= 0.475));
+  });
+
+  it('T04a aligns the playhead with rendered rhythm columns at each onset', async () => {
+    await assertPlayheadAlignsWithOnsets(createRuntime(IRREGULAR_RHYTHM_SCORE));
+  });
+
+  it('T04b aligns the playhead with rendered melody columns at each onset', async () => {
+    await assertPlayheadAlignsWithOnsets(createRuntime(IRREGULAR_MELODY_SCORE));
+  });
+
+  it('T04c aligns the playhead with lead-sheet beat slashes', async () => {
+    await assertPlayheadAlignsWithOnsets(createRuntime(LEAD_SHEET_RHYTHM_SCORE));
   });
 
   it('T05 count-in lasts a full first meter, holds score position at zero, and is start-only', async () => {
