@@ -83,7 +83,7 @@ env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run test:e2e
 env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test
 ```
 
-If a sandboxed macOS run exits with `SIGABRT` during AppKit application registration (`___RegisterApplication_block_invoke`) before Mocha starts, rerun the command in the host execution context outside the sandbox. This failure was reproduced with both flags unset; the same E2E and full-suite commands passed outside the sandbox. Record a pre-test launch crash separately from a test failure.
+If a sandboxed macOS run exits with `SIGABRT` during AppKit application registration (`___RegisterApplication_block_invoke`) before Mocha starts, rerun `npm run test:e2e` or `npm test` in the host execution context outside the sandbox. Unsetting the Electron and Node flags does not remove this sandbox restriction. Treat an abort before Mocha starts as a launch-environment failure, not a passing test or an assertion failure; any failure after Mocha starts is a test result and must be investigated normally.
 
 ---
 

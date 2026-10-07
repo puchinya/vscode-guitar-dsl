@@ -124,7 +124,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   const chordSize = style.chordSize ?? 15;
   const sectionSize = style.sectionSize ?? 9.5;
   const lyricSize = style.lyricSize ?? 10;
-  const leadSheet = opts.geometry.kind === 'leadSheet';
+  const leadSheet = opts.geometry.kind === 'leadSheet' && !opts.geometry.containsTab;
 
   let out = '';
   // Section label, chord names, volta brackets and special marks: moved down together by the header lift.

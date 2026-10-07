@@ -83,6 +83,162 @@
       "match": "^\\s*@[A-Za-z_]+\\s*:"
     },
     {
+      "name": "meta.tab.guitardsl",
+      "begin": "^\\s*(tab(?:\\[[1-4]\\])?:)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.tab.guitardsl"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.guitardsl",
+          "match": "(?<=\\s)#.*$"
+        },
+        {
+          "name": "keyword.operator.barline.guitardsl",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.repeat.guitardsl",
+          "match": "%"
+        },
+        {
+          "name": "variable.other.reference.guitardsl",
+          "match": "(?<![^\\s|])\\$[A-Za-z_][A-Za-z0-9_]*(?=[\\s|]|$)"
+        },
+        {
+          "name": "meta.tab-chord.guitardsl",
+          "match": "(?<![^\\s|])(\\[)([1-6](?:f[0-9]+|x)(?:\\{[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?\\})?~?(?:,[1-6](?:f[0-9]+|x)(?:\\{[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?\\})?~?)+)(\\])",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.tab-chord.begin.guitardsl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "name": "punctuation.separator.tab-chord.guitardsl",
+                  "match": ","
+                },
+                {
+                  "name": "constant.other.tab-note.guitardsl",
+                  "match": "([1-6])(f)([0-9]+)(~?)",
+                  "captures": {
+                    "1": {
+                      "name": "constant.numeric.tab-string.guitardsl"
+                    },
+                    "2": {
+                      "name": "punctuation.separator.tab-fret.guitardsl"
+                    },
+                    "3": {
+                      "name": "constant.numeric.tab-fret.guitardsl"
+                    },
+                    "4": {
+                      "name": "keyword.operator.tie.guitardsl"
+                    }
+                  }
+                },
+                {
+                  "name": "constant.other.tab-dead-note.guitardsl",
+                  "match": "([1-6])(x)(~?)",
+                  "captures": {
+                    "1": {
+                      "name": "constant.numeric.tab-string.guitardsl"
+                    },
+                    "2": {
+                      "name": "constant.other.tab-dead-note-mark.guitardsl"
+                    },
+                    "3": {
+                      "name": "keyword.operator.tie.guitardsl"
+                    }
+                  }
+                },
+                {
+                  "name": "entity.other.attribute-name.tab-note-effect.guitardsl",
+                  "match": "\\{[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?\\}"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.definition.tab-chord.end.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "entity.other.attribute-name.tab-beat-effect.guitardsl",
+          "match": "(!)(\\{[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?(?:,[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?)*\\})",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.tab-beat-effect.guitardsl"
+            },
+            "2": {
+              "name": "entity.other.attribute-name.tab-beat-effect-call.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "constant.other.tab-note.guitardsl",
+          "match": "(?<![^\\s,\\[|])([1-6])(f)([0-9]+)(~?)",
+          "captures": {
+            "1": {
+              "name": "constant.numeric.tab-string.guitardsl"
+            },
+            "2": {
+              "name": "punctuation.separator.tab-fret.guitardsl"
+            },
+            "3": {
+              "name": "constant.numeric.tab-fret.guitardsl"
+            },
+            "4": {
+              "name": "keyword.operator.tie.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "constant.other.tab-dead-note.guitardsl",
+          "match": "(?<![^\\s,\\[|])([1-6])(x)(~?)",
+          "captures": {
+            "1": {
+              "name": "constant.numeric.tab-string.guitardsl"
+            },
+            "2": {
+              "name": "constant.other.tab-dead-note-mark.guitardsl"
+            },
+            "3": {
+              "name": "keyword.operator.tie.guitardsl"
+            }
+          }
+        },
+        {
+          "name": "constant.other.rest.guitardsl",
+          "match": "(?<![^\\s|])r(?:/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?)?(?=\\s|\\||!|$)"
+        },
+        {
+          "name": "constant.numeric.duration.guitardsl",
+          "match": "/(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?(?:\\+(?:16|8|4|2|1)(?:[.t]|\\{[0-9]+:[0-9]+\\})?)*|:[0-9]+(?:\\.[0-9]+)?",
+          "captures": {
+            "0": {
+              "patterns": [
+                {
+                  "name": "constant.numeric.tuplet.guitardsl",
+                  "match": "\\{[0-9]+:[0-9]+\\}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "entity.other.attribute-name.tab-note-effect.guitardsl",
+          "match": "(?<![!])\\{[A-Za-z][A-Za-z0-9-]*(?:\\([^{}]*\\))?\\}"
+        },
+        {
+          "name": "invalid.illegal.tab.guitardsl",
+          "match": "[^\\s|]+"
+        }
+      ]
+    },
+    {
       "name": "meta.melody.guitardsl",
       "begin": "^\\s*(mel:)",
       "beginCaptures": {

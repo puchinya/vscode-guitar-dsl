@@ -51,6 +51,40 @@ describe('grammar - advanced notation (T046)', () => {
   });
 });
 
+describe('grammar - first-class TAB (Issue #89)', () => {
+  const tab = byName('meta.tab.guitardsl')[0];
+
+  it('recognizes tab: and tab[1]: as TAB lines', () => {
+    const begin = new RegExp(tab.begin);
+    assert.ok(begin.test('tab: | 2f5/4'));
+    assert.ok(begin.test('tab[1]: | 2f5/4'));
+    assert.strictEqual(tab.beginCaptures['1'].name, 'keyword.other.tab.guitardsl');
+  });
+
+  it('highlights fretted and dead notes, chords, and distinct effect scopes', () => {
+    const chord = tab.patterns.find((p: any) => p.name === 'meta.tab-chord.guitardsl');
+    const group = new RegExp(chord.match);
+    assert.ok(group.test('[6f3,5f2]'));
+    assert.ok(group.test('[6f3{pm},5f2]'));
+    assert.ok(group.test('[6f3~,5x]'));
+    assert.ok(!group.test('[Intro]'));
+
+    const fretted = new RegExp(tab.patterns.find((p: any) => p.name === 'constant.other.tab-note.guitardsl').match);
+    const dead = new RegExp(tab.patterns.find((p: any) => p.name === 'constant.other.tab-dead-note.guitardsl').match);
+    assert.ok(fretted.test('2f5') && fretted.test('1f24~'));
+    assert.ok(dead.test('6x'));
+    assert.ok(!dead.test('6f0'));
+
+    const noteEffect = tab.patterns.find((p: any) => p.name === 'entity.other.attribute-name.tab-note-effect.guitardsl');
+    const beatEffect = tab.patterns.find((p: any) => p.name === 'entity.other.attribute-name.tab-beat-effect.guitardsl');
+    assert.ok(new RegExp(noteEffect.match).test('{bend(amount=1)}'));
+    assert.ok(!new RegExp(noteEffect.match).test('!{pm}'));
+    assert.ok(new RegExp(beatEffect.match).test('!{let-ring}'));
+    assert.ok(tab.patterns.some((p: any) => p.name === 'variable.other.reference.guitardsl'));
+    assert.ok(tab.patterns.some((p: any) => p.name === 'keyword.operator.repeat.guitardsl'));
+  });
+});
+
 describe('grammar - let fragments and note groups (Issue #72)', () => {
   const letRule = byName('meta.let.guitardsl')[0];
   const melody = byName('meta.melody.guitardsl')[0].patterns;

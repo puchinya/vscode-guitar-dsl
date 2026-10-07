@@ -54,6 +54,8 @@ const MELODY_NO_LYRIC_BOTTOM = MELODY_STAVE_BOTTOM + 22;
 // The rhythm drawing starts at its accent row (y = 38) and ends at the system height (140).
 const RHYTHM_BLOCK_TOP = 36;
 const LEAD_SHEET_BOTTOM_PADDING = 6;
+const TAB_STAFF_HEIGHT = 50;
+const TAB_LYRIC_BASELINE_GAP = 22;
 // Upper limit of the melody technique marks (melodyStaff.ts MARK_CEILING).
 const MELODY_MARK_CEILING = 42;
 
@@ -61,6 +63,8 @@ export type SystemKind = 'rhythm' | 'melody' | 'leadSheet';
 
 export interface SystemGeometry {
   kind: SystemKind;
+  /** True when this system contains assigned TAB voice data. */
+  containsTab: boolean;
   /** Total height including the annotation lanes above and the dynamics lane below. */
   unitHeight: number;
   verseCount: number;
@@ -69,6 +73,20 @@ export interface SystemGeometry {
   lyricLineHeight: number;
   /** Vertical translation of the rhythm drawing (melody systems with the rhythm staff). */
   rhythmOffset: number;
+  /** Top of the six-line TAB block in system units. */
+  tabOffset: number;
+  /** Height of the six-line TAB staff, used by layout and the TAB renderer. */
+  tabStaffHeight: number;
+  /** Baseline of verse 1 below the TAB staff. */
+  tabLyricBaseline: number;
+  /** Vertical gap between TAB lyric verses. */
+  tabLyricLineHeight: number;
+  /** Number of TAB lyric verses in this system. */
+  tabVerseCount: number;
+  /** Final rhythm-staff drawing offset after the optional TAB block. */
+  finalRhythmOffset: number;
+  /** Whether the slash-rhythm staff is drawn in this system. */
+  rhythmRendered: boolean;
   /** Height of the annotation lanes; the notation content is drawn translated down by this. */
   annotationTop: number;
   /** Top y of each present lane (system units, 0 = system top). */
@@ -346,10 +364,11 @@ export function lyricLineHeight(lyricSize: number): number {
  */
 export function getSystemGeometry(measures: MeasureData[], score: GeometryScore): SystemGeometry {
   const hasMelody = measures.some(m => m.melody !== undefined);
+  const containsTab = measures.some(m => (m.tabVoices?.length ?? 0) > 0);
   const lyricSize = score.style.lyricSize ?? 10;
   const lineHeight = lyricLineHeight(lyricSize);
-  if (!hasMelody) {
-    return withLanes(measures, score, { kind: 'rhythm', unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0 },
+  if (!hasMelody && !containsTab) {
+    return withLanes(measures, score, { kind: 'rhythm', containsTab: false, unitHeight: SYSTEM_UNIT_HEIGHT, verseCount: 0, lyricBaseline: 0, lyricLineHeight: lineHeight, rhythmOffset: 0, tabOffset: 0, tabStaffHeight: 0, tabLyricBaseline: 0, tabLyricLineHeight: lineHeight, tabVerseCount: 0, finalRhythmOffset: 0, rhythmRendered: true },
       { bottom: rhythmStaffInkBottom(measures), top: contentInkTop(measures, score, Infinity) });
   }
   let verseCount = 0;
@@ -417,13 +436,48 @@ export function getSystemGeometry(measures: MeasureData[], score: GeometryScore)
   const inkTop = melodyInkTop(measures, score.measures ?? measures);
   const lift = headerLift(inkTop, score);
   const top = contentInkTop(measures, score, inkTop - lift);
+  if (containsTab) {
+    let tabVerseCount = 0;
+    for (const measure of measures) {
+      for (const voice of measure.tabVoices ?? []) {
+        for (const beat of voice.beats) tabVerseCount = Math.max(tabVerseCount, beat.syllables.length);
+      }
+    }
+    // Leave room above TAB for its rhythm and technique marks while keeping the system geometry authoritative.
+    const tabOffset = hasMelody ? Math.max(melodyBottom + 34, MELODY_STAVE_BOTTOM + 68) : 78;
+    const tabLyricBaseline = tabOffset + TAB_STAFF_HEIGHT + TAB_LYRIC_BASELINE_GAP;
+    const tabEnd = tabVerseCount > 0
+      ? tabLyricBaseline + (tabVerseCount - 1) * lineHeight + 8
+      : tabOffset + TAB_STAFF_HEIGHT + 20;
+    const rhythmRendered = score.showRhythm && measures.some(measure => measure.rhythmSource?.kind === 'explicit');
+    const finalRhythmOffset = rhythmRendered ? Math.max(SYSTEM_UNIT_HEIGHT, tabEnd + 12) - 70 : 0;
+    const kind: SystemKind = hasMelody ? (leadSheet ? 'leadSheet' : 'melody') : 'rhythm';
+    const unitHeight = rhythmRendered ? finalRhythmOffset + SYSTEM_UNIT_HEIGHT : Math.max(SYSTEM_UNIT_HEIGHT, tabEnd + 12);
+    const contentBottom = rhythmRendered ? finalRhythmOffset + rhythmStaffInkBottom(measures) : tabEnd;
+    return withLanes(measures, score, {
+      kind,
+      containsTab: true,
+      unitHeight,
+      verseCount,
+      lyricBaseline,
+      lyricLineHeight: lineHeight,
+      rhythmOffset: finalRhythmOffset,
+      tabOffset,
+      tabStaffHeight: TAB_STAFF_HEIGHT,
+      tabLyricBaseline,
+      tabLyricLineHeight: lineHeight,
+      tabVerseCount,
+      finalRhythmOffset,
+      rhythmRendered
+    }, { bottom: contentBottom, top: hasMelody ? top : contentInkTop(measures, score, Infinity) }, lift);
+  }
   if (leadSheet) {
     const inkBottom = verseCount > 0 ? lyricBaseline + (verseCount - 1) * lineHeight + 3 : maxMelodyBottom;
-    return withLanes(measures, score, { kind: 'leadSheet', unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0 },
+    return withLanes(measures, score, { kind: 'leadSheet', containsTab: false, unitHeight: melodyBottom + LEAD_SHEET_BOTTOM_PADDING, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset: 0, tabOffset: 0, tabStaffHeight: 0, tabLyricBaseline: 0, tabLyricLineHeight: lineHeight, tabVerseCount: 0, finalRhythmOffset: 0, rhythmRendered: false },
       { bottom: inkBottom, top }, lift);
   }
   const rhythmOffset = melodyBottom - RHYTHM_BLOCK_TOP;
-  return withLanes(measures, score, { kind: 'melody', unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset },
+  return withLanes(measures, score, { kind: 'melody', containsTab: false, unitHeight: SYSTEM_UNIT_HEIGHT + rhythmOffset, verseCount, lyricBaseline, lyricLineHeight: lineHeight, rhythmOffset, tabOffset: 0, tabStaffHeight: 0, tabLyricBaseline: 0, tabLyricLineHeight: lineHeight, tabVerseCount: 0, finalRhythmOffset: rhythmOffset, rhythmRendered: true },
     { bottom: rhythmOffset + rhythmStaffInkBottom(measures), top }, lift);
 }
 

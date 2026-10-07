@@ -24,6 +24,7 @@ import { parseChordName } from './chordDetect';
 import { resolveApplicableChordDefinition, resolveChordVoicing } from './chordVoicingResolver';
 import { ParsedScore, parseGuitarDsl } from './compiler';
 import { createInstrumentModel } from './instrumentModel';
+import { scoreHasTab } from './tab';
 
 export type BarrePolicy = 'allow' | 'forbid';
 
@@ -332,6 +333,7 @@ export function planBeginnerTransform(
   if (sourceError) {
     return { ok: false, code: 'sourceParseError', detail: `line ${sourceError.line + 1}: ${sourceError.code}` };
   }
+  if (scoreHasTab(source)) return { ok: false, code: 'tabTransformUnsupported' };
   const sourceCapo = parseCapoValue(source.capo);
   if (sourceCapo === null) return { ok: false, code: 'invalidSourceCapo', detail: source.capo };
   const policy = options.barrePolicy;

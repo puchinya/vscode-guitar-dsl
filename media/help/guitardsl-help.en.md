@@ -4,7 +4,7 @@
 
 ## About GuitarDSL
 
-**GuitarDSL** is a plain-text language for guitar scores such as strumming charts and lead sheets. You write chords, strum patterns (down/up strokes), melody and lyrics as text. The **GuitarDSL Previewer** extension then renders them as a score with a staff, rhythm slashes, pick-direction marks, chord names and chord diagrams.
+**GuitarDSL** is a plain-text language for guitar scores such as strumming charts, lead sheets and guitar tablature. You write chords, strum patterns (down/up strokes), melody, lyrics and explicit string/fret positions as text. The **GuitarDSL Previewer** extension then renders them as a score with standard notation, a TAB staff, rhythm, pick-direction marks, chord names and chord diagrams.
 
 - File extensions: `.guitardsl` and `.gdsl` (UTF-8 text)
 - Requirements: VS Code 1.109 or later
@@ -77,6 +77,8 @@ At narrow widths, the View, Paper and Orientation settings can scroll horizontal
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.
 
+Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any melody and melody lyrics, with a stacked `T` / `A` / `B` clef, broken string lines behind centered fret numbers, and rhythm marks above the staff. TAB carries its own rhythm, so an implicit slash-rhythm staff is omitted; explicitly authored rhythm is shown when `show_rhythm: true`. TAB and PDF use the same page SVG rendering path.
+
 ### PDF Export
 
 **📄 Save PDF**, or **GuitarDSL: Export PDF / Print**, writes a vector PDF of exactly what the preview shows, using the selected paper size and orientation. No browser is needed, and fonts are bundled, so output does not depend on your installed fonts. Printing is done from the saved PDF.
@@ -95,11 +97,11 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 
 ### Capo and Playability
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor.
+The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
 
 ### Beginner Mode
 
-Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview.
+Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview. Beginner transforms are unsupported for scores with TAB until they can preserve explicit string/fret positions.
 
 ### Score Settings
 
@@ -109,7 +111,7 @@ Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning a
 - **Beginner Mode**: the settings and chord substitutions described above.
 - **Transpose**: transposes the whole song by −11 to +11 semitones or to a target key. This changes the sounding key, melody and chords. The capo can stay the same, follow the recommendation, or be set to a value you choose.
 
-Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same panel at the capo section.
+Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same panel at the capo section. For a score with TAB, source-changing capo and transpose operations are reported as unsupported; the transform does not partially rewrite the document.
 
 ### Change Accompaniment Pattern
 
@@ -186,7 +188,7 @@ time: 4/4
 | `bpm` (`tempo`) | Tempo shown in the header |
 | `time`, `feel`, `pickup` | Starting time signature, feel (`straight` / `swing` / `shuffle`) and pickup length |
 | `measures_per_row` | Measures per row, 1–8 (default 4) |
-| `show_rhythm` | `false` hides the rhythm staff where there is a melody (lead-sheet mode) |
+| `show_rhythm` | `false` hides the rhythm staff where there is a melody; TAB keeps its own rhythm |
 | `chord_size`, `lyric_size`, `title_size`, `section_size`, `font_size` | Text sizes |
 
 ### Section Arrangement and Per-Occurrence Lyrics
@@ -305,6 +307,27 @@ lyr: | the morn- ing light is shin- ing | on the road a- head |
 ```
 
 Techniques go in braces after the length: `{hammer}`, `{pull}`, `{slide}`, `{gliss}`, `{bend:1}`, `{vibrato}`, `{staccato}`, `{tenuto}`, `{fermata}`, `{breath}`, `{grace}`, `{slur-start}`, `{slur-end}`, `{pm}`, `{let-ring}`.
+
+### Guitar TAB
+
+Use `tab:` (or `tab[1]:`) to write guitar positions directly. TAB is independent of `mel:`; you can use either staff or both. String 1 is the highest string and string 6 is the lowest. Frets are relative to the capo, so `0` is the capo position. Tuning and capo determine sounding pitches through the score's guitar model.
+
+```guitardsl
+tuning: Drop D
+capo: 2
+| D | G | A | D |
+tab: | 6f0/4 6f2 5f0 5f2 | [6f3,5f2,4f0]/4 6x/4 r/2 | 3f5{hammer}/8 3f7 2f5{bend(amount=1)}/2 1f0/4 | 6f0~/2 6f0/2 |
+lyr: | low down open up | chord hit | rise then bend now | hold |
+```
+
+- A note is `<string>f<fret>` (`2f5`); `6x` is a dead note. A chord such as `[6f3,5f2,4f0]` attacks several strings together. A rest is `r`. Each string may appear at most once in a chord.
+- The first beat in each `tab:` line needs a duration such as `/4`, `/8`, `/2`, or `/1`. Later beats inherit the previous beat's duration, including chords and rests. TAB uses the same dotted and tuplet duration syntax as the rest of GuitarDSL.
+- Put note effects directly after a TAB note: `{hammer}`, `{pull}`, `{slide}`, `{gliss}`, `{bend(amount=1)}`, `{vibrato}`, `{pm}`, `{let-ring}`. Put beat effects after the duration with `!{...}`, for example `[6f3,5f2]/4!{pm}`. Note effects are `hammer`, `pull`, `slide`, `gliss`, `bend(amount=number)`, `vibrato`, `pm`, and `let-ring`; beat effects are `pm` and `let-ring`.
+- Put `~` after an individual note to tie that string to the same fret in the next sounding beat, for example `[6f3~,5f2]/2`. Connections such as hammer and pull target the next TAB beat on the same string.
+- `let` fragments can hold TAB sequences and `$name` reuses them. Each fragment has its own duration inheritance; ties and connections started inside it must finish there. In a TAB measure cell, `%` repeats the previous TAB measure. Consecutive `lyr:` lines after TAB add verses; one chord or attacked beat takes one lyric slot, while rests and tie-only beats take none.
+- `tab[2]:`, `tab[3]:`, and `tab[4]:` are reserved and unsupported in this release. The current subset does not include advanced Guitar Pro 8 effects. Capo, transpose, and beginner-mode source transforms report TAB as unsupported until TAB-aware transforms are defined; editing `capo:` or `tuning:` in the source remains valid.
+
+When a row contains TAB, it uses a modern six-line profile with equal string lines, a stacked `T` / `A` / `B` clef, and a time signature inside the staff prefix. Ten-point semibold fret marks sit centered on their lines, which are masked behind each number. Rhythm stems and beams sit above TAB; whole notes have no stem, half notes have a short stem, quarters have a normal stem, and shorter values use flags or beams. Standard rests, barlines and repeat signs are shown. Adjacent beat-scope P.M. and let-ring effects use a continuous dashed span. TAB is rendered below melody and its lyrics when present. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
 
 ### Key Signature and Display Options
 

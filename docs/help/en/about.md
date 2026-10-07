@@ -4,7 +4,7 @@
 ## About GuitarDSL
 <!-- help-sources: syntax:1 extension:1 -->
 
-**GuitarDSL** is a plain-text language for guitar scores such as strumming charts and lead sheets. You write chords, strum patterns (down/up strokes), melody and lyrics as text. The **GuitarDSL Previewer** extension then renders them as a score with a staff, rhythm slashes, pick-direction marks, chord names and chord diagrams.
+**GuitarDSL** is a plain-text language for guitar scores such as strumming charts, lead sheets and guitar tablature. You write chords, strum patterns (down/up strokes), melody, lyrics and explicit string/fret positions as text. The **GuitarDSL Previewer** extension then renders them as a score with standard notation, a TAB staff, rhythm, pick-direction marks, chord names and chord diagrams.
 
 - File extensions: `.guitardsl` and `.gdsl` (UTF-8 text)
 - Requirements: VS Code 1.109 or later

@@ -25,6 +25,8 @@
 | [拡張機能仕様 §8](../specs/extension.md) | VS Code AI skills、instructions、tools | [AI integration](ai-integration.md) |
 | [言語構文仕様 §1–§10、§12–§13、§15–§18](../specs/guitardsl-syntax.md) | 言語構文、スコアイベント、音符と歌詞、再利用フラグメント | [Language and score processing](language-and-score-processing.md) |
 | [言語構文仕様 §11、§14](../specs/guitardsl-syntax.md) | レンダリング、レイアウト、表示設定 | [Preview, rendering, and export](preview-rendering-and-export.md), [Language and score processing](language-and-score-processing.md) |
+| [言語構文仕様 §19](../specs/guitardsl-syntax.md#19-ギター-tab-guitar-tablature) | 位置優先 TAB、声部、奏法、タイ、TAB 歌詞 | [TAB notation](tab-notation.md), [Language and score processing](language-and-score-processing.md) |
+| [拡張機能仕様 §4.7、§4B.6](../specs/extension.md#47-tab-プレビューレイアウトpdf) | TAB Preview / PDF と変換制限 | [TAB notation](tab-notation.md), [Preview, rendering, and export](preview-rendering-and-export.md) |
 
 ## Architecture
 
@@ -33,6 +35,7 @@
 | 設計書 | 主な範囲 |
 |---|---|
 | [Language and score processing](language-and-score-processing.md) | 構文解析、スコアモデル、演奏順、音符・歌詞、ハーモニー分析 |
+| [TAB notation](tab-notation.md) | 位置優先 TAB モデル、弦フレット意味論、変換安全性 |
 | [Preview, rendering, and export](preview-rendering-and-export.md) | プレビュー、SVG、ページネーション、PDF、プレビュー再生 |
 | [Score editing](score-editing.md) | コード編集、設定、カポ、初心者モード、移調、伴奏編集 |
 | [Audio transcription](audio-transcription.md) | YouTube / Audio MIR、Music IR、GuitarDSL への直列化 |
