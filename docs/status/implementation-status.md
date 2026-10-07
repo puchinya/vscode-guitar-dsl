@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-07
+- **最終更新日**: 2026-10-08
 - **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装
 
 ---
@@ -87,7 +87,7 @@
 | | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
-| | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。DSL は変更しない |
+| | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。Section は再生タイムラインで書かれた小節ごとの所属を解決し、複数小節と連続した反復を含める。DSL は変更しない |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
@@ -195,7 +195,7 @@
 - **手動 GUI smoke**: macOS arm64 / VS Code 1.139.1 Extension Development Host で Play・Pause・Resume・Stop・シーク、Count-in 後の進行、Resume で Count-in が再実行されないこと、再生中の Metronome 切替、ソース編集後に停止して再構築後は先頭になることを確認。Windows / Linux は未検証。
 
 ### 2.2C Practice Mode (Issue #93)
-- **自動検証**: `npm test` で unit 979 件、E2E 56 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile` と `npm run vscode:prepublish` も PASS。
+- **自動検証**: `npm test` で unit 981 件、E2E 56 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile` と `npm run vscode:prepublish` も PASS。
 - **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Pause後にSingle PageからWebへ切り替え、再生位置と停止状態を保ったままハイライトと再生位置表示が即時に移動することも確認。Preview 幅約 365 CSS px で各操作列が独立して横スクロールし、ヘルプと PDF 保存が表示されたままになることも確認。Windows / Linux は未検証。
 - **画面証拠**: [Practice OFF の再生](evidence/issue-93/practice-off-playing.png)、[速度 75% と小節ループ](evidence/issue-93/practice-loop-playing.png)、[狭幅でスクロールした操作列](evidence/issue-93/narrow-scroll.png)、[Pause後のSingle→Web切替](evidence/issue-93/pause-single-web.png)。
 

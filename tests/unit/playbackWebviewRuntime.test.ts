@@ -48,6 +48,21 @@ const SECTION_SCORE = [
   '| Am |'
 ].join('\n');
 
+const LATER_SECTION_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  '[Verse]',
+  '| C | D |',
+  '[Chorus]',
+  '| Em | G |'
+].join('\n');
+
+const UNNAMED_SECTION_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  '| C | D |'
+].join('\n');
+
 const REPEATED_MEASURE_SCORE = [
   'bpm: 120',
   'arrangement {',
@@ -64,7 +79,7 @@ const REPEATED_SECTION_SCORE = [
   'Chorus',
   '}',
   '[Verse]',
-  '| C |',
+  '| C | D |',
   '[Chorus]',
   '| G |'
 ].join('\n');
@@ -454,7 +469,7 @@ describe('Preview production Webview runtime', () => {
         `A/B mode must not inherit the prior ${selection.mode} range`);
     }
 
-    const invalidSection = createRuntime(SECTION_SCORE);
+    const invalidSection = createRuntime(UNNAMED_SECTION_SCORE);
     await invalidSection.click('practice-toggle');
     invalidSection.setRange('playback-seek', 2.1);
     await invalidSection.change('playback-seek');
@@ -515,34 +530,77 @@ describe('Preview production Webview runtime', () => {
       'Stop returns to the second occurrence, not the source measure’s first occurrence');
   });
 
-  it('T11a Section loop spans the contiguous Verse x2 play-order occurrences only', async () => {
-    const runtime = createRuntime(REPEATED_SECTION_SCORE);
-    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
-      ['Verse', 'Verse', 'Chorus']);
+  it('S121-02 selecting Section from its later measure spans the full written section', async () => {
+    const runtime = createRuntime(LATER_SECTION_SCORE);
     await runtime.click('practice-toggle');
     runtime.setRange('playback-seek', 2.1);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'section';
     await runtime.change('practice-loop');
-    runtime.setRange('playback-seek', 2.1);
+    assert.strictEqual(runtime.element('practice-loop').value, 'section');
+    closeEnough(Number(runtime.element('playback-seek').value), 2.1, 0.01, 'selecting from D keeps the current position');
+
+    runtime.setRange('playback-seek', 0.5);
     await runtime.change('playback-seek');
-    closeEnough(Number(runtime.element('playback-seek').value), 2.1, 0.01, 'both contiguous Verse occurrences belong to the loop');
+    closeEnough(Number(runtime.element('playback-seek').value), 0.5, 0.01, 'C belongs to the same Verse range');
     runtime.setRange('playback-seek', 4.1);
     await runtime.change('playback-seek');
-    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'the following Chorus is outside the Verse loop');
+    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'Chorus is outside the Verse range');
+    await runtime.click('btn-stop');
+    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'Stop returns to the Verse start');
+  });
+
+  it('S121-03 Section loop spans four measures in Verse x2 and stops before Chorus', async () => {
+    const runtime = createRuntime(REPEATED_SECTION_SCORE);
+    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
+      ['Verse', 'Verse', 'Verse', 'Verse', 'Chorus']);
+    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.startSeconds),
+      [0, 2, 4, 6, 8]);
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', 6.1);
+    await runtime.change('playback-seek');
+    runtime.element('practice-loop').value = 'section';
+    await runtime.change('practice-loop');
+    runtime.setRange('playback-seek', 6.1);
+    await runtime.change('playback-seek');
+    closeEnough(Number(runtime.element('playback-seek').value), 6.1, 0.01, 'second measure of the second repetition remains in the loop');
+    runtime.setRange('playback-seek', 8.1);
+    await runtime.change('playback-seek');
+    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'Chorus is outside the four-occurrence Verse loop');
+    await runtime.click('btn-stop');
+    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'Stop returns to the first Verse occurrence');
+  });
+
+  it('S121-04 a later Verse separated by Chorus does not loop back to the earlier Verse', async () => {
+    const runtime = createRuntime(SECTION_SCORE);
+    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
+      ['Verse', 'Verse', 'Chorus', 'Chorus', 'Verse']);
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', 8.1);
+    await runtime.change('playback-seek');
+    runtime.element('practice-loop').value = 'section';
+    await runtime.change('practice-loop');
+    runtime.setRange('playback-seek', 0.1);
+    await runtime.change('playback-seek');
+    closeEnough(Number(runtime.element('playback-seek').value), 8, 0.01, 'the later Verse range excludes the earlier same-name Verse');
+    await runtime.click('btn-stop');
+    closeEnough(Number(runtime.element('playback-seek').value), 8, 0.01, 'Stop returns to the later Verse start');
   });
 
   it('T11 named Section loop follows contiguous labels and loop points keep occurrence identity', async () => {
     const runtime = createRuntime(SECTION_SCORE);
     assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
-      ['Verse', undefined, 'Chorus', undefined, 'Verse']);
+      ['Verse', 'Verse', 'Chorus', 'Chorus', 'Verse']);
     await runtime.click('practice-toggle');
     runtime.element('practice-loop').value = 'section';
     await runtime.change('practice-loop');
     assert.strictEqual(runtime.element('practice-loop').value, 'section');
     runtime.setRange('playback-seek', 2.1);
     await runtime.change('playback-seek');
-    assert.strictEqual(Number(runtime.element('playback-seek').value), 0, 'seeking outside the selected section returns to its start');
+    assert.strictEqual(Number(runtime.element('playback-seek').value), 2.1, 'the second Verse measure remains in the selected section');
+    runtime.setRange('playback-seek', 4.1);
+    await runtime.change('playback-seek');
+    assert.strictEqual(Number(runtime.element('playback-seek').value), 0, 'seeking into Chorus returns to the first Verse start');
 
     const unnamed = createRuntime();
     await unnamed.click('practice-toggle');
