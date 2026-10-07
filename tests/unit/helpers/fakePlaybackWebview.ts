@@ -1,6 +1,6 @@
 import * as vm from 'vm';
 
-type Listener = (event: { target: FakeElement; currentTarget: FakeElement }) => unknown;
+type Listener = (event: any) => unknown;
 
 class FakeClassList {
   private readonly values = new Set<string>();
@@ -38,6 +38,14 @@ class FakeElement {
   textContent = '';
   innerHTML = '';
   title = '';
+  parentNode: FakeElement | null = null;
+  readonly children: FakeElement[] = [];
+  rectTop = 200;
+  readonly tagName: string;
+
+  constructor(tagName = 'div') {
+    this.tagName = tagName;
+  }
 
   addEventListener(type: string, listener: Listener): void {
     const values = this.listeners.get(type) ?? [];
@@ -57,8 +65,44 @@ class FakeElement {
     this.attributes.delete(name);
   }
 
-  closest(): null {
+  closest(selector: string): FakeElement | null {
+    let current: FakeElement | null = this;
+    while (current) {
+      if (selector.startsWith('.') && (current.getAttribute('class') ?? '').split(/\s+/).includes(selector.slice(1))) return current;
+      current = current.parentNode;
+    }
     return null;
+  }
+
+  get firstChild(): FakeElement | null {
+    return this.children[0] ?? null;
+  }
+
+  appendChild(child: FakeElement): FakeElement {
+    child.parentNode?.removeChild(child);
+    child.parentNode = this;
+    this.children.push(child);
+    return child;
+  }
+
+  insertBefore(child: FakeElement, before: FakeElement | null): FakeElement {
+    child.parentNode?.removeChild(child);
+    child.parentNode = this;
+    const index = before ? this.children.indexOf(before) : -1;
+    if (index < 0) this.children.push(child);
+    else this.children.splice(index, 0, child);
+    return child;
+  }
+
+  removeChild(child: FakeElement): FakeElement {
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
+    child.parentNode = null;
+    return child;
+  }
+
+  getBoundingClientRect(): { top: number; bottom: number; height: number } {
+    return { top: this.rectTop, bottom: this.rectTop + 100, height: 100 };
   }
 
   async dispatch(type: string): Promise<void> {
@@ -158,12 +202,17 @@ export interface FakePlaybackWebview {
   change(id: string): Promise<void>;
   advanceAudioTime(seconds: number): void;
   runSchedulerTicks(): void;
-  fireWindowEvent(name: 'pagehide' | 'unload'): Promise<void>;
+  fireWindowEvent(name: string, event?: unknown): Promise<void>;
+  sendPlaybackAction(action: string): Promise<void>;
+  runAnimationFrames(): void;
+  setAnchorRectTop(top: number): void;
+  scoreOverlayElementCount(): number;
   activeOscillators(): FakeOscillatorNode[];
   scheduledOscillators(): FakeOscillatorNode[];
   readonly audioContextCount: number;
   readonly audioContextCloseCount: number;
   readonly intervalCount: number;
+  readonly scrollY: number;
   readonly savedWebviewState: unknown;
   element(id: string): FakeElement;
 }
@@ -180,12 +229,15 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   playbackDataElement.textContent = dataScript[2];
   elements.set('playback-data', playbackDataElement);
 
-  const windowListeners = new Map<string, Array<() => unknown>>();
+  const windowListeners = new Map<string, Array<(event?: unknown) => unknown>>();
   const documentListeners = new Map<string, Listener[]>();
   const intervals = new Map<number, FakeInterval>();
   const contexts: Array<InstanceType<typeof FakeAudioContext>> = [];
   let nextIntervalId = 1;
   let savedWebviewState = restoredState;
+  let nextAnimationFrameId = 1;
+  let scrollY = 0;
+  const animationFrames = new Map<number, (time: number) => unknown>();
 
   class FakeAudioContext {
     currentTime = 0;
@@ -227,6 +279,20 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   const body = new FakeElement();
   body.setAttribute('data-page-size', 'A4');
   body.setAttribute('data-orientation', 'portrait');
+  const anchors: FakeElement[] = [];
+  const systemElements: FakeElement[] = [];
+  for (const match of html.matchAll(/<rect\b([^>]*\bclass=["']playback-measure-anchor["'][^>]*)\/?\s*>/gi)) {
+    const anchor = new FakeElement('rect');
+    const attributes = match[1];
+    for (const attribute of attributes.matchAll(/([\w:-]+)=["']([^"']*)["']/g)) {
+      anchor.setAttribute(attribute[1], attribute[2]);
+    }
+    const system = new FakeElement('g');
+    system.setAttribute('class', 'system');
+    system.appendChild(anchor);
+    anchors.push(anchor);
+    systemElements.push(system);
+  }
   const document = {
     body,
     getElementById(id: string): FakeElement {
@@ -237,8 +303,12 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       }
       return element;
     },
-    querySelectorAll(): FakeElement[] {
+    querySelectorAll(selector: string): FakeElement[] {
+      if (selector.includes('playback-measure-anchor')) return anchors;
       return [];
+    },
+    createElementNS(_namespace: string, tagName: string): FakeElement {
+      return new FakeElement(tagName);
     },
     addEventListener(type: string, listener: Listener): void {
       const values = documentListeners.get(type) ?? [];
@@ -248,6 +318,20 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   };
   const window = {
     AudioContext: FakeAudioContext,
+    innerHeight: 800,
+    get scrollY() { return scrollY; },
+    scrollTo(_x: number, y: number): void {
+      scrollY = y;
+      for (const listener of windowListeners.get('scroll') ?? []) listener({});
+    },
+    requestAnimationFrame(callback: (time: number) => unknown): number {
+      const id = nextAnimationFrameId++;
+      animationFrames.set(id, callback);
+      return id;
+    },
+    cancelAnimationFrame(id: number): void {
+      animationFrames.delete(id);
+    },
     setInterval(callback: () => void, delay: number): number {
       const id = nextIntervalId++;
       intervals.set(id, { callback, delay });
@@ -256,7 +340,7 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     clearInterval(id: number): void {
       intervals.delete(id);
     },
-    addEventListener(name: string, listener: () => unknown): void {
+    addEventListener(name: string, listener: (event?: unknown) => unknown): void {
       const values = windowListeners.get(name) ?? [];
       values.push(listener);
       windowListeners.set(name, values);
@@ -289,14 +373,30 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     runSchedulerTicks: () => {
       for (const interval of Array.from(intervals.values())) interval.callback();
     },
-    fireWindowEvent: async (name) => {
-      for (const listener of windowListeners.get(name) ?? []) await listener();
+    fireWindowEvent: async (name, event) => {
+      for (const listener of windowListeners.get(name) ?? []) await listener(event);
     },
+    sendPlaybackAction: async (action) => {
+      for (const listener of windowListeners.get('message') ?? []) await listener({ data: { command: 'playbackAction', action } });
+    },
+    runAnimationFrames: () => {
+      const frames = Array.from(animationFrames.values());
+      animationFrames.clear();
+      for (const callback of frames) callback(0);
+    },
+    setAnchorRectTop: (top) => {
+      for (const anchor of anchors) anchor.rectTop = top;
+    },
+    scoreOverlayElementCount: () => systemElements.reduce((count, system) => count + system.children.filter(child => {
+      const className = child.getAttribute('class') ?? '';
+      return className === 'playback-highlight' || className === 'playback-playhead';
+    }).length, 0),
     activeOscillators: () => allOscillators().filter((oscillator) => !oscillator.disconnected && !oscillator.ended),
     scheduledOscillators: allOscillators,
     get audioContextCount() { return contexts.length; },
     get audioContextCloseCount() { return contexts.reduce((count, context) => count + context.closeCalls, 0); },
     get intervalCount() { return intervals.size; },
+    get scrollY() { return scrollY; },
     get savedWebviewState() { return savedWebviewState; },
     element: getElement
   };

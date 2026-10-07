@@ -30,6 +30,17 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 - **📄 Save PDF** and the **?** Help button.
 - **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
 
+### Practice Mode
+<!-- help-sources: extension:3 extension:4 -->
+
+Turn on **Practice** in the Playback row to show the Practice controls. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo.
+
+- **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
+- **Loop** can repeat the current measure, the contiguous performed measures carrying the current section name, or an A/B range. Choose **Section** on a measure with a section name. **A** records the current playback position and clears B; **B** must be later than A. **Clear** removes the loop and both points. Loop ranges include A and stop before B.
+- With **Count-in** enabled, starting Practice playback from a non-zero position plays one measure of count-in using that performed measure's meter and tempo. Count-in follows Practice speed and does not repeat on each loop.
+- **Follow** keeps the active measure in view by scrolling the Preview. Scrolling or navigating manually in the Preview turns Follow off. It does not move the source editor's selection or cursor.
+- The Command Palette also offers **GuitarDSL: Play / Pause Preview Playback**, **Stop Preview Playback**, **Toggle Practice Mode**, **Set Practice Loop Start (A)**, **Set Practice Loop End (B)**, **Clear Practice Loop**, **Practice Slower** and **Practice Faster**. You can assign your own keybindings to these commands.
+
 At narrow widths, the View, Paper and Orientation settings can scroll horizontally while Help and Save PDF remain visible and available.
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.

@@ -210,7 +210,11 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   const lanes = renderRowLanes(row, ctx, spans);
   const shift = geometry.annotationTop - geometry.lift;
   const body = shift !== 0 ? `<g transform="translate(0, ${fmt(shift)})">${content}</g>` : content;
-  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${body}</g>\n`;
+  const measureAnchors = row.measures.map((measure, index) => {
+    const { bx, width } = measureBounds(ctx, row.measures.length, index);
+    return `<rect class="playback-measure-anchor" data-measure-index="${measure.measureIndex}" x="${fmt(bx)}" y="0" width="${fmt(width)}" height="${fmt(geometry.unitHeight)}" fill="none" pointer-events="none"/>`;
+  }).join('');
+  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${body}</g>\n`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {

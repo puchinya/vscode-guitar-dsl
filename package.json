@@ -98,6 +98,38 @@
       {
         "command": "guitardsl.openSample",
         "title": "%command.openSample.title%"
+      },
+      {
+        "command": "guitardsl.playback.togglePlayPause",
+        "title": "%command.playback.togglePlayPause.title%"
+      },
+      {
+        "command": "guitardsl.playback.stop",
+        "title": "%command.playback.stop.title%"
+      },
+      {
+        "command": "guitardsl.practice.toggle",
+        "title": "%command.practice.toggle.title%"
+      },
+      {
+        "command": "guitardsl.practice.setLoopStart",
+        "title": "%command.practice.setLoopStart.title%"
+      },
+      {
+        "command": "guitardsl.practice.setLoopEnd",
+        "title": "%command.practice.setLoopEnd.title%"
+      },
+      {
+        "command": "guitardsl.practice.clearLoop",
+        "title": "%command.practice.clearLoop.title%"
+      },
+      {
+        "command": "guitardsl.practice.slower",
+        "title": "%command.practice.slower.title%"
+      },
+      {
+        "command": "guitardsl.practice.faster",
+        "title": "%command.practice.faster.title%"
       }
     ],
     "viewsContainers": {

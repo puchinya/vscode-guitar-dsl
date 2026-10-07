@@ -369,16 +369,26 @@ describe('Help content scope', () => {
     }
   });
 
-  it('T019: generated Help has no Web Player, playback-control or "no sound" sections', async () => {
+  it('T019: generated Help documents Practice Mode and its commands without claiming a Web Player', async () => {
     const lib = await load();
     const inputs = lib.loadRepoInputs(ROOT);
     for (const locale of ['ja', 'en']) {
       const text: string = inputs.generatedFiles[lib.GENERATED_FILES[locale]];
       const headings = text.split('\n').filter(l => /^#{1,6} /.test(l));
       for (const h of headings) {
-        assert.ok(!/web ?player|webプレーヤー|playback control|再生コントロール|no sound|音が出ない|metronome|メトロノーム/i.test(h), `${locale}: forbidden heading "${h}"`);
+        assert.ok(!/web ?player|webプレーヤー/i.test(h), `${locale}: unsupported heading "${h}"`);
       }
-      assert.ok(!/guitardsl\.(play|playback|webPlayer)/i.test(text), `${locale}: no playback command IDs`);
+      assert.ok(/Practice Mode|練習モード/.test(text), `${locale}: Practice Mode is documented`);
+      for (const id of [
+        'guitardsl.playback.togglePlayPause',
+        'guitardsl.playback.stop',
+        'guitardsl.practice.toggle',
+        'guitardsl.practice.setLoopStart',
+        'guitardsl.practice.setLoopEnd',
+        'guitardsl.practice.clearLoop',
+        'guitardsl.practice.slower',
+        'guitardsl.practice.faster'
+      ]) assert.ok(text.includes(id), `${locale}: Help lists ${id}`);
     }
   });
 });

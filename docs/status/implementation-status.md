@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-06
-- **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットを実装
+- **最終更新日**: 2026-10-07
+- **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装
 
 ---
 
@@ -60,6 +60,7 @@
 |---|---|:---:|---|
 | **コマンド** | `guitardsl.showPreview` (プレビュー表示) | ✅ 完了 | エディタタイトルバー・コンテキストメニュー対応 |
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
+| | Issue #93 再生 / Practice Mode コマンド | ✅ 完了 | `guitardsl.playback.togglePlayPause` / `guitardsl.playback.stop`、`guitardsl.practice.toggle` / `setLoopStart` / `setLoopEnd` / `clearLoop` / `slower` / `faster` |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
 | | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレット、プレビューのカポバー「編集…」。セクション方式の楽譜設定エディタ（カポ / 弾きやすさ、初心者モード、移調） |
 | | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ新規エディタを開く。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、非実験的な分類を支える根拠がなく、生成結果は下書きとして要確認 |
@@ -86,6 +87,7 @@
 | | 用紙設定（A4/A3/A5/B4/B5/Letter、縦 / 横見開き） | ✅ 完了 | 変更時に拡張機能ホスト側で再レイアウト |
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
+| | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと譜面上の再生位置を表示。DSL は変更しない |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
@@ -191,6 +193,11 @@
 
 ### 2.2B Web Audio 再生 (Issue #90)
 - **手動 GUI smoke**: macOS arm64 / VS Code 1.139.1 Extension Development Host で Play・Pause・Resume・Stop・シーク、Count-in 後の進行、Resume で Count-in が再実行されないこと、再生中の Metronome 切替、ソース編集後に停止して再構築後は先頭になることを確認。Windows / Linux は未検証。
+
+### 2.2C Practice Mode (Issue #93)
+- **自動検証**: `npm test` で unit 968 件、E2E 55 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile:all` と `npm run vscode:prepublish` も PASS。
+- **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Preview 幅約 365 CSS px で各操作列が独立して横スクロールし、ヘルプと PDF 保存が表示されたままになることも確認。Windows / Linux は未検証。
+- **画面証拠**: [Practice OFF の再生](evidence/issue-93/practice-off-playing.png)、[速度 75% と小節ループ](evidence/issue-93/practice-loop-playing.png)、[狭幅でスクロールした操作列](evidence/issue-93/narrow-scroll.png)。
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)

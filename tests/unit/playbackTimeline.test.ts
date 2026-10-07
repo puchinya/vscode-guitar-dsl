@@ -31,6 +31,24 @@ describe('playbackTimeline', () => {
     assert.deepStrictEqual(eventsOf(underfilled, 'rhythmAttack').map(event => [event.timeSeconds, event.durationSeconds]), [[0, 0.5]]);
   });
 
+  it('copies section labels from written measures without changing occurrence identity', () => {
+    const timeline = validTimeline([
+      'bpm: 120',
+      '[Verse]',
+      '| C |',
+      '[Chorus]',
+      '| G |'
+    ].join('\n'));
+    assert.deepStrictEqual(timeline.occurrences.map(({ occurrenceIndex, measureIndex, sectionName }) => ({
+      occurrenceIndex,
+      measureIndex,
+      sectionName
+    })), [
+      { occurrenceIndex: 0, measureIndex: 0, sectionName: 'Verse' },
+      { occurrenceIndex: 1, measureIndex: 1, sectionName: 'Chorus' }
+    ]);
+  });
+
   it('uses resolved numeric tempo, restores tempo primo, and leaves tempo marks and feel display-only', () => {
     const source = [
       'bpm: 120',

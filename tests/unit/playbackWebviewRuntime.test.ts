@@ -17,6 +17,17 @@ const PICKUP_SCORE = [
   'mel: | c4/8 d4/8 |'
 ].join('\n');
 
+const SECTION_SCORE = [
+  'bpm: 120',
+  'time: 4/4',
+  '[Verse]',
+  '| C | D |',
+  '[Chorus]',
+  '| Em | G |',
+  '[Verse]',
+  '| Am |'
+].join('\n');
+
 function createRuntime(score = PLAYABLE_SCORE, state?: unknown): FakePlaybackWebview {
   return createFakePlaybackWebview(compileGuitarDslToHtml(score), state);
 }
@@ -247,5 +258,126 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.intervalCount, 1);
     closeEnough(Number(runtime.element('playback-seek').value), 0);
     assert.strictEqual(runtime.audioContextCount, 1);
+  });
+
+  it('T09 Practice speed is clamped, persisted, and host commands use the same controls', async () => {
+    const runtime = createRuntime();
+    await runtime.click('practice-toggle');
+    assert.strictEqual(runtime.element('practice-speed').disabled, false);
+    assert.strictEqual(runtime.element('practice-speed').value, '100');
+    runtime.element('practice-speed').value = '75';
+    await runtime.change('practice-speed');
+    assert.strictEqual(runtime.element('practice-speed').value, '75');
+    assert.strictEqual((runtime.savedWebviewState as { practiceSpeed: number }).practiceSpeed, 75);
+
+    await runtime.click('btn-play');
+    runtime.advanceAudioTime(0.525);
+    runtime.runSchedulerTicks();
+    closeEnough(Number(runtime.element('playback-seek').value), 0.375, 0.02);
+    await runtime.sendPlaybackAction('practiceFaster');
+    assert.strictEqual((runtime.savedWebviewState as { practiceSpeed: number }).practiceSpeed, 80);
+    assert.strictEqual(runtime.intervalCount, 1, 'speed changes keep one scheduler');
+
+    const restored = createRuntime(PLAYABLE_SCORE, runtime.savedWebviewState);
+    assert.strictEqual(restored.element('practice-toggle').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(restored.element('practice-speed').value, '80');
+  });
+
+  it('T10 A/B loop uses a half-open interval, rejects B at or before A, and wraps playback', async () => {
+    const runtime = createRuntime();
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', 0.5);
+    await runtime.change('playback-seek');
+    await runtime.click('practice-set-a');
+    runtime.setRange('playback-seek', 0.25);
+    await runtime.change('playback-seek');
+    await runtime.click('practice-set-b');
+    assert.match(runtime.element('playback-error').textContent, /after A|later than A/i);
+
+    runtime.setRange('playback-seek', 0.75);
+    await runtime.change('playback-seek');
+    await runtime.click('practice-set-b');
+    closeEnough(Number(runtime.element('playback-seek').value), 0.5);
+    await runtime.click('btn-play');
+
+    for (let elapsed = 0; elapsed < 0.35; elapsed += 0.025) {
+      runtime.advanceAudioTime(0.025);
+      runtime.runSchedulerTicks();
+    }
+    const clipped = runtime.scheduledOscillators().find((node) => {
+      const duration = (node.stopAt ?? 0) - (node.startAt ?? 0);
+      return Math.abs(duration - 0.252) < 0.01;
+    });
+    assert.ok(clipped, 'a note crossing B is clipped at the exclusive loop end');
+
+    for (let elapsed = 0; elapsed < 0.75; elapsed += 0.025) {
+      runtime.advanceAudioTime(0.025);
+      runtime.runSchedulerTicks();
+    }
+    const wrappedPosition = Number(runtime.element('playback-seek').value);
+    assert.ok(wrappedPosition >= 0.5 && wrappedPosition < 0.75, `wrapped position ${wrappedPosition} stays in [A, B)`);
+    assert.strictEqual(runtime.intervalCount, 1);
+  });
+
+  it('T11 named Section loop follows contiguous labels and loop points keep occurrence identity', async () => {
+    const runtime = createRuntime(SECTION_SCORE);
+    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
+      ['Verse', undefined, 'Chorus', undefined, 'Verse']);
+    await runtime.click('practice-toggle');
+    runtime.element('practice-loop').value = 'section';
+    await runtime.change('practice-loop');
+    assert.strictEqual(runtime.element('practice-loop').value, 'section');
+    runtime.setRange('playback-seek', 2.1);
+    await runtime.change('playback-seek');
+    assert.strictEqual(Number(runtime.element('playback-seek').value), 0, 'seeking outside the selected section returns to its start');
+
+    const unnamed = createRuntime();
+    await unnamed.click('practice-toggle');
+    unnamed.element('practice-loop').value = 'section';
+    await unnamed.change('practice-loop');
+    assert.strictEqual(unnamed.element('practice-loop').value, 'off');
+    assert.ok(unnamed.element('playback-error').textContent.length > 0, 'unnamed Section reports a localized status');
+  });
+
+  it('T12 playback highlight, playhead, Follow scrolling, and manual navigation stay in the Preview', async () => {
+    const runtime = createRuntime();
+    await runtime.click('practice-toggle');
+    runtime.setAnchorRectTop(900);
+    await runtime.click('btn-play');
+    assert.ok(runtime.scoreOverlayElementCount() >= 2, 'playback adds a highlight and playhead to the score SVG');
+    assert.ok(runtime.scrollY > 0, 'Follow keeps the active measure in the safe viewport band');
+
+    await runtime.fireWindowEvent('wheel');
+    assert.strictEqual(runtime.element('practice-follow').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual((runtime.savedWebviewState as { followEnabled: boolean }).followEnabled, false);
+    await runtime.click('practice-follow');
+    assert.strictEqual(runtime.element('practice-follow').getAttribute('aria-pressed'), 'true');
+
+    await runtime.click('btn-stop');
+    assert.strictEqual(runtime.scoreOverlayElementCount(), 0, 'Stop removes transient SVG overlay nodes');
+  });
+
+  it('T13 Practice count-in runs after a non-zero seek and holds the selected score position', async () => {
+    const runtime = createRuntime(PICKUP_SCORE);
+    await runtime.click('practice-toggle');
+    runtime.setChecked('count-in-toggle', true);
+    await runtime.change('count-in-toggle');
+    runtime.setRange('playback-seek', 0.25);
+    await runtime.change('playback-seek');
+    await runtime.click('btn-play');
+
+    assert.strictEqual(countCountInFrequencies(runtime), runtime.playbackData.occurrences[0].countInClicks.length);
+    runtime.advanceAudioTime(0.4);
+    runtime.runSchedulerTicks();
+    closeEnough(Number(runtime.element('playback-seek').value), 0.25);
+  });
+
+  it('T14 playback-ineligible scores disable Practice and report a localized reason for host actions', async () => {
+    const runtime = createRuntime('|: C |');
+    assert.strictEqual(runtime.playbackData.available, false);
+    assert.strictEqual(runtime.element('practice-toggle').disabled, true);
+    await runtime.sendPlaybackAction('practiceFaster');
+    assert.ok(runtime.element('playback-error').textContent.length > 0);
+    assert.strictEqual(runtime.audioContextCount, 0);
   });
 });

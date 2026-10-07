@@ -248,6 +248,24 @@ export function activate(context: vscode.ExtensionContext) {
     updateWebview(doc);
   });
 
+  const sendPlaybackAction = (action: string) => {
+    if (!currentPanel) {
+      vscode.window.showWarningMessage(msgs.msgPlaybackNoPreview);
+      return;
+    }
+    currentPanel.webview.postMessage({ command: 'playbackAction', action });
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('guitardsl.playback.togglePlayPause', () => sendPlaybackAction('togglePlayPause')),
+    vscode.commands.registerCommand('guitardsl.playback.stop', () => sendPlaybackAction('stop')),
+    vscode.commands.registerCommand('guitardsl.practice.toggle', () => sendPlaybackAction('practiceToggle')),
+    vscode.commands.registerCommand('guitardsl.practice.setLoopStart', () => sendPlaybackAction('practiceSetLoopStart')),
+    vscode.commands.registerCommand('guitardsl.practice.setLoopEnd', () => sendPlaybackAction('practiceSetLoopEnd')),
+    vscode.commands.registerCommand('guitardsl.practice.clearLoop', () => sendPlaybackAction('practiceClearLoop')),
+    vscode.commands.registerCommand('guitardsl.practice.slower', () => sendPlaybackAction('practiceSlower')),
+    vscode.commands.registerCommand('guitardsl.practice.faster', () => sendPlaybackAction('practiceFaster'))
+  );
+
   vscode.workspace.onDidChangeTextDocument((e) => {
     if (currentPanel && isGuitarDslDocument(e.document)) {
       if (lastActiveGuitarDslDoc && e.document.uri.toString() === lastActiveGuitarDslDoc.uri.toString()) {
