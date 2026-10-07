@@ -380,4 +380,41 @@ describe('Preview production Webview runtime', () => {
     assert.ok(runtime.element('playback-error').textContent.length > 0);
     assert.strictEqual(runtime.audioContextCount, 0);
   });
+
+  it('T15 Practice OFF clears A/B, uses normal speed, and rebuild restores preferences without transient loop state', async () => {
+    const runtime = createRuntime();
+    await runtime.click('practice-toggle');
+    runtime.element('practice-speed').value = '75';
+    await runtime.change('practice-speed');
+    runtime.setRange('playback-seek', 0.25);
+    await runtime.change('playback-seek');
+    await runtime.click('practice-set-a');
+    runtime.setRange('playback-seek', 0.75);
+    await runtime.change('playback-seek');
+    await runtime.click('practice-set-b');
+    assert.strictEqual(runtime.element('practice-loop').value, 'ab');
+
+    const rebuilt = createRuntime(PLAYABLE_SCORE, runtime.savedWebviewState);
+    assert.strictEqual(rebuilt.element('practice-toggle').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(rebuilt.element('practice-speed').value, '75');
+    assert.strictEqual(rebuilt.element('practice-loop').value, 'off');
+    assert.strictEqual(Number(rebuilt.element('playback-seek').value), 0);
+    assert.strictEqual(rebuilt.scoreOverlayElementCount(), 0);
+    assert.strictEqual(rebuilt.intervalCount, 0);
+
+    await runtime.click('practice-toggle');
+    assert.strictEqual(runtime.element('practice-toggle').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(runtime.element('practice-loop').value, 'off');
+    const savedState = runtime.savedWebviewState as { practiceEnabled: boolean; practiceSpeed: number };
+    assert.strictEqual(savedState.practiceEnabled, false);
+    assert.strictEqual(savedState.practiceSpeed, 75);
+
+    runtime.setRange('playback-seek', 0);
+    await runtime.change('playback-seek');
+    await runtime.click('btn-play');
+    runtime.advanceAudioTime(0.2);
+    runtime.runSchedulerTicks();
+    closeEnough(Number(runtime.element('playback-seek').value), 0.2, 0.03);
+    assert.strictEqual(runtime.intervalCount, 1);
+  });
 });
