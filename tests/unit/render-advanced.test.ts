@@ -276,9 +276,11 @@ describe('render - advanced sample (T048)', () => {
 });
 
 describe('render - legacy regression (T002)', () => {
-  // The only serialization change for legacy scores is the class attribute on time signature digits and
-  // tuplet numbers; every coordinate must stay byte-identical to the renders before score events existed.
-  const normalize = (svg: string) => svg.replace(/ class="(time-signature|tuplet-number)"/g, '');
+  // Ignore renderer-only metadata anchors used by the Webview overlay. Visible score serialization stays
+  // byte-identical apart from the existing time-signature and tuplet-number class attributes.
+  const normalize = (svg: string) => svg
+    .replace(/<rect\b(?=[^>]*\bclass="playback-measure-anchor")[^>]*\/>/g, '')
+    .replace(/ class="(time-signature|tuplet-number)"/g, '');
   const sha = (s: string) => require('crypto').createHash('sha256').update(s).digest('hex');
   const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/legacy-render-hashes.json'), 'utf8')).hashes as Record<string, string>;
 

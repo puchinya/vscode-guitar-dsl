@@ -73,6 +73,17 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 - **📄 Save PDF** and the **?** Help button.
 - **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
 
+### Practice Mode
+
+Turn on **Practice** in the Playback row to show the Practice controls. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo.
+
+- **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
+- During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.
+- **Loop** can repeat the current measure, the contiguous performed measures belonging to the current section, or an A/B range. A section label applies to its written measure and following written measures up to the next section label. Choose **Section** on any measure in a named section. Repetitions that are contiguous in playback order share one range; a same-name section after another section remains separate. **A** records the current playback position and clears B; **B** must be later than A. **Clear** removes the loop and both points. Loop ranges include A and stop before B.
+- With **Count-in** enabled, starting Practice playback from a non-zero position plays one measure of count-in using that performed measure's meter and tempo. Count-in follows Practice speed and does not repeat on each loop.
+- **Follow** keeps the active measure in view by scrolling the Preview. Scrolling or navigating manually in the Preview turns Follow off. It does not move the source editor's selection or cursor.
+- The Command Palette also offers **GuitarDSL: Play / Pause Preview Playback**, **Stop Preview Playback**, **Toggle Practice Mode**, **Set Practice Loop Start (A)**, **Set Practice Loop End (B)**, **Clear Practice Loop**, **Practice Slower** and **Practice Faster**. You can assign your own keybindings to these commands.
+
 At narrow widths, the View, Paper and Orientation settings can scroll horizontally while Help and Save PDF remain visible and available.
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.
@@ -470,6 +481,14 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 | GuitarDSL: Open Help | `guitardsl.openHelp` |
 | GuitarDSL: New from Template | `guitardsl.newDocumentFromTemplate` |
 | GuitarDSL: Open Sample | `guitardsl.openSample` |
+| GuitarDSL: Play / Pause Preview Playback | `guitardsl.playback.togglePlayPause` |
+| GuitarDSL: Stop Preview Playback | `guitardsl.playback.stop` |
+| GuitarDSL: Toggle Practice Mode | `guitardsl.practice.toggle` |
+| GuitarDSL: Set Practice Loop Start (A) | `guitardsl.practice.setLoopStart` |
+| GuitarDSL: Set Practice Loop End (B) | `guitardsl.practice.setLoopEnd` |
+| GuitarDSL: Clear Practice Loop | `guitardsl.practice.clearLoop` |
+| GuitarDSL: Practice Slower | `guitardsl.practice.slower` |
+| GuitarDSL: Practice Faster | `guitardsl.practice.faster` |
 
 ## Settings Reference
 

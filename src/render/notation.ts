@@ -253,6 +253,18 @@ export function computeMeasureColumns(m: MeasureData, bx: number, width: number,
   return { xAt: (offset: Fraction) => xs.get(key(offset)), columns };
 }
 
+/** Beat-slash positions used by melody-less lead-sheet measures. */
+export function leadSheetBeatColumns(ts: TimeSignature, bx: number, width: number): { beat: number; x: number }[] {
+  const count = ts.denominator >= 8 ? ts.groups.length : ts.numerator;
+  const beatUnit = 4 / ts.denominator;
+  let beat = 0;
+  return Array.from({ length: count }, (_, index) => {
+    const column = { beat, x: bx + 14 + (index + 0.5) * ((width - 28) / count) };
+    beat += ts.denominator >= 8 ? ts.groups[index] * beatUnit : beatUnit;
+    return column;
+  });
+}
+
 /** x for a chord placed at `beat`: the matching column, or proportional to `measureLength` quarter beats. */
 export function chordXAt(columns: MeasureColumns, bx: number, width: number, beat: number, measureLength: number): number {
   const match = columns.columns.find(c => Math.abs(c.beat - beat) < 0.05);

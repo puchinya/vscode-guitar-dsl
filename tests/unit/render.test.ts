@@ -103,6 +103,24 @@ describe('render - HTML and SVG', () => {
     assert.ok(sheets[0].includes('1 / 1'));
   });
 
+  it('emits invisible written-measure anchors in page and continuous SVG without static playback graphics', () => {
+    const source = 'bpm: 120\n[Verse]\n| C | G |';
+    const score = parseGuitarDsl(source);
+    const outputs = [
+      ...renderScoreSheets(score, 'A4', 'portrait'),
+      renderContinuousSvg(score)
+    ];
+    for (const svg of outputs) {
+      const anchors = svg.match(/<rect class="playback-measure-anchor"[^>]*\/>/g) ?? [];
+      assert.strictEqual(anchors.length, 2);
+      assert.ok(anchors.some(anchor => anchor.includes('data-measure-index="0"')));
+      assert.ok(anchors.some(anchor => anchor.includes('data-measure-index="1"')));
+      assert.ok(anchors.every(anchor => /fill="none"/.test(anchor) && /pointer-events="none"/.test(anchor)));
+      assert.ok(!svg.includes('playback-highlight'));
+      assert.ok(!svg.includes('playback-playhead'));
+    }
+  });
+
   it('should escape XML special characters in all text', () => {
     const dsl = [
       'title: A <B> & "C"',

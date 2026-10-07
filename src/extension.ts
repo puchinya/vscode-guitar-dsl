@@ -164,6 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (currentPanel) {
       currentPanel.reveal(vscode.ViewColumn.Beside);
     } else {
+      previewLifecycleProbe.lastPlaybackAction = undefined;
       currentPanel = vscode.window.createWebviewPanel(
         'guitardslPreview',
         msgs.previewTitle,
@@ -239,6 +240,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.onDidDispose(() => {
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
+        previewLifecycleProbe.lastPlaybackAction = undefined;
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();
@@ -247,6 +249,25 @@ export function activate(context: vscode.ExtensionContext) {
 
     updateWebview(doc);
   });
+
+  const sendPlaybackAction = (action: string) => {
+    if (!currentPanel) {
+      vscode.window.showWarningMessage(msgs.msgPlaybackNoPreview);
+      return;
+    }
+    previewLifecycleProbe.lastPlaybackAction = action;
+    currentPanel.webview.postMessage({ command: 'playbackAction', action });
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('guitardsl.playback.togglePlayPause', () => sendPlaybackAction('togglePlayPause')),
+    vscode.commands.registerCommand('guitardsl.playback.stop', () => sendPlaybackAction('stop')),
+    vscode.commands.registerCommand('guitardsl.practice.toggle', () => sendPlaybackAction('practiceToggle')),
+    vscode.commands.registerCommand('guitardsl.practice.setLoopStart', () => sendPlaybackAction('practiceSetLoopStart')),
+    vscode.commands.registerCommand('guitardsl.practice.setLoopEnd', () => sendPlaybackAction('practiceSetLoopEnd')),
+    vscode.commands.registerCommand('guitardsl.practice.clearLoop', () => sendPlaybackAction('practiceClearLoop')),
+    vscode.commands.registerCommand('guitardsl.practice.slower', () => sendPlaybackAction('practiceSlower')),
+    vscode.commands.registerCommand('guitardsl.practice.faster', () => sendPlaybackAction('practiceFaster'))
+  );
 
   vscode.workspace.onDidChangeTextDocument((e) => {
     if (currentPanel && isGuitarDslDocument(e.document)) {

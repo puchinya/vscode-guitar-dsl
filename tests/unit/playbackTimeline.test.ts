@@ -31,6 +31,28 @@ describe('playbackTimeline', () => {
     assert.deepStrictEqual(eventsOf(underfilled, 'rhythmAttack').map(event => [event.timeSeconds, event.durationSeconds]), [[0, 0.5]]);
   });
 
+  it('S121-01 resolves written section membership without changing occurrence identity or timing', () => {
+    const timeline = validTimeline([
+      'bpm: 120',
+      '| X |',
+      '[Verse]',
+      '| C | D |',
+      '[Chorus]',
+      '| G | Am |'
+    ].join('\n'));
+    assert.deepStrictEqual(timeline.occurrences.map(({ sectionName }) => sectionName),
+      [undefined, 'Verse', 'Verse', 'Chorus', 'Chorus']);
+    assert.deepStrictEqual(timeline.occurrences.map(({ occurrenceIndex, measureIndex, startSeconds, durationSeconds }) =>
+      [occurrenceIndex, measureIndex, startSeconds, durationSeconds]), [
+      [0, 0, 0, 2],
+      [1, 1, 2, 2],
+      [2, 2, 4, 2],
+      [3, 3, 6, 2],
+      [4, 4, 8, 2]
+    ]);
+    assert.deepStrictEqual(timeline.occurrences.map(({ startBeat }) => fnum(startBeat)), [0, 4, 8, 12, 16]);
+  });
+
   it('uses resolved numeric tempo, restores tempo primo, and leaves tempo marks and feel display-only', () => {
     const source = [
       'bpm: 120',

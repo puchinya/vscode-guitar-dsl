@@ -10,6 +10,8 @@ export type PlaybackTimelineErrorCode = 'invalidPlayOrder' | 'unresolvedTempo';
 export interface PlaybackOccurrence {
   occurrenceIndex: number;
   measureIndex: number;
+  /** Resolved written-section membership for this occurrence, not only the section-start marker. */
+  sectionName?: string;
   /** Optional 1-based lyric verse selected for this score occurrence. */
   lyricVerse?: number;
   startBeat: Fraction;
@@ -87,6 +89,14 @@ function rhythmItemDuration(item: RhythmItem): Fraction | null {
 export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResult {
   if (!score.playOrder.valid) return { ok: false, code: 'invalidPlayOrder' };
 
+  const sectionMembership = new Map<number, string>();
+  let activeSection: string | undefined;
+  for (const measure of score.measures) {
+    const marker = typeof measure.sectionName === 'string' ? measure.sectionName.trim() : '';
+    if (marker) activeSection = marker;
+    if (activeSection) sectionMembership.set(measure.measureIndex, activeSection);
+  }
+
   const occurrences: PlaybackOccurrence[] = [];
   const events: PlaybackEvent[] = [];
   let durationBeats = ZERO;
@@ -95,6 +105,7 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
   for (const played of score.playOrder.occurrences) {
     const sourceMeasure = score.measures[played.measureIndex];
     if (!sourceMeasure || sourceMeasure.measureIndex !== played.measureIndex) return { ok: false, code: 'invalidPlayOrder' };
+    const sectionName = sectionMembership.get(played.measureIndex);
     // Resolve the written % sign through the compiler's existing notation helper. Play order and
     // occurrence coordinates still come exclusively from ParsedScore.playOrder.
     const measure = sourceMeasure.isMeasureRepeat
@@ -111,6 +122,7 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
     const occurrence: PlaybackOccurrence = {
       occurrenceIndex: played.occurrenceIndex,
       measureIndex: played.measureIndex,
+      ...(sectionName === undefined ? {} : { sectionName }),
       ...(played.lyricVerse === undefined ? {} : { lyricVerse: played.lyricVerse }),
       startBeat: copyFraction(durationBeats),
       durationBeats: measureLength,

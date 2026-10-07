@@ -96,7 +96,7 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の13のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
+拡張機能は以下の21のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
@@ -113,6 +113,14 @@
 | `guitardsl.openHelp` | `GuitarDSL: Open Help` | コマンドパレット、プレビュー内ツールバー、サイドバー | - |
 | `guitardsl.newDocumentFromTemplate` | `GuitarDSL: New from Template` | コマンドパレット、サイドバー | - |
 | `guitardsl.openSample` | `GuitarDSL: Open Sample` | コマンドパレット、サイドバー | - |
+| `guitardsl.playback.togglePlayPause` | `GuitarDSL: Play / Pause Preview Playback` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.playback.stop` | `GuitarDSL: Stop Preview Playback` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.toggle` | `GuitarDSL: Toggle Practice Mode` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.setLoopStart` | `GuitarDSL: Set Practice Loop Start (A)` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.setLoopEnd` | `GuitarDSL: Set Practice Loop End (B)` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.clearLoop` | `GuitarDSL: Clear Practice Loop` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.slower` | `GuitarDSL: Practice Slower` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.practice.faster` | `GuitarDSL: Practice Faster` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
 
 ### 3.1 `guitardsl.showPreview`
 GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn.Beside`）の Webview パネルとして開く。
@@ -298,6 +306,38 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 - **キャンセル**: クイックピックをキャンセルした場合は何もせず、通知も表示しない。
 - **エラー処理**: サンプルを読めない場合はドキュメントを作成せず、ローカライズされたエラーメッセージを 1 件だけ表示する。スタックトレースは表示しない。
 
+### 3.14 Preview playback / Practice commands
+
+- **Preview がない場合**: 8 コマンドはローカライズされた警告を表示し、Preview を暗黙に開いたり再表示したりしない。
+- `guitardsl.playback.togglePlayPause` と `guitardsl.playback.stop` は Practice の ON/OFF にかかわらず動作する。`guitardsl.practice.toggle` は Practice の ON/OFF を切り替える。その他の Practice コマンドは Practice が ON のときだけ動作し、OFF の場合は何も変更せず Webview の状態メッセージで理由を通知する。
+- Extension Host は現在のシングルトン Preview に `{ command: 'playbackAction', action }` を送るだけであり、再生・シーク・Practice 状態を保持しない。Webview のコマンド処理と画面操作は同じハンドラーを使う。
+- 再生できない Preview では Practice 操作を無効化または no-op とし、ローカライズされた状態を通知する。Preview 内の操作はキーボードで操作できるネイティブ HTML コントロールを使う。
+- これらのコマンドはユーザーが任意のキー割り当てを設定できる。既定の `contributes.keybindings` と新しい設定は追加しない。
+
+### 3.14.1 `guitardsl.playback.togglePlayPause`
+Preview 再生中なら一時停止し、それ以外は現在位置から再生または再開する。
+
+### 3.14.2 `guitardsl.playback.stop`
+再生を停止する。Practice Loop 中は Loop 開始位置へ戻す。
+
+### 3.14.3 `guitardsl.practice.toggle`
+Practice Mode の ON/OFF を切り替える。OFF にすると Loop と A/B を消す。
+
+### 3.14.4 `guitardsl.practice.setLoopStart`
+現在の再生位置を A として記録し、既存の B を消す。
+
+### 3.14.5 `guitardsl.practice.setLoopEnd`
+A がある場合だけ現在の再生位置を B とする。`B <= A` の場合は A を保持して警告する。
+
+### 3.14.6 `guitardsl.practice.clearLoop`
+Loop と A/B を消す。
+
+### 3.14.7 `guitardsl.practice.slower`
+Practice speed を 5 ポイント下げる。下限は 25% とする。
+
+### 3.14.8 `guitardsl.practice.faster`
+Practice speed を 5 ポイント上げる。上限は 200% とする。
+
 ---
 
 ## 4. プレビュー機能仕様 (Webview Preview Specification)
@@ -325,7 +365,9 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 
 プレビュー幅が狭い場合も、ヘルプと PDF 保存のアクションは表示され操作できる。表示モード・用紙サイズ・向きの設定領域は必要に応じて横スクロール可能とし、アクションをビューポート外へ押し出さない。プレビュー幅だけを理由に操作を削除しない。
 
-4. **カポバー**（ツールバーの下の 2 段目。§4.4）:
+Playback はトップツールバー直下の独立した 42 px の行（`top: 48px`）を使う。Practice トグルはこの行にあり、初期値は OFF。Practice ON のときだけ、Playback 行の下 `top: 90px` に 42 px の Practice 行を表示し、速度、Loop、A、B、Clear、Follow、現在の小節／出現状態を操作できる。Practice OFF では行の高さを予約せず、カポなしの本文開始位置 `108px` とカポありの本文開始位置 `144px` を維持する。Practice ON ではカポなしの本文開始位置を `150px` とし、カポ行は `top: 132px`、本文開始位置は `186px` とする。通常幅では全 Practice 操作を表示し、狭い幅では Practice 行だけを独立して横スクロールさせる。ヘルプと PDF の固定表示、および #77 の設定領域・Playback 行は変更しない。
+
+4. **カポバー**（ツールバーと Playback 行、および表示中の Practice 行の下。§4.4）:
    - カポ選択（0〜12）。各候補に弾きやすさスコアを添え、推奨カポに `★ 推奨` を付ける。変更できない候補は選択できない。
    - 現在の弾きやすさ（段階名とスコア `n/100`）。コードがない場合は「評価できません」。
    - 推奨カポの表示、一時変更中は「プレビューのみ」の表示。
@@ -403,16 +445,19 @@ GuitarDSL ヘルプ（GuitarDSL の概要と使い始め方、拡張機能の機
 
 ### 4.6 Preview 再生
 
-Preview の HTML ツールバーに再生操作を表示する。再生操作は楽譜 SVG と PDF には描画しない。
+Preview の HTML には Playback 操作と Practice Mode を表示する。操作 UI、Practice の状態、音声実行、再生位置表示は Webview が所有し、楽譜 SVG と PDF に可視の Practice 表示を出力しない。
 
-- **再生位置**: 現在の Preview の演奏順で再生する。再生停止中の Play はシーク位置から始まり、末尾まで再生した後の Play は先頭に戻って始まる。Pause は現在位置で停止し、Resume はその位置から再開する。Stop は再生を停止して先頭へ戻す。シークは曲の先頭から末尾までに制限し、再生中のシークはその位置から再生を続ける。
-- **表示と再構築**: ツールバーにシークスライダーと現在位置 / 全長を `mm:ss / mm:ss` 形式で表示する。ソース編集、カポまたは初心者モードによる有効 DSL の変更、レイアウト再構築、対象ドキュメントの切替、Preview の閉鎖では再生を停止する。再構築後の Preview は停止状態で先頭から始まる。
-- **Count-in**: 初期値 OFF。先頭位置から停止中に Play した場合に限り、最初の演奏位置の拍子・テンポ・拍のグルーピングで 1 小節分を鳴らしてから再生を始める。冒頭に弱起があっても拍子一小節分とし、スコア再生位置は先頭のまま保つ。Resume と先頭以外へのシークでは鳴らさない。
-- **Metronome**: 初期値 OFF。ON の間は拍子の拍グループごとにクリックを鳴らし、各小節の最初のクリックを強調する。拍子記号に基づくグルーピングを使う（例: 6/8 は 2 拍、7/8 の 2+2+3 は 3 拍）。
-- **記憶する状態**: Count-in と Metronome の ON/OFF は既存の Preview 表示状態とともに保持する。再生中かどうか、シーク位置、AudioContext は保持しない。再生とシークは Preview の再構築後に初期化される。
-- **音と解釈**: メロディとインライン音高には基本的な合成音を使い、リズムのスラッシュはその小節の同じ位置までに現れた直近のコードを使う。小節をまたいでコードを引き継がず、コードがない場合や合成に対応しないコードは発音しない。ギターの弦・運指を再現するものではない。数値テンポと `tempo primo` は §16.5 に従い、フィール、`rit.` / `accel.` / `a tempo`、強弱、その他の奏法記号は再生速度・音量・発音に追加の効果を与えない。
-- **再生不可**: 演奏順序が不正な場合、または演奏位置のテンポを解決できない場合は部分再生せず、Preview に理由を表示する。
-- 新しい VS Code コマンドや設定は追加しない。再生音は Web Audio によるオフライン合成で、ネットワークやサンプルを使用しない。
+- **再生位置**: `ParsedScore.playOrder` の順で再生する。再生停止中の Play はシーク位置から始まり、末尾まで再生した後の Play は先頭へ戻る。Pause は現在位置を保持し、Resume はその位置から再開する。Stop は Practice OFF ではスコア時刻 0、Practice ON で Loop が有効なら Loop 開始へ戻る。Active Loop 中の Seek は `[start,end)` に収まるようクランプし、再生中のシークはその位置から再生を続ける。`mm:ss / mm:ss` は速度によらないスコア時刻を表示する。
+- **カーソル**: 再生中は Practice OFF / ON のどちらでも、現在の書かれた小節を半透明に強調し、縦の再生ヘッドを表示する。再生ヘッドは音符・リズム符の記譜位置に一致し、その間はスコア時刻に沿って進む。Pause は表示位置を固定し、Seek は直ちに移動する。Count-in 中はこれから始まる位置で待機する。Loop wrap は Loop 開始位置へ移動し、Stop は表示を隠す。自然終了後は最終位置に表示を残し、Stop または次の Play でリセットする。
+- **Practice speed**: Practice ON の速度は 25%〜200%、5% 刻み、初期値 100%。音声経過時間 `audioDelta` に対するスコア時刻の進みは `scoreDelta = audioDelta * speed` とする。ソース BPM、タイムライン、`mm:ss` は変更せず、音の開始・継続時間、Count-in、Metronome の音声時間を速度で割る。速度変更中の再生は現在スコア位置を取得し、予約音源をキャンセル／フェードして同位置・新速度で再同期する。Count-in は再実行せず、スケジューラは 1 つのままにする。Practice OFF の実効速度は常に 100% で、保存済みの Practice speed は保持する。
+- **Loop point**: Loop と A/B の点は半開区間 `[start,end)` を使い、最低限 `{ occurrenceIndex, scoreSeconds }` で識別する。Measure は現在出現の開始から終了までを選ぶ。Section 判定の `sectionName` は開始マーカーの文字列ではなく、書かれた小節の所属セクションを表す。非空のセクション見出しはその小節から次の非空見出しの直前まで適用し、最初の見出しより前の小節は無名となる。`PlaybackTimeline` が所属を解決し、各演奏出現は対応する書かれた小節の所属を引き継ぐ。Section は現在出現の前後へ連続し同じ空でない `sectionName` を持つ最大範囲を選ぶため、`Verse → Chorus → Verse` は別々の範囲、連続した `Verse x2` は 1 範囲となる。編曲呼び出し ID は追加しない。無名の Section 選択は拒否し、既存 Loop を保持して選択値を戻し、ローカライズされた状態を通知する。A 設定は現在の出現／位置を保存して B を消す。B は A より後でなければならず、`B <= A` は B を追加せず A を保持する。A/B は小節内の位置を使える。Measure/Section の選択、Loop Off、Clear、Practice OFF は Loop と A/B を消す。新しい範囲外（新しい排他的終端を含む）に位置がある状態で範囲を有効にすると、範囲の開始へ移動する。
+- **Loop scheduler**: 既存 Web Audio scheduler を延長し、開始時刻のイベントを含め、終了時刻のイベントは次の周回まで含めない。終了をまたぐ音は Loop 終端で切り、Loop/A より前に開始した sustain を再構築しない。100 ms 先読みが Loop 終端を越える場合は、同じ scheduler tick で末尾と折り返し後の先頭を必要な回数分スケジュールする。同時 scheduler interval は作らない。Active Loop 中の Seek は開始前なら開始へ、終端以降なら開始へ移す。Loop 中は Loop 終端で `ended` にならない。
+- **Count-in**: 既定 OFF。Practice OFF は既存仕様どおり、スコア時刻 0 からの停止中 Play だけで 1 小節分を鳴らす。Practice ON では停止状態の Play を非ゼロ位置または Loop 開始から行った場合も Count-in を使い、実際の開始位置を含む出現の拍子とテンポで 1 小節分鳴らす（弱起を含む）。Resume、再生中の Seek、速度変更、Practice 切替時の再同期、Loop wrap では再実行しない。Practice speed に従う。
+- **Metronome**: 既定 OFF。既存の拍グループと小節頭アクセントを保ち、速度および Loop に追従する。Playback 中に ON/OFF を切り替えられる。
+- **Follow**: Practice 専用で既定 ON。アクティブな小節／再生ヘッドが Preview 高さのおよそ 20〜80% の縦方向安全域を外れる場合に Preview だけをスクロールする。Preview の手動スクロールまたはナビゲーションで Follow を OFF にする。ソース選択・キャレットを変更せず、`TextEditor.revealRange()` を呼ばず、ソースエディタへフォーカスを移さない。
+- **保存と再構築**: `currentMode`、Count-in、Metronome に加えて `practiceEnabled`、`practiceSpeed`、`followEnabled` のみを `vscode.getState()/setState()` で保存する。再生、Seek、Loop/A-B、オーバーレイ、予約音源、`AudioContext` は保存しない。ソース／有効 DSL／カポ／初心者表示／レイアウト／対象文書が変わり HTML を再構築すると、停止・時刻 0・Loop Off・A/B 消去・オーバーレイ非表示とし、設定だけ復元する。`pagehide`、`unload`、Panel 破棄時の cleanup は何度呼ばれても安全にする。
+- **音と再生不可**: メロディとインライン音高には基本的な合成音を使い、リズムのスラッシュはその小節の同じ位置までに現れた直近のコードを使う。小節をまたいでコードを引き継がず、コードがない場合や合成に対応しないコードは発音しない。ギターの弦・運指を再現するものではない。数値テンポと `tempo primo` は §16.5 に従い、フィール、`rit.` / `accel.` / `a tempo`、強弱、その他の奏法記号は追加の再生効果を与えない。演奏順序が不正、テンポ解決不可、または再生データがない場合は部分再生せず、Practice 操作を無効化または no-op にし、ローカライズされた理由を表示する。
+- **ソース編集**: Practice 操作は GuitarDSL を変更しない。ソース編集時は再構築で古い occurrence index を無効化し、推測で再解決しない。
 
 ### 4.7 TAB プレビュー、レイアウト、PDF
 
@@ -673,7 +718,7 @@ Preview の HTML ツールバーに再生操作を表示する。再生操作は
 ### 7.1 ヘルプの構成
 - ヘルプ本文の編集元は `docs/help/`（日英それぞれの概要・機能・言語・トラブルシューティング）とする。同梱される `media/help/guitardsl-help.{ja,en}.md` は生成物であり、手で編集しない。
 - コマンド一覧と設定一覧は `package.json` と `package.nls*.json` から生成する。手書きの一覧は持たない。
-- ヘルプに Web プレーヤー、楽譜の再生機能、音が出ない場合の対処など、拡張機能が提供しない機能を記載しない。
+- §4.6 に定義した Preview 再生と Practice Mode はヘルプで説明できる。拡張機能が提供しない Web プレーヤーなどの機能は記載しない。
 
 ### 7.2 生成と検査
 - `npm run generate:help` は同梱ヘルプを決定論的に生成する（同じ入力に対してバイト単位で同一の出力）。書き換えるのは `media/help/` の生成物だけである。`npm run compile` の前に自動実行される。

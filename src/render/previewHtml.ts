@@ -38,13 +38,24 @@ type PlaybackHtmlEvent = PlaybackEvent & {
   midiNotes: number[];
 };
 
+interface PlaybackHtmlOccurrence {
+  occurrenceIndex: number;
+  measureIndex: number;
+  sectionName?: string;
+  startSeconds: number;
+  durationSeconds: number;
+  countInDurationSeconds: number;
+  countInClicks: { timeSeconds: number; accent: boolean }[];
+}
+
 interface PlaybackHtmlData {
   available: boolean;
   durationSeconds: number;
   events: PlaybackHtmlEvent[];
+  occurrences: PlaybackHtmlOccurrence[];
   countInDurationSeconds: number;
   countInClicks: { timeSeconds: number; accent: boolean }[];
-  labels: { play: string; resume: string; audioUnavailable: string };
+  labels: Record<string, string>;
   error?: string;
 }
 
@@ -75,6 +86,9 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const capoBar = options?.capo ? renderCapoBar(options.capo, msgs, options.beginner) : '';
+  const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
+    .map(speed => `<option value="${speed}"${speed === 100 ? ' selected' : ''}>${speed}%</option>`)
+    .join('');
   const continuousMaxWidthPx = Math.round(getSheetSize(pageSize, 'portrait').width * PX_PER_PT);
 
   const fontFaces = options?.fontUris ? `
@@ -207,6 +221,74 @@ ${cspMeta}
     font-size: 12px;
   }
   .playback-error:empty { display: none; }
+  .practice-toggle[aria-pressed="true"] {
+    background: #2e7d32;
+    border-color: #2e7d32;
+  }
+  .practice-toolbar {
+    position: fixed;
+    top: 90px;
+    left: 0;
+    right: 0;
+    height: 42px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    background: #2d2d30;
+    border-bottom: 1px solid #3c3c3c;
+    color: #eeeeee;
+    z-index: 998;
+    white-space: nowrap;
+    overflow-x: auto;
+    user-select: none;
+  }
+  body.has-practice-row .practice-toolbar { display: flex; }
+  .practice-control-label {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    color: #cccccc;
+    font-size: 12px;
+  }
+  .practice-select {
+    flex: 0 0 auto;
+    min-width: 68px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #252526;
+    color: #eeeeee;
+    padding: 3px 6px;
+    font: inherit;
+    font-size: 12px;
+  }
+  .practice-button {
+    flex: 0 0 auto;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #252526;
+    color: #eeeeee;
+    padding: 4px 9px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .practice-button:hover:not(:disabled) { background: #3c3c3c; }
+  .practice-button:focus-visible, .practice-select:focus-visible {
+    outline: 2px solid #3794ff;
+    outline-offset: 1px;
+  }
+  .practice-button:disabled, .practice-select:disabled { opacity: 0.45; cursor: default; }
+  .practice-button[aria-pressed="true"] { background: #2e7d32; border-color: #2e7d32; }
+  .practice-status {
+    flex: 1 0 140px;
+    min-width: 140px;
+    overflow: hidden;
+    color: #cccccc;
+    text-overflow: ellipsis;
+    font-size: 12px;
+  }
   .toolbar-label {
     font-size: 11px;
     text-transform: uppercase;
@@ -347,6 +429,15 @@ ${cspMeta}
   body.has-capo-bar {
     padding-top: 144px;
   }
+  body.has-practice-row:not(.has-capo-bar) {
+    padding-top: 150px;
+  }
+  body.has-practice-row.has-capo-bar {
+    padding-top: 186px;
+  }
+  body.has-practice-row .capo-bar {
+    top: 132px;
+  }
   .capo-bar {
     position: fixed;
     top: 90px;
@@ -454,7 +545,27 @@ ${cspMeta}
     <span class="playback-time" id="playback-time" aria-label="${escapeXml(msgs.uiPlaybackTime)}">00:00 / ${formatPlaybackTime(playback.durationSeconds)}</span>
     <label class="playback-toggle"><input id="count-in-toggle" type="checkbox">${escapeXml(msgs.uiCountIn)}</label>
     <label class="playback-toggle"><input id="metronome-toggle" type="checkbox">${escapeXml(msgs.uiMetronome)}</label>
+    <button class="playback-control-btn practice-toggle" id="practice-toggle" type="button" aria-pressed="false" title="${escapeXml(msgs.uiPracticeTitle)}" aria-label="${escapeXml(msgs.uiPracticeTitle)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPractice)}</button>
     <span class="playback-error" id="playback-error" role="status" aria-live="polite">${escapeXml(playback.error ?? '')}</span>
+  </div>
+
+  <div class="practice-toolbar" id="practice-toolbar" role="group" aria-label="${escapeXml(msgs.uiPractice)}">
+    <label class="practice-control-label">${escapeXml(msgs.uiPracticeSpeed)}
+      <select class="practice-select" id="practice-speed" aria-label="${escapeXml(msgs.uiPracticeSpeed)}"${playback.available ? '' : ' disabled'}>${practiceSpeedOptions}</select>
+    </label>
+    <label class="practice-control-label">${escapeXml(msgs.uiPracticeLoop)}
+      <select class="practice-select" id="practice-loop" aria-label="${escapeXml(msgs.uiPracticeLoop)}"${playback.available ? '' : ' disabled'}>
+        <option value="off">${escapeXml(msgs.uiPracticeLoopOff)}</option>
+        <option value="measure">${escapeXml(msgs.uiPracticeLoopMeasure)}</option>
+        <option value="section">${escapeXml(msgs.uiPracticeLoopSection)}</option>
+        <option value="ab">${escapeXml(msgs.uiPracticeLoopAB)}</option>
+      </select>
+    </label>
+    <button class="practice-button" id="practice-set-a" type="button" title="${escapeXml(msgs.uiPracticeSetA)}" aria-label="${escapeXml(msgs.uiPracticeSetA)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPracticeA)}</button>
+    <button class="practice-button" id="practice-set-b" type="button" title="${escapeXml(msgs.uiPracticeSetB)}" aria-label="${escapeXml(msgs.uiPracticeSetB)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPracticeB)}</button>
+    <button class="practice-button" id="practice-clear-loop" type="button" title="${escapeXml(msgs.uiPracticeClear)}" aria-label="${escapeXml(msgs.uiPracticeClear)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPracticeClear)}</button>
+    <button class="practice-button" id="practice-follow" type="button" aria-pressed="true" title="${escapeXml(msgs.uiPracticeFollowTitle)}" aria-label="${escapeXml(msgs.uiPracticeFollowTitle)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPracticeFollow)}</button>
+    <span class="practice-status" id="practice-status" role="status" aria-live="polite"></span>
   </div>
 
   ${capoBar}
@@ -479,6 +590,9 @@ ${cspMeta}
       let currentMode = 'single';
       let countInEnabled = false;
       let metronomeEnabled = false;
+      let practiceEnabled = false;
+      let practiceSpeed = 100;
+      let followEnabled = true;
 
       if (vscode) {
         const state = vscode.getState();
@@ -487,6 +601,11 @@ ${cspMeta}
         }
         if (state && typeof state.countInEnabled === 'boolean') countInEnabled = state.countInEnabled;
         if (state && typeof state.metronomeEnabled === 'boolean') metronomeEnabled = state.metronomeEnabled;
+        if (state && typeof state.practiceEnabled === 'boolean') practiceEnabled = state.practiceEnabled;
+        if (state && Number.isFinite(state.practiceSpeed)) {
+          practiceSpeed = Math.max(25, Math.min(200, Math.round(Number(state.practiceSpeed) / 5) * 5));
+        }
+        if (state && typeof state.followEnabled === 'boolean') followEnabled = state.followEnabled;
       }
 
       const modeButtons = document.querySelectorAll('.tool-btn[data-mode]');
@@ -495,11 +614,20 @@ ${cspMeta}
       const savePdfBtn = document.getElementById('btn-save-pdf');
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
+      const practiceToggle = document.getElementById('practice-toggle');
+      const practiceSpeedSelect = document.getElementById('practice-speed');
+      const practiceLoopSelect = document.getElementById('practice-loop');
+      const practiceSetAButton = document.getElementById('practice-set-a');
+      const practiceSetBButton = document.getElementById('practice-set-b');
+      const practiceClearButton = document.getElementById('practice-clear-loop');
+      const practiceFollowButton = document.getElementById('practice-follow');
+      const practiceStatus = document.getElementById('practice-status');
       if (countInToggle) countInToggle.checked = countInEnabled;
       if (metronomeToggle) metronomeToggle.checked = metronomeEnabled;
+      if (practiceSpeedSelect) practiceSpeedSelect.value = String(practiceSpeed);
 
       function persistWebviewState() {
-        if (vscode) vscode.setState({ currentMode, countInEnabled, metronomeEnabled });
+        if (vscode) vscode.setState({ currentMode, countInEnabled, metronomeEnabled, practiceEnabled, practiceSpeed, followEnabled });
       }
 
       const playbackDataElement = document.getElementById('playback-data');
@@ -507,14 +635,15 @@ ${cspMeta}
       try {
         playbackData = JSON.parse(playbackDataElement ? playbackDataElement.textContent : '{}');
       } catch (_) {
-        playbackData = { available: false, durationSeconds: 0, events: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
+        playbackData = { available: false, durationSeconds: 0, events: [], occurrences: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
       }
       if (!playbackData || typeof playbackData !== 'object') {
-        playbackData = { available: false, durationSeconds: 0, events: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
+        playbackData = { available: false, durationSeconds: 0, events: [], occurrences: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
       }
       const playbackAvailable = playbackData.available === true;
       const playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
       const playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
+      const playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
       const playBtn = document.getElementById('btn-play');
       const pauseBtn = document.getElementById('btn-pause');
       const stopBtn = document.getElementById('btn-stop');
@@ -526,15 +655,31 @@ ${cspMeta}
       let positionSeconds = 0;
       let scoreAnchorAudioTime = 0;
       let scoreAnchorSeconds = 0;
-      let nextPlaybackEventIndex = 0;
+      let schedulerCursorAudioTime = 0;
+      let schedulerCursorScoreSeconds = 0;
       let schedulerTimer = null;
       let audioContext = null;
       let masterGain = null;
       let startPending = false;
       let scrubbing = false;
       let disposed = false;
+      let loopMode = 'off';
+      let abStartPoint = null;
+      let abEndPoint = null;
+      let loopRange = null;
+      let practiceNotice = '';
+      let overlayVisible = false;
+      let overlayAnchor = null;
+      let overlayHighlight = null;
+      let overlayPlayhead = null;
+      let animationFrameId = null;
+      let followProgrammaticTarget = null;
       const activeNodes = new Set();
       const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+
+      function effectiveSpeed() {
+        return practiceEnabled ? practiceSpeed / 100 : 1;
+      }
 
       function clampScoreTime(value) {
         const finite = Number.isFinite(value) ? value : 0;
@@ -551,11 +696,206 @@ ${cspMeta}
       function scoreTimeFromAudioClock() {
         if (!audioContext) return positionSeconds;
         const elapsed = Math.max(0, audioContext.currentTime - scoreAnchorAudioTime);
-        return clampScoreTime(scoreAnchorSeconds + elapsed);
+        const raw = scoreAnchorSeconds + elapsed * effectiveSpeed();
+        if (loopRange && raw >= loopRange.endSeconds) {
+          const length = loopRange.endSeconds - loopRange.startSeconds;
+          return loopRange.startSeconds + ((raw - loopRange.startSeconds) % length);
+        }
+        return clampScoreTime(raw);
+      }
+
+      function occurrenceAtScoreTime(seconds) {
+        if (playbackOccurrences.length === 0) return null;
+        const target = clampScoreTime(Number(seconds));
+        return playbackOccurrences.find(occurrence =>
+          target >= occurrence.startSeconds && target < occurrence.startSeconds + occurrence.durationSeconds
+        ) ?? playbackOccurrences[playbackOccurrences.length - 1];
+      }
+
+      function pointAtScoreTime(seconds) {
+        const target = clampScoreTime(Number(seconds));
+        const occurrence = occurrenceAtScoreTime(target);
+        return occurrence ? { occurrenceIndex: occurrence.occurrenceIndex, scoreSeconds: target } : null;
+      }
+
+      function normalizedSeekTarget(seconds) {
+        const target = clampScoreTime(Number(seconds));
+        if (!loopRange) return target;
+        return target < loopRange.startSeconds || target >= loopRange.endSeconds
+          ? loopRange.startSeconds
+          : target;
+      }
+
+      function displayPositionText(seconds) {
+        const occurrence = occurrenceAtScoreTime(seconds);
+        if (!occurrence) return '';
+        const measureLabel = audioLabels.practiceMeasure || 'Measure';
+        const occurrenceLabel = audioLabels.practiceOccurrence || 'Occurrence';
+        return measureLabel + ' ' + (occurrence.measureIndex + 1) + ' / ' + occurrenceLabel + ' ' + (occurrence.occurrenceIndex + 1);
+      }
+
+      function setPracticeNotice(message) {
+        practiceNotice = message || '';
+        updatePracticeUi();
       }
 
       function setPlaybackError(message) {
         if (playbackError) playbackError.textContent = message || '';
+      }
+
+      function removeSvgNode(node) {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+      }
+
+      function removeScoreOverlay() {
+        removeSvgNode(overlayHighlight);
+        removeSvgNode(overlayPlayhead);
+        overlayAnchor = null;
+        overlayHighlight = null;
+        overlayPlayhead = null;
+      }
+
+      function visibleMeasureAnchor(measureIndex) {
+        const selector = currentMode === 'web'
+          ? '.web-score-container .playback-measure-anchor'
+          : '.sheet-pages-wrapper .playback-measure-anchor';
+        return Array.from(document.querySelectorAll(selector)).find(anchor =>
+          Number(anchor.getAttribute('data-measure-index')) === measureIndex
+        ) ?? null;
+      }
+
+      function followAnchor(anchor) {
+        if (!practiceEnabled || !followEnabled || typeof anchor.getBoundingClientRect !== 'function') return;
+        const rect = anchor.getBoundingClientRect();
+        const viewportHeight = Number(window.innerHeight) || 0;
+        if (viewportHeight <= 0) return;
+        const bandTop = viewportHeight * 0.2;
+        const bandBottom = viewportHeight * 0.8;
+        if (rect.top >= bandTop && rect.bottom <= bandBottom) return;
+        const currentScroll = Number(window.scrollY) || 0;
+        const requestedTarget = Math.max(0, currentScroll + (rect.top + rect.bottom) / 2 - viewportHeight / 2);
+        const scrollRoot = document.scrollingElement || document.documentElement || document.body;
+        const scrollHeight = Number(scrollRoot && scrollRoot.scrollHeight);
+        const maxScroll = Math.max(0, (Number.isFinite(scrollHeight) ? scrollHeight : 0) - viewportHeight);
+        const target = Math.min(maxScroll, requestedTarget);
+        if (Math.abs(target - currentScroll) < 1) return;
+        followProgrammaticTarget = target;
+        window.scrollTo(0, target);
+      }
+
+      function playbackColumnX(anchor, beat, durationBeats, progress, x, width) {
+        const serialized = anchor.getAttribute('data-playback-columns') || '';
+        const columns = serialized.split(';').map(value => {
+          const parts = value.split(':');
+          return { beat: Number(parts[0]), x: Number(parts[1]) };
+        }).filter(column => Number.isFinite(column.beat) && Number.isFinite(column.x));
+        if (columns.length === 0 || !Number.isFinite(durationBeats) || durationBeats <= 0) {
+          return x + width * progress;
+        }
+
+        const targetBeat = Math.max(0, Math.min(durationBeats, beat));
+        const exact = columns.find(column => Math.abs(column.beat - targetBeat) < 0.00001);
+        if (exact) return exact.x;
+
+        const nextIndex = columns.findIndex(column => column.beat > targetBeat);
+        if (nextIndex === 0) {
+          const next = columns[0];
+          const span = next.beat;
+          const amount = span > 0 ? Math.max(0, Math.min(1, targetBeat / span)) : 1;
+          return x + (next.x - x) * amount;
+        }
+        if (nextIndex > 0) {
+          const previous = columns[nextIndex - 1];
+          const next = columns[nextIndex];
+          const span = next.beat - previous.beat;
+          const amount = span > 0 ? Math.max(0, Math.min(1, (targetBeat - previous.beat) / span)) : 0;
+          return previous.x + (next.x - previous.x) * amount;
+        }
+
+        const last = columns[columns.length - 1];
+        const span = durationBeats - last.beat;
+        const amount = span > 0 ? Math.max(0, Math.min(1, (targetBeat - last.beat) / span)) : 1;
+        return last.x + (x + width - last.x) * amount;
+      }
+
+      function updateScoreOverlay() {
+        if (!overlayVisible || disposed) {
+          removeScoreOverlay();
+          return;
+        }
+        const shownTime = transport === 'playing' || transport === 'counting-in'
+          ? scoreTimeFromAudioClock()
+          : positionSeconds;
+        const occurrence = occurrenceAtScoreTime(shownTime);
+        const anchor = occurrence ? visibleMeasureAnchor(occurrence.measureIndex) : null;
+        const system = anchor && anchor.closest ? anchor.closest('.system') : null;
+        if (!anchor || !system) {
+          removeScoreOverlay();
+          return;
+        }
+
+        if (overlayAnchor !== anchor) {
+          removeScoreOverlay();
+          overlayHighlight = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          overlayHighlight.setAttribute('class', 'playback-highlight');
+          overlayHighlight.setAttribute('fill', '#3794ff');
+          overlayHighlight.setAttribute('fill-opacity', '0.13');
+          overlayHighlight.setAttribute('pointer-events', 'none');
+          overlayPlayhead = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          overlayPlayhead.setAttribute('class', 'playback-playhead');
+          overlayPlayhead.setAttribute('stroke', '#0078d4');
+          overlayPlayhead.setAttribute('stroke-width', '1.5');
+          overlayPlayhead.setAttribute('pointer-events', 'none');
+          system.insertBefore(overlayHighlight, system.firstChild);
+          system.appendChild(overlayPlayhead);
+          overlayAnchor = anchor;
+        }
+
+        const x = Number(anchor.getAttribute('x')) || 0;
+        const y = Number(anchor.getAttribute('y')) || 0;
+        const width = Math.max(0, Number(anchor.getAttribute('width')) || 0);
+        const height = Math.max(0, Number(anchor.getAttribute('height')) || 0);
+        const progress = occurrence.durationSeconds > 0
+          ? Math.max(0, Math.min(1, (shownTime - occurrence.startSeconds) / occurrence.durationSeconds))
+          : 0;
+        const durationBeats = Number(anchor.getAttribute('data-playback-duration-beats'));
+        const beat = durationBeats * progress;
+        const playheadX = playbackColumnX(anchor, beat, durationBeats, progress, x, width);
+        for (const [name, value] of Object.entries({ x, y, width, height })) {
+          overlayHighlight.setAttribute(name, String(value));
+        }
+        overlayPlayhead.setAttribute('x1', String(playheadX));
+        overlayPlayhead.setAttribute('x2', String(playheadX));
+        overlayPlayhead.setAttribute('y1', String(y));
+        overlayPlayhead.setAttribute('y2', String(y + height));
+        followAnchor(anchor);
+      }
+
+      function updatePracticeUi() {
+        body.classList.toggle('has-practice-row', practiceEnabled);
+        if (practiceToggle) {
+          practiceToggle.setAttribute('aria-pressed', String(practiceEnabled));
+          practiceToggle.disabled = !playbackAvailable || disposed;
+        }
+        if (practiceSpeedSelect) {
+          practiceSpeedSelect.value = String(practiceSpeed);
+          practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled;
+        }
+        if (practiceLoopSelect) {
+          practiceLoopSelect.value = loopMode;
+          practiceLoopSelect.disabled = !playbackAvailable || disposed || !practiceEnabled;
+        }
+        for (const button of [practiceSetAButton, practiceSetBButton, practiceClearButton, practiceFollowButton]) {
+          if (button) button.disabled = !playbackAvailable || disposed || !practiceEnabled;
+        }
+        if (practiceFollowButton) practiceFollowButton.setAttribute('aria-pressed', String(followEnabled));
+        if (practiceStatus) {
+          const shownTime = transport === 'playing' || transport === 'counting-in'
+            ? scoreTimeFromAudioClock()
+            : positionSeconds;
+          const position = displayPositionText(shownTime);
+          practiceStatus.textContent = [position, practiceNotice].filter(Boolean).join(' · ');
+        }
       }
 
       function updatePlaybackUi() {
@@ -573,6 +913,8 @@ ${cspMeta}
         }
         if (pauseBtn) pauseBtn.disabled = disposed || (transport !== 'playing' && transport !== 'counting-in');
         if (stopBtn) stopBtn.disabled = disposed || transport === 'stopped';
+        updatePracticeUi();
+        updateScoreOverlay();
       }
 
       function clearScheduler() {
@@ -669,13 +1011,19 @@ ${cspMeta}
         }
       }
 
-      function schedulePlaybackEvent(ctx, event, when) {
+      function schedulePlaybackEvent(ctx, event, when, speed) {
         if (event.kind === 'metronome') {
-          if (metronomeEnabled) scheduleTone(ctx, when, 0.03, event.accent ? 1000 : 700, 'sine', 0.25, 'metronome');
+          if (metronomeEnabled) {
+            let duration = 0.03;
+            if (loopRange) duration = Math.min(duration, Math.max(0, loopRange.endSeconds - event.timeSeconds));
+            scheduleTone(ctx, when, duration / speed, event.accent ? 1000 : 700, 'sine', 0.25, 'metronome');
+          }
           return;
         }
         if (event.kind === 'rest' || !Array.isArray(event.midiNotes) || event.midiNotes.length === 0) return;
-        const duration = Math.max(0, Number(event.durationSeconds) || 0);
+        let duration = Math.max(0, Number(event.durationSeconds) || 0);
+        if (loopRange) duration = Math.min(duration, Math.max(0, loopRange.endSeconds - event.timeSeconds));
+        duration /= speed;
         if (duration <= 0) return;
         const isChord = event.kind === 'rhythmAttack';
         const voiceGain = (isChord ? 0.34 : 0.24) / event.midiNotes.length;
@@ -686,22 +1034,34 @@ ${cspMeta}
         }
       }
 
-      function setNextEventIndex(scoreSeconds) {
+      function eventIndexAtScoreTime(scoreSeconds) {
         let low = 0;
         let high = playbackEvents.length;
         while (low < high) {
           const mid = (low + high) >>> 1;
-          if (playbackEvents[mid].timeSeconds < scoreSeconds - 0.000001) low = mid + 1;
+          if (playbackEvents[mid].timeSeconds < scoreSeconds) low = mid + 1;
           else high = mid;
         }
-        nextPlaybackEventIndex = low;
+        return low;
+      }
+
+      function scheduleEventsBetween(scoreStart, scoreEnd, audioStart, speed) {
+        for (let index = eventIndexAtScoreTime(scoreStart); index < playbackEvents.length; index++) {
+          const event = playbackEvents[index];
+          if (event.timeSeconds >= scoreEnd) break;
+          if (event.timeSeconds < scoreStart) continue;
+          const when = audioStart + (event.timeSeconds - scoreStart) / speed;
+          if (when >= audioContext.currentTime - 0.005) schedulePlaybackEvent(audioContext, event, when, speed);
+        }
       }
 
       function finishPlayback() {
         clearScheduler();
+        stopVisualLoop();
         cancelScheduledNodes();
         positionSeconds = playbackDuration;
         transport = 'ended';
+        overlayVisible = true;
         updatePlaybackUi();
       }
 
@@ -710,16 +1070,36 @@ ${cspMeta}
         const now = audioContext.currentTime;
         if (transport === 'counting-in' && now >= scoreAnchorAudioTime) transport = 'playing';
         const horizon = now + 0.1;
-        while (nextPlaybackEventIndex < playbackEvents.length) {
-          const event = playbackEvents[nextPlaybackEventIndex];
-          const eventAudioTime = scoreAnchorAudioTime + event.timeSeconds - scoreAnchorSeconds;
-          if (eventAudioTime > horizon) break;
-          nextPlaybackEventIndex++;
-          if (eventAudioTime >= now - 0.005) schedulePlaybackEvent(audioContext, event, eventAudioTime);
+        const speed = effectiveSpeed();
+        let cursorAudio = schedulerCursorAudioTime;
+        let cursorScore = schedulerCursorScoreSeconds;
+        if (cursorAudio < now) {
+          cursorAudio = now;
+          cursorScore = scoreTimeFromAudioClock();
         }
+        while (cursorAudio < horizon) {
+          const boundary = loopRange ? loopRange.endSeconds : playbackDuration;
+          if (cursorScore >= boundary) {
+            if (!loopRange) break;
+            cursorScore = loopRange.startSeconds;
+          }
+          const horizonScore = cursorScore + (horizon - cursorAudio) * speed;
+          const segmentEndScore = Math.min(boundary, horizonScore);
+          if (segmentEndScore <= cursorScore) break;
+          scheduleEventsBetween(cursorScore, segmentEndScore, cursorAudio, speed);
+          cursorAudio += (segmentEndScore - cursorScore) / speed;
+          cursorScore = segmentEndScore;
+          if (loopRange && cursorScore === loopRange.endSeconds) {
+            cursorScore = loopRange.startSeconds;
+          } else if (!loopRange && cursorScore >= playbackDuration) {
+            break;
+          }
+        }
+        schedulerCursorAudioTime = cursorAudio;
+        schedulerCursorScoreSeconds = cursorScore;
         if (transport === 'playing') {
           positionSeconds = scoreTimeFromAudioClock();
-          if (positionSeconds >= playbackDuration) {
+          if (!loopRange && positionSeconds >= playbackDuration) {
             finishPlayback();
             return;
           }
@@ -733,35 +1113,78 @@ ${cspMeta}
         schedulerTick();
       }
 
+      function setSchedulerCursor(scoreSeconds, audioTime) {
+        schedulerCursorAudioTime = audioTime;
+        schedulerCursorScoreSeconds = scoreSeconds;
+      }
+
+      function countInForPosition(scoreSeconds) {
+        const occurrence = occurrenceAtScoreTime(scoreSeconds);
+        if (occurrence) return occurrence;
+        return {
+          countInDurationSeconds: playbackData.countInDurationSeconds,
+          countInClicks: playbackData.countInClicks || []
+        };
+      }
+
+      function stopVisualLoop() {
+        if (animationFrameId !== null && typeof window.cancelAnimationFrame === 'function') {
+          window.cancelAnimationFrame(animationFrameId);
+        }
+        animationFrameId = null;
+      }
+
+      function visualFrame() {
+        animationFrameId = null;
+        if (disposed) return;
+        updatePlaybackUi();
+        if ((transport === 'playing' || transport === 'counting-in') && typeof window.requestAnimationFrame === 'function') {
+          animationFrameId = window.requestAnimationFrame(visualFrame);
+        }
+      }
+
+      function startVisualLoop() {
+        if (animationFrameId === null && typeof window.requestAnimationFrame === 'function') {
+          animationFrameId = window.requestAnimationFrame(visualFrame);
+        }
+      }
+
       async function startFromPosition(scoreSeconds, useCountIn) {
         if (startPending || disposed || !playbackAvailable) return;
         startPending = true;
         clearScheduler();
+        stopVisualLoop();
         updatePlaybackUi();
         try {
           const ctx = await ensureAudioContext();
           if (!ctx) return;
           cancelScheduledNodes();
-          positionSeconds = clampScoreTime(scoreSeconds);
+          positionSeconds = normalizedSeekTarget(scoreSeconds);
           scoreAnchorSeconds = positionSeconds;
           const scoreStartDelay = 0.025;
-          const countIn = useCountIn && playbackData.countInDurationSeconds > 0;
+          const speed = effectiveSpeed();
+          const countInData = countInForPosition(positionSeconds);
+          const countInDurationSeconds = Math.max(0, Number(countInData.countInDurationSeconds) || 0);
+          const countIn = useCountIn && countInDurationSeconds > 0;
           if (countIn) {
             const countInStart = ctx.currentTime + scoreStartDelay;
-            for (const click of playbackData.countInClicks || []) {
-              scheduleTone(ctx, countInStart + click.timeSeconds, 0.03, click.accent ? 1000 : 700, 'sine', 0.25, 'count-in');
+            for (const click of countInData.countInClicks || []) {
+              scheduleTone(ctx, countInStart + click.timeSeconds / speed, 0.03 / speed, click.accent ? 1000 : 700, 'sine', 0.25, 'count-in');
             }
-            scoreAnchorAudioTime = countInStart + playbackData.countInDurationSeconds;
+            scoreAnchorAudioTime = countInStart + countInDurationSeconds / speed;
             transport = 'counting-in';
           } else {
             scoreAnchorAudioTime = ctx.currentTime + scoreStartDelay;
             transport = 'playing';
           }
-          setNextEventIndex(positionSeconds);
+          setSchedulerCursor(positionSeconds, scoreAnchorAudioTime);
+          overlayVisible = true;
           setPlaybackError('');
           startScheduler();
+          startVisualLoop();
         } catch (_) {
           transport = 'stopped';
+          overlayVisible = false;
           setPlaybackError(audioLabels.audioUnavailable || 'Web Audio is unavailable.');
         } finally {
           startPending = false;
@@ -775,51 +1198,310 @@ ${cspMeta}
           await startFromPosition(positionSeconds, false);
           return;
         }
-        const from = transport === 'ended' ? 0 : positionSeconds;
-        const countIn = transport === 'stopped' && from === 0 && countInEnabled;
+        const from = normalizedSeekTarget(transport === 'ended' ? 0 : positionSeconds);
+        const countIn = transport === 'stopped' && countInEnabled && (practiceEnabled || from === 0);
         await startFromPosition(from, countIn);
+      }
+
+      function rescheduleAtPosition(scoreSeconds) {
+        const target = normalizedSeekTarget(scoreSeconds);
+        positionSeconds = target;
+        scoreAnchorSeconds = target;
+        overlayVisible = true;
+        if (transport === 'playing' || transport === 'counting-in') {
+          clearScheduler();
+          stopVisualLoop();
+          cancelScheduledNodes();
+          if (!audioContext) {
+            transport = 'stopped';
+            updatePlaybackUi();
+            return;
+          }
+          scoreAnchorAudioTime = audioContext.currentTime + 0.025;
+          transport = 'playing';
+          setSchedulerCursor(target, scoreAnchorAudioTime);
+          startScheduler();
+          startVisualLoop();
+        }
+        updatePlaybackUi();
       }
 
       function pausePlayback() {
         if (transport !== 'playing' && transport !== 'counting-in') return;
         positionSeconds = scoreTimeFromAudioClock();
         clearScheduler();
+        stopVisualLoop();
         cancelScheduledNodes();
         transport = 'paused';
+        overlayVisible = true;
         updatePlaybackUi();
       }
 
       function stopPlayback() {
         if (disposed) return;
         clearScheduler();
+        stopVisualLoop();
         cancelScheduledNodes();
-        positionSeconds = 0;
-        scoreAnchorSeconds = 0;
+        positionSeconds = loopRange ? loopRange.startSeconds : 0;
+        scoreAnchorSeconds = positionSeconds;
+        setSchedulerCursor(positionSeconds, 0);
         transport = 'stopped';
+        overlayVisible = false;
         updatePlaybackUi();
       }
 
       async function seekTo(value) {
         if (!playbackAvailable || disposed) return;
-        const target = clampScoreTime(Number(value));
+        const target = normalizedSeekTarget(Number(value));
         const wasPlaying = transport === 'playing' || transport === 'counting-in';
         scrubbing = false;
         if (wasPlaying) {
-          clearScheduler();
-          cancelScheduledNodes();
-          await startFromPosition(target, false);
+          rescheduleAtPosition(target);
           return;
         }
         positionSeconds = target;
         if (transport === 'ended' && target < playbackDuration) transport = 'stopped';
+        overlayVisible = true;
         updatePlaybackUi();
+      }
+
+      function currentScorePosition() {
+        return transport === 'playing' || transport === 'counting-in'
+          ? scoreTimeFromAudioClock()
+          : positionSeconds;
+      }
+
+      function loopRangeFromPoints(startPoint, endPoint) {
+        if (!startPoint || !endPoint || !Number.isFinite(startPoint.scoreSeconds) || !Number.isFinite(endPoint.scoreSeconds)) return null;
+        if (endPoint.scoreSeconds <= startPoint.scoreSeconds) return null;
+        return {
+          startPoint: { occurrenceIndex: startPoint.occurrenceIndex, scoreSeconds: startPoint.scoreSeconds },
+          endPoint: { occurrenceIndex: endPoint.occurrenceIndex, scoreSeconds: endPoint.scoreSeconds },
+          startSeconds: startPoint.scoreSeconds,
+          endSeconds: endPoint.scoreSeconds
+        };
+      }
+
+      function commitLoopState(mode, range, notice) {
+        const current = currentScorePosition();
+        const wasPlaying = transport === 'playing' || transport === 'counting-in';
+        let target = current;
+        if (range && (current < range.startSeconds || current >= range.endSeconds)) target = range.startSeconds;
+        loopMode = mode;
+        loopRange = range;
+        if (mode !== 'ab') {
+          abStartPoint = null;
+          abEndPoint = null;
+        }
+        if (practiceLoopSelect) practiceLoopSelect.value = mode;
+        if (wasPlaying) {
+          rescheduleAtPosition(target);
+        } else {
+          positionSeconds = target;
+          scoreAnchorSeconds = target;
+          if (transport === 'ended' && target < playbackDuration) transport = 'stopped';
+          updatePlaybackUi();
+        }
+        if (notice) announcePractice(notice);
+      }
+
+      function setLoopMode(mode) {
+        if (!practiceEnabled || disposed) return;
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        if (mode === 'off') {
+          commitLoopState('off', null, audioLabels.practiceLoopCleared);
+          return;
+        }
+        if (mode === 'ab') {
+          const range = loopRangeFromPoints(abStartPoint, abEndPoint);
+          commitLoopState('ab', range, range ? audioLabels.practiceLoopSet : '');
+          if (!range) announcePractice(audioLabels.practiceARequired);
+          return;
+        }
+
+        const current = currentScorePosition();
+        const currentOccurrence = occurrenceAtScoreTime(current);
+        if (!currentOccurrence) return;
+        const occurrences = playbackOccurrences;
+        const currentIndex = occurrences.findIndex(item => item.occurrenceIndex === currentOccurrence.occurrenceIndex);
+        if (currentIndex < 0) return;
+        let firstIndex = currentIndex;
+        let lastIndex = currentIndex;
+        if (mode === 'section') {
+          const sectionName = typeof currentOccurrence.sectionName === 'string' ? currentOccurrence.sectionName : '';
+          if (!sectionName.trim()) {
+            if (practiceLoopSelect) practiceLoopSelect.value = loopMode;
+            announcePractice(audioLabels.practiceUnnamedSection);
+            return;
+          }
+          while (firstIndex > 0 && occurrences[firstIndex - 1].sectionName === sectionName) firstIndex--;
+          while (lastIndex + 1 < occurrences.length && occurrences[lastIndex + 1].sectionName === sectionName) lastIndex++;
+        }
+        const first = occurrences[firstIndex];
+        const last = occurrences[lastIndex];
+        const startPoint = { occurrenceIndex: first.occurrenceIndex, scoreSeconds: first.startSeconds };
+        const endPoint = { occurrenceIndex: last.occurrenceIndex, scoreSeconds: last.startSeconds + last.durationSeconds };
+        const range = loopRangeFromPoints(startPoint, endPoint);
+        if (range) commitLoopState(mode, range, audioLabels.practiceLoopSet);
+      }
+
+      function setLoopStart() {
+        if (!practiceEnabled || disposed) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        const current = currentScorePosition();
+        const startPoint = pointAtScoreTime(current);
+        const wasPlaying = transport === 'playing' || transport === 'counting-in';
+        loopMode = 'ab';
+        abStartPoint = startPoint;
+        abEndPoint = null;
+        loopRange = null;
+        if (practiceLoopSelect) practiceLoopSelect.value = 'ab';
+        if (wasPlaying) rescheduleAtPosition(current);
+        else updatePlaybackUi();
+        announcePractice(audioLabels.practiceASet);
+      }
+
+      function setLoopEnd() {
+        if (!practiceEnabled || disposed) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        if (!abStartPoint) {
+          announcePractice(audioLabels.practiceARequired);
+          return;
+        }
+        const endPoint = pointAtScoreTime(currentScorePosition());
+        if (!endPoint || endPoint.scoreSeconds <= abStartPoint.scoreSeconds) {
+          announcePractice(audioLabels.practiceInvalidEnd);
+          return;
+        }
+        const range = loopRangeFromPoints(abStartPoint, endPoint);
+        if (!range) {
+          announcePractice(audioLabels.practiceInvalidEnd);
+          return;
+        }
+        abEndPoint = endPoint;
+        commitLoopState('ab', range, audioLabels.practiceLoopSet);
+      }
+
+      function clearPracticeLoop() {
+        if (!practiceEnabled || disposed) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        commitLoopState('off', null, audioLabels.practiceLoopCleared);
+      }
+
+      function announcePractice(message) {
+        setPlaybackError(message || '');
+        setPracticeNotice(message || '');
+      }
+
+      function togglePractice() {
+        if (disposed) return;
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        const wasPlaying = transport === 'playing' || transport === 'counting-in';
+        const current = currentScorePosition();
+        practiceEnabled = !practiceEnabled;
+        if (!practiceEnabled) {
+          loopMode = 'off';
+          abStartPoint = null;
+          abEndPoint = null;
+          loopRange = null;
+        }
+        persistWebviewState();
+        if (wasPlaying) rescheduleAtPosition(current);
+        else updatePlaybackUi();
+        announcePractice('');
+      }
+
+      function setPracticeSpeed(value) {
+        if (!practiceEnabled || disposed) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return;
+        const next = Math.max(25, Math.min(200, Math.round(numeric / 5) * 5));
+        if (next === practiceSpeed) return;
+        const current = currentScorePosition();
+        practiceSpeed = next;
+        persistWebviewState();
+        if (transport === 'playing' || transport === 'counting-in') rescheduleAtPosition(current);
+        else updatePlaybackUi();
+        announcePractice('');
+      }
+
+      function toggleFollow() {
+        if (!practiceEnabled || disposed) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        followEnabled = !followEnabled;
+        persistWebviewState();
+        updatePracticeUi();
+      }
+
+      function performPlaybackAction(action) {
+        if (!playbackAvailable && action !== 'stop') {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        if (action === 'togglePlayPause') {
+          if (transport === 'playing' || transport === 'counting-in') pausePlayback();
+          else void playOrResume();
+          return;
+        }
+        if (action === 'stop') {
+          stopPlayback();
+          return;
+        }
+        if (action === 'practiceToggle') {
+          togglePractice();
+          return;
+        }
+        if (!playbackAvailable) {
+          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
+          return;
+        }
+        if (!practiceEnabled) {
+          announcePractice(audioLabels.practiceEnableFirst);
+          return;
+        }
+        if (action === 'practiceSetLoopStart') setLoopStart();
+        else if (action === 'practiceSetLoopEnd') setLoopEnd();
+        else if (action === 'practiceClearLoop') clearPracticeLoop();
+        else if (action === 'practiceSlower') setPracticeSpeed(practiceSpeed - 5);
+        else if (action === 'practiceFaster') setPracticeSpeed(practiceSpeed + 5);
       }
 
       function disposePlayback() {
         if (disposed) return;
         disposed = true;
         clearScheduler();
+        stopVisualLoop();
         cancelScheduledNodes();
+        removeScoreOverlay();
         const contextToClose = audioContext;
         audioContext = null;
         masterGain = null;
@@ -832,6 +1514,47 @@ ${cspMeta}
       if (playBtn) playBtn.addEventListener('click', playOrResume);
       if (pauseBtn) pauseBtn.addEventListener('click', pausePlayback);
       if (stopBtn) stopBtn.addEventListener('click', stopPlayback);
+      if (practiceToggle) practiceToggle.addEventListener('click', togglePractice);
+      if (practiceSpeedSelect) {
+        practiceSpeedSelect.addEventListener('change', () => setPracticeSpeed(practiceSpeedSelect.value));
+      }
+      if (practiceLoopSelect) {
+        practiceLoopSelect.addEventListener('change', () => setLoopMode(practiceLoopSelect.value));
+      }
+      if (practiceSetAButton) practiceSetAButton.addEventListener('click', setLoopStart);
+      if (practiceSetBButton) practiceSetBButton.addEventListener('click', setLoopEnd);
+      if (practiceClearButton) practiceClearButton.addEventListener('click', clearPracticeLoop);
+      if (practiceFollowButton) practiceFollowButton.addEventListener('click', toggleFollow);
+      window.addEventListener('message', (event) => {
+        const message = event && event.data;
+        if (message && message.command === 'playbackAction' && typeof message.action === 'string') {
+          performPlaybackAction(message.action);
+        }
+      });
+      const disableFollowForManualNavigation = () => {
+        if (!practiceEnabled || !followEnabled || disposed) return;
+        followEnabled = false;
+        followProgrammaticTarget = null;
+        persistWebviewState();
+        updatePracticeUi();
+      };
+      window.addEventListener('wheel', disableFollowForManualNavigation, { passive: true });
+      window.addEventListener('touchmove', disableFollowForManualNavigation, { passive: true });
+      window.addEventListener('keydown', (event) => {
+        const targetTag = String(event && event.target && event.target.tagName || '').toUpperCase();
+        if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(targetTag)) return;
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+          disableFollowForManualNavigation();
+        }
+      });
+      window.addEventListener('scroll', () => {
+        if (followProgrammaticTarget !== null && Math.abs((Number(window.scrollY) || 0) - followProgrammaticTarget) < 2) {
+          followProgrammaticTarget = null;
+          return;
+        }
+        if (followProgrammaticTarget !== null) followProgrammaticTarget = null;
+        disableFollowForManualNavigation();
+      }, { passive: true });
       if (seekSlider) {
         seekSlider.addEventListener('pointerdown', () => { scrubbing = true; });
         seekSlider.addEventListener('keydown', () => { scrubbing = true; });
@@ -870,6 +1593,7 @@ ${cspMeta}
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
+        updateScoreOverlay();
         modeButtons.forEach(btn => {
           btn.classList.toggle('active', btn.getAttribute('data-mode') === currentMode);
         });
@@ -969,13 +1693,27 @@ ${cspMeta}
 }
 
 function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtmlData {
-  const labels = { play: msgs.uiPlay, resume: msgs.uiResume, audioUnavailable: msgs.uiPlaybackAudioUnavailable };
+  const labels = {
+    play: msgs.uiPlay,
+    resume: msgs.uiResume,
+    audioUnavailable: msgs.uiPlaybackAudioUnavailable,
+    practiceMeasure: msgs.uiPracticeMeasure,
+    practiceOccurrence: msgs.uiPracticeOccurrence,
+    practiceUnavailable: msgs.uiPracticeUnavailable,
+    practiceEnableFirst: msgs.uiPracticeEnableFirst,
+    practiceARequired: msgs.uiPracticeARequired,
+    practiceInvalidEnd: msgs.uiPracticeInvalidEnd,
+    practiceUnnamedSection: msgs.uiPracticeUnnamedSection,
+    practiceASet: msgs.uiPracticeASet,
+    practiceLoopSet: msgs.uiPracticeLoopSet,
+    practiceLoopCleared: msgs.uiPracticeLoopCleared
+  };
   const result = buildPlaybackTimeline(score);
   if (!result.ok) {
     const error = result.code === 'invalidPlayOrder'
       ? msgs.uiPlaybackInvalidOrder
       : msgs.uiPlaybackUnresolvedTempo;
-    return { available: false, durationSeconds: 0, events: [], countInDurationSeconds: 0, countInClicks: [], labels, error };
+    return { available: false, durationSeconds: 0, events: [], occurrences: [], countInDurationSeconds: 0, countInClicks: [], labels, error };
   }
 
   const { timeline } = result;
@@ -984,6 +1722,7 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
       available: false,
       durationSeconds: 0,
       events: [],
+      occurrences: [],
       countInDurationSeconds: 0,
       countInClicks: [],
       labels,
@@ -999,11 +1738,24 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
     timeSeconds: fnum(beat) * 60 / first.tempoBpm,
     accent: groupIndex === 0
   }));
+  const occurrences: PlaybackHtmlOccurrence[] = timeline.occurrences.map(occurrence => ({
+    occurrenceIndex: occurrence.occurrenceIndex,
+    measureIndex: occurrence.measureIndex,
+    ...(occurrence.sectionName === undefined ? {} : { sectionName: occurrence.sectionName }),
+    startSeconds: occurrence.startSeconds,
+    durationSeconds: occurrence.durationSeconds,
+    countInDurationSeconds: fnum(measureBeats(occurrence.timeSignature)) * 60 / occurrence.tempoBpm,
+    countInClicks: beamGroupStarts(occurrence.timeSignature).map((beat, groupIndex) => ({
+      timeSeconds: fnum(beat) * 60 / occurrence.tempoBpm,
+      accent: groupIndex === 0
+    }))
+  }));
 
   return {
     available: true,
     durationSeconds: timeline.durationSeconds,
     events: timeline.events.map(event => ({ ...event, midiNotes: playbackEventMidiNotes(event, effectiveCapo) })),
+    occurrences,
     countInDurationSeconds,
     countInClicks,
     labels

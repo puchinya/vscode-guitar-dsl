@@ -59,6 +59,32 @@ export interface Messages {
   uiPlaybackUnresolvedTempo: string;
   uiPlaybackEmpty: string;
   uiPlaybackAudioUnavailable: string;
+  uiPractice: string;
+  uiPracticeTitle: string;
+  uiPracticeSpeed: string;
+  uiPracticeLoop: string;
+  uiPracticeLoopOff: string;
+  uiPracticeLoopMeasure: string;
+  uiPracticeLoopSection: string;
+  uiPracticeLoopAB: string;
+  uiPracticeA: string;
+  uiPracticeB: string;
+  uiPracticeSetA: string;
+  uiPracticeSetB: string;
+  uiPracticeClear: string;
+  uiPracticeFollow: string;
+  uiPracticeFollowTitle: string;
+  uiPracticeMeasure: string;
+  uiPracticeOccurrence: string;
+  uiPracticeUnavailable: string;
+  uiPracticeEnableFirst: string;
+  uiPracticeARequired: string;
+  uiPracticeInvalidEnd: string;
+  uiPracticeUnnamedSection: string;
+  uiPracticeASet: string;
+  uiPracticeLoopSet: string;
+  uiPracticeLoopCleared: string;
+  msgPlaybackNoPreview: string;
 
   // Onboarding sidebar (Activity Bar "Start Here" view) and onboarding commands
   sidebarGetStarted: string;
@@ -185,6 +211,32 @@ export const MESSAGES_JA: Messages = {
   uiPlaybackUnresolvedTempo: '再生位置のテンポを解決できないため再生できません。',
   uiPlaybackEmpty: '再生する小節がありません。',
   uiPlaybackAudioUnavailable: 'この環境では Web Audio を利用できません。',
+  uiPractice: '練習',
+  uiPracticeTitle: '練習モードを切り替え',
+  uiPracticeSpeed: '速度',
+  uiPracticeLoop: 'ループ',
+  uiPracticeLoopOff: 'オフ',
+  uiPracticeLoopMeasure: '小節',
+  uiPracticeLoopSection: 'セクション',
+  uiPracticeLoopAB: 'A–B',
+  uiPracticeA: 'A',
+  uiPracticeB: 'B',
+  uiPracticeSetA: 'ループ開始点 A を設定',
+  uiPracticeSetB: 'ループ終了点 B を設定',
+  uiPracticeClear: 'クリア',
+  uiPracticeFollow: '追従',
+  uiPracticeFollowTitle: '再生位置への追従を切り替え',
+  uiPracticeMeasure: '小節',
+  uiPracticeOccurrence: '出現',
+  uiPracticeUnavailable: '再生できないため練習操作を利用できません。',
+  uiPracticeEnableFirst: '先に練習モードをオンにしてください。',
+  uiPracticeARequired: '先に A を設定してください。',
+  uiPracticeInvalidEnd: 'B は A より後に設定してください。',
+  uiPracticeUnnamedSection: 'この小節にセクション名がないため、セクションループを設定できません。',
+  uiPracticeASet: 'A を設定しました。B を設定してください。',
+  uiPracticeLoopSet: 'ループを設定しました。',
+  uiPracticeLoopCleared: 'ループを解除しました。',
+  msgPlaybackNoPreview: '再生操作には開いている GuitarDSL Preview が必要です。',
 
   sidebarGetStarted: 'はじめる',
   sidebarCurrentFile: '現在のファイル',
@@ -353,6 +405,32 @@ export const MESSAGES_EN: Messages = {
   uiPlaybackUnresolvedTempo: 'Playback is unavailable because a played measure has no valid tempo.',
   uiPlaybackEmpty: 'There are no measures to play.',
   uiPlaybackAudioUnavailable: 'Web Audio is unavailable in this environment.',
+  uiPractice: 'Practice',
+  uiPracticeTitle: 'Toggle Practice Mode',
+  uiPracticeSpeed: 'Speed',
+  uiPracticeLoop: 'Loop',
+  uiPracticeLoopOff: 'Off',
+  uiPracticeLoopMeasure: 'Measure',
+  uiPracticeLoopSection: 'Section',
+  uiPracticeLoopAB: 'A–B',
+  uiPracticeA: 'A',
+  uiPracticeB: 'B',
+  uiPracticeSetA: 'Set loop start A',
+  uiPracticeSetB: 'Set loop end B',
+  uiPracticeClear: 'Clear',
+  uiPracticeFollow: 'Follow',
+  uiPracticeFollowTitle: 'Toggle follow playback position',
+  uiPracticeMeasure: 'Measure',
+  uiPracticeOccurrence: 'Occurrence',
+  uiPracticeUnavailable: 'Practice controls are unavailable because playback cannot start.',
+  uiPracticeEnableFirst: 'Turn on Practice Mode first.',
+  uiPracticeARequired: 'Set A before setting B.',
+  uiPracticeInvalidEnd: 'B must be after A.',
+  uiPracticeUnnamedSection: 'This measure has no section name, so a section loop cannot be set.',
+  uiPracticeASet: 'A is set. Set B to complete the loop.',
+  uiPracticeLoopSet: 'Loop set.',
+  uiPracticeLoopCleared: 'Loop cleared.',
+  msgPlaybackNoPreview: 'Open a GuitarDSL Preview to use playback commands.',
 
   sidebarGetStarted: 'Get Started',
   sidebarCurrentFile: 'Current File',
