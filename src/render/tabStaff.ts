@@ -49,13 +49,14 @@ export function renderTabStaff(
   const lineYs = Array.from({ length: TAB_LINE_COUNT }, (_unused, index) => index * lineGap);
   const restStaffLines = Array.from({ length: 5 }, (_unused, index) => lineGap / 2 + index * lineGap);
   const restMidY = tabBottom / 2;
-  const xStart = TAB_STAFF_LEFT_X;
+  const staffLeftX = TAB_STAFF_LEFT_X;
+  const contentStartX = ctx.startX;
   const xEnd = ctx.totalWidth - 5;
   let out = '';
 
   for (let stringIndex = 0; stringIndex < lineYs.length; stringIndex++) {
     const y = lineYs[stringIndex];
-    out += `<line class="tab-string-line" data-string="${stringIndex + 1}" x1="${fmt(xStart)}" y1="${fmt(y)}" x2="${fmt(xEnd)}" y2="${fmt(y)}" stroke="#000" stroke-width="0.9"/>`;
+    out += `<line class="tab-string-line" data-string="${stringIndex + 1}" x1="${fmt(staffLeftX)}" y1="${fmt(y)}" x2="${fmt(xEnd)}" y2="${fmt(y)}" stroke="#000" stroke-width="0.9"/>`;
   }
   out += `<g class="tab-clef"><text class="tab-clef-letter" x="37" y="11" font-size="10.5" font-weight="700" text-anchor="middle">T</text><text class="tab-clef-letter" x="37" y="30" font-size="10.5" font-weight="700" text-anchor="middle">A</text><text class="tab-clef-letter" x="37" y="49" font-size="10.5" font-weight="700" text-anchor="middle">B</text></g>`;
   out += renderTimeSignature(prefix, top, 10);
@@ -163,8 +164,8 @@ export function renderTabStaff(
     }
   }
 
-  out += renderBeatEffectSpans(rowEntries, allEntries, rowPositionByBeat, xStart, xEnd, tabBottom + 6);
-  out += renderTabConnections(ctx, measures, rowPositionByBeat, allEntries, lineYs, xStart, xEnd);
+  out += renderBeatEffectSpans(rowEntries, allEntries, rowPositionByBeat, staffLeftX, xEnd, tabBottom + 6);
+  out += renderTabConnections(ctx, measures, rowPositionByBeat, allEntries, lineYs, contentStartX, xEnd);
   out += renderTabLyrics(rowEntries, geometry);
   return `<g class="tab-staff">${out}</g>`;
 }
@@ -331,7 +332,7 @@ function renderTabConnections(
   rowPositions: Map<string, BeatPosition>,
   allEntries: { measureIndex: number; beatIndex: number; beat: TabBeat }[],
   lineYs: number[],
-  xStart: number,
+  contentStartX: number,
   xEnd: number
 ): string {
   let out = '';
@@ -390,7 +391,7 @@ function renderTabConnections(
         if (tieResolution?.status === 'valid' && tieResolution.targetIndex === currentIndex) {
           const targetNote = current.beat.notes.find(candidate => candidate.string === note.string);
           const toEdge = position.x - (targetNote ? tabMarkHalfWidth(targetNote) : 0) - NUMBER_GAP;
-          out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(xStart + 3, toEdge, y - 5, false)}</g>`;
+          out += `<g class="tab-tie" data-string="${note.string}">${renderTieArc(contentStartX + 3, toEdge, y - 5, false)}</g>`;
         }
         const hasConnection = note.effects.some(effect => ['hammer', 'pull', 'slide', 'gliss'].includes(effect.name));
         const connectionResolution = hasConnection ? resolveTabLinkTarget(allBeats, sourceIndex, note, 'connection') : undefined;
@@ -402,9 +403,9 @@ function renderTabConnections(
           const targetFret = targetNote?.fret ?? note.fret ?? 0;
           const y1 = targetFret > (note.fret ?? 0) ? y + 3 : targetFret < (note.fret ?? 0) ? y - 3 : y;
           const y2 = targetFret > (note.fret ?? 0) ? y - 3 : targetFret < (note.fret ?? 0) ? y + 3 : y;
-          if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, xStart + 3, toEdge, y - 6, false);
-          else if (effect.name === 'slide') out += renderSlide(xStart + 3, y1, toEdge, y2);
-          else out += renderGliss(xStart + 3, y1, toEdge, y2);
+          if (effect.name === 'hammer' || effect.name === 'pull') out += renderHammerPull(effect.name, contentStartX + 3, toEdge, y - 6, false);
+          else if (effect.name === 'slide') out += renderSlide(contentStartX + 3, y1, toEdge, y2);
+          else out += renderGliss(contentStartX + 3, y1, toEdge, y2);
         }
       }
     }

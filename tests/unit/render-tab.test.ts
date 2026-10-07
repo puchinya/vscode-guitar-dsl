@@ -268,8 +268,32 @@ describe('TAB rendering and layout', () => {
       'tab: | 6f3{hammer}~/1 | 6f3/1 |'
     ].join('\n'));
     const svg = renderContinuousSvg(score);
+    const incomingStartX = getRenderContext(score).startX + 3;
+    const tieGroups = [...svg.matchAll(/<g class="tab-tie"[^>]*>(.*?)<\/g>/g)];
+    const hammerGroups = [...svg.matchAll(/<g class="technique-hammer">([\s\S]*?)<\/g>/g)];
     assert.strictEqual((svg.match(/class="tab-tie"/g) ?? []).length, 2);
     assert.strictEqual((svg.match(/class="technique-hammer"/g) ?? []).length, 2);
+    assert.strictEqual(tieGroups.length, 2);
+    assert.strictEqual(hammerGroups.length, 2);
+    const tieStartX = Number(tieGroups[1][1].match(/<path d="M ([\d.-]+),/)?.[1]);
+    const arcStartX = (group: string) => Number(group.match(/<path class="technique-arc" d="M ([\d.-]+),/)?.[1]);
+    assert.ok(Math.abs(tieStartX - incomingStartX) < 0.02,
+      'incoming tie starts at the musical content boundary after the TAB prefix');
+    assert.ok(Math.abs(arcStartX(hammerGroups[1][1]) - incomingStartX) < 0.02,
+      'incoming H/P arc starts at the musical content boundary after the TAB prefix');
+    assert.ok(tieStartX > 28, 'incoming tie does not start inside the clef/time-signature prefix');
+
+    const slideScore = parseGuitarDsl([
+      'measures_per_row: 1',
+      '| C | D |',
+      'tab: | 3f5{slide}/1 | 3f7/1 |'
+    ].join('\n'));
+    const slideSvg = renderContinuousSvg(slideScore);
+    const slides = [...slideSvg.matchAll(/<line class="technique-slide" x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/g)];
+    assert.strictEqual(slides.length, 2);
+    assert.ok(Math.abs(Number(slides[1][1]) - (getRenderContext(slideScore).startX + 3)) < 0.02,
+      'incoming slide starts after the TAB prefix');
+    assert.ok(Number(slides[1][4]) < Number(slides[1][2]), 'incoming ascending slide keeps its diagonal direction');
   });
 
   it('does not draw an invalid tie across an intervening sounding beat', () => {
