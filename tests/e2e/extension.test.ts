@@ -289,6 +289,71 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
 
 
+suite('Practice Mode host commands (Issue #93)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const previewCapo = () => require('../../previewCapo');
+  const commandActions = [
+    ['guitardsl.playback.togglePlayPause', 'togglePlayPause'],
+    ['guitardsl.playback.stop', 'stop'],
+    ['guitardsl.practice.toggle', 'practiceToggle'],
+    ['guitardsl.practice.setLoopStart', 'practiceSetLoopStart'],
+    ['guitardsl.practice.setLoopEnd', 'practiceSetLoopEnd'],
+    ['guitardsl.practice.clearLoop', 'practiceClearLoop'],
+    ['guitardsl.practice.slower', 'practiceSlower'],
+    ['guitardsl.practice.faster', 'practiceFaster']
+  ] as const;
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  async function waitFor(check: () => boolean, message: string): Promise<void> {
+    for (let i = 0; i < 50; i++) {
+      if (check()) return;
+      await sleep(100);
+    }
+    assert.fail(message);
+  }
+  const previewTabs = () => vscode.window.tabGroups.all.flatMap(group => group.tabs)
+    .filter(tab => tab.input instanceof vscode.TabInputWebview && tab.label.includes('GuitarDSL'));
+
+  test('E2E-PM01 no-Preview warning and all eight command-to-action mappings', async () => {
+    await closeAllEditors();
+    const probe = previewCapo().previewLifecycleProbe;
+    const previousGeneration = probe.generation;
+    if (previousGeneration > 0) {
+      await waitFor(() => probe.disposedGeneration === previousGeneration, 'previous Preview should be disposed');
+    }
+    assert.strictEqual(previewTabs().length, 0, 'start without a Preview');
+    assert.strictEqual(probe.lastPlaybackAction, undefined, 'disposing the prior Preview clears the observation');
+
+    const window = vscode.window as unknown as { showWarningMessage: (message: string) => unknown };
+    const originalWarning = window.showWarningMessage;
+    const warnings: string[] = [];
+    try {
+      window.showWarningMessage = async (message: string) => { warnings.push(message); return undefined; };
+      for (const [command] of commandActions) await vscode.commands.executeCommand(command);
+      assert.strictEqual(warnings.length, commandActions.length, 'every host command warns when Preview is absent');
+      assert.strictEqual(probe.generation, previousGeneration, 'Practice commands do not open or render Preview');
+      assert.strictEqual(probe.lastPlaybackAction, undefined, 'commands without Preview send no playback message');
+      assert.strictEqual(previewTabs().length, 0, 'no Preview webview tab is opened');
+    } finally {
+      window.showWarningMessage = originalWarning;
+    }
+
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: '| C |\nmel: | c4/1 |\n' });
+    await showAndFocus(doc, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => probe.generation > previousGeneration && probe.currentDocumentUri === doc.uri.toString(),
+      'Preview should be created for the current GuitarDSL document');
+    assert.strictEqual(probe.lastPlaybackAction, undefined, 'creating Preview starts with a cleared action observation');
+
+    for (const [command, expectedAction] of commandActions) {
+      await vscode.commands.executeCommand(command);
+      assert.strictEqual(probe.lastPlaybackAction, expectedAction, `${command} posts action ${expectedAction}`);
+    }
+    await closeAllEditors();
+    await waitFor(() => probe.disposedGeneration === probe.generation, 'closing Preview resets the action observation');
+    assert.strictEqual(probe.lastPlaybackAction, undefined);
+  });
+});
+
 suite('Capo / playability (Issue #62)', () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const previewCapo = () => require('../../previewCapo');

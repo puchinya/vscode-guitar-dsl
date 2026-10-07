@@ -24,7 +24,8 @@ export const effectiveDslProbe: { previewInput?: string; pdfInput?: string } = {
 export const previewLifecycleProbe = {
   generation: 0,
   currentDocumentUri: undefined as string | undefined,
-  disposedGeneration: undefined as number | undefined
+  disposedGeneration: undefined as number | undefined,
+  lastPlaybackAction: undefined as string | undefined
 };
 
 export class PreviewCapoController {

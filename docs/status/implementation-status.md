@@ -195,9 +195,9 @@
 - **手動 GUI smoke**: macOS arm64 / VS Code 1.139.1 Extension Development Host で Play・Pause・Resume・Stop・シーク、Count-in 後の進行、Resume で Count-in が再実行されないこと、再生中の Metronome 切替、ソース編集後に停止して再構築後は先頭になることを確認。Windows / Linux は未検証。
 
 ### 2.2C Practice Mode (Issue #93)
-- **自動検証**: `npm test` で unit 969 件、E2E 55 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile:all` と `npm run vscode:prepublish` も PASS。
-- **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Preview 幅約 365 CSS px で各操作列が独立して横スクロールし、ヘルプと PDF 保存が表示されたままになることも確認。Windows / Linux は未検証。
-- **画面証拠**: [Practice OFF の再生](evidence/issue-93/practice-off-playing.png)、[速度 75% と小節ループ](evidence/issue-93/practice-loop-playing.png)、[狭幅でスクロールした操作列](evidence/issue-93/narrow-scroll.png)。
+- **自動検証**: `npm test` で unit 979 件、E2E 56 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile` と `npm run vscode:prepublish` も PASS。
+- **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Pause後にSingle PageからWebへ切り替え、再生位置と停止状態を保ったままハイライトと再生位置表示が即時に移動することも確認。Preview 幅約 365 CSS px で各操作列が独立して横スクロールし、ヘルプと PDF 保存が表示されたままになることも確認。Windows / Linux は未検証。
+- **画面証拠**: [Practice OFF の再生](evidence/issue-93/practice-off-playing.png)、[速度 75% と小節ループ](evidence/issue-93/practice-loop-playing.png)、[狭幅でスクロールした操作列](evidence/issue-93/narrow-scroll.png)、[Pause後のSingle→Web切替](evidence/issue-93/pause-single-web.png)。
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)

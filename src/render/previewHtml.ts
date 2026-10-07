@@ -664,8 +664,8 @@ ${cspMeta}
       let scrubbing = false;
       let disposed = false;
       let loopMode = 'off';
-      let loopStartPoint = null;
-      let loopEndPoint = null;
+      let abStartPoint = null;
+      let abEndPoint = null;
       let loopRange = null;
       let practiceNotice = '';
       let overlayVisible = false;
@@ -773,7 +773,11 @@ ${cspMeta}
         const bandBottom = viewportHeight * 0.8;
         if (rect.top >= bandTop && rect.bottom <= bandBottom) return;
         const currentScroll = Number(window.scrollY) || 0;
-        const target = Math.max(0, currentScroll + (rect.top + rect.bottom) / 2 - viewportHeight / 2);
+        const requestedTarget = Math.max(0, currentScroll + (rect.top + rect.bottom) / 2 - viewportHeight / 2);
+        const scrollRoot = document.scrollingElement || document.documentElement || document.body;
+        const scrollHeight = Number(scrollRoot && scrollRoot.scrollHeight);
+        const maxScroll = Math.max(0, (Number.isFinite(scrollHeight) ? scrollHeight : 0) - viewportHeight);
+        const target = Math.min(maxScroll, requestedTarget);
         if (Math.abs(target - currentScroll) < 1) return;
         followProgrammaticTarget = target;
         window.scrollTo(0, target);
@@ -1278,15 +1282,17 @@ ${cspMeta}
         };
       }
 
-      function commitLoopState(mode, range, startPoint, endPoint, notice) {
+      function commitLoopState(mode, range, notice) {
         const current = currentScorePosition();
         const wasPlaying = transport === 'playing' || transport === 'counting-in';
         let target = current;
         if (range && (current < range.startSeconds || current >= range.endSeconds)) target = range.startSeconds;
         loopMode = mode;
         loopRange = range;
-        loopStartPoint = startPoint;
-        loopEndPoint = endPoint;
+        if (mode !== 'ab') {
+          abStartPoint = null;
+          abEndPoint = null;
+        }
         if (practiceLoopSelect) practiceLoopSelect.value = mode;
         if (wasPlaying) {
           rescheduleAtPosition(target);
@@ -1306,12 +1312,13 @@ ${cspMeta}
           return;
         }
         if (mode === 'off') {
-          commitLoopState('off', null, null, null, audioLabels.practiceLoopCleared);
+          commitLoopState('off', null, audioLabels.practiceLoopCleared);
           return;
         }
         if (mode === 'ab') {
-          commitLoopState('ab', loopRange, loopStartPoint, loopEndPoint, loopRange ? audioLabels.practiceLoopSet : '');
-          if (!loopRange) announcePractice(audioLabels.practiceARequired);
+          const range = loopRangeFromPoints(abStartPoint, abEndPoint);
+          commitLoopState('ab', range, range ? audioLabels.practiceLoopSet : '');
+          if (!range) announcePractice(audioLabels.practiceARequired);
           return;
         }
 
@@ -1338,7 +1345,7 @@ ${cspMeta}
         const startPoint = { occurrenceIndex: first.occurrenceIndex, scoreSeconds: first.startSeconds };
         const endPoint = { occurrenceIndex: last.occurrenceIndex, scoreSeconds: last.startSeconds + last.durationSeconds };
         const range = loopRangeFromPoints(startPoint, endPoint);
-        if (range) commitLoopState(mode, range, startPoint, endPoint, audioLabels.practiceLoopSet);
+        if (range) commitLoopState(mode, range, audioLabels.practiceLoopSet);
       }
 
       function setLoopStart() {
@@ -1354,8 +1361,8 @@ ${cspMeta}
         const startPoint = pointAtScoreTime(current);
         const wasPlaying = transport === 'playing' || transport === 'counting-in';
         loopMode = 'ab';
-        loopStartPoint = startPoint;
-        loopEndPoint = null;
+        abStartPoint = startPoint;
+        abEndPoint = null;
         loopRange = null;
         if (practiceLoopSelect) practiceLoopSelect.value = 'ab';
         if (wasPlaying) rescheduleAtPosition(current);
@@ -1372,21 +1379,22 @@ ${cspMeta}
           announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
           return;
         }
-        if (!loopStartPoint) {
+        if (!abStartPoint) {
           announcePractice(audioLabels.practiceARequired);
           return;
         }
         const endPoint = pointAtScoreTime(currentScorePosition());
-        if (!endPoint || endPoint.scoreSeconds <= loopStartPoint.scoreSeconds) {
+        if (!endPoint || endPoint.scoreSeconds <= abStartPoint.scoreSeconds) {
           announcePractice(audioLabels.practiceInvalidEnd);
           return;
         }
-        const range = loopRangeFromPoints(loopStartPoint, endPoint);
+        const range = loopRangeFromPoints(abStartPoint, endPoint);
         if (!range) {
           announcePractice(audioLabels.practiceInvalidEnd);
           return;
         }
-        commitLoopState('ab', range, loopStartPoint, endPoint, audioLabels.practiceLoopSet);
+        abEndPoint = endPoint;
+        commitLoopState('ab', range, audioLabels.practiceLoopSet);
       }
 
       function clearPracticeLoop() {
@@ -1394,7 +1402,7 @@ ${cspMeta}
           announcePractice(audioLabels.practiceEnableFirst);
           return;
         }
-        commitLoopState('off', null, null, null, audioLabels.practiceLoopCleared);
+        commitLoopState('off', null, audioLabels.practiceLoopCleared);
       }
 
       function announcePractice(message) {
@@ -1413,8 +1421,8 @@ ${cspMeta}
         practiceEnabled = !practiceEnabled;
         if (!practiceEnabled) {
           loopMode = 'off';
-          loopStartPoint = null;
-          loopEndPoint = null;
+          abStartPoint = null;
+          abEndPoint = null;
           loopRange = null;
         }
         persistWebviewState();
@@ -1585,6 +1593,7 @@ ${cspMeta}
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
+        updateScoreOverlay();
         modeButtons.forEach(btn => {
           btn.classList.toggle('active', btn.getAttribute('data-mode') === currentMode);
         });

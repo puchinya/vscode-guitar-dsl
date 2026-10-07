@@ -164,6 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (currentPanel) {
       currentPanel.reveal(vscode.ViewColumn.Beside);
     } else {
+      previewLifecycleProbe.lastPlaybackAction = undefined;
       currentPanel = vscode.window.createWebviewPanel(
         'guitardslPreview',
         msgs.previewTitle,
@@ -239,6 +240,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.onDidDispose(() => {
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
+        previewLifecycleProbe.lastPlaybackAction = undefined;
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();
@@ -253,6 +255,7 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showWarningMessage(msgs.msgPlaybackNoPreview);
       return;
     }
+    previewLifecycleProbe.lastPlaybackAction = action;
     currentPanel.webview.postMessage({ command: 'playbackAction', action });
   };
   context.subscriptions.push(

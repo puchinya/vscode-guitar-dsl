@@ -48,6 +48,27 @@ const SECTION_SCORE = [
   '| Am |'
 ].join('\n');
 
+const REPEATED_MEASURE_SCORE = [
+  'bpm: 120',
+  'arrangement {',
+  'Verse x2',
+  '}',
+  '[Verse]',
+  '| C |'
+].join('\n');
+
+const REPEATED_SECTION_SCORE = [
+  'bpm: 120',
+  'arrangement {',
+  'Verse x2',
+  'Chorus',
+  '}',
+  '[Verse]',
+  '| C |',
+  '[Chorus]',
+  '| G |'
+].join('\n');
+
 function createRuntime(score = PLAYABLE_SCORE, state?: unknown): FakePlaybackWebview {
   return createFakePlaybackWebview(compileGuitarDslToHtml(score), state);
 }
@@ -347,6 +368,30 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(restored.element('practice-speed').value, '80');
   });
 
+  it('T09a Practice speed scales score time and note duration at 50%, 100%, and 150%', async () => {
+    const firstEvent = createRuntime().playbackData.events.find((event: any) =>
+      event.timeSeconds === 0 && Array.isArray(event.midiNotes) && event.midiNotes.length > 0
+    );
+    assert.ok(firstEvent, 'fixture has a note at the score start');
+
+    for (const speed of [50, 100, 150]) {
+      const runtime = createRuntime();
+      await runtime.click('practice-toggle');
+      runtime.element('practice-speed').value = String(speed);
+      await runtime.change('practice-speed');
+      await runtime.click('btn-play');
+      runtime.advanceAudioTime(0.525);
+      runtime.runSchedulerTicks();
+
+      closeEnough(Number(runtime.element('playback-seek').value), 0.5 * speed / 100, 0.015);
+      assert.strictEqual(runtime.intervalCount, 1, 'speed keeps one scheduler');
+      const scoredNote = runtime.scheduledOscillators().find(node => Math.abs((node.startAt ?? Infinity) - 0.025) < 0.001);
+      assert.ok(scoredNote, `score note scheduled at ${speed}%`);
+      const actualDuration = (scoredNote!.stopAt ?? 0) - (scoredNote!.startAt ?? 0) - 0.002;
+      closeEnough(actualDuration, Number(firstEvent!.durationSeconds) / (speed / 100), 0.01);
+    }
+  });
+
   it('T10 A/B loop uses a half-open interval, rejects B at or before A, and wraps playback', async () => {
     const runtime = createRuntime();
     await runtime.click('practice-toggle');
@@ -381,6 +426,110 @@ describe('Preview production Webview runtime', () => {
     const wrappedPosition = Number(runtime.element('playback-seek').value);
     assert.ok(wrappedPosition >= 0.5 && wrappedPosition < 0.75, `wrapped position ${wrappedPosition} stays in [A, B)`);
     assert.strictEqual(runtime.intervalCount, 1);
+  });
+
+  it('T10a A/B points stay separate from Measure and Section loops, and invalid Section selection preserves the current loop', async () => {
+    for (const selection of [
+      { score: SECTION_SCORE, mode: 'measure', outside: 2.5 },
+      { score: SECTION_SCORE, mode: 'section', outside: 4.1 }
+    ]) {
+      const runtime = createRuntime(selection.score);
+      await runtime.click('practice-toggle');
+      runtime.setRange('playback-seek', 0.25);
+      await runtime.change('playback-seek');
+      await runtime.click('practice-set-a');
+      runtime.setRange('playback-seek', 0.75);
+      await runtime.change('playback-seek');
+      await runtime.click('practice-set-b');
+      assert.strictEqual(runtime.element('practice-loop').value, 'ab');
+
+      runtime.element('practice-loop').value = selection.mode;
+      await runtime.change('practice-loop');
+      assert.strictEqual(runtime.element('practice-loop').value, selection.mode, 'valid named loop selection succeeds');
+      runtime.element('practice-loop').value = 'ab';
+      await runtime.change('practice-loop');
+      runtime.setRange('playback-seek', selection.outside);
+      await runtime.change('playback-seek');
+      closeEnough(Number(runtime.element('playback-seek').value), selection.outside, 0.01,
+        `A/B mode must not inherit the prior ${selection.mode} range`);
+    }
+
+    const invalidSection = createRuntime(SECTION_SCORE);
+    await invalidSection.click('practice-toggle');
+    invalidSection.setRange('playback-seek', 2.1);
+    await invalidSection.change('playback-seek');
+    invalidSection.element('practice-loop').value = 'measure';
+    await invalidSection.change('practice-loop');
+    assert.strictEqual(invalidSection.element('practice-loop').value, 'measure');
+    invalidSection.element('practice-loop').value = 'section';
+    await invalidSection.change('practice-loop');
+    assert.strictEqual(invalidSection.element('practice-loop').value, 'measure', 'unnamed Section failure restores the prior mode');
+    invalidSection.setRange('playback-seek', 0.5);
+    await invalidSection.change('playback-seek');
+    closeEnough(Number(invalidSection.element('playback-seek').value), 2, 0.01, 'the existing Measure range is unchanged');
+  });
+
+  it('T10c Off, Clear, and Practice OFF clear all transient A/B points', async () => {
+    for (const clearAction of ['off', 'clear', 'practice-off'] as const) {
+      const runtime = createRuntime(SECTION_SCORE);
+      await runtime.click('practice-toggle');
+      runtime.setRange('playback-seek', 0.25);
+      await runtime.change('playback-seek');
+      await runtime.click('practice-set-a');
+      runtime.setRange('playback-seek', 0.75);
+      await runtime.change('playback-seek');
+      await runtime.click('practice-set-b');
+      assert.strictEqual(runtime.element('practice-loop').value, 'ab');
+
+      if (clearAction === 'off') {
+        runtime.element('practice-loop').value = 'off';
+        await runtime.change('practice-loop');
+      } else if (clearAction === 'clear') {
+        await runtime.click('practice-clear-loop');
+      } else {
+        await runtime.click('practice-toggle');
+        await runtime.click('practice-toggle');
+      }
+      runtime.element('practice-loop').value = 'ab';
+      await runtime.change('practice-loop');
+      runtime.setRange('playback-seek', 4.1);
+      await runtime.change('playback-seek');
+      closeEnough(Number(runtime.element('playback-seek').value), 4.1, 0.01,
+        `${clearAction} must not leave an A/B range available to restore`);
+    }
+  });
+
+  it('T10b Measure loop keeps the selected occurrence of a repeated source measure', async () => {
+    const runtime = createRuntime(REPEATED_MEASURE_SCORE);
+    const repeated = runtime.playbackData.occurrences.filter((occurrence: any) => occurrence.measureIndex === 0);
+    assert.strictEqual(repeated.length, 2);
+    assert.deepStrictEqual(repeated.map((occurrence: any) => occurrence.occurrenceIndex), [0, 1]);
+
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', repeated[1].startSeconds + 0.25);
+    await runtime.change('playback-seek');
+    runtime.element('practice-loop').value = 'measure';
+    await runtime.change('practice-loop');
+    await runtime.click('btn-stop');
+    closeEnough(Number(runtime.element('playback-seek').value), repeated[1].startSeconds, 0.01,
+      'Stop returns to the second occurrence, not the source measure’s first occurrence');
+  });
+
+  it('T11a Section loop spans the contiguous Verse x2 play-order occurrences only', async () => {
+    const runtime = createRuntime(REPEATED_SECTION_SCORE);
+    assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
+      ['Verse', 'Verse', 'Chorus']);
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', 2.1);
+    await runtime.change('playback-seek');
+    runtime.element('practice-loop').value = 'section';
+    await runtime.change('practice-loop');
+    runtime.setRange('playback-seek', 2.1);
+    await runtime.change('playback-seek');
+    closeEnough(Number(runtime.element('playback-seek').value), 2.1, 0.01, 'both contiguous Verse occurrences belong to the loop');
+    runtime.setRange('playback-seek', 4.1);
+    await runtime.change('playback-seek');
+    closeEnough(Number(runtime.element('playback-seek').value), 0, 0.01, 'the following Chorus is outside the Verse loop');
   });
 
   it('T11 named Section loop follows contiguous labels and loop points keep occurrence identity', async () => {
@@ -419,6 +568,52 @@ describe('Preview production Webview runtime', () => {
 
     await runtime.click('btn-stop');
     assert.strictEqual(runtime.scoreOverlayElementCount(), 0, 'Stop removes transient SVG overlay nodes');
+  });
+
+  it('T12a paused and ended score overlays move synchronously when display mode changes', async () => {
+    for (const transportState of ['paused', 'ended'] as const) {
+      const runtime = createRuntime();
+      await runtime.click('btn-play');
+      if (transportState === 'paused') {
+        runtime.advanceAudioTime(0.45);
+        runtime.runSchedulerTicks();
+        await runtime.click('btn-pause');
+      } else {
+        runtime.advanceAudioTime(runtime.playbackData.durationSeconds + 0.1);
+        runtime.runSchedulerTicks();
+      }
+      const heldPosition = Number(runtime.element('playback-seek').value);
+      const audioContextCount = runtime.audioContextCount;
+      assert.ok(runtime.scoreOverlayElementCount('page') >= 2, `${transportState} overlay starts in page SVG`);
+      assert.strictEqual(runtime.intervalCount, 0, `${transportState} transport has no scheduler`);
+      const pendingFrames = runtime.pendingAnimationFrameCount;
+
+      await runtime.clickDisplayMode('web');
+
+      assert.strictEqual(runtime.scoreOverlayElementCount('page'), 0, `${transportState} old page overlay is removed synchronously`);
+      assert.ok(runtime.scoreOverlayElementCount('web') >= 2, `${transportState} overlay is attached to Web SVG immediately`);
+      closeEnough(Number(runtime.element('playback-seek').value), heldPosition, 0.001, 'view change leaves playback position untouched');
+      assert.strictEqual(runtime.audioContextCount, audioContextCount, 'view change creates no audio context');
+      assert.strictEqual(runtime.intervalCount, 0, 'view change does not restart transport');
+      assert.strictEqual(runtime.pendingAnimationFrameCount, pendingFrames, 'overlay relocation does not wait for or schedule an animation frame');
+    }
+  });
+
+  it('T12b Follow stores the bottom-clamped target and manual scrolling still disables it', async () => {
+    const runtime = createRuntime();
+    await runtime.click('practice-toggle');
+    runtime.setScrollHeight(1000);
+    runtime.setAnchorRectTop(900);
+    await runtime.click('btn-play');
+
+    assert.strictEqual(runtime.scrollY, 200, 'scroll is clamped to scrollHeight - innerHeight');
+    assert.strictEqual(runtime.element('practice-follow').getAttribute('aria-pressed'), 'true',
+      'browser clamping is recognized as a programmatic Follow scroll');
+    assert.strictEqual((runtime.savedWebviewState as { followEnabled: boolean }).followEnabled, true);
+
+    runtime.manualScrollTo(150);
+    assert.strictEqual(runtime.element('practice-follow').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual((runtime.savedWebviewState as { followEnabled: boolean }).followEnabled, false);
   });
 
   it('T13 Practice count-in runs after a non-zero seek and holds the selected score position', async () => {

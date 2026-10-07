@@ -204,9 +204,13 @@ export interface FakePlaybackWebview {
   runSchedulerTicks(): void;
   fireWindowEvent(name: string, event?: unknown): Promise<void>;
   sendPlaybackAction(action: string): Promise<void>;
+  clickDisplayMode(mode: 'single' | 'spread' | 'web'): Promise<void>;
   runAnimationFrames(): void;
+  readonly pendingAnimationFrameCount: number;
   setAnchorRectTop(top: number): void;
-  scoreOverlayElementCount(): number;
+  setScrollHeight(height: number): void;
+  manualScrollTo(y: number): void;
+  scoreOverlayElementCount(mode?: 'page' | 'web'): number;
   activeOscillators(): FakeOscillatorNode[];
   scheduledOscillators(): FakeOscillatorNode[];
   readonly audioContextCount: number;
@@ -239,6 +243,7 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   let savedWebviewState = restoredState;
   let nextAnimationFrameId = 1;
   let scrollY = 0;
+  let scrollHeight = 4000;
   const animationFrames = new Map<number, (time: number) => unknown>();
 
   class FakeAudioContext {
@@ -281,8 +286,24 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   const body = new FakeElement();
   body.setAttribute('data-page-size', 'A4');
   body.setAttribute('data-orientation', 'portrait');
+  const displayMode = /<body\b[^>]*\bdata-display-mode=["']([^"']+)["']/i.exec(html)?.[1] ?? 'single';
+  body.setAttribute('data-display-mode', displayMode);
+  const modeButtons: FakeElement[] = [];
+  for (const match of html.matchAll(/<button\b([^>]*\bdata-mode=["']([^"']+)["'][^>]*)>/gi)) {
+    const button = new FakeElement('button');
+    for (const attribute of match[1].matchAll(/([\w:-]+)=["']([^"']*)["']/g)) {
+      button.setAttribute(attribute[1], attribute[2]);
+      if (attribute[1] === 'class') {
+        for (const name of attribute[2].split(/\s+/)) if (name) button.classList.add(name);
+      }
+    }
+    modeButtons.push(button);
+  }
   const anchors: FakeElement[] = [];
-  const systemElements: FakeElement[] = [];
+  const pageAnchors: FakeElement[] = [];
+  const webAnchors: FakeElement[] = [];
+  const systemElements: Array<{ mode: 'page' | 'web'; system: FakeElement }> = [];
+  const webContainerStart = html.indexOf('<div class="web-score-container">');
   for (const match of html.matchAll(/<rect\b([^>]*\bclass=["']playback-measure-anchor["'][^>]*)\/?\s*>/gi)) {
     const anchor = new FakeElement('rect');
     const attributes = match[1];
@@ -293,10 +314,15 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     system.setAttribute('class', 'system');
     system.appendChild(anchor);
     anchors.push(anchor);
-    systemElements.push(system);
+    const mode = webContainerStart >= 0 && (match.index ?? -1) > webContainerStart ? 'web' : 'page';
+    (mode === 'web' ? webAnchors : pageAnchors).push(anchor);
+    systemElements.push({ mode, system });
   }
+  const scrollRoot = { get scrollHeight() { return scrollHeight; } };
   const document = {
     body,
+    scrollingElement: scrollRoot,
+    documentElement: scrollRoot,
     getElementById(id: string): FakeElement {
       let element = elements.get(id);
       if (!element) {
@@ -306,7 +332,10 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       return element;
     },
     querySelectorAll(selector: string): FakeElement[] {
-      if (selector.includes('playback-measure-anchor')) return anchors;
+      if (selector.includes('playback-measure-anchor')) {
+        return selector.includes('.web-score-container') ? webAnchors : pageAnchors;
+      }
+      if (selector.includes('[data-mode]')) return modeButtons;
       return [];
     },
     createElementNS(_namespace: string, tagName: string): FakeElement {
@@ -323,7 +352,7 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     innerHeight: 800,
     get scrollY() { return scrollY; },
     scrollTo(_x: number, y: number): void {
-      scrollY = y;
+      scrollY = Math.max(0, Math.min(Math.max(0, scrollHeight - this.innerHeight), y));
       for (const listener of windowListeners.get('scroll') ?? []) listener({});
     },
     requestAnimationFrame(callback: (time: number) => unknown): number {
@@ -381,6 +410,11 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     sendPlaybackAction: async (action) => {
       for (const listener of windowListeners.get('message') ?? []) await listener({ data: { command: 'playbackAction', action } });
     },
+    clickDisplayMode: async (mode) => {
+      const button = modeButtons.find(candidate => candidate.getAttribute('data-mode') === mode);
+      if (!button) throw new Error(`Missing display mode button: ${mode}`);
+      await button.dispatch('click');
+    },
     runAnimationFrames: () => {
       const frames = Array.from(animationFrames.values());
       animationFrames.clear();
@@ -389,13 +423,18 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     setAnchorRectTop: (top) => {
       for (const anchor of anchors) anchor.rectTop = top;
     },
-    scoreOverlayElementCount: () => systemElements.reduce((count, system) => count + system.children.filter(child => {
+    setScrollHeight: (height) => { scrollHeight = height; },
+    manualScrollTo: (y) => {
+      scrollY = Math.max(0, Math.min(Math.max(0, scrollHeight - window.innerHeight), y));
+      for (const listener of windowListeners.get('scroll') ?? []) listener({});
+    },
+    scoreOverlayElementCount: (mode) => systemElements.reduce((count, entry) => count + (mode && entry.mode !== mode ? 0 : entry.system.children.filter(child => {
       const className = child.getAttribute('class') ?? '';
       return className === 'playback-highlight' || className === 'playback-playhead';
-    }).length, 0),
+    }).length), 0),
     playbackAnchor: (measureIndex) => anchors.find(anchor => Number(anchor.getAttribute('data-measure-index')) === measureIndex),
     playbackPlayheadX: () => {
-      const playhead = systemElements.flatMap(system => system.children).find(child => child.getAttribute('class') === 'playback-playhead');
+      const playhead = systemElements.flatMap(entry => entry.system.children).find(child => child.getAttribute('class') === 'playback-playhead');
       const x = playhead?.getAttribute('x1');
       return x === null || x === undefined ? null : Number(x);
     },
@@ -405,6 +444,7 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     get audioContextCloseCount() { return contexts.reduce((count, context) => count + context.closeCalls, 0); },
     get intervalCount() { return intervals.size; },
     get scrollY() { return scrollY; },
+    get pendingAnimationFrameCount() { return animationFrames.size; },
     get savedWebviewState() { return savedWebviewState; },
     element: getElement
   };
