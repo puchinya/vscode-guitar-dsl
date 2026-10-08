@@ -38,6 +38,30 @@ function gcd(a: number, b: number): number {
   return a || 1;
 }
 
+function isNormalizedFraction(value: unknown): value is InterchangeFraction {
+  return isRecord(value) && Number.isSafeInteger(value.n) && Number.isSafeInteger(value.d) && (value.d as number) > 0 && (value.n as number) >= 0 && gcd(value.n as number, value.d as number) === 1;
+}
+
+function compareFractionsExact(a: InterchangeFraction, b: InterchangeFraction): number {
+  const left = BigInt(a.n) * BigInt(b.d);
+  const right = BigInt(b.n) * BigInt(a.d);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function addFractionsExact(a: InterchangeFraction, b: InterchangeFraction): InterchangeFraction | null {
+  let numerator = BigInt(a.n) * BigInt(b.d) + BigInt(b.n) * BigInt(a.d);
+  let denominator = BigInt(a.d) * BigInt(b.d);
+  const gcdBigInt = (x: bigint, y: bigint): bigint => {
+    while (y !== 0n) [x, y] = [y, x % y];
+    return x || 1n;
+  };
+  const divisor = gcdBigInt(numerator, denominator);
+  numerator /= divisor;
+  denominator /= divisor;
+  if (numerator > BigInt(Number.MAX_SAFE_INTEGER) || denominator > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return { n: Number(numerator), d: Number(denominator) };
+}
+
 function add(errors: InterchangeError[], code: string, path: string, detail: string): void {
   errors.push({ code, path, detail });
 }
@@ -407,15 +431,14 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       });
     }
     if (isRecord(measure) && Array.isArray(measure.chords)) {
-      let previous = -1;
+      let previous: InterchangeFraction | undefined;
       for (let i = 0; i < measure.chords.length; i++) {
         const chord = measure.chords[i];
         const beatOffset = isRecord(chord) ? chord.beatOffset as Record<string, any> : null;
-        if (!beatOffset || !Number.isSafeInteger(beatOffset.n) || !Number.isSafeInteger(beatOffset.d) || beatOffset.d <= 0) continue;
-        const beat = beatOffset.n / beatOffset.d;
-        const expectedBeats = measure.expectedBeats as any;
-        if (beat < previous || beat > (isRecord(expectedBeats) ? (expectedBeats.n as number) / (expectedBeats.d as number) : Infinity)) add(errors, 'invalidChordOnset', `${path}/chords/${i}/beatOffset`, 'Chord onsets must be ordered and within the measure.');
-        previous = beat;
+        const expectedBeats = measure.expectedBeats;
+        if (!isNormalizedFraction(beatOffset) || !isNormalizedFraction(expectedBeats)) continue;
+        if ((previous && compareFractionsExact(beatOffset, previous) < 0) || compareFractionsExact(beatOffset, expectedBeats) > 0) add(errors, 'invalidChordOnset', `${path}/chords/${i}/beatOffset`, 'Chord onsets must be ordered and within the measure.');
+        previous = beatOffset;
       }
     }
     if (!isRecord(measure.rhythm) || !['explicit', 'implicit', 'repeat'].includes(String(measure.rhythm.origin)) || !Array.isArray(measure.rhythm.events)) add(errors, 'invalidRhythm', `${path}/rhythm`, 'Rhythm origin or events are invalid.');
@@ -513,6 +536,7 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       const expectedFraction = measure.expectedBeats;
       if (measure.chordPlacementMode === 'equalSplit') measure.chords.forEach((chord, chordIndex) => {
         const actual = chord.beatOffset;
+        if (!isNormalizedFraction(actual) || !isNormalizedFraction(expectedFraction)) return;
         const left = BigInt(actual.n) * BigInt(expectedFraction.d) * BigInt(measure.chords.length);
         const right = BigInt(expectedFraction.n) * BigInt(chordIndex) * BigInt(actual.d);
         if (left !== right) add(errors, 'equalSplitOffsetMismatch', `/measures/${measureIndex}/chords/${chordIndex}/beatOffset`, 'Equal-split chord offsets must be exact subdivisions of the expected measure length.');
@@ -520,13 +544,22 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       if (measure.chordPlacementMode === 'explicitDuration' && measure.chords.length && (measure.chords[0].beatOffset.n !== 0 || measure.chords[0].beatOffset.d !== 1)) add(errors, 'explicitChordStart', `/measures/${measureIndex}/chords/0/beatOffset`, 'Explicit-duration chord sequence must begin at beat zero.');
       if (measure.chordPlacementMode === 'inline') {
         const boundaries = [{ n: 0, d: 1 }];
-        let cursor = frac(0);
-        for (const event of measure.rhythm.events) {
-          if (!event.techniques?.grace) cursor = frac(cursor.n * event.duration.beats.d + event.duration.beats.n * cursor.d, cursor.d * event.duration.beats.d);
+        let cursor: InterchangeFraction = frac(0);
+        for (const [eventIndex, event] of measure.rhythm.events.entries()) {
+          const duration = isRecord(event) && isRecord(event.duration) ? event.duration.beats : undefined;
+          if (!isNormalizedFraction(duration)) continue;
+          if (!(isRecord(event.techniques) && event.techniques.grace === true)) {
+            const sum = addFractionsExact(cursor, duration);
+            if (!sum) {
+              add(errors, 'fractionOverflow', `/measures/${measureIndex}/rhythm/events/${eventIndex}/duration/beats`, 'Exact inline rhythm boundary exceeds the safe integer fraction range.');
+              continue;
+            }
+            cursor = sum;
+          }
           boundaries.push(cursor);
         }
         measure.chords.forEach((chord, chordIndex) => {
-          if (!boundaries.some(boundary => feq(boundary, frac(chord.beatOffset.n, chord.beatOffset.d)))) add(errors, 'inlineChordOffsetMismatch', `/measures/${measureIndex}/chords/${chordIndex}/beatOffset`, 'Inline chord onset must align with a parsed rhythm-event boundary.');
+          if (isNormalizedFraction(chord.beatOffset) && !boundaries.some(boundary => compareFractionsExact(boundary, chord.beatOffset) === 0)) add(errors, 'inlineChordOffsetMismatch', `/measures/${measureIndex}/chords/${chordIndex}/beatOffset`, 'Inline chord onset must align with a parsed rhythm-event boundary.');
         });
       }
       if (measure.rhythm.origin === 'implicit' && measure.rhythm.events.length) add(errors, 'implicitRhythmHasEvents', `/measures/${measureIndex}/rhythm/events`, 'Synthesized implicit rhythm cannot be represented as authored events.');

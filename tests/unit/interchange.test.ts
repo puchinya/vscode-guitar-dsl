@@ -178,6 +178,18 @@ describe('canonical interchange conversion', () => {
       }
       assert.strictEqual(JSON.stringify(testCase.score), before, `${testCase.label}: caller data mutated`);
     }
+
+    const closeOnsets = clone(baseResult.value);
+    const safe = Number.MAX_SAFE_INTEGER;
+    const smaller = { n: safe, d: safe - 1 };
+    const larger = { n: safe - 1, d: safe - 2 };
+    assert.strictEqual(smaller.n / smaller.d, larger.n / larger.d, 'fixture must collapse under floating-point division');
+    closeOnsets.measures[0].chordPlacementMode = 'explicitDuration';
+    closeOnsets.measures[0].chords = [
+      { name: 'C', beatOffset: larger },
+      { name: 'G', beatOffset: smaller }
+    ];
+    assert.ok(validateInterchangeScore(closeOnsets).some(error => error.code === 'invalidChordOnset'), 'exact rational order must be checked even when doubles compare equal');
   });
 
   it('blocks unsupported prior loss, preserves approved loss records, and detects a changed TAB fret in projection comparison', () => {

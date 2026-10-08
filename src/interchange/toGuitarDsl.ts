@@ -49,6 +49,21 @@ function fail(
 function fraction(value: InterchangeFraction): Fraction { return { n: value.n, d: value.d }; }
 function noteValueText(value: InterchangeNoteValue): string { return value.parts.map(formatNoteValuePart).join('+'); }
 
+function addExactFractions(a: InterchangeFraction, b: InterchangeFraction, path: string): InterchangeFraction {
+  let numerator = BigInt(a.n) * BigInt(b.d) + BigInt(b.n) * BigInt(a.d);
+  let denominator = BigInt(a.d) * BigInt(b.d);
+  let x = numerator;
+  let y = denominator;
+  while (y !== 0n) [x, y] = [y, x % y];
+  const divisor = x || 1n;
+  numerator /= divisor;
+  denominator /= divisor;
+  if (numerator > BigInt(Number.MAX_SAFE_INTEGER) || denominator > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Unrepresentable('fractionOverflow', path, 'Exact rhythm boundary exceeds the safe integer fraction range.');
+  }
+  return { n: Number(numerator), d: Number(denominator) };
+}
+
 function checkedLineValue(value: string, path: string): string {
   if (/[\r\n]/.test(value) || /\s#/.test(value) || value.startsWith('#')) throw new Unrepresentable('unsafeText', path, 'Text cannot be emitted safely in the current GuitarDSL line syntax.');
   return value;
@@ -409,12 +424,7 @@ function serializeMeasureBody(measure: InterchangeMeasure): string[] {
     for (let index = 0; index < rhythm.length; index++) {
       const event = rhythm[index];
       tokens.push(rhythmEventText(event, `/measures/${measure.index}/rhythm/events/${index}`));
-      offset = event.techniques?.grace ? offset : { n: offset.n * event.duration.beats.d + event.duration.beats.n * offset.d, d: offset.d * event.duration.beats.d };
-      if (offset.d !== 0) {
-        const g = (a: number, b: number): number => b === 0 ? Math.abs(a) : g(b, a % b);
-        const divisor = g(offset.n, offset.d) || 1;
-        offset = { n: offset.n / divisor, d: offset.d / divisor };
-      }
+      offset = event.techniques?.grace ? offset : addExactFractions(offset, event.duration.beats, `/measures/${measure.index}/rhythm/events/${index}/duration/beats`);
       const key = `${offset.n}/${offset.d}`;
       if (byOffset.has(key)) tokens.push(...byOffset.get(key)!);
     }

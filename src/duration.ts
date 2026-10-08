@@ -39,7 +39,9 @@ export function fmul(a: Fraction, b: Fraction): Fraction {
 }
 
 export function fcmp(a: Fraction, b: Fraction): number {
-  return a.n * b.d - b.n * a.d;
+  const left = BigInt(a.n) * BigInt(b.d);
+  const right = BigInt(b.n) * BigInt(a.d);
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function feq(a: Fraction, b: Fraction): boolean {
