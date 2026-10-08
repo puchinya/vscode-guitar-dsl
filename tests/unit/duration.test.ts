@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { decomposeBeats, fadd, feq, fnum, formatNoteValuePart, frac, parseBeats, parseNoteValue, parseNoteValueDetailed, parseRhythmDuration, tupletGroups, ZERO } from '../../src/duration';
+import { decomposeBeats, fadd, fcmp, feq, fnum, formatNoteValuePart, frac, parseBeats, parseNoteValue, parseNoteValueDetailed, parseRhythmDuration, tupletGroups, ZERO } from '../../src/duration';
 import { parseDurationToBeats } from '../../src/compiler';
 
 describe('duration - note value notation', () => {
@@ -22,6 +22,15 @@ describe('duration - note value notation', () => {
     const sum = fadd(fadd(fadd(ZERO, t.beats), t.beats), t.beats);
     assert.ok(feq(sum, frac(1)));
     assert.deepStrictEqual(parseNoteValue('4t')!.beats, frac(2, 3));
+  });
+
+  it('compares safe-integer fractions exactly when their Number quotients collapse', () => {
+    const safe = Number.MAX_SAFE_INTEGER;
+    const smaller = { n: safe, d: safe - 1 };
+    const larger = { n: safe - 1, d: safe - 2 };
+    assert.strictEqual(smaller.n / smaller.d, larger.n / larger.d);
+    assert.strictEqual(fcmp(smaller, larger), -1);
+    assert.strictEqual(feq(smaller, larger), false);
   });
 
   it('rejects invalid note values', () => {

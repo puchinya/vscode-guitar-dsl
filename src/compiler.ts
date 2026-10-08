@@ -7,6 +7,7 @@ import {
   ZERO,
   decomposeBeats,
   fadd,
+  fmul,
   feq,
   fnum,
   formatNoteValuePart,
@@ -94,6 +95,8 @@ export interface RhythmItem {
   inlineLyric?: string;
   /** Inline note `{...}` block, or slash modifiers `.pm .lr .stacc .ten .fermata .vib .breath`. */
   techniques?: NoteTechniques;
+  /** Exact shared note-value data for inline pitches; `duration` remains the established renderer token. */
+  inlineDuration?: { beats: Fraction; parts: NoteValuePart[] };
 }
 
 /**
@@ -165,6 +168,12 @@ export interface MeasureRhythmSource {
 export interface MeasureData {
   chord: string;
   chords: ChordPlacement[];
+  /** Parser-owned origin of the authored rhythm staff; implicit slashes are not authored rhythm. */
+  rhythmOrigin: 'explicit' | 'implicit' | 'repeat';
+  /** Parser-owned chord positioning mode. Numeric ChordPlacement.beat remains the renderer authority. */
+  chordPlacementMode: 'equalSplit' | 'explicitDuration' | 'inline';
+  /** Exact quarter-beat chord onsets; one entry per chords[] value. */
+  chordBeatOffsets: readonly Fraction[];
   isMeasureRepeat?: boolean;
   expandedFromRepeat?: boolean;
   repeatStart: boolean;
@@ -459,6 +468,8 @@ export interface ParsedScore {
   /** `chord` definitions in source order (first valid definition of a key wins). */
   chordDefinitions: ChordDefinition[];
   measures: MeasureData[];
+  /** Authored `mel:` group boundaries and final lyric-row counts. */
+  melodyGroups: ParsedMelodyGroupSummary[];
   playOrder: PlayOrderResult;
   pages: ScorePage[];
   /** Sharps (> 0) / flats (< 0) derived from `key:`; null when the key cannot be parsed. */
@@ -483,6 +494,12 @@ export interface ParsedScore {
   events: ScoreEvent[];
   /** Pitches of `mel:` notes and inline notes, in source order. */
   pitchTokens?: PitchTokenSpan[];
+}
+
+export interface ParsedMelodyGroupSummary {
+  startMeasure: number;
+  endMeasureExclusive: number;
+  verseCount: number;
 }
 
 const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?(?:\+(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?)*|w|h|q)|r[a-z0-9]*)(\.[a-z][a-z0-9:\-]*)*$/;
@@ -514,6 +531,8 @@ function locateToken(rawLine: string, tok: string, from: number): number {
 
 /** A `mel:` line: the notes it produced (in order) and the note index range of each cell. */
 interface MelodyGroup {
+  startMeasure: number;
+  endMeasureExclusive: number;
   notes: MelodyNote[];
   cellRanges: { start: number; end: number }[];
   verseCount: number;
@@ -645,6 +664,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const lengthChecks: LengthCheck[] = [];
   const defaultRhythmMeasures = new Set<MeasureData>();
   const equalSplitChords = new Set<MeasureData>();
+  const repeatInheritedChords = new Set<MeasureData>();
   const repeatChecks: { measureIdx: number; line: number; startCol: number; endCol: number }[] = [];
   interface NoteLocation { line: number; startCol: number; endCol: number }
   const melodyLocations = new WeakMap<MelodyNote, NoteLocation>();
@@ -1294,6 +1314,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         label?: string;
         duration?: Fraction;
         accumBeatAtToken: number;
+        accumBeatFraction: Fraction;
       }
       const rawChords: RawParsedChord[] = [];
       const rhythms: RhythmItem[] = [];
@@ -1400,7 +1421,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             name: parsedChord.name,
             label: parsedChord.label,
             duration: parsedChord.duration,
-            accumBeatAtToken: fnum(runningBeat)
+            accumBeatAtToken: fnum(runningBeat),
+            accumBeatFraction: { ...runningBeat }
           });
           const key = chordKey(parsedChord.name, parsedChord.label);
           usedChordsSet.add(key);
@@ -1472,34 +1494,51 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
 
       let barChords: ChordPlacement[] = [];
+      let chordPlacementMode: MeasureData['chordPlacementMode'] = 'equalSplit';
+      let chordBeatOffsets: Fraction[] = [];
+      let repeatChordsWereInherited = false;
       if (rawChords.length === 1) {
         barChords = [placement(rawChords[0], rawChords[0].accumBeatAtToken)];
+        chordPlacementMode = rawChords[0].accumBeatAtToken === 0 && rhythms.length === 0 ? 'equalSplit' : 'inline';
+        chordBeatOffsets = [{ ...rawChords[0].accumBeatFraction }];
       } else if (rawChords.length > 1) {
         const allChordsBeforeRhythm = rawChords.every(c => c.accumBeatAtToken === 0);
         if (allChordsBeforeRhythm) {
           const anyHasDuration = rawChords.some(c => c.duration !== undefined);
           if (anyHasDuration && !invalidChordLength) {
             let curB = ZERO;
+            chordPlacementMode = 'explicitDuration';
             barChords = rawChords.map(c => {
               const b = curB;
               curB = fadd(curB, c.duration ?? frac(2));
+              chordBeatOffsets.push({ ...b });
               return placement(c, fnum(b));
             });
           } else {
             // Positions are fixed once the measure length is known (resolveMeasures).
             const step = 4.0 / rawChords.length;
             barChords = rawChords.map((c, idx) => placement(c, idx * step));
+            chordPlacementMode = 'equalSplit';
+            chordBeatOffsets = rawChords.map(() => ({ ...ZERO }));
             multiChordEqualSplit = true;
           }
         } else {
           barChords = rawChords.map(c => placement(c, c.accumBeatAtToken));
+          chordPlacementMode = 'inline';
+          chordBeatOffsets = rawChords.map(c => ({ ...c.accumBeatFraction }));
         }
       } else if (isMeasureRepeat && measures.length > 0) {
         const prev = measures[measures.length - 1];
         if (prev.chords && prev.chords.length > 0) {
           barChords = prev.chords.map(c => ({ ...c }));
+          chordPlacementMode = prev.chordPlacementMode;
+          chordBeatOffsets = prev.chordBeatOffsets.map(offset => ({ ...offset }));
+          repeatChordsWereInherited = true;
         } else if (prev.chord) {
           barChords = [{ name: prev.chord, beat: 0 }];
+          chordPlacementMode = prev.chordPlacementMode;
+          chordBeatOffsets = prev.chordBeatOffsets.map(offset => ({ ...offset }));
+          repeatChordsWereInherited = true;
         }
         barChords.forEach(c => usedChordsSet.add(chordKey(c.name, c.label)));
       }
@@ -1507,6 +1546,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const mData: MeasureData = newMeasure({
         chord: barChords.length > 0 ? barChords[0].name : '',
         chords: barChords,
+        rhythmOrigin: isMeasureRepeat ? 'repeat' : rhythms.length > 0 ? 'explicit' : 'implicit',
+        chordPlacementMode,
+        chordBeatOffsets,
         isMeasureRepeat,
         repeatStart: rStart,
         repeatEnd: rEnd,
@@ -1518,6 +1560,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
         lyric: mLyric
       });
+      if (repeatChordsWereInherited && rawChords.length === 0) repeatInheritedChords.add(mData);
       if (rStart) {
         repeatOpen = true;
         voltaSinceEnd = false;
@@ -1568,7 +1611,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (parsed.pitches) {
       // Every part is kept so a compound group length (4+16) keeps its tied heads.
       const duration = baseParts.map(p => (p.tuplet ? formatNoteValuePart(p) : p.dotted ? `${p.base}+${p.base * 2}` : String(p.base))).join('+');
-      const group: RhythmItem = { duration, isRest: false, down: false, up: false, ghost: false, accent: false, tie: false, pitches: parsed.pitches };
+      const group: RhythmItem = { duration, isRest: false, down: false, up: false, ghost: false, accent: false, tie: false, pitches: parsed.pitches, inlineDuration: { beats: { ...parsed.beats }, parts: parsed.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) } };
       if (parsed.techniques) group.techniques = parsed.techniques;
       return group;
     }
@@ -1585,7 +1628,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       ghost: false,
       accent: false,
       tie: parsed.tieToNext,
-      pitch: parsed.pitch
+      pitch: parsed.pitch,
+      inlineDuration: { beats: { ...parsed.beats }, parts: parsed.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) }
     };
     if (parsed.techniques) item.techniques = parsed.techniques;
     return item;
@@ -1659,7 +1703,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number, sectionIndex: number | null): MelodyGroup {
-    const group: MelodyGroup = { notes: [], cellRanges: [], verseCount: 0, sectionIndex };
+    const group: MelodyGroup = { startMeasure: melodyCursor, endMeasureExclusive: melodyCursor, notes: [], cellRanges: [], verseCount: 0, sectionIndex };
     const state: MelodyTokenState = {};
     const sequence = pitchSequence++;
 
@@ -1773,6 +1817,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         lengthChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: Math.min(trimmedEnd, cellEnd), beats: total, heads });
       }
     }
+    group.endMeasureExclusive = melodyCursor;
     return group;
   }
 
@@ -1984,8 +2029,24 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       if (equalSplitChords.has(m)) {
         const step = fnum(m.expectedBeats) / m.chords.length;
         m.chords = m.chords.map((c, idx) => ({ ...c, beat: idx * step }));
+        m.chordBeatOffsets = m.chords.map((_, idx) => fmul(m.expectedBeats, frac(idx, m.chords.length)));
       }
     });
+
+    for (const measure of repeatInheritedChords) {
+      const index = measures.indexOf(measure);
+      let source: MeasureData | undefined;
+      for (let i = index - 1; i >= 0; i--) {
+        if (!measures[i].isMeasureRepeat) {
+          source = measures[i];
+          break;
+        }
+      }
+      if (source) {
+        measure.chordPlacementMode = source.chordPlacementMode;
+        measure.chordBeatOffsets = source.chordBeatOffsets.map(offset => ({ ...offset }));
+      }
+    }
 
     const last = measures.length - 1;
     for (const check of lengthChecks) {
@@ -2312,6 +2373,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     usedChords: Array.from(usedChordsSet),
     chordDefinitions,
     measures,
+    melodyGroups: melodyGroups.map(({ startMeasure, endMeasureExclusive, verseCount }) => ({ startMeasure, endMeasureExclusive, verseCount })),
     playOrder,
     pages: validPages,
     keySignature: parseKeySignature(originalKey),
@@ -2352,7 +2414,8 @@ export function expandMeasureRepeat(measure: MeasureData, allMeasures: MeasureDa
     ? source.rhythms.map(r => ({
         ...r,
         pitch: r.pitch ? { ...r.pitch } : undefined,
-        ...(r.pitches ? { pitches: r.pitches.map(p => ({ ...p })) } : {})
+        ...(r.pitches ? { pitches: r.pitches.map(p => ({ ...p })) } : {}),
+        ...(r.inlineDuration ? { inlineDuration: { beats: { ...r.inlineDuration.beats }, parts: r.inlineDuration.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) } } : {})
       }))
     : defaultRhythms(measure.context.timeSignature, measure.expectedBeats);
 

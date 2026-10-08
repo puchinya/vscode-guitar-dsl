@@ -102,11 +102,19 @@
 
 ---
 
+### 1.3 Canonical Score Interchange IR (Issue #96)
+
+| 機能 | ステータス | 備考 |
+|---|:---:|---|
+| GuitarDSL と `InterchangeScore` schema v1 の純粋な双方向変換 | ✅ 実装済み | `src/interchange/` は書かれた小節・イベント・正確な拍位置・メロディ・歌詞・独立したTAB・編曲指定を保持し、IR→DSL は再解析後の意味と演奏順を照合する。 |
+| 構造化 loss report と IR 検証 | ✅ 実装済み | 4カテゴリの決定的な loss 集約とブロッキング規則、schema/range/reference/technique の検証を提供。具体的なGP/XML/MIDIアダプター、UI、損失を許可するポリシーは含まない。 |
+
 ## 2. 検証・テスト状況 (Verification & Testing)
 
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
 - **テストファイル**:
+  - `tests/unit/interchange.test.ts`, `tests/unit/interchangeLoss.test.ts`, `tests/unit/interchangeProvenance.test.ts`: 全サンプルの往復、Standard / Drop D・capo・TABとメロディの独立性、編曲・pickup・複合拍子・tuplets、パーサー由来の正確なコード拍位置、4種のloss、無効IRと意味比較の拒否
   - `tests/unit/instrumentModel.test.ts`: 5 プリセット・明示6音・異名同音、入力と結果の不変性、弦と配列の順序、capo 相対/物理 fret 境界、正引き・逆引きの決定性と不正値
   - `tests/unit/compiler.test.ts`: メタデータパース（調弦の既定・各プリセット・明示値・コメント・重複・本文内・不正値と回復、診断 code/span）、小節・コード・リズム解析、改ページ、モジュール境界（描画 API を公開しないこと）、AI が生成しがちな誤り（続きの行・解釈できないトークン・`|:` のない `:|`）の診断
   - `tests/unit/duration.test.ts`: 共通音価表記・拍数・有理数計算
@@ -143,7 +151,7 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **791 / 791 件 PASS** (0 failures)
+- **テスト実行結果**: **999 / 999 件 PASS** (0 failures、2026-10-08)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -201,6 +209,7 @@
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)
+- **Issue #96 検証 (2026-10-08, macOS arm64)**: `npm ci`、`npm run compile`、`npm run test:unit` (999 件)、`env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test` (999 unit + 56 E2E)、`npm run check:help`、`npm run check:ai`、`PATH="$HOME/.cargo/bin:$PATH" npm run vscode:prepublish`、`npx @vscode/vsce ls`、`git diff --check` は PASS。通常権限での Electron 起動は `SIGABRT` で Mocha 前に終了し、sandbox 外の再実行で E2E は PASS。Windows / Linux は未検証。
 
 ---
 
