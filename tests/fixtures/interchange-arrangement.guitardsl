@@ -1,0 +1,15 @@
+title: Interchange Arrangement Fixture
+key: C
+arrangement {
+  Verse(lyr=2) x2
+  Chorus
+}
+[Verse]
+| C | 4.d 4 4.d 4 |
+mel: | c4/4 d4/4 e4/4 f4/4 |
+lyr: | あ さ の う | 
+lyr: | ひ か り へ |
+[Chorus]
+| G | 4.d 4 4.d 4 |
+mel: | g4/4 a4/4 b4/4 c5/4 |
+lyr: | う た ご え |
