@@ -36,6 +36,7 @@
 |---|---|
 | [Language and score processing](language-and-score-processing.md) | 構文解析、スコアモデル、演奏順、音符・歌詞、ハーモニー分析 |
 | [TAB notation](tab-notation.md) | 位置優先 TAB モデル、弦フレット意味論、変換安全性 |
+| [Canonical score interchange](interchange.md) | GuitarDSL と外部アダプター間のバージョン付き意味モデル、正確な音楽時間、損失報告 |
 | [Preview, rendering, and export](preview-rendering-and-export.md) | プレビュー、SVG、ページネーション、PDF、プレビュー再生 |
 | [Score editing](score-editing.md) | コード編集、設定、カポ、初心者モード、移調、伴奏編集 |
 | [Audio transcription](audio-transcription.md) | YouTube / Audio MIR、Music IR、GuitarDSL への直列化 |
