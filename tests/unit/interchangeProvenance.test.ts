@@ -65,4 +65,24 @@ describe('interchange parser provenance', () => {
     assert.strictEqual(explicit.measures[0].rhythmSource, undefined);
     assert.deepStrictEqual(explicit.measures[0].chordBeatOffsets, [{ n: 0, d: 1 }, { n: 1, d: 1 }]);
   });
+
+  it('records exact parser-owned melody group ranges and lyric row counts', () => {
+    const score = parseGuitarDsl([
+      '[Verse]',
+      '| C | 1.d |',
+      '| G | 1.d |',
+      'mel: | c4/1 | d4/1 |',
+      'lyr: あ',
+      'lyr: か き',
+      'pagebreak',
+      '| Am | 1.d |',
+      'mel: | e4/1 |',
+      'lyr: さ'
+    ].join('\n'));
+    assert.deepStrictEqual(score.diagnostics.filter(diagnostic => diagnostic.severity === 'error'), []);
+    assert.deepStrictEqual((score as any).melodyGroups, [
+      { startMeasure: 0, endMeasureExclusive: 2, verseCount: 2 },
+      { startMeasure: 2, endMeasureExclusive: 3, verseCount: 1 }
+    ]);
+  });
 });

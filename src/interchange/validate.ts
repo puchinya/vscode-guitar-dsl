@@ -6,14 +6,15 @@ import { lowerArrangement } from '../arrangement';
 import { resolvePlayOrder } from '../playOrder';
 import { parseTechniqueBlock, type NoteTechniques } from '../melody';
 import { parseTabCell, resolveTabLinkTarget } from '../tab';
+import { sectionLyricVerseCapacity } from './lyricGroups';
 import type {
   InterchangeError,
   InterchangeFraction,
   InterchangeMeasure,
+  InterchangeLyricSlot,
   InterchangeNoteTechniques,
   InterchangeNoteValue,
   InterchangeScore,
-  InterchangeSyllable,
   InterchangeTabEffectCall,
   InterchangeTabNote,
   InterchangeTimeSignature
@@ -147,18 +148,37 @@ function validPitch(value: unknown, path: string, errors: InterchangeError[]): b
   return true;
 }
 
-function validSyllables(value: unknown, path: string, errors: InterchangeError[]): value is readonly (InterchangeSyllable | null)[] {
+function validSyllables(value: unknown, path: string, errors: InterchangeError[]): value is readonly InterchangeLyricSlot[] {
   if (!Array.isArray(value)) {
     add(errors, 'invalidLyrics', path, 'Syllables must be an array by verse.');
     return false;
   }
-  value.forEach((syllable, index) => {
-    if (syllable === null) return;
-    if (!isRecord(syllable) || !rejectUnknownFields(syllable, ['text', 'hyphenToNext', 'extend'], `${path}/${index}`, errors) || typeof syllable.text !== 'string' || typeof syllable.hyphenToNext !== 'boolean' || typeof syllable.extend !== 'boolean' ||
-        (syllable.extend && (syllable.text !== '' || syllable.hyphenToNext))) {
-      add(errors, 'invalidSyllable', `${path}/${index}`, 'Syllable must preserve text, hyphen, and melisma semantics.');
+  for (let index = 0; index < value.length; index++) {
+    const slotPath = `${path}/${index}`;
+    if (!Object.prototype.hasOwnProperty.call(value, index)) {
+      add(errors, 'sparseLyricSlots', slotPath, 'Lyric slot arrays must be dense and use the omitted sentinel for an absent token.');
+      continue;
     }
-  });
+    const syllable = value[index];
+    if (syllable === undefined) {
+      add(errors, 'invalidLyricSlot', slotPath, 'Undefined is not a JSON-safe lyric slot value.');
+      continue;
+    }
+    if (syllable === null) continue;
+    if (isRecord(syllable) && syllable.kind === 'omitted') {
+      rejectUnknownFields(syllable, ['kind'], slotPath, errors);
+      if (Object.keys(syllable).length !== 1 || syllable.kind !== 'omitted') add(errors, 'invalidLyricSlot', slotPath, 'Omitted lyric slots must contain exactly { kind: omitted }.');
+      continue;
+    }
+    if (!isRecord(syllable) || !Object.prototype.hasOwnProperty.call(syllable, 'text')) {
+      add(errors, 'invalidLyricSlot', slotPath, 'Lyric slot must be a syllable, an explicit null skip, or the exact omitted sentinel.');
+      continue;
+    }
+    if (!rejectUnknownFields(syllable, ['text', 'hyphenToNext', 'extend'], slotPath, errors) || typeof syllable.text !== 'string' || typeof syllable.hyphenToNext !== 'boolean' || typeof syllable.extend !== 'boolean' ||
+        (syllable.extend && (syllable.text !== '' || syllable.hyphenToNext))) {
+      add(errors, 'invalidSyllable', slotPath, 'Syllable must preserve text, hyphen, and melisma semantics.');
+    }
+  }
   return true;
 }
 
@@ -326,12 +346,7 @@ function validateNote(note: unknown, path: string, errors: InterchangeError[]): 
       add(errors, 'unsupportedGroupTechnique', `${path}/techniques`, 'A note group cannot carry a connection, bend, or slur technique.');
     }
   }
-  if (Array.isArray(note.syllables) && !note.isRest && !(isRecord(note.techniques) && note.techniques.grace === true) && !note.tiedFromPrev) {
-    for (let index = 0; index < note.syllables.length; index++) {
-      const syllable = note.syllables[index];
-      if (syllable !== null && (!isRecord(syllable) || typeof syllable.text !== 'string')) add(errors, 'invalidSyllable', `${path}/syllables/${index}`, 'Syllable value is invalid.');
-    }
-  } else if (Array.isArray(note.syllables) && note.syllables.some(value => value !== null)) {
+  if (Array.isArray(note.syllables) && (note.isRest || isRecord(note.techniques) && note.techniques.grace === true || note.tiedFromPrev) && note.syllables.length > 0) {
     add(errors, 'lyricOnNonSungSlot', `${path}/syllables`, 'Rests, grace notes, and tied continuations do not consume lyric slots.');
   }
 }
@@ -354,7 +369,7 @@ function validateTabNote(note: unknown, path: string, errors: InterchangeError[]
 export function validateInterchangeScore(score: InterchangeScore): readonly InterchangeError[] {
   const errors: InterchangeError[] = [];
   if (!isRecord(score)) return [{ code: 'invalidScore', path: '', detail: 'Score must be an object.' }];
-  rejectUnknownFields(score, ['schemaVersion', 'metadata', 'chordDefinitions', 'arrangement', 'measures'], '', errors);
+  rejectUnknownFields(score, ['schemaVersion', 'metadata', 'chordDefinitions', 'arrangement', 'melodyGroups', 'measures'], '', errors);
   if (score.schemaVersion !== 1) add(errors, 'unsupportedSchemaVersion', '/schemaVersion', 'Only interchange schema version 1 is supported.');
   const metadata = score.metadata as unknown;
   if (!isRecord(metadata)) return [...errors, { code: 'invalidMetadata', path: '/metadata', detail: 'Metadata must be an object.' }];
@@ -490,6 +505,7 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
           rejectUnknownFields(beat, ['isRest', 'notes', 'duration', 'effects', 'syllables'], beatPath, errors);
           validSyllables(beat.syllables, `${beatPath}/syllables`, errors);
           if (beat.isRest && beat.notes.length > 0) add(errors, 'restHasTabNotes', `${beatPath}/notes`, 'A TAB rest cannot contain notes.');
+          if (beat.isRest && beat.syllables.length > 0) add(errors, 'lyricOnNonSungSlot', `${beatPath}/syllables`, 'TAB rests do not consume lyric slots.');
           if (!beat.isRest && beat.notes.length === 0) add(errors, 'emptyTabAttack', `${beatPath}/notes`, 'A sounding TAB beat requires at least one note.');
           const stringsByBeat = new Set<number>();
           validNoteValue(beat.duration, `${beatPath}/duration`, errors);
@@ -505,6 +521,56 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       });
     }
   });
+
+  if (!Array.isArray(score.melodyGroups)) {
+    add(errors, 'invalidMelodyGroups', '/melodyGroups', 'Melody group provenance must be an array.');
+  } else {
+    const measureCount = Array.isArray(score.measures) ? score.measures.length : 0;
+    const covered = new Set<number>();
+    let previousEnd = 0;
+    score.melodyGroups.forEach((rawGroup, groupIndex) => {
+      const groupPath = `/melodyGroups/${groupIndex}`;
+      if (!isRecord(rawGroup)) {
+        add(errors, 'invalidMelodyGroup', groupPath, 'Melody group provenance must be an object.');
+        return;
+      }
+      rejectUnknownFields(rawGroup, ['startMeasure', 'endMeasureExclusive', 'verseCount'], groupPath, errors);
+      const start = rawGroup.startMeasure;
+      const end = rawGroup.endMeasureExclusive;
+      const verseCount = rawGroup.verseCount;
+      let validRange = true;
+      if (!Number.isSafeInteger(start) || (start as number) < 0 || (start as number) >= measureCount) {
+        add(errors, 'invalidMelodyGroupRange', `${groupPath}/startMeasure`, 'Melody group start must identify a written measure.');
+        validRange = false;
+      }
+      if (!Number.isSafeInteger(end) || (end as number) <= (Number.isSafeInteger(start) ? start as number : -1) || (end as number) > measureCount) {
+        add(errors, 'invalidMelodyGroupRange', `${groupPath}/endMeasureExclusive`, 'Melody group end must be after its start and within written measures.');
+        validRange = false;
+      }
+      if (!Number.isSafeInteger(verseCount) || (verseCount as number) < 0) add(errors, 'invalidMelodyGroupVerseCount', `${groupPath}/verseCount`, 'Melody group verse count must be a nonnegative safe integer.');
+      if (validRange) {
+        const first = start as number;
+        const exclusive = end as number;
+        if (first < previousEnd) add(errors, 'overlappingMelodyGroups', `${groupPath}/startMeasure`, 'Melody groups must be ordered and non-overlapping.');
+        previousEnd = Math.max(previousEnd, exclusive);
+        for (let measureIndex = first; measureIndex < exclusive; measureIndex++) {
+          if (covered.has(measureIndex)) add(errors, 'overlappingMelodyGroups', `${groupPath}/startMeasure`, 'A written melody measure cannot belong to more than one group.');
+          covered.add(measureIndex);
+          const measure = Array.isArray(score.measures) ? score.measures[measureIndex] : undefined;
+          if (!isRecord(measure) || !Array.isArray(measure.melody)) add(errors, 'melodyGroupCoverage', `${groupPath}/startMeasure`, 'Every measure in a melody group must have parser-owned melody events.');
+          if (measureIndex > first && isRecord(measure) && measure.sectionStart !== undefined) add(errors, 'melodyGroupCrossesSection', groupPath, 'A melody group cannot cross a named section boundary.');
+          if (isRecord(measure) && Array.isArray(measure.melody)) measure.melody.forEach((note, noteIndex) => {
+            if (isRecord(note) && Array.isArray(note.syllables) && Number.isSafeInteger(verseCount) && note.syllables.length > (verseCount as number)) {
+              add(errors, 'melodyGroupSlotCount', `/measures/${measureIndex}/melody/${noteIndex}/syllables`, 'A melody note cannot contain more lyric slots than its owning group has verses.');
+            }
+          });
+        }
+      }
+    });
+    if (Array.isArray(score.measures)) score.measures.forEach((measure, measureIndex) => {
+      if (isRecord(measure) && Array.isArray(measure.melody) && !covered.has(measureIndex)) add(errors, 'melodyGroupCoverage', '/melodyGroups', 'Every written measure with melody must be covered by exactly one melody group.');
+    });
+  }
 
   if (Array.isArray(score.measures)) {
     const melody: Array<{ note: Record<string, any>; path: string }> = [];
@@ -530,7 +596,7 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
 
   const sectionNames = new Set<string>();
   for (const section of sectionStarts) {
-    if (sectionNames.has(section.name)) add(errors, 'duplicateSection', `/measures/${section.start}/sectionStart`, 'Section names must be unique for arrangement references.');
+    if (score.arrangement !== undefined && sectionNames.has(section.name)) add(errors, 'duplicateSection', `/measures/${section.start}/sectionStart`, 'Section names must be unique for arrangement references.');
     sectionNames.add(section.name);
   }
   if (score.arrangement !== undefined) {
@@ -544,7 +610,10 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       });
     if (Array.isArray(score.measures) && score.measures.length && !errors.length) {
         const input = score.measures.map(measure => ({ measureIndex: measure.index, repeatStart: measure.barline.repeatStart, repeatEnd: measure.barline.repeatEnd, bracket: measure.barline.bracket, specialMark: measure.barline.specialMark, sectionName: measure.sectionStart }));
-        const sections = sectionStarts.map((section, index) => ({ name: section.name, start: section.start, end: sectionStarts[index + 1]?.start ?? score.measures.length, labelSpan: { line: 0, startCol: 0, endCol: 0 }, lyricVerseCount: Math.max(0, ...score.measures.slice(section.start, sectionStarts[index + 1]?.start ?? score.measures.length).flatMap(m => m.melody?.flatMap(n => n.syllables.map((_s, i) => i + 1)) ?? [])) }));
+        const sections = sectionStarts.map((section, index) => {
+          const end = sectionStarts[index + 1]?.start ?? score.measures.length;
+          return { name: section.name, start: section.start, end, labelSpan: { line: 0, startCol: 0, endCol: 0 }, lyricVerseCount: sectionLyricVerseCapacity(score as InterchangeScore, section.start, end) };
+        });
         const lowered = lowerArrangement(score.arrangement.map((entry, index) => ({ ...entry, span: { line: 0, startCol: index, endCol: index + 1 }, nameSpan: { line: 0, startCol: index, endCol: index + 1 } })), sections, input);
         if (!lowered.valid) lowered.diagnostics.forEach((diagnostic, index) => add(errors, diagnostic.code, `/arrangement/${index}`, 'Arrangement cannot be resolved against the written sections.'));
       }

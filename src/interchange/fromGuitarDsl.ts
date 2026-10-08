@@ -10,6 +10,7 @@ import type {
   InterchangeEvent,
   InterchangeFraction,
   InterchangeLossReport,
+  InterchangeLyricSlot,
   InterchangeNote,
   InterchangeNoteTechniques,
   InterchangeNoteValue,
@@ -42,6 +43,15 @@ function pitch(value: { step: InterchangePitch['step']; alter: -1 | 0 | 1; octav
 
 function syllable(value: { text: string; hyphenToNext: boolean; extend: boolean } | null): InterchangeSyllable | null {
   return value ? { text: value.text, hyphenToNext: value.hyphenToNext, extend: value.extend } : null;
+}
+
+function lyricSlots(values: readonly ({ text: string; hyphenToNext: boolean; extend: boolean } | null)[]): InterchangeLyricSlot[] {
+  const slots: InterchangeLyricSlot[] = [];
+  for (let index = 0; index < values.length; index++) {
+    if (!Object.prototype.hasOwnProperty.call(values, index) || values[index] === undefined) slots.push({ kind: 'omitted' });
+    else slots.push(syllable(values[index]));
+  }
+  return slots;
 }
 
 function techniques(value: Record<string, unknown> | undefined): InterchangeNoteTechniques | undefined {
@@ -77,7 +87,7 @@ function convertNote(value: import('../melody').MelodyNote): InterchangeNote {
     ...(value.techniques ? { techniques: techniques(value.techniques as unknown as Record<string, unknown>) } : {}),
     tieToNext: value.tieToNext,
     tiedFromPrev: value.tiedFromPrev,
-    syllables: value.syllables.map(syllable)
+    syllables: lyricSlots(value.syllables)
   };
 }
 
@@ -101,7 +111,7 @@ function convertTabVoices(value: NonNullable<import('../compiler').MeasureData['
         name: effect.name,
         args: Object.fromEntries(Object.entries(effect.args).map(([key, val]) => [key, copyEffectValue(val)]))
       })),
-      syllables: beat.syllables.map(syllable)
+      syllables: lyricSlots(beat.syllables)
     }))
   }));
 }
@@ -238,6 +248,7 @@ export function parsedScoreToInterchange(score: ParsedScore, arrangementScan: Ar
         barres: definition.barres.map(barre => ({ ...barre }))
       })),
       ...(arrangementScan.present ? { arrangement: arrangementScan.entries.map(entry => ({ name: entry.name, count: entry.count, ...(entry.lyricVerse === undefined ? {} : { lyricVerse: entry.lyricVerse }) })) } : {}),
+      melodyGroups: score.melodyGroups.map(group => ({ ...group })),
       measures
     };
     const errors = validateInterchangeScore(scoreIR);

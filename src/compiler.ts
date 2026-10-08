@@ -468,6 +468,8 @@ export interface ParsedScore {
   /** `chord` definitions in source order (first valid definition of a key wins). */
   chordDefinitions: ChordDefinition[];
   measures: MeasureData[];
+  /** Authored `mel:` group boundaries and final lyric-row counts. */
+  melodyGroups: ParsedMelodyGroupSummary[];
   playOrder: PlayOrderResult;
   pages: ScorePage[];
   /** Sharps (> 0) / flats (< 0) derived from `key:`; null when the key cannot be parsed. */
@@ -492,6 +494,12 @@ export interface ParsedScore {
   events: ScoreEvent[];
   /** Pitches of `mel:` notes and inline notes, in source order. */
   pitchTokens?: PitchTokenSpan[];
+}
+
+export interface ParsedMelodyGroupSummary {
+  startMeasure: number;
+  endMeasureExclusive: number;
+  verseCount: number;
 }
 
 const RHYTHM_REGEX = /^(?:r?(?:(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?(?:\+(?:16|8|4|2|1)(?:t|\{[0-9]+:[0-9]+\})?)*|w|h|q)|r[a-z0-9]*)(\.[a-z][a-z0-9:\-]*)*$/;
@@ -523,6 +531,8 @@ function locateToken(rawLine: string, tok: string, from: number): number {
 
 /** A `mel:` line: the notes it produced (in order) and the note index range of each cell. */
 interface MelodyGroup {
+  startMeasure: number;
+  endMeasureExclusive: number;
   notes: MelodyNote[];
   cellRanges: { start: number; end: number }[];
   verseCount: number;
@@ -1693,7 +1703,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   function parseMelodyLine(rawLine: string, bodyStart: number, lineIdx: number, sectionIndex: number | null): MelodyGroup {
-    const group: MelodyGroup = { notes: [], cellRanges: [], verseCount: 0, sectionIndex };
+    const group: MelodyGroup = { startMeasure: melodyCursor, endMeasureExclusive: melodyCursor, notes: [], cellRanges: [], verseCount: 0, sectionIndex };
     const state: MelodyTokenState = {};
     const sequence = pitchSequence++;
 
@@ -1807,6 +1817,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         lengthChecks.push({ measureIdx, line: lineIdx, startCol: trimmedCol, endCol: Math.min(trimmedEnd, cellEnd), beats: total, heads });
       }
     }
+    group.endMeasureExclusive = melodyCursor;
     return group;
   }
 
@@ -2362,6 +2373,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     usedChords: Array.from(usedChordsSet),
     chordDefinitions,
     measures,
+    melodyGroups: melodyGroups.map(({ startMeasure, endMeasureExclusive, verseCount }) => ({ startMeasure, endMeasureExclusive, verseCount })),
     playOrder,
     pages: validPages,
     keySignature: parseKeySignature(originalKey),

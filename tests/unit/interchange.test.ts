@@ -6,6 +6,28 @@ import { parseGuitarDsl } from '../../src/compiler';
 import { appendLoss, emptyLossReport, guitarDslToInterchange, hasBlockingLoss, interchangeToGuitarDsl, validateInterchangeScore } from '../../src/interchange';
 import { interchangeSemanticMismatch } from '../../src/interchange/semanticProjection';
 
+function assertInterchangeRoundTrip(source: string) {
+  const before = parseGuitarDsl(source);
+  assert.deepStrictEqual(before.diagnostics.filter(item => item.severity === 'error'), []);
+  const first = guitarDslToInterchange(source);
+  assert.strictEqual(first.ok, true, JSON.stringify(first));
+  if (!first.ok) throw new Error(JSON.stringify(first));
+  const output = interchangeToGuitarDsl(first.value, first.loss);
+  assert.strictEqual(output.ok, true, JSON.stringify(output));
+  if (!output.ok) throw new Error(JSON.stringify(output));
+  const after = parseGuitarDsl(output.value);
+  assert.deepStrictEqual(after.diagnostics.filter(item => item.severity === 'error'), []);
+  const second = guitarDslToInterchange(output.value);
+  assert.strictEqual(second.ok, true, JSON.stringify(second));
+  if (!second.ok) throw new Error(JSON.stringify(second));
+  assert.deepStrictEqual(second.value, first.value);
+  assert.deepStrictEqual(
+    after.playOrder.occurrences.map(({ occurrenceIndex, measureIndex, lyricVerse }) => ({ occurrenceIndex, measureIndex, lyricVerse })),
+    before.playOrder.occurrences.map(({ occurrenceIndex, measureIndex, lyricVerse }) => ({ occurrenceIndex, measureIndex, lyricVerse }))
+  );
+  return { before, after, first: first.value, output: output.value, second: second.value, warnings: first.warnings };
+}
+
 describe('canonical interchange conversion', () => {
   it('T01 round-trips every checked-in GuitarDSL sample through the complete semantic gate', () => {
     const sampleDir = path.resolve(__dirname, '../../samples');
@@ -377,5 +399,188 @@ describe('canonical interchange conversion', () => {
     const invalidPlan = guitarDslToInterchange('| C [2.] |');
     assert.strictEqual(invalidPlan.ok, false);
     if (!invalidPlan.ok) assert.strictEqual(invalidPlan.code, 'invalidPlayOrder');
+  });
+});
+
+describe('interchange review remediation A-04 through A-07', () => {
+  it('A-04 preserves repeated section names without arrangement and rejects them with arrangement', () => {
+    const source = ['[Verse]', '| C | 1.d |', '[Verse]', '| G | 1.d |'].join('\n');
+    const roundTrip = assertInterchangeRoundTrip(source);
+    assert.deepStrictEqual(roundTrip.first.measures.map((measure: any) => measure.sectionStart), ['Verse', 'Verse']);
+
+    const arranged = [
+      'arrangement {',
+      '  Verse',
+      '}',
+      '[Verse]', '| C | 1.d |',
+      '[Verse]', '| G | 1.d |'
+    ].join('\n');
+    const invalid = guitarDslToInterchange(arranged);
+    assert.strictEqual(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.ok(['invalidSource', 'invalidPlayOrder'].includes(invalid.code));
+      assert.ok(invalid.diagnostics.some(item => item.severity === 'error'));
+      assert.ok(!('value' in invalid));
+    }
+  });
+
+  it('A-05 keeps parser-owned melody group spans and uses the minimum sung group verse count', () => {
+    const source = [
+      'arrangement {',
+      '  Verse x2',
+      '}',
+      '[Verse]',
+      '| C | 1.d |',
+      '| G | 1.d |',
+      'mel: | c4/1 |',
+      'lyr: あ',
+      'lyr: か',
+      'mel: | d4/1 |',
+      'lyr: さ'
+    ].join('\n');
+    const roundTrip = assertInterchangeRoundTrip(source);
+    assert.deepStrictEqual((roundTrip.before as any).melodyGroups, [
+      { startMeasure: 0, endMeasureExclusive: 1, verseCount: 2 },
+      { startMeasure: 1, endMeasureExclusive: 2, verseCount: 1 }
+    ]);
+    assert.deepStrictEqual((roundTrip.first as any).melodyGroups, (roundTrip.before as any).melodyGroups);
+    assert.deepStrictEqual(roundTrip.before.playOrder.occurrences.map(item => item.lyricVerse), [1, 1, 1, 1]);
+    assert.strictEqual((roundTrip.output.match(/^mel:/gm) ?? []).length, 2, 'adjacent authored groups must not be merged');
+
+    const unavailable = source.replace('Verse x2', 'Verse(lyr=2) x2');
+    const invalid = guitarDslToInterchange(unavailable);
+    assert.strictEqual(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.ok(invalid.diagnostics.some(item => item.code === 'arrangementLyricVerseUnavailable'));
+      assert.ok(!('value' in invalid));
+    }
+  });
+
+  it('A-05 retains a spanning group verse count across a page boundary and underfilled measure', () => {
+    const source = [
+      'arrangement {',
+      '  Intro',
+      '  Verse x2',
+      '}',
+      '[Intro]',
+      '| Am | 1.d |',
+      'pagebreak',
+      '[Verse]',
+      '| C | 1.d |',
+      '| G | 1.d |',
+      'mel: | c4/1 | d4/1 |',
+      'lyr: あ',
+      'lyr: か き'
+    ].join('\n');
+    const roundTrip = assertInterchangeRoundTrip(source);
+    assert.deepStrictEqual((roundTrip.first as any).melodyGroups, [
+      { startMeasure: 1, endMeasureExclusive: 3, verseCount: 2 }
+    ]);
+    const notes = roundTrip.first.measures.slice(1).flatMap((measure: any) => measure.melody);
+    assert.strictEqual(notes[0].syllables[0].text, 'あ');
+    assert.deepStrictEqual(notes[1].syllables[0], { kind: 'omitted' });
+    assert.strictEqual(notes[1].syllables[1].text, 'き');
+  });
+
+  it('A-06 emits melody lyric prefixes without padding omissions as skips', () => {
+    const short = assertInterchangeRoundTrip('| C | 1.d |\nmel: | c4/2 d4/2 |\nlyr: あ');
+    assert.ok(short.warnings.some(item => item.code === 'syllableCountMismatch'));
+    assert.deepStrictEqual(short.first.measures[0].melody?.map(note => note.syllables), [
+      [{ text: 'あ', hyphenToNext: false, extend: false }],
+      []
+    ]);
+    assert.match(short.output, /^lyr: \(あ\)$/m);
+    assert.doesNotMatch(short.output, /^lyr:.*\*/m);
+
+    const longerVerse = [
+      '| C | 1.d |',
+      'mel: | c4/4 d4/4 e4/4 f4/4 |',
+      'lyr: あ *',
+      'lyr: か き く'
+    ].join('\n');
+    const roundTrip = assertInterchangeRoundTrip(longerVerse);
+    const noteSlots = roundTrip.first.measures[0].melody!.map(note => note.syllables);
+    assert.strictEqual(noteSlots[1][0], null, 'authored * remains an explicit null');
+    assert.deepStrictEqual(noteSlots[2][0], { kind: 'omitted' });
+    assert.strictEqual((noteSlots[2][1] as any).text, 'く');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(roundTrip.first)), roundTrip.first);
+    assert.match(roundTrip.output, /^lyr: \(あ\) \*$/m);
+    assert.match(roundTrip.output, /^lyr: \(か\) \(き\) \(く\)$/m);
+  });
+
+  it('A-07 preserves underfilled TAB lyric prefixes, explicit skips, ties and dead-note attacks', () => {
+    const short = assertInterchangeRoundTrip('| C | 1.d |\ntab: | 6f0/2 6f2/2 |\nlyr: か');
+    assert.ok(short.warnings.some(item => item.code === 'syllableCountMismatch'));
+    assert.deepStrictEqual(short.first.measures[0].tabVoices![0].beats.map((beat: any) => beat.syllables), [
+      [{ text: 'か', hyphenToNext: false, extend: false }],
+      []
+    ]);
+    assert.match(short.output, /^lyr: \(か\)$/m);
+    assert.doesNotMatch(short.output, /^lyr:.*\*/m);
+
+    const skipped = assertInterchangeRoundTrip('| C | 1.d |\ntab: | 6f0/2 6f2/2 |\nlyr: *');
+    assert.deepStrictEqual(skipped.first.measures[0].tabVoices![0].beats.map((beat: any) => beat.syllables), [[null], []]);
+    assert.match(skipped.output, /^lyr: \*$/m);
+
+    const tied = [
+      '| C | 1.d |',
+      '| G | 1.d |',
+      'tab: | 5f0/2 5f0~/2 | 5f0/2 6x/2 |',
+      'lyr: か',
+      'lyr: き く け'
+    ].join('\n');
+    const roundTrip = assertInterchangeRoundTrip(tied);
+    const beats = roundTrip.first.measures.flatMap((measure: any) => measure.tabVoices![0].beats);
+    assert.strictEqual(beats[1].notes[0].tieToNext, true);
+    assert.strictEqual(beats[2].notes[0].string, 5);
+    assert.strictEqual(beats[3].notes[0].dead, true);
+    assert.deepStrictEqual(beats[2].syllables, []);
+    assert.deepStrictEqual(beats[3].syllables[0], { kind: 'omitted' });
+    assert.strictEqual((beats[3].syllables[1] as any).text, 'け');
+  });
+
+  it('T-NEG-1 rejects invalid melody group ranges and JSON lyric-slot shapes atomically', () => {
+    const base = guitarDslToInterchange('| C | 1.d |\nmel: | c4/2 d4/2 |\nlyr: あ');
+    assert.ok(base.ok);
+    if (!base.ok) return;
+    const clone = (value: unknown): any => JSON.parse(JSON.stringify(value));
+    const cases: Array<{ score: any; code: string; path: string }> = [];
+    const badRange = clone(base.value);
+    badRange.melodyGroups[0].startMeasure = -1;
+    cases.push({ score: badRange, code: 'invalidMelodyGroupRange', path: '/melodyGroups/0/startMeasure' });
+    const missingCoverage = clone(base.value);
+    missingCoverage.melodyGroups = [];
+    cases.push({ score: missingCoverage, code: 'melodyGroupCoverage', path: '/melodyGroups' });
+    const overlappingGroup = clone(base.value);
+    overlappingGroup.melodyGroups.push({ ...overlappingGroup.melodyGroups[0] });
+    cases.push({ score: overlappingGroup, code: 'overlappingMelodyGroups', path: '/melodyGroups/1/startMeasure' });
+    const badVerseCount = clone(base.value);
+    badVerseCount.melodyGroups[0].verseCount = -1;
+    cases.push({ score: badVerseCount, code: 'invalidMelodyGroupVerseCount', path: '/melodyGroups/0/verseCount' });
+    const impossibleVerse = clone(base.value);
+    impossibleVerse.melodyGroups[0].verseCount = 0;
+    cases.push({ score: impossibleVerse, code: 'melodyGroupSlotCount', path: '/measures/0/melody/0/syllables' });
+    const invalidOmission = clone(base.value);
+    invalidOmission.measures[0].melody[0].syllables[0] = {};
+    cases.push({ score: invalidOmission, code: 'invalidLyricSlot', path: '/measures/0/melody/0/syllables/0' });
+    const undefinedSlot = clone(base.value);
+    undefinedSlot.measures[0].melody[1].syllables = [undefined];
+    cases.push({ score: undefinedSlot, code: 'invalidLyricSlot', path: '/measures/0/melody/1/syllables/0' });
+    const sparseSlot = clone(base.value);
+    sparseSlot.measures[0].melody[1].syllables.length = 2;
+    sparseSlot.measures[0].melody[1].syllables[1] = { kind: 'omitted' };
+    cases.push({ score: sparseSlot, code: 'sparseLyricSlots', path: '/measures/0/melody/1/syllables/0' });
+
+    for (const item of cases) {
+      const before = JSON.stringify(item.score);
+      assert.ok(validateInterchangeScore(item.score).some(error => error.code === item.code && error.path === item.path), `${item.code}: ${JSON.stringify(validateInterchangeScore(item.score))}`);
+      const output = interchangeToGuitarDsl(item.score);
+      assert.strictEqual(output.ok, false, item.code);
+      if (!output.ok) {
+        assert.strictEqual(output.code, 'invalidIr', item.code);
+        assert.ok(!('value' in output), item.code);
+      }
+      assert.strictEqual(JSON.stringify(item.score), before, `${item.code}: caller IR mutated`);
+    }
   });
 });

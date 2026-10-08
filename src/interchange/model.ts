@@ -36,6 +36,20 @@ export interface InterchangeSyllable {
   readonly extend: boolean;
 }
 
+/** A verse slot with no authored lyric token. */
+export interface InterchangeOmittedSyllable {
+  readonly kind: 'omitted';
+}
+
+/** `null` is an authored `*`; omitted is distinct from that explicit skip. */
+export type InterchangeLyricSlot = InterchangeSyllable | null | InterchangeOmittedSyllable;
+
+export interface InterchangeMelodyGroup {
+  readonly startMeasure: number;
+  readonly endMeasureExclusive: number;
+  readonly verseCount: number;
+}
+
 export interface InterchangeNoteTechniques {
   readonly connection?: ConnectionTechnique;
   readonly bend?: number;
@@ -71,8 +85,8 @@ export interface InterchangeNote {
   readonly techniques?: InterchangeNoteTechniques;
   readonly tieToNext: boolean;
   readonly tiedFromPrev: boolean;
-  /** One slot per lyric verse; null means this note has no syllable in that verse. */
-  readonly syllables: readonly (InterchangeSyllable | null)[];
+  /** Dense verse slots; null is an authored skip and omitted records no source token. */
+  readonly syllables: readonly InterchangeLyricSlot[];
 }
 
 export interface InterchangeChord {
@@ -113,7 +127,7 @@ export interface InterchangeTabBeat {
   readonly notes: readonly InterchangeTabNote[];
   readonly duration: InterchangeNoteValue;
   readonly effects: readonly InterchangeTabEffectCall[];
-  readonly syllables: readonly (InterchangeSyllable | null)[];
+  readonly syllables: readonly InterchangeLyricSlot[];
 }
 
 export interface InterchangeTabVoice {
@@ -234,6 +248,8 @@ export interface InterchangeScore {
   readonly chordDefinitions: readonly InterchangeChordDefinition[];
   /** Absent when written repeat/navigation semantics are used instead. */
   readonly arrangement?: readonly InterchangeArrangementEntry[];
+  /** Parser-owned boundaries of authored `mel:` groups and their lyric-row counts. */
+  readonly melodyGroups: readonly InterchangeMelodyGroup[];
   /** Contiguous written-measure order; never flattened to execution order. */
   readonly measures: readonly InterchangeMeasure[];
 }

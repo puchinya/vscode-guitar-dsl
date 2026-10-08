@@ -7,11 +7,12 @@ import { createInstrumentModel, type TuningPreset } from '../instrumentModel';
 import { formatTimeSignature, type ScoreEventPayload } from '../scoreEvents';
 import { resolvePlayOrder } from '../playOrder';
 import type { PlayOrderMeasure } from '../playOrder';
-import { takesSyllable, type NoteTechniques } from '../melody';
+import type { NoteTechniques } from '../melody';
 import { mergeLossReports, emptyLossReport, hasBlockingLoss } from './loss';
 import { parsedScoreToInterchange } from './fromGuitarDsl';
 import { validateInterchangeScore } from './validate';
 import { interchangeSemanticMismatch } from './semanticProjection';
+import { lyricPrefixLength, sectionLyricVerseCapacity, takesMelodySyllable } from './lyricGroups';
 import type {
   InterchangeArrangementEntry,
   InterchangeChord,
@@ -19,6 +20,8 @@ import type {
   InterchangeEvent,
   InterchangeFraction,
   InterchangeLossReport,
+  InterchangeLyricSlot,
+  InterchangeMelodyGroup,
   InterchangeMeasure,
   InterchangeNote,
   InterchangeNoteTechniques,
@@ -27,7 +30,6 @@ import type {
   InterchangeResult,
   InterchangeRhythmEvent,
   InterchangeScore,
-  InterchangeSyllable,
   InterchangeTabBeat,
   InterchangeTabEffectCall,
   InterchangeTabNote
@@ -291,8 +293,9 @@ function metadataLines(score: InterchangeScore): string[] {
   return lines;
 }
 
-function serializeSyllable(value: InterchangeSyllable | null): string {
+function serializeSyllable(value: InterchangeLyricSlot): string {
   if (value === null) return '*';
+  if ('kind' in value) throw new Unrepresentable('omittedLyricSlot', '', 'An omitted lyric slot cannot be serialized as an authored token.');
   if (value.extend) return '_';
   if (/[\r\n|()]/.test(value.text)) throw new Unrepresentable('lyricText', '', 'Syllable text cannot be represented safely in the current lyric syntax.');
   if (value.hyphenToNext) {
@@ -303,29 +306,18 @@ function serializeSyllable(value: InterchangeSyllable | null): string {
   return `(${value.text})`;
 }
 
-function melodyGroupLines(measures: readonly InterchangeMeasure[]): string[] {
+function melodyGroupLines(group: InterchangeMelodyGroup, measures: readonly InterchangeMeasure[]): string[] {
   if (!measures.length) return [];
   const cells = measures.map(measure => measure.melody!.map((note, index) => melodyNoteText(note, `/measures/${measure.index}/melody/${index}`)).join(' '));
   const lines = [`mel: | ${cells.join(' | ')} |`];
-  const verseCount = Math.max(0, ...measures.flatMap(measure => measure.melody!.flatMap(note => note.syllables.map((_value, index) => index + 1))));
-  for (let verse = 0; verse < verseCount; verse++) {
-    const lyricCells = measures.map(measure => measure.melody!
-      .filter(note => !note.isRest && !note.techniques?.grace && !note.tiedFromPrev)
-      .map(note => serializeSyllable(note.syllables[verse] ?? null)).join(' '));
-    lines.push(`lyr: | ${lyricCells.join(' | ')} |`);
+  const sungNotes = measures.flatMap(measure => measure.melody!.filter(takesMelodySyllable));
+  for (let verse = 0; verse < group.verseCount; verse++) {
+    const slots = sungNotes.map(note => note.syllables[verse]);
+    const prefix = lyricPrefixLength(slots);
+    if (prefix < 0) throw new Unrepresentable('lyricRowNonPrefix', `/melodyGroups/${group.startMeasure}/verses/${verse}`, 'A melody lyric row has an authored syllable after an omitted slot.');
+    lines.push(`lyr:${prefix ? ` ${slots.slice(0, prefix).map(slot => serializeSyllable(slot!)).join(' ')}` : ''}`);
   }
   return lines;
-}
-
-function melodyVerseCount(measure: InterchangeMeasure): number {
-  return Math.max(0, ...(measure.melody ?? []).flatMap(note => note.syllables.map((_value, index) => index + 1)));
-}
-
-function tieContinuesAcross(left: InterchangeMeasure, right: InterchangeMeasure): boolean {
-  const previous = left.melody?.at(-1);
-  const next = right.melody?.[0];
-  const parserWouldMarkContinuation = !!previous?.tieToNext && !!next && !next.isRest && !next.pitches;
-  return !!next?.tiedFromPrev === parserWouldMarkContinuation;
 }
 
 function tabNoteText(note: InterchangeTabNote, path: string): string {
@@ -372,7 +364,6 @@ interface TabLyricGroup {
   beats: InterchangeTabBeat[];
   slots: InterchangeTabBeat[];
   verseCount: number;
-  hasSlots: boolean;
 }
 
 function tabBeatTakesSlot(beat: InterchangeTabBeat, previousBeats: readonly InterchangeTabBeat[]): boolean {
@@ -391,30 +382,27 @@ function tabBeatTakesSlot(beat: InterchangeTabBeat, previousBeats: readonly Inte
 
 function tabLyricGroups(measures: readonly InterchangeMeasure[], lastTabMeasure: number): TabLyricGroup[] {
   const groups: TabLyricGroup[] = [];
-  let current: TabLyricGroup = { measures: [], beats: [], slots: [], verseCount: 0, hasSlots: false };
+  let current: TabLyricGroup = { measures: [], beats: [], slots: [], verseCount: 0 };
   const appendMeasure = (group: TabLyricGroup, measure: InterchangeMeasure): boolean => {
     const beats = [...group.beats];
     const slots = [...group.slots];
-    let verseCount = group.verseCount;
-    let hasSlots = group.hasSlots;
     const voice = measure.tabVoices![0];
     for (const beat of voice.beats) {
       const takes = tabBeatTakesSlot(beat, beats);
-      if (takes) {
-        if (!hasSlots) verseCount = beat.syllables.length;
-        else if (beat.syllables.length !== verseCount) return false;
-        hasSlots = true;
-        slots.push(beat);
-      } else if (beat.syllables.length > 0) {
+      if (takes) slots.push(beat);
+      else if (beat.syllables.some(value => value === null || typeof value === 'object' && value !== null && !('kind' in value && value.kind === 'omitted'))) {
         return false;
       }
       beats.push(beat);
     }
+    const verseCount = Math.max(0, ...slots.map(beat => beat.syllables.length));
+    for (let verse = 0; verse < verseCount; verse++) {
+      if (lyricPrefixLength(slots.map(beat => beat.syllables[verse])) < 0) return false;
+    }
     group.measures.push(measure);
     group.beats = beats;
     group.slots = slots;
-    group.verseCount = hasSlots ? verseCount : 0;
-    group.hasSlots = hasSlots;
+    group.verseCount = verseCount;
     return true;
   };
 
@@ -426,7 +414,7 @@ function tabLyricGroups(measures: readonly InterchangeMeasure[], lastTabMeasure:
     }
     if (!current.measures.length) throw new Unrepresentable('tabLyricAlignment', `/measures/${measure.index}/tabVoices/0/beats`, 'TAB syllables cannot be represented by a lyric group without changing verse presence or tie slots.');
     groups.push(current);
-    current = { measures: [], beats: [], slots: [], verseCount: 0, hasSlots: false };
+    current = { measures: [], beats: [], slots: [], verseCount: 0 };
   }
   if (current.measures.length) groups.push(current);
   return groups;
@@ -435,7 +423,10 @@ function tabLyricGroups(measures: readonly InterchangeMeasure[], lastTabMeasure:
 function tabLyricLines(group: TabLyricGroup): string[] {
   const lines: string[] = [];
   for (let verse = 0; verse < group.verseCount; verse++) {
-    lines.push(`lyr: ${group.slots.map(beat => serializeSyllable(beat.syllables[verse] ?? null)).join(' ')}`);
+    const slots = group.slots.map(beat => beat.syllables[verse]);
+    const prefix = lyricPrefixLength(slots);
+    if (prefix < 0) throw new Unrepresentable('tabLyricRowNonPrefix', '/measures', 'A TAB lyric row has an authored syllable after an omitted slot.');
+    lines.push(`lyr:${prefix ? ` ${slots.slice(0, prefix).map(slot => serializeSyllable(slot!)).join(' ')}` : ''}`);
   }
   return lines;
 }
@@ -489,14 +480,6 @@ function serializeMeasureBody(measure: InterchangeMeasure): string[] {
   return [`${open} ${tokens.join(' ')} ${barlineClose(measure)}`];
 }
 
-function sectionLyricVerseCount(score: InterchangeScore, measureIndex: number): number {
-  let start = measureIndex;
-  while (start > 0 && !score.measures[start].sectionStart && !score.measures[start].pageBreakBefore) start--;
-  let end = measureIndex + 1;
-  while (end < score.measures.length && !score.measures[end].sectionStart && !score.measures[end].pageBreakBefore) end++;
-  return Math.max(0, ...score.measures.slice(start, end).flatMap(measure => measure.melody?.flatMap(note => note.syllables.map((_value, index) => index + 1)) ?? []));
-}
-
 function resolveExpectedOccurrences(score: InterchangeScore): readonly { occurrenceIndex: number; measureIndex: number; lyricVerse?: number }[] {
   const written: PlayOrderMeasure[] = score.measures.map(measure => ({
     measureIndex: measure.index,
@@ -509,12 +492,10 @@ function resolveExpectedOccurrences(score: InterchangeScore): readonly { occurre
   let input: PlayOrderMeasure[] = written;
   if (score.arrangement) {
     const starts = score.measures.flatMap(measure => measure.sectionStart ? [{ name: measure.sectionStart, start: measure.index }] : []);
-    const sections = starts.map((section, index) => ({
-      ...section,
-      end: starts[index + 1]?.start ?? score.measures.length,
-      labelSpan: { line: 0, startCol: 0, endCol: 0 },
-      lyricVerseCount: Math.max(0, ...score.measures.slice(section.start, starts[index + 1]?.start ?? score.measures.length).flatMap(measure => measure.melody?.flatMap(note => note.syllables.map((_value, verse) => verse + 1)) ?? []))
-    }));
+    const sections = starts.map((section, index) => {
+      const end = starts[index + 1]?.start ?? score.measures.length;
+      return { ...section, end, labelSpan: { line: 0, startCol: 0, endCol: 0 }, lyricVerseCount: sectionLyricVerseCapacity(score, section.start, end) };
+    });
     const lowered = lowerArrangement(score.arrangement.map((entry, index) => ({ ...entry, span: { line: 0, startCol: index, endCol: index + 1 }, nameSpan: { line: 0, startCol: index, endCol: index + 1 } })), sections, written);
     if (!lowered.valid) throw new Unrepresentable('invalidArrangement', '/arrangement', 'Arrangement references cannot be resolved.');
     input = lowered.measures;
@@ -548,37 +529,27 @@ function serialize(score: InterchangeScore): string {
   output.push(...arrangementBlock(score.arrangement ?? []));
 
   let melodyCursor = 0;
-  let melodyGroup: InterchangeMeasure[] = [];
-  const flushMelody = () => {
-    if (!melodyGroup.length) return;
-    if (melodyGroup[0].index !== melodyCursor) throw new Unrepresentable('sparseMelody', `/measures/${melodyGroup[0].index}/melody`, `Current GuitarDSL assigns melody to the next unfilled measure in the active section/page (cursor ${melodyCursor}, expected ${melodyGroup[0].index}).`);
-    output.push(...melodyGroupLines(melodyGroup));
-    melodyCursor += melodyGroup.length;
-    melodyGroup = [];
-  };
+  const melodyGroupsByEnd = new Map<number, InterchangeMelodyGroup>();
+  for (const group of score.melodyGroups) melodyGroupsByEnd.set(group.endMeasureExclusive - 1, group);
   for (const measure of score.measures) {
     if (measure.pageBreakBefore) {
-      flushMelody();
       output.push('pagebreak');
       melodyCursor = measure.index;
     }
     if (measure.sectionStart !== undefined) {
-      flushMelody();
       output.push(`[${checkedLineValue(measure.sectionStart, `/measures/${measure.index}/sectionStart`)}]`);
       melodyCursor = measure.index;
     }
-    if (!measure.melody?.length) flushMelody();
     for (const event of measure.eventsBefore) output.push(eventDirective(event, `/measures/${measure.index}/eventsBefore`));
     output.push(...serializeMeasureBody(measure));
-    if (measure.melody?.length) {
-      if (melodyGroup.length) {
-        const previous = melodyGroup[melodyGroup.length - 1];
-        if (previous.index + 1 !== measure.index || melodyVerseCount(previous) !== melodyVerseCount(measure) || !tieContinuesAcross(previous, measure)) flushMelody();
-      }
-      melodyGroup.push(measure);
+    const group = melodyGroupsByEnd.get(measure.index);
+    if (group) {
+      if (group.startMeasure !== melodyCursor) throw new Unrepresentable('sparseMelody', `/melodyGroups/${group.startMeasure}/startMeasure`, `Current GuitarDSL assigns melody from measure ${melodyCursor}, not ${group.startMeasure}.`);
+      const groupedMeasures = score.measures.slice(group.startMeasure, group.endMeasureExclusive);
+      output.push(...melodyGroupLines(group, groupedMeasures));
+      melodyCursor = group.endMeasureExclusive;
     }
   }
-  flushMelody();
 
   let lastTabMeasure = -1;
   for (let index = 0; index < score.measures.length; index++) if (score.measures[index].tabVoices?.length) lastTabMeasure = index;
