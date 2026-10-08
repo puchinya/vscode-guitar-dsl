@@ -367,28 +367,76 @@ function tabBeatText(beat: InterchangeTabBeat, path: string): string {
   return `${item}/${duration}${beatEffects}`;
 }
 
-function tabLyricLines(measures: readonly InterchangeMeasure[], lastTabMeasure: number): string[] {
-  const beats = measures.slice(0, lastTabMeasure + 1).flatMap(measure => measure.tabVoices?.[0]?.beats ?? []);
-  let verseCount = 0;
-  for (const beat of beats) verseCount = Math.max(verseCount, beat.syllables.length);
-  const beatTakesSlot: boolean[] = [];
-  for (let index = 0; index < beats.length; index++) {
-    const beat = beats[index];
-    const takes = !beat.isRest && beat.notes.some(note => {
-      if (note.dead) return true;
-      for (let prior = index - 1; prior >= 0; prior--) {
-        const previous = beats[prior];
-        if (previous.isRest || previous.notes.length === 0) continue;
-        const linked = previous.notes.find(candidate => candidate.string === note.string);
-        return !(linked?.tieToNext && linked.fret === note.fret);
+interface TabLyricGroup {
+  measures: InterchangeMeasure[];
+  beats: InterchangeTabBeat[];
+  slots: InterchangeTabBeat[];
+  verseCount: number;
+  hasSlots: boolean;
+}
+
+function tabBeatTakesSlot(beat: InterchangeTabBeat, previousBeats: readonly InterchangeTabBeat[]): boolean {
+  return !beat.isRest && beat.notes.some(note => {
+    if (note.dead) return true;
+    for (let prior = previousBeats.length - 1; prior >= 0; prior--) {
+      const previous = previousBeats[prior];
+      if (previous.isRest || previous.notes.length === 0) continue;
+      const linked = previous.notes.find(candidate => candidate.string === note.string);
+      if (!linked) continue;
+      return !(linked.tieToNext && linked.fret === note.fret);
+    }
+    return true;
+  });
+}
+
+function tabLyricGroups(measures: readonly InterchangeMeasure[], lastTabMeasure: number): TabLyricGroup[] {
+  const groups: TabLyricGroup[] = [];
+  let current: TabLyricGroup = { measures: [], beats: [], slots: [], verseCount: 0, hasSlots: false };
+  const appendMeasure = (group: TabLyricGroup, measure: InterchangeMeasure): boolean => {
+    const beats = [...group.beats];
+    const slots = [...group.slots];
+    let verseCount = group.verseCount;
+    let hasSlots = group.hasSlots;
+    const voice = measure.tabVoices![0];
+    for (const beat of voice.beats) {
+      const takes = tabBeatTakesSlot(beat, beats);
+      if (takes) {
+        if (!hasSlots) verseCount = beat.syllables.length;
+        else if (beat.syllables.length !== verseCount) return false;
+        hasSlots = true;
+        slots.push(beat);
+      } else if (beat.syllables.length > 0) {
+        return false;
       }
-      return true;
-    });
-    beatTakesSlot.push(takes);
+      beats.push(beat);
+    }
+    group.measures.push(measure);
+    group.beats = beats;
+    group.slots = slots;
+    group.verseCount = hasSlots ? verseCount : 0;
+    group.hasSlots = hasSlots;
+    return true;
+  };
+
+  for (let index = 0; index <= lastTabMeasure;) {
+    const measure = measures[index];
+    if (appendMeasure(current, measure)) {
+      index++;
+      continue;
+    }
+    if (!current.measures.length) throw new Unrepresentable('tabLyricAlignment', `/measures/${measure.index}/tabVoices/0/beats`, 'TAB syllables cannot be represented by a lyric group without changing verse presence or tie slots.');
+    groups.push(current);
+    current = { measures: [], beats: [], slots: [], verseCount: 0, hasSlots: false };
   }
-  const slots = beats.map((beat, index) => ({ beat, takes: beatTakesSlot[index] })).filter(slot => slot.takes);
+  if (current.measures.length) groups.push(current);
+  return groups;
+}
+
+function tabLyricLines(group: TabLyricGroup): string[] {
   const lines: string[] = [];
-  for (let verse = 0; verse < verseCount; verse++) lines.push(`lyr: ${slots.map(slot => serializeSyllable(slot.beat.syllables[verse] ?? null)).join(' ')}`);
+  for (let verse = 0; verse < group.verseCount; verse++) {
+    lines.push(`lyr: ${group.slots.map(beat => serializeSyllable(beat.syllables[verse] ?? null)).join(' ')}`);
+  }
   return lines;
 }
 
@@ -538,14 +586,16 @@ function serialize(score: InterchangeScore): string {
     for (let index = 0; index <= lastTabMeasure; index++) {
       if (score.measures[index].tabVoices?.length !== 1 || score.measures[index].tabVoices?.[0].voice !== 1) throw new Unrepresentable('sparseTab', `/measures/${index}/tabVoices`, 'Current GuitarDSL TAB assignment fills the next unassigned written measure, so gaps cannot be encoded without adding a TAB part.');
     }
-    const cells = score.measures.slice(0, lastTabMeasure + 1).map(measure => {
-      const voice = measure.tabVoices![0];
-      const beats = voice.beats.map((beat, index) => tabBeatText(beat, `/measures/${measure.index}/tabVoices/0/beats/${index}`));
-      if (!beats.length) throw new Unrepresentable('emptyTabCell', `/measures/${measure.index}/tabVoices/0/beats`, 'An empty TAB cell cannot be distinguished from an absent cell in the current syntax.');
-      return beats.join(' ');
-    });
-    output.push(`tab: | ${cells.join(' | ')} |`);
-    output.push(...tabLyricLines(score.measures, lastTabMeasure));
+    for (const group of tabLyricGroups(score.measures, lastTabMeasure)) {
+      const cells = group.measures.map(measure => {
+        const voice = measure.tabVoices![0];
+        const beats = voice.beats.map((beat, index) => tabBeatText(beat, `/measures/${measure.index}/tabVoices/0/beats/${index}`));
+        if (!beats.length) throw new Unrepresentable('emptyTabCell', `/measures/${measure.index}/tabVoices/0/beats`, 'An empty TAB cell cannot be distinguished from an absent cell in the current syntax.');
+        return beats.join(' ');
+      });
+      output.push(`tab: | ${cells.join(' | ')} |`);
+      output.push(...tabLyricLines(group));
+    }
   }
   return output.join('\n');
 }

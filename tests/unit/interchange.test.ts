@@ -2,6 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { createInstrumentModel } from '../../src/instrumentModel';
+import { parseGuitarDsl } from '../../src/compiler';
 import { appendLoss, emptyLossReport, guitarDslToInterchange, hasBlockingLoss, interchangeToGuitarDsl, validateInterchangeScore } from '../../src/interchange';
 import { interchangeSemanticMismatch } from '../../src/interchange/semanticProjection';
 
@@ -125,6 +126,144 @@ describe('canonical interchange conversion', () => {
     assert.strictEqual(tab[3].notes[0].dead, true);
     const output = interchangeToGuitarDsl(first.value);
     assert.strictEqual(output.ok, true, JSON.stringify(output));
+  });
+
+  it('preserves TAB lyric group presence, verse slots, sections, ties, and play order', () => {
+    const groupedSources = [
+      fs.readFileSync(path.resolve(__dirname, '../fixtures/interchange-tab-lyric-groups.guitardsl'), 'utf8'),
+      fs.readFileSync(path.resolve(__dirname, '../fixtures/interchange-tab-lyric-sections.guitardsl'), 'utf8'),
+      [
+        '| C | 1.d |',
+        '| D | 1.d |',
+        'tab: | 5f0/2 6f0~/2 | 6f0/2 5f2/2 |',
+        'lyr: か き く'
+      ].join('\n'),
+      [
+        '| C | 1.d |',
+        '| D | 1.d |',
+        'tab: | 5f0/2 6f0~/2 |',
+        'tab: | 6f0/2 5f2/2 |',
+        'lyr: か き'
+      ].join('\n')
+    ];
+    for (const source of groupedSources) {
+      const original = guitarDslToInterchange(source);
+      assert.strictEqual(original.ok, true, JSON.stringify(original));
+      if (!original.ok) continue;
+      const emitted = interchangeToGuitarDsl(original.value);
+      assert.strictEqual(emitted.ok, true, JSON.stringify(emitted));
+      if (!emitted.ok) continue;
+      const reparsed = guitarDslToInterchange(emitted.value);
+      assert.strictEqual(reparsed.ok, true, JSON.stringify(reparsed));
+      if (!reparsed.ok) continue;
+      assert.deepStrictEqual(
+        reparsed.value.measures.map(measure => measure.tabVoices?.[0]?.beats.map(beat => beat.syllables) ?? null),
+        original.value.measures.map(measure => measure.tabVoices?.[0]?.beats.map(beat => beat.syllables) ?? null)
+      );
+      const beforePlan = parseGuitarDsl(source).playOrder.occurrences.map(({ occurrenceIndex, measureIndex, lyricVerse }) => ({ occurrenceIndex, measureIndex, lyricVerse }));
+      const afterPlan = parseGuitarDsl(emitted.value).playOrder.occurrences.map(({ occurrenceIndex, measureIndex, lyricVerse }) => ({ occurrenceIndex, measureIndex, lyricVerse }));
+      assert.deepStrictEqual(afterPlan, beforePlan);
+    }
+    const grouped = fs.readFileSync(path.resolve(__dirname, '../fixtures/interchange-tab-lyric-groups.guitardsl'), 'utf8');
+    const converted = guitarDslToInterchange(grouped);
+    assert.ok(converted.ok);
+    if (converted.ok) {
+      const emitted = interchangeToGuitarDsl(converted.value);
+      assert.ok(emitted.ok);
+      if (emitted.ok) assert.match(emitted.value, /tab: \| 6f0\/1 \|\s*tab: \| 6f2\/1 \|\s*lyr: \(か\)/);
+    }
+    const sections = fs.readFileSync(path.resolve(__dirname, '../fixtures/interchange-tab-lyric-sections.guitardsl'), 'utf8');
+    const sectionResult = guitarDslToInterchange(sections);
+    assert.ok(sectionResult.ok);
+    if (sectionResult.ok) {
+      assert.deepStrictEqual(sectionResult.value.measures.map(measure => measure.tabVoices![0].beats[0].syllables), [
+        [],
+        [null],
+        [{ text: 'ぜ', hyphenToNext: false, extend: false }]
+      ]);
+    }
+  });
+
+  it('rejects ambiguous melody pitch fields and incoherent ties as invalid IR', () => {
+    const oneMeasure = guitarDslToInterchange('| C | 1.d |\nmel: | c4/1 |');
+    const twoMeasures = guitarDslToInterchange('| C | 1.d |\n| D | 1.d |\nmel: | c4/1~ | d4/1 |');
+    assert.ok(oneMeasure.ok && twoMeasures.ok);
+    if (!oneMeasure.ok || !twoMeasures.ok) return;
+    const clone = (value: unknown): any => JSON.parse(JSON.stringify(value));
+    const ambiguousPitch = clone(oneMeasure.value);
+    ambiguousPitch.measures[0].melody[0].pitches = [
+      { step: 'e', alter: 0, octave: 4 },
+      { step: 'g', alter: 0, octave: 4 }
+    ];
+    const orphanContinuation = clone(oneMeasure.value);
+    orphanContinuation.measures[0].melody[0].tiedFromPrev = true;
+    const missingContinuation = clone(twoMeasures.value);
+    missingContinuation.measures[1].melody[0].tiedFromPrev = false;
+    const incompatibleTarget = clone(twoMeasures.value);
+    incompatibleTarget.measures[1].melody[0].pitch = undefined;
+    incompatibleTarget.measures[1].melody[0].pitches = [
+      { step: 'd', alter: 0, octave: 4 },
+      { step: 'f', alter: 0, octave: 4 }
+    ];
+    incompatibleTarget.measures[1].melody[0].tiedFromPrev = false;
+    const groupTie = clone(oneMeasure.value);
+    groupTie.measures[0].melody[0].pitch = undefined;
+    groupTie.measures[0].melody[0].pitches = [
+      { step: 'e', alter: 0, octave: 4 },
+      { step: 'g', alter: 0, octave: 4 }
+    ];
+    groupTie.measures[0].melody[0].tieToNext = true;
+    const groupTechnique = clone(oneMeasure.value);
+    groupTechnique.measures[0].melody[0].pitch = undefined;
+    groupTechnique.measures[0].melody[0].pitches = [
+      { step: 'e', alter: 0, octave: 4 },
+      { step: 'g', alter: 0, octave: 4 }
+    ];
+    groupTechnique.measures[0].melody[0].techniques = { connection: 'hammer' };
+    for (const [score, code] of [
+      [ambiguousPitch, 'ambiguousPitch'],
+      [orphanContinuation, 'orphanTieContinuation'],
+      [missingContinuation, 'missingTieContinuation'],
+      [groupTie, 'unsupportedGroupTie'],
+      [groupTechnique, 'unsupportedGroupTechnique'],
+      [incompatibleTarget, 'invalidMelodyTieTarget']
+    ] as const) {
+      const before = JSON.stringify(score);
+      assert.ok(validateInterchangeScore(score).some(error => error.code === code), `${code}: ${JSON.stringify(validateInterchangeScore(score))}`);
+      const emitted = interchangeToGuitarDsl(score);
+      assert.strictEqual(emitted.ok, false);
+      if (!emitted.ok) {
+        assert.strictEqual(emitted.code, 'invalidIr');
+        assert.ok(!('value' in emitted));
+      }
+      assert.strictEqual(JSON.stringify(score), before);
+    }
+  });
+
+  it('rejects duplicate explicit-duration chord onsets before serialization', () => {
+    const valid = guitarDslToInterchange('| C | 1.d |');
+    assert.ok(valid.ok);
+    if (!valid.ok) return;
+    const duplicate = JSON.parse(JSON.stringify(valid.value));
+    duplicate.measures[0].chordPlacementMode = 'explicitDuration';
+    const atEnd = JSON.parse(JSON.stringify(valid.value));
+    for (const score of [duplicate, atEnd]) {
+      score.measures[0].chordPlacementMode = 'explicitDuration';
+      score.measures[0].chords = [
+        { name: 'C', beatOffset: { n: 0, d: 1 } },
+        { name: 'G', beatOffset: score === duplicate ? { n: 0, d: 1 } : { n: 4, d: 1 } }
+      ];
+      const before = JSON.stringify(score);
+      const errors = validateInterchangeScore(score);
+      assert.ok(errors.some(error => error.code === 'invalidChordOnset' && error.path === '/measures/0/chords/1/beatOffset'), JSON.stringify(errors));
+      const emitted = interchangeToGuitarDsl(score);
+      assert.strictEqual(emitted.ok, false);
+      if (!emitted.ok) {
+        assert.strictEqual(emitted.code, 'invalidIr');
+        assert.ok(!('value' in emitted));
+      }
+      assert.strictEqual(JSON.stringify(score), before);
+    }
   });
 
   it('returns atomic deterministic failures for malformed source and invalid IR', () => {

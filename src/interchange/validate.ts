@@ -311,12 +311,21 @@ function validateNote(note: unknown, path: string, errors: InterchangeError[]): 
   validSyllables(note.syllables, `${path}/syllables`, errors);
   if (note.isRest) {
     if (note.pitch !== undefined || note.pitches !== undefined) add(errors, 'restHasPitch', path, 'A rest cannot contain a pitch.');
+    if (note.tieToNext || note.tiedFromPrev) add(errors, 'invalidMelodyTieSource', path, 'A rest cannot start or continue a tie.');
+  } else if (note.pitch !== undefined && note.pitches !== undefined) {
+    add(errors, 'ambiguousPitch', path, 'A note must contain either one pitch or a note group, not both.');
   } else if (note.pitch !== undefined) validPitch(note.pitch, `${path}/pitch`, errors);
-  else if (Array.isArray(note.pitches)) {
+  else if (note.pitches !== undefined && Array.isArray(note.pitches)) {
     if (note.pitches.length < 2) add(errors, 'invalidNoteGroup', `${path}/pitches`, 'A note group requires at least two pitches.');
     note.pitches.forEach((pitch, index) => validPitch(pitch, `${path}/pitches/${index}`, errors));
   } else add(errors, 'missingPitch', path, 'A sounding note requires a pitch or note group.');
   validTechniques(note.techniques, `${path}/techniques`, errors);
+  if (note.pitches !== undefined && Array.isArray(note.pitches)) {
+    if (note.tieToNext || note.tiedFromPrev) add(errors, 'unsupportedGroupTie', path, 'A note group cannot start or continue a tie.');
+    if (isRecord(note.techniques) && (note.techniques.connection !== undefined || note.techniques.bend !== undefined || note.techniques.slurStart === true || note.techniques.slurEnd === true)) {
+      add(errors, 'unsupportedGroupTechnique', `${path}/techniques`, 'A note group cannot carry a connection, bend, or slur technique.');
+    }
+  }
   if (Array.isArray(note.syllables) && !note.isRest && !(isRecord(note.techniques) && note.techniques.grace === true) && !note.tiedFromPrev) {
     for (let index = 0; index < note.syllables.length; index++) {
       const syllable = note.syllables[index];
@@ -437,7 +446,11 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
         const beatOffset = isRecord(chord) ? chord.beatOffset as Record<string, any> : null;
         const expectedBeats = measure.expectedBeats;
         if (!isNormalizedFraction(beatOffset) || !isNormalizedFraction(expectedBeats)) continue;
-        if ((previous && compareFractionsExact(beatOffset, previous) < 0) || compareFractionsExact(beatOffset, expectedBeats) > 0) add(errors, 'invalidChordOnset', `${path}/chords/${i}/beatOffset`, 'Chord onsets must be ordered and within the measure.');
+        const ordering = previous ? compareFractionsExact(beatOffset, previous) : 1;
+        const atOrAfterEnd = compareFractionsExact(beatOffset, expectedBeats) >= 0;
+        if (ordering < 0 || (measure.chordPlacementMode === 'explicitDuration' && (ordering === 0 || atOrAfterEnd)) || compareFractionsExact(beatOffset, expectedBeats) > 0) {
+          add(errors, 'invalidChordOnset', `${path}/chords/${i}/beatOffset`, 'Chord onsets must be ordered, positive-duration, and within the measure.');
+        }
         previous = beatOffset;
       }
     }
@@ -492,6 +505,28 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       });
     }
   });
+
+  if (Array.isArray(score.measures)) {
+    const melody: Array<{ note: Record<string, any>; path: string }> = [];
+    score.measures.forEach((measure, measureIndex) => {
+      if (!isRecord(measure) || !Array.isArray(measure.melody)) return;
+      measure.melody.forEach((note, noteIndex) => {
+        if (isRecord(note)) melody.push({ note, path: `/measures/${measureIndex}/melody/${noteIndex}` });
+      });
+    });
+    melody.forEach(({ note, path }, index) => {
+      const previous = melody[index - 1]?.note;
+      const next = melody[index + 1]?.note;
+      if (note.tieToNext) {
+        if (note.isRest || note.pitch === undefined || note.pitches !== undefined) add(errors, 'invalidMelodyTieSource', path, 'Only a single pitched note can start a tie.');
+        if (!next || next.isRest || next.pitch === undefined || next.pitches !== undefined) add(errors, 'invalidMelodyTieTarget', path, 'A melody tie must continue into the next single pitched note.');
+        else if (!next.tiedFromPrev) add(errors, 'missingTieContinuation', `${path}/tieToNext`, 'A melody tie source must be paired with the next note’s tiedFromPrev marker.');
+      }
+      if (note.tiedFromPrev && (!previous || !previous.tieToNext || previous.isRest || previous.pitch === undefined || previous.pitches !== undefined || note.isRest || note.pitch === undefined || note.pitches !== undefined)) {
+        add(errors, 'orphanTieContinuation', `${path}/tiedFromPrev`, 'A tied continuation must follow a compatible single-note tie source.');
+      }
+    });
+  }
 
   const sectionNames = new Set<string>();
   for (const section of sectionStarts) {
@@ -568,17 +603,7 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
     const tabPositions = typedMeasures.flatMap(measure => (measure.tabVoices ?? []).flatMap(voice => voice.beats.map(beat => ({ measureIndex: measure.index, beat }))));
     const tabBeats = tabPositions.map(position => position.beat);
     tabPositions.forEach(({ measureIndex, beat }, beatIndex) => {
-      const takesSlot = !beat.isRest && beat.notes.some(note => {
-        if (note.dead) return true;
-        for (let prior = beatIndex - 1; prior >= 0; prior--) {
-          const previous = tabBeats[prior];
-          if (previous.isRest || previous.notes.length === 0) continue;
-          const linked = previous.notes.find(candidate => candidate.string === note.string);
-          return !(linked?.tieToNext && linked.fret === note.fret);
-        }
-        return true;
-      });
-      if (!takesSlot && beat.syllables.some(syllable => syllable !== null)) add(errors, 'lyricOnTiedTabContinuation', `/measures/${measureIndex}/tabVoices/0/beats/${beatIndex}/syllables`, 'A tied TAB continuation does not consume a lyric slot.');
+      if (beat.isRest && beat.syllables.length > 0) add(errors, 'lyricOnNonSungTabBeat', `/measures/${measureIndex}/tabVoices/0/beats/${beatIndex}/syllables`, 'A TAB rest cannot own syllables; lyric rows attach only to sounding slots.');
       for (let noteIndex = 0; noteIndex < beat.notes.length; noteIndex++) {
         const note = beat.notes[noteIndex];
         if (!note.tieToNext) continue;
