@@ -84,7 +84,7 @@ Run locally on 2026-10-10 on macOS 26.6.2 with Node.js v26.7.0 and npm 11.19.0.
 | Command | Result |
 |---|---|
 | `npm run compile` | PASS. |
-| `npm test` | PASS — `check:help`, `check:ai`, 1050 unit tests, and 56 E2E tests. A preceding run on the same working tree had 7 undo-history E2E assertion failures across Issues #62, #65, #68, and #80; the immediate full rerun exited 0. |
+| `npm test` | PASS — `check:help`, `check:ai`, 1050 unit tests, and 57 E2E tests, including the Issue #97 Untitled import/export command flow. Earlier runs intermittently failed undo-history E2E assertions in Issues #62, #65, #68, and #80 (7 or 15 failures); the final full rerun exited 0. |
 | `npm run vscode:prepublish` | PASS with the installed Rustup toolchain prioritized in `PATH`; WASM build, Help/AI generation, and TypeScript compilation completed. |
 | `npx @vscode/vsce ls` | PASS — 1581 package entries; GP78 modules, extension Help, and grammar are included. |
 | `python3 -m agent_workflow validate-docs --changed origin/main` | PASS — 8 changed documentation files, no errors. |

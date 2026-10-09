@@ -136,8 +136,15 @@ export async function publishGp78Exclusive(targetPath: string, bytes: Uint8Array
   }
 }
 
-function isLocalFileDocument(document: vscode.TextDocument): boolean {
-  return document.uri.scheme === 'file' && isGuitarDslDocument(document);
+function isExportableDocument(document: vscode.TextDocument): boolean {
+  return isGuitarDslDocument(document) && (document.uri.scheme === 'file' || document.isUntitled);
+}
+
+function defaultExportPath(document: vscode.TextDocument): string {
+  if (document.uri.scheme === 'file') return document.uri.fsPath.replace(/\.(guitardsl|gdsl)$/i, '.gp');
+  const basename = path.basename(document.fileName).replace(/\.(guitardsl|gdsl)$/i, '') || 'Untitled';
+  const workspacePath = vscode.workspace.workspaceFolders?.find(folder => folder.uri.scheme === 'file')?.uri.fsPath;
+  return path.join(workspacePath ?? process.cwd(), `${basename}.gp`);
 }
 
 export function registerGp78Commands(context: vscode.ExtensionContext, options: Gp78CommandOptions): vscode.Disposable {
@@ -161,7 +168,7 @@ export function registerGp78Commands(context: vscode.ExtensionContext, options: 
     busy = true;
     try {
       const document = await resolveGuitarDslDocument(uri, options.getLastActiveDocument());
-      if (!document || !isLocalFileDocument(document)) {
+      if (!document || !isExportableDocument(document)) {
         void vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
         return;
       }
@@ -187,7 +194,7 @@ export function registerGp78Commands(context: vscode.ExtensionContext, options: 
         return;
       }
       if (loss.entries.length > 0 && !await confirmLoss(msgs.gp78ExportLossConfirm(loss.entries.length), lossDetails(loss), msgs.gp78Continue, msgs.gp78Cancel)) return;
-      const defaultName = `${document.uri.fsPath.replace(/\.(guitardsl|gdsl)$/i, '')}.gp`;
+      const defaultName = defaultExportPath(document);
       const target = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(defaultName),
         filters: { 'Guitar Pro 7': ['gp'] },

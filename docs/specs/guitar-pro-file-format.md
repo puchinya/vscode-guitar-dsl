@@ -8,13 +8,19 @@
 - Related specification: [拡張機能仕様 §3.15](extension.md#315-guitardslimportguitarpro), [GuitarDSL TAB 歌詞仕様](guitardsl-syntax.md#19-ギター-tab-guitar-tablature)
 - Related design: [Guitar Pro 7/8 interchange](../design/gp78-interchange.md)
 
-## 1. 目的と適用範囲
+## Purpose
 
 この文書は、Guitar Pro 7/8 の `.gp` インポートで扱う GPIF の構造と意味の対応を定める。コマンドの起動方法、トラック選択、loss の確認、キャンセル時の動作は [拡張機能仕様 §3.15](extension.md#315-guitardslimportguitarpro) が定める。
 
+## Scope
+
 ここに記録する具体的な要素配置と件数は、分析済みの GP8.1.5 ファイルで観測した wire format である。件数や任意要素の有無を、すべての GP8 ファイルに共通する固定値とはみなさない。未対応バージョンや意味を安全に変換できない選択トラックは、推測で読み替えない。
 
-## 2. コンテナとバージョン
+## Security and privacy
+
+ZIP entry はファイルシステムへ展開せず、入力サイズ・参照・XML構造の境界を検証する。アーカイブ由来のパスを保存先として使用しない。
+
+### Container and version
 
 - `.gp` は ZIP コンテナとして読み、譜面データは `Content/score.gpif` から取得する。存在する場合は `Content/PartConfiguration` も読み、譜表の表示種別を決める。読み込み時に ZIP entry をファイルシステムへ展開しない。
 - 対応する GP 世代は `Content/score.gpif` 内の `GPIF/GPVersion` で判定する。ZIP 内の `VERSION` entry は GPIF の世代判定の根拠にしない。
@@ -22,7 +28,9 @@
 - GP7/GP8 はインポート対象とする。GP3–6、`.gpx`、GP9 以降、または世代を確定できない入力は拒否する。
 - ZIP の境界、XML の安全な解析、サイズ上限の規範は [拡張機能仕様 §3.15](extension.md#315-guitardslimportguitarpro) と [内部設計](../design/gp78-interchange.md) に従う。
 
-## 3. GPIF の参照構造
+## Normative requirements
+
+### GPIF reference structure
 
 GPIF の譜面要素は、親配列の位置だけで結び付けず、ID の宣言と参照を解決して読む。小節・声部・音符の時間順序は、以下の参照リストに現れる順で保つ。
 
@@ -44,7 +52,9 @@ GPIF `Notes/Note/Tie` の `origin` と `destination` は Boolean 属性で tie �
 
 標準譜表の `ConcertPitch/Pitch/Accidental` が `x` の場合、これはdouble sharpを表す。GuitarDSLは単一の `#` / `b` のみを表せるため、異名同音の単一臨時記号へ正規化し、実音高を保つ。音名の綴りが変わる場合は `gp78.normalize-double-accidental.v1` policy のnonblocking `droppedByPolicy` lossを選択トラックにつき1件報告する。`TransposedPitch` も同じ正規化を適用してから、concert pitchより1オクターブ高いことを検証する。対応できない臨時記号や音域は読み込みエラーとする。
 
-## 4. GP8.1.5 で観測した構造
+## Observable behavior
+
+### GP8.1.5 observed structure
 
 分析した GP8.1.5 ファイルでは、`Content/PartConfiguration` は `standard=true`、`tablature=false`、`slash=true`、`numbered=false` を示していた。歌詞データは独立した全曲歌詞表ではなく、対象イベントの `Beats/Beat` の子要素として次の形で保持されていた。
 
@@ -80,6 +90,10 @@ GPIF `Notes/Note/Tie` の `origin` と `destination` は Boolean 属性で tie �
 
 GuitarDSL の lyric slot と TAB attack の詳細な記法は [言語構文仕様 §19](guitardsl-syntax.md#19-ギター-tab-guitar-tablature) に従う。
 
-## 6. 適合性と検証
+## Error and boundary behavior
 
 適合するインポーターは、ZIP/XML/GPIF の上限と参照を検証し、選択トラックの歌詞本文・verse 順・slot 位置を保ち、未知または表現不能な意味を成功扱いしない。GP7 形式のサポートは維持するが、GP7 公式アプリを用いた互換性確認は本 Issue の受入条件に含めない。GP8 の公式アプリ確認と、自動化した GP7/GP8 fixture 検証は [Issue #97 の設計・証拠](../design/gp78-interchange.md) に記録する。
+
+## Verification strategy
+
+GPIF の参照・意味対応は本書の fixture matrix と [互換性証拠](../status/evidence/issue-97/compatibility-matrix.md) に従って検証する。コマンド動作と loss 確認は [拡張機能仕様 §3.15](extension.md#315-guitardslimportguitarpro) に従う。
