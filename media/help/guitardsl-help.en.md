@@ -94,6 +94,14 @@ Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any
 
 **📄 Save PDF**, or **GuitarDSL: Export PDF / Print**, writes a vector PDF of exactly what the preview shows, using the selected paper size and orientation. No browser is needed, and fonts are bundled, so output does not depend on your installed fonts. Printing is done from the saved PDF.
 
+### Importing and Exporting Guitar Pro Files
+
+Use **GuitarDSL: Import Guitar Pro 7/8** in the Command Palette to open a supported `.gp` file as a new untitled GuitarDSL document. If more than one guitar track is supported, choose the track to import. The source file is not changed.
+
+Import supports GP7/GP8 `.gp` files with one selected six-string guitar track, one staff, and the supported voice. Unsupported musical meaning in the selected track stops the import. Other tracks, audio, sound settings, and display layout can be omitted only under the command's reported loss policy.
+
+**GuitarDSL: Export Guitar Pro 7** saves the current GuitarDSL document as a GP7 `.gp` file. Before saving, the extension checks the supported scope and reports information that would be lost. It does not overwrite an existing file. GP8 8.1.5 native checks opened, displayed, re-saved, and re-imported the self-authored contract fixtures with matching score meaning. Native GP7-app compatibility has not been tested; automated GP7-format import/export checks are included.
+
 ### Chord Diagrams and the Chord Diagram Editor
 
 Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. With a non-Standard tuning, only preset shapes that sound as the requested chord are shown. Frets are relative to the capo, and capo playability and Beginner Mode use the same tuning and shape. Chord-name suggestions in the diagram editor also use the score's tuning. You can keep several voicings of the same chord with labels, such as `C@barre`.
@@ -470,6 +478,8 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 |---|---|
 | GuitarDSL: Open Preview to the Side | `guitardsl.showPreview` |
 | GuitarDSL: Export PDF / Print | `guitardsl.exportPdf` |
+| GuitarDSL: Import Guitar Pro 7/8 | `guitardsl.importGuitarPro` |
+| GuitarDSL: Export Guitar Pro 7 | `guitardsl.exportGuitarPro` |
 | GuitarDSL: Edit Chord Diagram | `guitardsl.editChordDiagram` |
 | GuitarDSL: Edit Score Settings | `guitardsl.editScoreSettings` |
 | GuitarDSL: Edit Capo / Playability | `guitardsl.editCapo` |

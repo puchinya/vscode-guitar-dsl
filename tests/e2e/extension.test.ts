@@ -62,7 +62,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(
       commands.includes('guitardsl.exportPdf'),
       'Command guitardsl.exportPdf should be registered'
-    );    assert.ok(
+    );
+    assert.ok(
+      commands.includes('guitardsl.importGuitarPro'),
+      'Command guitardsl.importGuitarPro should be registered'
+    );
+    assert.ok(
+      commands.includes('guitardsl.exportGuitarPro'),
+      'Command guitardsl.exportGuitarPro should be registered'
+    );
+    assert.ok(
       commands.includes('guitardsl.editChordDiagram'),
       'Command guitardsl.editChordDiagram should be registered'
     );

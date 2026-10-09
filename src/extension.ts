@@ -17,6 +17,7 @@ import { isBarrePolicy } from './beginnerMode';
 import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { registerGuitarDslAiTools } from './ai/tools';
+import { registerGp78Commands } from './gp78Commands';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
@@ -95,6 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
+  registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
   context.subscriptions.push(diagnosticCollection);

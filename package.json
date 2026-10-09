@@ -56,6 +56,14 @@
         "title": "%command.exportPdf.title%"
       },
       {
+        "command": "guitardsl.importGuitarPro",
+        "title": "%command.importGuitarPro.title%"
+      },
+      {
+        "command": "guitardsl.exportGuitarPro",
+        "title": "%command.exportGuitarPro.title%"
+      },
+      {
         "command": "guitardsl.editChordDiagram",
         "title": "%command.editChordDiagram.title%"
       },
@@ -175,11 +183,26 @@
           "command": "guitardsl.showPreview",
           "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
           "group": "navigation"
+        },
+        {
+          "command": "guitardsl.exportGuitarPro",
+          "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
+          "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "guitardsl.showPreview",
+          "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
+          "group": "navigation"
+        },
+        {
+          "command": "guitardsl.importGuitarPro",
+          "when": "resourceExtname == .gp",
+          "group": "navigation"
+        },
+        {
+          "command": "guitardsl.exportGuitarPro",
           "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
           "group": "navigation"
         }
@@ -887,6 +910,8 @@
   },
   "dependencies": {
     "@google/genai": "^2.24.0",
+    "fast-xml-parser": "5.11.2",
+    "fflate": "0.8.3",
     "pdfkit": "^0.20.2",
     "svg-to-pdfkit": "^0.1.8"
   }

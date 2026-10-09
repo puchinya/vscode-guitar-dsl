@@ -2,6 +2,7 @@ export { guitarDslToInterchange } from './fromGuitarDsl';
 export { interchangeToGuitarDsl } from './toGuitarDsl';
 export { validateInterchangeScore } from './validate';
 export { appendLoss, emptyLossReport, hasBlockingLoss, mergeLossReports } from './loss';
+export { parseTimeSignature as parseInterchangeTimeSignature } from '../scoreEvents';
 export type {
   InterchangeArrangementEntry,
   InterchangeBarline,

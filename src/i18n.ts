@@ -25,6 +25,17 @@ export interface Messages {
   msgPdfFailed: (err: string) => string;
   dialogSavePdfTitle: string;
   previewTitle: string;
+  gp78ImportTrackPrompt: string;
+  gp78ImportNoEligibleTracks: string;
+  gp78ImportLossConfirm: (count: number) => string;
+  gp78ExportLossConfirm: (count: number) => string;
+  gp78Continue: string;
+  gp78Cancel: string;
+  gp78Busy: string;
+  gp78Saved: (filename: string) => string;
+  gp78Failed: (detail: string) => string;
+  dialogOpenGp78Title: string;
+  dialogSaveGp78Title: string;
 
   // Webview Toolbar messages
   uiView: string;
@@ -178,6 +189,17 @@ export const MESSAGES_JA: Messages = {
   msgPdfFailed: (err: string) => `PDF保存に失敗しました: ${err}`,
   dialogSavePdfTitle: 'GuitarDSL スコアをPDFとして保存',
   previewTitle: 'GuitarDSL スコアプレビュー',
+  gp78ImportTrackPrompt: '取り込むギタートラックを選択してください',
+  gp78ImportNoEligibleTracks: '1スタッフ・6弦ギター・TAB声部1に対応するトラックがありません。',
+  gp78ImportLossConfirm: (count: number) => `インポート時に${count}件の情報を省略または補完します。内容を確認して続行しますか？`,
+  gp78ExportLossConfirm: (count: number) => `エクスポート時に${count}件の表示または音色情報を省略します。続行しますか？`,
+  gp78Continue: '続行',
+  gp78Cancel: 'キャンセル',
+  gp78Busy: 'Guitar Pro変換を実行中です。完了後にもう一度お試しください。',
+  gp78Saved: (filename: string) => `Guitar Proファイルを保存しました: ${filename}`,
+  gp78Failed: (detail: string) => `Guitar Pro変換に失敗しました: ${detail}`,
+  dialogOpenGp78Title: 'Guitar Pro 7/8ファイルを選択',
+  dialogSaveGp78Title: 'Guitar Pro 7互換ファイルとして保存',
 
   uiView: '表示',
   uiSinglePage: '1ページ',
@@ -372,6 +394,17 @@ export const MESSAGES_EN: Messages = {
   msgPdfFailed: (err: string) => `Failed to export PDF: ${err}`,
   dialogSavePdfTitle: 'Save GuitarDSL Score as PDF',
   previewTitle: 'GuitarDSL Score Preview',
+  gp78ImportTrackPrompt: 'Select the guitar track to import',
+  gp78ImportNoEligibleTracks: 'No track supports one staff, six strings, and TAB voice 1.',
+  gp78ImportLossConfirm: (count: number) => `Import will omit or infer ${count} items. Review the reported details and continue?`,
+  gp78ExportLossConfirm: (count: number) => `Export will omit ${count} display or instrument-sound items. Continue?`,
+  gp78Continue: 'Continue',
+  gp78Cancel: 'Cancel',
+  gp78Busy: 'A Guitar Pro conversion is already running. Try again when it finishes.',
+  gp78Saved: (filename: string) => `Guitar Pro file saved: ${filename}`,
+  gp78Failed: (detail: string) => `Guitar Pro conversion failed: ${detail}`,
+  dialogOpenGp78Title: 'Select a Guitar Pro 7/8 file',
+  dialogSaveGp78Title: 'Save as a Guitar Pro 7 compatible file',
 
   uiView: 'View',
   uiSinglePage: 'Single Page',
