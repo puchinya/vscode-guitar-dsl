@@ -248,7 +248,16 @@ describe('note groups', () => {
     for (const t of ['hammer', 'pull', 'slide', 'gliss', 'bend:1', 'slur-start', 'slur-end']) {
       assert.deepStrictEqual(codes(`| C |\nmel: | [c4,e4]/4{${t}} r/2. |`).filter(c => c !== 'beatCountMismatch'), ['unsupportedNoteGroupTechnique'], t);
     }
-    assert.deepStrictEqual(codes('| C |\nmel: | [c4,e4]/2~ [c4,e4]/2 |').filter(c => c !== 'beatCountMismatch'), ['unsupportedNoteGroupTechnique']);
+    const melodyTie = parseGuitarDsl('| C |\nmel: | [c4,e4]/2~ [e4,c4]/2 |');
+    assert.deepStrictEqual(melodyTie.diagnostics, []);
+    assert.strictEqual(melodyTie.measures[0].melody![0].tieToNext, true);
+    assert.strictEqual(melodyTie.measures[0].melody![1].tiedFromPrev, true);
+    const inlineTie = parseGuitarDsl('| C [c4,e4]/2~ [e4,c4]/2 |');
+    assert.deepStrictEqual(inlineTie.diagnostics, []);
+    assert.strictEqual(inlineTie.measures[0].rhythms[0].tie, true);
+    assert.deepStrictEqual(codes('| C |\nmel: | [c4,e4]/2~ [c4,g4]/2 |').filter(c => c !== 'beatCountMismatch'), ['unsupportedNoteGroupTechnique']);
+    const fragmentTie = parseGuitarDsl('let tied = [c4,e4]/2~ [e4,c4]/2\n| C | $tied |');
+    assert.deepStrictEqual(fragmentTie.diagnostics, []);
   });
 
   it('uses the exact rational length of tuplets and compound lengths (21)', () => {

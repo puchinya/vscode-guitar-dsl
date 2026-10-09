@@ -101,8 +101,7 @@ function melodyNoteText(note: InterchangeNote, path: string): string {
   const tie = note.tieToNext ? '~' : '';
   if (note.pitch) return `${pitchText(note.pitch)}/${duration}${tech}${tie}`;
   if (note.pitches) {
-    if (note.tieToNext) throw new Unrepresentable('unsupportedGroupTie', path, 'Grouped notes cannot be tied using the current GuitarDSL syntax.');
-    return `[${note.pitches.map(pitchText).join(',')}]/${duration}${tech}`;
+    return `[${note.pitches.map(pitchText).join(',')}]/${duration}${tech}${tie}`;
   }
   throw new Unrepresentable('missingPitch', path, 'Sounding melody note has no pitch.');
 }
@@ -113,9 +112,8 @@ function rhythmEventText(event: InterchangeRhythmEvent, path: string): string {
   if (event.pitch || event.pitches) {
     const text = event.pitch
       ? `${pitchText(event.pitch)}/${duration}${techniqueBlock(event.techniques)}${event.tie ? '~' : ''}`
-      : `[${event.pitches!.map(pitchText).join(',')}]/${duration}${techniqueBlock(event.techniques)}`;
+      : `[${event.pitches!.map(pitchText).join(',')}]/${duration}${techniqueBlock(event.techniques)}${event.tie ? '~' : ''}`;
     if (event.down || event.up || event.ghost || event.accent || event.arpeggio) throw new Unrepresentable('inlineRhythmFlags', path, 'Inline pitched events cannot carry slash-only rhythm modifiers in current syntax.');
-    if (event.pitches && event.tie) throw new Unrepresentable('groupTie', path, 'Grouped inline notes cannot carry a tie.');
     return text;
   }
   let text = `${event.isRest ? 'r' : ''}${duration}`;
@@ -475,6 +473,7 @@ function serializeMeasureBody(measure: InterchangeMeasure): string[] {
     if (/["\r\n]/.test(measure.measureLyric)) throw new Unrepresentable('measureLyric', `/measures/${measure.index}/measureLyric`, 'Measure lyric text cannot be quoted safely.');
     tokens.push(`l:"${measure.measureLyric}"`);
   }
+  if (measure.chords.length === 0 && measure.rhythm.origin === 'implicit' && rhythm.length === 0) tokens.push('N.C.');
   if (!tokens.length) throw new Unrepresentable('emptyMeasure', `/measures/${measure.index}`, 'A written measure requires at least one token in the current GuitarDSL syntax.');
   const open = measure.barline.repeatStart ? '|:' : '|';
   return [`${open} ${tokens.join(' ')} ${barlineClose(measure)}`];

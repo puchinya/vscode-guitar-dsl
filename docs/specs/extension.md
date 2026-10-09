@@ -103,7 +103,7 @@
 | `guitardsl.showPreview` | `GuitarDSL: Open Preview to the Side` | エディタタイトルバー、エクスプローラーコンテキストメニュー、コマンドパレット | `$(open-preview)` |
 | `guitardsl.exportPdf` | `GuitarDSL: Export PDF / Print` | コマンドパレット、プレビュー内ツールバー | - |
 | `guitardsl.importGuitarPro` | `GuitarDSL: Import Guitar Pro 7/8` | コマンドパレット、`.gp` ファイルのエクスプローラーコンテキストメニュー | - |
-| `guitardsl.exportGuitarPro` | `GuitarDSL: Export Guitar Pro 7` | コマンドパレット、GuitarDSL 文書のエディタタイトルバーとエクスプローラーコンテキストメニュー | - |
+| `guitardsl.exportGuitarPro` | `GuitarDSL: Export Guitar Pro 7` | コマンドパレット、GuitarDSL 文書のエクスプローラーコンテキストメニュー | - |
 | `guitardsl.editChordDiagram` | `GuitarDSL: Edit Chord Diagram` | コマンドパレット、`chord` 行の CodeLens、プレビューのダイアグラムクリック | - |
 | `guitardsl.editScoreSettings` | `GuitarDSL: Edit Score Settings` | コマンドパレット | - |
 | `guitardsl.editCapo` | `GuitarDSL: Edit Capo / Playability` | コマンドパレット、プレビューのカポバー「編集…」 | - |
@@ -345,6 +345,8 @@ Practice speed を 5 ポイント上げる。上限は 200% とする。
 ### 3.15 `guitardsl.importGuitarPro`
 Guitar Pro 7/8 の `.gp` ファイルを GuitarDSL 文書へ読み込む。コマンドパレットからファイルを選ぶか、`.gp` ファイルの Explorer コンテキストメニューから実行する。
 
+コンテナ・GPIF参照構造・GP8.1.5ファイルで観測した配置は、独立した[GPIFファイル形式仕様](guitar-pro-file-format.md)に定める。
+
 - **対応形式**: GP7/GP8 の `.gp`。形式判定は ZIP 内 `Content/score.gpif` の `GPVersion` に基づく。GP3–6、`.gpx`、GP9 以降、および対応形式を特定できないファイルは拒否する。
 - **トラック選択**: 6弦ギター、1 staff、TAB voice 1 として読み込めるトラックだけを候補とする。候補が1件なら自動選択し、複数なら QuickPick でユーザーに選ばせる。候補がなければ読み込まない。選択されなかったトラックは明示的な損失として提示し、無断で破棄しない。
 - **処理フロー**:
@@ -355,15 +357,15 @@ Guitar Pro 7/8 の `.gp` ファイルを GuitarDSL 文書へ読み込む。コ�
 - 元の GP ファイルは変更しない。キャンセル、形式エラー、参照エラー、resource limit 超過、DSL 検査失敗のいずれでも部分文書を作成しない。
 
 ### 3.16 `guitardsl.exportGuitarPro`
-対象の GuitarDSL 文書を Guitar Pro 7 `.gp` 形式へ書き出す。コマンドパレットと GuitarDSL 文書の editor/title・Explorer コンテキストメニューから実行する。
+対象の GuitarDSL 文書を Guitar Pro 7 `.gp` 形式へ書き出す。コマンドパレットまたは GuitarDSL 文書の Explorer コンテキストメニューから実行する。エディタ右上のタイトルバーにはエクスポートボタンを表示しない。
 
-- **対象文書**: 既存文書コマンドと同じ解決規則を使う。保存対象は実行時点の文書テキストと version の組であり、Preview の一時カポ・初心者モード変換を含めない。
+- **対象文書**: 既存文書コマンドと同じ解決規則を使う。ローカル file URI と `untitled` URI の GuitarDSL 文書を受け付け、インポート直後の無題文書も保存前に書き出せる。remote/その他 scheme は理由を示して拒否する。保存対象は実行時点の文書テキストと version の組であり、Preview の一時カポ・初心者モード変換を含めない。無題文書の保存ダイアログには `Untitled.gp` を初期名として示す。
 - **処理フロー**:
   1. 文書テキストを InterchangeScore v1 に変換する。
   2. 対応範囲、値の表現可能性、loss を保存前に検査する。`unsupported` loss がある場合は保存しない。非blocking loss があれば内容を示し、ユーザーの確認後に進む。
   3. `.gp` を生成し、自身の reader で再読込して表現対象の意味が一致することを確認する。
   4. 保存ダイアログを表示する。形式は1種類の GP7 `.gp` とし、GP8 固有形式は作成しない。
-- 既存ファイルは上書きしない。保存先はローカル file URI に限り、remote/non-file URI は理由を示して拒否する。出力待機中に文書 version が変わった場合は保存せず、再実行を促す。競合・書込失敗時に部分ファイルを残さない。
+- 既存ファイルは上書きしない。保存先はローカル file URI に限り、remote/non-file target URI は理由を示して拒否する。出力待機中に文書 version が変わった場合は保存せず、再実行を促す。競合・書込失敗時に部分ファイルを残さない。
 - ダイアログまたは loss 確認のキャンセルはファイル操作を行わない。出力の公開後にキャンセルが遅すぎる場合は、その状態を通知する。実 Guitar Pro 7 による互換性検証が未完了のとき、公式アプリでの検証済みと表示しない。
 
 ## 4. プレビュー機能仕様 (Webview Preview Specification)

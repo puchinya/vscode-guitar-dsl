@@ -27,6 +27,13 @@ describe('grammar - advanced notation (T046)', () => {
     for (const h of ['time:', 'time_signature:', 'meter:', 'feel:', 'pickup:', 'key:', 'bpm:', 'tuning:']) assert.ok(header.test(h), h);
   });
 
+  it('highlights the explicit no-chord measure marker', () => {
+    const noChord = new RegExp(byName('keyword.other.no-chord.guitardsl')[0].match);
+    assert.ok(noChord.test('N.C.'));
+    assert.ok(noChord.test('n.c.'));
+    assert.ok(!noChord.test('N.C.add9'));
+  });
+
   it('has a directive rule for every score event and an invalid rule for unknown names', () => {
     const directive = byName('meta.directive.guitardsl')[0];
     for (const name of ['key', 'tempo', 'bpm', 'time', 'meter', 'feel', 'dynamic', 'mark', 'text', 'ottava']) {
@@ -118,6 +125,7 @@ describe('grammar - let fragments and note groups (Issue #72)', () => {
       const m = '[c4,eb4,g4]/8{5:4}{staccato}'.match(re)!;
       assert.deepStrictEqual([m[1], m[2], m[3], m[4], m[5]], ['[', 'c4,eb4,g4', ']', '/8{5:4}', '{staccato}']);
       assert.ok(re.test('[c4,e4]:1.5'));
+      assert.ok(re.test('[c4,e4]/4~'));
       for (const bad of ['[Intro]', '[1.]', '[c4]/4', '[c4,e4]', '[Aメロ]']) assert.ok(!re.test(bad), bad);
       assert.strictEqual(rule.captures['2'].patterns[0].name, 'punctuation.separator.note-group.guitardsl');
       assert.strictEqual(rule.captures['2'].patterns[1].name, 'constant.other.note.guitardsl');

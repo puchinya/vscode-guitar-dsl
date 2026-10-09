@@ -32,6 +32,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+type PitchCarrier = {
+  isRest?: boolean;
+  pitch?: { step: unknown; alter: unknown; octave: unknown };
+  pitches?: readonly { step: unknown; alter: unknown; octave: unknown }[];
+};
+
+function notePitchKeys(note: PitchCarrier): string[] {
+  const pitches = note.pitches ?? (note.pitch === undefined ? [] : [note.pitch]);
+  return pitches.map(pitch => `${pitch.step}:${pitch.alter}:${pitch.octave}`).sort();
+}
+
+function samePitchGroup(left: PitchCarrier, right: PitchCarrier): boolean {
+  if (!left.pitches || !right.pitches) return false;
+  const a = notePitchKeys(left);
+  const b = notePitchKeys(right);
+  return a.length >= 2 && a.length === b.length && a.every((pitch, index) => pitch === b[index]);
+}
+
+function compatibleTiePitchSet(left: PitchCarrier, right: PitchCarrier): boolean {
+  if (left.pitches || right.pitches) return samePitchGroup(left, right);
+  return left.pitch !== undefined && right.pitch !== undefined;
+}
+
+function hasSoundingPitch(note: PitchCarrier): boolean {
+  return note.isRest !== true && (note.pitch !== undefined || Array.isArray(note.pitches) && note.pitches.length >= 2);
+}
+
 function gcd(a: number, b: number): number {
   a = Math.abs(a);
   b = Math.abs(b);
@@ -341,13 +368,12 @@ function validateNote(note: unknown, path: string, errors: InterchangeError[]): 
   } else add(errors, 'missingPitch', path, 'A sounding note requires a pitch or note group.');
   validTechniques(note.techniques, `${path}/techniques`, errors);
   if (note.pitches !== undefined && Array.isArray(note.pitches)) {
-    if (note.tieToNext || note.tiedFromPrev) add(errors, 'unsupportedGroupTie', path, 'A note group cannot start or continue a tie.');
     if (isRecord(note.techniques) && (note.techniques.connection !== undefined || note.techniques.bend !== undefined || note.techniques.slurStart === true || note.techniques.slurEnd === true)) {
       add(errors, 'unsupportedGroupTechnique', `${path}/techniques`, 'A note group cannot carry a connection, bend, or slur technique.');
     }
   }
-  if (Array.isArray(note.syllables) && (note.isRest || isRecord(note.techniques) && note.techniques.grace === true || note.tiedFromPrev) && note.syllables.length > 0) {
-    add(errors, 'lyricOnNonSungSlot', `${path}/syllables`, 'Rests, grace notes, and tied continuations do not consume lyric slots.');
+  if (Array.isArray(note.syllables) && (note.isRest || isRecord(note.techniques) && note.techniques.grace === true) && note.syllables.length > 0) {
+    add(errors, 'lyricOnNonSungSlot', `${path}/syllables`, 'Rests and grace notes do not consume melody lyric slots.');
   }
 }
 
@@ -584,15 +610,26 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
       const previous = melody[index - 1]?.note;
       const next = melody[index + 1]?.note;
       if (note.tieToNext) {
-        if (note.isRest || note.pitch === undefined || note.pitches !== undefined) add(errors, 'invalidMelodyTieSource', path, 'Only a single pitched note can start a tie.');
-        if (!next || next.isRest || next.pitch === undefined || next.pitches !== undefined) add(errors, 'invalidMelodyTieTarget', path, 'A melody tie must continue into the next single pitched note.');
+        if (!hasSoundingPitch(note)) add(errors, 'invalidMelodyTieSource', path, 'Only a sounding pitched note or pitch group can start a tie.');
+        if (!next || !hasSoundingPitch(next) || !compatibleTiePitchSet(note, next)) add(errors, 'invalidMelodyTieTarget', path, 'A melody tie must continue into the next compatible note or pitch group.');
         else if (!next.tiedFromPrev) add(errors, 'missingTieContinuation', `${path}/tieToNext`, 'A melody tie source must be paired with the next note’s tiedFromPrev marker.');
       }
-      if (note.tiedFromPrev && (!previous || !previous.tieToNext || previous.isRest || previous.pitch === undefined || previous.pitches !== undefined || note.isRest || note.pitch === undefined || note.pitches !== undefined)) {
-        add(errors, 'orphanTieContinuation', `${path}/tiedFromPrev`, 'A tied continuation must follow a compatible single-note tie source.');
+      if (note.tiedFromPrev && (!previous || !previous.tieToNext || !hasSoundingPitch(previous) || !hasSoundingPitch(note) || !compatibleTiePitchSet(previous, note))) {
+        add(errors, 'orphanTieContinuation', `${path}/tiedFromPrev`, 'A tied continuation must follow a matching single-note or pitch-group tie source.');
       }
     });
   }
+
+  const inlineEvents = score.measures.flatMap((measure, measureIndex) => measure.rhythm.events.map((event, eventIndex) => ({
+    event,
+    path: `/measures/${measureIndex}/rhythm/events/${eventIndex}`
+  })));
+  inlineEvents.forEach(({ event, path }, index) => {
+    if (!event.tie) return;
+    const next = inlineEvents[index + 1]?.event;
+    if (!hasSoundingPitch(event)) add(errors, 'invalidMelodyTieSource', path, 'Only a sounding pitched note or pitch group can start an inline tie.');
+    if (!next || !hasSoundingPitch(next) || !compatibleTiePitchSet(event, next)) add(errors, 'invalidMelodyTieTarget', path, 'An inline tie must continue into the next compatible event or pitch group.');
+  });
 
   const sectionNames = new Set<string>();
   for (const section of sectionStarts) {

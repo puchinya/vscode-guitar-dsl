@@ -3,6 +3,7 @@ import type {
   InterchangeChordDefinition,
   InterchangeEvent,
   InterchangeFraction,
+  InterchangeLyricSlot,
   InterchangeMeasure,
   InterchangeNoteValue,
   InterchangePitch,
@@ -29,12 +30,15 @@ interface WriteBeat {
   readonly duration: InterchangeNoteValue;
   readonly notes: readonly WriteNote[];
   readonly isRest: boolean;
+  readonly syllables?: readonly InterchangeLyricSlot[];
   readonly chordId?: number;
 }
 
 interface WriteNote {
   readonly tab?: InterchangeTabNote;
   readonly pitch?: InterchangePitch;
+  readonly tieToNext?: boolean;
+  readonly tiedFromPrev?: boolean;
 }
 
 function xml(value: string): string { return value.replace(/[&<>"']/g, character => ESCAPE_XML[character]); }
@@ -360,8 +364,9 @@ function staffPitchPropertyXml(name: 'ConcertPitch' | 'TransposedPitch', pitch: 
   return `<Property name="${name}"><Pitch><Step>${pitch.step.toUpperCase()}</Step><Accidental>${accidental}</Accidental><Octave>${pitch.octave + octaveOffset}</Octave></Pitch></Property>`;
 }
 
-function melodyNoteXml(pitch: InterchangePitch, id: number): string {
-  return `<Note id="${id}"><InstrumentArticulation>0</InstrumentArticulation><Properties>${staffPitchPropertyXml('ConcertPitch', pitch)}${staffPitchPropertyXml('TransposedPitch', pitch, 1)}</Properties></Note>`;
+function melodyNoteXml(pitch: InterchangePitch, id: number, tieToNext = false, tiedFromPrev = false): string {
+  const tie = tieToNext || tiedFromPrev ? `<Tie origin="${tieToNext}" destination="${tiedFromPrev}" />` : '';
+  return `<Note id="${id}">${tie}<InstrumentArticulation>0</InstrumentArticulation><Properties>${staffPitchPropertyXml('ConcertPitch', pitch)}${staffPitchPropertyXml('TransposedPitch', pitch, 1)}</Properties></Note>`;
 }
 
 function durationXml(rhythm: RhythmDescriptor, id: number): string {
@@ -369,13 +374,22 @@ function durationXml(rhythm: RhythmDescriptor, id: number): string {
   return `<Rhythm id="${id}"><NoteValue>${NOTE_BASE_NAME[rhythm.base]}</NoteValue>${tuplet}</Rhythm>`;
 }
 
-function beatXml(id: number, rhythmId: number, noteIds: readonly number[], chordId?: number, isRest = false): string {
+function lyricLinesXml(syllables: readonly InterchangeLyricSlot[] | undefined): string {
+  if (!syllables?.length) return '';
+  const lines = syllables.map(syllable => {
+    const text = syllable === null || 'kind' in syllable ? '' : syllable.text;
+    return `<Line>${xml(text)}</Line>`;
+  }).join('');
+  return `<Lyrics>${lines}</Lyrics>`;
+}
+
+function beatXml(id: number, rhythmId: number, noteIds: readonly number[], chordId?: number, isRest = false, syllables?: readonly InterchangeLyricSlot[]): string {
   const notes = noteIds.length > 0
     ? `<Notes>${noteIds.join(' ')}</Notes>`
     : chordId !== undefined && !isRest ? '' : '<Notes />';
   const rest = isRest && chordId === undefined ? '<Rest />' : '';
   const noteList = chordId !== undefined && isRest && noteIds.length === 0 ? '' : notes;
-  return `<Beat id="${id}"><Dynamic>MF</Dynamic><Rhythm ref="${rhythmId}"/><TransposedPitchStemOrientation>Downward</TransposedPitchStemOrientation><ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>${chordId === undefined ? '' : `<Chord><![CDATA[${chordId}]]></Chord>`}${rest}${noteList}<Properties><Property name="PrimaryPickupVolume"><Float>0.500000</Float></Property><Property name="PrimaryPickupTone"><Float>0.500000</Float></Property></Properties></Beat>`;
+  return `<Beat id="${id}"><Dynamic>MF</Dynamic><Rhythm ref="${rhythmId}"/><TransposedPitchStemOrientation>Downward</TransposedPitchStemOrientation><ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>${chordId === undefined ? '' : `<Chord><![CDATA[${chordId}]]></Chord>`}${rest}${noteList}${lyricLinesXml(syllables)}<Properties><Property name="PrimaryPickupVolume"><Float>0.500000</Float></Property><Property name="PrimaryPickupTone"><Float>0.500000</Float></Property></Properties></Beat>`;
 }
 
 function fractionPositionForBeat(beat: InterchangeTabBeat): InterchangeFraction { return beat.duration.beats; }
@@ -396,14 +410,31 @@ function createWriteBeats(measure: InterchangeMeasure, chordIds: ReadonlyMap<str
       if (chordForBeat.has(index)) error('unrepresentableValue', `${path}/chords`, 'More than one chord diagram is attached to a single TAB beat.');
       chordForBeat.set(index, chordIds.get(chord.name)!);
     }
-    return voice.beats.map((beat, index) => ({ duration: beat.duration, notes: beat.notes.map(tab => ({ tab })), isRest: beat.isRest, ...(chordForBeat.has(index) ? { chordId: chordForBeat.get(index)! } : {}) }));
+    return voice.beats.map((beat, index) => ({ duration: beat.duration, notes: beat.notes.map(tab => ({ tab })), isRest: beat.isRest, syllables: beat.syllables, ...(chordForBeat.has(index) ? { chordId: chordForBeat.get(index)! } : {}) }));
   }
 
-  if (measure.melody?.length) return measure.melody.map(note => ({
-    duration: note.duration,
-    notes: note.isRest ? [] : (note.pitches ?? (note.pitch ? [note.pitch] : [])).map(pitch => ({ pitch })),
-    isRest: note.isRest,
-  }));
+  if (measure.melody?.length) {
+    const starts: InterchangeFraction[] = [];
+    let position: InterchangeFraction = { n: 0, d: 1 };
+    for (const note of measure.melody) {
+      starts.push(position);
+      position = add(position, note.duration.beats);
+    }
+    const chordForBeat = new Map<number, number>();
+    for (const [chordIndex, chord] of measure.chords.entries()) {
+      const index = starts.findIndex(start => fracEqual(start, chord.beatOffset));
+      if (index < 0) error('unrepresentableValue', `${path}/chords/${chordIndex}`, 'Chord onset is not a melody beat boundary.');
+      if (chordForBeat.has(index)) error('unrepresentableValue', `${path}/chords/${chordIndex}`, 'More than one chord diagram is attached to a single melody beat.');
+      chordForBeat.set(index, chordIds.get(chord.name)!);
+    }
+    return measure.melody.map((note, index) => ({
+      duration: note.duration,
+      notes: note.isRest ? [] : (note.pitches ?? (note.pitch ? [note.pitch] : [])).map(pitch => ({ pitch, tieToNext: note.tieToNext, tiedFromPrev: note.tiedFromPrev })),
+      isRest: note.isRest,
+      syllables: note.syllables,
+      ...(chordForBeat.has(index) ? { chordId: chordForBeat.get(index)! } : {})
+    }));
+  }
 
   if (measure.chords.length === 0) return [];
   const ordered = [...measure.chords].sort((a, b) => compare(a.beatOffset, b.beatOffset));
@@ -474,13 +505,13 @@ function buildGpif(score: InterchangeScore): Uint8Array {
       const noteIds = beat.notes.map((note, noteIndex) => {
         const id = nextNoteId++;
         if (note.tab) noteXml.push(tabNoteXml(note.tab, instrument, id, tabNoteDestinations.get(note.tab)));
-        else if (note.pitch) noteXml.push(melodyNoteXml(note.pitch, id));
+        else if (note.pitch) noteXml.push(melodyNoteXml(note.pitch, id, note.tieToNext, note.tiedFromPrev));
         else error('unrepresentableValue', `${path}/beats/${beatIndex}/notes/${noteIndex}`, 'Writer note has no TAB position or standard-staff pitch.');
         return id;
       });
       const id = nextBeatId++;
       beatIds.push(id);
-      beatXmls.push(beatXml(id, rhythmId, noteIds, beat.chordId, beat.isRest));
+      beatXmls.push(beatXml(id, rhythmId, noteIds, beat.chordId, beat.isRest, beat.syllables));
     }
     if (beatIds.length > 0) {
       const voiceId = nextVoiceId++;
@@ -555,6 +586,33 @@ function semanticProjection(score: InterchangeScore): unknown {
   };
 }
 
+function semanticDifferencePath(left: unknown, right: unknown, path = ''): string | undefined {
+  if (Object.is(left, right)) return undefined;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return path || '/';
+    if (left.length !== right.length) return `${path}/length`;
+    for (let index = 0; index < left.length; index++) {
+      const difference = semanticDifferencePath(left[index], right[index], `${path}/${index}`);
+      if (difference) return difference;
+    }
+    return undefined;
+  }
+  if (left && right && typeof left === 'object' && typeof right === 'object') {
+    const a = left as Record<string, unknown>;
+    const b = right as Record<string, unknown>;
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])]
+      .filter(key => a[key] !== undefined || b[key] !== undefined)
+      .sort();
+    for (const key of keys) {
+      if (!(key in a) || !(key in b)) return `${path}/${key}`;
+      const difference = semanticDifferencePath(a[key], b[key], `${path}/${key}`);
+      if (difference) return difference;
+    }
+    return undefined;
+  }
+  return path || '/';
+}
+
 export function exportGp78(score: InterchangeScore): Gp78Result<Uint8Array> {
   try {
     validateExportScore(score);
@@ -563,8 +621,9 @@ export function exportGp78(score: InterchangeScore): Gp78Result<Uint8Array> {
     const archive = createGp7Archive(gpif, createGp7PartConfiguration(hasTablature));
     const inspected = importGp78(archive, 0);
     if (!inspected.ok) return gp78Failure('roundTripMismatch', inspected.errors[0]?.path ?? 'GPIF', inspected.errors[0]?.detail ?? 'Generated GPIF could not be read back.');
-    if (JSON.stringify(semanticProjection(score)) !== JSON.stringify(semanticProjection(inspected.value))) {
-      return gp78Failure('roundTripMismatch', 'GPIF', 'Generated GPIF did not preserve the input interchange semantics.');
+    const mismatch = semanticDifferencePath(semanticProjection(score), semanticProjection(inspected.value));
+    if (mismatch !== undefined) {
+      return gp78Failure('roundTripMismatch', `GPIF${mismatch}`, 'Generated GPIF did not preserve the input interchange semantics.');
     }
     let loss = appendLoss(emptyLossReport(), {
       category: 'droppedByPolicy', code: 'omittedRseSettings', path: '/InterchangeScore/metadata',

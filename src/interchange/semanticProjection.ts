@@ -29,7 +29,14 @@ function firstDifference(left: unknown, right: unknown, path = ''): string | und
 
 /** Private to the interchange implementation; returns the first semantic JSON Pointer difference. */
 export function interchangeSemanticMismatch(expected: InterchangeScore, actual: InterchangeScore): InterchangeError | undefined {
-  const path = firstDifference(expected, actual);
+  const comparable = (score: InterchangeScore) => ({
+    ...score,
+    measures: score.measures.map(measure => {
+      const { chordPlacementMode: _chordPlacementMode, ...rest } = measure;
+      return rest;
+    })
+  });
+  const path = firstDifference(comparable(expected), comparable(actual));
   return path === undefined ? undefined : {
     code: 'semanticMismatch',
     path,

@@ -124,6 +124,14 @@ export function eventPitches(event: { pitch?: Pitch; pitches?: Pitch[] }): Pitch
   return event.pitch ? [event.pitch] : [];
 }
 
+function samePitchSet(left: readonly Pitch[] | undefined, right: readonly Pitch[] | undefined): boolean {
+  if (!left || !right || left.length !== right.length) return false;
+  const key = (pitch: Pitch) => `${pitch.step}:${pitch.alter}:${pitch.octave}`;
+  const leftKeys = left.map(key).sort();
+  const rightKeys = right.map(key).sort();
+  return leftKeys.every((value, index) => value === rightKeys[index]);
+}
+
 export interface ChordPlacement {
   /** Displayed chord name (without the `@label`). */
   name: string;
@@ -914,15 +922,20 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const entry = nonTabEntries[i];
       const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
       if (tied) {
-        // The tie continues into the very next event, which must be a valid target inside the fragment:
-        // a single pitched note for a note tie (never a rest or a note group), a sounding slash for a slash tie.
+        // The tie continues into the very next event, which must be a valid target inside the fragment.
         const next = items[i + 1];
         if (!next) fail(entry, 'openTie');
-        else if (next.pitches) {
+        else if ('tieToNext' in item) {
+          if (next.isRest || !eventPitches(next).length) fail(entry, 'tieTarget');
+          else if ((item.pitches || next.pitches) && !samePitchSet(item.pitches, next.pitches)) {
+            report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'unsupportedNoteGroupTechnique', { token: entry.token });
+            ok = false;
+          }
+        } else if (item.pitches || next.pitches) {
+          if (!samePitchSet(item.pitches, next.pitches)) fail(entry, 'tieTarget');
+        } else if (next.isRest || !next.pitch) {
           report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'unsupportedNoteGroupTechnique', { token: entry.token });
           ok = false;
-        } else if (next.isRest || ('tieToNext' in item && !next.pitch)) {
-          fail(entry, 'tieTarget');
         }
       }
       const tech = item.techniques;
@@ -1320,6 +1333,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const rhythms: RhythmItem[] = [];
       let runningBeat = ZERO;
       let isMeasureRepeat = false;
+      let noChordMarker = false;
+      let noChordMarkerCol = -1;
       let invalidChordLength = false;
       let firstTokenCol = -1;
       let mBracket: string | undefined = undefined;
@@ -1360,6 +1375,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         if (tok === '%') {
           isMeasureRepeat = true;
           repeatTokenCol = tokCol;
+          continue;
+        }
+
+        if (tok.toUpperCase() === 'N.C.') {
+          noChordMarker = true;
+          noChordMarkerCol = tokCol;
           continue;
         }
 
@@ -1484,6 +1505,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         }
       }
 
+      if (noChordMarker && rawChords.length > 0) {
+        report(lineIdx, noChordMarkerCol, noChordMarkerCol + 4, 'unknownMeasureToken', { token: 'N.C.' });
+      }
+
       if (!isMeasureRepeat && rhythms.length > 0 && !fragmentFailed) {
         const col = firstTokenCol >= 0 ? firstTokenCol : 0;
         const heads = rhythms.filter(r => !r.techniques?.grace).flatMap(r => (parseRhythmDuration(r.duration)?.parts ?? []).map(part => ({ part })));
@@ -1557,7 +1582,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         bracket: mBracket,
         specialMark: mSpecialMark,
         sectionName: currentSection,
-        rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : defaultRhythms()),
+        rhythms: isMeasureRepeat ? [] : (rhythms.length > 0 ? rhythms : noChordMarker ? [] : defaultRhythms()),
         lyric: mLyric
       });
       if (repeatChordsWereInherited && rawChords.length === 0) repeatInheritedChords.add(mData);
@@ -1592,7 +1617,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       } else if (lastTokenEnd >= 0) {
         mData.rhythmSource = { line: lineIdx, startCol: lastTokenEnd, endCol: lastTokenEnd, kind: 'implicit' };
       }
-      if (!isMeasureRepeat && rhythms.length === 0) defaultRhythmMeasures.add(mData);
+      if (!isMeasureRepeat && !noChordMarker && rhythms.length === 0) defaultRhythmMeasures.add(mData);
       if (multiChordEqualSplit) equalSplitChords.add(mData);
       const sourceStart = firstTokenCol >= 0 ? firstTokenCol : 0;
       const sourceEnd = firstTokenCol >= 0
@@ -1611,7 +1636,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     if (parsed.pitches) {
       // Every part is kept so a compound group length (4+16) keeps its tied heads.
       const duration = baseParts.map(p => (p.tuplet ? formatNoteValuePart(p) : p.dotted ? `${p.base}+${p.base * 2}` : String(p.base))).join('+');
-      const group: RhythmItem = { duration, isRest: false, down: false, up: false, ghost: false, accent: false, tie: false, pitches: parsed.pitches, inlineDuration: { beats: { ...parsed.beats }, parts: parsed.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) } };
+      const group: RhythmItem = { duration, isRest: false, down: false, up: false, ghost: false, accent: false, tie: parsed.tieToNext, pitches: parsed.pitches, inlineDuration: { beats: { ...parsed.beats }, parts: parsed.parts.map(part => ({ ...part, ...(part.tuplet ? { tuplet: { ...part.tuplet } } : {}) })) } };
       if (parsed.techniques) group.techniques = parsed.techniques;
       return group;
     }
@@ -1798,8 +1823,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
 
       for (const note of notes) {
-        // A tie into a note group is invalid (validateConnections); the group still takes its syllable.
-        if (prevNote?.tieToNext && !note.isRest && !note.pitches) note.tiedFromPrev = true;
+        if (prevNote?.tieToNext && !note.isRest) {
+          const groupKindMatches = Boolean(prevNote.pitches) === Boolean(note.pitches);
+          const groupPitchesMatch = !prevNote.pitches || !note.pitches || samePitchSet(prevNote.pitches, note.pitches);
+          if (groupKindMatches && groupPitchesMatch) note.tiedFromPrev = true;
+        }
         prevNote = note;
       }
 
@@ -2318,9 +2346,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       let openSlur: NoteLocation | undefined;
       let openSlurSeen = false;
       seq.forEach(({ n, loc, measure }, i) => {
-        // A tie never picks one member of a following note group (spec §18.2).
-        if (loc && tied(n) && items[i + 1]?.pitches) {
-          report(loc.line, loc.startCol, loc.endCol, 'unsupportedNoteGroupTechnique', { token: lines[loc.line].slice(loc.startCol, loc.endCol) });
+        // A group tie applies to every pitch and can continue only into the same pitch set.
+        if (loc && tied(n) && (n.pitches || items[i + 1]?.pitches)) {
+          if (!samePitchSet(n.pitches, items[i + 1]?.pitches)) {
+            report(loc.line, loc.startCol, loc.endCol, 'unsupportedNoteGroupTechnique', { token: lines[loc.line].slice(loc.startCol, loc.endCol) });
+          }
         }
         const tech = n.techniques;
         if (!tech || !loc) return;

@@ -23,7 +23,7 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. Invalid rows are ignored and do not reserve a chord name; among valid duplicates, the first is used. |
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
-| Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
+| Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. Group ties must continue into the same pitch group; mixed single/group ties are invalid. |
 | Unrecognized token | A measure can hold only chords, rhythm tokens, notes, `$name`, `%`, volta brackets, navigation marks and `l:"..."`. Lyrics belong in `lyr:` or `l:"..."`. |
 | Continuation line | A `mel:` / `lyr:` line cannot continue on an indented `\| ... \|` line (that line is not read as measures). Put it on one line, or start each line with `mel:` / `lyr:`. |
 | `:\|` without `\|:` | Write `\|:` at the start of the passage to repeat. |

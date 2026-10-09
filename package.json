@@ -183,11 +183,6 @@
           "command": "guitardsl.showPreview",
           "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
           "group": "navigation"
-        },
-        {
-          "command": "guitardsl.exportGuitarPro",
-          "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
-          "group": "navigation"
         }
       ],
       "explorer/context": [

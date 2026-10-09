@@ -4,6 +4,7 @@ import type {
   InterchangeChordDefinition,
   InterchangeEvent,
   InterchangeFraction,
+  InterchangeLyricSlot,
   InterchangeMelodyGroup,
   InterchangeMeasure,
   InterchangeNote,
@@ -19,7 +20,7 @@ import { Gp78AdapterError } from './model';
 import type { Gp78TrackSummary } from './model';
 import type { Gp78TrackNotation } from './partConfiguration';
 import { indexGpifIds, parseGpifId, parseGpifIdList, resolveGpifRef } from './references';
-import { xmlAttr, xmlChild, xmlChildren, xmlText } from './xml';
+import { decodeXmlText, xmlAttr, xmlChild, xmlChildren, xmlText } from './xml';
 
 type Node = Record<string, unknown>;
 
@@ -31,13 +32,16 @@ interface TrackDescriptor extends Gp78TrackSummary {
 }
 
 interface ParsedBeat {
+  readonly beatId: number;
   readonly tabBeat: InterchangeTabBeat;
   readonly tabMarkers: readonly TabNoteMarkers[];
   readonly duration: InterchangeNoteValue;
   readonly melodyNotes: readonly InterchangeNote[];
   readonly hasTabNotes: boolean;
+  readonly hasTabRest: boolean;
+  readonly normalizedDoubleSharp: boolean;
+  readonly lyrics: readonly string[];
   readonly chordId?: number;
-  readonly explicitRest: boolean;
 }
 
 interface TabNoteMarkers {
@@ -277,7 +281,7 @@ function getChordDefinitions(staff: Node, path: string): { readonly byId: Readon
 
 type ParsedNote =
   | { readonly kind: 'tab'; readonly note: NonNullable<InterchangeTabBeat['notes']>[number]; readonly markers: TabNoteMarkers }
-  | { readonly kind: 'melody'; readonly pitch: InterchangePitch };
+  | { readonly kind: 'melody'; readonly pitch: InterchangePitch; readonly tieOrigin: boolean; readonly tieDestination: boolean; readonly normalizedDoubleSharp: boolean };
 
 function effect(name: string, args: Readonly<Record<string, string | number>> = {}) {
   return { name, args };
@@ -331,12 +335,31 @@ function melodyPitch(property: Node, path: string): InterchangePitch {
   const pitch = record(xmlChild(property, 'Pitch'), `${path}/Pitch`);
   const step = xmlText(xmlChild(pitch, 'Step'));
   const accidental = xmlText(xmlChild(pitch, 'Accidental'));
-  const alter: Readonly<Record<string, -1 | 0 | 1>> = { '': 0, Natural: 0, '#': 1, Sharp: 1, b: -1, Flat: -1 };
+  const alter: Readonly<Record<string, -1 | 0 | 1 | 2>> = { '': 0, Natural: 0, '#': 1, Sharp: 1, b: -1, Flat: -1, x: 2 };
   if (!/^[A-G]$/.test(step) || alter[accidental] === undefined) {
     throw new Gp78AdapterError('unsupportedSemantics', path, 'Standard-staff pitch uses an unsupported step or accidental.');
   }
   const octave = integer(xmlChild(pitch, 'Octave'), `${path}/Pitch/Octave`, 0, 9);
-  return { step: step.toLowerCase() as InterchangePitch['step'], alter: alter[accidental], octave };
+  if (accidental !== 'x') return { step: step.toLowerCase() as InterchangePitch['step'], alter: alter[accidental] as -1 | 0 | 1, octave };
+
+  const stepSemitones: Readonly<Record<string, number>> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const absolute = octave * 12 + stepSemitones[step] + alter[accidental];
+  const normalizedOctave = Math.floor(absolute / 12);
+  if (normalizedOctave < 0 || normalizedOctave > 9) {
+    throw new Gp78AdapterError('unsupportedSemantics', path, 'Enharmonic spelling normalization exceeds the supported octave range.');
+  }
+  const normalized = [
+    { step: 'c', alter: 0 }, { step: 'c', alter: 1 },
+    { step: 'd', alter: 0 }, { step: 'd', alter: 1 },
+    { step: 'e', alter: 0 }, { step: 'f', alter: 0 }, { step: 'f', alter: 1 },
+    { step: 'g', alter: 0 }, { step: 'g', alter: 1 },
+    { step: 'a', alter: 0 }, { step: 'a', alter: 1 }, { step: 'b', alter: 0 },
+  ][((absolute % 12) + 12) % 12];
+  return { ...normalized, octave: normalizedOctave } as InterchangePitch;
+}
+
+function hasDoubleSharp(property: Node): boolean {
+  return xmlText(xmlChild(xmlChild(property, 'Pitch'), 'Accidental')) === 'x';
 }
 
 function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, path: string, showTablature?: boolean): ParsedNote {
@@ -355,6 +378,10 @@ function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, p
   if (unexpected.length > 0) throw new Gp78AdapterError('unsupportedSemantics', `${path}/Properties`, `Unsupported note properties: ${unexpected.join(', ')}.`);
   const articulation = xmlText(xmlChild(note, 'InstrumentArticulation'));
   if (articulation !== '' && articulation !== '0') throw new Gp78AdapterError('unsupportedSemantics', `${path}/InstrumentArticulation`, 'Non-default instrument articulation is not mapped.');
+  const tieRaw = xmlChild(note, 'Tie');
+  const tieNode = tieRaw === undefined ? undefined : record(tieRaw, `${path}/Tie`);
+  const tieOrigin = booleanAttribute(tieNode, 'origin', `${path}/Tie`);
+  const tieDestination = booleanAttribute(tieNode, 'destination', `${path}/Tie`);
   const tabFields = ['Fret', 'Midi', 'String'].filter(name => values.has(name));
   // GP8 writes these two's-complement sentinels when saving standard-only notes.
   // They mean that the score has no TAB position, not that the fret/string values are invalid.
@@ -366,8 +393,8 @@ function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, p
     const concertPitch = values.get('ConcertPitch');
     if (!concertPitch) throw new Gp78AdapterError('unsupportedSemantics', `${path}/Properties`, 'A standard-staff note has no concert pitch.');
     if (['HopoOrigin', 'HopoDestination', 'Slide', 'PalmMuted', 'Bended', 'BendOriginOffset', 'BendOriginValue', 'BendMiddleOffset1', 'BendMiddleOffset2', 'BendMiddleValue', 'BendDestinationOffset', 'BendDestinationValue'].some(name => values.has(name)) ||
-        xmlChild(note, 'Tie') !== undefined || xmlChild(note, 'LetRing') !== undefined) {
-      throw new Gp78AdapterError('unsupportedSemantics', path, 'TAB-only effects and ties on standard-staff notes are not mapped.');
+        xmlChild(note, 'LetRing') !== undefined) {
+      throw new Gp78AdapterError('unsupportedSemantics', path, 'TAB-only effects on standard-staff notes are not mapped.');
     }
     if (values.has('TransposedPitch')) {
       const transposed = melodyPitch(values.get('TransposedPitch')!, `${path}/Properties/TransposedPitch`);
@@ -376,7 +403,13 @@ function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, p
         throw new Gp78AdapterError('unsupportedSemantics', `${path}/Properties/TransposedPitch`, 'Guitar transposition is not the supported octave-only mapping.');
       }
     }
-    return { kind: 'melody', pitch: melodyPitch(concertPitch, `${path}/Properties/ConcertPitch`) };
+    return {
+      kind: 'melody',
+      pitch: melodyPitch(concertPitch, `${path}/Properties/ConcertPitch`),
+      tieOrigin,
+      tieDestination,
+      normalizedDoubleSharp: hasDoubleSharp(concertPitch),
+    };
   }
   if (tabFields.length !== 3) throw new Gp78AdapterError('invalidGpif', `${path}/Properties`, 'TAB position properties must be present together.');
   const gpString = integer(xmlChild(values.get('String') ?? {}, 'String'), `${path}/String`, 0, 5);
@@ -392,10 +425,6 @@ function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, p
   if (expectedPitch !== midi) throw new Gp78AdapterError('invalidGpif', `${path}/Midi`, `Stored MIDI pitch ${midi} does not match tuning/capo/fret pitch ${expectedPitch}.`);
   const hopoOrigin = enabledProperty(values.get('HopoOrigin'), `${path}/Properties/HopoOrigin`);
   const hopoDestination = enabledProperty(values.get('HopoDestination'), `${path}/Properties/HopoDestination`);
-  const tieRaw = xmlChild(note, 'Tie');
-  const tieNode = tieRaw === undefined ? undefined : record(tieRaw, `${path}/Tie`);
-  const tieOrigin = booleanAttribute(tieNode, 'origin', `${path}/Tie`);
-  const tieDestination = booleanAttribute(tieNode, 'destination', `${path}/Tie`);
   const noteEffects = [];
   const slide = values.get('Slide');
   if (slide) {
@@ -414,6 +443,113 @@ function readNote(note: Node, model: ReturnType<typeof createInstrumentModel>, p
   };
 }
 
+function readBeatLyrics(beat: Node, path: string): string[] {
+  const value = xmlChild(beat, 'Lyrics');
+  if (value === undefined) return [];
+  const lyrics = record(value, `${path}/Lyrics`);
+  const unsupported = Object.keys(lyrics).filter(key => !['#text', 'Line'].includes(key));
+  if (unsupported.length > 0) throw new Gp78AdapterError('unsupportedSemantics', `${path}/Lyrics`, `Unsupported lyric elements: ${unsupported.join(', ')}.`);
+  const containerText = xmlChild(lyrics, '#text');
+  if (typeof containerText === 'string' && containerText.trim() !== '') {
+    throw new Gp78AdapterError('unsupportedSemantics', `${path}/Lyrics`, 'Lyrics contains text outside its Line elements.');
+  }
+  return xmlChildren(lyrics, 'Line').map((line, index) => {
+    const linePath = `${path}/Lyrics/Line[${index}]`;
+    if (typeof line === 'string') return decodeXmlText(line);
+    const lineNode = record(line, linePath);
+    const unsupportedLineFields = Object.keys(lineNode).filter(key => key !== '#text');
+    if (unsupportedLineFields.length > 0) {
+      throw new Gp78AdapterError('unsupportedSemantics', linePath, `Unsupported lyric line fields: ${unsupportedLineFields.join(', ')}.`);
+    }
+    return decodeXmlText(xmlChild(lineNode, '#text'));
+  });
+}
+
+function applyBeatLyrics(
+  measures: InterchangeMeasure[],
+  parsedByMeasure: readonly (readonly ParsedBeat[])[],
+  markersByMeasure: readonly (readonly (readonly TabNoteMarkers[])[])[],
+): void {
+  interface Target {
+    readonly measureIndex: number;
+    readonly beatIndex: number;
+    readonly beatId: number;
+    readonly lines: readonly string[];
+    readonly kind: 'tab' | 'melody' | null;
+    readonly takesSlot: boolean;
+    readonly melodyStart: number;
+    readonly melodyCount: number;
+  }
+  const targets: Target[] = [];
+  let verseCount = 0;
+  let lyricKind: 'tab' | 'melody' | undefined;
+  for (const [measureIndex, parsedBeats] of parsedByMeasure.entries()) {
+    let melodyStart = 0;
+    const measure = measures[measureIndex];
+    for (const [beatIndex, parsed] of parsedBeats.entries()) {
+      const hasLyrics = parsed.lyrics.some(text => text.trim().length > 0);
+      const kind = parsed.hasTabNotes ? 'tab' : parsed.melodyNotes.length > 0 ? 'melody' : null;
+      const tabBeat = measure.tabVoices?.[0]?.beats[beatIndex];
+      const tabMarkers = markersByMeasure[measureIndex]?.[beatIndex] ?? [];
+      const takesTabSlot = !!tabBeat && !tabBeat.isRest && tabBeat.notes.some((note, noteIndex) =>
+        note.dead || tabMarkers[noteIndex]?.tieDestination !== true);
+      const melody = measure.melody ?? [];
+      const melodyNotes = melody.slice(melodyStart, melodyStart + parsed.melodyNotes.length);
+      const takesMelodySlot = melodyNotes.some(note => !note.isRest && !note.techniques?.grace);
+      const takesSlot = kind === 'tab' ? takesTabSlot : kind === 'melody' ? takesMelodySlot : false;
+      const authoredLines = parsed.lyrics.flatMap((text, verse) => text.trim().length > 0 ? [verse] : []);
+      if (authoredLines.length > 0) {
+        const line = authoredLines[0];
+        if (!takesSlot || kind === null) {
+          throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${parsed.beatId}]/Lyrics/Line[${line}]`, 'Lyrics are attached to a beat without a lyric attack slot.');
+        }
+        if (lyricKind !== undefined && lyricKind !== kind) {
+          throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${parsed.beatId}]/Lyrics`, 'Lyrics mix TAB and standard-staff notation in one selected track.');
+        }
+        lyricKind = kind;
+        verseCount = Math.max(verseCount, ...authoredLines.map(verse => verse + 1));
+      }
+      targets.push({ measureIndex, beatIndex, beatId: parsed.beatId, lines: parsed.lyrics, kind, takesSlot, melodyStart, melodyCount: parsed.melodyNotes.length });
+      melodyStart += parsed.melodyNotes.length;
+    }
+  }
+  if (verseCount === 0) return;
+  if (lyricKind === 'melody' && targets.some(target => target.kind === 'melody' && target.melodyCount > 1)) {
+    const target = targets.find(value => value.kind === 'melody' && value.melodyCount > 1)!;
+    throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${target.beatId}]/Notes`, 'Lyrics cannot be aligned to a multi-note standard-staff beat.');
+  }
+
+  const slots = targets.filter(target => target.takesSlot);
+  const lastLyricSlot = Array.from({ length: verseCount }, () => -1);
+  slots.forEach((target, slotIndex) => target.lines.forEach((text, verse) => {
+    if (text.trim().length > 0) lastLyricSlot[verse] = slotIndex;
+  }));
+  slots.forEach((target, slotIndex) => {
+    let lastActiveVerse = -1;
+    lastLyricSlot.forEach((lastSlot, verse) => { if (lastSlot >= slotIndex) lastActiveVerse = verse; });
+    const syllables: InterchangeLyricSlot[] = [];
+    for (let verse = 0; verse <= lastActiveVerse; verse++) {
+      const text = target.lines[verse] ?? '';
+      if (text.trim().length > 0) syllables.push({ text, hyphenToNext: false, extend: false });
+      else if (lastLyricSlot[verse] >= slotIndex) syllables.push(null);
+      else syllables.push({ kind: 'omitted' });
+    }
+    const measure = measures[target.measureIndex];
+    if (target.kind === 'tab') {
+      const voice = measure.tabVoices?.[0];
+      if (!voice) throw new Gp78AdapterError('invalidIr', `/measures/${target.measureIndex}/tabVoices`, 'TAB lyric target is missing its voice.');
+      const beats = [...voice.beats];
+      beats[target.beatIndex] = { ...beats[target.beatIndex], syllables };
+      measures[target.measureIndex] = { ...measure, tabVoices: [{ ...voice, beats }] };
+    } else if (target.kind === 'melody') {
+      if (target.melodyCount !== 1) throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${target.beatId}]/Notes`, 'Lyrics require one standard-staff note per beat.');
+      const melody = [...(measure.melody ?? [])];
+      melody[target.melodyStart] = { ...melody[target.melodyStart], syllables };
+      measures[target.measureIndex] = { ...measure, melody };
+    }
+  });
+}
+
 function readBeat(
   beat: Node,
   beatId: number,
@@ -424,8 +560,9 @@ function readBeat(
   showTablature?: boolean,
 ): ParsedBeat {
   const path = `GPIF/Beats/Beat[id=${beatId}]`;
-  const unsupported = Object.keys(beat).filter(key => !['@_id', '#text', 'Dynamic', 'Rhythm', 'TransposedPitchStemOrientation', 'ConcertPitchStemOrientation', 'Chord', 'Notes', 'Rest', 'Properties'].includes(key));
+  const unsupported = Object.keys(beat).filter(key => !['@_id', '#text', 'Dynamic', 'Rhythm', 'TransposedPitchStemOrientation', 'ConcertPitchStemOrientation', 'Chord', 'Notes', 'Rest', 'Properties', 'Lyrics'].includes(key));
   if (unsupported.length > 0) throw new Gp78AdapterError('unsupportedSemantics', path, `Unsupported beat elements: ${unsupported.join(', ')}.`);
+  const lyrics = readBeatLyrics(beat, path);
   const dynamic = xmlText(xmlChild(beat, 'Dynamic'));
   if (dynamic && dynamic !== 'MF') throw new Gp78AdapterError('unsupportedSemantics', `${path}/Dynamic`, `Dynamic ${dynamic} is not mapped at its exact beat position.`);
   const rhythmReference = xmlChild(beat, 'Rhythm');
@@ -449,9 +586,7 @@ function readBeat(
     if (!chordMap.has(chordId)) throw new Gp78AdapterError('invalidGpif', `${path}/Chord`, `Chord diagram reference ${chordId} is unresolved.`);
   }
   const explicitRest = xmlChild(beat, 'Rest') !== undefined;
-  if (parsedNotes.length === 0 && !explicitRest && chordId === undefined) {
-    throw new Gp78AdapterError('unsupportedSemantics', path, 'A beat without a note must have an explicit rest or chord reference.');
-  }
+  const hasTabRest = explicitRest || (parsedNotes.length === 0 && chordId === undefined);
   const properties = xmlChildren(xmlChild(beat, 'Properties'), 'Property').map(value => record(value, `${path}/Properties/Property`));
   const unexpectedProperties = properties.map(value => xmlAttr(value, 'name') ?? '').filter(name => !['PrimaryPickupVolume', 'PrimaryPickupTone'].includes(name));
   if (unexpectedProperties.length > 0) throw new Gp78AdapterError('unsupportedSemantics', `${path}/Properties`, `Unsupported beat properties: ${unexpectedProperties.join(', ')}.`);
@@ -462,15 +597,43 @@ function readBeat(
     effects: [],
     syllables: [],
   };
-  const melodyNotes: InterchangeNote[] = standardNotes.map(({ pitch }) => ({
-    isRest: false,
-    pitch,
+  const melodyNotes: InterchangeNote[] = [];
+  if (standardNotes.length > 0) {
+    const tieOrigin = standardNotes[0].tieOrigin;
+    const tieDestination = standardNotes[0].tieDestination;
+    if (standardNotes.some(note => note.tieOrigin !== tieOrigin || note.tieDestination !== tieDestination)) {
+      throw new Gp78AdapterError('unsupportedSemantics', `${path}/Notes`, 'Notes in one standard-staff pitch group have inconsistent tie flags.');
+    }
+    const pitches = standardNotes.map(note => note.pitch);
+    melodyNotes.push({
+      isRest: false,
+      ...(pitches.length === 1 ? { pitch: pitches[0] } : { pitches }),
+      duration,
+      tieToNext: tieOrigin,
+      tiedFromPrev: tieDestination,
+      syllables: [],
+    });
+  } else if (parsedNotes.length === 0 && chordId === undefined && showTablature === false) {
+    melodyNotes.push({
+      isRest: true,
+      duration,
+      tieToNext: false,
+      tiedFromPrev: false,
+      syllables: [],
+    });
+  }
+  return {
+    beatId,
+    tabBeat,
+    tabMarkers,
     duration,
-    tieToNext: false,
-    tiedFromPrev: false,
-    syllables: [],
-  }));
-  return { tabBeat, tabMarkers, duration, melodyNotes, hasTabNotes: tabNotes.length > 0, ...(chordId === undefined ? {} : { chordId }), explicitRest };
+    melodyNotes,
+    hasTabNotes: tabNotes.length > 0,
+    hasTabRest,
+    normalizedDoubleSharp: parsedNotes.some(value => value.kind === 'melody' && value.normalizedDoubleSharp),
+    lyrics,
+    ...(chordId === undefined ? {} : { chordId }),
+  };
 }
 
 function parseTempoAutomations(root: Node): ReadonlyMap<number, number> {
@@ -575,6 +738,7 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   const hasAnacrusis = xmlChild(xmlChild(root, 'MasterTrack'), 'Anacrusis') !== undefined;
   const measures: InterchangeMeasure[] = [];
   const parsedTabMarkersByMeasure: Array<readonly (readonly TabNoteMarkers[])[]> = [];
+  const parsedBeatsByMeasure: ParsedBeat[][] = [];
   const model = createInstrumentModel({ openMidi: descriptor.tuning.openMidi }, descriptor.capo);
   for (let measureIndex = 0; measureIndex < masterBars.length; measureIndex++) {
     const masterBar = masterBars[measureIndex];
@@ -599,6 +763,7 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
       }
     }
     parsedTabMarkersByMeasure.push(beatRecords.map(beat => beat.tabMarkers));
+    parsedBeatsByMeasure.push(beatRecords);
     const timeSignature = parseTimeSignature(xmlChild(masterBar, 'Time'), `${path}/Time`);
     const key = keyName(xmlChild(masterBar, 'Key'), `${path}/Key`);
     const eventsBefore: InterchangeEvent[] = [];
@@ -622,7 +787,7 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
     let beatOffset = { n: 0, d: 1 };
     const chords: InterchangeChord[] = [];
     const measureHasTabNotes = beatRecords.some(beat => beat.hasTabNotes);
-    const measureHasExplicitRests = beatRecords.some(beat => beat.explicitRest);
+    const measureHasTabRests = showTablature !== false && beatRecords.some(beat => beat.hasTabRest);
     const melody = beatRecords.flatMap(beat => beat.melodyNotes);
     if (measureHasTabNotes && melody.length > 0) throw new Gp78AdapterError('unsupportedSemantics', `${path}/Beats`, 'A measure cannot mix TAB-positioned and standard-staff-only notes in GPIF v1.');
     for (const beat of beatRecords) {
@@ -652,7 +817,7 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
       chordPlacementMode: 'explicitDuration',
       rhythm: { origin: 'implicit', events: [] },
       ...(melody.length > 0 ? { melody } : {}),
-      ...(measureHasTabNotes || measureHasExplicitRests
+      ...(measureHasTabNotes || measureHasTabRests
         ? { tabVoices: [{ voice: 1, beats: beatRecords.map(beat => beat.tabBeat) }] }
         : {}),
     };
@@ -662,6 +827,17 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   }
 
   resolveTabNoteLinks(measures, parsedTabMarkersByMeasure);
+  resolveMelodyNoteLinks(parsedBeatsByMeasure);
+  applyBeatLyrics(measures, parsedBeatsByMeasure, parsedTabMarkersByMeasure);
+  if (parsedBeatsByMeasure.some(beats => beats.some(beat => beat.normalizedDoubleSharp))) {
+    loss = appendLoss(loss, {
+      category: 'droppedByPolicy',
+      code: 'normalizedDoubleSharpSpelling',
+      path: '/GPIF/Notes/*/Properties/ConcertPitch',
+      detail: 'Double-sharp spelling was normalized enharmonically because GuitarDSL supports single accidentals; sounding pitch was preserved.',
+      policyId: 'gp78.normalize-double-accidental.v1',
+    });
+  }
 
   const firstMasterBar = masterBars[0];
   const firstTime = parseTimeSignature(xmlChild(firstMasterBar, 'Time'), 'GPIF/MasterBars/MasterBar[0]/Time');
@@ -672,7 +848,8 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
     const hasMelody = index < measures.length && (measures[index].melody?.length ?? 0) > 0;
     if (hasMelody && melodyStart === undefined) melodyStart = index;
     if (!hasMelody && melodyStart !== undefined) {
-      melodyGroups.push({ startMeasure: melodyStart, endMeasureExclusive: index, verseCount: 0 });
+      const verseCount = Math.max(0, ...measures.slice(melodyStart, index).flatMap(measure => measure.melody ?? []).map(note => note.syllables.length));
+      melodyGroups.push({ startMeasure: melodyStart, endMeasureExclusive: index, verseCount });
       melodyStart = undefined;
     }
   }
@@ -701,6 +878,38 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   const validation = validateInterchangeScore(score);
   if (validation.length > 0) throw new Gp78AdapterError('invalidIr', validation[0].path, validation[0].detail);
   return { score, loss };
+}
+
+function resolveMelodyNoteLinks(parsedByMeasure: readonly (readonly ParsedBeat[])[]): void {
+  interface Position {
+    readonly beatId: number;
+    readonly note?: InterchangeNote;
+  }
+  const positions: Position[] = [];
+  for (const parsedBeats of parsedByMeasure) {
+    if (parsedBeats.length === 0) positions.push({ beatId: -1 });
+    for (const beat of parsedBeats) {
+      if (beat.melodyNotes.length > 1) throw new Gp78AdapterError('invalidIr', `GPIF/Beats/Beat[id=${beat.beatId}]`, 'A beat produced more than one standard-staff event.');
+      positions.push({ beatId: beat.beatId, ...(beat.melodyNotes[0] ? { note: beat.melodyNotes[0] } : {}) });
+    }
+  }
+  const linkedDestinations = new Set<number>();
+  const pitchKey = (note: InterchangeNote): string => (note.pitches ?? (note.pitch ? [note.pitch] : []))
+    .map(pitch => `${pitch.step}:${pitch.alter}:${pitch.octave}`).sort().join('|');
+  for (const [index, position] of positions.entries()) {
+    const note = position.note;
+    if (!note?.tieToNext) continue;
+    const destination = positions[index + 1];
+    if (!destination?.note || !destination.note.tiedFromPrev || pitchKey(note) !== pitchKey(destination.note)) {
+      throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${position.beatId}]/Notes`, 'A standard-staff tie origin must resolve to the next pitch group with matching pitches and a tie destination.');
+    }
+    linkedDestinations.add(index + 1);
+  }
+  for (const [index, position] of positions.entries()) {
+    if (position.note?.tiedFromPrev && !linkedDestinations.has(index)) {
+      throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Beats/Beat[id=${position.beatId}]/Notes`, 'A standard-staff tie destination has no preceding matching origin.');
+    }
+  }
 }
 
 function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: readonly (readonly (readonly TabNoteMarkers[])[])[]): void {

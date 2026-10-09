@@ -214,7 +214,7 @@ export function parsedScoreToInterchange(score: ParsedScore, arrangementScan: Ar
         chordPlacementMode: measure.chordPlacementMode,
         rhythm: {
           origin: measure.rhythmOrigin,
-          events: measure.rhythms.map(convertRhythm)
+          events: measure.rhythmOrigin === 'implicit' ? [] : measure.rhythms.map(convertRhythm)
         },
         ...(measure.lyric ? { measureLyric: measure.lyric } : {}),
         ...(measure.melody ? { melody: measure.melody.map(convertNote) } : {}),

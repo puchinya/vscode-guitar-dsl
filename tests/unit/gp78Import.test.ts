@@ -1,10 +1,11 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { strToU8, zipSync } from 'fflate';
-import { importGp78, inspectGp78 } from '../../src/gp78';
+import { strToU8, unzipSync, zipSync } from 'fflate';
+import { exportGp78, importGp78, inspectGp78 } from '../../src/gp78';
 import { extractGpif } from '../../src/gp78/archive';
-import { hasBlockingLoss } from '../../src/interchange';
+import { guitarDslToInterchange, hasBlockingLoss, interchangeToGuitarDsl } from '../../src/interchange';
+import { parseGuitarDsl } from '../../src/compiler';
 import { resolvePlayOrder } from '../../src/playOrder';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -18,6 +19,39 @@ function importFirstTrack(bytes: Uint8Array) {
   const track = inspection.value.tracks.find(candidate => candidate.eligible);
   assert.ok(track);
   return importGp78(bytes, track.id);
+}
+
+function replaceGpif(source: Uint8Array, gpif: string): Uint8Array {
+  const entries = unzipSync(source);
+  entries['Content/score.gpif'] = strToU8(gpif);
+  return zipSync(entries);
+}
+
+function addBeatLyrics(gpif: string, beatId: number, lines: readonly string[]): string {
+  const marker = `<Beat id="${beatId}">`;
+  assert.ok(gpif.includes(marker), `Beat ${beatId} is present in the fixture`);
+  const lyrics = `<Lyrics>${lines.map(text => `<Line>${text}</Line>`).join('')}</Lyrics>`;
+  return gpif.replace(marker, `${marker}${lyrics}`);
+}
+
+function removeBeatNotes(gpif: string, beatId: number): string {
+  const marker = `<Beat id="${beatId}">`;
+  const start = gpif.indexOf(marker);
+  assert.notStrictEqual(start, -1, `Beat ${beatId} is present in the fixture`);
+  const end = gpif.indexOf('</Beat>', start);
+  assert.notStrictEqual(end, -1, `Beat ${beatId} is closed in the fixture`);
+  const beat = gpif.slice(start, end + '</Beat>'.length);
+  assert.match(beat, /<Notes>[^<]*<\/Notes>/);
+  return gpif.slice(0, start) + beat.replace(/<Notes>[^<]*<\/Notes>/, '') + gpif.slice(end + '</Beat>'.length);
+}
+
+function emptyFirstVoiceBeatList(gpif: string): string {
+  const voiceStart = gpif.indexOf('<Voice id=');
+  assert.notStrictEqual(voiceStart, -1, 'the fixture has a voice definition');
+  const beatsStart = gpif.indexOf('<Beats>', voiceStart);
+  const beatsEnd = gpif.indexOf('</Beats>', beatsStart);
+  assert.ok(beatsStart > voiceStart && beatsEnd > beatsStart, 'the fixture voice has a beat list');
+  return gpif.slice(0, beatsStart) + '<Beats></Beats>' + gpif.slice(beatsEnd + '</Beats>'.length);
 }
 
 describe('GP7/8 GPIF import', () => {
@@ -147,6 +181,45 @@ describe('GP7/8 GPIF import', () => {
     assert.strictEqual(result.value.measures[0].chords[0].name, 'C');
   });
 
+  it('keeps a GPIF bar with no voice beats through GuitarDSL and GP7 roundtrip without attacks or lyrics', () => {
+    const source = fixture('F01-standard-4-4.gp');
+    const gpif = emptyFirstVoiceBeatList(new TextDecoder().decode(extractGpif(source).gpif));
+    const imported = importFirstTrack(replaceGpif(source, gpif));
+    assert.strictEqual(imported.ok, true, JSON.stringify(imported));
+    if (!imported.ok) return;
+    assert.strictEqual(imported.value.measures.length, 1);
+    const emptyMeasure = imported.value.measures[0];
+    assert.deepStrictEqual(emptyMeasure.chords, []);
+    assert.strictEqual(emptyMeasure.melody, undefined);
+    assert.strictEqual(emptyMeasure.tabVoices, undefined);
+
+    const serialized = interchangeToGuitarDsl(imported.value);
+    assert.strictEqual(serialized.ok, true, JSON.stringify(serialized));
+    if (!serialized.ok) return;
+    assert.match(serialized.value, /\| N\.C\. \|/);
+    const parsed = parseGuitarDsl(serialized.value);
+    assert.deepStrictEqual(parsed.diagnostics.filter(item => item.severity === 'error'), []);
+    assert.strictEqual(parsed.measures.length, 1);
+    assert.deepStrictEqual(parsed.measures[0].rhythms, []);
+    const restored = guitarDslToInterchange(serialized.value);
+    assert.strictEqual(restored.ok, true, JSON.stringify(restored));
+    if (!restored.ok) return;
+    assert.strictEqual(restored.value.measures.length, 1);
+    assert.deepStrictEqual(restored.value.measures[0].chords, []);
+    assert.deepStrictEqual(restored.value.measures[0].rhythm.events, []);
+
+    const exported = exportGp78(restored.value);
+    assert.strictEqual(exported.ok, true, JSON.stringify(exported));
+    if (!exported.ok) return;
+    const reimported = importFirstTrack(exported.value);
+    assert.strictEqual(reimported.ok, true, JSON.stringify(reimported));
+    if (!reimported.ok) return;
+    assert.strictEqual(reimported.value.measures.length, 1);
+    assert.deepStrictEqual(reimported.value.measures[0].chords, []);
+    assert.strictEqual(reimported.value.measures[0].melody, undefined);
+    assert.strictEqual(reimported.value.measures[0].tabVoices, undefined);
+  });
+
   it('imports a GP8 standard-only guitar track as melody without inventing string positions', () => {
     const bytes = fixture('F10-melody-only.gp');
     const inspection = inspectGp78(bytes);
@@ -163,6 +236,103 @@ describe('GP7/8 GPIF import', () => {
     assert.ok(!('string' in measure.melody![0]) && !('fret' in measure.melody![0]));
   });
 
+  it('maps rhythm-bearing empty beats to duration-preserving rests without lyric slots', () => {
+    const tabSource = fixture('F01-standard-4-4.gp');
+    const tabGpif = removeBeatNotes(new TextDecoder().decode(extractGpif(tabSource).gpif), 0);
+    const tab = importFirstTrack(replaceGpif(tabSource, tabGpif));
+    assert.strictEqual(tab.ok, true, JSON.stringify(tab));
+    if (!tab.ok) return;
+    const tabRest = tab.value.measures[0].tabVoices?.[0].beats[0];
+    assert.strictEqual(tabRest?.isRest, true);
+    assert.deepStrictEqual(tabRest?.syllables, []);
+    assert.strictEqual(tab.value.measures[0].melody, undefined);
+
+    const melodySource = fixture('F10-melody-only.gp');
+    const melodyGpif = removeBeatNotes(new TextDecoder().decode(extractGpif(melodySource).gpif), 0);
+    const melody = importFirstTrack(replaceGpif(melodySource, melodyGpif));
+    assert.strictEqual(melody.ok, true, JSON.stringify(melody));
+    if (!melody.ok) return;
+    assert.strictEqual(melody.value.measures[0].tabVoices, undefined);
+    assert.strictEqual(melody.value.measures[0].melody?.[0].isRest, true);
+    assert.deepStrictEqual(melody.value.measures[0].melody?.[0].syllables, []);
+    const scoreWithTestAnchor = {
+      ...melody.value,
+      measures: melody.value.measures.map(measure => ({
+        ...measure,
+        chords: [{ name: 'C', beatOffset: { n: 0, d: 1 } }],
+        chordPlacementMode: 'equalSplit' as const,
+      })),
+    };
+    const serialized = interchangeToGuitarDsl(scoreWithTestAnchor);
+    assert.strictEqual(serialized.ok, true, JSON.stringify(serialized));
+    if (serialized.ok) assert.deepStrictEqual(parseGuitarDsl(serialized.value).diagnostics.filter(item => item.severity === 'error'), []);
+  });
+
+  it('preserves GPIF TAB lyrics, verse order, internal skips, and ignores trailing blank lines', () => {
+    const source = fixture('F05-techniques.gp');
+    let gpif = new TextDecoder().decode(extractGpif(source).gpif);
+    gpif = addBeatLyrics(gpif, 0, ['あいう', 'かきく', '', '', '']);
+    gpif = addBeatLyrics(gpif, 2, ['さしす', 'せそ', '', '', '']);
+    const result = importFirstTrack(replaceGpif(source, gpif));
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+
+    const beats = result.value.measures.flatMap(measure => measure.tabVoices?.[0].beats ?? []);
+    const slots = beats.slice(0, 4).map(beat => beat.syllables.map(value =>
+      value === null ? null : 'kind' in value ? 'omitted' : value.text));
+    assert.deepStrictEqual(slots, [
+      ['あいう', 'かきく'],
+      [null, null],
+      ['さしす', 'せそ'],
+      [],
+    ]);
+
+    const scoreWithTestAnchors = {
+      ...result.value,
+      measures: result.value.measures.map(measure => ({
+        ...measure,
+        chords: [{ name: 'C', beatOffset: { n: 0, d: 1 } }],
+        chordPlacementMode: 'equalSplit' as const,
+      })),
+    };
+    const serialized = interchangeToGuitarDsl(scoreWithTestAnchors);
+    assert.strictEqual(serialized.ok, true, JSON.stringify(serialized));
+    if (!serialized.ok) return;
+    const parsed = parseGuitarDsl(serialized.value);
+    assert.deepStrictEqual(parsed.diagnostics.filter(item => item.severity === 'error'), []);
+    assert.deepStrictEqual(serialized.value.split('\n').filter(line => line.startsWith('lyr:')), [
+      'lyr: (あいう) * (さしす)',
+      'lyr: (かきく) * (せそ)',
+    ]);
+
+    const restored = guitarDslToInterchange(serialized.value);
+    assert.strictEqual(restored.ok, true, JSON.stringify(restored));
+    if (!restored.ok) return;
+    const restoredBeats = restored.value.measures.flatMap(measure => measure.tabVoices?.[0].beats ?? []);
+    assert.deepStrictEqual(restoredBeats.slice(0, 4).map(beat => beat.syllables.map(value =>
+      value === null ? null : 'kind' in value ? 'omitted' : value.text)), slots);
+  });
+
+  it('maps GPIF lyrics to standard-staff melody notes and rejects lyrics on a tied continuation', () => {
+    const melodySource = fixture('F10-melody-only.gp');
+    const melodyGpif = addBeatLyrics(new TextDecoder().decode(extractGpif(melodySource).gpif), 0, ['あいう', '', '', '', '']);
+    const melody = importFirstTrack(replaceGpif(melodySource, melodyGpif));
+    assert.strictEqual(melody.ok, true, JSON.stringify(melody));
+    if (!melody.ok) return;
+    assert.deepStrictEqual(melody.value.measures[0].melody?.[0].syllables.map(value =>
+      value === null ? null : 'kind' in value ? 'omitted' : value.text), ['あいう']);
+    assert.strictEqual(melody.value.melodyGroups[0].verseCount, 1);
+
+    const tiedSource = fixture('F05-techniques.gp');
+    const tiedGpif = addBeatLyrics(new TextDecoder().decode(extractGpif(tiedSource).gpif), 6, ['あいう', '', '', '', '']);
+    const tied = importFirstTrack(replaceGpif(tiedSource, tiedGpif));
+    assert.strictEqual(tied.ok, false);
+    if (!tied.ok) {
+      assert.strictEqual(tied.code, 'unsupportedSemantics');
+      assert.strictEqual(tied.errors[0].path, 'GPIF/Beats/Beat[id=6]/Lyrics/Line[0]');
+    }
+  });
+
   it('imports GP8 standard-only sentinel values after native re-save without inventing TAB positions', () => {
     const sourceGpif = new TextDecoder().decode(extractGpif(fixture('F10-melody-only.gp')).gpif);
     const gp8ResavedGpif = sourceGpif
@@ -170,7 +340,7 @@ describe('GP7/8 GPIF import', () => {
       .replace('<Number>65</Number>', '<Number>2147483648</Number>')
       .replace('<String>5</String>', '<String>0</String>');
     assert.notStrictEqual(gp8ResavedGpif, sourceGpif);
-    const result = importFirstTrack(zipSync({ 'Content/score.gpif': strToU8(gp8ResavedGpif) }));
+    const result = importFirstTrack(replaceGpif(fixture('F10-melody-only.gp'), gp8ResavedGpif));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
     const measure = result.value.measures[0];

@@ -8,7 +8,7 @@
 | Official app | Guitar Pro 8.1.5 build 31, `/Applications/Guitar Pro 8.app`, bundle `com.arobas-music.guitarpro8` |
 | Guitar Pro 7 | Not installed; the user excluded native GP7-app checks from the contract. Status: `NOT RUN / EXCLUDED`. GP7 file-format handling remains under automated import/export and writer self-roundtrip coverage. |
 | GUI access | Native Guitar Pro 8 UI; open/display/save actions were observed through CUA accessibility state and screenshots. |
-| Fixture rights | Every score is self-authored for Issue #97; no third-party compositions or recordings are included. |
+| Fixture rights | Checked-in scores are self-authored for Issue #97. The user-supplied score was verified locally and is not stored in the repository. |
 
 ## Source fixture matrix
 
@@ -28,6 +28,19 @@ SHA-256 values identify the exact checked-in input files.
 | F08b `F08-advanced-technique.gp` | `c4c44a8b5c42c63b6a8db4cb92a2f294b16185b282e0fdbf34d46a38640717c5` | Selected-track Trill/XProperties are rejected as blocking `unsupportedSemantics`; no export is produced. |
 | F09 `F09-chord-only.gp` | `d259c74a33a62f666d64cf1f47364bf2bc881370a9f9c5da7245d08526a0a117` | Chord-bearing beat has no notes and the GPIF has zero `Note` elements; import/export PASS. |
 | F10 `F10-melody-only.gp` | `efde8b16738fd34f27215206714f589c83aa52cf4b22b7604d6d5fe09253d41b` | Standard-notation melody has no TAB positions; import/export PASS without inventing string/fret values. |
+
+## User-supplied file verification
+
+Run locally on 2026-10-10. The source filename, title, lyrics, and file bytes are intentionally omitted; the original file was not modified or copied into the repository.
+
+| Check | Result |
+|---|---|
+| GPIF inspection and eligible-track selection | PASS — exactly one eligible track. |
+| GPIF import → GuitarDSL serialization → GuitarDSL parse → InterchangeScore | PASS — 37 written measures; parser had zero error diagnostics. |
+| Empty final measure | PASS — measure 37 remained an `N.C.` measure with no chord, melody/TAB attack, or rhythm event. |
+| Lyrics | PASS — all 18 lyric slots remained after GuitarDSL and GP7 export/re-import. |
+| GP7 export and re-import | PASS — 37 written measures and the empty final measure were preserved. |
+| Guitar Pro 8.1.5 app | PASS — the generated GP7 roundtrip opened in the official app with no error dialog. |
 
 ## Observed GPIF mappings
 
@@ -63,3 +76,16 @@ Run on 2026-10-10 with Guitar Pro 8.1.5 build 31. Each output listed below was g
 | F10 | `3964d8871d98e29414dc777bd2c39f478bf0db25a3ee36b305136305aad3e8dd` | `95f05a6be0d4b0a7e688233f6ca43026637c072ab3c3249e474610bee46efede` | PASS — standard-notation melody displays without TAB positions; semantic equality. |
 
 F08b is a blocking import fixture by contract and therefore has no writer output. GP7 native-app verification remains `NOT RUN / EXCLUDED` and does not block completion.
+
+## Final automated verification
+
+Run locally on 2026-10-10 on macOS 26.6.2 with Node.js v26.7.0 and npm 11.19.0.
+
+| Command | Result |
+|---|---|
+| `npm run compile` | PASS. |
+| `npm test` | PASS — `check:help`, `check:ai`, 1050 unit tests, and 56 E2E tests. A preceding run on the same working tree had 7 undo-history E2E assertion failures across Issues #62, #65, #68, and #80; the immediate full rerun exited 0. |
+| `npm run vscode:prepublish` | PASS with the installed Rustup toolchain prioritized in `PATH`; WASM build, Help/AI generation, and TypeScript compilation completed. |
+| `npx @vscode/vsce ls` | PASS — 1581 package entries; GP78 modules, extension Help, and grammar are included. |
+| `python3 -m agent_workflow validate-docs --changed origin/main` | PASS — 8 changed documentation files, no errors. |
+| `git diff --check` | PASS. |

@@ -225,11 +225,12 @@ export interface NoteGroupToken {
 
 /**
  * Parses a simultaneous note group `[c4,e4,g4]/4{staccato}` (spec §18). Members need an explicit octave,
- * the shared length is mandatory and only group-level techniques are allowed (no connection, bend, slur or
- * tie). Never reads nor updates the single-note inheritance state.
+ * the shared length is mandatory and only group-level techniques are allowed (no connection, bend or slur).
+ * A trailing tie applies to the complete group. Never reads nor updates the single-note inheritance state.
  */
 export function parseNoteGroupToken(tok: string): NoteGroupToken | MelodyTokenError {
-  if (tok.endsWith('~')) return 'unsupportedNoteGroupTechnique';
+  const tieToNext = tok.endsWith('~');
+  if (tieToNext) tok = tok.slice(0, -1);
   const m = tok.match(GROUP_RE);
   if (!m) return 'invalidNoteGroup';
   let tail = m[2];
@@ -270,7 +271,7 @@ export function parseNoteGroupToken(tok: string): NoteGroupToken | MelodyTokenEr
     pitches,
     parts: length.parts,
     beats: grace ? ZERO : length.beats,
-    tieToNext: false,
+    tieToNext,
     tiedFromPrev: false,
     syllables: []
   };
@@ -397,7 +398,7 @@ export function tokenizeLyrics(text: string): LyricItem[] {
   return items;
 }
 
-/** A note is sung (takes a syllable) unless it is a rest, a grace note or the continuation of a tie. */
+/** A melody note takes a syllable unless it is a rest or a grace note. */
 export function takesSyllable(note: MelodyNote): boolean {
-  return !note.isRest && !note.tiedFromPrev && !isGrace(note);
+  return !note.isRest && !isGrace(note);
 }

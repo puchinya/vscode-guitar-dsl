@@ -13,7 +13,7 @@
 
 ## Scope
 
-この索引は仕様の所有者を案内します。製品要件の正本は [拡張機能仕様](extension.md) と [言語構文仕様](guitardsl-syntax.md) です。
+この索引は仕様の所有者を案内します。製品要件の正本は [拡張機能仕様](extension.md)、[言語構文仕様](guitardsl-syntax.md)、および [Guitar Pro GPIF ファイル形式仕様](guitar-pro-file-format.md) です。
 
 ## Normative requirements
 
@@ -23,14 +23,15 @@
 |---|---|
 | [拡張機能仕様](extension.md) | コマンド、エディタ連携、プレビュー、PDFエクスポート、アウトライン、採譜、AI 連携 |
 | [GuitarDSL 言語構文仕様](guitardsl-syntax.md) | メタデータ、セクション、小節線、コード、リズム、歌詞、スコアイベント、描画規則 |
+| [Guitar Pro GPIF ファイル形式仕様](guitar-pro-file-format.md) | Guitar Pro 7/8 の `.gp` コンテナ、GPIF 参照構造、GP8.1.5 歌詞配置と import 対応 |
 
 ## Observable behavior
 
-拡張機能のユーザー向け動作は [拡張機能仕様](extension.md) が所有し、テキスト形式と描画規則は [言語構文仕様](guitardsl-syntax.md) が所有します。
+拡張機能のユーザー向け動作は [拡張機能仕様](extension.md) が所有し、テキスト形式と描画規則は [言語構文仕様](guitardsl-syntax.md) が所有します。Guitar Pro ファイルの読み取り構造と GuitarDSL への対応は [GPIF ファイル形式仕様](guitar-pro-file-format.md) が所有します。
 
 ## Error and boundary behavior
 
-エラー、診断、入力境界の規範は各仕様の対応節にあります。この索引では新しいエラー動作を定義しません。
+エラー、診断、入力境界の規範は各仕様の対応節にあります。GPIF の参照・構造エラーは [GPIF ファイル形式仕様](guitar-pro-file-format.md) が所有します。この索引では新しいエラー動作を定義しません。
 
 ## Security and privacy
 

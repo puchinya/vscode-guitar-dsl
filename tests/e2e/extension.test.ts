@@ -71,6 +71,17 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       commands.includes('guitardsl.exportGuitarPro'),
       'Command guitardsl.exportGuitarPro should be registered'
     );
+    const extension = vscode.extensions.getExtension('puchinya.vscode-guitar-dsl');
+    assert.ok(extension, 'Extension should expose its package contributions');
+    const menus = extension.packageJSON.contributes?.menus as Record<string, Array<{ command: string }>>;
+    assert.ok(
+      !(menus['editor/title'] ?? []).some(item => item.command === 'guitardsl.exportGuitarPro'),
+      'Guitar Pro export must not add an editor title toolbar button'
+    );
+    assert.ok(
+      (menus['explorer/context'] ?? []).some(item => item.command === 'guitardsl.exportGuitarPro'),
+      'Guitar Pro export should remain available from the Explorer context menu'
+    );
     assert.ok(
       commands.includes('guitardsl.editChordDiagram'),
       'Command guitardsl.editChordDiagram should be registered'

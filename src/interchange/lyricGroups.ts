@@ -1,11 +1,11 @@
 import type { InterchangeLyricSlot, InterchangeScore } from './model';
 
 /**
- * Mirrors melody.ts::takesSyllable(): rests, grace notes, and tied continuations do not consume lyric slots.
+ * Mirrors melody.ts::takesSyllable(): rests and grace notes do not consume melody lyric slots.
  * The compiler remains the parser authority; this predicate is used only on the normalized snapshot.
  */
 export function takesMelodySyllable(note: NonNullable<InterchangeScore['measures'][number]['melody']>[number]): boolean {
-  return !note.isRest && !note.techniques?.grace && !note.tiedFromPrev;
+  return !note.isRest && !note.techniques?.grace;
 }
 
 /** Minimum authored verse count across melody groups wholly contained in a written section. */

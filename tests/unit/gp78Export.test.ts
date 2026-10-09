@@ -6,6 +6,7 @@ import { importGp78, exportGp78, inspectGp78 } from '../../src/gp78';
 import { extractGpif } from '../../src/gp78/archive';
 import { parsePartConfiguration } from '../../src/gp78/partConfiguration';
 import { publishGp78Exclusive } from '../../src/gp78Commands';
+import { guitarDslToInterchange } from '../../src/interchange';
 
 const ROOT = path.resolve(__dirname, '../..');
 const fixture = new Uint8Array(fs.readFileSync(path.join(ROOT, 'tests/fixtures/gp78/F01-standard-4-4.gp')));
@@ -65,6 +66,91 @@ describe('GP7 writer', () => {
     assert.ok(gpif.includes('<Transpose><Chromatic>0</Chromatic><Octave>-1</Octave></Transpose>'));
     assert.ok(gpif.includes('<Property name="ConcertPitch"><Pitch><Step>B</Step><Accidental></Accidental><Octave>4</Octave></Pitch></Property>'));
     assert.ok(gpif.includes('<Property name="TransposedPitch"><Pitch><Step>B</Step><Accidental></Accidental><Octave>5</Octave></Pitch></Property>'));
+  });
+
+  it('attaches chord diagrams to standard melody beat onsets during GP7 export', () => {
+    const melody = guitarDslToInterchange('| C |\nmel: | c4/2 e4/2 |');
+    assert.strictEqual(melody.ok, true, JSON.stringify(melody));
+    if (!melody.ok) return;
+    const chordSource = new Uint8Array(fs.readFileSync(path.join(ROOT, 'tests/fixtures/gp78/F04-chord-onsets.gp')));
+    const chordInspection = inspectGp78(chordSource);
+    assert.strictEqual(chordInspection.ok, true, JSON.stringify(chordInspection));
+    if (!chordInspection.ok) return;
+    const chordTrack = chordInspection.value.tracks.find(track => track.eligible);
+    assert.ok(chordTrack);
+    if (!chordTrack) return;
+    const chordScore = importGp78(chordSource, chordTrack.id);
+    assert.strictEqual(chordScore.ok, true, JSON.stringify(chordScore));
+    if (!chordScore.ok) return;
+
+    const score = {
+      ...melody.value,
+      chordDefinitions: chordScore.value.chordDefinitions,
+      measures: melody.value.measures.map(measure => ({
+        ...measure,
+        chords: [
+          { name: 'C', beatOffset: { n: 0, d: 1 } },
+          { name: 'G/B', beatOffset: { n: 2, d: 1 } },
+        ],
+        chordPlacementMode: 'explicitDuration' as const,
+      })),
+    };
+    const output = exportGp78(score);
+    assert.strictEqual(output.ok, true, JSON.stringify(output));
+    if (!output.ok) return;
+    const roundtrip = importGp78(output.value, 0);
+    assert.strictEqual(roundtrip.ok, true, JSON.stringify(roundtrip));
+    if (!roundtrip.ok) return;
+    assert.deepStrictEqual(roundtrip.value.measures[0].chords.map(chord => ({ name: chord.name, beatOffset: chord.beatOffset })), [
+      { name: 'C', beatOffset: { n: 0, d: 1 } },
+      { name: 'G/B', beatOffset: { n: 2, d: 1 } },
+    ]);
+    assert.deepStrictEqual(roundtrip.value.measures[0].melody?.map(note => note.pitch), [
+      { step: 'c', alter: 0, octave: 4 },
+      { step: 'e', alter: 0, octave: 4 },
+    ]);
+  });
+
+  it('writes melody syllables as ordered GPIF lyric lines on their beats', () => {
+    const score = guitarDslToInterchange('| N.C. |\nmel: | c4/2 e4/2 |\nlyr: | la li |');
+    assert.strictEqual(score.ok, true, JSON.stringify(score));
+    if (!score.ok) return;
+    const output = exportGp78(score.value);
+    assert.strictEqual(output.ok, true, JSON.stringify(output));
+    if (!output.ok) return;
+    const gpif = new TextDecoder().decode(extractGpif(output.value).gpif);
+    assert.ok(gpif.includes('<Lyrics><Line>la</Line></Lyrics>'));
+    assert.ok(gpif.includes('<Lyrics><Line>li</Line></Lyrics>'));
+    const roundtrip = importGp78(output.value, 0);
+    assert.strictEqual(roundtrip.ok, true, JSON.stringify(roundtrip));
+    if (!roundtrip.ok) return;
+    assert.deepStrictEqual(roundtrip.value.measures[0].melody?.map(note => note.syllables), [
+      [{ text: 'la', hyphenToNext: false, extend: false }],
+      [{ text: 'li', hyphenToNext: false, extend: false }],
+    ]);
+  });
+
+  it('writes melody group ties to every pitch in the GPIF note group', () => {
+    const score = guitarDslToInterchange('| N.C. |\nmel: | [c4,e4]/2~ [c4,e4]/2 |');
+    assert.strictEqual(score.ok, true, JSON.stringify(score));
+    if (!score.ok) return;
+    const output = exportGp78(score.value);
+    assert.strictEqual(output.ok, true, JSON.stringify(output));
+    if (!output.ok) return;
+    const gpif = new TextDecoder().decode(extractGpif(output.value).gpif);
+    assert.strictEqual((gpif.match(/<Tie origin="true" destination="false" \/>/g) ?? []).length, 2);
+    assert.strictEqual((gpif.match(/<Tie origin="false" destination="true" \/>/g) ?? []).length, 2);
+    const roundtrip = importGp78(output.value, 0);
+    assert.strictEqual(roundtrip.ok, true, JSON.stringify(roundtrip));
+    if (!roundtrip.ok) return;
+    assert.deepStrictEqual(roundtrip.value.measures[0].melody?.map(note => ({
+      pitches: note.pitches,
+      tieToNext: note.tieToNext,
+      tiedFromPrev: note.tiedFromPrev,
+    })), [
+      { pitches: [{ step: 'c', alter: 0, octave: 4 }, { step: 'e', alter: 0, octave: 4 }], tieToNext: true, tiedFromPrev: false },
+      { pitches: [{ step: 'c', alter: 0, octave: 4 }, { step: 'e', alter: 0, octave: 4 }], tieToNext: false, tiedFromPrev: true },
+    ]);
   });
 
   it('round-trips pickup, meter/key changes, and tempo automation to GP7', () => {
