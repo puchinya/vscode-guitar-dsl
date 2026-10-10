@@ -347,6 +347,8 @@ Guitar Pro 7/8 の `.gp` ファイルを GuitarDSL 文書へ読み込む。コ�
 
 コンテナ・GPIF参照構造・GP8.1.5ファイルで観測した配置は、独立した[GPIFファイル形式仕様](guitar-pro-file-format.md)に定める。
 
+`MasterBar/DoubleBar` と `MasterBar/Section/Text` は InterchangeScore の小節線・セクション開始へ対応させる。異なる `Section/Letter` は表示用情報として省略し、non-blocking loss に記録する。固定拍子で表現できない `FreeTime`、InterchangeScore v1 に対応先がない `Fermatas` は読み込みを失敗させる。選択トラックの譜表表示フラグが複数の score view に定義され、その値が異なる場合は、未検証の active-view 値から推測せず読み込みを失敗させる。設定のない view や非選択トラックの差異は選択トラックの解釈に影響しない。
+
 - **対応形式**: GP7/GP8 の `.gp`。形式判定は ZIP 内 `Content/score.gpif` の `GPVersion` に基づく。GP3–6、`.gpx`、GP9 以降、および対応形式を特定できないファイルは拒否する。
 - **トラック選択**: 6弦ギター、1 staff、TAB voice 1 として読み込めるトラックだけを候補とする。候補が1件なら自動選択し、複数なら QuickPick でユーザーに選ばせる。候補がなければ読み込まない。選択されなかったトラックは明示的な損失として提示し、無断で破棄しない。
 - **処理フロー**:
@@ -358,6 +360,8 @@ Guitar Pro 7/8 の `.gp` ファイルを GuitarDSL 文書へ読み込む。コ�
 
 ### 3.16 `guitardsl.exportGuitarPro`
 対象の GuitarDSL 文書を Guitar Pro 7 `.gp` 形式へ書き出す。コマンドパレットまたは GuitarDSL 文書の Explorer コンテキストメニューから実行する。エディタ右上のタイトルバーにはエクスポートボタンを表示しない。
+
+InterchangeScore にあるセクション名と二重小節線は GPIF へ書き出し、writer の必須再読込比較にも含める。GPIF 構造の詳細は[GPIFファイル形式仕様](guitar-pro-file-format.md)に定める。
 
 - **対象文書**: 既存文書コマンドと同じ解決規則を使う。ローカル file URI と `untitled` URI の GuitarDSL 文書を受け付け、インポート直後の無題文書も保存前に書き出せる。remote/その他 scheme は理由を示して拒否する。保存対象は実行時点の文書テキストと version の組であり、Preview の一時カポ・初心者モード変換を含めない。無題文書の保存ダイアログには `Untitled.gp` を初期名として示す。
 - **処理フロー**:

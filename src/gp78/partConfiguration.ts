@@ -11,8 +11,16 @@ export interface Gp78TrackNotation {
   readonly numbered: boolean;
 }
 
+export interface Gp78PartConfiguration {
+  readonly views: readonly (readonly Gp78TrackNotation[])[];
+}
+
 function invalid(detail: string): never {
   throw new Gp78AdapterError('invalidContainer', PATH, detail);
+}
+
+function unsupported(detail: string): never {
+  throw new Gp78AdapterError('unsupportedSemantics', PATH, detail);
 }
 
 function readUInt32(bytes: Uint8Array, offset: number): number {
@@ -20,7 +28,7 @@ function readUInt32(bytes: Uint8Array, offset: number): number {
   return ((bytes[offset] * 0x1000000) + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3]) >>> 0;
 }
 
-export function parsePartConfiguration(bytes: Uint8Array | undefined): readonly Gp78TrackNotation[] | undefined {
+export function parsePartConfiguration(bytes: Uint8Array | undefined): Gp78PartConfiguration | undefined {
   if (!bytes) return undefined;
   if (bytes.byteLength > GP78_LIMITS.partConfigurationBytes) {
     throw new Gp78AdapterError('resourceLimit', PATH, `Part configuration exceeds ${GP78_LIMITS.partConfigurationBytes} bytes.`);
@@ -60,7 +68,25 @@ export function parsePartConfiguration(bytes: Uint8Array | undefined): readonly 
     const activeView = readUInt32(bytes, cursor);
     if (activeView >= scoreViewCount) return invalid(`Active score view ${activeView} is out of range.`);
   }
-  return Object.freeze(views[0]);
+  return Object.freeze({ views: Object.freeze(views.map(view => Object.freeze(view))) });
+}
+
+export function notationForTrack(configuration: Gp78PartConfiguration | undefined, trackIndex: number): Gp78TrackNotation | undefined {
+  if (!configuration) return undefined;
+  const availableViews = configuration.views.map(view => view[trackIndex])
+    .filter((notation): notation is Gp78TrackNotation => notation !== undefined);
+  const first = availableViews[0];
+  if (!first) return undefined;
+  const hasDifferentNotation = availableViews.slice(1).some(notation =>
+    notation.standard !== first.standard
+    || notation.tablature !== first.tablature
+    || notation.slash !== first.slash
+    || notation.numbered !== first.numbered,
+  );
+  if (hasDifferentNotation) {
+    return unsupported('Score views use different notation flags for the selected track; the active-view selector is not used until its native GP8 semantics are verified.');
+  }
+  return first;
 }
 
 export function createGp7PartConfiguration(showTablature: boolean): Uint8Array {

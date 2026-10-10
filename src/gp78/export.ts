@@ -140,10 +140,10 @@ function validateExportScore(score: InterchangeScore): void {
   }
   for (const [measureIndex, measure] of score.measures.entries()) {
     const path = `/measures/${measureIndex}`;
-    if (measure.sectionStart || measure.measureLyric) error('unrepresentableValue', path, 'Section markers and measure lyrics are not emitted.');
+    if (measure.measureLyric) error('unrepresentableValue', `${path}/measureLyric`, 'Measure lyrics are not emitted.');
     if (measure.isPickup && (measureIndex !== 0 || score.metadata.pickup === undefined)) throw new Gp78AdapterError('invalidIr', `${path}/isPickup`, 'Only the first measure can be marked as a pickup, and it requires pickup metadata.');
-    if (measure.barline.doubleEnd || measure.barline.finalEnd) {
-      error('unrepresentableValue', `${path}/barline`, 'Double and final barlines are not emitted by the GP writer.');
+    if (measure.barline.finalEnd) {
+      error('unrepresentableValue', `${path}/barline/finalEnd`, 'Final barlines are not emitted by the GP writer.');
     }
     if (measure.barline.bracket !== undefined && !/^[1-8]\.$/.test(measure.barline.bracket)) {
       error('unrepresentableValue', `${path}/barline/bracket`, 'Only one numbered alternate ending from 1 through 8 is supported.');
@@ -452,6 +452,17 @@ function compare(a: InterchangeFraction, b: InterchangeFraction): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function sectionLetter(index: number): string {
+  let value = index + 1;
+  let result = '';
+  while (value > 0) {
+    value--;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
 function subtract(a: InterchangeFraction, b: InterchangeFraction, path: string): InterchangeFraction {
   const n = a.n * b.d - b.n * a.d;
   const d = a.d * b.d;
@@ -480,6 +491,7 @@ function buildGpif(score: InterchangeScore): Uint8Array {
   let currentTempo = score.metadata.bpm;
   let previousKey = score.metadata.key;
   let previousTime = score.metadata.timeSignature;
+  let nextSectionLetter = 0;
 
   for (const [measureIndex, measure] of score.measures.entries()) {
     const path = `/measures/${measureIndex}`;
@@ -526,6 +538,10 @@ function buildGpif(score: InterchangeScore): Uint8Array {
     const alternateEnding = measure.barline.bracket
       ? `<AlternateEndings>${measure.barline.bracket.slice(0, -1)}</AlternateEndings>`
       : '';
+    const section = measure.sectionStart === undefined
+      ? ''
+      : `<Section><Letter>${sectionLetter(nextSectionLetter++)}</Letter><Text>${xml(measure.sectionStart)}</Text></Section>`;
+    const doubleBar = measure.barline.doubleEnd ? '<DoubleBar />' : '';
     const targetMap = { segno: 'Segno', coda: 'Coda', fine: 'Fine' } as const;
     const jumpMap = { to_coda: 'DaCoda', dc: 'DaCapo', ds: 'DaSegno' } as const;
     const mark = measure.barline.specialMark;
@@ -534,7 +550,7 @@ function buildGpif(score: InterchangeScore): Uint8Array {
         ? `<Directions><Target>${targetMap[mark as keyof typeof targetMap]}</Target></Directions>`
         : `<Directions><Jump>${jumpMap[mark as keyof typeof jumpMap]}</Jump></Directions>`
       : '';
-    masterBarXmls.push(`<MasterBar>${xmlKey(key, `${path}/key`)}<Time>${timeText(time, `${path}/timeSignature`)}</Time>${repeat}${alternateEnding}${directions}<Bars>${barId}</Bars></MasterBar>`);
+    masterBarXmls.push(`<MasterBar>${xmlKey(key, `${path}/key`)}<Time>${timeText(time, `${path}/timeSignature`)}</Time>${repeat}${alternateEnding}${section}${doubleBar}${directions}<Bars>${barId}</Bars></MasterBar>`);
   }
 
   const rhythms = rhythmXmls.join('');
@@ -563,9 +579,17 @@ function semanticProjection(score: InterchangeScore): unknown {
     chordDefinitions: score.chordDefinitions.map(definition => ({ name: definition.name, frets: definition.frets, baseFret: definition.baseFret, fingers: definition.fingers ?? Array(6).fill(null), barres: definition.barres })),
     melodyGroups: score.melodyGroups,
     measures: score.measures.map(measure => ({
+      sectionStart: measure.sectionStart,
       expectedBeats: measure.expectedBeats,
       isPickup: measure.isPickup ?? false,
-      barline: { repeatStart: measure.barline.repeatStart, repeatEnd: measure.barline.repeatEnd },
+      barline: {
+        repeatStart: measure.barline.repeatStart,
+        repeatEnd: measure.barline.repeatEnd,
+        doubleEnd: measure.barline.doubleEnd,
+        finalEnd: measure.barline.finalEnd,
+        bracket: measure.barline.bracket,
+        specialMark: measure.barline.specialMark,
+      },
       eventsBefore: events(measure.eventsBefore),
       chords: measure.chords.map(chord => ({ name: chord.name, beatOffset: chord.beatOffset })),
       melody: (measure.melody ?? []).map(note => ({
@@ -613,6 +637,11 @@ function semanticDifferencePath(left: unknown, right: unknown, path = ''): strin
   return path || '/';
 }
 
+/** @internal Shared by the mandatory writer gate and focused equality regressions. */
+export function gp78RoundTripMismatch(expected: InterchangeScore, actual: InterchangeScore): string | undefined {
+  return semanticDifferencePath(semanticProjection(expected), semanticProjection(actual));
+}
+
 export function exportGp78(score: InterchangeScore): Gp78Result<Uint8Array> {
   try {
     validateExportScore(score);
@@ -621,7 +650,7 @@ export function exportGp78(score: InterchangeScore): Gp78Result<Uint8Array> {
     const archive = createGp7Archive(gpif, createGp7PartConfiguration(hasTablature));
     const inspected = importGp78(archive, 0);
     if (!inspected.ok) return gp78Failure('roundTripMismatch', inspected.errors[0]?.path ?? 'GPIF', inspected.errors[0]?.detail ?? 'Generated GPIF could not be read back.');
-    const mismatch = semanticDifferencePath(semanticProjection(score), semanticProjection(inspected.value));
+    const mismatch = gp78RoundTripMismatch(score, inspected.value);
     if (mismatch !== undefined) {
       return gp78Failure('roundTripMismatch', `GPIF${mismatch}`, 'Generated GPIF did not preserve the input interchange semantics.');
     }

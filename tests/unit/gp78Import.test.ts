@@ -5,8 +5,10 @@ import { strToU8, unzipSync, zipSync } from 'fflate';
 import { exportGp78, importGp78, inspectGp78 } from '../../src/gp78';
 import { extractGpif } from '../../src/gp78/archive';
 import { guitarDslToInterchange, hasBlockingLoss, interchangeToGuitarDsl } from '../../src/interchange';
+import type { InterchangeMeasure } from '../../src/interchange';
 import { parseGuitarDsl } from '../../src/compiler';
 import { resolvePlayOrder } from '../../src/playOrder';
+import { buildGpifMelodyGroups, resolveTabNoteLinks } from '../../src/gp78/tracks';
 
 const ROOT = path.resolve(__dirname, '../..');
 function fixture(name: string): Uint8Array {
@@ -25,6 +27,34 @@ function replaceGpif(source: Uint8Array, gpif: string): Uint8Array {
   const entries = unzipSync(source);
   entries['Content/score.gpif'] = strToU8(gpif);
   return zipSync(entries);
+}
+
+function replacePartConfiguration(source: Uint8Array, partConfiguration: Uint8Array): Uint8Array {
+  const entries = unzipSync(source);
+  entries['Content/PartConfiguration'] = partConfiguration;
+  return zipSync(entries);
+}
+
+function encodePartConfiguration(views: readonly (readonly number[])[], activeView: number): Uint8Array {
+  const bytes: number[] = [];
+  const pushUInt32 = (value: number) => bytes.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff);
+  pushUInt32(views.length);
+  for (const flags of views) {
+    bytes.push(0);
+    pushUInt32(flags.length);
+    bytes.push(...flags);
+  }
+  pushUInt32(activeView);
+  return Uint8Array.from(bytes);
+}
+
+function addFirstMasterBarChild(gpif: string, child: string): string {
+  const openingTag = /<MasterBar(?:\s[^>]*)?>/.exec(gpif);
+  assert.ok(openingTag, 'the fixture has a master bar');
+  if (!openingTag) return gpif;
+  const close = gpif.indexOf('</MasterBar>', openingTag.index + openingTag[0].length);
+  assert.notStrictEqual(close, -1, 'the fixture master bar is closed');
+  return gpif.slice(0, close) + child + gpif.slice(close);
 }
 
 function addBeatLyrics(gpif: string, beatId: number, lines: readonly string[]): string {
@@ -55,6 +85,55 @@ function emptyFirstVoiceBeatList(gpif: string): string {
 }
 
 describe('GP7/8 GPIF import', () => {
+  it('splits melody groups at imported section boundaries', () => {
+    const note = { syllables: [{ text: 'la', hyphenToNext: false, extend: false }] };
+    assert.deepStrictEqual(buildGpifMelodyGroups([
+      { sectionStart: 'Intro', melody: [note] },
+      { melody: [note] },
+      { sectionStart: 'Verse', melody: [note] },
+      {},
+    ]), [
+      { startMeasure: 0, endMeasureExclusive: 2, verseCount: 1 },
+      { startMeasure: 2, endMeasureExclusive: 3, verseCount: 1 },
+    ]);
+  });
+
+  it('resolves same-string TAB links in a 20,000-position score', () => {
+    const positionCount = 20_000;
+    const measure: InterchangeMeasure = {
+      index: 0,
+      expectedBeats: { n: 1, d: 1 },
+      barline: { repeatStart: false, repeatEnd: false, doubleEnd: false, finalEnd: false },
+      eventsBefore: [],
+      chords: [],
+      chordPlacementMode: 'equalSplit',
+      rhythm: { origin: 'implicit', events: [] },
+      tabVoices: [{
+        voice: 1,
+        beats: Array.from({ length: positionCount }, (_, index) => ({
+          isRest: false,
+          notes: [{ string: 2, fret: index === 0 ? 2 : index === 1 ? 3 : 0, dead: false, tieToNext: false, effects: [] }],
+          duration: { beats: { n: 1, d: 1 }, parts: [{ base: 4, dotted: false }] },
+          effects: [],
+          syllables: [],
+        })),
+      }],
+    };
+    const markers = Array.from({ length: positionCount }, (_, index) => [{
+      hopoOrigin: index === 0,
+      hopoDestination: index === 1,
+      tieOrigin: false,
+      tieDestination: false,
+    }]);
+    const measures = [measure];
+
+    resolveTabNoteLinks(measures, [markers]);
+
+    assert.deepStrictEqual(measures[0].tabVoices?.[0].beats[0].notes[0].effects, [{ name: 'hammer', args: {} }]);
+    assert.deepStrictEqual(measures[0].tabVoices?.[0].beats[1].notes[0].effects, []);
+    assert.strictEqual(measures[0].tabVoices?.[0].beats.length, positionCount);
+  });
+
   it('imports GP8 Standard TAB with validated tuning, fret, string, and pitch', () => {
     const result = importFirstTrack(fixture('F01-standard-4-4.gp'));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
@@ -152,6 +231,78 @@ describe('GP7/8 GPIF import', () => {
     })));
     assert.strictEqual(playOrder.valid, true, JSON.stringify(playOrder.diagnostics));
     assert.deepStrictEqual(playOrder.occurrences.map(occurrence => occurrence.measureIndex), [0, 1, 0, 2, 3, 0, 2, 3, 4, 5]);
+  });
+
+  it('preserves supported master-bar section and double-bar data and blocks unsupported markers', () => {
+    const source = fixture('F01-standard-4-4.gp');
+    const sourceGpif = new TextDecoder().decode(extractGpif(source).gpif);
+    const withSection = replaceGpif(source, addFirstMasterBarChild(sourceGpif,
+      '<Section><Letter><![CDATA[A]]></Letter><Text><![CDATA[Intro]]></Text></Section>'));
+    const section = importFirstTrack(withSection);
+    assert.strictEqual(section.ok, true, JSON.stringify(section));
+    if (section.ok) {
+      assert.strictEqual(section.value.measures[0].sectionStart, 'Intro');
+      assert.deepStrictEqual(section.loss.entries.filter(entry => entry.code === 'omittedSectionLetter').map(entry => ({
+        category: entry.category,
+        policyId: entry.policyId,
+      })), [{ category: 'droppedByPolicy', policyId: 'gp78.omit-section-letter.v1' }]);
+      const exported = exportGp78(section.value);
+      assert.strictEqual(exported.ok, true, JSON.stringify(exported));
+      if (exported.ok) {
+        const exportedGpif = new TextDecoder().decode(extractGpif(exported.value).gpif);
+        assert.ok(exportedGpif.includes('<Section><Letter>A</Letter><Text>Intro</Text></Section>'));
+        const reimported = importFirstTrack(exported.value);
+        assert.strictEqual(reimported.ok, true, JSON.stringify(reimported));
+        if (reimported.ok) assert.strictEqual(reimported.value.measures[0].sectionStart, 'Intro');
+      }
+    }
+
+    const withDoubleBar = replaceGpif(source, addFirstMasterBarChild(sourceGpif, '<DoubleBar />'));
+    const doubleBar = importFirstTrack(withDoubleBar);
+    assert.strictEqual(doubleBar.ok, true, JSON.stringify(doubleBar));
+    if (doubleBar.ok) {
+      assert.strictEqual(doubleBar.value.measures[0].barline.doubleEnd, true);
+      const exported = exportGp78(doubleBar.value);
+      assert.strictEqual(exported.ok, true, JSON.stringify(exported));
+      if (exported.ok) {
+        const exportedGpif = new TextDecoder().decode(extractGpif(exported.value).gpif);
+        assert.ok(exportedGpif.includes('<DoubleBar />'));
+        const reimported = importFirstTrack(exported.value);
+        assert.strictEqual(reimported.ok, true, JSON.stringify(reimported));
+        if (reimported.ok) assert.strictEqual(reimported.value.measures[0].barline.doubleEnd, true);
+      }
+    }
+
+    for (const [tag, markup] of [
+      ['FreeTime', '<FreeTime />'],
+      ['Fermatas', '<Fermatas><Fermata /></Fermatas>'],
+    ] as const) {
+      const unsupported = importFirstTrack(replaceGpif(source, addFirstMasterBarChild(sourceGpif, markup)));
+      assert.strictEqual(unsupported.ok, false, `${tag} must not import with silent loss`);
+      if (!unsupported.ok) {
+        assert.strictEqual(unsupported.code, 'unsupportedSemantics');
+        assert.match(unsupported.errors[0].path, new RegExp(`/MasterBar\\[0\\]/${tag}$`));
+        assert.strictEqual(unsupported.loss.entries[0]?.category, 'unsupported');
+      }
+    }
+  });
+
+  it('rejects score views with conflicting notation flags regardless of active view index', () => {
+    const source = fixture('F01-standard-4-4.gp');
+    for (const activeView of [0, 1]) {
+      const bytes = replacePartConfiguration(source, encodePartConfiguration([[0x01], [0x02]], activeView));
+      const result = importGp78(bytes, 0);
+      assert.strictEqual(result.ok, false, `active view ${activeView} must not select an unverified notation view`);
+      if (!result.ok) {
+        assert.strictEqual(result.code, 'unsupportedSemantics');
+        assert.strictEqual(result.errors[0].path, 'Content/PartConfiguration');
+      }
+    }
+
+    const equivalentViews = replacePartConfiguration(source, encodePartConfiguration([[0x03], [0x03]], 1));
+    const result = importGp78(equivalentViews, 0);
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    if (result.ok) assert.strictEqual(result.value.measures[0].tabVoices?.[0].beats[0].notes[0].string, 2);
   });
 
   it('lists F07 guitar, bass, and drums while blocking a guitar with voice 2', () => {

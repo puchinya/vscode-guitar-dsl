@@ -44,6 +44,12 @@ GPIF の譜面要素は、親配列の位置だけで結び付けず、ID の宣
 
 `MasterBars`、`Bars`、`Voices`、`Beats`、`Notes`、`Rhythms` は要素定義を保持し、上表の子要素は ID 参照として解決する。ID が重複する、参照先がない、または参照順を保てない場合は読み込みエラーとし、配列位置や既定値で補わない。
 
+`MasterBar/DoubleBar` は `InterchangeMeasure.barline.doubleEnd` に対応させる。`MasterBar/Section/Text` は `InterchangeMeasure.sectionStart` に対応させ、異なる `Section/Letter` は表示用の別フィールドがないため `gp78.omit-section-letter.v1` policy の non-blocking loss として報告する。`FreeTime` は固定拍子の IR で表せず、非空の `Fermatas` は IR v1 の対応先がないため、いずれも該当する MasterBar の GPIF path を示してインポートを失敗させる。
+
+`Content/PartConfiguration` に複数の score view がある場合、選択トラックの `standard` / `tablature` / `slash` / `numbered` flags が複数の view に定義され、その値が異なれば、インポーターは末尾の active-view 値を使って譜表を選ばず、未対応意味論として失敗させる。選択トラックの設定が存在しない view や非選択トラックの差異は、選択トラックの解釈に影響しない。選択トラックの設定がある view 間で flags が同じ場合は、音符解釈が同じなので読み込みを続ける。
+
+TAB ノート位置数を P とする。既存の GPIF XML element 上限（100万）が P を制限し、TAB の同一弦・次拍リンク解決は O(P) 時間・O(P) 補助メモリで行う。各ノートから全ノート位置を再走査しない。20,000位置のストレス回帰で同一弦リンクを検証する。
+
 1つの `Beat/Notes` に複数の Note ID がある場合、その Notes は同時に鳴るpitch groupとして扱う。ID ごとに別々の時間イベントや lyric slot として連続配置しない。標準譜表では1 Beat のpitch groupを1つの五線音符イベントへ対応させる。
 
 GPIF `Notes/Note/Tie` の `origin` と `destination` は Boolean 属性で tie の開始側・継続側を示す。1つのpitch groupを構成するNote間でtie状態が異なる場合や、次のpitch groupに同じpitch集合の対応先がない場合は、tieを推測せず読み込みエラーにする。成立するtieは GuitarDSL のgroup全体に対するtieとして保ち、構成音の記述順によらずpitch集合を対応付ける。
@@ -57,6 +63,8 @@ GPIF `Notes/Note/Tie` の `origin` と `destination` は Boolean 属性で tie �
 ### GP8.1.5 observed structure
 
 分析した GP8.1.5 ファイルでは、`Content/PartConfiguration` は `standard=true`、`tablature=false`、`slash=true`、`numbered=false` を示していた。歌詞データは独立した全曲歌詞表ではなく、対象イベントの `Beats/Beat` の子要素として次の形で保持されていた。
+
+同ファイルの `Content/PartConfiguration` は score view が2つあり、両 view のトラック表示 flags は同じで、末尾の32-bit値は `1` だった。この観測だけでは選択トラックの flags が異なる score view に対する active-view 値の選択規則を確定できないため、該当する選択トラックの差異は推測せず拒否する。
 
 ```xml
 <Beats>

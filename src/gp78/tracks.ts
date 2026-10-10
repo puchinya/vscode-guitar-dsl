@@ -18,7 +18,7 @@ import type {
 import { createInstrumentModel, parseTuningValue, type GuitarString } from '../instrumentModel';
 import { Gp78AdapterError } from './model';
 import type { Gp78TrackSummary } from './model';
-import type { Gp78TrackNotation } from './partConfiguration';
+import { notationForTrack, type Gp78PartConfiguration } from './partConfiguration';
 import { indexGpifIds, parseGpifId, parseGpifIdList, resolveGpifRef } from './references';
 import { decodeXmlText, xmlAttr, xmlChild, xmlChildren, xmlText } from './xml';
 
@@ -210,6 +210,37 @@ function readRepeat(masterBar: Node, path: string): {
     }
   }
   return { repeatStart: start, repeatEnd: end, ...(bracket ? { bracket } : {}), ...(specialMark ? { specialMark } : {}) };
+}
+
+function rejectUnsupportedMasterBarSemantics(masterBar: Node, path: string): void {
+  const unsupported: readonly [string, string][] = [
+    ['FreeTime', 'Free-time measures cannot be represented by the fixed meter in GuitarDSL.'],
+  ];
+  for (const [tag, detail] of unsupported) {
+    if (xmlChild(masterBar, tag) !== undefined) {
+      throw new Gp78AdapterError('unsupportedSemantics', `${path}/${tag}`, detail);
+    }
+  }
+  const fermatas = xmlChild(masterBar, 'Fermatas');
+  const hasFermataData = typeof fermatas === 'string'
+    ? fermatas.trim().length > 0
+    : Array.isArray(fermatas)
+      ? fermatas.length > 0
+      : Boolean(fermatas && typeof fermatas === 'object' && Object.keys(fermatas).some(key => key !== '#text'));
+  if (hasFermataData) {
+    throw new Gp78AdapterError('unsupportedSemantics', `${path}/Fermatas`, 'Master-bar fermata placements are not represented by InterchangeScore v1.');
+  }
+}
+
+function readSectionStart(masterBar: Node, path: string): { readonly value?: string; readonly omittedLetter: boolean } {
+  const sectionNode = xmlChild(masterBar, 'Section');
+  if (sectionNode === undefined) return { omittedLetter: false };
+  const section = record(sectionNode, `${path}/Section`);
+  const letter = xmlText(xmlChild(section, 'Letter')).trim();
+  const text = xmlText(xmlChild(section, 'Text')).trim();
+  const value = text || letter;
+  if (!value) throw new Gp78AdapterError('invalidGpif', `${path}/Section`, 'Section marker has neither Letter nor Text.');
+  return { value, omittedLetter: Boolean(text && letter && text !== letter) };
 }
 
 function noteValueFromRhythm(rhythm: Node, path: string): InterchangeNoteValue {
@@ -693,12 +724,36 @@ export function summarizeGp78Tracks(root: Node): readonly Gp78TrackSummary[] {
   return Object.freeze(summaries);
 }
 
-export function gpifToInterchange(root: Node, selectedTrackId: number, trackNotations?: readonly Gp78TrackNotation[], audioTrackPresent = false): { readonly score: InterchangeScore; readonly loss: ReturnType<typeof emptyLossReport> } {
+type MelodyGroupInputMeasure = Pick<InterchangeMeasure, 'sectionStart'> & {
+  readonly melody?: readonly Pick<InterchangeNote, 'syllables'>[];
+};
+
+/** @internal Build contiguous melody groups without crossing an explicit section boundary. */
+export function buildGpifMelodyGroups(measures: readonly MelodyGroupInputMeasure[]): InterchangeMelodyGroup[] {
+  const groups: InterchangeMelodyGroup[] = [];
+  let start: number | undefined;
+  const close = (endMeasureExclusive: number): void => {
+    if (start === undefined) return;
+    const verseCount = Math.max(0, ...measures.slice(start, endMeasureExclusive)
+      .flatMap(measure => measure.melody ?? []).map(note => note.syllables.length));
+    groups.push({ startMeasure: start, endMeasureExclusive, verseCount });
+    start = undefined;
+  };
+  for (let index = 0; index <= measures.length; index++) {
+    const hasMelody = index < measures.length && (measures[index].melody?.length ?? 0) > 0;
+    if (index > 0 && index < measures.length && measures[index].sectionStart !== undefined) close(index);
+    if (hasMelody && start === undefined) start = index;
+    if (!hasMelody) close(index);
+  }
+  return groups;
+}
+
+export function gpifToInterchange(root: Node, selectedTrackId: number, trackNotations?: Gp78PartConfiguration, audioTrackPresent = false): { readonly score: InterchangeScore; readonly loss: ReturnType<typeof emptyLossReport> } {
   const descriptors = getTrackDescriptors(root);
   const descriptor = descriptors.find(track => track.id === selectedTrackId);
   if (!descriptor) throw new Gp78AdapterError('unsupportedSemantics', 'selectedTrackId', `Track ID ${selectedTrackId} does not exist.`);
   if (!descriptor.eligible) throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Tracks/Track[id=${selectedTrackId}]`, `Selected track is not eligible: ${descriptor.reasonCode}.`);
-  const showTablature = trackNotations?.[descriptor.order]?.tablature;
+  const showTablature = notationForTrack(trackNotations, descriptor.order)?.tablature;
 
   const barMap = indexGpifIds<Node>(xmlChild(xmlChild(root, 'Bars'), 'Bar'), 'GPIF/Bars/Bar');
   const voiceMap = indexGpifIds<Node>(xmlChild(xmlChild(root, 'Voices'), 'Voice'), 'GPIF/Voices/Voice');
@@ -740,9 +795,22 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   const parsedTabMarkersByMeasure: Array<readonly (readonly TabNoteMarkers[])[]> = [];
   const parsedBeatsByMeasure: ParsedBeat[][] = [];
   const model = createInstrumentModel({ openMidi: descriptor.tuning.openMidi }, descriptor.capo);
+  let reportedSectionLetterLoss = false;
   for (let measureIndex = 0; measureIndex < masterBars.length; measureIndex++) {
     const masterBar = masterBars[measureIndex];
     const path = `GPIF/MasterBars/MasterBar[${measureIndex}]`;
+    rejectUnsupportedMasterBarSemantics(masterBar, path);
+    const section = readSectionStart(masterBar, path);
+    if (section.omittedLetter && !reportedSectionLetterLoss) {
+      loss = appendLoss(loss, {
+        category: 'droppedByPolicy',
+        code: 'omittedSectionLetter',
+        path: 'GPIF/MasterBars/MasterBar[*]/Section/Letter',
+        detail: 'Section titles were preserved from Section/Text; separate display letters are not represented in GuitarDSL.',
+        policyId: 'gp78.omit-section-letter.v1',
+      });
+      reportedSectionLetterLoss = true;
+    }
     const barRefs = parseGpifIdList(xmlChild(masterBar, 'Bars'), `${path}/Bars`, true);
     const barId = barRefs[descriptor.order];
     if (barId === undefined || barId === null) throw new Gp78AdapterError('invalidGpif', `${path}/Bars`, 'Master bar has no bar for the selected track order.');
@@ -803,11 +871,12 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
     const measure: InterchangeMeasure = {
       index: measureIndex,
       ...(measureIndex === 0 && hasAnacrusis ? { isPickup: true } : {}),
+      ...(section.value ? { sectionStart: section.value } : {}),
       expectedBeats,
       barline: {
         repeatStart: repeat.repeatStart,
         repeatEnd: repeat.repeatEnd,
-        doubleEnd: false,
+        doubleEnd: xmlChild(masterBar, 'DoubleBar') !== undefined,
         finalEnd: false,
         ...(repeat.bracket ? { bracket: repeat.bracket } : {}),
         ...(repeat.specialMark ? { specialMark: repeat.specialMark } : {}),
@@ -842,17 +911,7 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   const firstMasterBar = masterBars[0];
   const firstTime = parseTimeSignature(xmlChild(firstMasterBar, 'Time'), 'GPIF/MasterBars/MasterBar[0]/Time');
   const firstKey = keyName(xmlChild(firstMasterBar, 'Key'), 'GPIF/MasterBars/MasterBar[0]/Key');
-  const melodyGroups: InterchangeMelodyGroup[] = [];
-  let melodyStart: number | undefined;
-  for (let index = 0; index <= measures.length; index++) {
-    const hasMelody = index < measures.length && (measures[index].melody?.length ?? 0) > 0;
-    if (hasMelody && melodyStart === undefined) melodyStart = index;
-    if (!hasMelody && melodyStart !== undefined) {
-      const verseCount = Math.max(0, ...measures.slice(melodyStart, index).flatMap(measure => measure.melody ?? []).map(note => note.syllables.length));
-      melodyGroups.push({ startMeasure: melodyStart, endMeasureExclusive: index, verseCount });
-      melodyStart = undefined;
-    }
-  }
+  const melodyGroups = buildGpifMelodyGroups(measures);
   const score: InterchangeScore = {
     schemaVersion: 1,
     metadata: {
@@ -912,7 +971,8 @@ function resolveMelodyNoteLinks(parsedByMeasure: readonly (readonly ParsedBeat[]
   }
 }
 
-function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: readonly (readonly (readonly TabNoteMarkers[])[])[]): void {
+/** @internal Resolve TAB effects by indexing the next note on each string in linear time. */
+export function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: readonly (readonly (readonly TabNoteMarkers[])[])[]): void {
   interface Position {
     readonly beatOrder: number;
     readonly measureIndex: number;
@@ -928,20 +988,39 @@ function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: r
     if (!voice) continue;
     for (const [beatIndex, beat] of voice.beats.entries()) {
       const parsedMarkers = markersByMeasure[measureIndex]?.[beatIndex] ?? [];
-      const beatPositions: Position[] = [];
       for (const [noteIndex, note] of beat.notes.entries()) {
-        beatPositions.push({ beatOrder, measureIndex, beatIndex, noteIndex, note, markers: parsedMarkers[noteIndex] ?? { hopoOrigin: false, hopoDestination: false, tieOrigin: note.tieToNext, tieDestination: false } });
+        positions.push({ beatOrder, measureIndex, beatIndex, noteIndex, note, markers: parsedMarkers[noteIndex] ?? { hopoOrigin: false, hopoDestination: false, tieOrigin: note.tieToNext, tieDestination: false } });
       }
-      positions.push(...beatPositions);
       beatOrder++;
     }
   }
+  const nextPositionByIndex: Array<Position | undefined> = new Array(positions.length);
+  const nextPositionByString = new Map<GuitarString, Position>();
+  for (let groupEnd = positions.length; groupEnd > 0;) {
+    const beatOrderForGroup = positions[groupEnd - 1].beatOrder;
+    let groupStart = groupEnd - 1;
+    while (groupStart > 0 && positions[groupStart - 1].beatOrder === beatOrderForGroup) groupStart--;
+    const firstPositionByString = new Map<GuitarString, Position>();
+    for (let positionIndex = groupStart; positionIndex < groupEnd; positionIndex++) {
+      const position = positions[positionIndex];
+      nextPositionByIndex[positionIndex] = nextPositionByString.get(position.note.string);
+      if (!firstPositionByString.has(position.note.string)) firstPositionByString.set(position.note.string, position);
+    }
+    for (const [string, position] of firstPositionByString) nextPositionByString.set(string, position);
+    groupEnd = groupStart;
+  }
   const linkedHopoDestinations = new Set<Position>();
   const linkedTieDestinations = new Set<Position>();
-  const effectAdditions = new Map<Position, string>();
-  for (const source of positions) {
-    const nextBeat = positions.filter(position => position.beatOrder > source.beatOrder && position.note.string === source.note.string);
-    const target = nextBeat[0];
+  const effectAdditions = new Map<number, Map<number, Map<number, string>>>();
+  const addEffect = (position: Position, name: string): void => {
+    let byBeat = effectAdditions.get(position.measureIndex);
+    if (!byBeat) effectAdditions.set(position.measureIndex, byBeat = new Map());
+    let byNote = byBeat.get(position.beatIndex);
+    if (!byNote) byBeat.set(position.beatIndex, byNote = new Map());
+    byNote.set(position.noteIndex, name);
+  };
+  for (const [positionIndex, source] of positions.entries()) {
+    const target = nextPositionByIndex[positionIndex];
     if (source.markers.hopoOrigin) {
       if (!target || target.markers.hopoDestination !== true) {
         throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Notes/${source.measureIndex}/${source.beatIndex}/${source.noteIndex}`, 'HopoOrigin must resolve to a matching HopoDestination on the next same-string note.');
@@ -949,7 +1028,7 @@ function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: r
       if (source.note.fret === undefined || target.note.fret === undefined || source.note.fret === target.note.fret) {
         throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Notes/${source.measureIndex}/${source.beatIndex}/${source.noteIndex}`, 'Hammer-on/pull-off destination must change the fret on the same string.');
       }
-      effectAdditions.set(source, target.note.fret > source.note.fret ? 'hammer' : 'pull');
+      addEffect(source, target.note.fret > source.note.fret ? 'hammer' : 'pull');
       linkedHopoDestinations.add(target);
     }
     if (source.markers.tieOrigin) {
@@ -967,15 +1046,19 @@ function resolveTabNoteLinks(measures: InterchangeMeasure[], markersByMeasure: r
       throw new Gp78AdapterError('unsupportedSemantics', `GPIF/Notes/${position.measureIndex}/${position.beatIndex}/${position.noteIndex}`, 'Tie destination has no matching preceding tie origin.');
     }
   }
-  for (const [position, name] of effectAdditions) {
-    const voice = measures[position.measureIndex].tabVoices![0];
+  for (const [measureIndex, byBeat] of effectAdditions) {
+    const measure = measures[measureIndex];
+    const voice = measure.tabVoices![0];
     const beats = [...voice.beats];
-    const beat = beats[position.beatIndex];
-    const notes = [...beat.notes];
-    notes[position.noteIndex] = { ...position.note, effects: [...position.note.effects, effect(name)] };
-    beats[position.beatIndex] = { ...beat, notes };
-    measures[position.measureIndex] = {
-      ...measures[position.measureIndex],
+    for (const [beatIndex, byNote] of byBeat) {
+      const notes = [...beats[beatIndex].notes];
+      for (const [noteIndex, name] of byNote) {
+        notes[noteIndex] = { ...notes[noteIndex], effects: [...notes[noteIndex].effects, effect(name)] };
+      }
+      beats[beatIndex] = { ...beats[beatIndex], notes };
+    }
+    measures[measureIndex] = {
+      ...measure,
       tabVoices: [{ ...voice, beats }],
     };
   }

@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { importGp78, exportGp78, inspectGp78 } from '../../src/gp78';
 import { extractGpif } from '../../src/gp78/archive';
+import { gp78RoundTripMismatch } from '../../src/gp78/export';
 import { parsePartConfiguration } from '../../src/gp78/partConfiguration';
 import { publishGp78Exclusive } from '../../src/gp78Commands';
 import { guitarDslToInterchange } from '../../src/interchange';
@@ -274,7 +275,7 @@ describe('GP7 writer', () => {
     assert.strictEqual(exported.ok, true, JSON.stringify(exported));
     if (!exported.ok) return;
     const archive = extractGpif(exported.value);
-    const notation = parsePartConfiguration(archive.partConfiguration)?.[0];
+    const notation = parsePartConfiguration(archive.partConfiguration)?.views[0]?.[0];
     assert.deepStrictEqual(notation && { standard: notation.standard, tablature: notation.tablature }, { standard: true, tablature: false });
     const gpif = new TextDecoder().decode(archive.gpif);
     const noteXml = gpif.match(/<Note id="[^"]+">[\s\S]*?<\/Note>/)?.[0] ?? '';
@@ -326,6 +327,31 @@ describe('GP7 writer', () => {
       bracket: measure.barline.bracket,
       specialMark: measure.barline.specialMark,
     })));
+  });
+
+  it('fails the semantic equality gate when a volta, D.S., or Coda mark changes', () => {
+    const navigationFixture = new Uint8Array(fs.readFileSync(path.join(ROOT, 'tests/fixtures/gp78/F06-navigation.gp')));
+    const inspection = inspectGp78(navigationFixture);
+    assert.strictEqual(inspection.ok, true, JSON.stringify(inspection));
+    if (!inspection.ok) return;
+    const imported = importGp78(navigationFixture, inspection.value.tracks[0].id);
+    assert.strictEqual(imported.ok, true, JSON.stringify(imported));
+    if (!imported.ok) return;
+
+    const alterBarline = (index: number, field: 'bracket' | 'specialMark', value: string | undefined) => ({
+      ...imported.value,
+      measures: imported.value.measures.map((measure, measureIndex) => measureIndex === index
+        ? { ...measure, barline: { ...measure.barline, [field]: value } }
+        : measure),
+    });
+    const cases = [
+      { score: alterBarline(1, 'bracket', undefined), path: '/measures/1/barline/bracket' },
+      { score: alterBarline(3, 'specialMark', undefined), path: '/measures/3/barline/specialMark' },
+      { score: alterBarline(4, 'specialMark', 'ds'), path: '/measures/4/barline/specialMark' },
+    ];
+    for (const testCase of cases) {
+      assert.strictEqual(gp78RoundTripMismatch(imported.value, testCase.score), testCase.path);
+    }
   });
 
   it('exports the explicitly selected F07 guitar as a single-track GP file', () => {
