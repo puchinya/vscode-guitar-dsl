@@ -46,6 +46,10 @@ GPIF の譜面要素は、親配列の位置だけで結び付けず、ID の宣
 
 `MasterBar/DoubleBar` は `InterchangeMeasure.barline.doubleEnd` に対応させる。`MasterBar/Section/Text` は `InterchangeMeasure.sectionStart` に対応させ、異なる `Section/Letter` は表示用の別フィールドがないため `gp78.omit-section-letter.v1` policy の non-blocking loss として報告する。`FreeTime` は固定拍子の IR で表せず、非空の `Fermatas` は IR v1 の対応先がないため、いずれも該当する MasterBar の GPIF path を示してインポートを失敗させる。
 
+MasterBar の直接の子要素は `Bars`、`Time`、`Key`、`Repeat`、`AlternateEndings`、`Directions`、`DoubleBar`、`Section`、`FreeTime`、`Fermatas`、`XProperties` に限定する。MasterBar 直下の属性と、未確認の子要素・入れ子要素・属性は `unsupportedSemantics` として該当 path を示して失敗させる。F03で確認した MasterBar `XProperties` は `XProperty/@id` と単一の `Int` だけを持つ形に限定し、既知値を `gp78.omit-known-masterbar-xproperties.v1` policy の non-blocking loss として報告する。既知値は `1124139010=8`、`1124139264=2|3`、`1124139265=2`、`1124139266=2`、`1124139267`〜`1124139295=0`。未知ID・値・形状・重複IDはブロッキングする。
+
+GP8.1.5 は Section の表示文字列を CDATA として保存する。writer は `<Letter><![CDATA[]]></Letter>` と `<Text><![CDATA[section name]]></Text>` を出力する。通常のXML文字列として出力した Section はGP8.1.5が読み込み時に空にするため、Section と DoubleBar を同時に含むwriter出力をGP8で開き、表示・再保存・再取込する確認を行う。
+
 `Content/PartConfiguration` に複数の score view がある場合、選択トラックの `standard` / `tablature` / `slash` / `numbered` flags が複数の view に定義され、その値が異なれば、インポーターは末尾の active-view 値を使って譜表を選ばず、未対応意味論として失敗させる。選択トラックの設定が存在しない view や非選択トラックの差異は、選択トラックの解釈に影響しない。選択トラックの設定がある view 間で flags が同じ場合は、音符解釈が同じなので読み込みを続ける。
 
 TAB ノート位置数を P とする。既存の GPIF XML element 上限（100万）が P を制限し、TAB の同一弦・次拍リンク解決は O(P) 時間・O(P) 補助メモリで行う。各ノートから全ノート位置を再走査しない。20,000位置のストレス回帰で同一弦リンクを検証する。

@@ -52,6 +52,18 @@ interface TabNoteMarkers {
 }
 
 const TUNING_PRESETS: readonly NonNullable<InterchangeTuning['preset']>[] = ['Standard', 'Drop D', 'DADGAD', 'Open G', 'Open D'];
+const MASTER_BAR_CHILDREN = new Set([
+  'Bars', 'Time', 'Key', 'Repeat', 'AlternateEndings', 'Directions', 'DoubleBar', 'Section', 'FreeTime', 'Fermatas', 'XProperties',
+]);
+const MASTER_BAR_XPROPERTY_VALUES = new Map<string, ReadonlySet<string>>([
+  ['1124139010', new Set(['8'])],
+  ['1124139264', new Set(['2', '3'])],
+  ['1124139265', new Set(['2'])],
+  ['1124139266', new Set(['2'])],
+]);
+for (let id = 1124139267; id <= 1124139295; id++) {
+  MASTER_BAR_XPROPERTY_VALUES.set(String(id), new Set(['0']));
+}
 const NOTE_BASES: Readonly<Record<string, InterchangeNoteValue['parts'][number]['base']>> = {
   Whole: 1,
   Half: 2,
@@ -212,7 +224,111 @@ function readRepeat(masterBar: Node, path: string): {
   return { repeatStart: start, repeatEnd: end, ...(bracket ? { bracket } : {}), ...(specialMark ? { specialMark } : {}) };
 }
 
-function rejectUnsupportedMasterBarSemantics(masterBar: Node, path: string): void {
+function unsupportedMasterBar(path: string, detail: string): never {
+  throw new Gp78AdapterError('unsupportedSemantics', path, detail);
+}
+
+function assertMasterBarElementShape(
+  value: unknown,
+  path: string,
+  allowedChildren: ReadonlySet<string>,
+  allowedAttributes: ReadonlySet<string>,
+  allowText = true,
+): void {
+  if (typeof value === 'string') {
+    if (!allowText && value.trim()) unsupportedMasterBar(`${path}/#text`, 'Unexpected text is not represented by the MasterBar whitelist.');
+    return;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    unsupportedMasterBar(path, 'MasterBar field has an unrecognized XML shape.');
+  }
+  for (const [key, child] of Object.entries(value as Node)) {
+    if (key === '#text') {
+      if (!allowText && xmlText(child)) unsupportedMasterBar(`${path}/#text`, 'Unexpected text is not represented by the MasterBar whitelist.');
+      continue;
+    }
+    if (key.startsWith('@_')) {
+      const attribute = key.slice(2);
+      if (!allowedAttributes.has(attribute)) unsupportedMasterBar(`${path}/@${attribute}`, `Unknown MasterBar attribute ${attribute}.`);
+      continue;
+    }
+    if (!allowedChildren.has(key)) unsupportedMasterBar(`${path}/${key}`, `Unknown MasterBar child ${key}.`);
+  }
+}
+
+function assertMasterBarChildShape(
+  masterBar: Node,
+  name: string,
+  path: string,
+  allowedChildren: readonly string[],
+  allowedAttributes: readonly string[] = [],
+  allowText = true,
+): void {
+  const value = xmlChild(masterBar, name);
+  if (value === undefined) return;
+  const values = Array.isArray(value) ? value : [value];
+  for (const [index, child] of values.entries()) {
+    const childPath = values.length > 1 ? `${path}/${name}[${index}]` : `${path}/${name}`;
+    assertMasterBarElementShape(child, childPath, new Set(allowedChildren), new Set(allowedAttributes), allowText);
+  }
+}
+
+function assertKnownMasterBarXProperties(value: unknown, path: string): boolean {
+  if (value === undefined) return false;
+  assertMasterBarElementShape(value, path, new Set(['XProperty']), new Set(), false);
+  const properties = xmlChildren(value, 'XProperty');
+  const seenIds = new Set<string>();
+  for (const [index, propertyValue] of properties.entries()) {
+    const property = record(propertyValue, `${path}/XProperty[${index}]`);
+    const id = xmlAttr(property, 'id');
+    const values = id === undefined ? undefined : MASTER_BAR_XPROPERTY_VALUES.get(id);
+    const propertyPath = id === undefined ? `${path}/XProperty[${index}]` : `${path}/XProperty[id=${id}]`;
+    if (!values) unsupportedMasterBar(`${propertyPath}/@id`, `Unknown MasterBar XProperty id ${id ?? '(missing)'}.`);
+    if (seenIds.has(id!)) unsupportedMasterBar(`${propertyPath}/@id`, `Duplicate MasterBar XProperty id ${id}.`);
+    seenIds.add(id!);
+    assertMasterBarElementShape(property, propertyPath, new Set(['Int']), new Set(['id']), false);
+    const intValues = xmlChildren(property, 'Int');
+    if (intValues.length !== 1) unsupportedMasterBar(`${propertyPath}/Int`, 'MasterBar XProperty must contain exactly one Int value.');
+    const intValue = intValues[0];
+    assertMasterBarElementShape(intValue, `${propertyPath}/Int`, new Set(), new Set());
+    const raw = xmlText(intValue);
+    if (!values.has(raw)) unsupportedMasterBar(`${propertyPath}/Int`, `Unreviewed value ${raw || '(empty)'} for MasterBar XProperty ${id}.`);
+  }
+  return properties.length > 0;
+}
+
+function rejectUnsupportedMasterBarSemantics(masterBar: Node, path: string): boolean {
+  for (const [key, value] of Object.entries(masterBar)) {
+    if (key === '#text') {
+      if (xmlText(value)) unsupportedMasterBar(`${path}/#text`, 'Unexpected text is not supported in MasterBar.');
+      continue;
+    }
+    if (key.startsWith('@_')) {
+      const attribute = key.slice(2);
+      unsupportedMasterBar(`${path}/@${attribute}`, `Unknown MasterBar attribute ${attribute}.`);
+    }
+    if (!MASTER_BAR_CHILDREN.has(key)) unsupportedMasterBar(`${path}/${key}`, `Unknown MasterBar child ${key}.`);
+  }
+
+  assertMasterBarChildShape(masterBar, 'Bars', path, []);
+  assertMasterBarChildShape(masterBar, 'Time', path, []);
+  assertMasterBarChildShape(masterBar, 'Key', path, ['AccidentalCount', 'Mode', 'TransposeAs'], [], false);
+  for (const name of ['AccidentalCount', 'Mode', 'TransposeAs']) {
+    assertMasterBarChildShape(record(xmlChild(masterBar, 'Key') ?? {}, `${path}/Key`), name, `${path}/Key`, []);
+  }
+  assertMasterBarChildShape(masterBar, 'Repeat', path, [], ['start', 'end', 'count'], false);
+  assertMasterBarChildShape(masterBar, 'AlternateEndings', path, []);
+  assertMasterBarChildShape(masterBar, 'Directions', path, ['Target', 'Jump'], [], false);
+  for (const name of ['Target', 'Jump']) {
+    assertMasterBarChildShape(record(xmlChild(masterBar, 'Directions') ?? {}, `${path}/Directions`), name, `${path}/Directions`, []);
+  }
+  assertMasterBarChildShape(masterBar, 'DoubleBar', path, [], [], false);
+  assertMasterBarChildShape(masterBar, 'Section', path, ['Letter', 'Text'], [], false);
+  for (const name of ['Letter', 'Text']) {
+    assertMasterBarChildShape(record(xmlChild(masterBar, 'Section') ?? {}, `${path}/Section`), name, `${path}/Section`, []);
+  }
+  assertMasterBarChildShape(masterBar, 'Fermatas', path, ['Fermata'], [], false);
+
   const unsupported: readonly [string, string][] = [
     ['FreeTime', 'Free-time measures cannot be represented by the fixed meter in GuitarDSL.'],
   ];
@@ -230,6 +346,7 @@ function rejectUnsupportedMasterBarSemantics(masterBar: Node, path: string): voi
   if (hasFermataData) {
     throw new Gp78AdapterError('unsupportedSemantics', `${path}/Fermatas`, 'Master-bar fermata placements are not represented by InterchangeScore v1.');
   }
+  return assertKnownMasterBarXProperties(xmlChild(masterBar, 'XProperties'), `${path}/XProperties`);
 }
 
 function readSectionStart(masterBar: Node, path: string): { readonly value?: string; readonly omittedLetter: boolean } {
@@ -796,10 +913,21 @@ export function gpifToInterchange(root: Node, selectedTrackId: number, trackNota
   const parsedBeatsByMeasure: ParsedBeat[][] = [];
   const model = createInstrumentModel({ openMidi: descriptor.tuning.openMidi }, descriptor.capo);
   let reportedSectionLetterLoss = false;
+  let reportedMasterBarXPropertiesLoss = false;
   for (let measureIndex = 0; measureIndex < masterBars.length; measureIndex++) {
     const masterBar = masterBars[measureIndex];
     const path = `GPIF/MasterBars/MasterBar[${measureIndex}]`;
-    rejectUnsupportedMasterBarSemantics(masterBar, path);
+    const hasKnownXProperties = rejectUnsupportedMasterBarSemantics(masterBar, path);
+    if (hasKnownXProperties && !reportedMasterBarXPropertiesLoss) {
+      loss = appendLoss(loss, {
+        category: 'droppedByPolicy',
+        code: 'omittedMasterBarXProperties',
+        path: 'GPIF/MasterBars/MasterBar[*]/XProperties',
+        detail: 'Only the observed GP8.1.5 MasterBar XProperty IDs and values were accepted; this opaque sidecar is not represented in InterchangeScore v1.',
+        policyId: 'gp78.omit-known-masterbar-xproperties.v1',
+      });
+      reportedMasterBarXPropertiesLoss = true;
+    }
     const section = readSectionStart(masterBar, path);
     if (section.omittedLetter && !reportedSectionLetterLoss) {
       loss = appendLoss(loss, {

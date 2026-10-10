@@ -42,6 +42,7 @@ interface WriteNote {
 }
 
 function xml(value: string): string { return value.replace(/[&<>"']/g, character => ESCAPE_XML[character]); }
+function cdata(value: string): string { return `<![CDATA[${value.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`; }
 
 function fail(code: 'invalidIr' | 'unrepresentableValue' | 'roundTripMismatch' | 'resourceLimit', path: string, detail: string): Gp78Result<Uint8Array> {
   return gp78Failure(code, path, detail);
@@ -452,17 +453,6 @@ function compare(a: InterchangeFraction, b: InterchangeFraction): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function sectionLetter(index: number): string {
-  let value = index + 1;
-  let result = '';
-  while (value > 0) {
-    value--;
-    result = String.fromCharCode(65 + (value % 26)) + result;
-    value = Math.floor(value / 26);
-  }
-  return result;
-}
-
 function subtract(a: InterchangeFraction, b: InterchangeFraction, path: string): InterchangeFraction {
   const n = a.n * b.d - b.n * a.d;
   const d = a.d * b.d;
@@ -491,7 +481,6 @@ function buildGpif(score: InterchangeScore): Uint8Array {
   let currentTempo = score.metadata.bpm;
   let previousKey = score.metadata.key;
   let previousTime = score.metadata.timeSignature;
-  let nextSectionLetter = 0;
 
   for (const [measureIndex, measure] of score.measures.entries()) {
     const path = `/measures/${measureIndex}`;
@@ -540,7 +529,7 @@ function buildGpif(score: InterchangeScore): Uint8Array {
       : '';
     const section = measure.sectionStart === undefined
       ? ''
-      : `<Section><Letter>${sectionLetter(nextSectionLetter++)}</Letter><Text>${xml(measure.sectionStart)}</Text></Section>`;
+      : `<Section><Letter><![CDATA[]]></Letter><Text>${cdata(measure.sectionStart)}</Text></Section>`;
     const doubleBar = measure.barline.doubleEnd ? '<DoubleBar />' : '';
     const targetMap = { segno: 'Segno', coda: 'Coda', fine: 'Fine' } as const;
     const jumpMap = { to_coda: 'DaCoda', dc: 'DaCapo', ds: 'DaSegno' } as const;

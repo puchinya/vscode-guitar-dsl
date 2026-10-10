@@ -69,6 +69,43 @@ describe('GP7 writer', () => {
     assert.ok(gpif.includes('<Property name="TransposedPitch"><Pitch><Step>B</Step><Accidental></Accidental><Octave>5</Octave></Pitch></Property>'));
   });
 
+  it('exports Section and DoubleBar together for GP8.1.5 native acceptance', () => {
+    const inspection = inspectGp78(fixture);
+    assert.strictEqual(inspection.ok, true, JSON.stringify(inspection));
+    if (!inspection.ok) return;
+    const track = inspection.value.tracks.find(candidate => candidate.eligible);
+    assert.ok(track, JSON.stringify(inspection));
+    if (!track) return;
+    const imported = importGp78(fixture, track.id);
+    assert.strictEqual(imported.ok, true, JSON.stringify(imported));
+    if (!imported.ok) return;
+
+    const score = {
+      ...imported.value,
+      measures: imported.value.measures.map((measure, index) => index === 0 ? {
+        ...measure,
+        sectionStart: 'Intro',
+        barline: { ...measure.barline, doubleEnd: true },
+      } : measure),
+    };
+    const output = exportGp78(score);
+    assert.strictEqual(output.ok, true, JSON.stringify(output));
+    if (!output.ok) return;
+
+    const gpif = new TextDecoder().decode(extractGpif(output.value).gpif);
+    const firstMasterBar = /<MasterBar\b[^>]*>[\s\S]*?<\/MasterBar>/.exec(gpif)?.[0];
+    assert.ok(firstMasterBar, 'the output has a first MasterBar');
+    assert.match(firstMasterBar ?? '', /<Section><Letter><!\[CDATA\[\]\]><\/Letter><Text><!\[CDATA\[Intro\]\]><\/Text><\/Section>/);
+    assert.match(firstMasterBar ?? '', /<DoubleBar\s*\/>/);
+
+    const reimported = importGp78(output.value, 0);
+    assert.strictEqual(reimported.ok, true, JSON.stringify(reimported));
+    if (reimported.ok) {
+      assert.strictEqual(reimported.value.measures[0].sectionStart, 'Intro');
+      assert.strictEqual(reimported.value.measures[0].barline.doubleEnd, true);
+    }
+  });
+
   it('attaches chord diagrams to standard melody beat onsets during GP7 export', () => {
     const melody = guitarDslToInterchange('| C |\nmel: | c4/2 e4/2 |');
     assert.strictEqual(melody.ok, true, JSON.stringify(melody));

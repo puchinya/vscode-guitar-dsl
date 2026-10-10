@@ -57,6 +57,119 @@ function addFirstMasterBarChild(gpif: string, child: string): string {
   return gpif.slice(0, close) + child + gpif.slice(close);
 }
 
+function addFirstMasterBarAttribute(gpif: string, attribute: string): string {
+  const openingTag = /<MasterBar(?:\s[^>]*)?>/.exec(gpif);
+  assert.ok(openingTag, 'the fixture has a master bar');
+  if (!openingTag) return gpif;
+  const insertAt = openingTag.index + openingTag[0].length - 1;
+  return `${gpif.slice(0, insertAt)} ${attribute}${gpif.slice(insertAt)}`;
+}
+
+function appendFirstMasterBarXProperty(gpif: string, id: string, value: string): string {
+  const openTag = '<XProperties>';
+  const opening = gpif.indexOf(openTag);
+  assert.notStrictEqual(opening, -1, 'the fixture has MasterBar XProperties');
+  const close = gpif.indexOf('</XProperties>', opening + openTag.length);
+  assert.notStrictEqual(close, -1, 'the fixture XProperties is closed');
+  return `${gpif.slice(0, close)}<XProperty id="${id}"><Int>${value}</Int></XProperty>${gpif.slice(close)}`;
+}
+
+function replaceFirstMasterBarXPropertyValue(gpif: string, id: string, value: string): string {
+  const marker = `<XProperty id="${id}">`;
+  const propertyStart = gpif.indexOf(marker);
+  assert.notStrictEqual(propertyStart, -1, `XProperty ${id} is present`);
+  const valueStart = gpif.indexOf('<Int>', propertyStart) + '<Int>'.length;
+  const valueEnd = gpif.indexOf('</Int>', valueStart);
+  assert.ok(valueStart >= '<Int>'.length && valueEnd > valueStart, `XProperty ${id} has an Int value`);
+  return `${gpif.slice(0, valueStart)}${value}${gpif.slice(valueEnd)}`;
+}
+
+function replaceGpifBlock(gpif: string, name: string, contents: string): string {
+  const tags = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<\/?([A-Za-z_][\w:.-]*)(?:\s[^>]*)?\/?>/g;
+  let depth = 0;
+  let openingStart = -1;
+  let openingEnd = -1;
+  let closingStart = -1;
+  let match: RegExpExecArray | null;
+  while ((match = tags.exec(gpif)) !== null) {
+    const tagName = match[1];
+    if (!tagName) continue;
+    const tag = match[0];
+    const isClosing = tag.startsWith('</');
+    const isSelfClosing = /\/\s*>$/.test(tag);
+    if (isClosing) {
+      if (depth === 2 && openingStart >= 0 && tagName === name) {
+        closingStart = match.index;
+        break;
+      }
+      depth--;
+      continue;
+    }
+    if (depth === 1 && tagName === name && !isSelfClosing) {
+      openingStart = match.index;
+      openingEnd = match.index + tag.length;
+    }
+    if (!isSelfClosing) depth++;
+  }
+  assert.ok(openingStart >= 0 && openingEnd >= 0 && closingStart > openingEnd, `the fixture has a top-level ${name} block`);
+  if (openingStart < 0 || openingEnd < 0 || closingStart < 0) return gpif;
+  return `${gpif.slice(0, openingStart)}<${name}>${contents}</${name}>${gpif.slice(gpif.indexOf('>', closingStart) + 1)}`;
+}
+
+function makeLargePositionGpif(positionCount: number): Uint8Array {
+  const base = fixture('F01-standard-4-4.gp');
+  let gpif = new TextDecoder().decode(extractGpif(base).gpif);
+  const beatsPerMeasure = 16;
+  const measureCount = positionCount / beatsPerMeasure;
+  assert.strictEqual(Number.isInteger(measureCount), true, 'position count is a whole number of 4/4 sixteenth-note measures');
+
+  const masterBars: string[] = [];
+  const bars: string[] = [];
+  const voices: string[] = [];
+  const beats: string[] = [];
+  const notes: string[] = [];
+  let position = 0;
+  for (let measure = 0; measure < measureCount; measure++) {
+    const barId = measure;
+    const voiceId = measure;
+    const measureBeatIds: number[] = [];
+    for (let beat = 0; beat < beatsPerMeasure; beat++) {
+      const beatId = position;
+      const noteId = position;
+      const isOrigin = position === 0;
+      const isDestination = position === 1;
+      const fret = isDestination ? 1 : 0;
+      const step = isDestination ? 'C' : 'B';
+      const midi = isDestination ? 60 : 59;
+      const markerProperties = [
+        ...(isOrigin ? ['<Property name="HopoOrigin"><Enable /></Property>'] : []),
+        ...(isDestination ? ['<Property name="HopoDestination"><Enable /></Property>'] : []),
+      ].join('');
+      measureBeatIds.push(beatId);
+      beats.push(`<Beat id="${beatId}"><Dynamic>MF</Dynamic><Rhythm ref="0" /><Notes>${noteId}</Notes></Beat>`);
+      notes.push(`<Note id="${noteId}"><InstrumentArticulation>0</InstrumentArticulation><Properties>` +
+        `<Property name="ConcertPitch"><Pitch><Step>${step}</Step><Accidental /><Octave>4</Octave></Pitch></Property>` +
+        `<Property name="Fret"><Fret>${fret}</Fret></Property>` +
+        `<Property name="Midi"><Number>${midi}</Number></Property>` +
+        '<Property name="String"><String>4</String></Property>' +
+        `<Property name="TransposedPitch"><Pitch><Step>${step}</Step><Accidental /><Octave>5</Octave></Pitch></Property>` +
+        `${markerProperties}</Properties></Note>`);
+      position++;
+    }
+    masterBars.push(`<MasterBar><Key><AccidentalCount>0</AccidentalCount><Mode>Major</Mode><TransposeAs>Sharps</TransposeAs></Key>` +
+      `<Time>4/4</Time><Bars>${barId}</Bars></MasterBar>`);
+    bars.push(`<Bar id="${barId}"><Clef>G2</Clef><Voices>${voiceId} -1 -1 -1</Voices></Bar>`);
+    voices.push(`<Voice id="${voiceId}"><Beats>${measureBeatIds.join(' ')}</Beats></Voice>`);
+  }
+  gpif = replaceGpifBlock(gpif, 'MasterBars', masterBars.join(''));
+  gpif = replaceGpifBlock(gpif, 'Bars', bars.join(''));
+  gpif = replaceGpifBlock(gpif, 'Voices', voices.join(''));
+  gpif = replaceGpifBlock(gpif, 'Beats', beats.join(''));
+  gpif = replaceGpifBlock(gpif, 'Notes', notes.join(''));
+  gpif = replaceGpifBlock(gpif, 'Rhythms', '<Rhythm id="0"><NoteValue>Sixteenth</NoteValue></Rhythm>');
+  return replaceGpif(base, gpif);
+}
+
 function addBeatLyrics(gpif: string, beatId: number, lines: readonly string[]): string {
   const marker = `<Beat id="${beatId}">`;
   assert.ok(gpif.includes(marker), `Beat ${beatId} is present in the fixture`);
@@ -134,6 +247,29 @@ describe('GP7/8 GPIF import', () => {
     assert.strictEqual(measures[0].tabVoices?.[0].beats.length, positionCount);
   });
 
+  it('inspects and imports 20,000 TAB positions across multiple GPIF measures', function () {
+    this.timeout(120_000);
+    const positionCount = 20_000;
+    const score = makeLargePositionGpif(positionCount);
+    const inspection = inspectGp78(score);
+    assert.strictEqual(inspection.ok, true, JSON.stringify(inspection));
+    if (!inspection.ok) return;
+    const track = inspection.value.tracks.find(candidate => candidate.eligible);
+    assert.ok(track, `the generated guitar track is eligible: ${JSON.stringify(inspection)}`);
+    if (!track) return;
+
+    const result = importGp78(score, track.id);
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const positions = result.value.measures.flatMap(measure => measure.tabVoices?.[0].beats ?? [])
+      .filter(beat => !beat.isRest)
+      .flatMap(beat => beat.notes);
+    assert.strictEqual(positions.length, positionCount);
+    assert.strictEqual(positions[0].string, positions[1].string);
+    assert.deepStrictEqual(positions[0].effects, [{ name: 'hammer', args: {} }]);
+    assert.deepStrictEqual(positions[1].effects, []);
+  });
+
   it('imports GP8 Standard TAB with validated tuning, fret, string, and pitch', () => {
     const result = importFirstTrack(fixture('F01-standard-4-4.gp'));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
@@ -158,6 +294,10 @@ describe('GP7/8 GPIF import', () => {
     const result = importFirstTrack(fixture('F03-time-meter-key-pickup.gp'));
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    const xpropertiesLoss = result.loss.entries.find(entry => entry.code === 'omittedMasterBarXProperties');
+    assert.deepStrictEqual(xpropertiesLoss && { category: xpropertiesLoss.category, policyId: xpropertiesLoss.policyId }, {
+      category: 'droppedByPolicy', policyId: 'gp78.omit-known-masterbar-xproperties.v1',
+    });
     assert.deepStrictEqual(result.value.metadata.pickup, { n: 1, d: 1 });
     assert.deepStrictEqual({ pickup: result.value.measures[0].isPickup, beats: result.value.measures[0].expectedBeats }, {
       pickup: true, beats: { n: 1, d: 1 },
@@ -250,7 +390,7 @@ describe('GP7/8 GPIF import', () => {
       assert.strictEqual(exported.ok, true, JSON.stringify(exported));
       if (exported.ok) {
         const exportedGpif = new TextDecoder().decode(extractGpif(exported.value).gpif);
-        assert.ok(exportedGpif.includes('<Section><Letter>A</Letter><Text>Intro</Text></Section>'));
+        assert.ok(exportedGpif.includes('<Section><Letter><![CDATA[]]></Letter><Text><![CDATA[Intro]]></Text></Section>'));
         const reimported = importFirstTrack(exported.value);
         assert.strictEqual(reimported.ok, true, JSON.stringify(reimported));
         if (reimported.ok) assert.strictEqual(reimported.value.measures[0].sectionStart, 'Intro');
@@ -283,6 +423,40 @@ describe('GP7/8 GPIF import', () => {
         assert.strictEqual(unsupported.code, 'unsupportedSemantics');
         assert.match(unsupported.errors[0].path, new RegExp(`/MasterBar\\[0\\]/${tag}$`));
         assert.strictEqual(unsupported.loss.entries[0]?.category, 'unsupported');
+      }
+    }
+  });
+
+  it('blocks unknown MasterBar children, attributes, and XProperties with precise paths', () => {
+    const standard = fixture('F01-standard-4-4.gp');
+    const standardGpif = new TextDecoder().decode(extractGpif(standard).gpif);
+    const xproperties = fixture('F03-time-meter-key-pickup.gp');
+    const xpropertiesGpif = new TextDecoder().decode(extractGpif(xproperties).gpif);
+    const mutations = [
+      {
+        bytes: replaceGpif(standard, addFirstMasterBarChild(standardGpif, '<UnknownMusicField>1</UnknownMusicField>')),
+        path: '/UnknownMusicField',
+      },
+      {
+        bytes: replaceGpif(standard, addFirstMasterBarAttribute(standardGpif, 'unknownMusic="true"')),
+        path: '/@unknownMusic',
+      },
+      {
+        bytes: replaceGpif(xproperties, appendFirstMasterBarXProperty(xpropertiesGpif, '9999999999', '1')),
+        path: '/XProperties/XProperty[id=9999999999]/@id',
+      },
+      {
+        bytes: replaceGpif(xproperties, replaceFirstMasterBarXPropertyValue(xpropertiesGpif, '1124139010', '9')),
+        path: '/XProperties/XProperty[id=1124139010]/Int',
+      },
+    ];
+    for (const mutation of mutations) {
+      const result = importFirstTrack(mutation.bytes);
+      assert.strictEqual(result.ok, false, mutation.path);
+      if (!result.ok) {
+        assert.strictEqual(result.code, 'unsupportedSemantics');
+        assert.ok(result.errors[0].path.endsWith(mutation.path), result.errors[0].path);
+        assert.strictEqual(result.loss.entries.some(entry => entry.category === 'unsupported'), true);
       }
     }
   });
