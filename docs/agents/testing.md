@@ -123,13 +123,10 @@ npm run vscode:prepublish
 - `vsce ls` must include `media/help/guitardsl-help.ja.md` and `media/help/guitardsl-help.en.md` and must not include `docs/help/`.
 - `vsce ls` must include `ai/instructions/guitardsl.instructions.md`, `ai/skills/guitardsl-language/SKILL.md` and `ai/skills/guitardsl-language/references/guitardsl-syntax.md`.
 - Packaged contents are controlled by `.vscodeignore`: the VSIX must contain runtime files (`out/**/*.js` excluding `out/tests/`, `package.json`, `package.nls*.json`, `README.md`, `language-configuration.json`, `syntaxes/`, `media/`, `ai/`, production `node_modules/`) and the five curated sample scores opened by `guitardsl.openSample` (`samples/sample.guitardsl`, `samples/sample_melody.guitardsl`, `samples/sample_leadsheet.guitardsl`, `samples/sample_voicings.guitardsl`, `samples/sample_notes.guitardsl`). Keep the sample list in sync with `src/onboarding.ts`. Development/agent paths (`.agent-state/`, `.vscode/`, `.vscode-test/`, `src/`, `tests/`, `docs/`, `scripts/`, non-curated sample files, `*.ts`, `*.map`) must not appear in `vsce ls`.
-- `vscode:prepublish` builds Audio MIR WASM. On macOS, put the rustup toolchain first when the default Homebrew Rust install lacks the `wasm32-unknown-unknown` target:
-  ```bash
-  PATH="$HOME/.cargo/bin:$PATH" npm run vscode:prepublish
-  ```
+- `vscode:prepublish` builds Audio MIR WASM through `scripts/build-audio-mir-wasm.mjs`. The script prefers rustup's active toolchain when rustup is available; otherwise it uses `rustc` and `cargo` from `PATH`. It uses `wasm-pack` from `PATH`, validates that `wasm32-unknown-unknown` is installed, pins the selected Cargo and Rust compiler for the build, and rejects tools whose resolved paths are inside known Homebrew prefixes. It never invokes `brew`.
 
 ### 5. Audio MIR (Rust/WASM) Gate
-Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts or packaging. Prerequisites: rustup toolchain with the `wasm32-unknown-unknown` target and `wasm-pack` on `PATH`. If Homebrew's `rustc` shadows rustup, put `~/.cargo/bin` first.
+Required when a change touches `wasm/`, `src/audioMir/`, the Audio MIR scripts or packaging. Prerequisites: a non-Homebrew `rustc`, `cargo` and `wasm-pack` on `PATH`, with the `wasm32-unknown-unknown` target installed. Rustup is preferred when available; Homebrew-resolved tools are rejected.
 ```bash
 cargo fmt --manifest-path wasm/Cargo.toml --check
 cargo test --manifest-path wasm/Cargo.toml

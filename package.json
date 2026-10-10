@@ -859,7 +859,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build:audio-mir && npm run compile",
-    "build:audio-mir": "wasm-pack build wasm/crates/audio-mir --target nodejs --release --out-dir ../../../media/audio-mir-wasm --out-name guitardsl_audio_mir",
+    "build:audio-mir": "node scripts/build-audio-mir-wasm.mjs",
     "test:audio-mir-wasm": "node --import tsx scripts/test-audio-mir-wasm.mjs",
     "generate:help": "node scripts/generate-help.mjs",
     "check:help": "node scripts/check-help-sync.mjs",
