@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-08
+- **最終更新日**: 2026-10-10
 - **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装
 
 ---
@@ -175,6 +175,7 @@
 - **テスト実行結果**: **54 / 54 件 PASS**（実行 1 回。VS Code 1.140.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
 
 ### 2.2A Audio MIR (Rust/WASM)
+- **Issue #125 build tool selection**: `scripts/build-audio-mir-wasm.mjs` prefers rustup's active toolchain, accepts non-Homebrew Rust tools from `PATH` when rustup is unavailable, validates the wasm target, and rejects tools resolved inside Homebrew prefixes. A regression suite covers PATH selection, rustup preference, Homebrew rejection and a missing target.
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
   - Beat This!（#56）: log-mel が torchaudio と一致（22,050 Hz。44.1/48 kHz は soxr 基準で通過帯域 ≤ 0.02）、ロジットが PyTorch と一致（≤ 1e-3、リサンプル経路 ≤ 0.02 で拍は同一）、upstream と同じチャンク化・集約・ピーク検出、段階的 API と `analyze_wav` の JSON 一致（複数チャンク含む）、ドラム無しストローク 90/150 BPM、`Classic` が #52 の出力と一致、拍が得られない場合の `Classic` への切り替え
   - 倍音の多い明るい音色で、D/Dmaj7・F#/F#maj7・A/Amaj7 について「#50 は誤認し、新設定は正しい」ことと、本物の 7th（A7 含む）を保持することをペアごとに確認
