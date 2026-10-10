@@ -108,7 +108,7 @@
 |---|:---:|---|
 | GuitarDSL と `InterchangeScore` schema v1 の純粋な双方向変換 | ✅ 実装済み | `src/interchange/` は書かれた小節・イベント・正確な拍位置・メロディ・歌詞・独立したTAB・編曲指定を保持し、IR→DSL は再解析後の意味と演奏順を照合する。 |
 | 構造化 loss report と IR 検証 | ✅ 実装済み | 4カテゴリの決定的な loss 集約とブロッキング規則、schema/range/reference/technique の検証を提供。具体的なGP/XML/MIDIアダプター、UI、損失を許可するポリシーは含まない。 |
-| Guitar Pro 7/8 import/export (Issue #97) | ✅ 実装済み | `src/gp78/` はGPIF版検査、ZIP/XML上限、ID参照、6弦ギターの対応意味論、明示的な選択トラック、型付きloss policyを処理し、GP7互換出力を意味比較する。F01–F10の表現可能fixtureはGP8.1.5で開封・表示・再保存・再取込後も意味一致。F08 advanced-techniqueは契約どおりブロッキング`unsupported`。GP7 native app verificationは `NOT RUN / EXCLUDED`。構成済み最終ゲートは2026-10-10にPASS。現在のPR HEADへのself-reviewと `phase:review` handoffは進行中。 |
+| Guitar Pro 7/8 import/export (Issue #97) | ✅ 実装済み | `src/gp78/` はGPIF版検査、ZIP/XML上限、ID参照、6弦ギターの対応意味論、明示的な選択トラック、型付きloss policyを処理し、GP7互換出力を意味比較する。F01–F10の表現可能fixtureはGP8.1.5で開封・表示・再保存・再取込後も意味一致。F08 advanced-techniqueは契約どおりブロッキング`unsupported`。GP7 native app verificationは `NOT RUN / EXCLUDED`。構成済み最終ゲートは2026-10-10にPASS。PR #123 のcurrent HEAD self-reviewと `phase:review` handoffは完了し、人手レビュー待ち。 |
 
 ## 2. 検証・テスト状況 (Verification & Testing)
 
