@@ -540,15 +540,20 @@ function renderTies(heads: Head[], ctx: RenderContext): string {
   const sounding = heads.filter(h => !h.note.isRest);
   sounding.forEach((h, i) => {
     if (h.members) {
-      // Compound group length: one tie per member; the lower half bends down, the upper half up.
-      if (h.isLastPart) return;
-      const next = sounding[i + 1];
+      const tieBackward = i === 0 && h.isFirstPart && h.note.tiedFromPrev;
+      const tieForward = !h.isLastPart || h.note.tieToNext;
+      if (!tieBackward && !tieForward) return;
+      const next = tieForward ? sounding[i + 1] : undefined;
       const n = h.members.length;
       h.members.forEach((m, k) => {
         const below = k * 2 + 1 === n ? h.stemUp : k * 2 + 1 < n;
         const tieY = below ? m.y + 6 : m.y - 6;
         const x1 = h.x + Math.max(0, m.dx) + 6;
-        out += renderTieArc(x1, next ? next.x + Math.min(0, next.members?.[k]?.dx ?? 0) - 6 : ctx.totalWidth - 8, tieY, below);
+        if (tieBackward) out += renderTieArc(ctx.startX - 4, h.x + Math.min(0, m.dx) - 6, tieY, below);
+        if (tieForward) {
+          const matchingMember = next?.members?.find(candidate => candidate.pitch.step === m.pitch.step && candidate.pitch.alter === m.pitch.alter && candidate.pitch.octave === m.pitch.octave);
+          out += renderTieArc(x1, next && matchingMember ? next.x + Math.min(0, matchingMember.dx) - 6 : ctx.totalWidth - 8, tieY, below);
+        }
       });
       return;
     }

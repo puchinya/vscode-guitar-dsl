@@ -19,6 +19,7 @@
 |---|---|---|
 | [拡張機能仕様 §1–§2](../specs/extension.md) | 拡張機能の全体、VS Code 言語貢献 | [Architecture](architecture.md), [VS Code editor experience](vscode-editor-experience.md) |
 | [拡張機能仕様 §3.1–§3.2、§4、§4.6](../specs/extension.md) | プレビュー、レンダリング、PDF、再生 | [Preview, rendering, and export](preview-rendering-and-export.md) |
+| [拡張機能仕様 §3.15–§3.16](../specs/extension.md) | Guitar Pro 7/8 のインポート、エクスポート | [Guitar Pro 7/8 interchange](gp78-interchange.md), [Canonical score interchange](interchange.md) |
 | [拡張機能仕様 §3.3、§3.9–§3.10、§4.4–§4B](../specs/extension.md) | コードダイアグラム、楽譜設定、カポ、初心者モード、移調、伴奏 | [Score editing](score-editing.md) |
 | [拡張機能仕様 §3.4、§3.8](../specs/extension.md) | YouTube / ローカル音声の採譜 | [Audio transcription](audio-transcription.md) |
 | [拡張機能仕様 §3.5–§3.7、§3.11–§3.13、§4C–§7](../specs/extension.md) | キー設定、コマンド、サイドバー、診断、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md), [AI integration](ai-integration.md) |
@@ -37,6 +38,7 @@
 | [Language and score processing](language-and-score-processing.md) | 構文解析、スコアモデル、演奏順、音符・歌詞、ハーモニー分析 |
 | [TAB notation](tab-notation.md) | 位置優先 TAB モデル、弦フレット意味論、変換安全性 |
 | [Canonical score interchange](interchange.md) | GuitarDSL と外部アダプター間のバージョン付き意味モデル、正確な音楽時間、損失報告 |
+| [Guitar Pro 7/8 interchange](gp78-interchange.md) | GPIF archive reader/writer、track policy、InterchangeScore 変換、安全なファイル公開 |
 | [Preview, rendering, and export](preview-rendering-and-export.md) | プレビュー、SVG、ページネーション、PDF、プレビュー再生 |
 | [Score editing](score-editing.md) | コード編集、設定、カポ、初心者モード、移調、伴奏編集 |
 | [Audio transcription](audio-transcription.md) | YouTube / Audio MIR、Music IR、GuitarDSL への直列化 |

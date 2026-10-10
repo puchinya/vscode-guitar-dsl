@@ -420,8 +420,16 @@ describe('compiler - invalid structures an AI may generate (Issue #101 D4)', () 
       'error:unknownMeasureToken:1',
       'error:unknownMeasureToken:1'
     ]);
-    const d = parseGuitarDsl('| N.C. | 4.d 4.d 4.d 4.d |').diagnostics[0];
-    assert.deepStrictEqual([d.code, d.args], ['unknownMeasureToken', { token: 'N.C.' }]);
+    const noChord = parseGuitarDsl('| N.C. | 4.d 4.d 4.d 4.d |');
+    assert.deepStrictEqual(noChord.diagnostics.filter(d => d.severity === 'error'), []);
+    assert.strictEqual(noChord.measures.length, 2, 'an N.C. measure must not merge with the following rhythm measure');
+    assert.strictEqual(noChord.measures[0].chords.length, 0);
+    assert.strictEqual(noChord.measures[0].rhythms.length, 0);
+    assert.strictEqual(noChord.measures[1].rhythms.length, 4);
+    const noChordWithRhythm = parseGuitarDsl('| N.C. 4.d 4.d 4.d 4.d |');
+    assert.deepStrictEqual(noChordWithRhythm.diagnostics.filter(d => d.severity === 'error'), []);
+    assert.strictEqual(noChordWithRhythm.measures.length, 1);
+    assert.strictEqual(noChordWithRhythm.measures[0].rhythms.length, 4);
     for (const valid of ['|: [1.] C 4.d 4.d 4.d 4.d :| [2.] G To Coda |', '| C Fine | D.S. |', '| C | % |', '| C | c4/4 [c4,e4]/4 2.d |']) {
       assert.deepStrictEqual(codes(valid).filter(c => c.includes('unknownMeasureToken')), [], valid);
     }

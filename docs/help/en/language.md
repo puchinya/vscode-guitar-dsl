@@ -69,6 +69,8 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 | Am | 4.d 4.d 4.d 4.d |
 ```
 
+Use `N.C.` to mark a measure with no chord. `| N.C. |` creates no implicit rhythm or note/lyric slot. Add explicit rhythm or notes in the same cell when needed, for example `| N.C. 4.d 4.d 4.d 4.d |`.
+
 Barlines and navigation marks:
 
 - `|` normal barline, `|:` and `:|` repeats, `||` double barline, `|]` final barline. A `:|` with no unmatched `|:` uses an implicit repeat starting at the nearest preceding section heading or the start of the score. Its notation warning is checked separately from play-order resolution.
@@ -225,12 +227,12 @@ mel: | $riff $riff | c5/2 r/2 |
 ### Note Groups (Simultaneous Notes)
 <!-- help-sources: syntax:18 -->
 
-Write notes that sound together in square brackets with one shared length: `[c4,e4,g4]/4`. Each note needs its own octave. Group-level techniques such as `{staccato}` are allowed, but ties, hammer-ons, slides, bends and slurs are not.
+Write notes that sound together in square brackets with one shared length: `[c4,e4,g4]/4`. Each note needs its own octave. Group-level techniques such as `{staccato}` are allowed. A trailing `~` ties the whole group to the next group with the same pitches; it does not tie just one member. Hammer-ons, slides, bends and slurs are not supported on groups.
 
 ```guitardsl
 | C | [c4,e4,g4]/4 [c4,eb4,g4]/8 8.u 4.d [c4,e4,g4]/4{staccato} |
 | C | G |
-mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4. [d4,f4]/8 [e4,g4]/2 |
+mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4~ [c4,e4,g4]/4 r/2 |
 ```
 
 ### Rendering and Layout

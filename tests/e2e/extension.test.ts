@@ -1,4 +1,7 @@
 import * as assert from 'assert';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -62,7 +65,27 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(
       commands.includes('guitardsl.exportPdf'),
       'Command guitardsl.exportPdf should be registered'
-    );    assert.ok(
+    );
+    assert.ok(
+      commands.includes('guitardsl.importGuitarPro'),
+      'Command guitardsl.importGuitarPro should be registered'
+    );
+    assert.ok(
+      commands.includes('guitardsl.exportGuitarPro'),
+      'Command guitardsl.exportGuitarPro should be registered'
+    );
+    const extension = vscode.extensions.getExtension('puchinya.vscode-guitar-dsl');
+    assert.ok(extension, 'Extension should expose its package contributions');
+    const menus = extension.packageJSON.contributes?.menus as Record<string, Array<{ command: string }>>;
+    assert.ok(
+      !(menus['editor/title'] ?? []).some(item => item.command === 'guitardsl.exportGuitarPro'),
+      'Guitar Pro export must not add an editor title toolbar button'
+    );
+    assert.ok(
+      (menus['explorer/context'] ?? []).some(item => item.command === 'guitardsl.exportGuitarPro'),
+      'Guitar Pro export should remain available from the Explorer context menu'
+    );
+    assert.ok(
       commands.includes('guitardsl.editChordDiagram'),
       'Command guitardsl.editChordDiagram should be registered'
     );
@@ -89,6 +112,80 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(commands.includes('guitardsl.openHelp'), 'Command guitardsl.openHelp should be registered');
     assert.ok(commands.includes('guitardsl.newDocumentFromTemplate'), 'Command guitardsl.newDocumentFromTemplate should be registered');
     assert.ok(commands.includes('guitardsl.openSample'), 'Command guitardsl.openSample should be registered');
+  });
+
+  test('GP import opens an Untitled GuitarDSL source that can be exported, with safe cancel and edit handling', async () => {
+    const fixturePath = path.resolve(__dirname, '../../../tests/fixtures/gp78/F01-standard-4-4.gp');
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'guitardsl-gp78-e2e-'));
+    const successfulTarget = path.join(tempDir, 'roundtrip.gp');
+    const cancelledTarget = path.join(tempDir, 'cancelled.gp');
+    const changedTarget = path.join(tempDir, 'changed.gp');
+    const windowApi = vscode.window as unknown as Record<string, unknown>;
+    const originalShowOpenDialog = windowApi.showOpenDialog;
+    const originalShowSaveDialog = windowApi.showSaveDialog;
+    const originalShowWarningMessage = windowApi.showWarningMessage;
+    const originalShowErrorMessage = windowApi.showErrorMessage;
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    const newDocs = () => vscode.workspace.textDocuments.filter(document => document.isUntitled && document.languageId === 'guitardsl');
+    try {
+      windowApi.showOpenDialog = async () => undefined;
+      const beforeCancelledImport = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro');
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforeCancelledImport.has(uri)), []);
+
+      windowApi.showWarningMessage = async (...args: unknown[]) => {
+        warnings.push(String(args[0] ?? ''));
+        const choices = args.slice(1).filter((value): value is string => typeof value === 'string');
+        return choices[0];
+      };
+      windowApi.showErrorMessage = async (...args: unknown[]) => {
+        errors.push(String(args[0] ?? ''));
+        return undefined;
+      };
+      const beforeImport = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      const imported = newDocs().find(document => !beforeImport.has(document.uri.toString()));
+      assert.ok(imported, 'Import should open a new Untitled GuitarDSL document');
+
+      let resolveSaveDialog: ((uri: vscode.Uri | undefined) => void) | undefined;
+      let signalSaveDialog: (() => void) | undefined;
+      const saveDialogStarted = new Promise<void>(resolve => { signalSaveDialog = resolve; });
+      windowApi.showSaveDialog = () => new Promise<vscode.Uri | undefined>(resolve => {
+        resolveSaveDialog = resolve;
+        signalSaveDialog?.();
+      });
+      const firstExport = vscode.commands.executeCommand('guitardsl.exportGuitarPro', imported.uri);
+      await saveDialogStarted;
+      const warningCountBeforeReentry = warnings.length;
+      await vscode.commands.executeCommand('guitardsl.exportGuitarPro', imported.uri);
+      assert.strictEqual(warnings.length, warningCountBeforeReentry + 1, 'A concurrent export should be rejected as busy');
+      resolveSaveDialog?.(vscode.Uri.file(successfulTarget));
+      await firstExport;
+      const bytes = await fs.readFile(successfulTarget);
+      assert.strictEqual(bytes.subarray(0, 2).toString('ascii'), 'PK', 'Untitled source should export as a GP ZIP');
+
+      windowApi.showSaveDialog = async () => undefined;
+      await vscode.commands.executeCommand('guitardsl.exportGuitarPro', imported.uri);
+      await assert.rejects(fs.stat(cancelledTarget));
+
+      windowApi.showSaveDialog = async () => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(imported.uri, imported.positionAt(imported.getText().length), '\n');
+        assert.ok(await vscode.workspace.applyEdit(edit), 'The source edit should be applied during the save dialog');
+        return vscode.Uri.file(changedTarget);
+      };
+      await vscode.commands.executeCommand('guitardsl.exportGuitarPro', imported.uri);
+      await assert.rejects(fs.stat(changedTarget));
+      assert.ok(errors.some(message => message.includes('changed while export was waiting')));
+    } finally {
+      windowApi.showOpenDialog = originalShowOpenDialog;
+      windowApi.showSaveDialog = originalShowSaveDialog;
+      windowApi.showWarningMessage = originalShowWarningMessage;
+      windowApi.showErrorMessage = originalShowErrorMessage;
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('the GuitarDSL sidebar view is contributed and can be focused', async () => {

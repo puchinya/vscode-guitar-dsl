@@ -94,6 +94,16 @@ Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any
 
 **📄 Save PDF**, or **GuitarDSL: Export PDF / Print**, writes a vector PDF of exactly what the preview shows, using the selected paper size and orientation. No browser is needed, and fonts are bundled, so output does not depend on your installed fonts. Printing is done from the saved PDF.
 
+### Importing and Exporting Guitar Pro Files
+
+Use **GuitarDSL: Import Guitar Pro 7/8** in the Command Palette to open a supported `.gp` file as a new untitled GuitarDSL document. If more than one guitar track is supported, choose the track to import. The source file is not changed.
+
+Import supports GP7/GP8 `.gp` files with one selected six-string guitar track, one staff, and the supported voice. Unsupported musical meaning in the selected track stops the import. Other tracks, audio, sound settings, and display layout can be omitted only under the command's reported loss policy.
+
+Section titles and double barlines are preserved. A separate Section display letter is reported as a loss. Free-time bars, master-bar fermatas, and multiple score views with conflicting notation flags stop the import instead of being guessed.
+
+**GuitarDSL: Export Guitar Pro 7** saves the current GuitarDSL document as a GP7 `.gp` file. An untitled document created by import can be exported before saving it. Run the command from the Command Palette or the Explorer context menu; there is no export button in the editor's top-right toolbar. Before saving, the extension checks the supported scope and reports information that would be lost. It does not overwrite an existing file. GP8 8.1.5 native checks opened, displayed, re-saved, and re-imported the self-authored contract fixtures with matching score meaning. Native GP7-app compatibility has not been tested; automated GP7-format import/export checks are included.
+
 ### Chord Diagrams and the Chord Diagram Editor
 
 Every chord used in the score is drawn as a fretboard diagram in the header. The shape comes from a `chord` definition in the file if one exists, otherwise from the built-in library. A slash chord without its own library shape, such as `F/A`, is drawn with the shape of its upper chord (`F`); `G/B` and `D/F#` have their own shapes. With a non-Standard tuning, only preset shapes that sound as the requested chord are shown. Frets are relative to the capo, and capo playability and Beginner Mode use the same tuning and shape. Chord-name suggestions in the diagram editor also use the score's tuning. You can keep several voicings of the same chord with labels, such as `C@barre`.
@@ -236,6 +246,8 @@ A line like `[Intro]` or `[Chorus]` labels the next measure. A line containing `
 | C 4.d 4.d 4.d 4.d | G 4.d 4.d 4.d 4.d |
 | Am | 4.d 4.d 4.d 4.d |
 ```
+
+Use `N.C.` to mark a measure with no chord. `| N.C. |` creates no implicit rhythm or note/lyric slot. Add explicit rhythm or notes in the same cell when needed, for example `| N.C. 4.d 4.d 4.d 4.d |`.
 
 Barlines and navigation marks:
 
@@ -382,12 +394,12 @@ mel: | $riff $riff | c5/2 r/2 |
 
 ### Note Groups (Simultaneous Notes)
 
-Write notes that sound together in square brackets with one shared length: `[c4,e4,g4]/4`. Each note needs its own octave. Group-level techniques such as `{staccato}` are allowed, but ties, hammer-ons, slides, bends and slurs are not.
+Write notes that sound together in square brackets with one shared length: `[c4,e4,g4]/4`. Each note needs its own octave. Group-level techniques such as `{staccato}` are allowed. A trailing `~` ties the whole group to the next group with the same pitches; it does not tie just one member. Hammer-ons, slides, bends and slurs are not supported on groups.
 
 ```guitardsl
 | C | [c4,e4,g4]/4 [c4,eb4,g4]/8 8.u 4.d [c4,e4,g4]/4{staccato} |
 | C | G |
-mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4. [d4,f4]/8 [e4,g4]/2 |
+mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4~ [c4,e4,g4]/4 r/2 |
 ```
 
 ### Rendering and Layout
@@ -417,7 +429,7 @@ Hover over a squiggle or open the **Problems** panel to read the message. Common
 | Chord definition | Write six fret values from the 6th string to the 1st. Numbers are relative to the capo; fretted notes must stay within 5 frets of the start fret and at or below physical fret 24, including the capo. Invalid rows are ignored and do not reserve a chord name; among valid duplicates, the first is used. |
 | Unknown `@label` | `C@x` is used but no `chord C@x = ...` exists. The plain `C` shape is drawn instead. |
 | `let` / `$name` | Undefined names, circular references, `%` inside a definition, or a fragment used where it is not allowed (for example, rhythm tokens in `mel:`). |
-| Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. |
+| Note groups | Each note in `[...]` needs an octave, there are no spaces inside the brackets, and a length is required after `]`. Group ties must continue into the same pitch group; mixed single/group ties are invalid. |
 | Unrecognized token | A measure can hold only chords, rhythm tokens, notes, `$name`, `%`, volta brackets, navigation marks and `l:"..."`. Lyrics belong in `lyr:` or `l:"..."`. |
 | Continuation line | A `mel:` / `lyr:` line cannot continue on an indented `\| ... \|` line (that line is not read as measures). Put it on one line, or start each line with `mel:` / `lyr:`. |
 | `:\|` without `\|:` | Write `\|:` at the start of the passage to repeat. |
@@ -470,6 +482,8 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 |---|---|
 | GuitarDSL: Open Preview to the Side | `guitardsl.showPreview` |
 | GuitarDSL: Export PDF / Print | `guitardsl.exportPdf` |
+| GuitarDSL: Import Guitar Pro 7/8 | `guitardsl.importGuitarPro` |
+| GuitarDSL: Export Guitar Pro 7 | `guitardsl.exportGuitarPro` |
 | GuitarDSL: Edit Chord Diagram | `guitardsl.editChordDiagram` |
 | GuitarDSL: Edit Score Settings | `guitardsl.editScoreSettings` |
 | GuitarDSL: Edit Capo / Playability | `guitardsl.editCapo` |

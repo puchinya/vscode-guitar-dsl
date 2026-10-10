@@ -53,6 +53,17 @@ Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any
 
 **📄 Save PDF**, or **GuitarDSL: Export PDF / Print**, writes a vector PDF of exactly what the preview shows, using the selected paper size and orientation. No browser is needed, and fonts are bundled, so output does not depend on your installed fonts. Printing is done from the saved PDF.
 
+### Importing and Exporting Guitar Pro Files
+<!-- help-sources: extension:3 -->
+
+Use **GuitarDSL: Import Guitar Pro 7/8** in the Command Palette to open a supported `.gp` file as a new untitled GuitarDSL document. If more than one guitar track is supported, choose the track to import. The source file is not changed.
+
+Import supports GP7/GP8 `.gp` files with one selected six-string guitar track, one staff, and the supported voice. Unsupported musical meaning in the selected track stops the import. Other tracks, audio, sound settings, and display layout can be omitted only under the command's reported loss policy.
+
+Section titles and double barlines are preserved. A separate Section display letter is reported as a loss. Free-time bars, master-bar fermatas, and multiple score views with conflicting notation flags stop the import instead of being guessed.
+
+**GuitarDSL: Export Guitar Pro 7** saves the current GuitarDSL document as a GP7 `.gp` file. An untitled document created by import can be exported before saving it. Run the command from the Command Palette or the Explorer context menu; there is no export button in the editor's top-right toolbar. Before saving, the extension checks the supported scope and reports information that would be lost. It does not overwrite an existing file. GP8 8.1.5 native checks opened, displayed, re-saved, and re-imported the self-authored contract fixtures with matching score meaning. Native GP7-app compatibility has not been tested; automated GP7-format import/export checks are included.
+
 ### Chord Diagrams and the Chord Diagram Editor
 <!-- help-sources: extension:4A syntax:7 -->
 

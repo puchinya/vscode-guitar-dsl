@@ -17,6 +17,7 @@
 |---|---|
 | GuitarDSL 構文解析、スコアモデル、演奏順とイベント | [Language and score processing](language-and-score-processing.md) |
 | 位置優先ギター TAB のコンパイル済みモデル、意味検証、変換ガード | [TAB notation](tab-notation.md) |
+| Guitar Pro 7/8 GPIF reader/writer と InterchangeScore 変換 | [Guitar Pro 7/8 interchange](gp78-interchange.md) |
 | プレビュー、レンダリング、ページ構成、PDF、再生 | [Preview, rendering, and export](preview-rendering-and-export.md) |
 | コード図・楽譜設定・カポ・初心者モード・移調・伴奏編集 | [Score editing](score-editing.md) |
 | 音声採譜と結果のDSL化 | [Audio transcription](audio-transcription.md) |
@@ -38,13 +39,18 @@ flowchart LR
     Core --> Editors["Feature editors and commands"]
     Core --> Audio["Optional transcription adapters"]
     Core --> AI["VS Code AI tool adapters"]
+    Core --> GPCommands["GP file commands: I/O and UI"]
     Editors --> Compiler
     Audio --> Serializer["Music IR validation and DSL serializer"]
     AI --> Compiler
     AI --> Editors
+    GPCommands --> GPAdapter["Pure GPIF archive adapter"]
+    GPAdapter <--> Interchange["InterchangeScore v1"]
+    Interchange --> Serializer
+    Serializer --> Compiler
 ```
 
-依存の基本方向は `Extension Core → feature adapters / render / PDF → compiler` である。ドメイン処理のうち純粋な変換は VS Code API から分離し、ホスト側は入出力とエディター統合を担う。採譜の2方式は別の入力アダプターだが、Music IR の検証と DSL シリアライザーを共有する。AI ツールは既存ドメイン API の薄いアダプターであり、モデルの選択・実行は VS Code 側の責務である。
+依存の基本方向は `Extension Core → feature adapters / render / PDF → compiler` である。ドメイン処理のうち純粋な変換は VS Code API から分離し、ホスト側は入出力とエディター統合を担う。採譜の2方式は別の入力アダプターだが、Music IR の検証と DSL シリアライザーを共有する。Guitar Pro コマンドもファイル操作とユーザー確認だけを Extension Core に置き、GPIF archive / XML の解釈と書出しは `src/gp78/` の純粋なアダプターに委譲する。GPアダプターは公開 `src/interchange/index.ts` を介して DSL シリアライザーと意味モデルを共有し、Compiler の内部型へ依存しない。AI ツールは既存ドメイン API の薄いアダプターであり、モデルの選択・実行は VS Code 側の責務である。
 
 TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Compiler が `ParsedScore` 内の TAB モデルへ解決し、通常音の実音は `InstrumentModel.pitchAt()` から得る。Renderer はコンパイル済み位置を表示し、調弦・カポから独自に音高を再計算しない。将来の再生・交換形式も同じ TAB モデルを読む。
 
@@ -59,12 +65,13 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 | GuitarDSL 文書テキスト | VS Code TextDocument | Compiler、symbols、編集機能。保存対象の原文は文書が所有する |
 | `ParsedScore` と診断 | Compiler | Renderer、Outline/診断連携、各ドメイン変換 |
 | `InterchangeScore` | 純粋な `src/interchange/` 変換境界 | 将来の #97/#98/#99 アダプター。Compiler の `ParsedScore` と採譜 `TranscribedSong` から独立した値スナップショット |
+| GP7/8 archive bytes と GPIF | 純粋な `src/gp78/` adapter | container/XML validation、明示的ID解決、`InterchangeScore` 変換。VS Code file I/O は `src/gp78Commands.ts` が所有 |
 | `TabVoiceMeasure` / `TabBeat` / `TabNote` | Compiler と共有 `InstrumentModel` | layout / TAB SVG helper / 安全な変換判定 |
 | ページ / SVG / HTML | layout・Renderer | Preview Webview、PDF exporter |
 | Music IR (`TranscribedSong`) | 採譜アダプター | validator、serializer、文書挿入フロー |
 | AI tool 入出力 | VS Code Agent / Chat と tool adapter | 既存のドメイン API。会話・モデル選択は拡張機能外が所有する |
 
-`src/interchange/` は GuitarDSL テキストを既存 Compiler で検証して意味スナップショットへ写し、逆変換では型付き値から DSL を書いて Compiler に再解析させる純粋な境界である。将来の形式アダプターは公開 barrel を消費し、Compiler の内部型や元の文書テキストを保存先として扱わない。演奏順は既存 resolver、再生時間は `buildPlaybackTimeline()` が引き続き所有する。
+`src/interchange/` は GuitarDSL テキストを既存 Compiler で検証して意味スナップショットへ写し、逆変換では型付き値から DSL を書いて Compiler に再解析させる純粋な境界である。形式アダプターは公開 barrel を消費し、Compiler の内部型や元の文書テキストを保存先として扱わない。Guitar Pro adapter は GP archive の検査・GPIF parsing・参照解決を純粋な値変換として行い、URI、QuickPick、save dialog、排他的ファイル公開を含めない。演奏順は既存 resolver、再生時間は `buildPlaybackTimeline()` が引き続き所有する。詳細は [Guitar Pro 7/8 interchange](gp78-interchange.md) を参照する。
 
 PDF は `src/pdf.ts` 内でページ SVG からブラウザーを使わずプロセス内生成する。Extension Core は保存先を選び、書き出し成功後にユーザーが完成ファイルを開く操作を担う。PDF 生成経路の詳細は[プレビュー・描画・PDF設計](preview-rendering-and-export.md)を参照する。
 

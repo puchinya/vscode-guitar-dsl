@@ -161,15 +161,15 @@ describe('compiler - syllable lyrics (lyr:)', () => {
     ]);
   });
 
-  it('assigns syllables to sung notes only (skips rests and tie continuations), per verse', () => {
+  it('assigns syllables to tied continuations but not rests, per verse', () => {
     const score = parseGuitarDsl([
       '| C | % |',
       'mel: | r/4 c5/4~ c d |',
-      'lyr: | あ い |',
-      'lyr: | か さ |'
+      'lyr: | あ い う |',
+      'lyr: | か さ た |'
     ].join('\n'));
     const mel = score.measures[0].melody!;
-    assert.deepStrictEqual(mel.map(n => n.syllables.map(s => s?.text)), [[], ['あ', 'か'], [], ['い', 'さ']]);
+    assert.deepStrictEqual(mel.map(n => n.syllables.map(s => s?.text)), [[], ['あ', 'か'], ['い', 'さ'], ['う', 'た']]);
     assert.deepStrictEqual(score.diagnostics, []);
   });
 

@@ -1,6 +1,8 @@
 {
   "command.showPreview.title": "GuitarDSL: プレビューを横に開く",
   "command.exportPdf.title": "GuitarDSL: PDF出力 / 印刷",
+  "command.importGuitarPro.title": "GuitarDSL: Guitar Pro 7/8をインポート",
+  "command.exportGuitarPro.title": "GuitarDSL: Guitar Pro 7へエクスポート",
   "command.editChordDiagram.title": "GuitarDSL: コードダイアグラムを編集",
   "command.editScoreSettings.title": "GuitarDSL: 楽譜設定を編集",
   "command.editCapo.title": "GuitarDSL: カポ / 弾きやすさを編集",

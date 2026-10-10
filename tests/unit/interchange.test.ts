@@ -211,6 +211,14 @@ describe('canonical interchange conversion', () => {
     const twoMeasures = guitarDslToInterchange('| C | 1.d |\n| D | 1.d |\nmel: | c4/1~ | d4/1 |');
     assert.ok(oneMeasure.ok && twoMeasures.ok);
     if (!oneMeasure.ok || !twoMeasures.ok) return;
+    const groupTieScore = guitarDslToInterchange('| C | 1.d |\nmel: | [c4,e4]/2~ [e4,c4]/2 |');
+    assert.ok(groupTieScore.ok);
+    if (!groupTieScore.ok) return;
+    assert.strictEqual(groupTieScore.value.measures[0].melody![0].tieToNext, true);
+    assert.strictEqual(groupTieScore.value.measures[0].melody![1].tiedFromPrev, true);
+    const groupDsl = interchangeToGuitarDsl(groupTieScore.value);
+    assert.ok(groupDsl.ok);
+    if (groupDsl.ok) assert.deepStrictEqual(parseGuitarDsl(groupDsl.value).diagnostics, []);
     const clone = (value: unknown): any => JSON.parse(JSON.stringify(value));
     const ambiguousPitch = clone(oneMeasure.value);
     ambiguousPitch.measures[0].melody[0].pitches = [
@@ -246,7 +254,7 @@ describe('canonical interchange conversion', () => {
       [ambiguousPitch, 'ambiguousPitch'],
       [orphanContinuation, 'orphanTieContinuation'],
       [missingContinuation, 'missingTieContinuation'],
-      [groupTie, 'unsupportedGroupTie'],
+      [groupTie, 'invalidMelodyTieTarget'],
       [groupTechnique, 'unsupportedGroupTechnique'],
       [incompatibleTarget, 'invalidMelodyTieTarget']
     ] as const) {
@@ -377,6 +385,20 @@ describe('canonical interchange conversion', () => {
     const mismatch = interchangeSemanticMismatch(converted.value, changed);
     assert.strictEqual(mismatch?.code, 'semanticMismatch');
     assert.strictEqual(mismatch?.path, '/measures/0/tabVoices/0/beats/0/notes/0/fret');
+  });
+
+  it('compares exact chord onsets and ignores placement serialization mode', () => {
+    const converted = guitarDslToInterchange('| C G |');
+    assert.ok(converted.ok);
+    if (!converted.ok) return;
+    const sameOnsets = JSON.parse(JSON.stringify(converted.value));
+    sameOnsets.measures[0].chordPlacementMode = 'explicitDuration';
+    assert.strictEqual(interchangeSemanticMismatch(converted.value, sameOnsets), undefined);
+
+    sameOnsets.measures[0].chords[1].beatOffset = { n: 3, d: 1 };
+    const mismatch = interchangeSemanticMismatch(converted.value, sameOnsets);
+    assert.strictEqual(mismatch?.code, 'semanticMismatch');
+    assert.strictEqual(mismatch?.path, '/measures/0/chords/1/beatOffset/n');
   });
 
   it('returns stable source and play-order failures with positions and no partial score', () => {

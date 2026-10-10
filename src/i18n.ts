@@ -25,6 +25,17 @@ export interface Messages {
   msgPdfFailed: (err: string) => string;
   dialogSavePdfTitle: string;
   previewTitle: string;
+  gp78ImportTrackPrompt: string;
+  gp78ImportNoEligibleTracks: string;
+  gp78ImportLossConfirm: (count: number) => string;
+  gp78ExportLossConfirm: (count: number) => string;
+  gp78Continue: string;
+  gp78Cancel: string;
+  gp78Busy: string;
+  gp78Saved: (filename: string) => string;
+  gp78Failed: (detail: string) => string;
+  dialogOpenGp78Title: string;
+  dialogSaveGp78Title: string;
 
   // Webview Toolbar messages
   uiView: string;
@@ -178,6 +189,17 @@ export const MESSAGES_JA: Messages = {
   msgPdfFailed: (err: string) => `PDF保存に失敗しました: ${err}`,
   dialogSavePdfTitle: 'GuitarDSL スコアをPDFとして保存',
   previewTitle: 'GuitarDSL スコアプレビュー',
+  gp78ImportTrackPrompt: '取り込むギタートラックを選択してください',
+  gp78ImportNoEligibleTracks: '1スタッフ・6弦ギター・TAB声部1に対応するトラックがありません。',
+  gp78ImportLossConfirm: (count: number) => `インポート時に${count}件の情報を省略または補完します。内容を確認して続行しますか？`,
+  gp78ExportLossConfirm: (count: number) => `エクスポート時に${count}件の表示または音色情報を省略します。続行しますか？`,
+  gp78Continue: '続行',
+  gp78Cancel: 'キャンセル',
+  gp78Busy: 'Guitar Pro変換を実行中です。完了後にもう一度お試しください。',
+  gp78Saved: (filename: string) => `Guitar Proファイルを保存しました: ${filename}`,
+  gp78Failed: (detail: string) => `Guitar Pro変換に失敗しました: ${detail}`,
+  dialogOpenGp78Title: 'Guitar Pro 7/8ファイルを選択',
+  dialogSaveGp78Title: 'Guitar Pro 7互換ファイルとして保存',
 
   uiView: '表示',
   uiSinglePage: '1ページ',
@@ -372,6 +394,17 @@ export const MESSAGES_EN: Messages = {
   msgPdfFailed: (err: string) => `Failed to export PDF: ${err}`,
   dialogSavePdfTitle: 'Save GuitarDSL Score as PDF',
   previewTitle: 'GuitarDSL Score Preview',
+  gp78ImportTrackPrompt: 'Select the guitar track to import',
+  gp78ImportNoEligibleTracks: 'No track supports one staff, six strings, and TAB voice 1.',
+  gp78ImportLossConfirm: (count: number) => `Import will omit or infer ${count} items. Review the reported details and continue?`,
+  gp78ExportLossConfirm: (count: number) => `Export will omit ${count} display or instrument-sound items. Continue?`,
+  gp78Continue: 'Continue',
+  gp78Cancel: 'Cancel',
+  gp78Busy: 'A Guitar Pro conversion is already running. Try again when it finishes.',
+  gp78Saved: (filename: string) => `Guitar Pro file saved: ${filename}`,
+  gp78Failed: (detail: string) => `Guitar Pro conversion failed: ${detail}`,
+  dialogOpenGp78Title: 'Select a Guitar Pro 7/8 file',
+  dialogSaveGp78Title: 'Save as a Guitar Pro 7 compatible file',
 
   uiView: 'View',
   uiSinglePage: 'Single Page',
@@ -669,7 +702,7 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   invalidVariableValue: a => `let ${a.name} の値が不正です（${VARIABLE_VALUE_REASON_JA[a.reason] ?? a.reason}）: ${a.token}`,
   variableContextMismatch: a => `$${a.name} は${a.context === 'melody' ? ' mel: 行' : '小節行'}では使えません`,
   invalidNoteGroup: a => `同時複数音が不正です（[音名オクターブ,…] に2音以上、重複なし、空白なし、共通の長さが必須）: ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `同時複数音には接続・ベンド・スラー・タイを付けられません: ${a.token}`,
+  unsupportedNoteGroupTechnique: a => `同時複数音では接続・ベンド・スラーは未対応です（タイは同じ音高セットの次の同時複数音へ続ける場合のみ使えます）: ${a.token}`,
   unknownMeasureToken: a => `小節の中で解釈できないトークンです（コード・リズム・音符・記号のどれでもありません）: ${a.token}`,
   unsupportedContinuationLine: () => '`mel:` / `lyr:` の続きの行は書けません。この行は小節として読みません。1 行にまとめるか、行ごとに `mel:` / `lyr:` を付けてください',
   repeatEndWithoutStart: () => '反復終了線 `:|` に対応する反復開始線 `|:` がありません（楽譜の先頭または直前の `:|` のあと）',
@@ -751,7 +784,7 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   invalidVariableValue: a => `Invalid value for let ${a.name} (${VARIABLE_VALUE_REASON_EN[a.reason] ?? a.reason}): ${a.token}`,
   variableContextMismatch: a => `$${a.name} cannot be used in ${a.context === 'melody' ? 'a mel: line' : 'a measure line'}`,
   invalidNoteGroup: a => `Invalid note group ([pitch+octave,...] with two or more distinct pitches, no spaces and a shared length): ${a.token}`,
-  unsupportedNoteGroupTechnique: a => `Note groups cannot take connections, bends, slurs or ties: ${a.token}`,
+  unsupportedNoteGroupTechnique: a => `Note groups cannot use connections, bends, or slurs; a tie must continue to a note group with the same pitch set: ${a.token}`,
   unknownMeasureToken: a => `Unrecognized token in a measure (not a chord, rhythm, note or mark): ${a.token}`,
   unsupportedContinuationLine: () => 'A `mel:` / `lyr:` line cannot continue on the next line; this line is not read as measures. Put it on one line or start each line with `mel:` / `lyr:`',
   repeatEndWithoutStart: () => 'Repeat end `:|` has no matching repeat start `|:` (since the start of the score or the previous `:|`)',
