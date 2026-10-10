@@ -235,7 +235,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(optimizedFixturePath));
       const optimized = newDocs().find(document => !beforeOptimizedImport.has(document.uri.toString()));
       assert.ok(optimized, 'Approved optimized import should open one Untitled GuitarDSL document');
-      assert.ok(optimized?.getText().includes('| C 4 C 4 C 4 C 4 |'), 'Optimized output should contain four exact C rhythm attacks');
+      assert.ok(optimized?.getText().includes('| C 4 4 4 4 |'), 'Optimized output should contain one generated C label and four exact rhythm attacks');
       assert.ok(!optimized?.getText().includes('TAB'), 'Optimized output should not retain the source TAB staff');
       assert.ok(warnings.some(message => message.includes('Import will omit or infer') || message.includes('インポート時に')), 'Optimized import must show the combined loss summary before creating the document');
       assert.deepStrictEqual(await fs.readFile(optimizedFixturePath), optimizedSourceBefore, 'The GP8 source fixture must remain byte-identical');
@@ -247,6 +247,148 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       windowApi.showErrorMessage = originalShowErrorMessage;
       await vscode.commands.executeCommand('workbench.action.closeAllEditors');
       await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('optimized serialization and postparse failures offer explicit faithful fallback or cancel', async () => {
+    const fixturePath = path.resolve(__dirname, '../../../tests/fixtures/gp78/F11-chord-strum-gp8.gp');
+    const windowApi = vscode.window as unknown as Record<string, unknown>;
+    const originalShowQuickPick = windowApi.showQuickPick;
+    const originalShowWarningMessage = windowApi.showWarningMessage;
+    const originalShowErrorMessage = windowApi.showErrorMessage;
+    type SerializeSuccess = { ok: true; value: string };
+    type SerializeFailure = { ok: false; code: string; diagnostics: unknown[]; errors: Array<{ code: string; path: string; detail: string }>; loss: unknown };
+    type SerializeResult = SerializeSuccess | SerializeFailure;
+    type ParseResult = { diagnostics: Array<{ severity: string }>; [key: string]: unknown };
+    type Gp78Inspection = { ok: true; value: { tracks: Array<{ id: string; eligible: boolean }> } } | { ok: false };
+    type Gp78Import = { ok: true; value: unknown; loss: unknown } | { ok: false };
+    const interchangeModule = require(path.resolve(__dirname, '../../../out/interchange/toGuitarDsl.js')) as {
+      interchangeToGuitarDsl: (score: unknown, loss: unknown) => SerializeResult;
+    };
+    const compilerModule = require(path.resolve(__dirname, '../../../out/compiler.js')) as {
+      parseGuitarDsl: (source: string) => ParseResult;
+    };
+    const gp78Module = require(path.resolve(__dirname, '../../../out/gp78/index.js')) as {
+      inspectGp78: (bytes: Uint8Array) => Gp78Inspection;
+      importGp78: (bytes: Uint8Array, trackId: string) => Gp78Import;
+    };
+    const gp78ImportModule = require(path.resolve(__dirname, '../../../out/gp78/import.js')) as {
+      importGp78: (bytes: Uint8Array, trackId: number) => Gp78Import;
+    };
+    const originalSerialize = interchangeModule.interchangeToGuitarDsl;
+    const originalParse = compilerModule.parseGuitarDsl;
+    const originalGp78Import = gp78ImportModule.importGp78;
+    const bytes = new Uint8Array(await fs.readFile(fixturePath));
+    const inspection = gp78Module.inspectGp78(bytes);
+    assert.strictEqual(inspection.ok, true, JSON.stringify(inspection));
+    if (!inspection.ok) return;
+    const track = inspection.value.tracks.find(candidate => candidate.eligible);
+    assert.ok(track);
+    if (!track) return;
+    const imported = gp78Module.importGp78(bytes, track.id);
+    assert.strictEqual(imported.ok, true, JSON.stringify(imported));
+    if (!imported.ok) return;
+    const faithfulOutput = originalSerialize(imported.value, imported.loss);
+    assert.strictEqual(faithfulOutput.ok, true, JSON.stringify(faithfulOutput));
+    if (!faithfulOutput.ok) return;
+
+    const newDocs = () => vscode.workspace.textDocuments.filter(document => document.isUntitled && document.languageId === 'guitardsl');
+    const warnings: string[] = [];
+    let fallbackChoice: 'faithful' | 'cancel' = 'cancel';
+    let injectedFailure: 'serialization' | 'postparse' | undefined;
+    let parseCalls = 0;
+    let gp78ImportCalls = 0;
+    try {
+      windowApi.showQuickPick = async (items: unknown) => {
+        const choices = Array.isArray(items) ? items as Array<{ mode?: 'faithful' | 'optimize' }> : [];
+        return choices.find(choice => choice.mode === 'optimize') ?? choices[0];
+      };
+      windowApi.showWarningMessage = async (...args: unknown[]) => {
+        const message = String(args[0] ?? '');
+        warnings.push(message);
+        const choices = args.slice(1).filter((value): value is string => typeof value === 'string');
+        if (message.includes('output could not be validated') || message.includes('出力を検証できません')) {
+          return choices[fallbackChoice === 'faithful' ? 0 : 1];
+        }
+        return choices[0];
+      };
+      windowApi.showErrorMessage = async (...args: unknown[]) => {
+        throw new Error(`Unexpected import error: ${String(args[0] ?? '')}`);
+      };
+      gp78ImportModule.importGp78 = ((sourceBytes, trackId) => {
+        gp78ImportCalls += 1;
+        return originalGp78Import(sourceBytes, trackId);
+      }) as typeof originalGp78Import;
+      interchangeModule.interchangeToGuitarDsl = ((score, loss) => {
+        if (injectedFailure === 'serialization') {
+          injectedFailure = undefined;
+          return {
+            ok: false,
+            code: 'unrepresentableValue',
+            diagnostics: [],
+            errors: [{ code: 'injectedSerializationFailure', path: '/test', detail: 'Injected serialization failure' }],
+            loss: imported.loss,
+          } as SerializeResult;
+        }
+        return originalSerialize(score, loss);
+      }) as typeof originalSerialize;
+      compilerModule.parseGuitarDsl = ((source: string) => {
+        const parsed = originalParse(source);
+        parseCalls += 1;
+        if (injectedFailure === 'postparse' && parseCalls === 2) {
+          injectedFailure = undefined;
+          const injectedDiagnostic = { severity: 'error' } as ParseResult['diagnostics'][number];
+          return { ...parsed, diagnostics: [...parsed.diagnostics, injectedDiagnostic] };
+        }
+        return parsed;
+      }) as typeof originalParse;
+
+      const beforeSerializationCancel = new Set(newDocs().map(document => document.uri.toString()));
+      gp78ImportCalls = 0;
+      injectedFailure = 'serialization';
+      fallbackChoice = 'cancel';
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforeSerializationCancel.has(uri)), []);
+      assert.strictEqual(gp78ImportCalls, 1, 'Serialization failure must import the selected track only once');
+
+      const beforeFaithfulFallback = new Set(newDocs().map(document => document.uri.toString()));
+      gp78ImportCalls = 0;
+      injectedFailure = 'serialization';
+      fallbackChoice = 'faithful';
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      const faithfulFallback = newDocs().find(document => !beforeFaithfulFallback.has(document.uri.toString()));
+      assert.ok(faithfulFallback, 'Choosing Faithful after optimized serialization failure should open one document');
+      assert.strictEqual(faithfulFallback?.getText(), faithfulOutput.value);
+      assert.strictEqual(gp78ImportCalls, 1, 'Faithful fallback must reuse the imported IR without re-importing the GP track');
+
+      const beforePostparseCancel = new Set(newDocs().map(document => document.uri.toString()));
+      gp78ImportCalls = 0;
+      parseCalls = 0;
+      injectedFailure = 'postparse';
+      fallbackChoice = 'cancel';
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforePostparseCancel.has(uri)), []);
+      assert.strictEqual(gp78ImportCalls, 1, 'Postparse failure must import the selected track only once');
+
+      const beforePostparseFallback = new Set(newDocs().map(document => document.uri.toString()));
+      gp78ImportCalls = 0;
+      parseCalls = 0;
+      injectedFailure = 'postparse';
+      fallbackChoice = 'faithful';
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      const postparseFallback = newDocs().find(document => !beforePostparseFallback.has(document.uri.toString()));
+      assert.ok(postparseFallback, 'Choosing Faithful after postparse validation failure should open one document');
+      assert.strictEqual(postparseFallback?.getText(), faithfulOutput.value);
+      assert.strictEqual(gp78ImportCalls, 1, 'Postparse Faithful fallback must reuse the imported IR without re-importing the GP track');
+      assert.ok(warnings.filter(message => message.includes('output could not be validated') || message.includes('出力を検証できません')).length >= 4);
+    } finally {
+      interchangeModule.interchangeToGuitarDsl = originalSerialize;
+      compilerModule.parseGuitarDsl = originalParse;
+      gp78ImportModule.importGp78 = originalGp78Import;
+      windowApi.showQuickPick = originalShowQuickPick;
+      windowApi.showWarningMessage = originalShowWarningMessage;
+      windowApi.showErrorMessage = originalShowErrorMessage;
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     }
   });
 

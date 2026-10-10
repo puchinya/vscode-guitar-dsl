@@ -2,7 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { exportGp78, importGp78, inspectGp78, planGp78ChordStrum } from '../../src/gp78';
-import { interchangeToGuitarDsl, validateInterchangeScore } from '../../src/interchange';
+import { guitarDslToInterchange, interchangeToGuitarDsl, validateInterchangeScore } from '../../src/interchange';
 import type {
   InterchangeNoteValue,
   InterchangeMeasure,
@@ -96,16 +96,14 @@ describe('GP7/8 chord-strum optimization', () => {
     if (!result.ok) return;
     assert.strictEqual(JSON.stringify(source), before);
     assert.strictEqual(result.stats.attacks, 4);
-    assert.strictEqual(result.stats.inferredChords, 4);
-    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C', 'C', 'C', 'C']);
-    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.beatOffset), [
-      { n: 0, d: 1 }, { n: 1, d: 1 }, { n: 2, d: 1 }, { n: 3, d: 1 },
-    ]);
+    assert.strictEqual(result.stats.inferredChords, 1);
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C']);
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.beatOffset), [{ n: 0, d: 1 }]);
     assert.deepStrictEqual(result.score.measures[0].rhythm.events.map(event => event.duration.beats), Array(4).fill({ n: 1, d: 1 }));
     assert.strictEqual(result.score.measures[0].tabVoices, undefined);
     assert.strictEqual(result.score.metadata.showRhythm, true);
     assert.ok(result.loss.entries.some(entry => entry.code === 'optimizedTabToRhythm'));
-    assert.ok(result.loss.entries.some(entry => entry.code === 'inferredStrumChord'));
+    assert.strictEqual(result.loss.entries.filter(entry => entry.code === 'inferredStrumChord').length, 1);
     assert.ok(result.loss.entries.some(entry => entry.code === 'enabledRhythmDisplay'));
 
     const converted = interchangeToGuitarDsl(result.score, result.loss);
@@ -155,8 +153,31 @@ describe('GP7/8 chord-strum optimization', () => {
     const result = planGp78ChordStrum(withSourceChord);
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C']);
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.beatOffset), [{ n: 0, d: 1 }]);
+    assert.strictEqual(result.stats.inferredChords, 0);
+  });
+
+  it('preserves repeated authored chord labels while deduplicating only generated labels', () => {
+    const source = strumScore([
+      beat(C_MAJOR, 4), beat(C_MAJOR, 4), beat(C_MAJOR, 4), beat(C_MAJOR, 4),
+    ]);
+    const withAuthoredLabels = {
+      ...source,
+      measures: source.measures.map((measure, index) => index === 0 ? {
+        ...measure,
+        chords: [0, 1, 2, 3].map(offset => ({ name: 'C', beatOffset: { n: offset, d: 1 } })),
+      } : measure),
+    };
+    const result = planGp78ChordStrum(withAuthoredLabels);
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.beatOffset), [
+      { n: 0, d: 1 }, { n: 1, d: 1 }, { n: 2, d: 1 }, { n: 3, d: 1 },
+    ]);
     assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C', 'C', 'C', 'C']);
     assert.strictEqual(result.stats.inferredChords, 0);
+    assert.strictEqual(result.loss.entries.filter(entry => entry.code === 'inferredStrumChord').length, 0);
   });
 
   it('rejects multiple exact diminished-seventh names instead of choosing the top rank', () => {
@@ -284,34 +305,49 @@ describe('GP7/8 chord-strum optimization', () => {
     delete (withoutTab as { sectionStart?: string }).sectionStart;
     delete (withoutTab as { pageBreakBefore?: boolean }).pageBreakBefore;
     const notFinal = { ...first.barline, finalEnd: false };
-    const emptyBar: InterchangeMeasure = {
+    const chordOnlyBar: InterchangeMeasure = {
       ...withoutTab,
       index: 1,
       barline: { ...notFinal },
-      chords: [],
+      chords: [{ name: 'C', beatOffset: { n: 0, d: 1 } }],
+      chordPlacementMode: 'inline',
       rhythm: { origin: 'implicit', events: [] },
     };
-    const chordOnlyBar: InterchangeMeasure = {
+    const emptyFinalBar: InterchangeMeasure = {
       ...withoutTab,
       index: 2,
       barline: { ...first.barline, finalEnd: true },
-      chords: [{ name: 'C', beatOffset: { n: 0, d: 1 } }],
-      chordPlacementMode: 'inline',
+      chords: [],
       rhythm: { origin: 'implicit', events: [] },
     };
     const withEmptyMeasures: InterchangeScore = {
       ...base,
       chordDefinitions: [{ name: 'C', frets: [...C_MAJOR], barres: [] }],
-      measures: [{ ...first, index: 0, barline: notFinal }, emptyBar, chordOnlyBar],
+      measures: [{ ...first, index: 0, barline: notFinal }, chordOnlyBar, emptyFinalBar],
     };
     assert.deepStrictEqual(validateInterchangeScore(withEmptyMeasures), []);
     const result = planGp78ChordStrum(withEmptyMeasures);
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    assert.strictEqual(result.score.measures[1].rhythm.events.length, 0);
-    assert.strictEqual(result.score.measures[2].rhythm.events.length, 0);
-    assert.deepStrictEqual(result.score.measures[2].chords, [{ name: 'C', beatOffset: { n: 0, d: 1 } }]);
-    assert.strictEqual(result.score.measures[2].tabVoices, undefined);
+    assert.deepStrictEqual(result.score.measures[1], chordOnlyBar);
+    assert.deepStrictEqual(result.score.measures[2], emptyFinalBar);
+
+    const converted = interchangeToGuitarDsl(result.score, result.loss);
+    assert.strictEqual(converted.ok, true, JSON.stringify(converted));
+    if (!converted.ok) return;
+    const parsed = parseGuitarDsl(converted.value);
+    assert.deepStrictEqual(parsed.diagnostics.filter(item => item.severity === 'error'), []);
+    const restored = guitarDslToInterchange(converted.value);
+    assert.strictEqual(restored.ok, true, JSON.stringify(restored));
+    if (!restored.ok) return;
+    assert.deepStrictEqual(restored.value.measures.map(measure => measure.rhythm.events.length), [4, 0, 0]);
+    assert.strictEqual(restored.value.measures[1].rhythm.origin, 'implicit');
+    assert.deepStrictEqual(restored.value.measures[1].chords, [{ name: 'C', beatOffset: { n: 0, d: 1 } }]);
+    assert.strictEqual(restored.value.measures[2].rhythm.origin, 'implicit');
+    assert.deepStrictEqual(restored.value.measures[2].chords, []);
+    assert.strictEqual(restored.value.measures[2].barline.finalEnd, true);
+    assert.strictEqual(restored.value.measures[1].tabVoices, undefined);
+    assert.strictEqual(restored.value.measures[2].tabVoices, undefined);
   });
 
   it('stops at the documented measure and TAB-beat limits', () => {
@@ -346,7 +382,8 @@ describe('GP7/8 chord-strum optimization', () => {
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
     assert.strictEqual(result.stats.attacks, 4);
-    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C', 'C', 'C', 'C']);
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C']);
+    assert.strictEqual(result.stats.inferredChords, 1);
   });
 
   it('round-trips a generated GP7-compatible strum fixture through the unchanged writer and planner', () => {
@@ -370,6 +407,7 @@ describe('GP7/8 chord-strum optimization', () => {
     assert.strictEqual(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
     assert.strictEqual(result.stats.attacks, 4);
-    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C', 'C', 'C', 'C']);
+    assert.deepStrictEqual(result.score.measures[0].chords.map(chord => chord.name), ['C']);
+    assert.strictEqual(result.stats.inferredChords, 1);
   });
 });

@@ -118,17 +118,39 @@ async function importCommand(locale: SupportedLocale, requestedUri?: vscode.Uri)
       }
     }
 
-    const converted = interchangeToGuitarDsl(score, baseLoss);
-    if (!converted.ok) {
-      void vscode.window.showErrorMessage(msgs.gp78Failed(converted.errors.map(error => `${error.code} ${error.path}: ${error.detail}`).join('\n')));
+    const serializeImport = (candidateScore: typeof imported.value, candidateLoss: typeof imported.loss) => {
+      try {
+        const candidate = interchangeToGuitarDsl(candidateScore, candidateLoss);
+        if (!candidate.ok) return { ok: false as const, detail: resultError(candidate) };
+        const parsed = parseGuitarDsl(candidate.value);
+        const parseErrors = parsed.diagnostics.filter(diagnostic => diagnostic.severity === 'error');
+        if (parseErrors.length > 0) {
+          const codes = parseErrors.map(diagnostic => diagnostic.code).join(', ');
+          return { ok: false as const, detail: `Generated GuitarDSL has ${parseErrors.length} parse error(s)${codes ? `: ${codes}` : ''}.` };
+        }
+        return { ok: true as const, converted: candidate };
+      } catch (error) {
+        return { ok: false as const, detail: error instanceof Error ? error.message : String(error) };
+      }
+    };
+    let output = serializeImport(score, baseLoss);
+    if (!output.ok && selectedMode.mode === 'optimize') {
+      const fallback = await vscode.window.showWarningMessage(
+        msgs.gp78ImportOptimizeOutputUnavailable(output.detail),
+        { modal: true },
+        msgs.gp78ImportUseFaithful,
+        msgs.gp78Cancel,
+      );
+      if (fallback !== msgs.gp78ImportUseFaithful) return;
+      score = imported.value;
+      baseLoss = imported.loss;
+      output = serializeImport(score, baseLoss);
+    }
+    if (!output.ok) {
+      void vscode.window.showErrorMessage(msgs.gp78Failed(output.detail));
       return;
     }
-    const parsed = parseGuitarDsl(converted.value);
-    const parseErrors = parsed.diagnostics.filter(diagnostic => diagnostic.severity === 'error');
-    if (parseErrors.length > 0) {
-      void vscode.window.showErrorMessage(msgs.gp78Failed(`Generated GuitarDSL has ${parseErrors.length} parse error(s).`));
-      return;
-    }
+    const converted = output.converted;
     const loss = mergeLossReports(baseLoss, converted.loss);
     if (loss.entries.length > 0 && !await confirmLoss(msgs.gp78ImportLossConfirm(loss.entries.length), lossDetails(loss), msgs.gp78Continue, msgs.gp78Cancel)) return;
     const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: converted.value });

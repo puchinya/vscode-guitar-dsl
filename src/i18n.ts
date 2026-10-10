@@ -32,6 +32,7 @@ export interface Messages {
   gp78ImportOptimize: string;
   gp78ImportOptimizeDescription: string;
   gp78ImportOptimizeUnavailable: (reason: string, detail: string) => string;
+  gp78ImportOptimizeOutputUnavailable: (detail: string) => string;
   gp78ImportUseFaithful: string;
   gp78ImportNoEligibleTracks: string;
   gp78ImportLossConfirm: (count: number) => string;
@@ -203,6 +204,7 @@ export const MESSAGES_JA: Messages = {
   gp78ImportOptimize: 'コードストラム用に最適化',
   gp78ImportOptimizeDescription: '適格なコードストラムをコード記号とリズムスラッシュに変換します',
   gp78ImportOptimizeUnavailable: (reason: string, detail: string) => `コードストラム最適化を利用できません（${reason}）。\n${detail}\n\n忠実なインポートに切り替えますか？`,
+  gp78ImportOptimizeOutputUnavailable: (detail: string) => `コードストラム最適化の出力を検証できませんでした。\n${detail}\n\n忠実なインポートに切り替えますか？`,
   gp78ImportUseFaithful: '忠実にインポート',
   gp78ImportNoEligibleTracks: '1スタッフ・6弦ギター・TAB声部1に対応するトラックがありません。',
   gp78ImportLossConfirm: (count: number) => `インポート時に${count}件の情報を省略または補完します。内容を確認して続行しますか？`,
@@ -415,6 +417,7 @@ export const MESSAGES_EN: Messages = {
   gp78ImportOptimize: 'Optimize for chord strumming',
   gp78ImportOptimizeDescription: 'Convert eligible chord strums to chord symbols and rhythm slashes',
   gp78ImportOptimizeUnavailable: (reason: string, detail: string) => `Chord-strum optimization is unavailable (${reason}).\n${detail}\n\nSwitch to faithful import?`,
+  gp78ImportOptimizeOutputUnavailable: (detail: string) => `The optimized chord-strum output could not be validated.\n${detail}\n\nSwitch to faithful import?`,
   gp78ImportUseFaithful: 'Import faithfully',
   gp78ImportNoEligibleTracks: 'No track supports one staff, six strings, and TAB voice 1.',
   gp78ImportLossConfirm: (count: number) => `Import will omit or infer ${count} items. Review the reported details and continue?`,

@@ -363,30 +363,23 @@ export function planGp78ChordStrum(score: InterchangeScore): Gp78StrumPlan {
       ? measure.chords.map(chord => cloneValue(chord))
       : [];
     const inferred: { offset: InterchangeFraction; name: string }[] = [];
-    let lastExplicit: InterchangeMeasure['chords'][number] | undefined;
+    let activeChordName: string | undefined;
     for (const attack of attacks) {
       const sourceChords = explicitByOffset.get(fractionKey(attack.offset)) ?? [];
       if (sourceChords.length === 1) {
         outputChords.push(cloneValue(sourceChords[0]));
-        lastExplicit = sourceChords[0];
+        activeChordName = sourceChords[0].name;
         continue;
       }
       const candidates = attack.candidateNames;
-      if (lastExplicit && compatibleExplicitName(lastExplicit.name, candidates)) {
-        outputChords.push({
-          name: lastExplicit.name,
-          ...(lastExplicit.label === undefined ? {} : { label: lastExplicit.label }),
-          beatOffset: cloneValue(attack.offset),
-        });
-        continue;
-      }
-      lastExplicit = undefined;
+      if (activeChordName && compatibleExplicitName(activeChordName, candidates)) continue;
       if (candidates.length !== 1) {
         return unavailable('ambiguousHarmony', `/measures/${measureIndex}/tabVoices/0`, `Beat ${formatFraction(attack.offset)} has ${candidates.length} exact chord names; add an explicit compatible chord symbol or use faithful import.`);
       }
       const name = candidates[0];
       outputChords.push({ name, beatOffset: cloneValue(attack.offset) });
       inferred.push({ offset: cloneValue(attack.offset), name });
+      activeChordName = name;
     }
     totalAttacks += attacks.length;
     inferredCount += inferred.length;
@@ -409,7 +402,7 @@ export function planGp78ChordStrum(score: InterchangeScore): Gp78StrumPlan {
   let loss = emptyLossReport();
   for (let index = 0; index < measurePlans.length; index += 1) {
     const plan = measurePlans[index];
-    if ((plan.measure.tabVoices?.length ?? 0) > 0) {
+    if (plan.rhythm.length > 0) {
       loss = appendLoss(loss, {
         category: 'droppedByPolicy',
         code: 'optimizedTabToRhythm',
@@ -448,6 +441,7 @@ export function planGp78ChordStrum(score: InterchangeScore): Gp78StrumPlan {
   }
 
   const transformedMeasures = measurePlans.map(plan => {
+    if (plan.rhythm.length === 0) return cloneValue(plan.measure);
     const { tabVoices: _tabVoices, ...preserved } = cloneValue(plan.measure);
     return {
       ...preserved,
