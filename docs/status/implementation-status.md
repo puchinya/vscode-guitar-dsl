@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-10
-- **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装。Issue #97 の契約機能とGP8 native writer確認は完了し、最終ゲートとPR deliveryを進行中。Issue #124 のGP7/8コードストラム最適化は実装済み。クリーンインストール後の `npm test`（1,068 unit＋57 E2E）、Rustup経由のprepublish、compile、Help/AI同期はPASS。current-HEAD self-reviewとPR deliveryを進行中。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装。Issue #97 の契約機能とGP8 native writer確認は完了し、最終ゲートとPR deliveryを進行中。Issue #124 のGP7/8コードストラム最適化は実装済み。クリーンインストール後の `npm test`（1,069 unit＋57 E2E）、Rustup経由のprepublish、compile、Help/AI同期はPASS。current-HEAD self-reviewとPR deliveryを進行中。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -109,7 +109,7 @@
 | GuitarDSL と `InterchangeScore` schema v1 の純粋な双方向変換 | ✅ 実装済み | `src/interchange/` は書かれた小節・イベント・正確な拍位置・メロディ・歌詞・独立したTAB・編曲指定を保持し、IR→DSL は再解析後の意味と演奏順を照合する。 |
 | 構造化 loss report と IR 検証 | ✅ 実装済み | 4カテゴリの決定的な loss 集約とブロッキング規則、schema/range/reference/technique の検証を提供。具体的なGP/XML/MIDIアダプター、UI、損失を許可するポリシーは含まない。 |
 | Guitar Pro 7/8 import/export (Issue #97) | ✅ 実装済み | `src/gp78/` はGPIF版検査、ZIP/XML上限、ID参照、6弦ギターの対応意味論、明示的な選択トラック、型付きloss policyを処理し、GP7互換出力を意味比較する。F01–F10の表現可能fixtureとC-01のSection＋DoubleBar出力はGP8.1.5で表示・再保存・再取込後も意味一致。MasterBarの未知要素は精密なpathでブロックし、既知XPropertiesは明示policyで報告する。F08 advanced-techniqueは契約どおりブロッキング`unsupported`。GP7 native app verificationは `NOT RUN / EXCLUDED`。PR #123指摘A-05/A-06/B-01/C-01を反映し、既存XMLノード上限、TABリンク解決O(P)時間・O(P)補助メモリ、20,000位置回帰を含む契約が承認済み（comment 6095998009）。A-07のビルド変更はIssue #125/PR #126へ分離し、#97から除外。ローカル最終ゲート（compile、npm test 1,058 unit＋57 E2E、Homebrew不使用prepublish、VSIX一覧、docs/help/AI同期）はPASS。current-HEAD self-reviewとPR delivery checkを進行中。 |
-| Guitar Pro 7/8 chord-strum optimization (Issue #124) | 🟡 実装済み・PR delivery中 | `src/gp78/chordStrum.ts` は全曲適格性、正確な拍長、単一候補コード照合、歌詞制限と決定的上限を検証し、全曲を一括変換する。インポートUIはFaithfulを既定にし、最適化不可時のFaithful選択と統合loss確認を明示する。自己作成GP8.1.5 fixtureを使用。クリーンインストール後の `npm test`（1,068 unit＋57 E2E）、Rustup経由のprepublish、compile、Help/AI同期はPASS。Issue添付用にF11最適化結果のレンダリングpreviewを生成・確認済み。 |
+| Guitar Pro 7/8 chord-strum optimization (Issue #124) | 🟡 実装済み・PR delivery中 | `src/gp78/chordStrum.ts` は全曲適格性、正確な拍長、単一候補コード照合、歌詞制限と決定的上限を検証し、全曲を一括変換する。インポートUIはFaithfulを既定にし、最適化不可時のFaithful選択と統合loss確認を明示する。自己作成GP8.1.5 fixtureを使用。クリーンインストール後の `npm test`（1,069 unit＋57 E2E）、Rustup経由のprepublish、compile、Help/AI同期はPASS。Issue添付用にF11最適化結果のレンダリングpreviewを生成・確認済み。 |
 
 ## 2. 検証・テスト状況 (Verification & Testing)
 

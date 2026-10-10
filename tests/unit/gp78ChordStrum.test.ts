@@ -191,6 +191,69 @@ describe('GP7/8 chord-strum optimization', () => {
     if (!voiceResult.ok) assert.strictEqual(voiceResult.reason, 'unsupportedNotes');
   });
 
+  it('rejects melody, arpeggio-like attacks, and TAB details that cannot become chord slashes', () => {
+    const beats = [beat(C_MAJOR, 4), beat(C_MAJOR, 4), beat(C_MAJOR, 4), beat(C_MAJOR, 4)];
+    const source = strumScore(beats);
+    const melodyNote = {
+      isRest: false,
+      pitch: { step: 'c' as const, alter: 0 as const, octave: 4 },
+      duration: noteValue(4),
+      tieToNext: false,
+      tiedFromPrev: false,
+      syllables: [],
+    };
+    const withMelody = {
+      ...source,
+      melodyGroups: [{ startMeasure: 0, endMeasureExclusive: 1, verseCount: 0 }],
+      measures: source.measures.map((measure, index) => index === 0
+        ? { ...measure, melody: Array.from({ length: 4 }, () => melodyNote) }
+        : measure),
+    };
+    assert.deepStrictEqual(validateInterchangeScore(withMelody), []);
+    const melodyResult = planGp78ChordStrum(withMelody);
+    assert.strictEqual(melodyResult.ok, false);
+    if (!melodyResult.ok) {
+      assert.strictEqual(melodyResult.reason, 'mixedMelody');
+      assert.ok(!('score' in melodyResult), 'a mixed score must never return partial optimized output');
+    }
+
+    const alterFirstBeat = (alter: (first: InterchangeTabBeat) => InterchangeTabBeat): InterchangeScore => ({
+      ...source,
+      measures: source.measures.map((measure, index) => index !== 0 ? measure : {
+        ...measure,
+        tabVoices: measure.tabVoices!.map(voice => ({
+          ...voice,
+          beats: voice.beats.map((item, beatIndex) => beatIndex === 0 ? alter(item) : item),
+        })),
+      }),
+    });
+    const disallowed: Array<[string, InterchangeScore]> = [
+      ['tie', alterFirstBeat(first => ({
+        ...first,
+        notes: first.notes.map((note, index) => index === 0 ? { ...note, tieToNext: true } : note),
+      }))],
+      ['dead note', alterFirstBeat(first => ({
+        ...first,
+        notes: first.notes.map((note, index) => index === 0 ? { ...note, dead: true, fret: undefined } : note),
+      }))],
+      ['note effect', alterFirstBeat(first => ({
+        ...first,
+        notes: first.notes.map((note, index) => index === 0 ? { ...note, effects: [{ name: 'pm', args: {} }] } : note),
+      }))],
+      ['beat effect', alterFirstBeat(first => ({ ...first, effects: [{ name: 'pm', args: {} }] }))],
+      ['out-of-range fret', alterFirstBeat(first => ({
+        ...first,
+        notes: first.notes.map((note, index) => index === 0 ? { ...note, fret: 25 } : note),
+      }))],
+      ['arpeggio-like single-note attack', alterFirstBeat(first => ({ ...first, notes: tabNotes(['x', 'x', 'x', 'x', 'x', 0]) }))],
+    ];
+    for (const [name, score] of disallowed) {
+      const result = planGp78ChordStrum(score);
+      assert.strictEqual(result.ok, false, `${name} must reject the whole score`);
+      assert.ok(!('score' in result), `${name} must not return a partial score`);
+    }
+  });
+
   it('adapts only one safe first-beat lyric and rejects authored skips', () => {
     const syllable = { text: 'home', hyphenToNext: false, extend: false };
     const safe = strumScore([
