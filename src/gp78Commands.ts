@@ -6,7 +6,7 @@ import { guitarDslToInterchange, hasBlockingLoss, interchangeToGuitarDsl, mergeL
 import { parseGuitarDsl } from './compiler';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { getMessages, type SupportedLocale } from './i18n';
-import { exportGp78, importGp78, inspectGp78 } from './gp78';
+import { exportGp78, importGp78, inspectGp78, planGp78ChordStrum } from './gp78';
 
 const IMPORT_COMMAND = 'guitardsl.importGuitarPro';
 const EXPORT_COMMAND = 'guitardsl.exportGuitarPro';
@@ -22,7 +22,7 @@ function resultError(result: { readonly errors: readonly { readonly code: string
 }
 
 function lossDetails(loss: import('./interchange').InterchangeLossReport): string {
-  return loss.entries.map(entry => `• ${entry.category}: ${entry.detail}`).join('\n');
+  return loss.entries.map(entry => `• ${entry.category} ${entry.path}: ${entry.detail}`).join('\n');
 }
 
 async function confirmLoss(message: string, detail: string, continueLabel: string, cancelLabel: string): Promise<boolean> {
@@ -72,6 +72,24 @@ async function importCommand(locale: SupportedLocale, requestedUri?: vscode.Uri)
       if (!choice) return;
       selectedTrack = choice.track;
     }
+    const modeItems = [
+      {
+        label: msgs.gp78ImportFaithful,
+        description: msgs.gp78ImportFaithfulDescription,
+        mode: 'faithful' as const,
+      },
+      {
+        label: msgs.gp78ImportOptimize,
+        description: msgs.gp78ImportOptimizeDescription,
+        mode: 'optimize' as const,
+      },
+    ];
+    const selectedMode = await vscode.window.showQuickPick(modeItems, {
+      placeHolder: msgs.gp78ImportModePrompt,
+      ignoreFocusOut: true,
+    });
+    if (!selectedMode) return;
+
     const imported = importGp78(bytes, selectedTrack.id);
     if (!imported.ok) {
       void vscode.window.showErrorMessage(msgs.gp78Failed(resultError(imported)));
@@ -81,7 +99,26 @@ async function importCommand(locale: SupportedLocale, requestedUri?: vscode.Uri)
       void vscode.window.showErrorMessage(msgs.gp78Failed('Unsupported musical semantics cannot be approved away.'));
       return;
     }
-    const converted = interchangeToGuitarDsl(imported.value, imported.loss);
+
+    let score = imported.value;
+    let baseLoss = imported.loss;
+    if (selectedMode.mode === 'optimize') {
+      const plan = planGp78ChordStrum(imported.value);
+      if (!plan.ok) {
+        const fallback = await vscode.window.showWarningMessage(
+          msgs.gp78ImportOptimizeUnavailable(plan.reason, `${plan.path}: ${plan.detail}`),
+          { modal: true },
+          msgs.gp78ImportUseFaithful,
+          msgs.gp78Cancel,
+        );
+        if (fallback !== msgs.gp78ImportUseFaithful) return;
+      } else {
+        score = plan.score;
+        baseLoss = mergeLossReports(imported.loss, plan.loss);
+      }
+    }
+
+    const converted = interchangeToGuitarDsl(score, baseLoss);
     if (!converted.ok) {
       void vscode.window.showErrorMessage(msgs.gp78Failed(converted.errors.map(error => `${error.code} ${error.path}: ${error.detail}`).join('\n')));
       return;
@@ -92,7 +129,7 @@ async function importCommand(locale: SupportedLocale, requestedUri?: vscode.Uri)
       void vscode.window.showErrorMessage(msgs.gp78Failed(`Generated GuitarDSL has ${parseErrors.length} parse error(s).`));
       return;
     }
-    const loss = mergeLossReports(imported.loss, converted.loss);
+    const loss = mergeLossReports(baseLoss, converted.loss);
     if (loss.entries.length > 0 && !await confirmLoss(msgs.gp78ImportLossConfirm(loss.entries.length), lossDetails(loss), msgs.gp78Continue, msgs.gp78Cancel)) return;
     const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: converted.value });
     await vscode.window.showTextDocument(document, { preview: false });

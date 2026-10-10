@@ -26,6 +26,13 @@ export interface Messages {
   dialogSavePdfTitle: string;
   previewTitle: string;
   gp78ImportTrackPrompt: string;
+  gp78ImportModePrompt: string;
+  gp78ImportFaithful: string;
+  gp78ImportFaithfulDescription: string;
+  gp78ImportOptimize: string;
+  gp78ImportOptimizeDescription: string;
+  gp78ImportOptimizeUnavailable: (reason: string, detail: string) => string;
+  gp78ImportUseFaithful: string;
   gp78ImportNoEligibleTracks: string;
   gp78ImportLossConfirm: (count: number) => string;
   gp78ExportLossConfirm: (count: number) => string;
@@ -190,6 +197,13 @@ export const MESSAGES_JA: Messages = {
   dialogSavePdfTitle: 'GuitarDSL スコアをPDFとして保存',
   previewTitle: 'GuitarDSL スコアプレビュー',
   gp78ImportTrackPrompt: '取り込むギタートラックを選択してください',
+  gp78ImportModePrompt: 'インポート方法を選択してください',
+  gp78ImportFaithful: '原曲に忠実にインポート',
+  gp78ImportFaithfulDescription: '現在のインポート動作を維持します（既定）',
+  gp78ImportOptimize: 'コードストラム用に最適化',
+  gp78ImportOptimizeDescription: '適格なコードストラムをコード記号とリズムスラッシュに変換します',
+  gp78ImportOptimizeUnavailable: (reason: string, detail: string) => `コードストラム最適化を利用できません（${reason}）。\n${detail}\n\n忠実なインポートに切り替えますか？`,
+  gp78ImportUseFaithful: '忠実にインポート',
   gp78ImportNoEligibleTracks: '1スタッフ・6弦ギター・TAB声部1に対応するトラックがありません。',
   gp78ImportLossConfirm: (count: number) => `インポート時に${count}件の情報を省略または補完します。内容を確認して続行しますか？`,
   gp78ExportLossConfirm: (count: number) => `エクスポート時に${count}件の表示または音色情報を省略します。続行しますか？`,
@@ -395,6 +409,13 @@ export const MESSAGES_EN: Messages = {
   dialogSavePdfTitle: 'Save GuitarDSL Score as PDF',
   previewTitle: 'GuitarDSL Score Preview',
   gp78ImportTrackPrompt: 'Select the guitar track to import',
+  gp78ImportModePrompt: 'Choose how to import this track',
+  gp78ImportFaithful: 'Faithful import',
+  gp78ImportFaithfulDescription: 'Keep the current import behavior (default)',
+  gp78ImportOptimize: 'Optimize for chord strumming',
+  gp78ImportOptimizeDescription: 'Convert eligible chord strums to chord symbols and rhythm slashes',
+  gp78ImportOptimizeUnavailable: (reason: string, detail: string) => `Chord-strum optimization is unavailable (${reason}).\n${detail}\n\nSwitch to faithful import?`,
+  gp78ImportUseFaithful: 'Import faithfully',
   gp78ImportNoEligibleTracks: 'No track supports one staff, six strings, and TAB voice 1.',
   gp78ImportLossConfirm: (count: number) => `Import will omit or infer ${count} items. Review the reported details and continue?`,
   gp78ExportLossConfirm: (count: number) => `Export will omit ${count} display or instrument-sound items. Continue?`,

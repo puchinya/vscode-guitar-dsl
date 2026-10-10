@@ -5,6 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #97](https://github.com/puchinya/vscode-guitar-dsl/issues/97)
+- Related Issue: [Issue #124](https://github.com/puchinya/vscode-guitar-dsl/issues/124)
 - Related specification: [Extension specification §3.15–§3.16](../specs/extension.md)
 
 ## Context and goals
@@ -13,7 +14,7 @@ This design defines the pure Guitar Pro 7/8 adapter around the public `Interchan
 
 The supported musical boundary is one selected six-string guitar track, one staff, and TAB voice 1. The adapter must preserve supported score meaning and must stop when the selected track contains musical meaning it cannot represent. Non-musical sound and layout settings may be omitted only through the typed loss policies owned by the adapter.
 
-The implementation contract and the public behavior are owned by [Issue #97](https://github.com/puchinya/vscode-guitar-dsl/issues/97) and [the extension specification](../specs/extension.md#315-guitardslimportguitarpro). The native source-format evidence uses self-authored files saved by Guitar Pro 8.1.5. At the user's direction, verification in the Guitar Pro 7 application is excluded from acceptance; GP7 import/version handling and GP7-compatible export remain in scope and require automated fixture and self-roundtrip coverage. Guitar Pro 8 native writer open/re-save/reimport remains a required acceptance check.
+The GP7/8 adapter contract is owned by [Issue #97](https://github.com/puchinya/vscode-guitar-dsl/issues/97); the optional chord-strum import plan is owned by [Issue #124](https://github.com/puchinya/vscode-guitar-dsl/issues/124). Public import behavior remains in [the extension specification](../specs/extension.md#315-guitardslimportguitarpro). The native source-format evidence uses self-authored files saved by Guitar Pro 8.1.5. At the user's direction, verification in the Guitar Pro 7 application is excluded from acceptance; GP7 import/version handling and GP7-compatible export remain in scope and require automated fixture and self-roundtrip coverage. Guitar Pro 8 native writer open/re-save/reimport remains a required acceptance check for the GP7 writer.
 
 ## Requirements traceability
 
@@ -22,6 +23,7 @@ The implementation contract and the public behavior are owned by [Issue #97](htt
 | `guitardsl.importGuitarPro` and `guitardsl.exportGuitarPro` behavior | [Extension specification §3.15–§3.16](../specs/extension.md) and `src/gp78Commands.ts` |
 | GP container validation, selected GPIF extraction, XML parsing, and reference resolution | `src/gp78/archive.ts`, `xml.ts`, and `references.ts` |
 | Track eligibility, typed loss handling, import, and export | `tracks.ts`, `compatibility.ts`, `import.ts`, and `export.ts` |
+| Optional whole-score chord-strum optimization after selected-track import | [Issue #124](https://github.com/puchinya/vscode-guitar-dsl/issues/124), `src/gp78/chordStrum.ts`, and `src/gp78Commands.ts` |
 | Canonical interchange and GuitarDSL serialization | `src/interchange/index.ts` only |
 | Issue #97 fixture facts and native compatibility evidence | [Compatibility matrix](../status/evidence/issue-97/compatibility-matrix.md) |
 
@@ -37,6 +39,8 @@ flowchart LR
   REF --> TRACK[Track eligibility and loss policy]
   TRACK --> IR[InterchangeScore v1]
   IR --> DSL[Canonical GuitarDSL serializer and parser]
+  IR --> PLAN[Optional chord-strum planner]
+  PLAN --> DSL
   IR --> WRITE[GP7-compatible writer]
   WRITE --> SELF[Reader semantic round trip]
   UI[VS Code command adapter] --> ARCH
@@ -46,7 +50,7 @@ flowchart LR
 
 `inspectGp78(bytes)` validates the container and GPIF version and returns stable track summaries. `importGp78(bytes, selectedTrackId)` converts only the explicitly selected eligible track to `InterchangeScore`. `exportGp78(score)` produces a deterministic `.gp` byte array and accepts it only when the same reader can recover semantically equal interchange data.
 
-The command adapter owns document resolution, workspace file reads, QuickPick and loss confirmation, opening an Untitled document, save-dialog timing, and exclusive local-file publication. It snapshots the source text and document version before export preflight. It must not use temporary Preview transformations.
+The command adapter owns document resolution, workspace file reads, track and import-mode QuickPicks, explicit faithful fallback, loss confirmation, opening an Untitled document, save-dialog timing, and exclusive local-file publication. For import, it reads the selected file once, inspects eligible tracks, asks for a mode after track selection and before `importGp78`, then calls `importGp78` once. Cancelling the mode creates no document. It snapshots the source text and document version before export preflight. It must not use temporary Preview transformations or interpret raw GPIF.
 
 ## Data flow and ownership
 
@@ -83,6 +87,22 @@ These observations establish GP8 reader inputs only for the recorded examples. T
 6. `compatibility.ts` blocks unsupported music in the selected track. A non-selected track may be reported as `droppedByPolicy` only after the user selects a single track. Known non-musical RSE or display settings can be omitted under named policies. A missing initial tempo may be inferred as 120 BPM with an `inferred` loss entry.
 7. `import.ts` builds `InterchangeScore` v1. The command adapter invokes the canonical interchange serializer, reparses the DSL, requires zero errors, reports non-blocking losses, and opens the Untitled document only after approval.
 
+### Optional chord-strum optimization (Issue #124)
+
+`src/gp78/chordStrum.ts` exports the pure synchronous `planGp78ChordStrum(score)` API. It consumes only a validated `InterchangeScore` v1 and returns a discriminated `Gp78StrumPlan`: a successful immutable transformed score, merged planner losses, and counts; or an unavailable reason with a stable measure/beat path and detail. An unavailable result never contains a partial score. The planner imports neither VS Code nor GPIF code, performs no I/O, and is deterministic.
+
+Eligibility is whole-score. Reject independent melody, additional voices, mixed or unsupported notes, dead notes, ties, nonempty note/beat effects, incompatible rhythm, and any ambiguous harmony. Each sounding TAB beat must contain at least three distinct pitched strings with valid frets, and each sounding measure must contain at least two simultaneous chord attacks; rests remain rests. Exact beat durations, including rests, must sum to `expectedBeats` in each measure. Preserve empty final and chord-only measures without creating attacks. Limit work to 2,000 measures and 20,000 TAB beats.
+
+Build each six-string voicing from the source TAB positions, using `x` for unplayed strings. Chord naming delegates only to the existing `InstrumentModel` and `detectChordNames(voicing, 32, model)`. A source chord name is accepted only at a matching attack boundary with compatible pitch class, quality, and bass. An unlabeled attack is inferred only when exactly one musically exact candidate remains; ranking alone never resolves ambiguity. A contradiction or unmatched explicit chord rejects optimization for the whole score.
+
+The successful plan deep-copies source metadata, sections, events, barlines, navigation, and chord definitions. It emits one explicit-duration rhythm event for every original sounding or rest beat, keeps the exact duration and attack boundary, places only nonredundant chord names at those boundaries with `chordPlacementMode: inline`, removes `tabVoices` after complete preflight, and sets `showRhythm` to true. It invents no pitch, note, direction, ghost, tie, technique, or lyric melody. A false source `showRhythm` is reported as a named display-policy loss.
+
+Lyrics are representable only when a measure has one verse and exactly one safe syllable on its first sounding beat at offset zero, with no other slot, skip, omission, hyphen, extension, or conflicting measure lyric. The planner moves that exact text to the same measure's `measureLyric` and reports the granularity change as an `approximated` loss. Every other lyric layout returns `unsupportedLyrics`; lyric text is never discarded or attached to rhythm slashes. GuitarDSL grammar and InterchangeScore schema v1 do not change.
+
+Planner loss identities are stable: `gp78.strum.drop-tab-note-details.v1` (`optimizedTabToRhythm`), `gp78.strum.unique-chord-inference.v1` (`inferredStrumChord`), `gp78.strum.force-rhythm-visible.v1` (`enabledRhythmDisplay`), and `gp78.strum.measure-lyric.v1` (`adaptedMeasureLyric`). Details include exact measure/beat paths, removed note and attack counts, each inferred onset, and each measure lyric approximation. Merge importer, planner, and serializer reports through `mergeLossReports`; unsupported source semantics remain blocking.
+
+For either import entry point, the user selects the file, eligible track if needed, then Faithful import (first/default) or Optimize chord strumming. Read and convert the GP file once. If optimization is unavailable, show its reason and offer only an explicit Faithful import or cancel; never silently fall back or optimize part of a mixed score. Convert the selected result through the canonical writer, require zero parser errors and semantic/play-order round-trip equality, then show the complete merged losses before opening one Untitled document. Any selection/loss cancellation, invalid IR, unsupported optimization, conversion failure, or semantic mismatch creates no document and does not change the source GP bytes. Existing busy/finally cleanup prevents reentrant duplicate imports.
+
 ### Export
 
 `export.ts` consumes only `InterchangeScore` v1 and creates one GP7-compatible `.gp` archive. It emits section titles as CDATA with an empty `Section/Letter`, plus double-bar markers; unsupported or unrepresentable values, including final-bar markers, fail before output. `exportGp78` runs the generated bytes through the same archive reader, imports the written track, and compares normalized score meaning—including section starts, barline flags, repeat endings, and navigation marks—before returning bytes. This self-check complements the required Guitar Pro 8 native open/re-save check. Guitar Pro 7 native-app verification is excluded by Issue #97's revised contract.
@@ -110,6 +130,8 @@ Pure APIs return the contract's discriminated `Gp78Result<T>` with stable error 
 
 Container failures, invalid XML, invalid GPIF references, unsupported selected-track music, invalid interchange data, and self-round-trip mismatches stop the operation. Non-blocking, named losses are shown before import document creation or export file selection. Cancellation creates no document or output file. Export aborts if the document version changes while the user is choosing a destination. Existing destination bytes remain unchanged under both pre-existing-file and concurrent-creation failures.
 
+For Issue #124, an unavailable chord-strum plan is a visible reason and requires an explicit Faithful import choice or cancellation. Unsupported music semantics remain blocking and cannot be approved by the user. A cancellation at file, track, mode, fallback, or loss confirmation creates no partial document.
+
 No unknown music element, missing reference, invalid numeric value, or malformed field receives a guessed default. Conflicting score-view notation flags for the selected track, free-time bars, and non-empty master-bar fermatas stop import. The only default in v1 is the contract's explicit 120 BPM inference, represented in the loss report.
 
 ## Alternatives considered
@@ -124,6 +146,6 @@ No unknown music element, missing reference, invalid numeric value, or malformed
 
 ## Verification strategy
 
-The native source-format spike is recorded in [the compatibility matrix](../status/evidence/issue-97/compatibility-matrix.md), with self-authored GP8 samples in `tests/fixtures/gp78/`. Unit tests cover archive limits and malformed archives, reference resolution, import/export semantic mapping, loss blocking, and deterministic output. Extension tests cover command registration, explicit multi-track choice, cancellation, loss approval, and safe file publication.
+The native source-format spike is recorded in [the compatibility matrix](../status/evidence/issue-97/compatibility-matrix.md), with self-authored GP8 samples in `tests/fixtures/gp78/`. Unit tests cover archive limits and malformed archives, reference resolution, import/export semantic mapping, loss blocking, and deterministic output. Issue #124 adds a self-authored clear strum fixture plus GP7-format automated fixtures for the optimizer, including all explicit eligibility, inference, lyric, loss, resource, immutability, and semantic round-trip boundaries. Extension tests cover command registration, track/mode selection, explicit fallback, cancellation before document creation, loss approval, and safe file publication. GP7 native-application verification is excluded and must not be reported as passed.
 
 Before merge, run the verification hooks from `.agent/project.json`, `npm run check:help`, `npm run check:ai`, the required unit and extension tests, and the configured delivery checks at the exact PR head. Automated fixtures must exercise all F01–F10 import/export cases, compare semantic roundtrips for representable meaning, and verify contract-defined loss/blocking behavior. The final native gate opens, displays, re-saves, and re-imports writer output in Guitar Pro 8 and compares score meaning. Record GP7 native-app verification as `NOT RUN / EXCLUDED`; it is not a completion blocker.

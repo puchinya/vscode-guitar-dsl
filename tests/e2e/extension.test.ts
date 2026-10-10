@@ -116,17 +116,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
   test('GP import opens an Untitled GuitarDSL source that can be exported, with safe cancel and edit handling', async () => {
     const fixturePath = path.resolve(__dirname, '../../../tests/fixtures/gp78/F01-standard-4-4.gp');
+    const optimizedFixturePath = path.resolve(__dirname, '../../../tests/fixtures/gp78/F11-chord-strum-gp8.gp');
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'guitardsl-gp78-e2e-'));
     const successfulTarget = path.join(tempDir, 'roundtrip.gp');
     const cancelledTarget = path.join(tempDir, 'cancelled.gp');
     const changedTarget = path.join(tempDir, 'changed.gp');
     const windowApi = vscode.window as unknown as Record<string, unknown>;
     const originalShowOpenDialog = windowApi.showOpenDialog;
+    const originalShowQuickPick = windowApi.showQuickPick;
     const originalShowSaveDialog = windowApi.showSaveDialog;
     const originalShowWarningMessage = windowApi.showWarningMessage;
     const originalShowErrorMessage = windowApi.showErrorMessage;
     const warnings: string[] = [];
     const errors: string[] = [];
+    const importModesSeen: string[][] = [];
+    let nextImportMode: 'faithful' | 'optimize' | 'cancel' = 'cancel';
+    let warningChoiceIndex = 0;
     const newDocs = () => vscode.workspace.textDocuments.filter(document => document.isUntitled && document.languageId === 'guitardsl');
     try {
       windowApi.showOpenDialog = async () => undefined;
@@ -137,16 +142,55 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       windowApi.showWarningMessage = async (...args: unknown[]) => {
         warnings.push(String(args[0] ?? ''));
         const choices = args.slice(1).filter((value): value is string => typeof value === 'string');
-        return choices[0];
+        return choices[warningChoiceIndex];
+      };
+      windowApi.showQuickPick = async (items: unknown) => {
+        const choices = Array.isArray(items) ? items as Array<{ label: string; mode?: 'faithful' | 'optimize' }> : [];
+        if (!choices.some(choice => choice.mode)) return undefined;
+        importModesSeen.push(choices.filter(choice => choice.mode).map(choice => choice.mode!));
+        if (nextImportMode === 'cancel') return undefined;
+        return choices.find(choice => choice.mode === nextImportMode);
       };
       windowApi.showErrorMessage = async (...args: unknown[]) => {
         errors.push(String(args[0] ?? ''));
         return undefined;
       };
+      const beforeModeCancel = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforeModeCancel.has(uri)), [], 'Cancelling the mode QuickPick must not create a document');
+      assert.deepStrictEqual(importModesSeen[0], ['faithful', 'optimize'], 'Faithful import must be the first/default option');
+
+      nextImportMode = 'optimize';
+      warningChoiceIndex = 1;
+      const beforeFallbackCancel = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforeFallbackCancel.has(uri)), [], 'Cancelling an unavailable optimization must not create a document');
+      assert.ok(warnings.some(message => message.includes('optimization is unavailable') || message.includes('最適化を利用できません')), 'Unavailable optimization should explain the failed preflight');
+
+      warningChoiceIndex = 0;
       const beforeImport = new Set(newDocs().map(document => document.uri.toString()));
       await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
       const imported = newDocs().find(document => !beforeImport.has(document.uri.toString()));
-      assert.ok(imported, 'Import should open a new Untitled GuitarDSL document');
+      assert.ok(imported, 'Explicitly choosing faithful import after an unavailable plan should open one Untitled GuitarDSL document');
+
+      let resolvePendingMode: ((mode: 'faithful' | 'optimize') => void) | undefined;
+      let signalModePicker: (() => void) | undefined;
+      const modePickerStarted = new Promise<void>(resolve => { signalModePicker = resolve; });
+      const quickPickHandler = windowApi.showQuickPick;
+      windowApi.showQuickPick = async (items: unknown) => new Promise(resolve => {
+        const choices = Array.isArray(items) ? items as Array<{ mode?: 'faithful' | 'optimize' }> : [];
+        resolvePendingMode = mode => resolve(choices.find(choice => choice.mode === mode));
+        signalModePicker?.();
+      });
+      const pendingImport = vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      await modePickerStarted;
+      const warningCountBeforeImportReentry = warnings.length;
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(fixturePath));
+      assert.strictEqual(warnings.length, warningCountBeforeImportReentry + 1, 'A concurrent import while mode selection is open should be rejected as busy');
+      assert.ok(warnings.at(-1)?.includes('already running') || warnings.at(-1)?.includes('実行中'), 'The reentrant import should show the busy explanation');
+      resolvePendingMode?.('faithful');
+      await pendingImport;
+      windowApi.showQuickPick = quickPickHandler;
 
       let resolveSaveDialog: ((uri: vscode.Uri | undefined) => void) | undefined;
       let signalSaveDialog: (() => void) | undefined;
@@ -178,8 +222,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await vscode.commands.executeCommand('guitardsl.exportGuitarPro', imported.uri);
       await assert.rejects(fs.stat(changedTarget));
       assert.ok(errors.some(message => message.includes('changed while export was waiting')));
+
+      nextImportMode = 'optimize';
+      warningChoiceIndex = 1;
+      const optimizedSourceBefore = await fs.readFile(optimizedFixturePath);
+      const beforeLossCancel = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(optimizedFixturePath));
+      assert.deepStrictEqual(newDocs().map(document => document.uri.toString()).filter(uri => !beforeLossCancel.has(uri)), [], 'Cancelling combined optimization losses must not create a document');
+
+      warningChoiceIndex = 0;
+      const beforeOptimizedImport = new Set(newDocs().map(document => document.uri.toString()));
+      await vscode.commands.executeCommand('guitardsl.importGuitarPro', vscode.Uri.file(optimizedFixturePath));
+      const optimized = newDocs().find(document => !beforeOptimizedImport.has(document.uri.toString()));
+      assert.ok(optimized, 'Approved optimized import should open one Untitled GuitarDSL document');
+      assert.ok(optimized?.getText().includes('| C 4 C 4 C 4 C 4 |'), 'Optimized output should contain four exact C rhythm attacks');
+      assert.ok(!optimized?.getText().includes('TAB'), 'Optimized output should not retain the source TAB staff');
+      assert.ok(warnings.some(message => message.includes('Import will omit or infer') || message.includes('インポート時に')), 'Optimized import must show the combined loss summary before creating the document');
+      assert.deepStrictEqual(await fs.readFile(optimizedFixturePath), optimizedSourceBefore, 'The GP8 source fixture must remain byte-identical');
     } finally {
       windowApi.showOpenDialog = originalShowOpenDialog;
+      windowApi.showQuickPick = originalShowQuickPick;
       windowApi.showSaveDialog = originalShowSaveDialog;
       windowApi.showWarningMessage = originalShowWarningMessage;
       windowApi.showErrorMessage = originalShowErrorMessage;
