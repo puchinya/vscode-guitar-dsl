@@ -133,4 +133,42 @@ suite("Audio MIR WASM build tool selection", () => {
       fixture.cleanup();
     }
   });
+
+  it("reports actionable errors when wasm-pack, rustc, or cargo is missing", () => {
+    const cases = [
+      {
+        missingTool: "wasm-pack",
+        expected: /wasm-pack was not found on PATH/,
+        setup: (_fixture: ReturnType<typeof makeFixture>) => {},
+      },
+      {
+        missingTool: "rustc",
+        expected: /rustc was not found on PATH/,
+        setup: (fixture: ReturnType<typeof makeFixture>) => {
+          writeExecutable(path.join(fixture.bin, "wasm-pack"), "#!/bin/sh\nexit 0\n");
+        },
+      },
+      {
+        missingTool: "cargo",
+        expected: /cargo was not found on PATH/,
+        setup: (fixture: ReturnType<typeof makeFixture>) => {
+          writeExecutable(path.join(fixture.bin, "wasm-pack"), "#!/bin/sh\nexit 0\n");
+          writeExecutable(path.join(fixture.bin, "rustc"), "#!/bin/sh\nif [ \"$1\" = \"--print\" ]; then printf '%s\\n' \"$FAKE_WASM_LIBDIR\"; exit 0; fi\nexit 0\n");
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const fixture = makeFixture();
+      try {
+        testCase.setup(fixture);
+        const result = fixture.run(fixture.env());
+        assert.equal(result.status, 1, `${testCase.missingTool}: ${result.stdout}\n${result.stderr}`);
+        assert.match(result.stderr, testCase.expected);
+        assert.equal(existsSync(fixture.toolLog), false);
+      } finally {
+        fixture.cleanup();
+      }
+    }
+  });
 });
