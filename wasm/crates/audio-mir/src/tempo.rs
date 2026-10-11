@@ -234,10 +234,9 @@ fn tempo_confidence(candidates: &[Candidate], chosen_index: usize) -> f64 {
     })
 }
 
-/// Estimates tempo and beats; fails with `NO_STABLE_BEAT` when fewer than 8 beats
-/// or no positive-scoring path exists.
-pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
-    let mut cands: Vec<Candidate> = tempo_candidates(onset, fps)
+/// Builds valid scored Classic tempo candidates in the original lag order.
+fn scored_tempo_candidates(onset: &[f32], fps: f64) -> Vec<Candidate> {
+    tempo_candidates(onset, fps)
         .into_iter()
         .filter_map(|lag| {
             let (beats, score) = beat_path(onset, lag)?;
@@ -248,7 +247,13 @@ pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
             let bpm = 60.0 * fps * (beats.len() - 1) as f64 / span;
             Some(Candidate { bpm, beats, score })
         })
-        .collect();
+        .collect()
+}
+
+/// Estimates tempo and beats; fails with `NO_STABLE_BEAT` when fewer than 8 beats
+/// or no positive-scoring path exists.
+pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
+    let mut cands = scored_tempo_candidates(onset, fps);
     if cands.is_empty() {
         return Err(MirError::NoStableBeat);
     }
@@ -376,18 +381,7 @@ mod tests {
         assert!((0.0..=1.0).contains(&bt.confidence));
 
         let onset = robust_normalize(&smooth3(&feats.percussive_flux));
-        let candidates: Vec<Candidate> = tempo_candidates(&onset, feats.rhythm_fps)
-            .into_iter()
-            .filter_map(|lag| {
-                let (beats, score) = beat_path(&onset, lag)?;
-                if beats.len() < MIN_BEATS || !score.is_finite() || score <= 0.0 {
-                    return None;
-                }
-                let span = (beats[beats.len() - 1] - beats[0]) as f64;
-                let bpm = 60.0 * feats.rhythm_fps * (beats.len() - 1) as f64 / span;
-                Some(Candidate { bpm, beats, score })
-            })
-            .collect();
+        let candidates = scored_tempo_candidates(&onset, feats.rhythm_fps);
         let chosen_index = candidates
             .iter()
             .position(|candidate| candidate.beats == bt.beats && candidate.bpm == bt.bpm)
