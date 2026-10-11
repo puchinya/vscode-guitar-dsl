@@ -1,5 +1,7 @@
 import * as assert from 'assert';
 import { computeCodeActionHints, planMusicCodeAction } from '../../src/codeActions';
+import { analyzeRepeatedFragmentTokens, MAX_REPEATED_FRAGMENT_TOKENS } from '../../src/codeActions/analysis';
+import { SelectedToken } from '../../src/codeActions/sourceIndex';
 import { parseGuitarDsl } from '../../src/compiler';
 import { SourceOffsetEdit, spliceSourceOffsets } from '../../src/sourceEdits';
 
@@ -131,6 +133,24 @@ describe('music-aware Code Action planners', () => {
     assert.strictEqual(plan(collision, 'transpose', collisionStart, collisionStart + 1, { semitones: 2 }).ok, false,
       'a custom definition at the target name is not overwritten');
 
+    const customSource = 'chord C# = 244322\n| C# |\n';
+    const customSourceStart = customSource.lastIndexOf('C#');
+    assert.strictEqual(plan(customSource, 'enharmonic', customSourceStart, customSourceStart + 2).ok, false,
+      'a custom source chord cannot be respelled away from its voicing definition');
+    assert.strictEqual(plan(customSource, 'normalizePitchNames', customSourceStart, customSourceStart + 2).ok, false,
+      'normalization cannot change a custom chord lookup key');
+    const customScore = score(customSource);
+    assert.strictEqual(customScore.usedChords.includes('C#'), true);
+    assert.deepStrictEqual(customScore.chordDefinitions[0].frets, [2, 4, 4, 3, 2, 2], 'the resolved source voicing remains available unchanged');
+
+    const normalizingCustomSource = 'chord Cmin = 244322\n| Cmin |\n';
+    const customUseStart = normalizingCustomSource.lastIndexOf('Cmin');
+    const normalizedCustom = plan(normalizingCustomSource, 'normalizePitchNames', customUseStart, customUseStart + 'Cmin'.length);
+    assert.strictEqual(normalizedCustom.ok, false, 'a normalized spelling cannot detach a use from its source custom voicing');
+    const normalizedCustomScore = score(normalizingCustomSource);
+    assert.strictEqual(normalizedCustomScore.usedChords.includes('Cmin'), true);
+    assert.deepStrictEqual(normalizedCustomScore.chordDefinitions[0].frets, [2, 4, 4, 3, 2, 2]);
+
     const labeled = 'chord C@open = x32010\n| C@open |\n';
     const labeledStart = labeled.lastIndexOf('C@open');
     assert.strictEqual(plan(labeled, 'transpose', labeledStart, labeledStart + 'C@open'.length, { semitones: 1 }).ok, false,
@@ -234,6 +254,24 @@ describe('music-aware Code Action planners', () => {
       'duration changes require an authored duration');
   });
 
+  it('preserves parsed beats for unselected inherited melody notes', () => {
+    const beatSummary = (source: string) => (parseGuitarDsl(source).measures[0].melody ?? [])
+      .map(note => `${note.beats.n}/${note.beats.d}`);
+    const source = '| C |\nmel: | c4/4 d e f |\n';
+    assert.deepStrictEqual(beatSummary(source), ['1/1', '1/1', '1/1', '1/1']);
+    const start = source.indexOf('c4/4');
+    const rejected = plan(source, 'doubleDuration', start, start + 'c4/4'.length);
+    assert.strictEqual(rejected.ok, false, 'the inherited d/e/f notes would otherwise double too');
+    assert.deepStrictEqual(beatSummary(source), ['1/1', '1/1', '1/1', '1/1'], 'rejected plans leave parsed source semantics unchanged');
+
+    const explicit = '| C |\nmel: | c4/4 d/4 e/4 f/4 |\n';
+    const explicitStart = explicit.indexOf('c4/4');
+    const accepted = plan(explicit, 'doubleDuration', explicitStart, explicitStart + 'c4/4'.length);
+    assert.ok(accepted.ok, accepted.ok ? '' : accepted.code);
+    assert.deepStrictEqual(beatSummary(explicit), ['1/1', '1/1', '1/1', '1/1']);
+    assert.deepStrictEqual(beatSummary(accepted.text), ['2/1', '1/1', '1/1', '1/1'], 'only the selected note duration changes');
+  });
+
   it('offers bounded hints and only removes an unused definition without a trailing comment', () => {
     const source = 'chord C@unused = x32010\n| G 4.d 8.u 4.d 8.u |\n| D 4.d 8.u 4.d 8.u |\n';
     const parsed = score(source);
@@ -263,10 +301,47 @@ describe('music-aware Code Action planners', () => {
     assert.strictEqual(planMusicCodeAction(used, usedParsed, { kind: 'removeUnusedChordDefinition', line: activeDefinition!.line }).ok, false,
       'active chord definitions cannot be removed');
 
+    const duplicate = 'chord C@unused = x32010\nchord C@unused = x32010\n| G |\n';
+    const duplicateScore = score(duplicate);
+    assert.ok(duplicateScore.diagnostics.some(diagnostic => diagnostic.code === 'duplicateChordDefinition'));
+    assert.ok(!computeCodeActionHints(duplicate, duplicateScore).some(hint => hint.kind === 'unusedChordDefinition'),
+      'the first definition participating in a duplicate warning receives no unused hint');
+    const firstDefinition = duplicateScore.sourceDefinitions?.find(definition => definition.kind === 'chord');
+    assert.ok(firstDefinition);
+    assert.strictEqual(planMusicCodeAction(duplicate, duplicateScore, { kind: 'removeUnusedChordDefinition', line: firstDefinition!.line }).ok, false,
+      'a duplicate chord key cannot be deleted automatically');
+
     const invalid = '| not-a-chord |\n';
     assert.deepStrictEqual(computeCodeActionHints(invalid, parseGuitarDsl(invalid)), [], 'parser errors suppress both Hints');
 
     const manyUnused = `${Array.from({ length: 41 }, (_, index) => `chord C@unused${index} = x32010`).join('\n')}\n| C |\n`;
     assert.strictEqual(computeCodeActionHints(manyUnused, score(manyUnused)).length, 40, 'diagnostics remain capped at 40');
+  });
+
+  it('bounds repeated-fragment analysis to 3,000 tokens with many distinct windows', () => {
+    const build = (texts: string[]): { source: string; tokens: SelectedToken[] } => {
+      let source = '';
+      const tokens: SelectedToken[] = [];
+      for (const [index, text] of texts.entries()) {
+        if (index > 0) source += ' ';
+        const start = source.length;
+        source += text;
+        tokens.push({
+          token: { line: 0, startCol: start, endCol: source.length, text, kind: 'rhythm', cellId: 'cell' },
+          span: { start, end: source.length }
+        });
+      }
+      return { source, tokens };
+    };
+    const distinct = build(Array.from({ length: MAX_REPEATED_FRAGMENT_TOKENS }, (_, index) => `token${index}`));
+    assert.deepStrictEqual(analyzeRepeatedFragmentTokens(distinct.source, distinct.tokens), [],
+      'many distinct windows are indexed without finding a false repetition');
+
+    const tail = build([
+      ...Array.from({ length: MAX_REPEATED_FRAGMENT_TOKENS }, (_, index) => `unique${index}`),
+      'late-a', 'late-b', 'late-c', 'late-d', 'late-a', 'late-b', 'late-c', 'late-d'
+    ]);
+    assert.deepStrictEqual(analyzeRepeatedFragmentTokens(tail.source, tail.tokens), [],
+      'repetitions beyond the document token cap are not analyzed');
   });
 });

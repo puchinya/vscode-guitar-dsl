@@ -1884,12 +1884,24 @@ suite('AI integration: language model tools (Issue #80)', () => {
     const end = source.lastIndexOf('4.d') + '4.d'.length;
     const range = new vscode.Range(doc.positionAt(start), doc.positionAt(end));
     const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      'vscode.executeCodeActionProvider', doc.uri, range, vscode.CodeActionKind.RefactorRewrite.value
+      'vscode.executeCodeActionProvider', doc.uri, range, vscode.CodeActionKind.RefactorExtract.value
     );
     const extract = actions?.find(action => action.command?.command === 'guitardsl.applyMusicCodeAction'
       && (action.command.arguments?.[0] as { kind?: string } | undefined)?.kind === 'extractLet');
     assert.ok(extract?.command, 'the provider offers the extract action for the selected tokens');
-    await vscode.commands.executeCommand(extract.command!.command, ...(extract.command!.arguments ?? []));
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalApplyEdit = workspaceApi.applyEdit;
+    let applyCount = 0;
+    try {
+      workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+        applyCount++;
+        return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>).call(vscode.workspace, edit);
+      };
+      await vscode.commands.executeCommand(extract.command!.command, ...(extract.command!.arguments ?? []));
+    } finally {
+      workspaceApi.applyEdit = originalApplyEdit;
+    }
+    assert.strictEqual(applyCount, 1, 'one Code Action uses one WorkspaceEdit application');
     assert.match(doc.getText(), /let fragment1 = 4\.d 4\.d/);
     assert.match(doc.getText(), /\$fragment1/);
     await undoIn(doc);
@@ -1917,7 +1929,7 @@ suite('AI integration: language model tools (Issue #80)', () => {
     );
     assert.ok(quickFixes?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'removeUnusedChordDefinition'));
     const refactors = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      'vscode.executeCodeActionProvider', doc.uri, repeated.range, vscode.CodeActionKind.RefactorRewrite.value
+      'vscode.executeCodeActionProvider', doc.uri, repeated.range, vscode.CodeActionKind.RefactorExtract.value
     );
     assert.ok(refactors?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'extractLet'));
 
@@ -1930,5 +1942,212 @@ suite('AI integration: language model tools (Issue #80)', () => {
     await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
     await waitFor(() => !vscode.languages.getDiagnostics(doc.uri).some(diagnostic => String(diagnostic.code).startsWith('guitardsl.')),
       'closing the document clears Code Action Hint diagnostics');
+  });
+
+  test('R015 cursor Code Actions use extract and inline kinds and support the token cursor', async () => {
+    const source = 'let riff = 4.d 4.d\nkey: C\n| C $riff |\n| G 4.d 4.d 8.u |\n';
+    const doc = await openUntitled(source);
+    const refStart = source.indexOf('$riff');
+    const cursor = doc.positionAt(refStart + 2);
+    const inlineActions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri, new vscode.Range(cursor, cursor), vscode.CodeActionKind.RefactorInline.value
+    );
+    assert.strictEqual(inlineActions?.length, 1, 'the cursor inside a let reference discovers its inline refactor');
+    assert.strictEqual(inlineActions?.[0].kind?.value, vscode.CodeActionKind.RefactorInline.value);
+    assert.strictEqual((inlineActions?.[0].command?.arguments?.[0] as { kind?: string } | undefined)?.kind, 'inlineLet');
+
+    const selectedStart = source.indexOf('4.d', source.indexOf('| G'));
+    const selectedEnd = source.lastIndexOf('4.d') + '4.d'.length;
+    const extractActions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri,
+      new vscode.Range(doc.positionAt(selectedStart), doc.positionAt(selectedEnd)),
+      vscode.CodeActionKind.RefactorExtract.value
+    );
+    assert.ok(extractActions?.some(action => action.kind?.value === vscode.CodeActionKind.RefactorExtract.value
+      && (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'extractLet'),
+    'the selected fragment is offered under refactor.extract when context.only requests it');
+
+    const names = await openUntitled('| C# Cmin/A# |\n');
+    const sharp = names.getText().indexOf('C#') + 1;
+    const sharpCursor = names.positionAt(sharp);
+    const enharmonic = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', names.uri, new vscode.Range(sharpCursor, sharpCursor), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    assert.ok(enharmonic?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'enharmonic'),
+      'a cursor inside a chord name offers enharmonic spelling');
+    const alias = names.getText().indexOf('Cmin/A#') + 2;
+    const aliasCursor = names.positionAt(alias);
+    const normalized = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', names.uri, new vscode.Range(aliasCursor, aliasCursor), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    assert.ok(normalized?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'normalizePitchNames'),
+      'a cursor inside an alias offers normalization');
+  });
+
+  test('R016 stale and cancelled Code Actions make no edits', async () => {
+    const staleSource = '| C 4.d 4.d |\n';
+    const staleDoc = await openUntitled(staleSource);
+    const staleStart = staleSource.indexOf('C');
+    const staleActions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', staleDoc.uri,
+      new vscode.Range(staleDoc.positionAt(staleStart), staleDoc.positionAt(staleStart + 1)),
+      vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const staleTranspose = staleActions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'transpose');
+    assert.ok(staleTranspose?.command);
+    const mutate = new vscode.WorkspaceEdit();
+    mutate.insert(staleDoc.uri, staleDoc.positionAt(staleDoc.getText().length), '# changed\n');
+    assert.ok(await vscode.workspace.applyEdit(mutate));
+    const staleText = staleDoc.getText();
+
+    const windowApi = vscode.window as unknown as { showWarningMessage: unknown; showQuickPick: unknown };
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalWarn = windowApi.showWarningMessage;
+    const originalPick = windowApi.showQuickPick;
+    const originalApply = workspaceApi.applyEdit;
+    let applyCount = 0;
+    try {
+      windowApi.showWarningMessage = async () => undefined;
+      workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+        applyCount++;
+        return (originalApply as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>).call(vscode.workspace, edit);
+      };
+      await vscode.commands.executeCommand(staleTranspose.command!.command, ...(staleTranspose.command!.arguments ?? []));
+      assert.strictEqual(staleDoc.getText(), staleText, 'a command created for an older document version is rejected');
+      assert.strictEqual(applyCount, 0, 'a stale action never calls applyEdit');
+
+      const cancelSource = '| C |\n';
+      const cancelDoc = await openUntitled(cancelSource);
+      const cancelOffset = cancelSource.indexOf('C');
+      const cancelActions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        'vscode.executeCodeActionProvider', cancelDoc.uri,
+        new vscode.Range(cancelDoc.positionAt(cancelOffset), cancelDoc.positionAt(cancelOffset + 1)),
+        vscode.CodeActionKind.RefactorRewrite.value
+      );
+      const transpose = cancelActions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'transpose');
+      assert.ok(transpose?.command);
+      windowApi.showQuickPick = async () => undefined;
+      applyCount = 0;
+      await vscode.commands.executeCommand(transpose.command!.command, ...(transpose.command!.arguments ?? []));
+      assert.strictEqual(cancelDoc.getText(), cancelSource, 'cancelling the transpose QuickPick makes no edit');
+      assert.strictEqual(applyCount, 0, 'QuickPick cancellation never calls applyEdit');
+    } finally {
+      windowApi.showWarningMessage = originalWarn;
+      windowApi.showQuickPick = originalPick;
+      workspaceApi.applyEdit = originalApply;
+    }
+  });
+
+  test('R017 QuickPick version changes and concurrent applies are rejected safely', async () => {
+    const source = '| C |\n';
+    const doc = await openUntitled(source);
+    const start = source.indexOf('C');
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri,
+      new vscode.Range(doc.positionAt(start), doc.positionAt(start + 1)), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const transpose = actions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'transpose');
+    assert.ok(transpose?.command);
+
+    const windowApi = vscode.window as unknown as { showQuickPick: unknown; showWarningMessage: unknown };
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalPick = windowApi.showQuickPick;
+    const originalWarn = windowApi.showWarningMessage;
+    const originalApply = workspaceApi.applyEdit;
+    let resolvePick: ((item: vscode.QuickPickItem | undefined) => void) | undefined;
+    let pickCalls = 0;
+    let applyCalls = 0;
+    try {
+      windowApi.showWarningMessage = async () => undefined;
+      windowApi.showQuickPick = (items: vscode.QuickPickItem[]) => {
+        pickCalls++;
+        return new Promise<vscode.QuickPickItem | undefined>(resolve => { resolvePick = resolve; });
+      };
+      workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+        applyCalls++;
+        return (originalApply as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>).call(vscode.workspace, edit);
+      };
+      const pending = vscode.commands.executeCommand(transpose.command!.command, ...(transpose.command!.arguments ?? []));
+      for (let i = 0; i < 100 && pickCalls === 0; i++) await settle(5);
+      assert.strictEqual(pickCalls, 1, 'the first transpose action opens one picker');
+      const changed = new vscode.WorkspaceEdit();
+      changed.insert(doc.uri, doc.positionAt(doc.getText().length), '# changed\n');
+      assert.ok(await (originalApply as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>).call(vscode.workspace, changed));
+      const updatedText = doc.getText();
+      applyCalls = 0;
+      resolvePick?.({ label: 'one semitone', semitones: 1 } as vscode.QuickPickItem);
+      await pending;
+      assert.strictEqual(doc.getText(), updatedText, 'the picker result is discarded after the document version changes');
+      assert.strictEqual(applyCalls, 0, 'a stale QuickPick result never calls applyEdit');
+    } finally {
+      windowApi.showQuickPick = originalPick;
+      windowApi.showWarningMessage = originalWarn;
+      workspaceApi.applyEdit = originalApply;
+    }
+
+    const concurrentDoc = await openUntitled(source);
+    const concurrentActions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', concurrentDoc.uri,
+      new vscode.Range(concurrentDoc.positionAt(start), concurrentDoc.positionAt(start + 1)), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const concurrentTranspose = concurrentActions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'transpose');
+    assert.ok(concurrentTranspose?.command);
+    let finishPick: ((item: vscode.QuickPickItem | undefined) => void) | undefined;
+    let concurrentPicks = 0;
+    let concurrentApplies = 0;
+    const before = concurrentDoc.getText();
+    try {
+      windowApi.showQuickPick = () => {
+        concurrentPicks++;
+        return new Promise<vscode.QuickPickItem | undefined>(resolve => { finishPick = resolve; });
+      };
+      workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+        concurrentApplies++;
+        return (originalApply as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>).call(vscode.workspace, edit);
+      };
+      const first = vscode.commands.executeCommand(concurrentTranspose.command!.command, ...(concurrentTranspose.command!.arguments ?? []));
+      for (let i = 0; i < 100 && concurrentPicks === 0; i++) await settle(5);
+      await vscode.commands.executeCommand(concurrentTranspose.command!.command, ...(concurrentTranspose.command!.arguments ?? []));
+      assert.strictEqual(concurrentPicks, 1, 'a concurrent apply for the same URI does not open a second picker');
+      finishPick?.({ label: 'one semitone', semitones: 1 } as vscode.QuickPickItem);
+      await first;
+      assert.strictEqual(concurrentApplies, 1, 'the guarded invocation applies exactly once');
+      assert.notStrictEqual(concurrentDoc.getText(), before);
+    } finally {
+      windowApi.showQuickPick = originalPick;
+      windowApi.showWarningMessage = originalWarn;
+      workspaceApi.applyEdit = originalApply;
+    }
+    await undoIn(concurrentDoc);
+    assert.strictEqual(concurrentDoc.getText(), before, 'the one accepted invocation is one Undo step');
+  });
+
+  test('R018 applyEdit rejection leaves source unchanged and reports failure', async () => {
+    const source = '| C# |\n';
+    const doc = await openUntitled(source);
+    const start = source.indexOf('C#');
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri,
+      new vscode.Range(doc.positionAt(start), doc.positionAt(start + 2)), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const enharmonic = actions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'enharmonic');
+    assert.ok(enharmonic?.command);
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const windowApi = vscode.window as unknown as { showWarningMessage: unknown };
+    const originalApply = workspaceApi.applyEdit;
+    const originalWarn = windowApi.showWarningMessage;
+    let applyCalls = 0;
+    let warnings = 0;
+    try {
+      workspaceApi.applyEdit = async () => { applyCalls++; return false; };
+      windowApi.showWarningMessage = async () => { warnings++; return undefined; };
+      await vscode.commands.executeCommand(enharmonic.command!.command, ...(enharmonic.command!.arguments ?? []));
+      assert.strictEqual(doc.getText(), source, 'an applyEdit=false result does not mutate the document');
+      assert.strictEqual(applyCalls, 1);
+      assert.strictEqual(warnings, 1, 'rejected edits report a user-facing failure');
+    } finally {
+      workspaceApi.applyEdit = originalApply;
+      windowApi.showWarningMessage = originalWarn;
+    }
   });
 });

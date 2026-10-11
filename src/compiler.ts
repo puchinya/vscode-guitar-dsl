@@ -161,6 +161,8 @@ export interface CodeActionSourceToken {
   /** Tokens in one authored measure rhythm or one `mel:` cell share this identifier. */
   cellId: string;
   measureIndex?: number;
+  /** Parser event indexes represented by this token; melody and rhythm use their measure arrays separately. */
+  eventRange?: { collection: 'rhythm' | 'melody'; start: number; end: number };
   /** Present only when this authored token contains a parseable explicit duration. */
   duration?: {
     startCol: number;
@@ -1466,10 +1468,13 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
         if (tok.startsWith('$')) {
           // `let` fragment: fresh copies of the resolved events; the bar's inline inheritance is untouched.
-          codeActionTokens.push({ line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'letReference', cellId: `measure:${measures.length}`, measureIndex: measures.length });
+          const eventStart = rhythms.length;
+          const referenceToken: CodeActionSourceToken = { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'letReference', cellId: `measure:${measures.length}`, measureIndex: measures.length };
+          codeActionTokens.push(referenceToken);
           const fragment = useFragment(tok, lineIdx, tokCol, CTX_MEASURE);
           if (!fragment) {
             fragmentFailed = true;
+            referenceToken.eventRange = { collection: 'rhythm', start: eventStart, end: eventStart };
             continue;
           }
           for (const ev of fragment) {
@@ -1484,6 +1489,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               runningBeat = fadd(runningBeat, ev.note.beats);
             }
           }
+          referenceToken.eventRange = { collection: 'rhythm', start: eventStart, end: rhythms.length };
           continue;
         }
 
@@ -1564,6 +1570,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             codeActionTokens.push({
               line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'rhythm',
               cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              eventRange: { collection: 'rhythm', start: rhythms.length, end: rhythms.length + 1 },
               duration: {
                 startCol: durationStart, endCol: tokCol + durationToken.length,
                 text: restPrefix ? durationToken.slice(1) : durationToken, style: 'rhythm', beats: parsedDuration.beats
@@ -1583,6 +1590,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           codeActionTokens.push({
             line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'noteGroup',
             cellId: `measure:${measures.length}`, measureIndex: measures.length,
+            eventRange: { collection: 'rhythm', start: rhythms.length, end: rhythms.length + 1 },
             ...(explicitNoteDurationSpan(tok, tokCol) ? { duration: explicitNoteDurationSpan(tok, tokCol) } : {})
           });
           rhythms.push(item);
@@ -1597,6 +1605,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             codeActionTokens.push({
               line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'inlineNote',
               cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              eventRange: { collection: 'rhythm', start: rhythms.length, end: rhythms.length + 1 },
               ...(explicitNoteDurationSpan(tok, tokCol) ? { duration: explicitNoteDurationSpan(tok, tokCol) } : {})
             });
             rhythms.push(item);
@@ -1895,10 +1904,13 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           const col = cell.col + m.index;
           if (m[0].startsWith('$')) {
             // `let` fragment: fresh copies; the line's inheritance state is neither read nor changed.
-            codeActionTokens.push({ line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: 'letReference', cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx });
+            const eventStart = notes.length;
+            const referenceToken: CodeActionSourceToken = { line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: 'letReference', cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx };
+            codeActionTokens.push(referenceToken);
             const fragment = useFragment(m[0], lineIdx, col, CTX_MELODY);
             if (!fragment) {
               fragmentFailed = true;
+              referenceToken.eventRange = { collection: 'melody', start: eventStart, end: eventStart };
               continue;
             }
             for (const ev of fragment) {
@@ -1907,6 +1919,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               notes.push(note);
               melodyLocations.set(note, { line: lineIdx, startCol: col, endCol: col + m[0].length });
             }
+            referenceToken.eventRange = { collection: 'melody', start: eventStart, end: notes.length };
             continue;
           }
           if (m[0].startsWith('[')) {
@@ -1919,6 +1932,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             codeActionTokens.push({
               line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: 'melodyGroup',
               cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx,
+              eventRange: { collection: 'melody', start: notes.length - 1, end: notes.length },
               ...(explicitNoteDurationSpan(m[0], col) ? { duration: explicitNoteDurationSpan(m[0], col) } : {})
             });
             melodyLocations.set(group.note, { line: lineIdx, startCol: col, endCol: col + m[0].length });
@@ -1934,6 +1948,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           codeActionTokens.push({
             line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: parsed.isRest ? 'melodyRest' : 'melodyNote',
             cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx,
+            eventRange: { collection: 'melody', start: notes.length - 1, end: notes.length },
             ...(explicitNoteDurationSpan(m[0], col) ? { duration: explicitNoteDurationSpan(m[0], col) } : {})
           });
           melodyLocations.set(parsed, { line: lineIdx, startCol: col, endCol: col + m[0].length });
