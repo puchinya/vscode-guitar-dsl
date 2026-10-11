@@ -203,6 +203,37 @@ fn is_pair(a: f64, b: f64) -> bool {
     (ratio - 2.0).abs() <= 2.0 * PAIR_RATIO_TOLERANCE
 }
 
+fn is_equivalent_tempo(chosen_bpm: f64, candidate_bpm: f64) -> bool {
+    debug_assert!(chosen_bpm.is_finite() && chosen_bpm > 0.0);
+    debug_assert!(candidate_bpm.is_finite() && candidate_bpm > 0.0);
+    let ratio = chosen_bpm.max(candidate_bpm) / chosen_bpm.min(candidate_bpm);
+    ratio <= 1.0 + PAIR_RATIO_TOLERANCE
+        || [2.0, 3.0].into_iter().any(|multiple| {
+            let lower = multiple * (1.0 - PAIR_RATIO_TOLERANCE);
+            let upper = multiple * (1.0 + PAIR_RATIO_TOLERANCE);
+            ratio >= lower && ratio <= upper
+        })
+}
+
+/// Classic confidence is the relative score separation from the strongest independent
+/// tempo candidate. It differs from Neural interval stability; 1.0 with no independent
+/// candidate means no alternative was measured in this candidate set, not certainty.
+fn tempo_confidence(candidates: &[Candidate], chosen_index: usize) -> f64 {
+    let chosen = &candidates[chosen_index];
+    let max_independent_score = candidates
+        .iter()
+        .enumerate()
+        .filter(|(index, candidate)| {
+            *index != chosen_index && !is_equivalent_tempo(chosen.bpm, candidate.bpm)
+        })
+        .map(|(_, candidate)| candidate.score)
+        .reduce(f64::max);
+
+    max_independent_score.map_or(1.0, |score| {
+        ((chosen.score - score) / chosen.score.abs().max(EPSILON)).clamp(0.0, 1.0)
+    })
+}
+
 /// Estimates tempo and beats; fails with `NO_STABLE_BEAT` when fewer than 8 beats
 /// or no positive-scoring path exists.
 pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
@@ -242,18 +273,7 @@ pub fn track_beats(onset: &[f32], fps: f64) -> MirResult<BeatTrack> {
             break;
         }
     }
-    let chosen_score = cands[chosen].score;
-    let second = cands
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| i != chosen)
-        .map(|(_, c)| c.score)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let confidence = if second.is_finite() {
-        ((chosen_score - second) / chosen_score.abs().max(EPSILON)).clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
+    let confidence = tempo_confidence(&cands, chosen);
     let c = cands.swap_remove(chosen);
     Ok(BeatTrack {
         beats: c.beats,
@@ -324,6 +344,14 @@ mod tests {
         (feats, clicks.iter().map(|c| c.time).collect())
     }
 
+    fn candidate(bpm: f64, score: f64) -> Candidate {
+        Candidate {
+            bpm,
+            beats: Vec::new(),
+            score,
+        }
+    }
+
     fn track(feats: &Features) -> MirResult<BeatTrack> {
         let onset = robust_normalize(&smooth3(&feats.percussive_flux));
         track_beats(&onset, feats.rhythm_fps)
@@ -346,6 +374,36 @@ mod tests {
             );
         }
         assert!((0.0..=1.0).contains(&bt.confidence));
+
+        let onset = robust_normalize(&smooth3(&feats.percussive_flux));
+        let candidates: Vec<Candidate> = tempo_candidates(&onset, feats.rhythm_fps)
+            .into_iter()
+            .filter_map(|lag| {
+                let (beats, score) = beat_path(&onset, lag)?;
+                if beats.len() < MIN_BEATS || !score.is_finite() || score <= 0.0 {
+                    return None;
+                }
+                let span = (beats[beats.len() - 1] - beats[0]) as f64;
+                let bpm = 60.0 * feats.rhythm_fps * (beats.len() - 1) as f64 / span;
+                Some(Candidate { bpm, beats, score })
+            })
+            .collect();
+        let chosen_index = candidates
+            .iter()
+            .position(|candidate| candidate.beats == bt.beats && candidate.bpm == bt.bpm)
+            .expect("track result must come from its candidate set");
+        let strongest_independent = candidates
+            .iter()
+            .filter(|candidate| !is_equivalent_tempo(bt.bpm, candidate.bpm))
+            .max_by(|a, b| a.score.total_cmp(&b.score));
+        assert_eq!(bt.confidence, tempo_confidence(&candidates, chosen_index));
+        eprintln!(
+            "T06 Classic click: chosen={:.6} BPM score={:.9}; strongest independent={:?}; confidence={:.9}",
+            bt.bpm,
+            candidates[chosen_index].score,
+            strongest_independent.map(|rival| (rival.bpm, rival.score)),
+            bt.confidence
+        );
     }
 
     #[test]
@@ -402,5 +460,139 @@ mod tests {
         assert!(is_pair(93.0, 186.0));
         assert!(is_pair(186.0, 93.5));
         assert!(!is_pair(120.0, 180.0));
+    }
+
+    #[test]
+    fn tempo_equivalence_has_inclusive_symmetric_one_two_and_three_x_bands() {
+        for (ratio, expected) in [
+            (1.0, true),
+            (1.019, true),
+            (1.0 + PAIR_RATIO_TOLERANCE, true),
+            (1.021, false),
+            (2.0 * (1.0 - 0.021), false),
+            (2.0 * (1.0 - 0.019), true),
+            (2.0, true),
+            (2.0 * (1.0 + 0.019), true),
+            (2.0 * (1.0 + 0.021), false),
+            (3.0 * (1.0 - 0.021), false),
+            (3.0 * (1.0 - 0.019), true),
+            (3.0, true),
+            (3.0 * (1.0 + 0.019), true),
+            (3.0 * (1.0 + 0.021), false),
+            (1.5, false),
+        ] {
+            assert_eq!(is_equivalent_tempo(1.0, ratio), expected, "ratio {ratio}");
+            assert_eq!(
+                is_equivalent_tempo(ratio, 1.0),
+                expected,
+                "reverse ratio {ratio}"
+            );
+        }
+
+        for multiple in [2.0, 3.0] {
+            for endpoint in [1.0 - PAIR_RATIO_TOLERANCE, 1.0 + PAIR_RATIO_TOLERANCE] {
+                let ratio = multiple * endpoint;
+                assert!(is_equivalent_tempo(1.0, ratio), "boundary {ratio}");
+                assert!(is_equivalent_tempo(ratio, 1.0), "reverse boundary {ratio}");
+            }
+        }
+
+        assert!(is_equivalent_tempo(120.0, 120.0));
+        assert!(is_equivalent_tempo(120.0, 121.0));
+        assert!(is_equivalent_tempo(121.0, 120.0));
+        assert!(is_equivalent_tempo(120.318563, 119.655285));
+        assert!(is_equivalent_tempo(119.655285, 120.318563));
+        assert!(!is_equivalent_tempo(120.0, 124.0));
+        assert!(!is_equivalent_tempo(120.0, 180.0));
+        assert!(is_equivalent_tempo(60.0, 120.0));
+        assert!(is_equivalent_tempo(60.0, 180.0));
+        assert!(is_equivalent_tempo(120.0, 60.0));
+        assert!(is_equivalent_tempo(180.0, 60.0));
+    }
+
+    #[test]
+    fn confidence_is_one_when_only_metrical_aliases_or_no_rivals_exist() {
+        let candidates = [
+            candidate(120.0, 1.00),
+            candidate(121.0, 0.995),
+            candidate(60.0, 0.99),
+            candidate(240.0, 0.98),
+            candidate(40.0, 0.97),
+            candidate(360.0, 0.96),
+        ];
+        assert_eq!(tempo_confidence(&candidates, 0), 1.0);
+        assert_eq!(tempo_confidence(&candidates[..1], 0), 1.0);
+    }
+
+    #[test]
+    fn confidence_uses_the_strongest_independent_candidate() {
+        let candidates = [
+            candidate(120.0, 1.00),
+            candidate(121.0, 0.995),
+            candidate(60.0, 0.99),
+            candidate(240.0, 0.98),
+            candidate(40.0, 0.97),
+            candidate(360.0, 0.96),
+            candidate(155.0, 0.30),
+        ];
+        assert!((tempo_confidence(&candidates, 0) - 0.70).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn confidence_is_one_for_observed_near_one_x_click_candidates() {
+        let candidates = [
+            candidate(120.318563, 0.992497784),
+            candidate(119.655285, 0.886638901),
+        ];
+        assert_eq!(tempo_confidence(&candidates, 0), 1.0);
+    }
+
+    #[test]
+    fn confidence_keeps_real_independent_ties_but_ignores_near_one_x_candidates() {
+        let candidates = [
+            candidate(120.0, 1.00),
+            candidate(240.0, 0.999),
+            candidate(121.0, 0.99),
+            candidate(155.0, 0.98),
+        ];
+        let old_runner_up = candidates
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != 0)
+            .max_by(|(_, a), (_, b)| a.score.total_cmp(&b.score))
+            .unwrap()
+            .1;
+        assert_eq!(old_runner_up.bpm, 240.0);
+        let old_margin = (candidates[0].score - old_runner_up.score) / candidates[0].score;
+        assert!((old_margin - 0.001).abs() <= 1e-12);
+        assert!((tempo_confidence(&candidates, 0) - 0.02).abs() <= 1e-12);
+
+        let closer_independent = [
+            candidate(120.0, 1.00),
+            candidate(240.0, 0.999),
+            candidate(121.0, 0.99),
+            candidate(155.0, 0.98),
+            candidate(124.0, 0.99),
+        ];
+        assert!((tempo_confidence(&closer_independent, 0) - 0.01).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn confidence_uses_final_chosen_candidate_even_when_it_is_not_top_scoring() {
+        let contract_case = [
+            candidate(240.0, 1.00),
+            candidate(120.0, 0.99),
+            candidate(155.0, 1.01),
+        ];
+        assert_eq!(tempo_confidence(&contract_case, 1), 0.0);
+
+        // 60 BPM is an alias of the chosen 120 BPM but not of the higher-scoring 240 BPM.
+        let chosen_bpm_case = [
+            candidate(240.0, 1.00),
+            candidate(120.0, 0.99),
+            candidate(60.0, 0.98),
+            candidate(155.0, 0.97),
+        ];
+        assert!((tempo_confidence(&chosen_bpm_case, 1) - (0.99 - 0.97) / 0.99).abs() <= 1e-12);
     }
 }

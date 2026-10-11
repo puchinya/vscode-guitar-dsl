@@ -222,25 +222,34 @@ fn classic(params: AnalysisParams) -> AnalysisParams {
 }
 
 #[test]
-fn classic_tracker_reproduces_issue_52_output() {
+fn classic_tracker_preserves_issue_52_output_except_confidence() {
     // Golden JSON produced by the #52 build (main @ 86dc629) for the same song.
     let bytes = render_song();
-    // Identical apart from the `tempo.tracker` field added by #56.
-    let without_tracker = |params: &AnalysisParams| {
+    // Historical output remains exact apart from the tracker field added by #56 and
+    // the Classic confidence intentionally revised by Issue #54.
+    let current_without_tracker_or_confidence = |params: &AnalysisParams| {
         let result = analyze_with(&bytes, params).unwrap();
         assert_eq!(result.tempo.tracker, "classic");
+        assert!(result.tempo.confidence.is_finite());
+        assert!((0.0..=1.0).contains(&result.tempo.confidence));
         let mut v: serde_json::Value = serde_json::from_str(&result.to_json().unwrap()).unwrap();
-        v["tempo"].as_object_mut().unwrap().remove("tracker");
+        let tempo = v["tempo"].as_object_mut().unwrap();
+        tempo.remove("tracker");
+        tempo.remove("confidence");
         v
     };
-    let golden = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
+    let historical_without_confidence = |text: &str| {
+        let mut v = serde_json::from_str::<serde_json::Value>(text).unwrap();
+        v["tempo"].as_object_mut().unwrap().remove("confidence");
+        v
+    };
     assert_eq!(
-        without_tracker(&AnalysisParams::BASELINE),
-        golden(include_str!("../tests/fixtures/classic_song_baseline.json"))
+        current_without_tracker_or_confidence(&AnalysisParams::BASELINE),
+        historical_without_confidence(include_str!("../tests/fixtures/classic_song_baseline.json"))
     );
     assert_eq!(
-        without_tracker(&classic(AnalysisParams::default())),
-        golden(include_str!("../tests/fixtures/classic_song_52.json"))
+        current_without_tracker_or_confidence(&classic(AnalysisParams::default())),
+        historical_without_confidence(include_str!("../tests/fixtures/classic_song_52.json"))
     );
 }
 
