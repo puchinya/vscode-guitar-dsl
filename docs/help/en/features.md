@@ -13,12 +13,13 @@ Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view
 The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
 
 ### Editor Support
-<!-- help-sources: extension:2 extension:5 extension:5A -->
+<!-- help-sources: extension:2 extension:5 extension:5A extension:5B -->
 
 - Syntax highlighting for headers, sections, chords, rhythm tokens, lyrics, melody (`mel:` / `lyr:`), chord definitions, score events and `let` fragments.
 - Comment toggling with `#`, and bracket and quote pairing.
 - **Outline**: metadata, sections, a chord summary for each measure line, and score events appear in the Outline view and **Go to Symbol in File**.
 - **Diagnostics**: errors and warnings appear as you type (see **Troubleshooting**).
+- **Code Actions**: transpose selected chord names or notes by sounding pitch, toggle enharmonic spelling, double or halve durations, normalize pitch names, and extract or inline rhythm `let` fragments. An unused chord definition offers a Quick Fix, and a repeated-pattern Hint can extract one occurrence. Select complete editable tokens; comments and formatting outside the selection are preserved.
 
 ### Score Preview
 <!-- help-sources: extension:4 syntax:11 -->

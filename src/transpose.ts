@@ -6,6 +6,7 @@ import { chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { CapoTransformFailureCode, inferCapoForDsl, parseCapoValue, planCapoTransform, transposeChordName } from './capo';
 import { ParsedScore, Pitch, eventPitches, parseGuitarDsl } from './compiler';
 import { PitchStep } from './melody';
+import { SourceColumnEdit, spliceSourceColumns } from './sourceEdits';
 import { scoreHasTab } from './tab';
 
 export const MIN_SEMITONES = -11;
@@ -80,34 +81,7 @@ function pitchName(p: Pitch): string {
   return p.step + (p.alter === 1 ? '#' : p.alter === -1 ? 'b' : '');
 }
 
-interface Edit {
-  line: number;
-  start: number;
-  end: number;
-  expected: string;
-  text: string;
-}
-
-/** Applies column edits right to left per line, keeping every other byte (including CR/LF). */
-function spliceEdits(text: string, edits: Edit[]): { ok: true; text: string } | { ok: false; detail: string } {
-  const parts = text.split(/(\r?\n)/);
-  const byLine = new Map<number, Edit[]>();
-  for (const e of edits) {
-    const line = parts[e.line * 2];
-    if (line === undefined || line.slice(e.start, e.end) !== e.expected) {
-      return { ok: false, detail: `line ${e.line + 1}: ${e.expected} not found` };
-    }
-    const list = byLine.get(e.line) ?? [];
-    list.push(e);
-    byLine.set(e.line, list);
-  }
-  for (const [line, list] of byLine) {
-    let s = parts[line * 2];
-    for (const e of [...list].sort((a, b) => b.start - a.start)) s = s.slice(0, e.start) + e.text + s.slice(e.end);
-    parts[line * 2] = s;
-  }
-  return { ok: true, text: parts.join('') };
-}
+type Edit = SourceColumnEdit;
 
 const KEY_INSERT_BEFORE = new Set(['bpm', 'tempo', 'time', 'time_signature', 'meter', 'feel', 'pickup']);
 
@@ -245,7 +219,7 @@ export function planSoundingTranspose(text: string, semitones: number): Transpos
     });
   }
 
-  const spliced = spliceEdits(text, edits);
+  const spliced = spliceSourceColumns(text, edits);
   if (!spliced.ok) return { ok: false, code: 'transformedParseError', detail: spliced.detail, stage: 'transpose' };
   let out = spliced.text;
   // Without a key header the sounding key is the default C: write the transposed key explicitly.

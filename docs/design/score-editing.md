@@ -5,6 +5,7 @@
 
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -20,6 +21,7 @@
 | プレビュー中のカポと初心者モード | 拡張機能仕様 §4.4–§4.5 |
 | 移調、カポ、弾きやすさ、表示・保存境界 | 拡張機能仕様 §4B.2–§4B.5、言語構文仕様 §14 |
 | ストロークパターンの適用 | 拡張機能仕様 §3.10、§8.7 |
+| Code Actions によるソース保持編集 | Issue #87、拡張機能仕様 §5B |
 
 ## Architecture
 
@@ -65,4 +67,29 @@ VS Code 文書が原文を所有し、純粋な変換モジュールは変換結
 
 ## Verification strategy
 
-既存検証として chord editor model / definitions / resolver、`capo`、beginner mode、transpose、strumming pattern / accompaniment のユニットテストを参照する。今回の文書変更では Schema 2 validator と差分検査を行い、実行時テストは追加しない。
+既存検証として chord editor model / definitions / resolver、`capo`、beginner mode、transpose、strumming pattern / accompaniment のユニットテストを参照する。Issue #87 では下記の純粋な planner / span edit ユニットテストと editor host E2E を追加し、Schema 2 validator と差分検査も行う。
+
+## Issue #87 implementation design
+
+### Ownership and planning
+
+`src/codeActions.ts` は VS Code API に依存せず、`ParsedScore`、パーサーが所有する token / duration source spans、および元テキストから候補と編集計画を返す。音高とコード名は既存の `PitchTokenSpan` / `ChordTokenSpan`、セル・拍・duration は parser-owned spans を使う。duration span が現状の構造に無い場合はコンパイラーの parse 結果へ追加し、Code Action 側で DSL を再走査して境界を推測しない。
+
+各編集は期待する元テキスト、置換文字列、対象範囲を含む plan として表す。transpose と capo の既存右から左への span-splice 検査を共通の source edit helper に移し、行区切り、コメント、空白、Unicode を含む範囲外の文字列を保持する。既存 transform の出力と失敗条件は変えずに helper を共有する。
+
+抽出・inline・移調・異名同音・長さ変更・正規化・未使用コード定義削除は、それぞれ parser の構造とソース範囲から計画する。適用前後で parse し、該当操作の意味保存条件を検査する。反復候補 Hint は同じ authored rhythm の token 情報を使い、Quick Fix は選択された一つの定義行だけを削除する。
+
+### Validation and failure behavior
+
+- 変換は確定後の最新 URI / version の文書を読み直し、選択範囲がまだ対象 token 境界と一致することを確認してから計画を再作成する。
+- 変換後に parse error、音楽的意味の不一致、暗黙の octave / beat / rhythm 継承の変更、コード定義衝突、範囲不一致のいずれかがあれば plan 全体を拒否する。
+- Apply 時は URI 単位で reentrancy を防ぎ、検証済みの全差分を単一 WorkspaceEdit と単一 `applyEdit` にまとめる。キャンセル・stale plan・適用失敗では部分編集を残さない。
+- 抽出名の衝突、重複・曖昧な定義参照、未対応 duration、TAB / implicit / repeat 由来の境界は該当アクションを提示しない。失敗理由は呼び出し元がローカライズできる識別子で返す。
+
+### Alternatives considered
+
+AST 全体の再シリアライズはコメント、改行、ユーザー書式を壊すため採用しない。選択テキストを独立パーサーで解析する方法は既存の compiler span と継承規則から外れるため採用しない。アクションごとに独自の文字列 splice を実装する方法は衝突・部分編集の検査が不統一になるため、既存変換と共有する検証済み helper に集約する。
+
+### Verification strategy
+
+純粋な planner と span splice にユニットテストを追加し、LF / CRLF、コメント、範囲外空白、無効・古い選択、parse / semantic validation failure、コード衝突、最小 / 最大 duration を確認する。E2E では multi-span 変換の単一 Undo、untitled URI、stale document の拒否を確認する。Issue #87 の contract に列挙された project hooks、Help / AI checks、Schema 2 validation を実行し、実行できない GUI / packaging target は NOT RUN と記録する。

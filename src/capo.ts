@@ -2,11 +2,12 @@
 // Pure module: no VS Code, Webview, transcription or Audio MIR dependency. Other features may call
 // inferCapo() with structured chord data; the GuitarDSL adapters below are thin wrappers over it.
 
-import { NOTE_NAMES, parseChordName } from './chordDetect';
+import { NOTE_NAMES, noteNameToPitchClass, parseChordName } from './chordDetect';
 import { ChordVoicing, chordKey, isValidChordName, splitChordKey } from './chordDefinition';
 import { resolveApplicableChordDefinition, resolveDefaultChordVoicing } from './chordVoicingResolver';
 import { ChordTokenSpan, ParsedScore, parseGuitarDsl } from './compiler';
 import { createInstrumentModel, MAX_CAPO, STANDARD_TUNING, Tuning } from './instrumentModel';
+import { spliceSourceColumns } from './sourceEdits';
 import { scoreHasTab } from './tab';
 
 export const MIN_CAPO = 0;
@@ -86,6 +87,49 @@ export function transposeChordName(name: string, semitones: number): string | nu
   const root = NOTE_NAMES[(parsed.rootPc + shift) % 12];
   const bass = parsed.bassPc !== undefined ? `/${NOTE_NAMES[(parsed.bassPc + shift) % 12]}` : '';
   return root + suffix + bass;
+}
+
+function toggleEnharmonicNoteName(note: string): string {
+  const pitchClass = noteNameToPitchClass(note);
+  if (pitchClass === null) return note;
+  const canonical = NOTE_NAMES[pitchClass];
+  if (note !== canonical) return canonical;
+  if (canonical.endsWith('#')) {
+    const letters = 'CDEFGAB';
+    const next = letters[(letters.indexOf(canonical[0]) + 1) % letters.length];
+    return `${next}b`;
+  }
+  if (canonical.endsWith('b')) {
+    const letters = 'CDEFGAB';
+    const previous = letters[(letters.indexOf(canonical[0]) + letters.length - 1) % letters.length];
+    return `${previous}#`;
+  }
+  return note;
+}
+
+/** Switches only the five specified black-key chord roots / slash basses to their enharmonic spelling. */
+export function toggleChordEnharmonicSpelling(name: string): string | null {
+  const parsed = parseChordName(name);
+  if (!parsed) return null;
+  const bassText = parsed.bass !== undefined ? `/${parsed.bass}` : '';
+  const suffix = name.slice(parsed.root.length, name.length - bassText.length);
+  const root = toggleEnharmonicNoteName(parsed.root);
+  const bass = parsed.bass !== undefined ? `/${toggleEnharmonicNoteName(parsed.bass)}` : '';
+  return root + suffix + bass;
+}
+
+/** Canonical spelling for roots / slash basses and only the unambiguous `min` / standalone `maj` aliases. */
+export function normalizeChordSpelling(name: string): string | null {
+  const parsed = parseChordName(name);
+  if (!parsed) return null;
+  const bassText = parsed.bass !== undefined ? `/${parsed.bass}` : '';
+  let suffix = name.slice(parsed.root.length, name.length - bassText.length);
+  if (suffix === 'maj') suffix = '';
+  else if (suffix.startsWith('min')) suffix = `m${suffix.slice(3)}`;
+  const root = NOTE_NAMES[parsed.rootPc];
+  const bass = parsed.bassPc !== undefined ? `/${NOTE_NAMES[parsed.bassPc]}` : '';
+  const normalized = root + suffix + bass;
+  return isValidChordName(normalized) ? normalized : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,25 +377,16 @@ export function replaceChordTokenNames(
   tokens: readonly ChordTokenSpan[],
   targetName: (tok: ChordTokenSpan) => string
 ): { ok: true; text: string } | { ok: false; detail: string } {
-  const src = splitSourceLines(text);
-  const byLine = new Map<number, ChordTokenSpan[]>();
+  const edits: { line: number; start: number; end: number; expected: string; text: string }[] = [];
   for (const tok of tokens) {
-    if (targetName(tok) === tok.name) continue;
-    if (src.lines[tok.line]?.slice(tok.startCol, tok.endCol) !== tok.name) {
+    const target = targetName(tok);
+    if (target === tok.name) continue;
+    if (text.split(/\r?\n/)[tok.line]?.slice(tok.startCol, tok.endCol) !== tok.name) {
       return { ok: false, detail: `line ${tok.line + 1}: chord ${tok.name} not found` };
     }
-    const list = byLine.get(tok.line) ?? [];
-    list.push(tok);
-    byLine.set(tok.line, list);
+    edits.push({ line: tok.line, start: tok.startCol, end: tok.endCol, expected: tok.name, text: target });
   }
-  for (const [line, list] of byLine) {
-    let lineText = src.lines[line];
-    for (const tok of [...list].sort((a, b) => b.startCol - a.startCol)) {
-      lineText = lineText.slice(0, tok.startCol) + targetName(tok) + lineText.slice(tok.endCol);
-    }
-    src.lines[line] = lineText;
-  }
-  return { ok: true, text: joinSourceLines(src) };
+  return spliceSourceColumns(text, edits);
 }
 
 const CAPO_INSERT_BEFORE = new Set(['key', 'original_key', 'bpm', 'tempo']);

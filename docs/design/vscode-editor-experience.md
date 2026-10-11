@@ -5,6 +5,7 @@
 
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -20,6 +21,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 | コマンドと設定 | 拡張機能仕様 §3 |
 | サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
+| Code Actions、editor Hint、Quick Fix の登録と文書編集境界 | Issue #87、拡張機能仕様 §5A–§5B、§6.3 |
 | public language rules and examples | 言語構文仕様 §1–§18 |
 
 ## Architecture
@@ -61,3 +63,15 @@ Help ファイルの欠落・preview 起動例外は `openGuitarDslHelp()` 境�
 ## Verification strategy
 
 言語 contributions とコマンド宣言は extension manifest 検査、Outline / diagnostics / sidebar / onboarding / Help / localization はそれぞれの既存ユニット検証を参照する。Help は `npm run check:help`、Schema 2 文書は `python -m agent_workflow validate-docs` で検証する。
+
+## Issue #87 implementation design
+
+`src/extension.ts` は Code Action provider を GuitarDSL selector に登録し、内部 apply command と診断 Hint を extension host に接続する。純粋な planner は [score editing design](score-editing.md) に従い、VS Code provider は document、selection、cancellation token、URI/version の境界を所有する。新しい public package command は追加しない。
+
+Code Action provider は `CodeActionContext.only` を尊重し、キャンセル済み要求には結果を返さない。未使用コード定義 Hint の Quick Fix と、反復 fragment 候補 Hint は parser error のある文書では抑止する。診断を既存の `guitardsl` collection に統合し、文書変更時に再計算、close 時に消去する。既存診断の severity や code は変えない。
+
+選択系 action は元の URI、version、range、対象 token 境界を内部 command に渡す。実行時に最新文書を取得して再計画・再検証し、URI 単位で同時実行を抑止する。全編集を一つの `WorkspaceEdit` に集め、一度の `workspace.applyEdit` で適用するため Undo は操作全体を戻す。キャンセル、stale range、re-parse 不一致、衝突、applyEdit rejection の場合に編集を残さない。
+
+新しい Code Action / Quick Pick / Hint 文言は `src/i18n.ts` の英語・日本語辞書で解決する。Quick Fix をユーザーが実行できるよう Code Action title と diagnostic message を両ロケールで用意し、文書変更・close で Hint state を同期する。
+
+E2E は extension host 上で一回の Undo による完全復元、untitled document URI、複数範囲編集と stale document rejection を確認する。VSIX listing は新しいローカライズ資産と既存 manifest allowlist の同梱を確認する。

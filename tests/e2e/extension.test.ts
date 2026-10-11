@@ -1875,4 +1875,24 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual((await call(tools.guitardsl_apply_capo, { uri: u(doc), targetCapo: 0 })).changed, true);
     assert.strictEqual(doc.getText(), capoModule().planCapoTransform(latest, 0).text, 'the edit made in between is transformed too');
   });
+
+  test('R013 code action extraction targets an untitled URI and one Undo restores every edit', async () => {
+    const source = 'key: C\n| C 4.d 4.d 8.u |\n';
+    const doc = await openUntitled(source);
+    assert.strictEqual(doc.uri.scheme, 'untitled');
+    const start = source.indexOf('4.d');
+    const end = source.lastIndexOf('4.d') + '4.d'.length;
+    const range = new vscode.Range(doc.positionAt(start), doc.positionAt(end));
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri, range, vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const extract = actions?.find(action => action.command?.command === 'guitardsl.applyMusicCodeAction'
+      && (action.command.arguments?.[0] as { kind?: string } | undefined)?.kind === 'extractLet');
+    assert.ok(extract?.command, 'the provider offers the extract action for the selected tokens');
+    await vscode.commands.executeCommand(extract.command!.command, ...(extract.command!.arguments ?? []));
+    assert.match(doc.getText(), /let fragment1 = 4\.d 4\.d/);
+    assert.match(doc.getText(), /\$fragment1/);
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), source, 'one undo reverses the definition insertion and token replacement');
+  });
 });

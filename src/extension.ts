@@ -18,6 +18,7 @@ import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPane
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { registerGuitarDslAiTools } from './ai/tools';
 import { registerGp78Commands } from './gp78Commands';
+import { computeCodeActionDiagnostics, registerMusicCodeActions } from './codeActionProvider';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
@@ -100,9 +101,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
   context.subscriptions.push(diagnosticCollection);
+  registerMusicCodeActions(context, currentLocale);
   const refreshDiagnostics = (doc: vscode.TextDocument) => {
     if (isGuitarDslDocument(doc)) {
-      diagnosticCollection.set(doc.uri, computeDocumentDiagnostics(doc, currentLocale));
+      diagnosticCollection.set(doc.uri, [
+        ...computeDocumentDiagnostics(doc, currentLocale),
+        ...computeCodeActionDiagnostics(doc, currentLocale)
+      ]);
     }
   };
   vscode.workspace.textDocuments.forEach(refreshDiagnostics);

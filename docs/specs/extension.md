@@ -684,6 +684,32 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 ---
 
+構造編集に伴うエディター専用 Hint は、コンパイラ診断と同じく GuitarDSL 文書の変更時に更新し、文書を閉じると消去する。構文エラーがある文書では以下の Hint を表示しない。
+
+- `guitardsl.unusedChordDefinition` は、重複していない有効な `chord` 定義が参照されていない場合の Hint とし、`Unnecessary` タグを付ける。無名ラベルの定義は参照とボイシングを保守的に解決する。重複定義または依存関係が曖昧な場合は自動削除を提示しない。末尾コメント付き定義は Hint を表示できるが、自動削除は提示しない。
+- `guitardsl.repeatedFragmentCandidate` は、空白を正規化した4〜16個の完全な authored rhythm token の並びが、異なる非重複位置に2回以上現れる場合の Hint とする。最長の並び、次に最も早い出現位置を優先する。解析は文書あたり最大3,000 token、Hint は最大40件とする。操作は一つの出現箇所を `let` に抽出するもので、全箇所を書き換えない。
+
+## 5B. Code Actions とソース保持リファクタリング
+
+Code Actions は `guitardsl` 文書の現在の選択範囲と意味に適用できる構造編集を提示する。各操作は文書を全体再生成せず、解析済みデータとそのソース位置を使って決定的な変換計画を作る。次の8操作を提供する。
+
+| 操作 | 適用条件と振る舞い |
+|---|---|
+| 選択範囲を `let` に抽出 | 一つの authored measure-rhythm または `mel:` cell 内にある、連続した完全な音楽 token を2個以上選択する。TAB、`$name`、`%`、コード、継承状態や境界が不安定な範囲には提示しない。選択位置に一意な `let fragmentN` を挿入し、選択範囲だけを置換する。解析後の音楽的意味が同一の場合だけ提示する。 |
+| `let` を inline | measure または `mel:` cell 全体を占める一つの `$name` 参照を定義 RHS に置換する。定義と他の参照は変更しない。再解析した意味が一致し、継承またはフラグメント境界が変化しない場合だけ提示する。 |
+| 選択範囲の sounding transpose | 半音数を −11〜−1 または +1〜+11 から選び、選択された完全なコード名・音高 token のみを変更する。key、capo、`let` 定義、未選択 token は変更しない。TAB を含む文書、label 付き variant、カスタムコード衝突、音域逸脱、暗黙の音高継承が変わる場合は提示しない。 |
+| 異名同音の表記切替 | `C#↔Db`、`D#↔Eb`、`F#↔Gb`、`G#↔Ab`、`A#↔Bb` を、対象となるコードの root/bass または音符 token に適用する。実音高とボイシングを保持する。カスタム定義または label との衝突時は提示しない。 |
+| 選択 duration ×2 | measure rhythm、音符・休符・グループ、対応するコード長 suffix の、全体が選択された明示 duration token のみを2倍にする。 |
+| 選択 duration ×1/2 | 同じ token 範囲を1/2にする。×2 と ×1/2 は base 1/2/4/8/16、加算値、一般的な付点値、正確に表現できる `:beats` を扱う。`4.d` は付点でなく downstroke modifier。`1×2`、`16×1/2`、連符（`t` / `{a:n}`）、暗黙・継承値、TAB、`$name`、曖昧な選択には提示しない。拍子の長さに関する警告は既存 compiler の動作を保ち、新しい parse error を作らない。 |
+| 未使用 chord 定義の削除 | `guitardsl.unusedChordDefinition` の Quick Fix として提示する。有効な参照中の定義、重複定義、末尾コメント付き定義は自動削除しない。 |
+| chord 表記の正規化 | root/bass の音名を `C,C#,D,Eb,E,F,F#,G,Ab,A,Bb,B` に正規化する。また、意味が同じと確定できる `min→m` と単独 `maj→` 空 suffix のみを正規化する。無関係な token、コメント、行配置は変更しない。 |
+
+Code Action の計画は VS Code API に依存しない純粋変換として実装し、既存 parser、音高・duration・chord 定義モデル、および parser が返すソース位置を使う。新しいユーザー向け `package.json` command は追加せず、拡張 host が provider と内部 command を登録する。
+
+操作の作成時に URI、文書 version、選択範囲を保持する。適用時に対象の最新文書を読み直し、version が古ければ中止し、最新ソースから再計画する。parse と意味の postvalidation を編集前に完了する。1回の適用は1個の `WorkspaceEdit` と1回の `applyEdit` とし、Undo 1回で元に戻せるようにする。LF/CRLF、コメント、無関係な空白、Unicode、および明示編集範囲外の文字を保持する。
+
+キャンセル、衝突、不正ソース、古い version、postvalidation 失敗、編集適用の拒否、または同一 URI への再入時は部分編集を残さない。`CodeActionContext.only` と token 境界に従う。既存の7つの language-model tool と MCP の範囲は変えない。
+
 ## 6. 国際化・多言語対応仕様 (Internationalization / Localization)
 
 拡張機能は日本語および英語の表示に対応する。
@@ -724,6 +750,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
   - PDF保存ダイアログタイトル: `Save GuitarDSL Score as PDF` (EN) / `GuitarDSL スコアをPDFとして保存` (JA)
   - PDF保存完了通知およびアクションボタン「Open File」 / 「ファイルを開く」: 英語 / 日本語
   - 各種警告・エラー通知: 英語 / 日本語
+  - §5B の Code Action 名、選択移調の Quick Pick、未使用コード定義と反復候補の Hint メッセージ: 英語 / 日本語。コードアクションのタイトルや説明をソース文字列に固定せず、VS Code の解決ロケールで表示する。
 
 ### 6.4 Webview プレビューツールバーのローカライズ
 - `compileGuitarDslToHtml(dslContent, options?: { locale?: string; pageSize?; orientation?; fontUris? })` を提供する（`src/render/previewHtml.ts`）。

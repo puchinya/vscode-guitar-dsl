@@ -151,6 +151,40 @@ export interface ChordTokenSpan {
   label?: string;
 }
 
+/** Parser-owned source data for a complete authored token used by music-aware editor actions. */
+export interface CodeActionSourceToken {
+  line: number;
+  startCol: number;
+  endCol: number;
+  text: string;
+  kind: 'rhythm' | 'noteGroup' | 'inlineNote' | 'melodyNote' | 'melodyGroup' | 'melodyRest' | 'letReference' | 'chord';
+  /** Tokens in one authored measure rhythm or one `mel:` cell share this identifier. */
+  cellId: string;
+  measureIndex?: number;
+  /** Present only when this authored token contains a parseable explicit duration. */
+  duration?: {
+    startCol: number;
+    endCol: number;
+    text: string;
+    style: 'rhythm' | 'noteValue' | 'beats';
+    beats: Fraction;
+  };
+}
+
+/** Parser-owned source locations for a valid user definition. */
+export interface CodeActionDefinitionSpan {
+  kind: 'let' | 'chord';
+  name: string;
+  label?: string;
+  line: number;
+  startCol: number;
+  endCol: number;
+  valueStartCol?: number;
+  valueEndCol?: number;
+  trailingComment: boolean;
+  duplicate?: boolean;
+}
+
 /** Source location of one header line; the value range excludes the `key:` prefix. */
 export interface HeaderLine {
   /** Lower-case header key as written (e.g. 'capo', 'original_key', 'style_chord_size'). */
@@ -428,6 +462,9 @@ interface ParsedChordToken {
   name: string;
   label?: string;
   duration?: Fraction;
+  durationText?: string;
+  durationStart?: number;
+  durationStyle?: 'beats' | 'noteValue';
   invalidLength?: boolean;
 }
 
@@ -437,11 +474,15 @@ function parseChordToken(tok: string): ParsedChordToken | null {
   const base = { name: match[1], label: match[2] };
   if (match[3] !== undefined) {
     const beats = parseBeats(match[3]);
-    return beats ? { ...base, duration: beats } : { ...base, invalidLength: true };
+    return beats
+      ? { ...base, duration: beats, durationText: match[3], durationStart: tok.lastIndexOf(':') + 1, durationStyle: 'beats' }
+      : { ...base, invalidLength: true };
   }
   if (match[4] !== undefined) {
     const value = parseNoteValue(match[4]);
-    return value ? { ...base, duration: value.beats } : { ...base, invalidLength: true };
+    return value
+      ? { ...base, duration: value.beats, durationText: match[4], durationStart: tok.lastIndexOf('/') + 1, durationStyle: 'noteValue' }
+      : { ...base, invalidLength: true };
   }
   return base;
 }
@@ -502,6 +543,10 @@ export interface ParsedScore {
   events: ScoreEvent[];
   /** Pitches of `mel:` notes and inline notes, in source order. */
   pitchTokens?: PitchTokenSpan[];
+  /** Exact source spans emitted by the same parser that owns the score model. */
+  codeActionTokens?: CodeActionSourceToken[];
+  sourceDefinitions?: CodeActionDefinitionSpan[];
+  hasTab?: boolean;
 }
 
 export interface ParsedMelodyGroupSummary {
@@ -616,6 +661,33 @@ export interface ParseGuitarDslOptions {
   expandPageBreakRepeats?: boolean;
 }
 
+function explicitNoteDurationSpan(token: string, tokenStartCol: number): CodeActionSourceToken['duration'] | undefined {
+  let braceDepth = 0;
+  let separator = -1;
+  let separatorKind: '/' | ':' | undefined;
+  for (let i = 0; i < token.length; i++) {
+    if (token[i] === '{') braceDepth++;
+    else if (token[i] === '}') braceDepth = Math.max(0, braceDepth - 1);
+    else if (braceDepth === 0 && (token[i] === '/' || token[i] === ':')) {
+      separator = i;
+      separatorKind = token[i] as '/' | ':';
+    }
+  }
+  if (separator < 0 || !separatorKind) return undefined;
+  const remainder = token.slice(separator + 1);
+  for (let length = remainder.length; length > 0; length--) {
+    const text = remainder.slice(0, length);
+    if (separatorKind === '/') {
+      const value = parseNoteValue(text);
+      if (value) return { startCol: tokenStartCol + separator + 1, endCol: tokenStartCol + separator + 1 + length, text, style: 'noteValue', beats: value.beats };
+    } else {
+      const beats = parseBeats(text);
+      if (beats) return { startCol: tokenStartCol + separator + 1, endCol: tokenStartCol + separator + 1 + length, text, style: 'beats', beats };
+    }
+  }
+  return undefined;
+}
+
 export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptions): ParsedScore {
   const lines = dslContent.split(/\r?\n/);
   const arrangementScan = scanArrangementBlockLines(lines);
@@ -653,6 +725,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const chordDefinitionLines: { text: string; line: number; startCol: number; endCol: number }[] = [];
   const chordUses: { key: string; line: number; startCol: number; endCol: number }[] = [];
   const chordTokens: ChordTokenSpan[] = [];
+  const codeActionTokens: CodeActionSourceToken[] = [];
+  const sourceDefinitions: CodeActionDefinitionSpan[] = [];
   const headerLines: HeaderLine[] = [];
   let firstBodyLine: number | undefined;
   const markBody = (lineIdx: number) => {
@@ -733,7 +807,13 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
     const name = m[2];
     const nameLoc = { line: lineIdx, startCol: m[1].length, endCol: m[1].length + name.length };
-    if (letDefinitions.has(name)) {
+    const duplicate = letDefinitions.has(name);
+    const valueStartCol = m[1].length + name.length + m[3].length;
+    sourceDefinitions.push({
+      kind: 'let', name, line: lineIdx, startCol: 0, endCol: rawLine.length,
+      valueStartCol, valueEndCol: valueStartCol + m[4].length, trailingComment: comment >= 0, duplicate
+    });
+    if (duplicate) {
       report(lineIdx, nameLoc.startCol, nameLoc.endCol, 'duplicateVariable', { name });
       return;
     }
@@ -1386,6 +1466,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
         if (tok.startsWith('$')) {
           // `let` fragment: fresh copies of the resolved events; the bar's inline inheritance is untouched.
+          codeActionTokens.push({ line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'letReference', cellId: `measure:${measures.length}`, measureIndex: measures.length });
           const fragment = useFragment(tok, lineIdx, tokCol, CTX_MEASURE);
           if (!fragment) {
             fragmentFailed = true;
@@ -1452,6 +1533,19 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             const span: ChordTokenSpan = { line: lineIdx, startCol: spanCol, endCol: spanCol + parsedChord.name.length, name: parsedChord.name };
             if (parsedChord.label !== undefined) span.label = parsedChord.label;
             chordTokens.push(span);
+            codeActionTokens.push({
+              line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'chord',
+              cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              ...(parsedChord.durationText !== undefined && parsedChord.durationStart !== undefined && parsedChord.duration !== undefined
+                ? { duration: {
+                    startCol: tokCol + parsedChord.durationStart,
+                    endCol: tokCol + parsedChord.durationStart + parsedChord.durationText.length,
+                    text: parsedChord.durationText,
+                    style: parsedChord.durationStyle === 'beats' ? 'beats' as const : 'noteValue' as const,
+                    beats: parsedChord.duration
+                  } }
+                : {})
+            });
             // Continue after the adopted position: an earlier match (e.g. inside l:"...") must not be reused.
             searchPos = Math.max(searchPos, spanCol + tok.length);
           }
@@ -1462,6 +1556,20 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           // Rhythm token e.g. 4.d, 8.u, 16.d.a, rq, 8t.d, 8{5:4}.d, 4+8.d, 4.pm, etc.
           const item = parseRhythmToken(tok, lineIdx, tokCol);
           if (!item) continue;
+          const durationToken = tok.split('.')[0];
+          const restPrefix = durationToken.startsWith('r');
+          const parsedDuration = parseRhythmDurationDetailed(durationToken);
+          if (typeof parsedDuration !== 'string') {
+            const durationStart = tokCol + (restPrefix ? 1 : 0);
+            codeActionTokens.push({
+              line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'rhythm',
+              cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              duration: {
+                startCol: durationStart, endCol: tokCol + durationToken.length,
+                text: restPrefix ? durationToken.slice(1) : durationToken, style: 'rhythm', beats: parsedDuration.beats
+              }
+            });
+          }
           rhythms.push(item);
           runningBeat = fadd(runningBeat, rhythmBeatsFraction(item.duration));
         } else if (NOTE_GROUP_START.test(tok)) {
@@ -1472,6 +1580,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             continue;
           }
           const item = inlineItem(parsed.note);
+          codeActionTokens.push({
+            line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'noteGroup',
+            cellId: `measure:${measures.length}`, measureIndex: measures.length,
+            ...(explicitNoteDurationSpan(tok, tokCol) ? { duration: explicitNoteDurationSpan(tok, tokCol) } : {})
+          });
           rhythms.push(item);
           inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
           pushGroupPitchTokens(parsed, lineIdx, tokCol, barSequence);
@@ -1481,6 +1594,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           const parsed = parseMelodyToken(tok, inlineMelodyState);
           if (typeof parsed !== 'string') {
             const item = inlineItem(parsed);
+            codeActionTokens.push({
+              line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'inlineNote',
+              cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              ...(explicitNoteDurationSpan(tok, tokCol) ? { duration: explicitNoteDurationSpan(tok, tokCol) } : {})
+            });
             rhythms.push(item);
             inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
             if (parsed.pitch) {
@@ -1744,7 +1862,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     }
 
     let prevNote: MelodyNote | null = null;
-    for (const cell of cells) {
+    for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+      const cell = cells[cellIndex];
       const cellEnd = cell.col + cell.text.length;
       const trimmedCol = cell.col + (cell.text.length - cell.text.trimStart().length);
       const trimmedEnd = cell.col + cell.text.trimEnd().length;
@@ -1776,6 +1895,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           const col = cell.col + m.index;
           if (m[0].startsWith('$')) {
             // `let` fragment: fresh copies; the line's inheritance state is neither read nor changed.
+            codeActionTokens.push({ line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: 'letReference', cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx });
             const fragment = useFragment(m[0], lineIdx, col, CTX_MELODY);
             if (!fragment) {
               fragmentFailed = true;
@@ -1796,6 +1916,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
               continue;
             }
             notes.push(group.note);
+            codeActionTokens.push({
+              line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: 'melodyGroup',
+              cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx,
+              ...(explicitNoteDurationSpan(m[0], col) ? { duration: explicitNoteDurationSpan(m[0], col) } : {})
+            });
             melodyLocations.set(group.note, { line: lineIdx, startCol: col, endCol: col + m[0].length });
             pushGroupPitchTokens(group, lineIdx, col, sequence);
             continue;
@@ -1806,6 +1931,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             continue;
           }
           notes.push(parsed);
+          codeActionTokens.push({
+            line: lineIdx, startCol: col, endCol: col + m[0].length, text: m[0], kind: parsed.isRest ? 'melodyRest' : 'melodyNote',
+            cellId: `melody:${lineIdx}:${cellIndex}`, measureIndex: measureIdx,
+            ...(explicitNoteDurationSpan(m[0], col) ? { duration: explicitNoteDurationSpan(m[0], col) } : {})
+          });
           melodyLocations.set(parsed, { line: lineIdx, startCol: col, endCol: col + m[0].length });
           if (parsed.pitch) {
             const len = pitchTextLength(m[0]);
@@ -2418,7 +2548,38 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     feel,
     pickup: pickupBeats,
     events,
-    pitchTokens
+    pitchTokens,
+    codeActionTokens: codeActionTokens.map(token => {
+      if (!token.cellId.startsWith('measure:') || token.kind === 'chord') return token;
+      const measureIndex = measures.findIndex(measure => {
+        const span = measure.rhythmSource;
+        return span?.kind === 'explicit'
+          && span.line === token.line
+          && token.startCol >= span.startCol
+          && token.endCol <= span.endCol;
+      });
+      if (measureIndex < 0) return { ...token, measureIndex: undefined };
+      const span = measures[measureIndex].rhythmSource!;
+      return { ...token, measureIndex, cellId: `measure:${measureIndex}:${span.line}:${span.startCol}` };
+    }),
+    sourceDefinitions: [
+      ...sourceDefinitions,
+      ...chordDefinitions.map(definition => {
+        const rawLine = lines[definition.line] ?? '';
+        const nonWhitespace = rawLine.search(/\S/);
+        const startCol = nonWhitespace < 0 ? 0 : nonWhitespace;
+        return {
+          kind: 'chord' as const,
+          name: definition.name,
+          ...(definition.label !== undefined ? { label: definition.label } : {}),
+          line: definition.line,
+          startCol,
+          endCol: rawLine.length,
+          trailingComment: /\s#/.test(rawLine.slice(startCol))
+        };
+      })
+    ],
+    hasTab: tabGroups.length > 0
   };
 }
 
