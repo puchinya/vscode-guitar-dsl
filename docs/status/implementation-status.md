@@ -181,7 +181,17 @@
 - **テスト実行結果**: **60 / 60 件 PASS**（2026-10-11、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
 
 ### 2.2A Audio MIR (Rust/WASM)
-- **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
+- **Issue #54 v2 検証 (2026-10-11, macOS arm64)**:
+  - T01–T07 focused tests: **12 / 12 PASS**。T06 の合成クリックは BPM 120.318563、score 0.992497784、最強の独立候補は 137.8125 BPM / score 0.6045682128、confidence 0.390861902。近接候補 119.655285 BPM は near-1× 等価として除外され、BPM 許容差と ±50 ms のクリック整列も PASS。
+  - `cargo test --manifest-path wasm/Cargo.toml classic_tracker`: **1 / 1 PASS**。#52 の履歴 JSON は現在値から `tempo.tracker`、現在値と期待値から `tempo.confidence` のみを除外して厳密比較した。履歴 fixture は変更していない。
+  - Rust/WASM gates: `cargo fmt --check`、全 Rust tests **78 / 78 PASS**、`cargo clippy --all-targets -- -D warnings`、`cd wasm && cargo check --target wasm32-unknown-unknown`（SIMD 設定適用）が PASS。
+  - Audio MIR build と smoke: `npm run build:audio-mir` PASS、`npm run test:audio-mir-wasm` **7 / 7 PASS**。
+  - Extension gates: `npm run compile`、Help / AI sync、`npm test` が PASS。Unit **1083 件**、E2E **65 件**。PATH に rustup を指定した `npm run vscode:prepublish` も PASS。
+  - `npx @vscode/vsce ls`: **1590 項目**。生成 NodeJS WASM core と両 worker を含み、Rust source と Audio MIR fixture は含まない。
+  - 合成 pulse set（seed 2、60 曲）評価: Classic Acc1 **66.7%**、Acc2 **93.3%**、median absolute error **0.11 BPM**、beat F **0.706**。同じ 60 曲を baseline `7069acccc212d61ce3e6a344ecfc21c2413a44a0` でも評価し、曲別 Classic / Neural BPM **60 / 60 一致**、aggregate metrics も同一で tempo selection regression なし。
+  - `validate-docs --issue 54` と configured `verify_final` hook（4 command groups）、`git diff --check` が PASS。
+  - GuitarSet は一般的なローカル保管先に見つからず **NOT RUN / unavailable**。Issue #54 の契約ポインターは 2026-10-12 に正規形へ修正し、`verify-implementation-contract` でコメント ID `6108533964` と SHA-256 を照合済み。self-review と delivery gate を継続。
+- **Issue #54 基準コミット `7069acccc212d61ce3e6a344ecfc21c2413a44a0` の Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
   - Beat This!（#56）: log-mel が torchaudio と一致（22,050 Hz。44.1/48 kHz は soxr 基準で通過帯域 ≤ 0.02）、ロジットが PyTorch と一致（≤ 1e-3、リサンプル経路 ≤ 0.02 で拍は同一）、upstream と同じチャンク化・集約・ピーク検出、段階的 API と `analyze_wav` の JSON 一致（複数チャンク含む）、ドラム無しストローク 90/150 BPM、`Classic` が #52 の出力と一致、拍が得られない場合の `Classic` への切り替え
   - 倍音の多い明るい音色で、D/Dmaj7・F#/F#maj7・A/Amaj7 について「#50 は誤認し、新設定は正しい」ことと、本物の 7th（A7 含む）を保持することをペアごとに確認
   - `BASELINE` が #50 のクロマ計算と厳密に一致すること。生成した合成音のみを使用し、次の項目を確認している。
