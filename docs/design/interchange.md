@@ -76,6 +76,8 @@ The compiler adds only parser-owned provenance needed to distinguish authored ma
 
 The existing numeric `ChordPlacement.beat` and renderer positions do not change. In particular, the interchange layer never reconstructs an exact rational from a rounded beat number. A written `%` measure has its own written index and copies exact onset data only when its chords are inherited; authored overrides use their own parsed data.
 
+For Issue #124, the GP78 chord-strum planner consumes this existing representation: exact inline chord onsets, explicit-duration rhythm events, and measure-level `measureLyric` for the narrowly supported lyric approximation. It does not change the schema, GuitarDSL grammar, canonical writer semantics, or play-order authority. The adapter still uses the canonical serializer and parser to verify semantic and occurrence equality.
+
 ### Melody, rhythm, lyrics, and TAB
 
 Explicit rhythm retains chronological attacks, rests, inline notes/groups, durations, flags, ties, and techniques. Implicit rhythm marks parser-synthesized defaults so a writer does not claim they were authored. A repeated measure records `repeat` provenance and remains a written measure.

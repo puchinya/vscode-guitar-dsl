@@ -98,7 +98,11 @@ Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any
 
 Use **GuitarDSL: Import Guitar Pro 7/8** in the Command Palette to open a supported `.gp` file as a new untitled GuitarDSL document. If more than one guitar track is supported, choose the track to import. The source file is not changed.
 
+After choosing a track, select **Faithful import** (the default) or **Optimize for chord strumming**. Faithful import keeps the existing conversion and preserves TAB and pitches. Optimization converts a whole eligible score to chord symbols and exact-duration rhythm slashes while keeping rests and measure structure. It omits repeated generated chord names when the harmony stays the same, preserves source-authored chord labels, and leaves empty or chord-only measures without adding rhythm attacks.
+
 Import supports GP7/GP8 `.gp` files with one selected six-string guitar track, one staff, and the supported voice. Unsupported musical meaning in the selected track stops the import. Other tracks, audio, sound settings, and display layout can be omitted only under the command's reported loss policy.
+
+If optimization is unavailable, or its output cannot be serialized or validated after parsing, the command explains why and lets you switch explicitly to faithful import or cancel. The fallback reuses the already imported score. Before creating the document, it shows one summary of omitted TAB pitches, voicings, and fingering, inferred chords, and display or supported lyric changes. A document is created only when the selected GuitarDSL output validates successfully.
 
 Section titles and double barlines are preserved. A separate Section display letter is reported as a loss. Free-time bars, master-bar fermatas, and multiple score views with conflicting notation flags stop the import instead of being guessed.
 
