@@ -184,7 +184,7 @@
 - **Issue #54 v2 検証 (2026-10-11, macOS arm64)**:
   - T01–T07 focused tests: **12 / 12 PASS**。T06 の合成クリックは BPM 120.318563、score 0.992497784、最強の独立候補は 137.8125 BPM / score 0.6045682128、confidence 0.390861902。近接候補 119.655285 BPM は near-1× 等価として除外され、BPM 許容差と ±50 ms のクリック整列も PASS。
   - `cargo test --manifest-path wasm/Cargo.toml classic_tracker`: **1 / 1 PASS**。#52 の履歴 JSON は現在値から `tempo.tracker`、現在値と期待値から `tempo.confidence` のみを除外して厳密比較した。履歴 fixture は変更していない。
-  - Rust/WASM gates: `cargo fmt --check`、全 Rust tests **78 / 78 PASS**、`cargo clippy --all-targets -- -D warnings`、`wasm32-unknown-unknown` check が PASS。
+  - Rust/WASM gates: `cargo fmt --check`、全 Rust tests **78 / 78 PASS**、`cargo clippy --all-targets -- -D warnings`、`cd wasm && cargo check --target wasm32-unknown-unknown`（SIMD 設定適用）が PASS。
   - Audio MIR build と smoke: `npm run build:audio-mir` PASS、`npm run test:audio-mir-wasm` **7 / 7 PASS**。
   - Extension gates: `npm run compile`、Help / AI sync、`npm test` が PASS。Unit **1083 件**、E2E **65 件**。PATH に rustup を指定した `npm run vscode:prepublish` も PASS。
   - `npx @vscode/vsce ls`: **1590 項目**。生成 NodeJS WASM core と両 worker を含み、Rust source と Audio MIR fixture は含まない。
