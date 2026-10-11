@@ -1,5 +1,5 @@
 /** Pure semantic post-validation for music-aware Code Action plans. */
-import { CodeActionSourceToken, ParsedScore, parseGuitarDsl } from '../compiler';
+import { CodeActionSourceToken, ParsedScore, PitchTokenSpan, parseGuitarDsl } from '../compiler';
 import { SourceOffsetEdit, spliceSourceOffsets } from '../sourceEdits';
 import { MusicCodeActionPlan } from './sourceIndex';
 
@@ -72,6 +72,74 @@ export function makePlan(
   if (parseFailed(next)) return { ok: false, code: 'validationFailed' };
   if (validation === 'sameMusic' && musicalFingerprint(score) !== musicalFingerprint(next)) return { ok: false, code: 'validationFailed' };
   if (validation === 'sameStructure' && structureFingerprint(score) !== structureFingerprint(next)) return { ok: false, code: 'validationFailed' };
+  return { ok: true, text: spliced.text, edits };
+}
+
+function selectedPitchEventIndexes(
+  score: ParsedScore,
+  selectedPitches: readonly PitchTokenSpan[]
+): { rhythm: Map<number, Set<number>>; melody: Map<number, Set<number>> } | undefined {
+  const selected = { rhythm: new Map<number, Set<number>>(), melody: new Map<number, Set<number>>() };
+  for (const pitch of selectedPitches) {
+    const owners = (score.codeActionTokens ?? []).filter(token => token.line === pitch.line
+      && token.measureIndex !== undefined && token.eventRange !== undefined
+      && token.startCol <= pitch.startCol && token.endCol >= pitch.endCol);
+    if (owners.length !== 1) return undefined;
+    const owner = owners[0];
+    const range = owner.eventRange!;
+    if (!Number.isInteger(owner.measureIndex) || range.start < 0 || range.end <= range.start) return undefined;
+    const indexes = selected[range.collection].get(owner.measureIndex!) ?? new Set<number>();
+    for (let index = range.start; index < range.end; index++) indexes.add(index);
+    selected[range.collection].set(owner.measureIndex!, indexes);
+  }
+  return selected;
+}
+
+function soundingPitchSignature(event: { pitch?: PitchTokenSpan['pitch']; pitches?: PitchTokenSpan['pitch'][] }): string {
+  const semitones: Record<PitchTokenSpan['pitch']['step'], number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+  const pitches = event.pitches ?? (event.pitch ? [event.pitch] : []);
+  return JSON.stringify(pitches.map(pitch => pitch.octave * 12 + semitones[pitch.step] + pitch.alter));
+}
+
+/** Reject name changes whose reparsed inheritance changes any event outside the selected pitches. */
+export function unselectedEventPitchesMatch(
+  before: ParsedScore,
+  after: ParsedScore,
+  selectedPitches: readonly PitchTokenSpan[]
+): boolean {
+  if (before.measures.length !== after.measures.length) return false;
+  const selected = selectedPitchEventIndexes(before, selectedPitches);
+  if (!selected) return false;
+  for (let measureIndex = 0; measureIndex < before.measures.length; measureIndex++) {
+    const left = before.measures[measureIndex];
+    const right = after.measures[measureIndex];
+    if (left.rhythms.length !== right.rhythms.length || (left.melody?.length ?? 0) !== (right.melody?.length ?? 0)) return false;
+    const selectedRhythm = selected.rhythm.get(measureIndex) ?? new Set<number>();
+    for (let index = 0; index < left.rhythms.length; index++) {
+      if (selectedRhythm.has(index)) continue;
+      if (soundingPitchSignature(left.rhythms[index]) !== soundingPitchSignature(right.rhythms[index])) return false;
+    }
+    const selectedMelody = selected.melody.get(measureIndex) ?? new Set<number>();
+    for (let index = 0; index < (left.melody?.length ?? 0); index++) {
+      if (selectedMelody.has(index)) continue;
+      if (soundingPitchSignature(left.melody![index]) !== soundingPitchSignature(right.melody![index])) return false;
+    }
+  }
+  return true;
+}
+
+export function makePitchPreservingPlan(
+  source: string,
+  score: ParsedScore,
+  edits: SourceOffsetEdit[],
+  selectedPitches: readonly PitchTokenSpan[]
+): MusicCodeActionPlan {
+  if (edits.length === 0) return { ok: false, code: 'invalidSelection' };
+  const spliced = spliceSourceOffsets(source, edits);
+  if (!spliced.ok) return { ok: false, code: 'staleSource' };
+  const next = parseGuitarDsl(spliced.text);
+  if (parseFailed(next) || structureFingerprint(score) !== structureFingerprint(next)
+    || !unselectedEventPitchesMatch(score, next, selectedPitches)) return { ok: false, code: 'validationFailed' };
   return { ok: true, text: spliced.text, edits };
 }
 

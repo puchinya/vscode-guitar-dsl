@@ -9,7 +9,7 @@ import {
   MusicCodeActionFailure, MusicCodeActionPlan, SelectedToken, SourceSelection, lineStarts, offsetOf,
   selectCodeTokens, selectedMusic
 } from './sourceIndex';
-import { duplicateChordDefinitionKeys, hasTab, hasUnsupportedMeasureBoundary, makeDurationPlan, makePlan, parseFailed } from './semantics';
+import { duplicateChordDefinitionKeys, hasTab, hasUnsupportedMeasureBoundary, makeDurationPlan, makePitchPreservingPlan, makePlan, parseFailed } from './semantics';
 
 export type MusicCodeAction =
   | { kind: 'extractLet'; selection: SourceSelection }
@@ -90,6 +90,28 @@ function chordCollision(score: ParsedScore, sourceKey: string, targetName: strin
   return customKeys.includes(sourceKey) || customKeys.some(key => key === targetKey && key !== sourceKey);
 }
 
+function implicitOctavesToWrite(score: ParsedScore, selectedPitches: readonly PitchTokenSpan[], semitones: number): Set<PitchTokenSpan> {
+  const selected = new Set(selectedPitches);
+  const inheritedOctaves = new Map<number, number>();
+  const writeOctaves = new Set<PitchTokenSpan>();
+  for (const pitch of score.pitchTokens ?? []) {
+    if (pitch.kind !== 'melody' && pitch.kind !== 'inline') continue;
+    const currentOctave = inheritedOctaves.get(pitch.sequence) ?? pitch.pitch.octave;
+    const target = selected.has(pitch) ? transposePitch(pitch.pitch, semitones) : null;
+    if (pitch.explicitOctave) {
+      inheritedOctaves.set(pitch.sequence, target?.octave ?? pitch.pitch.octave);
+    } else if (selected.has(pitch)) {
+      if (target && target.octave !== currentOctave) writeOctaves.add(pitch);
+      inheritedOctaves.set(pitch.sequence, target?.octave ?? currentOctave);
+    } else {
+      // An unselected implicit pitch keeps the source inheritance state; the post-parse guard
+      // rejects the plan if that means its resolved pitch would change.
+      inheritedOctaves.set(pitch.sequence, currentOctave);
+    }
+  }
+  return writeOctaves;
+}
+
 function planMusicNames(source: string, score: ParsedScore, selection: SourceSelection, operation: 'transpose' | 'enharmonic' | 'normalizePitchNames', semitones = 0): MusicCodeActionPlan {
   if (hasTab(score)) return { ok: false, code: 'unsupportedBoundary' };
   if (operation === 'transpose' && !isValidSemitones(semitones)) return { ok: false, code: 'invalidSelection' };
@@ -97,6 +119,7 @@ function planMusicNames(source: string, score: ParsedScore, selection: SourceSel
   if (!selected.ok) return selected;
   const lineStartsBySource = lineStarts(source);
   const edits: SourceOffsetEdit[] = [];
+  const transposeOctaves = operation === 'transpose' ? implicitOctavesToWrite(score, selected.pitches, semitones) : new Set<PitchTokenSpan>();
   for (const chord of selected.chords) {
     if (chord.label !== undefined) return { ok: false, code: 'unsupportedBoundary' };
     const start = offsetOf(lineStartsBySource, chord.line, chord.startCol);
@@ -120,7 +143,7 @@ function planMusicNames(source: string, score: ParsedScore, selection: SourceSel
       const value = transposePitch(pitch.pitch, semitones);
       if (!value) return { ok: false, code: 'pitchOutOfRange' };
       if (!pitch.explicitOctave && value.octave !== pitch.pitch.octave) return { ok: false, code: 'unsupportedBoundary' };
-      next = `${value.step}${value.alter === 1 ? '#' : value.alter === -1 ? 'b' : ''}${pitch.explicitOctave ? value.octave : ''}`;
+      next = `${value.step}${value.alter === 1 ? '#' : value.alter === -1 ? 'b' : ''}${pitch.explicitOctave || transposeOctaves.has(pitch) ? value.octave : ''}`;
     } else if (operation === 'enharmonic') {
       const current = `${pitch.pitch.step.toUpperCase()}${pitch.pitch.alter === 1 ? '#' : pitch.pitch.alter === -1 ? 'b' : ''}`;
       const respelled = toggleChordEnharmonicSpelling(current);
@@ -133,7 +156,7 @@ function planMusicNames(source: string, score: ParsedScore, selection: SourceSel
     const expected = source.slice(start, end);
     if (next !== expected) edits.push({ start, end, expected, text: next });
   }
-  return makePlan(source, score, edits, 'sameStructure');
+  return makePitchPreservingPlan(source, score, edits, selected.pitches);
 }
 
 function scaleDurationText(text: string, style: 'rhythm' | 'noteValue' | 'beats', double: boolean): string | null {

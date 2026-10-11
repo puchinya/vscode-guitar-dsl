@@ -1908,6 +1908,40 @@ suite('AI integration: language model tools (Issue #80)', () => {
     assert.strictEqual(doc.getText(), source, 'one undo reverses the definition insertion and token replacement');
   });
 
+  test('R019 transposing an explicit octave rejects changed unselected inherited pitches without applying an edit', async () => {
+    const source = '| C |\nmel: | b4/4 d e f |\n';
+    const doc = await openUntitled(source);
+    const start = source.indexOf('b4');
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri,
+      new vscode.Range(doc.positionAt(start), doc.positionAt(start + 2)), vscode.CodeActionKind.RefactorRewrite.value
+    );
+    const transpose = actions?.find(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'transpose');
+    assert.ok(transpose?.command, 'a valid transpose action remains available for the selected B4');
+
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const windowApi = vscode.window as unknown as { showQuickPick: unknown; showWarningMessage: unknown };
+    const originalApply = workspaceApi.applyEdit;
+    const originalPick = windowApi.showQuickPick;
+    const originalWarn = windowApi.showWarningMessage;
+    let applyCalls = 0;
+    let warnings = 0;
+    try {
+      windowApi.showQuickPick = async (items: vscode.QuickPickItem[]) =>
+        (items as (vscode.QuickPickItem & { semitones: number })[]).find(item => item.semitones === 2);
+      workspaceApi.applyEdit = async () => { applyCalls++; return true; };
+      windowApi.showWarningMessage = async () => { warnings++; return undefined; };
+      await vscode.commands.executeCommand(transpose.command!.command, ...(transpose.command!.arguments ?? []));
+    } finally {
+      workspaceApi.applyEdit = originalApply;
+      windowApi.showQuickPick = originalPick;
+      windowApi.showWarningMessage = originalWarn;
+    }
+    assert.strictEqual(doc.getText(), source, 'the failed semantic validation leaves the source untouched');
+    assert.strictEqual(applyCalls, 0, 'no WorkspaceEdit is applied for a transpose that changes unselected pitches');
+    assert.strictEqual(warnings, 1, 'the rejected plan reports a user-facing failure');
+  });
+
   test('R014 Code Action Hints expose bounded Quick Fixes and refresh and clear with the document', async () => {
     const source = 'chord C@unused = x32010\n| G 4.d 8.u 4.d 8.u |\n| D 4.d 8.u 4.d 8.u |\n';
     const file = writeFixture('r014-code-action-hints.guitardsl', source);

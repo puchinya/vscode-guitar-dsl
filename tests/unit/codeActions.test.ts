@@ -162,6 +162,33 @@ describe('music-aware Code Action planners', () => {
       'an implicit octave that would cross an inheritance boundary is rejected');
   });
 
+  it('preserves unselected inherited pitches when transposing explicit-octave melody and inline notes', () => {
+    const source = '| C |\nmel: | b4/4 d e f |\n';
+    const start = source.indexOf('b4');
+    const selectedOnly = plan(source, 'transpose', start, start + 2, { semitones: 2 });
+    assert.deepStrictEqual(selectedOnly.ok ? null : selectedOnly.code, 'validationFailed',
+      'changing b4 to c#5 must not move the unselected d/e/f from octave 4');
+
+    const inline = '| C | b4/4 d e f |\n';
+    const inlineStart = inline.indexOf('b4');
+    const inlineOnly = plan(inline, 'transpose', inlineStart, inlineStart + 2, { semitones: 2 });
+    assert.deepStrictEqual(inlineOnly.ok ? null : inlineOnly.code, 'validationFailed',
+      'inline notes in the rhythm cell must retain their resolved pitches too');
+
+    const explicitFollowers = '| C |\nmel: | b4/4 d4 e4 f4 |\n';
+    const explicitStart = explicitFollowers.indexOf('b4');
+    const safe = plan(explicitFollowers, 'transpose', explicitStart, explicitStart + 2, { semitones: 2 });
+    assert.ok(safe.ok, safe.ok ? '' : safe.code);
+    assert.strictEqual(safe.text, explicitFollowers.replace('b4/4', 'c#5/4'),
+      'explicit D4/E4/F4 pitches stay unchanged when only B4 is selected');
+
+    const allEnd = source.indexOf('f', start) + 1;
+    const allSelected = plan(source, 'transpose', start, allEnd, { semitones: 2 });
+    assert.ok(allSelected.ok, allSelected.ok ? '' : allSelected.code);
+    assert.strictEqual(allSelected.text, '| C |\nmel: | c#5/4 e4 f# g |\n',
+      'selected implicit notes gain only the octave markers needed to preserve each transposed pitch');
+  });
+
   it('toggles black-key chord spelling and normalizes only canonical pitch and chord aliases', () => {
     const chord = '| C# |\n';
     const chordStart = chord.indexOf('C#');
