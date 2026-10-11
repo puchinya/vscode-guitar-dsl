@@ -190,7 +190,7 @@
   - `npx @vscode/vsce ls`: **1590 項目**。生成 NodeJS WASM core と両 worker を含み、Rust source と Audio MIR fixture は含まない。
   - 合成 pulse set（seed 2、60 曲）評価: Classic Acc1 **66.7%**、Acc2 **93.3%**、median absolute error **0.11 BPM**、beat F **0.706**。同じ 60 曲を baseline `7069acccc212d61ce3e6a344ecfc21c2413a44a0` でも評価し、曲別 Classic / Neural BPM **60 / 60 一致**、aggregate metrics も同一で tempo selection regression なし。
   - `validate-docs --issue 54` と configured `verify_final` hook（4 command groups）、`git diff --check` が PASS。
-  - GuitarSet は一般的なローカル保管先に見つからず **NOT RUN / unavailable**。Issue の契約ポインターは `State: approved (v2; prior contract superseded)` で、workflow が要求する厳密な `State: approved` と一致しないため、契約検証と delivery phase transition は未完了。
+  - GuitarSet は一般的なローカル保管先に見つからず **NOT RUN / unavailable**。Issue #54 の契約ポインターは 2026-10-12 に正規形へ修正し、`verify-implementation-contract` でコメント ID `6108533964` と SHA-256 を照合済み。self-review と delivery gate を継続。
 - **Issue #54 基準コミット `7069acccc212d61ce3e6a344ecfc21c2413a44a0` の Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
   - Beat This!（#56）: log-mel が torchaudio と一致（22,050 Hz。44.1/48 kHz は soxr 基準で通過帯域 ≤ 0.02）、ロジットが PyTorch と一致（≤ 1e-3、リサンプル経路 ≤ 0.02 で拍は同一）、upstream と同じチャンク化・集約・ピーク検出、段階的 API と `analyze_wav` の JSON 一致（複数チャンク含む）、ドラム無しストローク 90/150 BPM、`Classic` が #52 の出力と一致、拍が得られない場合の `Classic` への切り替え
   - 倍音の多い明るい音色で、D/Dmaj7・F#/F#maj7・A/Amaj7 について「#50 は誤認し、新設定は正しい」ことと、本物の 7th（A7 含む）を保持することをペアごとに確認
