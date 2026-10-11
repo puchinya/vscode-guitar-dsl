@@ -184,13 +184,19 @@
       "source": "extension",
       "section": "5A",
       "helpPage": "troubleshooting",
-      "reviewedSourceSha256": "cdbabbeda93f305b1cbb5f2174bfb2b0822c1b344a93581f1470f1ffb831572f"
+      "reviewedSourceSha256": "49ec8ed8bb2f8282a0c2af7b3f937099c5b1e24ea344ba1c3d797b7280018ea3"
+    },
+    {
+      "source": "extension",
+      "section": "5B",
+      "helpPage": "features",
+      "reviewedSourceSha256": "059102b66159f3c0f5ff2ed7c5fe852e63adfc10f6cd850b1afd5156fb0d28dc"
     },
     {
       "source": "extension",
       "section": "6",
       "helpPage": "about",
-      "reviewedSourceSha256": "402f060cefc471eac433ba7df133bdee4976e2226112c39d7a38ee8e5186056d"
+      "reviewedSourceSha256": "4e89e0eea757f132e32a88108cbe956667db8c7c8457d9547eedd50e2309d431"
     },
     {
       "source": "extension",

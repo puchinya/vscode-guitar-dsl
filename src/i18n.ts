@@ -23,6 +23,19 @@ export interface Messages {
   msgPdfSaved: (filename: string) => string;
   msgOpenFile: string;
   msgPdfFailed: (err: string) => string;
+  codeActionExtractLet: string;
+  codeActionInlineLet: string;
+  codeActionTranspose: string;
+  codeActionEnharmonic: string;
+  codeActionDoubleDuration: string;
+  codeActionHalveDuration: string;
+  codeActionNormalizePitchNames: string;
+  codeActionRemoveUnusedChord: string;
+  codeActionTransposePickTitle: string;
+  codeActionTransposePickItem: (semitones: number) => string;
+  hintUnusedChordDefinition: (name: string) => string;
+  hintRepeatedFragmentCandidate: (count: number) => string;
+  msgCodeActionFailed: string;
   dialogSavePdfTitle: string;
   previewTitle: string;
   gp78ImportTrackPrompt: string;
@@ -195,6 +208,19 @@ export const MESSAGES_JA: Messages = {
   msgPdfSaved: (filename: string) => `PDFを保存しました: ${filename}`,
   msgOpenFile: 'ファイルを開く',
   msgPdfFailed: (err: string) => `PDF保存に失敗しました: ${err}`,
+  codeActionExtractLet: '選択したリズムを let に抽出',
+  codeActionInlineLet: 'let 参照を展開',
+  codeActionTranspose: '選択範囲の実音を移調',
+  codeActionEnharmonic: '異名同音の表記を切り替え',
+  codeActionDoubleDuration: '選択した長さを2倍にする',
+  codeActionHalveDuration: '選択した長さを半分にする',
+  codeActionNormalizePitchNames: '音名を標準表記にそろえる',
+  codeActionRemoveUnusedChord: '未使用コード定義を削除',
+  codeActionTransposePickTitle: '移調する半音数を選択',
+  codeActionTransposePickItem: (semitones: number) => `${semitones > 0 ? '+' : ''}${semitones} 半音`,
+  hintUnusedChordDefinition: (name: string) => `コード定義 ${name} は使われていません`,
+  hintRepeatedFragmentCandidate: (count: number) => `${count} 個のリズムトークンが繰り返されています。選択範囲を let に抽出できます`,
+  msgCodeActionFailed: '文書が変更されたか、編集結果を検証できませんでした。',
   dialogSavePdfTitle: 'GuitarDSL スコアをPDFとして保存',
   previewTitle: 'GuitarDSL スコアプレビュー',
   gp78ImportTrackPrompt: '取り込むギタートラックを選択してください',
@@ -408,6 +434,19 @@ export const MESSAGES_EN: Messages = {
   msgPdfSaved: (filename: string) => `PDF saved: ${filename}`,
   msgOpenFile: 'Open File',
   msgPdfFailed: (err: string) => `Failed to export PDF: ${err}`,
+  codeActionExtractLet: 'Extract selected rhythm to let',
+  codeActionInlineLet: 'Inline let reference',
+  codeActionTranspose: 'Transpose selected sounding pitches',
+  codeActionEnharmonic: 'Toggle enharmonic spelling',
+  codeActionDoubleDuration: 'Double selected durations',
+  codeActionHalveDuration: 'Halve selected durations',
+  codeActionNormalizePitchNames: 'Normalize pitch names',
+  codeActionRemoveUnusedChord: 'Remove unused chord definition',
+  codeActionTransposePickTitle: 'Choose semitones to transpose',
+  codeActionTransposePickItem: (semitones: number) => `${semitones > 0 ? '+' : ''}${semitones} semitones`,
+  hintUnusedChordDefinition: (name: string) => `Chord definition ${name} is unused`,
+  hintRepeatedFragmentCandidate: (count: number) => `${count} rhythm tokens repeat. Extract the selected range to let`,
+  msgCodeActionFailed: 'The document changed or the edit could not be validated.',
   dialogSavePdfTitle: 'Save GuitarDSL Score as PDF',
   previewTitle: 'GuitarDSL Score Preview',
   gp78ImportTrackPrompt: 'Select the guitar track to import',
