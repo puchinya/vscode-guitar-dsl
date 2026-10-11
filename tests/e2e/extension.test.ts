@@ -1895,4 +1895,40 @@ suite('AI integration: language model tools (Issue #80)', () => {
     await undoIn(doc);
     assert.strictEqual(doc.getText(), source, 'one undo reverses the definition insertion and token replacement');
   });
+
+  test('R014 Code Action Hints expose bounded Quick Fixes and refresh and clear with the document', async () => {
+    const source = 'chord C@unused = x32010\n| G 4.d 8.u 4.d 8.u |\n| D 4.d 8.u 4.d 8.u |\n';
+    const file = writeFixture('r014-code-action-hints.guitardsl', source);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+    await showAndFocus(doc);
+    const hintDiagnostics = () => vscode.languages.getDiagnostics(doc.uri)
+      .filter(diagnostic => String(diagnostic.code).startsWith('guitardsl.'));
+    await waitFor(() => {
+      const codes = hintDiagnostics().map(diagnostic => String(diagnostic.code));
+      return codes.includes('guitardsl.unusedChordDefinition') && codes.includes('guitardsl.repeatedFragmentCandidate');
+    }, 'both music-aware Hints should appear for their source locations');
+    const diagnostics = hintDiagnostics();
+    const unused = diagnostics.find(diagnostic => diagnostic.code === 'guitardsl.unusedChordDefinition')!;
+    const repeated = diagnostics.find(diagnostic => diagnostic.code === 'guitardsl.repeatedFragmentCandidate')!;
+    assert.deepStrictEqual(unused.tags, [vscode.DiagnosticTag.Unnecessary]);
+
+    const quickFixes = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri, unused.range, vscode.CodeActionKind.QuickFix.value
+    );
+    assert.ok(quickFixes?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'removeUnusedChordDefinition'));
+    const refactors = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider', doc.uri, repeated.range, vscode.CodeActionKind.RefactorRewrite.value
+    );
+    assert.ok(refactors?.some(action => (action.command?.arguments?.[0] as { kind?: string } | undefined)?.kind === 'extractLet'));
+
+    const updated = source.replace('| G 4.d 8.u 4.d 8.u |', '| C@unused 4.d 8.u 16.d 8.u |');
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(source.length)), updated);
+    assert.ok(await vscode.workspace.applyEdit(edit));
+    await waitFor(() => hintDiagnostics().length === 0, 'Hints should recompute away when the chord is used and rhythm no longer repeats');
+    assert.ok(await doc.save(), 'the saved temporary document can close without a prompt');
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+    await waitFor(() => !vscode.languages.getDiagnostics(doc.uri).some(diagnostic => String(diagnostic.code).startsWith('guitardsl.')),
+      'closing the document clears Code Action Hint diagnostics');
+  });
 });

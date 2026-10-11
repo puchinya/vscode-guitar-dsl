@@ -156,7 +156,7 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **1079 / 1079 件 PASS** (0 failures、2026-10-11)
+- **テスト実行結果**: **1080 / 1080 件 PASS** (0 failures、2026-10-11)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -178,7 +178,7 @@
   - 新曲作成（Issue #104）: 伴奏のリズムを書かない構造の下書き（2 セクション、コード・メロディ・歌詞）が検証を通り、分析がセクションを返し、複数セクションの適用が 1 回の編集で伴奏を生成し、最後の検証がエラー 0 件で、1 回の元に戻すで下書きに戻ること（対象が確立済みの状態から始めるツールの動作確認で、Agent の対象選択は検証しない）。既存スコアをアクティブに開いたまま、別の新しい文書を `path` で検証・分析・適用・検証すると、新しい文書だけが編集され、既存スコアはバイト単位で変わらないこと
   - 実モデル smoke（ユーザー実施、2026-09-27）: PR #105 head `362cda23c27d66dbd26a09ae5f67ee5c6965f67a` の build で Skill resources が解決され、別の新規文書で伴奏適用まで完了。候補数で停止せず、サビ1/2に変化がありラスサビが最も強かったため R051/R052 PASS（[Issue evidence](https://github.com/puchinya/vscode-guitar-dsl/issues/104#issuecomment-5856512394)）。VS Code version/model は未記録。apply 入力 JSON は未記録で R041/R042/R046/R047 は未検証、R043 の引数も未記録、R048 は strict PASS としない。R030 は既存ファイルの hash 未取得、R039 はファイル読取ログなし、R040 は failure path 未実行。
   - AI 連携（Issue #80）: モデルなしでの起動と 7 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算、入力が示す文書だけを編集すること（確認後にアクティブなエディタが変わっても対象は変わらない。対象なし・両方指定は `invalidInput`。未知の無題 URI で文書を作らない）、確認メッセージが入力だけから作られること、読み取り専用ツールの `document.uri` を `vscode.lm.invokeTool` 経由で変更系ツールに渡して無題ドキュメントを編集できること
-- **テスト実行結果**: **59 / 59 件 PASS**（2026-10-11、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
+- **テスト実行結果**: **60 / 60 件 PASS**（2026-10-11、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Rust 単体テスト (`cargo test --manifest-path wasm/Cargo.toml`)**: **72 / 72 件 PASS**。次を含む:
@@ -215,7 +215,7 @@
 
 ### 2.3 静的解析・型チェック
 - **TypeScriptコンパイル (`npm run compile`)**: エラー 0 件 (strict mode 準拠)
-- **Issue #87 最終検証 (2026-10-11, macOS arm64)**: `verify_final` PASS。`npm run compile`、`npm test`（unit 1079 件 + E2E 59 件、Help/AI 同期を含む）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はすべて終了コード 0。E2E は VS Code 1.141.0。Windows / Linux は未検証。
+- **Issue #87 最終検証 (2026-10-11, macOS arm64)**: `verify_final` PASS。`npm run compile`、`npm test`（unit 1080 件 + E2E 60 件、Help/AI 同期を含む）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はすべて終了コード 0。E2E は VS Code 1.141.0。Windows / Linux は未検証。
 - **Issue #96 検証 (2026-10-08, macOS arm64)**: `npm ci`、`npm run compile`、`npm run test:unit` (999 件)、`env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test` (999 unit + 56 E2E)、`npm run check:help`、`npm run check:ai`、`PATH="$HOME/.cargo/bin:$PATH" npm run vscode:prepublish`、`npx @vscode/vsce ls`、`git diff --check` は PASS。通常権限での Electron 起動は `SIGABRT` で Mocha 前に終了し、sandbox 外の再実行で E2E は PASS。Windows / Linux は未検証。
 
 ---

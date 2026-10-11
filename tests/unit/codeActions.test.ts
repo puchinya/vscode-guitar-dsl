@@ -41,20 +41,23 @@ describe('source edits shared by music transforms', () => {
 
 describe('music-aware Code Action planners', () => {
   it('extracts two complete authored tokens to a unique let and can inline one reference', () => {
-    const source = 'key: C\n| C 4.d 4.d 8.u |\n';
+    const source = '# guitar 🎸\r\nkey: C\r\n| C 4.d 4.d 8.u |\r\n# keep\r\n';
     const start = source.indexOf('4.d');
     const end = source.lastIndexOf('4.d') + '4.d'.length;
     const extracted = plan(source, 'extractLet', start, end);
     assert.ok(extracted.ok, extracted.ok ? '' : extracted.code);
     assert.match(extracted.text, /let fragment1 = 4\.d 4\.d/);
     assert.match(extracted.text, /\$fragment1/);
+    assert.ok(extracted.text.includes('# guitar 🎸\r\n'));
+    assert.ok(extracted.text.endsWith('|\r\n# keep\r\n'));
 
-    const withReference = 'let riff = 4.d 4.d\nkey: C\n| C $riff |\n';
+    const withReference = 'let riff = 4.d 4.d\nkey: C\n| C $riff |\n| G $riff |\n';
     const refStart = withReference.indexOf('$riff');
     const inlined = plan(withReference, 'inlineLet', refStart, refStart + '$riff'.length);
     assert.ok(inlined.ok, inlined.ok ? '' : inlined.code);
     assert.match(inlined.text, /\| C 4\.d 4\.d \|/);
-    assert.ok(!inlined.text.includes('$riff'));
+    assert.match(inlined.text, /\| G \$riff \|/);
+    assert.ok(inlined.text.startsWith('let riff = 4.d 4.d\n'), 'the definition remains available to other uses');
 
     const splitCells = 'key: C\n| C | 4.d 4.d |\n';
     const splitStart = splitCells.indexOf('4.d');
@@ -74,6 +77,26 @@ describe('music-aware Code Action planners', () => {
     const repeatedScore = parseGuitarDsl(repeated);
     const repeatedToken = (repeatedScore.codeActionTokens ?? []).find(token => token.kind === 'rhythm');
     assert.strictEqual(repeatedToken, undefined);
+
+    const acrossCells = 'key: C\n| C 4.d | 4.d 8.u |\n';
+    const first = acrossCells.indexOf('4.d');
+    const last = acrossCells.lastIndexOf('4.d') + 3;
+    assert.strictEqual(plan(acrossCells, 'extractLet', first, last).ok, false, 'selection cannot cross measure cells');
+
+    const definition = 'let riff = 4.d 4.d\nkey: C\n| C 4.d 4.d 8.u |\n';
+    const definitionStart = definition.indexOf('4.d');
+    assert.strictEqual(plan(definition, 'extractLet', definitionStart, definition.lastIndexOf('4.d') + 3).ok, false,
+      'a fragment definition is not an extractable use site');
+
+    const inline = 'let riff = 4.d 4.d\nkey: C\n| C 4.d $riff |\n';
+    const referenceStart = inline.indexOf('$riff');
+    assert.strictEqual(plan(inline, 'inlineLet', referenceStart + 1, referenceStart + 5).ok, false, 'partial references are rejected');
+    assert.strictEqual(plan(inline, 'inlineLet', referenceStart, referenceStart + 5).ok, false, 'inline requires its own cell');
+
+    const unique = 'let fragment1 = 8.d 8.d\nkey: C\n| C 4.d 4.d 8.u |\n';
+    const uniqueStart = unique.indexOf('4.d');
+    const uniqueResult = plan(unique, 'extractLet', uniqueStart, unique.lastIndexOf('4.d') + 3);
+    assert.ok(uniqueResult.ok && uniqueResult.text.includes('let fragment2 = 4.d 4.d'), 'generated names skip existing definitions');
   });
 
   it('transposes only selected chord and pitch names, rejecting custom collisions and TAB scores', () => {
@@ -102,6 +125,21 @@ describe('music-aware Code Action planners', () => {
     const chordMoved = plan(chordLength, 'transpose', chordTokenStart, chordTokenStart + 3, { semitones: 2 });
     assert.ok(chordMoved.ok, chordMoved.ok ? '' : chordMoved.code);
     assert.strictEqual(chordMoved.text, '| D/4 |\n');
+
+    const collision = 'chord F# = 244322\n| E |\n';
+    const collisionStart = collision.lastIndexOf('E');
+    assert.strictEqual(plan(collision, 'transpose', collisionStart, collisionStart + 1, { semitones: 2 }).ok, false,
+      'a custom definition at the target name is not overwritten');
+
+    const labeled = 'chord C@open = x32010\n| C@open |\n';
+    const labeledStart = labeled.lastIndexOf('C@open');
+    assert.strictEqual(plan(labeled, 'transpose', labeledStart, labeledStart + 'C@open'.length, { semitones: 1 }).ok, false,
+      'labeled chord variants are unsupported');
+
+    const inherited = '| C |\nmel: | c3/4 b/4 g/4 |\n';
+    const inheritedPitch = inherited.indexOf('b/4');
+    assert.strictEqual(plan(inherited, 'transpose', inheritedPitch, inheritedPitch + 1, { semitones: 1 }).ok, false,
+      'an implicit octave that would cross an inheritance boundary is rejected');
   });
 
   it('toggles black-key chord spelling and normalizes only canonical pitch and chord aliases', () => {
@@ -122,18 +160,42 @@ describe('music-aware Code Action planners', () => {
     const canonical = plan(alias, 'normalizePitchNames', aliasStart, aliasStart + 'Cmin/A#'.length);
     assert.ok(canonical.ok, canonical.ok ? '' : canonical.code);
     assert.strictEqual(canonical.text, '| Cm/Bb |\n');
+
+    const major = '| Cmaj |\n';
+    const majorStart = major.indexOf('Cmaj');
+    const majorResult = plan(major, 'normalizePitchNames', majorStart, majorStart + 'Cmaj'.length);
+    assert.ok(majorResult.ok, majorResult.ok ? '' : majorResult.code);
+    assert.strictEqual(majorResult.text, '| C |\n');
+
+    const natural = '| C |\n';
+    const naturalStart = natural.indexOf('C');
+    assert.strictEqual(plan(natural, 'enharmonic', naturalStart, naturalStart + 1).ok, false, 'natural spellings have no black-key toggle');
+
+    const qualified = '| Cmaj7 |\n';
+    const qualifiedStart = qualified.indexOf('Cmaj7');
+    assert.strictEqual(plan(qualified, 'normalizePitchNames', qualifiedStart, qualifiedStart + 'Cmaj7'.length).ok, false,
+      'maj is normalized only as a standalone alias');
   });
 
   it('doubles and halves explicit durations while preserving stroke modifiers and exact beat notation', () => {
-    const source = '| C 4.d 8.u |\n';
+    const source = '# 🎵 preserve\r\n| C 4.d 8.u |\r\n# keep\r\n';
     const start = source.indexOf('4.d');
     const end = source.indexOf('8.u') + '8.u'.length;
     const doubled = plan(source, 'doubleDuration', start, end);
     assert.ok(doubled.ok, doubled.ok ? '' : doubled.code);
-    assert.strictEqual(doubled.text, '| C 2.d 4.u |\n');
+    assert.strictEqual(doubled.text, '# 🎵 preserve\r\n| C 2.d 4.u |\r\n# keep\r\n');
     const halved = plan(source, 'halveDuration', start, end);
     assert.ok(halved.ok, halved.ok ? '' : halved.code);
-    assert.strictEqual(halved.text, '| C 8.d 16.u |\n');
+    assert.strictEqual(halved.text, '# 🎵 preserve\r\n| C 8.d 16.u |\r\n# keep\r\n');
+
+    const additive = '| C 4+8 |\n';
+    const additiveStart = additive.indexOf('4+8');
+    const additiveDoubled = plan(additive, 'doubleDuration', additiveStart, additiveStart + 3);
+    assert.ok(additiveDoubled.ok, additiveDoubled.ok ? '' : additiveDoubled.code);
+    assert.strictEqual(additiveDoubled.text, '| C 2+4 |\n');
+    const additiveHalved = plan(additive, 'halveDuration', additiveStart, additiveStart + 3);
+    assert.ok(additiveHalved.ok, additiveHalved.ok ? '' : additiveHalved.code);
+    assert.strictEqual(additiveHalved.text, '| C 8+16 |\n');
 
     const dotted = '| C/4. |\n';
     const dottedStart = dotted.indexOf('C/4.');
@@ -165,6 +227,11 @@ describe('music-aware Code Action planners', () => {
     const reference = 'let phrase = 4.d 4.d\n| C $phrase |\n';
     const refStart = reference.indexOf('$phrase');
     assert.strictEqual(plan(reference, 'doubleDuration', refStart, refStart + '$phrase'.length).ok, false);
+
+    const inherited = '| C |\nmel: | c4/4 d |\n';
+    const inheritedStart = inherited.indexOf('d |');
+    assert.strictEqual(plan(inherited, 'doubleDuration', inheritedStart, inheritedStart + 1).ok, false,
+      'duration changes require an authored duration');
   });
 
   it('offers bounded hints and only removes an unused definition without a trailing comment', () => {
@@ -185,5 +252,21 @@ describe('music-aware Code Action planners', () => {
     assert.ok(commentedHint);
     const noFix = planMusicCodeAction(commented, commentedScore, { kind: 'removeUnusedChordDefinition', line: commentedHint!.line });
     assert.strictEqual(noFix.ok, false);
+
+    const used = 'chord C@used = x32010\n| C@used 4.d 8.u 16.d 8.u |\n';
+    const usedParsed = score(used);
+    const usedHints = computeCodeActionHints(used, usedParsed);
+    assert.ok(!usedHints.some(hint => hint.kind === 'unusedChordDefinition'), 'active definitions do not get a removal hint');
+    assert.ok(!usedHints.some(hint => hint.kind === 'repeatedFragmentCandidate'), 'a non-repeated cell gets no extraction hint');
+    const activeDefinition = usedParsed.sourceDefinitions?.find(definition => definition.kind === 'chord');
+    assert.ok(activeDefinition);
+    assert.strictEqual(planMusicCodeAction(used, usedParsed, { kind: 'removeUnusedChordDefinition', line: activeDefinition!.line }).ok, false,
+      'active chord definitions cannot be removed');
+
+    const invalid = '| not-a-chord |\n';
+    assert.deepStrictEqual(computeCodeActionHints(invalid, parseGuitarDsl(invalid)), [], 'parser errors suppress both Hints');
+
+    const manyUnused = `${Array.from({ length: 41 }, (_, index) => `chord C@unused${index} = x32010`).join('\n')}\n| C |\n`;
+    assert.strictEqual(computeCodeActionHints(manyUnused, score(manyUnused)).length, 40, 'diagnostics remain capped at 40');
   });
 });

@@ -52,6 +52,17 @@ describe('i18n - getMessages', () => {
     assert.deepStrictEqual(jaKeys, enKeys);
   });
 
+  it('formats music-aware Code Action labels and Hints in Japanese and English', () => {
+    const ja = getMessages('ja');
+    const en = getMessages('en');
+    assert.match(ja.codeActionExtractLet, /抽出/);
+    assert.match(en.codeActionExtractLet, /Extract/);
+    assert.match(ja.hintUnusedChordDefinition('C'), /C/);
+    assert.match(en.hintUnusedChordDefinition('C'), /C/);
+    assert.match(ja.hintRepeatedFragmentCandidate(4), /4/);
+    assert.match(en.hintRepeatedFragmentCandidate(4), /4/);
+  });
+
   it('formats every diagnostic code in Japanese and English', () => {
     const allCodes: DiagnosticCode[] = [
       'upperCaseNoteName', 'invalidMelodyNote', 'invalidLength', 'missingInitialOctaveOrLength',
