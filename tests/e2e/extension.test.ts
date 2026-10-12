@@ -27,6 +27,8 @@ async function showAndFocus(doc: vscode.TextDocument, column: vscode.ViewColumn 
 async function undoIn(doc: vscode.TextDocument): Promise<void> {
   const before = doc.getText();
   await showAndFocus(doc);
+  await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+  await showAndFocus(doc);
   await vscode.commands.executeCommand('undo');
   for (let i = 0; i < 100 && doc.getText() === before; i++) await settle(10);
 }
@@ -35,6 +37,58 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
 async function closeAllEditors(): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   for (let i = 0; i < 100 && (vscode.window.visibleTextEditors.length > 0 || vscode.window.activeTextEditor); i++) await settle(10);
+}
+
+function makeCandidateQuickPick(mode: 'accept' | 'escape', activeIndex = 0, acceptedIndex = 0): {
+  quickPick: vscode.QuickPick<vscode.QuickPickItem>;
+  rows: () => Array<vscode.QuickPickItem & { candidate?: { id?: string; key?: string } }>;
+} {
+  let activeHandler: ((items: readonly vscode.QuickPickItem[]) => void) | undefined;
+  let acceptHandler: (() => void) | undefined;
+  let hideHandler: (() => void) | undefined;
+  const fake = {
+    items: [] as Array<vscode.QuickPickItem & { candidate?: { id?: string; key?: string } }>,
+    activeItems: [] as vscode.QuickPickItem[],
+    selectedItems: [] as vscode.QuickPickItem[],
+    canSelectMany: true,
+    ignoreFocusOut: false,
+    matchOnDescription: false,
+    matchOnDetail: false,
+    title: '',
+    placeholder: '',
+    show() {
+      const active = this.items[activeIndex];
+      if (active) {
+        this.activeItems = [active];
+        activeHandler?.(this.activeItems);
+      }
+      if (mode === 'accept') {
+        const selected = this.items[acceptedIndex];
+        if (selected) this.selectedItems = [selected];
+        acceptHandler?.();
+      } else {
+        hideHandler?.();
+      }
+    },
+    hide() { hideHandler?.(); },
+    dispose() {},
+    onDidChangeActive(handler: (items: readonly vscode.QuickPickItem[]) => void) {
+      activeHandler = handler;
+      return { dispose() {} };
+    },
+    onDidAccept(handler: () => void) {
+      acceptHandler = handler;
+      return { dispose() {} };
+    },
+    onDidHide(handler: () => void) {
+      hideHandler = handler;
+      return { dispose() {} };
+    }
+  };
+  return {
+    quickPick: fake as unknown as vscode.QuickPick<vscode.QuickPickItem>,
+    rows: () => fake.items
+  };
 }
 
 suite('GuitarDSL Extension E2E Test Suite', () => {
@@ -110,8 +164,771 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       'Command guitardsl.applyStrummingPattern should be registered'
     );
     assert.ok(commands.includes('guitardsl.openHelp'), 'Command guitardsl.openHelp should be registered');
+    assert.ok(commands.includes('guitardsl.suggestChordProgression'), 'Chord progression suggestions should be registered');
+    for (const command of [
+      'guitardsl.progression.chooseCandidate', 'guitardsl.progression.play', 'guitardsl.progression.stop',
+      'guitardsl.progression.showOriginal', 'guitardsl.progression.showCandidate',
+      'guitardsl.progression.apply', 'guitardsl.progression.close'
+    ]) assert.ok(commands.includes(command), `${command} should be registered as an independent editor action`);
     assert.ok(commands.includes('guitardsl.newDocumentFromTemplate'), 'Command guitardsl.newDocumentFromTemplate should be registered');
     assert.ok(commands.includes('guitardsl.openSample'), 'Command guitardsl.openSample should be registered');
+  });
+
+  test('ED-05 empty chord completion and editor command use the target key after @key', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |\n@key: D\n|   |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    const completion = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider', doc.uri, new vscode.Position(3, 3)
+    );
+    const items = completion?.items.filter(item => /^0[0-4]$/.test(item.sortText ?? '') && item.documentation instanceof vscode.MarkdownString) ?? [];
+    assert.ok(items.length > 0, 'an empty chord cell after @key still offers completions');
+    assert.ok(items.every(item => (item.documentation as vscode.MarkdownString).value.startsWith('D')),
+      'completion rationale uses the target measure D key, not the previous C key');
+
+    editor.selection = new vscode.Selection(new vscode.Position(3, 2), new vscode.Position(3, 2));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    const originalWarningMessage = window.showWarningMessage;
+    const picker = makeCandidateQuickPick('accept');
+    window.showQuickPick = async choices => {
+      const options = choices as Array<{ bars?: number; label?: string; description?: string }>;
+      return options.find(item => item.bars === 4) ?? options.find(item => item.description === 'append');
+    };
+    window.createQuickPick = () => picker.quickPick;
+    window.showWarningMessage = async () => undefined;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      window.showWarningMessage = originalWarningMessage;
+    }
+    assert.strictEqual(progressionAssistant.progressionAssistantProbe.getLastResolvedTarget().key, 'D',
+      'the editor command passes the current target measure key to candidate generation');
+    assert.ok(picker.rows().length > 0 && picker.rows().every(row => row.candidate?.key === 'D'),
+      'the append candidate Quick Pick also uses the pending D key after @key');
+    assert.strictEqual(doc.getText(), source, 'target resolution does not change the source');
+  });
+
+  test('ED-05 editor command accepts whitespace after a sharp chord and rejects a real trailing comment', async () => {
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    const originalWarningMessage = window.showWarningMessage;
+    let candidatePickerCount = 0;
+    const picker = makeCandidateQuickPick('accept');
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => {
+      candidatePickerCount++;
+      return picker.quickPick;
+    };
+    window.showWarningMessage = async () => undefined;
+    try {
+      const source = 'key: C\n| F#   | G | Am | F |';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      const editor = await showAndFocus(doc);
+      editor.selection = new vscode.Selection(new vscode.Position(1, 5), new vscode.Position(1, 5));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session, 'a cursor in whitespace after F# still resolves the first chord cell');
+      assert.strictEqual(session.target.startMeasure, 0);
+      assert.strictEqual(candidatePickerCount, 1, 'the candidate Quick Pick opens for the sharp chord line');
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+
+      const commentSource = 'key: C\n| F#   # comment | G | Am | F |';
+      const commentDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: commentSource });
+      const commentEditor = await showAndFocus(commentDoc);
+      const commentOffset = commentSource.indexOf('# comment') + 2;
+      commentEditor.selection = new vscode.Selection(commentDoc.positionAt(commentOffset), commentDoc.positionAt(commentOffset));
+      const countBeforeComment = candidatePickerCount;
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      assert.strictEqual(candidatePickerCount, countBeforeComment, 'a cursor in a real trailing comment does not open candidate selection');
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), undefined,
+        'a real trailing comment does not create an assistant session');
+      assert.strictEqual(commentDoc.getText(), commentSource, 'target checks do not edit the score');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      window.showWarningMessage = originalWarningMessage;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  test('ED-01/ED-02 CodeLens opens a native Quick Pick and selecting only decorates the editor', async () => {
+    const source = 'key: C\n[Verse]\n| C | Dm | Em | F |\n[Chorus]\n| G | Am | F | C |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    assert.ok(await editor.edit(edit => edit.insert(doc.positionAt(doc.getText().length), '\n# pre-existing edit')));
+    await settle(50);
+    const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', doc.uri);
+    const progressionLenses = (codeLenses ?? []).filter(lens => lens.command?.command === 'guitardsl.suggestChordProgression');
+    assert.ok(progressionLenses.some(lens => lens.range.start.line === 2), 'a chord-measure line has a Suggest progression CodeLens');
+    assert.ok(progressionLenses.some(lens => lens.range.start.line === 4), 'another chord-measure line has a CodeLens');
+    assert.ok(progressionLenses.every(lens => [2, 4].includes(lens.range.start.line)), 'unrelated section and key lines have no action');
+
+    editor.selection = new vscode.Selection(new vscode.Position(2, 3), new vscode.Position(2, 3));
+    const window = vscode.window as unknown as {
+      showQuickPick: (items: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    let progressionLengths: number[] = [];
+    const picker = makeCandidateQuickPick('accept');
+    window.showQuickPick = async items => {
+      const choices = items as Array<{ bars?: number; description?: string }>;
+      if (choices.some(item => item.bars !== undefined)) {
+        progressionLengths = choices.map(item => item.bars).filter((bars): bars is number => bars !== undefined);
+      }
+      return choices.find(item => item.bars === 4) ?? choices.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const previewCapo = require('../../previewCapo');
+    const generationBeforeSelection = previewCapo.previewLifecycleProbe.generation;
+    const previewDocumentBeforeSelection = previewCapo.previewLifecycleProbe.currentDocumentUri;
+    const originalText = doc.getText();
+    const originalVersion = doc.version;
+    try {
+      const entry = progressionLenses.find(lens => lens.range.start.line === 2)!;
+      await vscode.commands.executeCommand(entry.command!.command, ...(entry.command!.arguments ?? []));
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+    assert.strictEqual(doc.getText(), originalText, 'candidate selection leaves the score bytes unchanged');
+    assert.strictEqual(doc.version, originalVersion, 'selection leaves document version unchanged');
+    assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationBeforeSelection,
+      'selection does not open or rebuild Preview');
+    assert.strictEqual(previewCapo.previewLifecycleProbe.currentDocumentUri, previewDocumentBeforeSelection,
+      'selection does not redirect Preview to the selected editor');
+    assert.strictEqual(picker.quickPick.canSelectMany, false, 'candidate Quick Pick is single-select');
+    const rows = picker.rows();
+    assert.ok(rows.length > 0 && rows.length <= 5, 'Quick Pick shows at most five candidates');
+    assert.ok(rows.every(row => typeof row.label === 'string' && !!row.description && !!row.detail),
+      'each row includes the chord sequence, score and tonal rationale');
+    assert.ok(rows.every(row => !('picked' in row)), 'candidate rows use no checkbox or radio marker');
+    assert.deepStrictEqual(progressionLengths, [4, 8, 16], 'the editor picker offers only the approved progression lengths');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const session = progressionAssistant.progressionAssistantProbe.getSession();
+    assert.strictEqual(session.source, originalText);
+    assert.strictEqual(session.uri, doc.uri.toString());
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), source, 'candidate selection adds no undo step ahead of a pre-existing edit');
+  });
+
+  test('ED-02/ED-03 Quick Pick Escape restores committed selection and audition speed survives host rerenders', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+    const window = vscode.window as unknown as {
+      showQuickPick: (items: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    window.showQuickPick = async items => {
+      const choices = items as Array<{ bars?: number; description?: string }>;
+      return choices.find(item => item.bars === 4) ?? choices.find(item => item.description === 'replace');
+    };
+    const initialPicker = makeCandidateQuickPick('accept');
+    window.createQuickPick = () => initialPicker.quickPick;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const currentSession = progressionAssistant.progressionAssistantProbe.getSession();
+    assert.ok(currentSession, 'an accepted candidate session is active');
+    const sessionMessage = (message: Record<string, unknown>) => ({
+      ...message, sessionUri: currentSession.uri, sessionVersion: currentSession.version,
+      sessionGeneration: currentSession.sessionGeneration
+    });
+    const originalVersion = doc.version;
+    const originalText = doc.getText();
+
+    const picker = makeCandidateQuickPick('escape', 1);
+    window.showQuickPick = async items => {
+      const choices = items as Array<{ bars?: number; description?: string }>;
+      return choices.find(item => item.bars === 4) ?? choices.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+    assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().activeCandidateId, currentSession.activeCandidateId,
+      'Escape restores the prior committed candidate and its decorations');
+    assert.strictEqual(progressionAssistant.progressionAssistantProbe.getProvisionalCandidateId(), undefined);
+    assert.strictEqual(doc.getText(), originalText);
+    assert.strictEqual(doc.version, originalVersion);
+
+    await controller.handlePreviewMessage(sessionMessage({ command: 'progressionSpeedChanged', speed: 75 }));
+    await controller.handlePreviewMessage(sessionMessage({ command: 'progressionSideChanged', side: 'A' }));
+    assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().auditionSpeed, 75,
+      'A/B rerender retains the selected 75% speed in the host session');
+    const nextCandidate = currentSession.candidates.find((candidate: { id: string }) => candidate.id !== currentSession.activeCandidateId);
+    assert.ok(nextCandidate);
+    await controller.handlePreviewMessage(sessionMessage({ command: 'progressionCandidateChanged', candidateId: nextCandidate.id }));
+    const nextSession = progressionAssistant.progressionAssistantProbe.getSession();
+    assert.strictEqual(nextSession.auditionSpeed, 75, 'candidate rerender retains 75% speed');
+    assert.strictEqual(nextSession.activeCandidateId, nextCandidate.id);
+    assert.strictEqual(doc.getText(), originalText, 'A/B and candidate changes do not edit the source');
+  });
+
+  test('Preview messages from an earlier session are ignored when URI and version are unchanged', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |\n| G | Am | C | G |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const originalPreview = controller.preview;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    let renderCount = 0;
+    let restoreCount = 0;
+    controller.preview = {
+      render: () => { renderCount++; },
+      stop: () => undefined,
+      restore: () => { restoreCount++; }
+    };
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    let picker = makeCandidateQuickPick('accept');
+    window.createQuickPick = () => picker.quickPick;
+    try {
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session1 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session1, 'the first target creates session S1');
+      const delayedS1Messages = [
+        { command: 'progressionSideChanged', side: 'A' },
+        { command: 'progressionSpeedChanged', speed: 50 },
+        { command: 'progressionCandidateChanged', candidateId: session1.activeCandidateId },
+        { command: 'progressionDismiss' }
+      ].map(message => ({
+        ...message, sessionUri: session1.uri, sessionVersion: session1.version,
+        sessionGeneration: session1.sessionGeneration
+      }));
+
+      picker = makeCandidateQuickPick('accept');
+      editor.selection = new vscode.Selection(new vscode.Position(2, 3), new vscode.Position(2, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session2 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session2, 'the second target creates session S2');
+      assert.strictEqual(session2.uri, session1.uri, 'S1 and S2 use the same document URI');
+      assert.strictEqual(session2.version, session1.version, 'S1 and S2 use the same unchanged document version');
+      assert.strictEqual(session2.target.startMeasure, 4, 'S2 is bound to measure 4');
+      assert.notStrictEqual(session2.sessionGeneration, session1.sessionGeneration, 'each host session has a distinct generation');
+
+      await controller.handlePreviewMessage({
+        command: 'progressionSpeedChanged', sessionUri: session2.uri, sessionVersion: session2.version,
+        sessionGeneration: session2.sessionGeneration, speed: 125
+      });
+      const activeCandidateId = session2.activeCandidateId;
+      const renderCountBeforeStaleMessages = renderCount;
+      for (const message of delayedS1Messages) await controller.handlePreviewMessage(message);
+
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), session2,
+        'delayed S1 dismiss does not clear active session S2');
+      assert.strictEqual(controller.hasActiveSession(doc.uri.toString()), true, 'S2 remains active for its document');
+      assert.strictEqual(session2.activeCandidateId, activeCandidateId, 'S2 candidate selection is unchanged');
+      assert.strictEqual(session2.side, 'B', 'S1 A/B message cannot change S2 side');
+      assert.strictEqual(session2.auditionSpeed, 125, 'S1 speed message cannot change S2 audition speed');
+      assert.strictEqual(renderCount, renderCountBeforeStaleMessages, 'stale messages do not rerender the current Preview');
+      assert.strictEqual(restoreCount, 0, 'stale dismiss does not restore or close the Preview');
+      assert.strictEqual(doc.getText(), source, 'session identity checks leave source unchanged');
+    } finally {
+      controller.preview = originalPreview;
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  test('Late Preview initialization cannot replace a newer progression session', async () => {
+    await closeAllEditors();
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    const progressionAssistant = require('../../progressionAssistant');
+    const previewCapo = require('../../previewCapo');
+    const { parseGuitarDsl } = require('../../compiler');
+    const { planProgressionEdit } = require('../../progressionSourceEdits');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    const commands = vscode.commands as unknown as {
+      executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
+    };
+    const originalExecuteCommand = commands.executeCommand;
+    const executeCommand = originalExecuteCommand.bind(vscode.commands);
+    let picker = makeCandidateQuickPick('accept', 0, 0);
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+
+    let resolveShowStarted!: () => void;
+    const showStarted = new Promise<void>(resolve => { resolveShowStarted = resolve; });
+    let releaseShowPreview!: () => void;
+    const showPreviewGate = new Promise<void>(resolve => { releaseShowPreview = resolve; });
+    let holdNextShowPreview = false;
+    try {
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await executeCommand('guitardsl.suggestChordProgression');
+      const session1 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session1, 'the first candidate session is active');
+      const firstCandidate = session1.candidates.find((candidate: { id: string }) => candidate.id === session1.activeCandidateId);
+      const firstPlan = planProgressionEdit(source, parseGuitarDsl(source), session1.target, firstCandidate);
+      assert.ok(firstPlan.ok, 'the first candidate has a renderable edit plan');
+
+      commands.executeCommand = async (command, ...args) => {
+        const result = await executeCommand(command, ...args);
+        if (command === 'guitardsl.showPreview' && holdNextShowPreview) {
+          holdNextShowPreview = false;
+          resolveShowStarted();
+          await showPreviewGate;
+        }
+        return result;
+      };
+      holdNextShowPreview = true;
+      const firstPlay = executeCommand('guitardsl.progression.play');
+      await showStarted;
+
+      picker = makeCandidateQuickPick('accept', 0, 1);
+      await executeCommand('guitardsl.suggestChordProgression');
+      const session2 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session2, 'the newer candidate session is active while S1 waits for Preview initialization');
+      assert.strictEqual(session2.uri, session1.uri);
+      assert.strictEqual(session2.version, session1.version);
+      assert.notStrictEqual(session2.sessionGeneration, session1.sessionGeneration);
+      assert.ok(picker.rows().length > 1, 'the second session has a distinct candidate available');
+      assert.notStrictEqual(session2.activeCandidateId, session1.activeCandidateId);
+      const secondCandidate = session2.candidates.find((candidate: { id: string }) => candidate.id === session2.activeCandidateId);
+      const secondPlan = planProgressionEdit(source, parseGuitarDsl(source), session2.target, secondCandidate);
+      assert.ok(secondPlan.ok, 'the second candidate has a renderable edit plan');
+      assert.notStrictEqual(secondPlan.previewSource, firstPlan.previewSource,
+        'the selected candidates produce distinct Preview sources so a stale overwrite is observable');
+
+      const generationAfterSecondRender = previewCapo.previewLifecycleProbe.generation;
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'S2 is the current Preview after its render completes');
+      releaseShowPreview();
+      await firstPlay;
+
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), session2,
+        'late S1 completion leaves S2 as the focused assistant session');
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'late S1 completion cannot replace S2 Preview content');
+      assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationAfterSecondRender,
+        'late S1 completion does not render HTML or schedule its autoplay');
+      assert.strictEqual(doc.getText(), source, 'switching sessions and releasing a stale render leave source unchanged');
+    } finally {
+      releaseShowPreview();
+      commands.executeCommand = originalExecuteCommand;
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      await executeCommand('guitardsl.progression.close');
+      await closeAllEditors();
+    }
+  });
+
+  test('Late showPreview document resolution cannot replace a newer progression session', async () => {
+    await closeAllEditors();
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    const progressionAssistant = require('../../progressionAssistant');
+    const documentResolver = require('../../documentResolver');
+    const previewCapo = require('../../previewCapo');
+    const { parseGuitarDsl } = require('../../compiler');
+    const { planProgressionEdit } = require('../../progressionSourceEdits');
+    const originalResolveDocument = documentResolver.resolveGuitarDslDocument;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    let picker = makeCandidateQuickPick('accept', 0, 0);
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+
+    let resolveDocumentResolutionStarted!: () => void;
+    const documentResolutionStarted = new Promise<void>(resolve => { resolveDocumentResolutionStarted = resolve; });
+    let releaseDocumentResolution!: () => void;
+    const documentResolutionGate = new Promise<void>(resolve => { releaseDocumentResolution = resolve; });
+    let holdFirstResolution = true;
+    documentResolver.resolveGuitarDslDocument = async (uri: vscode.Uri | undefined, fallback: vscode.TextDocument | undefined) => {
+      if (holdFirstResolution && uri?.toString() === doc.uri.toString()) {
+        holdFirstResolution = false;
+        resolveDocumentResolutionStarted();
+        await documentResolutionGate;
+      }
+      return originalResolveDocument(uri, fallback);
+    };
+
+    try {
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session1 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session1, 'S1 is the current assistant session before opening Preview');
+
+      const firstPlay = vscode.commands.executeCommand('guitardsl.progression.play');
+      await documentResolutionStarted;
+
+      picker = makeCandidateQuickPick('accept', 0, 1);
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session2 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session2, 'S2 replaces S1 while S1 is resolving its Preview document');
+      assert.strictEqual(session2.uri, session1.uri);
+      assert.strictEqual(session2.version, session1.version);
+      assert.notStrictEqual(session2.sessionGeneration, session1.sessionGeneration);
+      assert.notStrictEqual(session2.activeCandidateId, session1.activeCandidateId);
+
+      const secondCandidate = session2.candidates.find((candidate: { id: string }) => candidate.id === session2.activeCandidateId);
+      const secondPlan = planProgressionEdit(source, parseGuitarDsl(source), session2.target, secondCandidate);
+      assert.ok(secondPlan.ok, 'S2 has a renderable Preview plan');
+      await vscode.commands.executeCommand('guitardsl.progression.play');
+      const generationAfterSecondRender = previewCapo.previewLifecycleProbe.generation;
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'S2 is rendered while S1 remains inside document resolution');
+
+      releaseDocumentResolution();
+      await firstPlay;
+
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), session2,
+        'late S1 document resolution cannot replace current session S2');
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'late S1 document resolution cannot update the Preview with stale DSL');
+      assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationAfterSecondRender,
+        'stale showPreview returns before rebuilding webview HTML');
+      assert.strictEqual(doc.getText(), source, 'the race does not change source');
+    } finally {
+      releaseDocumentResolution();
+      documentResolver.resolveGuitarDslDocument = originalResolveDocument;
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      await closeAllEditors();
+    }
+  });
+
+  test('ED-03 editor Play, Stop, A/B, Apply and Close stay independent operations', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+    const window = vscode.window as unknown as {
+      showQuickPick: (items: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    window.showQuickPick = async items => {
+      const choices = items as Array<{ bars?: number; description?: string }>;
+      return choices.find(item => item.bars === 4) ?? choices.find(item => item.description === 'replace');
+    };
+    const picker = makeCandidateQuickPick('accept');
+    window.createQuickPick = () => picker.quickPick;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const session = progressionAssistant.progressionAssistantProbe.getSession();
+    assert.ok(session);
+    const calls: Array<{ action: string; options?: Record<string, unknown>; uri?: string }> = [];
+    const originalPreview = controller.preview;
+    controller.preview = {
+      render: async (_activeSession: unknown, options?: Record<string, unknown>) => { calls.push({ action: 'render', options }); },
+      stop: (uri: string) => { calls.push({ action: 'stop', uri }); },
+      restore: async (uri: string) => { calls.push({ action: 'restore', uri }); }
+    };
+    const originalWarningMessage = window.showWarningMessage;
+    window.showWarningMessage = async () => undefined;
+    try {
+      await vscode.commands.executeCommand('guitardsl.progression.play');
+      assert.deepStrictEqual(calls.pop(), {
+        action: 'render', options: { openIfNeeded: true, startPlayback: 'melody' }
+      }, 'Play explicitly opens the existing Preview and requests its shared melody transport');
+      await vscode.commands.executeCommand('guitardsl.progression.stop');
+      assert.deepStrictEqual(calls.pop(), { action: 'stop', uri: doc.uri.toString() });
+      await vscode.commands.executeCommand('guitardsl.progression.showOriginal');
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'A');
+      assert.deepStrictEqual(calls.pop(), { action: 'render', options: undefined });
+      await vscode.commands.executeCommand('guitardsl.progression.showCandidate');
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'B');
+      assert.deepStrictEqual(calls.pop(), { action: 'render', options: undefined });
+      await vscode.commands.executeCommand('guitardsl.progression.apply');
+      assert.strictEqual(doc.getText(), source, 'Apply is separately confirmed and cancellation writes nothing');
+      assert.ok(progressionAssistant.progressionAssistantProbe.getSession(), 'canceling Apply keeps the session open');
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), undefined);
+      assert.ok(calls.some(call => call.action === 'restore' && call.uri === doc.uri.toString()),
+        'Close clears the session and restores the ordinary Preview');
+      assert.strictEqual(doc.getText(), source, 'all independent controls leave source unchanged until Apply is confirmed');
+    } finally {
+      controller.preview = originalPreview;
+      window.showWarningMessage = originalWarningMessage;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  test('ED-03/ED-04 progression actions keep Apply separate and preserve one-undo, stale and cancellation guards', async () => {
+    await closeAllEditors();
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    const completionPosition = new vscode.Position(1, 3);
+    const completionList = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider', doc.uri, completionPosition
+    );
+    assert.ok(completionList && completionList.items.length > 0, 'a chord cell offers deterministic suggestions');
+    assert.ok(completionList!.items.length <= 5, 'completion shows at most five candidates');
+    assert.ok(completionList!.items.every(item => item.range instanceof vscode.Range
+      && item.range.start.character === 2 && item.range.end.character === 3), 'completion replaces exactly the chord token');
+
+    editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+    const window = vscode.window as unknown as {
+      showQuickPick: (items: unknown[], options?: unknown) => Promise<unknown>;
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    const originalWarningMessage = window.showWarningMessage;
+    const choosePlacement = async (items: unknown[]) => {
+      const choices = items as Array<{ bars?: number; description?: string }>;
+      return choices.find(item => item.bars === 4) ?? choices.find(item => item.description === 'replace');
+    };
+    window.showQuickPick = choosePlacement;
+    let picker = makeCandidateQuickPick('accept');
+    window.createQuickPick = () => picker.quickPick;
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const previewCapo = require('../../previewCapo');
+    const generationBeforeSelection = previewCapo.previewLifecycleProbe.generation;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+    assert.strictEqual(doc.getText(), source, 'candidate selection leaves the source untouched');
+    const candidatePreview = previewCapo.effectiveDslProbe.previewInput as string;
+    assert.ok(candidatePreview !== source, 'an already-open Preview mirrors the selected candidate');
+    assert.ok(previewCapo.previewLifecycleProbe.generation > generationBeforeSelection,
+      'the existing Preview rerenders as a synchronized secondary surface');
+    const selectedCandidateId = picker.rows()[0]?.candidate?.id;
+    assert.ok(selectedCandidateId, 'the selected candidate has an ID for the Apply action');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const activeSession = progressionAssistant.progressionAssistantProbe.getSession();
+    const sessionMessage = (message: Record<string, unknown>) => ({
+      ...message, sessionUri: activeSession.uri, sessionVersion: activeSession.version,
+      sessionGeneration: activeSession.sessionGeneration
+    });
+    assert.ok(controller, 'the active progression assistant controller is registered');
+    const generationWithCandidate = previewCapo.previewLifecycleProbe.generation;
+    await showAndFocus(doc, vscode.ViewColumn.One);
+    assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationWithCandidate,
+      'returning focus to the same source document keeps the assistant Preview generation');
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, candidatePreview,
+      'same-document focus does not replace the candidate Preview with normal source');
+    await vscode.commands.executeCommand('workbench.action.focusNextGroup');
+    await settle(30);
+    assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationWithCandidate,
+      'returning focus to Preview keeps the same assistant session');
+
+    await controller.handlePreviewMessage(sessionMessage({ command: 'progressionSideChanged', side: 'A' }));
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, source,
+      'A re-renders the Preview from the original DSL');
+    const aGeneration = previewCapo.previewLifecycleProbe.generation;
+    await controller.handlePreviewMessage(sessionMessage({ command: 'progressionSideChanged', side: 'B' }));
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, candidatePreview,
+      'B re-renders the Preview from the selected candidate DSL');
+    assert.ok(previewCapo.previewLifecycleProbe.generation > aGeneration, 'each A/B transition rebuilds the Preview');
+
+    const workspace = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalApplyEdit = workspace.applyEdit;
+    let applyCount = 0;
+    const trackingApplyEdit = async (edit: vscode.WorkspaceEdit) => {
+      applyCount++;
+      return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+        .call(vscode.workspace, edit);
+    };
+    try {
+      workspace.applyEdit = trackingApplyEdit;
+      window.showWarningMessage = async () => undefined;
+      const applyMessage = sessionMessage({ command: 'progressionApply', candidateId: selectedCandidateId });
+      await controller.handlePreviewMessage(applyMessage);
+      assert.strictEqual(doc.getText(), source, 'cancelling confirmation leaves the source untouched');
+      assert.strictEqual(applyCount, 0, 'confirmation cancellation does not call applyEdit');
+
+      window.showWarningMessage = async (...args) => args[args.length - 1];
+      await Promise.all([
+        controller.handlePreviewMessage(applyMessage),
+        controller.handlePreviewMessage(applyMessage)
+      ]);
+    } finally {
+      window.showWarningMessage = originalWarningMessage;
+      workspace.applyEdit = originalApplyEdit;
+    }
+    assert.strictEqual(applyCount, 1, 'concurrent confirmations still perform exactly one applyEdit');
+    assert.strictEqual(doc.getText(), candidatePreview,
+      'confirmation applies exactly the candidate source shown in Preview');
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), source, 'one undo restores the exact original source');
+
+    picker = makeCandidateQuickPick('accept');
+    window.showQuickPick = choosePlacement;
+    window.createQuickPick = () => picker.quickPick;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+    }
+    const staleCandidateId = picker.rows()[0]?.candidate?.id;
+    assert.ok(staleCandidateId, 'a second preview session is created for stale-source validation');
+    const staleSession = progressionAssistant.progressionAssistantProbe.getSession();
+    const staleSessionMessage = (message: Record<string, unknown>) => ({
+      ...message, sessionUri: staleSession.uri, sessionVersion: staleSession.version,
+      sessionGeneration: staleSession.sessionGeneration
+    });
+
+    applyCount = 0;
+    window.showWarningMessage = async (...args) => args[args.length - 1];
+    workspace.applyEdit = async () => { applyCount++; return false; };
+    try {
+      await controller.handlePreviewMessage(staleSessionMessage({ command: 'progressionApply', candidateId: staleCandidateId }));
+    } finally {
+      window.showWarningMessage = originalWarningMessage;
+      workspace.applyEdit = originalApplyEdit;
+    }
+    assert.strictEqual(doc.getText(), source, 'an applyEdit=false result leaves the source untouched');
+    assert.strictEqual(applyCount, 1, 'the candidate is submitted once to the failing applyEdit');
+
+    const userEdit = new vscode.WorkspaceEdit();
+    userEdit.insert(doc.uri, doc.positionAt(doc.getText().length), '\n# user edit');
+    assert.ok(await (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+      .call(vscode.workspace, userEdit));
+    const editedSource = doc.getText();
+    await settle(30);
+    applyCount = 0;
+    workspace.applyEdit = trackingApplyEdit;
+    try {
+      await controller.handlePreviewMessage(staleSessionMessage({ command: 'progressionApply', candidateId: staleCandidateId }));
+      assert.strictEqual(doc.getText(), editedSource, 'an edit after candidate preview invalidates the candidate without overwriting the user');
+      assert.strictEqual(applyCount, 0, 'stale source is rejected before applyEdit');
+    } finally {
+      workspace.applyEdit = originalApplyEdit;
+    }
+    await closeAllEditors();
+  });
+
+  test('Issue #129 completions ignore non-chord contexts and unrelated parser errors', async () => {
+    const cases = [
+      { label: 'melody', source: 'key: C\nmel: | c4/4 |', needle: 'c4', after: 2 },
+      { label: 'lyrics', source: 'key: C\nlyr: | "words" |', needle: 'words', after: 2 },
+      { label: 'TAB', source: 'key: C\ntab: 6:0/4', needle: '6:0', after: 1 },
+      { label: 'chord definition', source: 'key: C\nchord C@barre = x35553', needle: 'x35553', after: 2 },
+      { label: 'comment', source: 'key: C\n# | C |', needle: 'C |', after: 1 },
+      { label: 'header', source: 'key: C\n| C |', needle: 'key: C', after: 6 },
+      { label: 'explicit duration', source: 'key: C\n| C:2 |', needle: 'C:2', after: 1 },
+      {
+        label: 'custom voicing label',
+        source: 'key: C\nchord C@barre = x35553\n| C@barre |',
+        needle: 'C@barre', after: 'C@barre'.length
+      },
+      { label: 'unrelated parse error', source: 'key: C\n| C bogus |', needle: 'C bogus', after: 1 }
+    ];
+    for (const item of cases) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: item.source });
+      const offset = item.source.indexOf(item.needle) + item.after;
+      const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+        'vscode.executeCompletionItemProvider', doc.uri, doc.positionAt(offset)
+      );
+      const progressionItems = result?.items.filter(completion =>
+        /^0[0-4]$/.test(completion.sortText ?? '') && typeof completion.detail === 'string'
+      ) ?? [];
+      assert.strictEqual(progressionItems.length, 0, `${item.label} must not offer chord suggestions`);
+    }
+  });
+
+  test('Issue #129 completions accept sharp chord roots and stop at whitespace-prefixed comments', async () => {
+    const cases = [
+      { label: 'F# chord', source: 'key: C\n| F# |', needle: 'F#', offers: true },
+      { label: 'C# chord', source: 'key: C\n| C# |', needle: 'C#', offers: true },
+      { label: 'real trailing comment', source: 'key: C\n| F# | # comment', needle: 'comment', offers: false }
+    ];
+    for (const item of cases) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: item.source });
+      const offset = item.source.indexOf(item.needle) + item.needle.length;
+      const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+        'vscode.executeCompletionItemProvider', doc.uri, doc.positionAt(offset)
+      );
+      const progressionItems = result?.items.filter(completion =>
+        /^0[0-4]$/.test(completion.sortText ?? '') && typeof completion.detail === 'string'
+      ) ?? [];
+      assert.strictEqual(progressionItems.length > 0, item.offers, `${item.label} completion behavior`);
+      if (item.offers) {
+        assert.ok(progressionItems.every(completion => completion.range instanceof vscode.Range
+          && completion.range.start.character === 2 && completion.range.end.character === 4),
+        `${item.label} replaces only the sharp chord token`);
+      }
+    }
   });
 
   test('GP import opens an Untitled GuitarDSL source that can be exported, with safe cancel and edit handling', async () => {

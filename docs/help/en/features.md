@@ -31,6 +31,15 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 - **📄 Save PDF** and the **?** Help button.
 - **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
 
+### Chord Progression Suggestions and Audition
+<!-- help-sources: extension:3 extension:4 -->
+
+**GuitarDSL: Suggest Chord Progression** offers deterministic 4-, 8-, and 16-bar candidates from CodeLens in the active GuitarDSL editor. After you choose a length and placement, VS Code's native Quick Pick shows up to five rows with the chord sequence, score, and tonal rationale. Select with a click or the keyboard. It uses no radio buttons or checkboxes. Candidates come from a fixed catalog and the current key, capo, and melody. Scores are heuristics for comparing candidates. Completions in chord cells can still suggest the next chord.
+
+- You can replace only the chord names in the target range or append chord-only measures at the end of the score. Rhythm, melody, lyrics, comments, and whitespace are preserved. An empty chord cell uses the immediately preceding `@key` for its target key. A range can start after a key change, but any `@key` event inside the replacement range is rejected, even when it repeats the same key. Ranges that cross keys or contain ambiguous harmony are also unavailable. Targets that cannot be resolved safely are unavailable, including repeated measures, multiple chords, explicit chord durations, custom voicings, TAB, and source errors.
+- Quick Pick selection only adds source-preserving Decorations in the editor. It does not change the source, document version, or undo history; it does not open Preview or start playback. While a session is active, use the separate editor commands **Play**, **Stop**, **A Original**, **B Candidate**, **Apply**, and **Close**. **Play** opens the existing Preview and auditions the progression with melody through its shared Web Audio engine. If Preview is already open, it stays synchronized. Preview also offers single-chord, progression, progression-with-melody, and full-song audition. Speed ranges from 50% to 150% and remains selected across A/B and candidate switches. Switching sides stops current audition audio.
+- Choose **Apply candidate** and confirm to write the candidate in one undoable edit. If the document changes before apply, the edit is cancelled.
+
 ### Practice Mode
 <!-- help-sources: extension:3 extension:4 -->
 

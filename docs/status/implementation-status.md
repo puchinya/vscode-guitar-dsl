@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-10
-- **全体ステータス**: 基本機能実装完了。Issue #89 の6弦・単一声部TABサブセットと Issue #93 の Practice Mode を実装。Issue #97 の契約機能とGP8 native writer確認は完了し、最終ゲートとPR deliveryを進行中。Issue #124 のレビュー指摘を反映し、`npm test`（1,070 unit＋58 E2E）、Help/AI同期はPASS。Rustup経由のprepublish、current-HEAD self-review、PR deliveryを進行中。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **最終更新日**: 2026-10-12
+- **全体ステータス**: 基本機能実装済み。Issue #129 は追加レビュー対応中。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。`npm run compile`、`npm test`（1,110 unit＋76 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,594件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。開発ホストからの実音出力は未確認。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -69,6 +69,7 @@
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
 | | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
+| | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完とコマンドパレットから決定論的な候補を提示。調とメロディを評価し、補完では prefix のみを置換。コマンドは複数小節の置換または末尾追加を候補化 |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
 | **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | Get Started / Current File（アクティブなエディタのみ）/ Tools。`onView:guitardsl.sidebar` で起動 |
@@ -89,6 +90,7 @@
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。Section は再生タイムラインで書かれた小節ごとの所属を解決し、複数小節と連続した反復を含める。DSL は変更しない |
+| | コード進行アシスタント（Issue #129） | 🟡 レビュー対応中 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。CodeLens と標準 Quick Pick でエディタから選び、Decoration で元ソースを変えずに候補を表示。選択は自動再生せず、Play/Stop/A/B/Apply/Close は独立操作。Preview の既存 Web Audio engine を再利用し、50〜150%の試聴速度をA/B・候補切替後も保持。確認後に単一 WorkspaceEdit で適用。転調直後の対象調、曖昧な和声、未対応構文、古いWebview message、showPreview内の非同期document解決後に遅れるPreview副作用をsession / 描画世代で拒否。自動テストはPASS。CodeLens / Quick Pick / narrow layout画像は保存・Issue添付済み。開発ホストでの実音再生確認は未検証 |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
@@ -113,6 +115,8 @@
 | Guitar Pro 7/8 chord-strum optimization (Issue #124) | 🟡 レビュー指摘対応・PR delivery中 | `src/gp78/chordStrum.ts` は全曲適格性、正確な拍長、単一候補コード照合、歌詞制限と決定的上限を検証し、全曲を一括変換する。TAB拍のない空小節・コードのみの小節は元IRを保ち、生成コード名は和声が変わる箇所だけに置く。ソース明示コードの反復は保持する。最適化出力のシリアライズ/再検証失敗では Faithful/Cancel を提示し、Faithful は読み込み済みIR/lossを再利用する。`npm test`（1,070 unit＋58 E2E）、Help/AI同期はPASS。F11の自己作成GP8.1.5最適化previewを再生成・目視確認済み、Issue #124 comment 6099402141へ添付済み。GP7 native app verificationは `NOT RUN / EXCLUDED`。 |
 
 ## 2. 検証・テスト状況 (Verification & Testing)
+
+- **追加確認 (2026-10-12, HEAD `4861a4c`)**: GitHub の必須 `agent-required-check` は PASS。ローカルでは `npm run test:unit -- --timeout 10000` が 1,110 件 PASS、Help/AI同期・`npm run vscode:prepublish`・`npx @vscode/vsce ls` (1,594件)・Issue文書/契約検証も PASS。一方、標準 `npm test` は1回目がExtension Hostの `SIGABRT`、2回目は2秒上限のユニットテスト1件がtimeout。単独E2Eは74件PASS/1件FAILで、既存の「optimized serialization and postparse failures offer explicit faithful fallback or cancel」GPインポート検証が失敗した。別の過去実行では75件PASSしているが、今回のローカル再実行は成功扱いにしない。
 
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
@@ -156,14 +160,16 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-- **テスト実行結果**: **1080 / 1080 件 PASS** (0 failures、2026-10-11)
+  - `tests/unit/progressionSuggestions.test.ts`, `tests/unit/progressionSourceEdits.test.ts`, `tests/unit/progressionAudition.test.ts`: 固定メジャー / マイナーカタログ、調・メロディ・カポを使った順位付け、同値 `@key` 境界と曖昧な和声の拒否、ソース範囲保持、A/B の譜面表示と音声切替、明示操作までの無再生、反復時の全曲試聴制限
+  - `tests/e2e/extension.test.ts`: 遅延したS1のPreview初期化完了後も、同じURI/versionの新しいS2の候補表示・セッションを保持し、古い要求の再描画・自動再生を抑止
+- **テスト実行結果**: **1110 / 1110 件 PASS** (0 failures、2026-10-12)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.openHelp`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
   - サイドバー: ビュー `guitardsl.sidebar` にフォーカスできること
   - ヘルプ: GuitarDSL ドキュメントなしで `guitardsl.openHelp` が完了し、テキストドキュメントを変更しないこと
   - ドキュメントシンボル
@@ -171,6 +177,7 @@
   - メロディ行の診断の発行と修正時のクリア
   - 調弦 (Issue #84): 不正 pitch の診断範囲が入力 token と一致し、修正時に消えること。Drop D + capo の Preview/PDF が同じ有効 DSL で描画され、調弦・key・melody を保持すること
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）
+  - Issue #129: chord cell の補完が最大5件かつコード prefix だけを置換し、`F#` / `C#` と `F#` 後の空白位置を有効セルとして扱い、実コメントでは候補を出さないこと。候補プレビューでは元文書が不変で、A/B切替時は選択側の DSL から譜面と音声を再描画し、同じ文書へ戻ったとき assistant Preview を保つ。対象調変更直後の空セルでは対象調を使う。未変更同一文書のS1→S2で遅延したS1のdismiss/A-B/速度メッセージはS2の候補・側・速度・active stateを変えず、遅延したS1のPreview初期化完了後もS2のHTMLを上書きせず自動再生しない。確認キャンセル・古い候補・連続適用・`applyEdit=false` は原文を書き換えず、有効候補は一括適用後 Undo 1 回で原文に戻ること
   - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
   - 移調（Issue #68）: 最新テキストからの再計算、移調 + カポ指定の 1 回の編集と 1 回の元に戻す、失敗時は不変、楽譜設定のカポ・初心者モード・移調の 3 セクション、適用後のプレビュー・PDF の再解決（初心者モード有効時を含む）、スコアイベントのアウトライン、高度な記譜のサンプルの PDF 出力
   - 初心者モード: ON で `forbid`・自動・カポ一時変更の解除、プレビュー入力と PDF 入力の一致、OFF でソース表示（カポ一時変更は戻さない）、ON/OFF の繰り返しでドリフトなし、固定カポ・バレーコード変更で自動へ、編集への追従と解なしでの解除（古い PDF なし）、切り替え・ドキュメントを閉じる・プレビューを閉じるでの解除、適用（最新テキスト・1 回の編集・1 回の元に戻す・失敗時は不変）、楽譜設定 `beginner` セクションのモデルと適用
@@ -178,7 +185,7 @@
   - 新曲作成（Issue #104）: 伴奏のリズムを書かない構造の下書き（2 セクション、コード・メロディ・歌詞）が検証を通り、分析がセクションを返し、複数セクションの適用が 1 回の編集で伴奏を生成し、最後の検証がエラー 0 件で、1 回の元に戻すで下書きに戻ること（対象が確立済みの状態から始めるツールの動作確認で、Agent の対象選択は検証しない）。既存スコアをアクティブに開いたまま、別の新しい文書を `path` で検証・分析・適用・検証すると、新しい文書だけが編集され、既存スコアはバイト単位で変わらないこと
   - 実モデル smoke（ユーザー実施、2026-09-27）: PR #105 head `362cda23c27d66dbd26a09ae5f67ee5c6965f67a` の build で Skill resources が解決され、別の新規文書で伴奏適用まで完了。候補数で停止せず、サビ1/2に変化がありラスサビが最も強かったため R051/R052 PASS（[Issue evidence](https://github.com/puchinya/vscode-guitar-dsl/issues/104#issuecomment-5856512394)）。VS Code version/model は未記録。apply 入力 JSON は未記録で R041/R042/R046/R047 は未検証、R043 の引数も未記録、R048 は strict PASS としない。R030 は既存ファイルの hash 未取得、R039 はファイル読取ログなし、R040 は failure path 未実行。
   - AI 連携（Issue #80）: モデルなしでの起動と 7 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算、入力が示す文書だけを編集すること（確認後にアクティブなエディタが変わっても対象は変わらない。対象なし・両方指定は `invalidInput`。未知の無題 URI で文書を作らない）、確認メッセージが入力だけから作られること、読み取り専用ツールの `document.uri` を `vscode.lm.invokeTool` 経由で変更系ツールに渡して無題ドキュメントを編集できること
-- **テスト実行結果**: **60 / 60 件 PASS**（2026-10-11、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
+- **テスト実行結果**: **76 / 76 件 PASS**（2026-10-12、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Issue #54 v2 検証 (2026-10-11, macOS arm64)**:

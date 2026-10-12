@@ -73,7 +73,8 @@ export interface HarmonicAnalysisResult {
 
 type QualityFamily = 'major' | 'minor' | 'diminished' | 'augmented' | 'thirdless';
 type ScaleName = SecondaryDominantTarget['scale'];
-type KeyInfo = { tonicPc: number; mode: HarmonicMode };
+export interface ParsedKeyContext { tonicPc: number; mode: HarmonicMode }
+type KeyInfo = ParsedKeyContext;
 type NashvilleCoordinate = Pick<NashvilleNumber, 'degree' | 'accidental'>;
 
 interface AnalyzedChordEvent {
@@ -116,7 +117,7 @@ function parseCapo(value: unknown): number | null {
   return Number(value);
 }
 
-function parseKey(value: unknown): KeyInfo | null {
+export function parseKeyContext(value: unknown): ParsedKeyContext | null {
   if (typeof value !== 'string') return null;
   const match = value.match(/^([A-G][b#]?)(m?)$/);
   if (!match) return null;
@@ -446,7 +447,7 @@ export function analyzeHarmony(score: Pick<ParsedScore, 'capo' | 'measures'>): H
     }
 
     const keyText = measure.context.key;
-    const key = parseKey(keyText);
+    const key = parseKeyContext(keyText);
     if (!key) diagnostics.push({ code: 'invalidKey', value: String(keyText), measureIndex });
 
     expandedChords(measure, score.measures).forEach((placement, chordIndex) => {

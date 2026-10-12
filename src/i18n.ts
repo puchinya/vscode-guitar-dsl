@@ -117,6 +117,49 @@ export interface Messages {
   uiPracticeLoopSet: string;
   uiPracticeLoopCleared: string;
   msgPlaybackNoPreview: string;
+  progressionCompletionDetail: (score: number) => string;
+  progressionScoreBreakdown: (follow: number, identical: number, tonic: number, melody: string) => string;
+  progressionNoDocument: string;
+  progressionLengthPrompt: string;
+  progressionSuggestLabel: string;
+  progressionChooseCandidate: string;
+  progressionAppendPreview: (chords: string) => string;
+  progressionLengthFour: string;
+  progressionLengthEight: string;
+  progressionLengthSixteen: string;
+  progressionCandidatePrompt: string;
+  progressionOperationPrompt: string;
+  progressionReplace: string;
+  progressionAppend: string;
+  progressionApplyConfirm: string;
+  progressionApplyFailed: string;
+  progressionPreviewUnavailable: string;
+  progressionInvalidTarget: string;
+  progressionSourceErrors: string;
+  progressionKeyRequired: string;
+  progressionInvalidKey: string;
+  progressionInvalidCapo: string;
+  progressionUnsupportedQuality: string;
+  progressionAmbiguousHarmony: string;
+  progressionKeyBoundary: string;
+  progressionNoSafeCandidates: string;
+  uiProgressionTitle: string;
+  uiProgressionDescription: string;
+  uiProgressionAudition: string;
+  uiProgressionChord: string;
+  uiProgressionBars: string;
+  uiProgressionWithMelody: string;
+  uiProgressionSideA: string;
+  uiProgressionSideB: string;
+  uiProgressionSpeed: string;
+  uiProgressionApply: string;
+  uiProgressionNoCandidates: string;
+  uiProgressionAudioUnavailable: string;
+  uiProgressionFullSongOnly: string;
+  uiProgressionFullSong: string;
+  uiProgressionHeuristic: string;
+  uiProgressionRepeatNotice: string;
+  uiProgressionClose: string;
 
   // Onboarding sidebar (Activity Bar "Start Here" view) and onboarding commands
   sidebarGetStarted: string;
@@ -301,6 +344,49 @@ export const MESSAGES_JA: Messages = {
   uiPracticeLoopSet: 'ループを設定しました。',
   uiPracticeLoopCleared: 'ループを解除しました。',
   msgPlaybackNoPreview: '再生操作には開いている GuitarDSL Preview が必要です。',
+  progressionCompletionDetail: score => `進行ヒューリスティック ${score >= 0 ? '+' : ''}${score}`,
+  progressionScoreBreakdown: (follow, identical, tonic, melody) => `直前ルート ${follow >= 0 ? '+' : ''}${follow}、同一開始 ${identical}、主音終止 +${tonic}、メロディ ${melody}`,
+  progressionNoDocument: 'アクティブな GuitarDSL エディタを開いてください。',
+  progressionLengthPrompt: '提案する範囲を選択',
+  progressionSuggestLabel: 'コード進行を提案',
+  progressionChooseCandidate: '候補を選択',
+  progressionAppendPreview: (chords: string) => '追加位置: ' + chords,
+  progressionLengthFour: '4小節',
+  progressionLengthEight: '8小節',
+  progressionLengthSixteen: '16小節',
+  progressionCandidatePrompt: 'コード進行候補を選択',
+  progressionOperationPrompt: '候補の配置方法を選択',
+  progressionReplace: '対象の小節を置き換える',
+  progressionAppend: '本文末に追加する',
+  progressionApplyConfirm: '選択したコード進行を1回の編集で適用しますか？',
+  progressionApplyFailed: 'コード進行を安全に適用できませんでした。文書は変更していません。',
+  progressionPreviewUnavailable: 'コード進行の試聴には GuitarDSL Preview を開いてください。',
+  progressionInvalidTarget: 'カーソル位置からコード小節を特定できません。',
+  progressionSourceErrors: '文書に解析エラーがあります。エラーを直してから試してください。',
+  progressionKeyRequired: '候補を作るには、ヘッダーの key または対象範囲より前の @key が必要です。',
+  progressionInvalidKey: '対象範囲の調を解釈できません。',
+  progressionInvalidCapo: 'カポ設定を解釈できません。',
+  progressionUnsupportedQuality: '対象範囲のコード品質は候補生成に対応していません。',
+  progressionAmbiguousHarmony: '対象範囲の和声を判定できないため、コード進行候補を作成できません。',
+  progressionKeyBoundary: '候補範囲が調の境界にかかっています。',
+  progressionNoSafeCandidates: '候補を安全に適用できる範囲がありません。',
+  uiProgressionTitle: 'コード進行候補',
+  uiProgressionDescription: '候補を選んでも再生や文書編集は始まりません。',
+  uiProgressionAudition: '試聴',
+  uiProgressionChord: 'コード1つ',
+  uiProgressionBars: '進行全体',
+  uiProgressionWithMelody: 'メロディと試聴',
+  uiProgressionSideA: 'A 原文',
+  uiProgressionSideB: 'B 候補',
+  uiProgressionSpeed: '試聴速度',
+  uiProgressionApply: '候補を適用…',
+  uiProgressionNoCandidates: '候補がありません。',
+  uiProgressionAudioUnavailable: '音声を開始できません。候補の適用は引き続き利用できます。',
+  uiProgressionFullSongOnly: '演奏順で対象範囲が連続しないため、全曲試聴のみ利用できます。',
+  uiProgressionFullSong: '全曲を試聴',
+  uiProgressionHeuristic: 'スコアは候補比較用のヒューリスティックで、曲の良さを評価するものではありません。',
+  uiProgressionRepeatNotice: '8小節・16小節候補は、4小節パターンを2回・4回繰り返します。',
+  uiProgressionClose: '閉じる',
 
   sidebarGetStarted: 'はじめる',
   sidebarCurrentFile: '現在のファイル',
@@ -527,6 +613,49 @@ export const MESSAGES_EN: Messages = {
   uiPracticeLoopSet: 'Loop set.',
   uiPracticeLoopCleared: 'Loop cleared.',
   msgPlaybackNoPreview: 'Open a GuitarDSL Preview to use playback commands.',
+  progressionCompletionDetail: score => `Progression heuristic ${score >= 0 ? '+' : ''}${score}`,
+  progressionScoreBreakdown: (follow, identical, tonic, melody) => `Previous root ${follow >= 0 ? '+' : ''}${follow}, identical opening ${identical}, tonic ending +${tonic}, melody ${melody}`,
+  progressionNoDocument: 'Open an active GuitarDSL editor first.',
+  progressionLengthPrompt: 'Choose a suggestion range',
+  progressionSuggestLabel: 'Suggest progression',
+  progressionChooseCandidate: 'Choose candidate',
+  progressionAppendPreview: (chords: string) => 'Append here: ' + chords,
+  progressionLengthFour: '4 bars',
+  progressionLengthEight: '8 bars',
+  progressionLengthSixteen: '16 bars',
+  progressionCandidatePrompt: 'Choose a chord progression',
+  progressionOperationPrompt: 'Choose how to place the candidate',
+  progressionReplace: 'Replace target measures',
+  progressionAppend: 'Append at the end of the score',
+  progressionApplyConfirm: 'Apply this progression in one undoable edit?',
+  progressionApplyFailed: 'The progression could not be applied safely. The document was not changed.',
+  progressionPreviewUnavailable: 'Open a GuitarDSL Preview to audition a progression.',
+  progressionInvalidTarget: 'A chord measure could not be resolved from the caret position.',
+  progressionSourceErrors: 'The document has parse errors. Fix them before suggesting a progression.',
+  progressionKeyRequired: 'Declare a key in the header or with @key before the target range to get suggestions.',
+  progressionInvalidKey: 'The key for the target range could not be interpreted.',
+  progressionInvalidCapo: 'The capo setting could not be interpreted.',
+  progressionUnsupportedQuality: 'A chord quality in the target range is not supported for suggestions.',
+  progressionAmbiguousHarmony: 'The harmony in the target range is ambiguous, so progression suggestions are unavailable.',
+  progressionKeyBoundary: 'The candidate range crosses a key boundary.',
+  progressionNoSafeCandidates: 'No candidates can be applied safely to this range.',
+  uiProgressionTitle: 'Chord progression suggestions',
+  uiProgressionDescription: 'Selecting a candidate does not play audio or edit the document.',
+  uiProgressionAudition: 'Audition',
+  uiProgressionChord: 'Single chord',
+  uiProgressionBars: 'Full progression',
+  uiProgressionWithMelody: 'Progression with melody',
+  uiProgressionSideA: 'A Original',
+  uiProgressionSideB: 'B Candidate',
+  uiProgressionSpeed: 'Audition speed',
+  uiProgressionApply: 'Apply candidate…',
+  uiProgressionNoCandidates: 'No candidates are available.',
+  uiProgressionAudioUnavailable: 'Audio could not start. Candidate apply is still available.',
+  uiProgressionFullSongOnly: 'The target range is noncontiguous in play order; only full-song audition is available.',
+  uiProgressionFullSong: 'Audition full song',
+  uiProgressionHeuristic: 'Scores are heuristics for comparing candidates, not objective song-quality ratings.',
+  uiProgressionRepeatNotice: 'Eight- and sixteen-bar candidates repeat a selected four-bar pattern two or four times.',
+  uiProgressionClose: 'Close',
 
   sidebarGetStarted: 'Get Started',
   sidebarCurrentFile: 'Current File',

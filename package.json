@@ -138,6 +138,38 @@
       {
         "command": "guitardsl.practice.faster",
         "title": "%command.practice.faster.title%"
+      },
+      {
+        "command": "guitardsl.suggestChordProgression",
+        "title": "%command.suggestChordProgression.title%"
+      },
+      {
+        "command": "guitardsl.progression.chooseCandidate",
+        "title": "%command.progression.chooseCandidate.title%"
+      },
+      {
+        "command": "guitardsl.progression.play",
+        "title": "%command.progression.play.title%"
+      },
+      {
+        "command": "guitardsl.progression.stop",
+        "title": "%command.progression.stop.title%"
+      },
+      {
+        "command": "guitardsl.progression.showOriginal",
+        "title": "%command.progression.showOriginal.title%"
+      },
+      {
+        "command": "guitardsl.progression.showCandidate",
+        "title": "%command.progression.showCandidate.title%"
+      },
+      {
+        "command": "guitardsl.progression.apply",
+        "title": "%command.progression.apply.title%"
+      },
+      {
+        "command": "guitardsl.progression.close",
+        "title": "%command.progression.close.title%"
       }
     ],
     "viewsContainers": {
@@ -183,6 +215,36 @@
           "command": "guitardsl.showPreview",
           "when": "resourceLangId == guitardsl || resourceExtname == .guitardsl || resourceExtname == .gdsl",
           "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "guitardsl.progression.chooseCandidate",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.play",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.stop",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.showOriginal",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.showCandidate",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.apply",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
+        },
+        {
+          "command": "guitardsl.progression.close",
+          "when": "guitardsl.progressionAssistantActive && editorLangId == guitardsl"
         }
       ],
       "explorer/context": [

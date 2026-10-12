@@ -46,6 +46,23 @@ describe('i18n - getMessages', () => {
     assert.strictEqual(msgs.msgPdfSaved('score.pdf'), 'PDF saved: score.pdf');
   });
 
+  it('localizes the editor-first progression Quick Pick in Japanese and English', () => {
+    const ja = getMessages('ja');
+    const en = getMessages('en');
+    assert.match(ja.progressionChooseCandidate, /候補/);
+    assert.match(en.progressionChooseCandidate, /candidate/i);
+    assert.match(ja.progressionCandidatePrompt, /候補/);
+    assert.match(en.progressionCandidatePrompt, /progression/i);
+    for (const key of [
+      'progressionLengthPrompt', 'progressionLengthFour', 'progressionLengthEight', 'progressionLengthSixteen',
+      'progressionOperationPrompt', 'progressionReplace', 'progressionAppend'
+    ] as const) {
+      assert.ok(ja[key].trim(), `Japanese ${key} must be present`);
+      assert.ok(en[key].trim(), `English ${key} must be present`);
+      assert.notStrictEqual(ja[key], en[key], `${key} must use the selected locale`);
+    }
+  });
+
   it('should have symmetric keys between MESSAGES_JA and MESSAGES_EN', () => {
     const jaKeys = Object.keys(MESSAGES_JA).sort();
     const enKeys = Object.keys(MESSAGES_EN).sort();
