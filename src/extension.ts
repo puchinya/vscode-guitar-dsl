@@ -99,6 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   let progressionAssistantController: ProgressionAssistantController | undefined;
+  let progressionRenderGeneration = 0;
   let openingPreviewForProgressionAssistant = false;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
@@ -269,9 +270,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   progressionAssistantController = registerProgressionAssistant(context, currentLocale, {
     async render(session, renderOptions: ProgressionAssistantRenderOptions = {}) {
+      const renderGeneration = ++progressionRenderGeneration;
+      const isCurrentRender = () => renderGeneration === progressionRenderGeneration
+        && progressionAssistantController?.isCurrentSession(session) === true;
       const uri = vscode.Uri.parse(session.uri);
       const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === session.uri)
         ?? await vscode.workspace.openTextDocument(uri);
+      if (!isCurrentRender()) return;
       if (doc.version !== session.version || doc.getText() !== session.source) {
         vscode.window.showWarningMessage(msgs.progressionApplyFailed);
         progressionAssistantController?.invalidate(session.uri);
@@ -296,6 +301,7 @@ export function activate(context: vscode.ExtensionContext) {
           openingPreviewForProgressionAssistant = false;
         }
       }
+      if (!isCurrentRender()) return;
       if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== session.uri) {
         if (!renderOptions.openIfNeeded) return;
         vscode.window.showWarningMessage(msgs.progressionPreviewUnavailable);
@@ -356,14 +362,17 @@ export function activate(context: vscode.ExtensionContext) {
       previewLifecycleProbe.currentDocumentUri = session.uri;
     },
     stop(uri) {
+      progressionRenderGeneration++;
       if (currentPanel && previewLifecycleProbe.currentDocumentUri === uri) {
         currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
       }
     },
     async restore(uri) {
+      const renderGeneration = ++progressionRenderGeneration;
       if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== uri) return;
       const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === uri)
         ?? await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+      if (renderGeneration !== progressionRenderGeneration || progressionAssistantController?.hasActiveSession(uri)) return;
       updateWebview(doc);
     }
   });

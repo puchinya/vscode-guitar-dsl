@@ -479,6 +479,99 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
+  test('Late Preview initialization cannot replace a newer progression session', async () => {
+    await closeAllEditors();
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    const progressionAssistant = require('../../progressionAssistant');
+    const previewCapo = require('../../previewCapo');
+    const { parseGuitarDsl } = require('../../compiler');
+    const { planProgressionEdit } = require('../../progressionSourceEdits');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    const commands = vscode.commands as unknown as {
+      executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
+    };
+    const originalExecuteCommand = commands.executeCommand;
+    const executeCommand = originalExecuteCommand.bind(vscode.commands);
+    let picker = makeCandidateQuickPick('accept', 0, 0);
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+
+    let resolveShowStarted!: () => void;
+    const showStarted = new Promise<void>(resolve => { resolveShowStarted = resolve; });
+    let releaseShowPreview!: () => void;
+    const showPreviewGate = new Promise<void>(resolve => { releaseShowPreview = resolve; });
+    let holdNextShowPreview = false;
+    try {
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await executeCommand('guitardsl.suggestChordProgression');
+      const session1 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session1, 'the first candidate session is active');
+      const firstCandidate = session1.candidates.find((candidate: { id: string }) => candidate.id === session1.activeCandidateId);
+      const firstPlan = planProgressionEdit(source, parseGuitarDsl(source), session1.target, firstCandidate);
+      assert.ok(firstPlan.ok, 'the first candidate has a renderable edit plan');
+
+      commands.executeCommand = async (command, ...args) => {
+        const result = await executeCommand(command, ...args);
+        if (command === 'guitardsl.showPreview' && holdNextShowPreview) {
+          holdNextShowPreview = false;
+          resolveShowStarted();
+          await showPreviewGate;
+        }
+        return result;
+      };
+      holdNextShowPreview = true;
+      const firstPlay = executeCommand('guitardsl.progression.play');
+      await showStarted;
+
+      picker = makeCandidateQuickPick('accept', 0, 1);
+      await executeCommand('guitardsl.suggestChordProgression');
+      const session2 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session2, 'the newer candidate session is active while S1 waits for Preview initialization');
+      assert.strictEqual(session2.uri, session1.uri);
+      assert.strictEqual(session2.version, session1.version);
+      assert.notStrictEqual(session2.sessionGeneration, session1.sessionGeneration);
+      assert.ok(picker.rows().length > 1, 'the second session has a distinct candidate available');
+      assert.notStrictEqual(session2.activeCandidateId, session1.activeCandidateId);
+      const secondCandidate = session2.candidates.find((candidate: { id: string }) => candidate.id === session2.activeCandidateId);
+      const secondPlan = planProgressionEdit(source, parseGuitarDsl(source), session2.target, secondCandidate);
+      assert.ok(secondPlan.ok, 'the second candidate has a renderable edit plan');
+      assert.notStrictEqual(secondPlan.previewSource, firstPlan.previewSource,
+        'the selected candidates produce distinct Preview sources so a stale overwrite is observable');
+
+      const generationAfterSecondRender = previewCapo.previewLifecycleProbe.generation;
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'S2 is the current Preview after its render completes');
+      releaseShowPreview();
+      await firstPlay;
+
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), session2,
+        'late S1 completion leaves S2 as the focused assistant session');
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'late S1 completion cannot replace S2 Preview content');
+      assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationAfterSecondRender,
+        'late S1 completion does not render HTML or schedule its autoplay');
+      assert.strictEqual(doc.getText(), source, 'switching sessions and releasing a stale render leave source unchanged');
+    } finally {
+      releaseShowPreview();
+      commands.executeCommand = originalExecuteCommand;
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      await executeCommand('guitardsl.progression.close');
+      await closeAllEditors();
+    }
+  });
+
   test('ED-03 editor Play, Stop, A/B, Apply and Close stay independent operations', async () => {
     const source = 'key: C\n| C | Dm | Em | F |';
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });

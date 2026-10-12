@@ -552,6 +552,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline`、Preview の既存 AudioContext / transport で再生する。小節番号から独自に時刻を推測しない。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
 - Preview が候補セッションを表示中に A/B または候補を切り替えたときは予約音源を stop/fade し、同じ singleton Preview を選択側の DSL から再描画する。Preview が閉じていれば候補切替で開かない。速度変更では予約音源と scheduler を停止する。同一文書へフォーカスを戻しても Preview の表示を通常 Preview に差し替えない。文書変更・別文書への切替・通常 Preview への復帰・パネルを閉じたときは session と Decoration を破棄する。Preview の通常再生・Practice・PDF の状態と責務を維持し、二重 scheduler を作らない。
 - Preview の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。Webview の表示は keyboard-operable で、候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
+- Preview を開く非同期ホスト描画は要求世代と現在の session identity を再確認してから HTML・停止・自動再生を更新する。後続の A/B・候補・停止・閉じる操作で古くなった描画要求は現在の Preview 表示と試聴状態に反映しない。
 
 ## 4B. 楽譜設定エディタ (Score Settings Editor)
 

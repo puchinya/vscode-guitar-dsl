@@ -541,6 +541,13 @@ export class ProgressionAssistantController implements vscode.Disposable {
     return this.session?.uri === uri;
   }
 
+  isCurrentSession(session: ProgressionAssistantSession): boolean {
+    return this.session === session
+      && this.session.sessionGeneration === session.sessionGeneration
+      && this.session.uri === session.uri
+      && this.session.version === session.version;
+  }
+
   getActiveSessionForTest(): ProgressionAssistantSession | undefined {
     return this.session;
   }
