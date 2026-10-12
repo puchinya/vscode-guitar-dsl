@@ -19,9 +19,9 @@
 
 - **状態**: 実装済み、PR はレビュー待ち。
 - **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Play は chord / bars / melody / song の既存 Preview transport に接続し、A/B切替前に再生を停止する。8/16小節では4小節パターンの反復であることを表示する。Apply は確認後もセッション・候補 revision・対象文書を再検証して単一 WorkspaceEdit を適用し、1回の Undo で戻せる。単一コード補完と既存 Preview の音声 transport は維持し、Preview 内の重複した進行編集フォームは除去した。
-- **検証**: `npm run compile:all`、`npm test`（単体 **1124 / 1124**、VS Code 1.141.0 E2E **80 / 80**。Help/AI同期を含む）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、Issue文書検証、Implementation Contract 検証、`git diff --check` が PASS。E2Eスクリーンショット専用実行もPASS。
-- **画面証拠**: E2E のローカルDevToolsからタイトルでExtension Development Hostのページを特定し、候補一覧と操作部を別々に取得した（英語・暗色：[候補](evidence/issue-134/inspector-en-dark-narrow-review-final-dark.png)、[操作部](evidence/issue-134/inspector-en-dark-narrow-review-final-dark-controls.png)、英語・明色：[候補](evidence/issue-134/inspector-en-light-narrow-review-final-light.png)、[操作部](evidence/issue-134/inspector-en-light-narrow-review-final-light-controls.png)）。画像は VS Code renderer の内容で、macOS のネイティブ枠は含まない。
-- **未確認**: 日本語言語パックを隔離プロファイルへ渡して再実行したが、`vscode.env.language` が `en` のままのため日本語画像は保存していない。全ロケール・テーマの組み合わせ、実際のキーボードフォーカス移動と操作、VoiceOverの実読み上げ、およびスピーカー出力は未確認。ユニットテストでは候補のネイティブbutton意味論と `:focus-visible` の表示を確認した。
+- **検証**: `npm run compile:all`、`npm test`（単体 **1124 / 1124**、VS Code 1.141.0 E2E **80 / 80**。Help/AI同期を含む）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、Issue文書検証、Implementation Contract 検証、`git diff --check` が PASS。スクリーンショット専用E2EでもTabで候補へ移動しSpaceで選択できることを確認した。
+- **画面証拠**: E2E のローカルDevToolsからタイトルでExtension Development Hostのページを特定し、候補一覧と操作部を別々に取得した（英語・暗色：[候補](evidence/issue-134/inspector-en-dark-narrow-review-final-dark-kbd.png)、[フォーカス中の操作部](evidence/issue-134/inspector-en-dark-narrow-review-final-dark-kbd-controls.png)、英語・明色：[候補](evidence/issue-134/inspector-en-light-narrow-review-final-light-kbd.png)、[フォーカス中の操作部](evidence/issue-134/inspector-en-light-narrow-review-final-light-kbd-controls.png)）。画像は VS Code renderer の内容で、macOS のネイティブ枠は含まない。
+- **未確認**: 日本語言語パックを隔離プロファイルへ渡して再実行したが、`vscode.env.language` が `en` のままのため日本語画像は保存していない。全ロケール・テーマの組み合わせ、VoiceOverの実読み上げ、およびスピーカー出力は未確認。ユニットテストでは候補のネイティブbutton意味論と `:focus-visible` のCSSを確認し、Tab/Spaceの実操作はスクリーンショット専用E2Eで確認した。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 

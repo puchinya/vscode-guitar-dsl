@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
+import { activateInspectorCandidateWithKeyboard, captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -246,6 +246,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await settle(200);
       await captureWorkbenchScreenshot(`${screenshotName}.png`);
       await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const keyboardCandidate = session.candidates.find((candidate: { id: string }) => candidate.id !== session.activeCandidateId);
+      assert.ok(keyboardCandidate, 'keyboard selection has an alternate candidate');
+      const tabReachedCandidate = await activateInspectorCandidateWithKeyboard(keyboardCandidate.chords.join('→'));
+      assert.ok(tabReachedCandidate, 'Tab reaches the alternate native candidate button in the Inspector webview');
+      await settle(100);
+      assert.strictEqual(session.activeCandidateId, keyboardCandidate.id,
+        'Space selects the focused candidate without mouse input');
       await scrollInspectorToControls();
       await settle(200);
       await captureWorkbenchScreenshot(`${screenshotName}-controls.png`);

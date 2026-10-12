@@ -96,6 +96,55 @@ export async function scrollInspectorToControls(): Promise<void> {
   });
 }
 
+export async function activateInspectorCandidateWithKeyboard(candidateLabel: string): Promise<boolean> {
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const targets = await getTargets(port);
+  const target = targets.find(item => item.type === 'iframe' && item.url.includes('purpose=webviewView') && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
+  if (!target) throw new Error('Could not find the GuitarDSL Inspector webview target');
+  return withDevToolsTarget(target, async send => {
+    const result = await send('Page.getFrameTree');
+    let activeFrameId: string | undefined;
+    const visit = (node: Record<string, unknown>): void => {
+      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+    };
+    if (result.frameTree) visit(result.frameTree as Record<string, unknown>);
+    if (!activeFrameId) throw new Error('Could not find the active Inspector webview frame');
+    const isolatedWorld = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-e2e-keyboard-check' });
+    const executionContextId = isolatedWorld.executionContextId;
+    if (typeof executionContextId !== 'number') throw new Error('Could not create an Inspector frame execution context');
+    const normalizedLabel = candidateLabel.replace(/\s+/g, '').toLowerCase();
+    const readFocusedButton = async (): Promise<boolean> => {
+      const focused = await send('Runtime.evaluate', {
+        contextId: executionContextId,
+        expression: "JSON.stringify({tag:document.activeElement?.tagName,text:document.activeElement?.innerText,pressed:document.activeElement?.getAttribute('aria-pressed')})",
+        returnByValue: true
+      });
+      const value = (focused.result as { value?: unknown } | undefined)?.value;
+      if (typeof value !== 'string') return false;
+      const element = JSON.parse(value) as { tag?: unknown; text?: unknown; pressed?: unknown };
+      return element.tag === 'BUTTON' && element.pressed !== null
+        && typeof element.text === 'string'
+        && element.text.replace(/\s+/g, '').toLowerCase().includes(normalizedLabel);
+    };
+    const dispatchTab = async (): Promise<void> => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+    };
+    for (let tab = 0; tab < 40; tab++) {
+      await dispatchTab();
+      if (await readFocusedButton()) {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
 type SendDevToolsCommand = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
 async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
