@@ -116,6 +116,8 @@
 
 ## 2. 検証・テスト状況 (Verification & Testing)
 
+- **追加確認 (2026-10-12, HEAD `4861a4c`)**: GitHub の必須 `agent-required-check` は PASS。ローカルでは `npm run test:unit -- --timeout 10000` が 1,110 件 PASS、Help/AI同期・`npm run vscode:prepublish`・`npx @vscode/vsce ls` (1,594件)・Issue文書/契約検証も PASS。一方、標準 `npm test` は1回目がExtension Hostの `SIGABRT`、2回目は2秒上限のユニットテスト1件がtimeout。単独E2Eは74件PASS/1件FAILで、既存の「optimized serialization and postparse failures offer explicit faithful fallback or cancel」GPインポート検証が失敗した。別の過去実行では75件PASSしているが、今回のローカル再実行は成功扱いにしない。
+
 ### 2.1 単体テスト (Unit Tests)
 - **フレームワーク**: Mocha + `tsx` (TypeScript直接実行)
 - **テストファイル**:
