@@ -3026,6 +3026,9 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
       assert.ok(registeredCommands.includes('guitardsl.inspector.focus'));
       await vscode.commands.executeCommand('guitardsl.openInspector');
       assert.strictEqual(document.getText(), before, 'explicit open is read-only and repeatable');
+      await showAndFocus(document);
+      await vscode.commands.executeCommand('guitardsl.openInspector', true);
+      assert.strictEqual(vscode.window.activeTextEditor?.document, document, 'a resolved view can preserve editor focus');
 
       const other = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'leave this alone' });
       await showAndFocus(other);

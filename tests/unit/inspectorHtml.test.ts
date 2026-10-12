@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { runInNewContext } from 'node:vm';
 import { renderInspectorHtml } from '../../src/render/inspectorHtml';
 
 describe('renderInspectorHtml', () => {
@@ -30,6 +31,40 @@ describe('renderInspectorHtml', () => {
     assert.match(html, /Showing the active GuitarDSL document context/);
     assert.match(html, /This foundation is read-only/);
     assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
+  });
+
+  it('ignores an older asynchronous context message after a newer generation is applied', () => {
+    const html = renderInspectorHtml('en', { kind: 'empty' }, 'vscode-webview://unit', 'nonce-3', 1);
+    const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
+    assert.strictEqual(typeof script, 'string');
+
+    const root = { dataset: { generation: '1', contextKind: 'empty' } };
+    const status = { textContent: 'empty' };
+    const description = { textContent: 'empty description' };
+    let receiveMessage: ((event: { data: unknown }) => void) | undefined;
+    runInNewContext(script!, {
+      document: {
+        getElementById: (id: string) => ({
+          'inspector-state': root,
+          'inspector-status': status,
+          'inspector-description': description
+        }[id])
+      },
+      window: {
+        addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => {
+          receiveMessage = listener;
+        }
+      }
+    });
+
+    assert.ok(receiveMessage);
+    receiveMessage!({ data: { command: 'setContext', generation: 3, kind: 'document', status: 'current', description: 'current context' } });
+    receiveMessage!({ data: { command: 'setContext', generation: 2, kind: 'empty', status: 'stale', description: 'stale context' } });
+
+    assert.strictEqual(root.dataset.generation, '1', 'the host-rendered baseline is preserved');
+    assert.strictEqual(root.dataset.contextKind, 'document');
+    assert.strictEqual(status.textContent, 'current');
+    assert.strictEqual(description.textContent, 'current context');
   });
 
   it('escapes untrusted nonce and CSP source values', () => {

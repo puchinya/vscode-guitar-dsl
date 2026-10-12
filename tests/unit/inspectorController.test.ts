@@ -99,6 +99,31 @@ describe('GuitarDslInspectorController', () => {
     assert.strictEqual(presentation.disposeCalls, 0);
   });
 
+  it('keeps the newest context when a second open arrives before view activation resolves', async () => {
+    const presentation = new FakePresentation();
+    let finishFocus!: () => void;
+    const focusPending = new Promise<void>(resolve => { finishFocus = resolve; });
+    let activeDocument: InspectorActiveDocument = { uri: 'file:///A.guitardsl', version: 1 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => focusPending);
+
+    const openingA = controller.openForActiveEditor();
+    activeDocument = { uri: 'file:///B.guitardsl', version: 2 };
+    const openingB = controller.openForActiveEditor();
+
+    assert.deepStrictEqual(controller.currentContext, {
+      kind: 'document',
+      uri: 'file:///B.guitardsl',
+      version: 2
+    });
+    finishFocus();
+    await Promise.all([openingA, openingB]);
+    assert.deepStrictEqual(controller.currentContext, {
+      kind: 'document',
+      uri: 'file:///B.guitardsl',
+      version: 2
+    });
+  });
+
   it('disposes its presentation once and ignores later context changes', () => {
     const presentation = new FakePresentation();
     const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
