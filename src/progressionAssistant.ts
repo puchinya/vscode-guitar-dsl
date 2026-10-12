@@ -40,6 +40,12 @@ export interface ProgressionAssistantSession {
   auditionSpeed: 50 | 75 | 100 | 125 | 150;
 }
 
+export interface ProgressionAssistantSessionIdentity {
+  uri: string;
+  version: number;
+  sessionGeneration: number;
+}
+
 export interface ProgressionAssistantPreviewController {
   render(session: ProgressionAssistantSession, options?: ProgressionAssistantRenderOptions): Promise<void> | void;
   stop(uri: string): void;
@@ -542,10 +548,14 @@ export class ProgressionAssistantController implements vscode.Disposable {
   }
 
   isCurrentSession(session: ProgressionAssistantSession): boolean {
-    return this.session === session
-      && this.session.sessionGeneration === session.sessionGeneration
-      && this.session.uri === session.uri
-      && this.session.version === session.version;
+    return this.session === session && this.isCurrentSessionIdentity(session);
+  }
+
+  isCurrentSessionIdentity(identity: ProgressionAssistantSessionIdentity): boolean {
+    return !!this.session
+      && this.session.sessionGeneration === identity.sessionGeneration
+      && this.session.uri === identity.uri
+      && this.session.version === identity.version;
   }
 
   getActiveSessionForTest(): ProgressionAssistantSession | undefined {

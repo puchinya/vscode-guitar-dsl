@@ -572,6 +572,90 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
+  test('Late showPreview document resolution cannot replace a newer progression session', async () => {
+    await closeAllEditors();
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    const progressionAssistant = require('../../progressionAssistant');
+    const documentResolver = require('../../documentResolver');
+    const previewCapo = require('../../previewCapo');
+    const { parseGuitarDsl } = require('../../compiler');
+    const { planProgressionEdit } = require('../../progressionSourceEdits');
+    const originalResolveDocument = documentResolver.resolveGuitarDslDocument;
+    const window = vscode.window as unknown as {
+      showQuickPick: (choices: unknown[], options?: unknown) => Promise<unknown>;
+      createQuickPick: () => vscode.QuickPick<vscode.QuickPickItem>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalCreateQuickPick = window.createQuickPick;
+    let picker = makeCandidateQuickPick('accept', 0, 0);
+    window.showQuickPick = async choices => {
+      const items = choices as Array<{ bars?: number; description?: string }>;
+      return items.find(item => item.bars === 4) ?? items.find(item => item.description === 'replace');
+    };
+    window.createQuickPick = () => picker.quickPick;
+
+    let resolveDocumentResolutionStarted!: () => void;
+    const documentResolutionStarted = new Promise<void>(resolve => { resolveDocumentResolutionStarted = resolve; });
+    let releaseDocumentResolution!: () => void;
+    const documentResolutionGate = new Promise<void>(resolve => { releaseDocumentResolution = resolve; });
+    let holdFirstResolution = true;
+    documentResolver.resolveGuitarDslDocument = async (uri: vscode.Uri | undefined, fallback: vscode.TextDocument | undefined) => {
+      if (holdFirstResolution && uri?.toString() === doc.uri.toString()) {
+        holdFirstResolution = false;
+        resolveDocumentResolutionStarted();
+        await documentResolutionGate;
+      }
+      return originalResolveDocument(uri, fallback);
+    };
+
+    try {
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session1 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session1, 'S1 is the current assistant session before opening Preview');
+
+      const firstPlay = vscode.commands.executeCommand('guitardsl.progression.play');
+      await documentResolutionStarted;
+
+      picker = makeCandidateQuickPick('accept', 0, 1);
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const session2 = progressionAssistant.progressionAssistantProbe.getSession();
+      assert.ok(session2, 'S2 replaces S1 while S1 is resolving its Preview document');
+      assert.strictEqual(session2.uri, session1.uri);
+      assert.strictEqual(session2.version, session1.version);
+      assert.notStrictEqual(session2.sessionGeneration, session1.sessionGeneration);
+      assert.notStrictEqual(session2.activeCandidateId, session1.activeCandidateId);
+
+      const secondCandidate = session2.candidates.find((candidate: { id: string }) => candidate.id === session2.activeCandidateId);
+      const secondPlan = planProgressionEdit(source, parseGuitarDsl(source), session2.target, secondCandidate);
+      assert.ok(secondPlan.ok, 'S2 has a renderable Preview plan');
+      await vscode.commands.executeCommand('guitardsl.progression.play');
+      const generationAfterSecondRender = previewCapo.previewLifecycleProbe.generation;
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'S2 is rendered while S1 remains inside document resolution');
+
+      releaseDocumentResolution();
+      await firstPlay;
+
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession(), session2,
+        'late S1 document resolution cannot replace current session S2');
+      assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, secondPlan.previewSource,
+        'late S1 document resolution cannot update the Preview with stale DSL');
+      assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationAfterSecondRender,
+        'stale showPreview returns before rebuilding webview HTML');
+      assert.strictEqual(doc.getText(), source, 'the race does not change source');
+    } finally {
+      releaseDocumentResolution();
+      documentResolver.resolveGuitarDslDocument = originalResolveDocument;
+      window.showQuickPick = originalQuickPick;
+      window.createQuickPick = originalCreateQuickPick;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      await closeAllEditors();
+    }
+  });
+
   test('ED-03 editor Play, Stop, A/B, Apply and Close stay independent operations', async () => {
     const source = 'key: C\n| C | Dm | Em | F |';
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });

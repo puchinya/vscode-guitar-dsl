@@ -20,7 +20,7 @@ import { registerGuitarDslAiTools } from './ai/tools';
 import { registerGp78Commands } from './gp78Commands';
 import { computeCodeActionDiagnostics, registerMusicCodeActions } from './codeActionProvider';
 import { registerProgressionCompletions } from './progressionCompletionProvider';
-import { registerProgressionAssistant, type ProgressionAssistantController, type ProgressionAssistantRenderOptions } from './progressionAssistant';
+import { registerProgressionAssistant, type ProgressionAssistantController, type ProgressionAssistantRenderOptions, type ProgressionAssistantSessionIdentity } from './progressionAssistant';
 import { planProgressionEdit } from './progressionSourceEdits';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
@@ -100,7 +100,6 @@ export function activate(context: vscode.ExtensionContext) {
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   let progressionAssistantController: ProgressionAssistantController | undefined;
   let progressionRenderGeneration = 0;
-  let openingPreviewForProgressionAssistant = false;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
@@ -166,13 +165,18 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
-  const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri) => {
-    if (!openingPreviewForProgressionAssistant) progressionAssistantController?.invalidateActive();
+  const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri, progressionSessionIdentity?: ProgressionAssistantSessionIdentity) => {
+    if (!progressionSessionIdentity) progressionAssistantController?.invalidateActive();
+    const isCurrentProgressionSession = () => !progressionSessionIdentity
+      || progressionAssistantController?.isCurrentSessionIdentity(progressionSessionIdentity) === true;
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!isCurrentProgressionSession()) return;
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
+    if (progressionSessionIdentity && (doc.uri.toString() !== progressionSessionIdentity.uri
+      || doc.version !== progressionSessionIdentity.version)) return;
 
     lastActiveGuitarDslDoc = doc;
 
@@ -294,12 +298,12 @@ export function activate(context: vscode.ExtensionContext) {
 
       const panelShowsSession = !!currentPanel && previewLifecycleProbe.currentDocumentUri === session.uri;
       if (!panelShowsSession && renderOptions.openIfNeeded) {
-        openingPreviewForProgressionAssistant = true;
-        try {
-          await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
-        } finally {
-          openingPreviewForProgressionAssistant = false;
-        }
+        const sessionIdentity: ProgressionAssistantSessionIdentity = {
+          uri: session.uri,
+          version: session.version,
+          sessionGeneration: session.sessionGeneration
+        };
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri, sessionIdentity);
       }
       if (!isCurrentRender()) return;
       if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== session.uri) {
