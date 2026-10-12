@@ -43,7 +43,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 
 ### Common Inspector
 
-`guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホストの Controller が `{kind:'empty'} | {kind:'document'; uri; version}` を所有し、切替・close 時に古い URI/version を無効化する。View の再解決は最新 snapshot を描画し、解決後の更新は単調増加 generation で古いメッセージを拒否する。ユーザーが移動した View をコードから移動し直さない。
+`guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホストの Controller が `{kind:'empty'} | {kind:'document'; uri; version}` を所有し、切替・close 時に古い URI/version を無効化する。非表示中は DOM 更新メッセージを送らず、状態変更ごとに generation を進める。View が再表示されたら最新 snapshot で HTML を作り直す。Webview は message listener を登録してから `ready` を送り、ホストは最新 snapshot を新しい generation で再送するため、非表示中または DOM 再生成中に失われたメッセージへ依存しない。古い generation のメッセージは拒否する。ユーザーが移動した View をコードから移動し直さない。
 
 Inspector はソース・編集・Undo・音声再生を所有しない。Preview Panel は引き続き唯一の Web Audio transport owner であり、編集補助機能は後続 Issue の契約で段階移行する。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
 
@@ -67,7 +67,7 @@ Help の編集元は `docs/help/{ja,en}/`、拡張機能に同梱する生成物
 
 Help ファイルの欠落・preview 起動例外は `openGuitarDslHelp()` 境界で捕捉し、ローカライズ済みエラーを一度表示する。サンプル読込失敗では新規文書を開かない。sidebar view の読み込みは editor panel の機能 module を eager import しない。
 
-Inspector View の再解決時は controller の現在 snapshot を使い、既に閉じた文書の URI/version を復活させない。provider disposal で可視 Webview への参照とイベント subscription を解放する。
+Inspector View の再解決・再表示時は controller の現在 snapshot を使い、既に閉じた文書の URI/version を復活させない。非表示中の切替・編集は最新 snapshot と generation に反映し、可視化後に HTML 初期状態と `ready` handshake で同期する。provider disposal で Webview への参照とイベント subscription を解放する。
 
 ## Alternatives considered
 

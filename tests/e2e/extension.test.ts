@@ -3030,47 +3030,34 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
     }
   });
 
-  test('the production Inspector WebviewView displays active document, empty, and version updates', async () => {
+  test('the production Inspector WebviewView restores its latest state on repeated hide and reveal', async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
     const sourceA = 'key: C\n| C | G | Am | F |';
     const documentA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: sourceA });
     await showAndFocus(documentA);
-    await vscode.commands.executeCommand('guitardsl.openInspector');
-
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
-      inspectorViewTestProbe: { resolvedView?: vscode.WebviewView };
+      inspectorViewTestProbe: {
+        resolvedView?: vscode.WebviewView;
+        transformHtml?: (html: string) => string;
+      };
     };
-    for (let attempt = 0; attempt < 100 && !inspectorViewTestProbe.resolvedView; attempt++) await settle(20);
-    const inspectorView = inspectorViewTestProbe.resolvedView;
-    assert.ok(inspectorView, 'the explicit command resolves the registered production WebviewView');
-
-    type Snapshot = { generation: number; kind: string; status: string; description: string };
-    const snapshots: Snapshot[] = [];
-    const waiters: Array<{ predicate: (snapshot: Snapshot) => boolean; resolve: (snapshot: Snapshot) => void }> = [];
-    const waitForSnapshot = (predicate: (snapshot: Snapshot) => boolean): Promise<Snapshot> => {
-      const existing = snapshots.find(predicate);
-      if (existing) return Promise.resolve(existing);
-      return new Promise(resolve => waiters.push({ predicate, resolve }));
-    };
-    const messageSubscription = inspectorView.webview.onDidReceiveMessage((message: unknown) => {
-      const candidate = message as { command?: unknown; generation?: number; kind?: string; status?: string; description?: string };
-      if (candidate.command !== 'inspectorTestSnapshot' || !Number.isSafeInteger(candidate.generation)) return;
-      const snapshot = candidate as Snapshot & { command: string };
-      snapshots.push(snapshot);
-      const waiterIndex = waiters.findIndex(waiter => waiter.predicate(snapshot));
-      if (waiterIndex >= 0) waiters.splice(waiterIndex, 1)[0].resolve(snapshot);
-    });
-
-    try {
-      const currentHtml = inspectorView.webview.html;
-      const nonce = currentHtml.match(/<script nonce="([^"]+)">/)?.[1];
+    const transformHtml = (html: string): string => {
+      const apiBinding = 'const vscodeApi = acquireVsCodeApi();';
+      const testApiBinding = 'window.__guitardslInspectorTestApi = vscodeApi;';
+      const instrumented = html.includes(testApiBinding)
+        ? html
+        : html.replace(apiBinding, `${apiBinding}\n      ${testApiBinding}`);
+      const probeMarker = '<!-- guitardsl-inspector-e2e-probe -->';
+      if (instrumented.includes(probeMarker)) return instrumented;
+      const nonce = instrumented.match(/<script nonce="([^"]+)">/)?.[1];
       assert.ok(nonce, 'the production Inspector HTML contains its CSP nonce');
       const probe = [
         '(() => {',
         '  const state = document.getElementById("inspector-state");',
         '  const status = document.getElementById("inspector-status");',
         '  const description = document.getElementById("inspector-description");',
-        '  const vscode = acquireVsCodeApi();',
+        '  const vscode = window.__guitardslInspectorTestApi;',
         '  const report = () => vscode.postMessage({',
         '    command: "inspectorTestSnapshot",',
         '    generation: Number(state.dataset.generation),',
@@ -3082,43 +3069,101 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
         '  report();',
         '})();'
       ].join('\n');
-      const probedHtml = currentHtml.replace('</body>', `<script nonce="${nonce}">${probe}</script>\n</body>`);
-      assert.notStrictEqual(probedHtml, currentHtml, 'the resolved Inspector renders its production shell');
-      inspectorView.webview.html = probedHtml;
+      return instrumented.replace('</body>', `${probeMarker}<script nonce="${nonce}">${probe}</script>\n</body>`);
+    };
+    inspectorViewTestProbe.transformHtml = transformHtml;
 
-      const initial = await waitForSnapshot(snapshot => snapshot.kind === 'document');
+    let messageSubscription: vscode.Disposable | undefined;
+    try {
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      for (let attempt = 0; attempt < 100 && !inspectorViewTestProbe.resolvedView; attempt++) await settle(20);
+      const inspectorView = inspectorViewTestProbe.resolvedView;
+      assert.ok(inspectorView, 'the explicit command resolves the registered production WebviewView');
+
+      type Snapshot = { generation: number; kind: string; status: string; description: string };
+      const snapshots: Snapshot[] = [];
+      messageSubscription = inspectorView.webview.onDidReceiveMessage((message: unknown) => {
+        const candidate = message as { command?: unknown; generation?: number; kind?: string; status?: string; description?: string };
+        if (candidate.command !== 'inspectorTestSnapshot' || !Number.isSafeInteger(candidate.generation)) return;
+        snapshots.push(candidate as Snapshot);
+      });
+
+      const currentHtml = inspectorView.webview.html;
+      assert.ok(currentHtml.includes('inspectorTestSnapshot'), 'the resolved Inspector renders its production shell with a DOM probe');
+      inspectorView.webview.html = currentHtml;
+
+      const waitForNextSnapshot = async (index: number): Promise<Snapshot> => {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          if (snapshots[index]) return snapshots[index];
+          await settle(20);
+        }
+        throw new Error(`Inspector Webview did not report DOM snapshot ${index + 1}`);
+      };
+
+      const initial = await waitForNextSnapshot(0);
       assert.strictEqual(initial.kind, 'document');
       assert.ok(initial.status.length > 0);
       assert.ok(initial.description.length > 0);
       assert.doesNotMatch(initial.status + initial.description, /A\.guitardsl|version/i,
         'the initial DOM does not expose the host-owned URI/version');
 
-      const emptyUpdate = waitForSnapshot(snapshot => snapshot.generation > initial.generation && snapshot.kind === 'empty');
+      await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+      for (let attempt = 0; attempt < 100 && inspectorView.visible; attempt++) await settle(20);
+      assert.strictEqual(inspectorView.visible, false, 'the first hide transition completes before changing editors');
+
       const unrelatedDocument = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'not GuitarDSL' });
       await showAndFocus(unrelatedDocument);
-      const empty = await emptyUpdate;
+      const emptyStart = snapshots.length;
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      const empty = await waitForNextSnapshot(emptyStart);
       assert.strictEqual(empty.kind, 'empty');
+      assert.ok(empty.generation > initial.generation,
+        'the first stable DOM after reveal reflects the plaintext editor selected while hidden');
       assert.notStrictEqual(empty.status, initial.status, 'switching to a non-GuitarDSL editor changes visible status text');
+      assert.strictEqual(inspectorViewTestProbe.resolvedView, inspectorView,
+        'hide and reveal reuse the same registered WebviewView');
 
-      const documentBUpdate = waitForSnapshot(snapshot => snapshot.generation > empty.generation && snapshot.kind === 'document');
+      await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+      for (let attempt = 0; attempt < 100 && inspectorView.visible; attempt++) await settle(20);
+      assert.strictEqual(inspectorView.visible, false, 'the second hide transition completes before editing document B');
       const documentB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: G\n| G | D | Em | C |' });
       const editorB = await showAndFocus(documentB);
-      const switched = await documentBUpdate;
-      assert.strictEqual(switched.kind, 'document', 'switching to GuitarDSL document B restores document context');
-      assert.strictEqual(switched.status, initial.status);
-      assert.strictEqual(switched.description, initial.description);
-
       const previousVersion = documentB.version;
-      const versionUpdate = waitForSnapshot(snapshot => snapshot.generation > switched.generation && snapshot.kind === 'document');
       await editorB.edit(edit => edit.insert(new vscode.Position(1, 0), '  '));
       assert.ok(documentB.version > previousVersion, 'the source edit advances the document version');
-      const versionUpdated = await versionUpdate;
-      assert.ok(versionUpdated.generation > switched.generation, 'the new host version reaches and updates the rendered DOM');
-      assert.strictEqual(versionUpdated.kind, 'document');
-      assert.doesNotMatch(versionUpdated.description, /A\.guitardsl|B\.guitardsl|version/i,
+      const documentBStart = snapshots.length;
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      const documentBFirst = await waitForNextSnapshot(documentBStart);
+      assert.strictEqual(documentBFirst.kind, 'document',
+        'the first stable DOM after reveal reflects the edited GuitarDSL document selected while hidden');
+      assert.ok(documentBFirst.generation > empty.generation,
+        'hidden document switch and source edit advance the host generation before rendering');
+      assert.strictEqual(documentBFirst.status, initial.status);
+      assert.strictEqual(documentBFirst.description, initial.description);
+      assert.doesNotMatch(documentBFirst.description, /A\.guitardsl|B\.guitardsl|version/i,
         'URI and version remain host-owned and are not rendered into the Webview');
+
+      await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+      for (let attempt = 0; attempt < 100 && inspectorView.visible; attempt++) await settle(20);
+      assert.strictEqual(inspectorView.visible, false);
+      const repeatedRevealStart = snapshots.length;
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      const repeatedReveal = await waitForNextSnapshot(repeatedRevealStart);
+      assert.strictEqual(repeatedReveal.kind, 'document',
+        'a repeated hide and reveal without a later editor event still renders the current document');
+      assert.ok(repeatedReveal.generation > documentBFirst.generation);
+
+      const liveEditStart = snapshots.length;
+      const liveVersion = documentB.version;
+      await editorB.edit(edit => edit.insert(new vscode.Position(1, 0), '  '));
+      assert.ok(documentB.version > liveVersion);
+      const liveUpdate = await waitForNextSnapshot(liveEditStart);
+      assert.strictEqual(liveUpdate.kind, 'document');
+      assert.ok(liveUpdate.generation > repeatedReveal.generation,
+        'visible source edits continue to update the DOM through the live message path');
     } finally {
-      messageSubscription.dispose();
+      messageSubscription?.dispose();
+      inspectorViewTestProbe.transformHtml = undefined;
       await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
       await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
       await closeAllEditors();

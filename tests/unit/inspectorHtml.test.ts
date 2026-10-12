@@ -17,6 +17,7 @@ describe('renderInspectorHtml', () => {
     assert.match(html, /script-src 'nonce-unit-nonce'/);
     assert.match(html, /message\.generation <= lastGeneration/);
     assert.match(html, /status\.textContent = message\.status/);
+    assert.match(html, /postMessage\(\{ command: "ready" \}\)/);
     assert.match(html, /var\(--vscode-sideBar-background\)/);
     assert.match(html, /@media \(max-width: 600px\)/);
     assert.match(html, /<script nonce="unit-nonce">/);
@@ -55,6 +56,7 @@ describe('renderInspectorHtml', () => {
     const status = elements.get('inspector-status')!;
     const description = elements.get('inspector-description')!;
     let receiveMessage: ((event: { data: unknown }) => void) | undefined;
+    let readyMessage: unknown;
     runInNewContext(script!, {
       document: {
         getElementById: (id: string) => elements.get(id)
@@ -63,10 +65,16 @@ describe('renderInspectorHtml', () => {
         addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => {
           receiveMessage = listener;
         }
-      }
+      },
+      acquireVsCodeApi: () => ({ postMessage: (message: unknown) => { readyMessage = message; } })
     });
 
     assert.ok(receiveMessage);
+    assert.strictEqual(
+      (readyMessage as { command?: unknown } | undefined)?.command,
+      'ready',
+      'the initialized DOM requests an authoritative host snapshot'
+    );
     receiveMessage!({ data: { command: 'setContext', generation: 3, kind: 'document', status: 'current', description: 'current context' } });
     receiveMessage!({ data: { command: 'setContext', generation: 2, kind: 'empty', status: 'stale', description: 'stale context' } });
 

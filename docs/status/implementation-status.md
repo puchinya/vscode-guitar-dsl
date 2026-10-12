@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装済み。Issue #129 は追加レビュー対応中、Issue #133 は実装済み・PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,122 unit＋77 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,597件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。開発ホストからの実音出力は未確認。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装済み。Issue #129 は追加レビュー対応中、Issue #133 は実装済み・PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,122 unit＋79 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,597件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。開発ホストからの実音出力は未確認。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -12,7 +12,7 @@
 
 - **状態**: 実装済み、PR はレビュー待ち。
 - **実装**: Secondary Sidebar に単一の Webview View を登録。Extension Host がアクティブな GuitarDSL 文書の URI / version を所有し、空状態と文書状態を表示する。編集、再生、進行提案は既存の所有者に残す。
-- **検証**: `npm run compile`、単体テスト **1122 / 1122**、VS Code 1.141.0 の E2E **77 / 77**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,597 項目）が PASS。
+- **検証**: `npm run compile`、単体テスト **1122 / 1122**、VS Code 1.141.0 の E2E **79 / 79**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,597 項目）が PASS。実 WebviewView E2E では非表示中に plaintext へ切替、GuitarDSL 文書Bの編集後に再表示し、各回の最初の DOM が最新状態を持つことと、イベント追加なしの再 hide/reveal、可視中の編集更新を確認した。View の Primary Sidebar / Panel への手動ドラッグ移動は **NOT RUN**。
 - **画面証拠**: [狭幅・暗色](evidence/issue-133/inspector-dark-narrow.png)、[広幅・暗色](evidence/issue-133/inspector-dark-wide.png)、[狭幅・明色](evidence/issue-133/inspector-light-narrow.png)、[広幅・明色](evidence/issue-133/inspector-light-wide.png)。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)

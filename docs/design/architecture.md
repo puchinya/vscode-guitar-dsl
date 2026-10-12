@@ -61,7 +61,7 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 
 ## Data flow and ownership
 
-共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が一時的な `{kind:'empty'} | {kind:'document'; uri; version}` snapshot と明示表示を所有し、View は最新 snapshot を読み取り専用で描画する。Inspector は DSL、編集、Undo、AudioContext / scheduler を所有せず、既存 Preview が唯一の音声 transport owner である。
+共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が一時的な `{kind:'empty'} | {kind:'document'; uri; version}` snapshot と明示表示を所有し、View は最新 snapshot を読み取り専用で描画する。非表示中の状態変更は generation に記録し、再表示時は最新 snapshot で HTML を再生成する。Webview は message listener 登録後に `ready` を送り、ホストが最新 snapshot を再送するため、隠れた Webview や DOM 再生成との競合で状態を失わない。Inspector は DSL、編集、Undo、AudioContext / scheduler を所有せず、既存 Preview が唯一の音声 transport owner である。
 
 | データ | 作成者 | 消費者 / 所有境界 |
 |---|---|---|
