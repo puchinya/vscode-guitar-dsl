@@ -12,7 +12,7 @@
 
 - **状態**: 実装済み、PR はレビュー待ち。
 - **実装**: Secondary Sidebar に単一の Webview View を登録。Extension Host がアクティブな GuitarDSL 文書の URI / version を所有し、空状態と文書状態を表示する。編集、再生、進行提案は既存の所有者に残す。
-- **検証**: `npm run compile`、単体テスト **1122 / 1122**、VS Code 1.141.0 の E2E **79 / 79**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,597 項目）が PASS。実 WebviewView E2E では非表示中に plaintext へ切替、GuitarDSL 文書Bの編集後に再表示し、各回の最初の DOM が最新状態を持つことと、イベント追加なしの再 hide/reveal、可視中の編集更新を確認した。View の Primary Sidebar / Panel への手動ドラッグ移動は **NOT RUN**。
+- **検証**: `npm run compile`、単体テスト **1122 / 1122**、VS Code 1.141.0 の E2E **79 / 79**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,597 項目）が PASS。実 WebviewView E2E では非表示中に plaintext へ切替、GuitarDSL 文書Bの編集後に再表示し、各回の最初の DOM が最新状態を持つことと、イベント追加なしの再 hide/reveal、可視中の編集更新を確認した。Workbench UI E2E ではCDPマウスイベントでInspectorをSecondary SidebarからPrimary Sidebarへドラッグし、Primary Sidebarを隠してから `guitardsl.openInspector` で再表示後もInspectorがPrimary Sidebarに残り、Secondary Sidebarへ戻らないことを確認した。VS Code E2Eは `docs/agents/testing.md` に従いサンドボックス外で実行した。
 - **画面証拠**: [狭幅・暗色](evidence/issue-133/inspector-dark-narrow.png)、[広幅・暗色](evidence/issue-133/inspector-dark-wide.png)、[狭幅・明色](evidence/issue-133/inspector-light-narrow.png)、[広幅・明色](evidence/issue-133/inspector-light-wide.png)。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
