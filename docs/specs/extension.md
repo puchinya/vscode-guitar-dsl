@@ -5,6 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
 - Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
@@ -13,7 +14,7 @@
 
 ## 1. 概要 (Overview)
 
-`vscode-guitar-dsl` は、ギター弾き語り・アコースティックギターストローク譜向けDSLである **GuitarDSL**（`.guitardsl`, `.gdsl`）の編集を支援し、リアルタイムでの五線・リズムスラッシュ楽譜プレビュー、印刷・PDF保存、およびシンタックスハイライトやアウトライン構造を提供する VS Code 拡張機能である。アクティビティバーの GuitarDSL サイドバー（§4C）から、テンプレート・サンプル・ヘルプ・現在のファイルへの操作に移動できる。
+`vscode-guitar-dsl` は、ギター弾き語り・アコースティックギターストローク譜向けDSLである **GuitarDSL**（`.guitardsl`, `.gdsl`）の編集を支援し、リアルタイムでの五線・リズムスラッシュ楽譜プレビュー、印刷・PDF保存、およびシンタックスハイライトやアウトライン構造を提供する VS Code 拡張機能である。アクティビティバーの GuitarDSL サイドバー（§4C）から、テンプレート・サンプル・ヘルプ・現在のファイルへの操作に移動できる。明示操作で開く共通 Inspector（§4D）は、移行後の編集補助機能の表示面である。
 
 - **拡張機能識別子 (Extension ID)**: `vscode-guitar-dsl`
 - **表示名 (Display Name)**: `GuitarDSL Previewer`
@@ -101,6 +102,7 @@
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
 | `guitardsl.showPreview` | `GuitarDSL: Open Preview to the Side` | エディタタイトルバー、エクスプローラーコンテキストメニュー、コマンドパレット | `$(open-preview)` |
+| `guitardsl.openInspector` | `GuitarDSL: Open Inspector` | コマンドパレット | - |
 | `guitardsl.exportPdf` | `GuitarDSL: Export PDF / Print` | コマンドパレット、プレビュー内ツールバー | - |
 | `guitardsl.importGuitarPro` | `GuitarDSL: Import Guitar Pro 7/8` | コマンドパレット、`.gp` ファイルのエクスプローラーコンテキストメニュー | - |
 | `guitardsl.exportGuitarPro` | `GuitarDSL: Export Guitar Pro 7` | コマンドパレット、GuitarDSL 文書のエクスプローラーコンテキストメニュー | - |
@@ -417,6 +419,9 @@ B（候補）を選択して提案コードDecorationを表示する。再生は
 ### 3.24 `guitardsl.progression.close`
 候補セッション、試聴音声、Decorationを破棄し、該当文書のPreviewを通常表示へ戻す。ソースは変更しない。
 
+### 3.25 `guitardsl.openInspector`
+GuitarDSL 共通 Inspector（§4D）を明示的に開く。対象は現在アクティブなエディタだけとし、GuitarDSL 文書がない場合は空の案内を表示する。他の開いている文書へフォールバックしない。呼び出しを繰り返してもビューは増えない。通常の入力・カーソル移動・文書切替・拡張機能の起動ではビューを表示しない。
+
 ## 4. プレビュー機能仕様 (Webview Preview Specification)
 
 プレビュー画面は VS Code Webview API を使用して提供される。
@@ -674,6 +679,21 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - アクティブなエディタのドキュメントが GuitarDSL ドキュメント（§2.1）の場合、そのドキュメントの URI を引数として次の 6 項目をこの順に表示する: `Open Preview to the Side`（`guitardsl.showPreview`）、`Edit Chord Diagram`（`guitardsl.editChordDiagram`）、`Edit Score Settings`（`guitardsl.editScoreSettings`）、`Edit Capo / Playability`（`guitardsl.editCapo`）、`Change Accompaniment Pattern`（`guitardsl.applyStrummingPattern`）、`Export PDF / Print`（`guitardsl.exportPdf`）。
 - アクティブなエディタがない、または GuitarDSL ドキュメントでない場合は、コマンドを持たない案内項目（「.guitardsl ファイルを開くと、ファイル操作が表示されます。」）を 1 つだけ表示する。他に開いている GuitarDSL ドキュメントには切り替えない。
 - アクティブなエディタの変更、テキストドキュメントのオープン・クローズで表示を更新する。定期的なポーリングは行わない。
+
+## 4D. 共通 Inspector (GuitarDSL Inspector)
+
+Inspector は編集補助機能を同じ場所へ段階的に集約するための単一 Webview View であり、この基盤では文書コンテキストを表示するだけでソース編集機能を持たない。既存の Activity Bar サイドバー（§4C）と標準 TextEditor、Preview はそれぞれの役割を維持する。
+
+### 4D.1 貢献と表示
+- `contributes.viewsContainers.secondarySidebar` にコンテナ ID `guitardslInspector`、タイトル `GuitarDSL Inspector` を登録し、Webview View ID `guitardsl.inspector` を 1 つだけ置く。Activity Bar に Inspector を追加しない。
+- `guitardsl.openInspector` または明示的な View 表示で開く。拡張機能起動、入力、選択・カーソル移動、通常の文書切替だけでは自動表示しない。ユーザーが View を移動した場合はその配置を維持する。
+- コマンドはアクティブな GuitarDSL TextEditor の URI と文書 version だけを対象とする。対象がなければローカライズされた空状態を表示し、他の開いている文書から選ばない。コマンドは冪等であり、Webview View Provider を複数作らない。
+
+### 4D.2 コンテキストと境界
+- ホストが `{kind:'empty'}` または `{kind:'document'; uri:string; version:number}` の現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、文書切替・クローズでは古い URI の状態を無効化する。ビューが非表示でも状態更新はビューを表示しない。
+- View の再解決時にはホストの最新スナップショットだけを描画する。解決済み View へのコンテキスト更新は単調増加 generation 付きで送り、Webview は古い更新を無視する。文書コンテキストは一時状態で、保存・編集・Undo を作らない。適用可能な操作も提供しない。
+- Inspector に AudioContext / scheduler を置かない。Preview を唯一の音声再生所有者として維持し、既存 Preview / Practice / PDF / 進行提案 / コードエディタの動作を変えない。
+- 1 列のレスポンシブ配置、VS Code テーマ色、見出し・状態の ARIA 名、キーボードとスクリーンリーダーで読める状態表示を用いる。nonce 付き CSP を設定し、リモートの script/style/resource は読み込まない。
 
 ---
 

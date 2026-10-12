@@ -11,6 +11,7 @@ import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrum
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
 import { registerGuitarDslSidebar } from './sidebar';
+import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
@@ -102,6 +103,22 @@ export function activate(context: vscode.ExtensionContext) {
   let progressionRenderGeneration = 0;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
+  const inspector = registerGuitarDslInspector(context, currentLocale);
+  const refreshInspectorContext = (document?: vscode.TextDocument) => {
+    if (isGuitarDslDocument(document)) {
+      inspector.showDocument(document.uri.toString(), document.version);
+    } else if (inspector.currentContext.kind === 'document') {
+      inspector.invalidate(inspector.currentContext.uri);
+    }
+  };
+  refreshInspectorContext(vscode.window.activeTextEditor?.document);
+  vscode.window.onDidChangeActiveTextEditor(editor => refreshInspectorContext(editor?.document), null, context.subscriptions);
+  vscode.workspace.onDidChangeTextDocument(event => {
+    if (vscode.window.activeTextEditor?.document.uri.toString() === event.document.uri.toString()) {
+      refreshInspectorContext(event.document);
+    }
+  }, null, context.subscriptions);
+  vscode.workspace.onDidCloseTextDocument(document => inspector.invalidate(document.uri.toString()), null, context.subscriptions);
   registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');

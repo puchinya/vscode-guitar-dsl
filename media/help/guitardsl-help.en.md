@@ -57,6 +57,10 @@ Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view
 
 The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
 
+### GuitarDSL Inspector
+
+The Inspector is a shared place for document-aware assistance as features move into it. Use **GuitarDSL: Open Inspector** from the Command Palette. It follows only the active GuitarDSL document and shows an empty state when none is active. Typing, cursor movement, and ordinary document switches do not reveal it. The initial view is read-only; source editing and audio playback keep their existing owners. If you move the view, VS Code keeps it in that location.
+
 ### Editor Support
 
 - Syntax highlighting for headers, sections, chords, rhythm tokens, lyrics, melody (`mel:` / `lyr:`), chord definitions, score events and `let` fragments.
@@ -494,6 +498,7 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 | Command | ID |
 |---|---|
 | GuitarDSL: Open Preview to the Side | `guitardsl.showPreview` |
+| GuitarDSL: Open Inspector | `guitardsl.openInspector` |
 | GuitarDSL: Export PDF / Print | `guitardsl.exportPdf` |
 | GuitarDSL: Import Guitar Pro 7/8 | `guitardsl.importGuitarPro` |
 | GuitarDSL: Export Guitar Pro 7 | `guitardsl.exportGuitarPro` |

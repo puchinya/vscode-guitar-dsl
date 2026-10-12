@@ -177,6 +177,12 @@ export interface Messages {
   sidebarExportPdf: string;
   sidebarTranscribeYouTube: string;
   sidebarTranscribeAudio: string;
+  inspectorHeading: string;
+  inspectorRegionLabel: string;
+  inspectorEmptyStatus: string;
+  inspectorEmptyDescription: string;
+  inspectorDocumentStatus: string;
+  inspectorDocumentDescription: string;
   templatePickPlaceholder: string;
   templates: Record<StarterTemplateId, { label: string; description: string }>;
   samplePickPlaceholder: string;
@@ -403,6 +409,12 @@ export const MESSAGES_JA: Messages = {
   sidebarExportPdf: 'PDF出力 / 印刷',
   sidebarTranscribeYouTube: 'YouTubeから採譜（実験的）',
   sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
+  inspectorHeading: 'GuitarDSL Inspector',
+  inspectorRegionLabel: 'GuitarDSL Inspector',
+  inspectorEmptyStatus: 'GuitarDSL 文書が選択されていません',
+  inspectorEmptyDescription: 'エディタで GuitarDSL 文書を開くと、この場所に文書コンテキストが表示されます。',
+  inspectorDocumentStatus: 'アクティブな GuitarDSL 文書に対応しています',
+  inspectorDocumentDescription: 'この基盤は読み取り専用です。文書の編集は標準エディタで行います。',
   templatePickPlaceholder: '新しい GuitarDSL ドキュメントのテンプレートを選択',
   templates: {
     basicChordSong: { label: 'コード譜（基本）', description: 'コードとストロークのリズム、小節単位の歌詞' },
@@ -672,6 +684,12 @@ export const MESSAGES_EN: Messages = {
   sidebarExportPdf: 'Export PDF / Print',
   sidebarTranscribeYouTube: 'Transcribe from YouTube (Experimental)',
   sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
+  inspectorHeading: 'GuitarDSL Inspector',
+  inspectorRegionLabel: 'GuitarDSL Inspector',
+  inspectorEmptyStatus: 'No active GuitarDSL document',
+  inspectorEmptyDescription: 'Open a GuitarDSL document in the editor to show its context here.',
+  inspectorDocumentStatus: 'Showing the active GuitarDSL document context',
+  inspectorDocumentDescription: 'This foundation is read-only. Edit the document in the standard editor.',
   templatePickPlaceholder: 'Choose a template for the new GuitarDSL document',
   templates: {
     basicChordSong: { label: 'Basic Chord Song', description: 'Chords, strumming rhythm and per-bar lyrics' },

@@ -12,6 +12,11 @@
 
 コマンドパレットの **GuitarDSL: テンプレートから新規作成** と **GuitarDSL: サンプルを開く** でも同じ操作ができます。
 
+### GuitarDSL Inspector
+<!-- help-sources: extension:4D -->
+
+Inspector は、機能の移行に合わせて文書ごとの編集補助をまとめる表示先です。コマンドパレットから **GuitarDSL: Inspectorを開く** を実行します。対象はアクティブな GuitarDSL 文書だけで、該当文書がない場合は空状態を表示します。入力、カーソル移動、通常の文書切替では自動表示しません。初期段階は読み取り専用で、ソース編集と音声再生は既存の画面が引き続き担当します。View を移動した場合、VS Code はその配置を保ちます。
+
 ### エディタ支援
 <!-- help-sources: extension:2 extension:5 extension:5A extension:5B -->
 

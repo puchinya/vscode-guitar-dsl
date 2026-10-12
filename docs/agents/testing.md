@@ -15,6 +15,8 @@ All automated tests must be placed in designated directories based on their scop
 - Test file naming: `*.test.ts`.
 - Unit tests must be completely runnable standalone without launching VS Code or requiring external network access.
 - E2E tests run inside an isolated VS Code test instance launched by `@vscode/test-electron`.
+- Any test command that launches VS Code/Electron must always run outside the command sandbox. This applies to both `npm run test:e2e` and `npm test` (which includes E2E tests). An isolated VS Code test profile does not remove this requirement.
+- If VS Code exits during startup when an E2E command is run inside a sandbox (for example, with `SIGABRT`), treat that as an invalid test run and rerun the command outside the sandbox.
 
 ---
 
@@ -33,6 +35,10 @@ Run integration tests in VS Code runtime:
 ```bash
 npm run test:e2e
 ```
+- Run this command outside the command sandbox. On macOS, clear inherited Electron/Node runtime overrides as follows, still outside the sandbox:
+  ```bash
+  env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run test:e2e
+  ```
 - Compiles the extension and test files (`npm run compile:all`).
 - Launches VS Code and runs the E2E test suite.
 
@@ -41,6 +47,7 @@ Run the Help and AI asset sync gates, then unit and E2E tests:
 ```bash
 npm test
 ```
+- Run `npm test` outside the command sandbox because it launches the VS Code E2E suite.
 
 ### 4. Help Generation and Sync
 ```bash

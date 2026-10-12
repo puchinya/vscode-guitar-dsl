@@ -1,5 +1,6 @@
 {
   "command.showPreview.title": "GuitarDSL: Open Preview to the Side",
+  "command.openInspector.title": "GuitarDSL: Open Inspector",
   "command.exportPdf.title": "GuitarDSL: Export PDF / Print",
   "command.importGuitarPro.title": "GuitarDSL: Import Guitar Pro 7/8",
   "command.exportGuitarPro.title": "GuitarDSL: Export Guitar Pro 7",
@@ -31,7 +32,9 @@
   "command.progression.apply.title": "GuitarDSL: Apply Progression Candidate",
   "command.progression.close.title": "GuitarDSL: Close Progression Assistant",
   "viewsContainer.guitardslSidebar.title": "GuitarDSL",
+  "viewsContainer.guitardslInspector.title": "GuitarDSL Inspector",
   "view.sidebar.name": "Start Here",
+  "view.inspector.name": "Inspector",
   "config.geminiModel.description": "Gemini model to use for experimental YouTube audio transcription.",
   "config.compressRepeats.description": "Compress repeated sections with identical chords and melody into repeat barlines (|: :|) and multi-line lyrics to shorten the score.",
   "config.expandPageBreakRepeats.description": "Automatically expand measure repeat symbols (%) when they appear at the start of a page.",

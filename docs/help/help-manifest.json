@@ -136,7 +136,7 @@
       "source": "extension",
       "section": "1",
       "helpPage": "about",
-      "reviewedSourceSha256": "f3c91067c54b550797473bdc7bddf4ac077896a2704c14c967a3f057b706156c"
+      "reviewedSourceSha256": "d9fff215ad6d390f1cfb0e2ca54575bfe4d160f956997acdfb84ccc815d859a3"
     },
     {
       "source": "extension",
@@ -148,7 +148,7 @@
       "source": "extension",
       "section": "3",
       "helpPage": "features",
-      "reviewedSourceSha256": "d7850c8d00dc6234cdc4bf55e6d14fcf7e98367cfede8bbfaa211103bcd4c15a"
+      "reviewedSourceSha256": "c379ff976c5d27273e7ba0e3ac862959a79fc1441362b2df4a87711d7ab64b54"
     },
     {
       "source": "extension",
@@ -173,6 +173,12 @@
       "section": "4C",
       "helpPage": "features",
       "reviewedSourceSha256": "4d651a9a519ac3f5bd9db247f02b8c0b2461f6c7252bff82d267fe3f87b08a20"
+    },
+    {
+      "source": "extension",
+      "section": "4D",
+      "helpPage": "features",
+      "reviewedSourceSha256": "7ed87fe399410fcf8c7b3dba75e4b7909fab46c1e67beebcfdb8172cbcd134f7"
     },
     {
       "source": "extension",

@@ -5,6 +5,7 @@
 
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
@@ -20,6 +21,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 | 言語ID、拡張子、language configuration、TextMate grammar | 拡張機能仕様 §2 |
 | コマンドと設定 | 拡張機能仕様 §3 |
 | サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
+| 共通 Inspector の登録、表示、文書コンテキスト | Issue #133、拡張機能仕様 §3.25、§4D |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
 | Code Actions、editor Hint、Quick Fix の登録と文書編集境界 | Issue #87、拡張機能仕様 §5A–§5B、§6.3 |
 | コード進行補完と assistant コマンド | Issue #129、拡張機能仕様 §3.17、§4.8 |
@@ -30,6 +32,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 - `package.json` が VS Code の言語・コマンド・設定・表示の貢献を宣言し、`language-configuration.json` と `syntaxes/guitardsl.tmLanguage.json` が編集補助と TextMate grammar を提供する。
 - `src/extension.ts` はコマンド登録、文書イベント購読、Document resolver、Preview Panel 等を束ねる。Compiler 診断は `DiagnosticCollection` に反映される。Outline は `src/symbols.ts` の `DocumentSymbolProvider` が提供する。
 - サイドバーと初回利用導線は `src/sidebar.ts` / `src/onboarding.ts`、Help のローカル表示は `src/help.ts` と生成済み `media/help/` が担う。Help は仕様・package metadata 由来の生成物であり、仕様の正本ではない。
+- 共通 Inspector は `src/inspector/inspectorController.ts` が URI/version 付きの現在コンテキストと明示表示を管理し、`src/inspector/inspectorView.ts` が単一の `WebviewViewProvider` を登録する。HTML builder は `src/render/inspectorHtml.ts` にあり、この基盤では読み取り専用の空状態／文書状態だけを描画する。
 - ローカライズは `src/i18n.ts` と VS Code の `package.nls*.json` / Webview locale message を通じて拡張機能ホストと UI に提供する。
 
 ### Navigation と初回利用
@@ -37,6 +40,12 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 `GuitarDslSidebarProvider` は TreeDataProvider で、項目を section / command / hint として返す。command 項目は既存の command ID と引数に委譲する。Current File はアクティブな GuitarDSL TextEditor だけを指し、他の開いた文書へ暗黙に切り替えない。Editor / document open / close イベントで更新し、polling は行わない。
 
 テンプレートは小さな `STARTER_TEMPLATES` から、新しいサンプルは extension 配下の `samples/` から読み、成功してから無題 GuitarDSL TextDocument を開く。失敗時は文書を作らず、各コマンドが捕捉してローカライズ済みメッセージを一度表示する。VSIX へ同梱するサンプルは curated list と `.vscodeignore` の allowlist が一致する。
+
+### Common Inspector
+
+`guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホストの Controller が `{kind:'empty'} | {kind:'document'; uri; version}` を所有し、切替・close 時に古い URI/version を無効化する。非表示中は DOM 更新メッセージを送らず、状態変更ごとに generation を進める。View が再表示されたら最新 snapshot で HTML を作り直す。Webview は message listener を登録してから `ready` を送り、ホストは最新 snapshot を新しい generation で再送するため、非表示中または DOM 再生成中に失われたメッセージへ依存しない。古い generation のメッセージは拒否する。ユーザーが移動した View をコードから移動し直さない。
+
+Inspector はソース・編集・Undo・音声再生を所有しない。Preview Panel は引き続き唯一の Web Audio transport owner であり、編集補助機能は後続 Issue の契約で段階移行する。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
 
 ### Help とローカライズ
 
@@ -50,12 +59,15 @@ Help の編集元は `docs/help/{ja,en}/`、拡張機能に同梱する生成物
 2. 文書変更は Extension Core に届き、必要な機能が Compiler / symbol provider を呼ぶ。診断と Outline は VS Code の各 provider surface に返る。
 3. コマンドは対象 TextDocument を解決し、プレビュー・設定エディター・採譜・Help 等の担当機能へ委譲する。
 4. Help ページ本文は `docs/help/` が所有し、`media/help/` は生成する。仕様との対応・レビュー済み digest は `docs/help/help-manifest.json` が記録する。
+5. Inspector の active-document snapshot と表示制御は Inspector Controller が所有し、Webview View はその snapshot を表示するだけである。document switch/close は stale context を消去し、view reveal は明示コマンドだけが行う。
 
 ## Failure handling
 
 無効な入力は Diagnostics の仕様に従う。コマンドに対象文書がない場合や機能固有操作が失敗する場合の通知は、そのコマンド仕様と担当機能に委譲する。Help の生成・同期不整合は製品 UI の代替動作にせず、開発時 gate で検出する。
 
 Help ファイルの欠落・preview 起動例外は `openGuitarDslHelp()` 境界で捕捉し、ローカライズ済みエラーを一度表示する。サンプル読込失敗では新規文書を開かない。sidebar view の読み込みは editor panel の機能 module を eager import しない。
+
+Inspector View の再解決・再表示時は controller の現在 snapshot を使い、既に閉じた文書の URI/version を復活させない。非表示中の切替・編集は最新 snapshot と generation に反映し、可視化後に HTML 初期状態と `ready` handshake で同期する。provider disposal で Webview への参照とイベント subscription を解放する。
 
 ## Alternatives considered
 
