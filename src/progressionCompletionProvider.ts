@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseGuitarDsl } from './compiler';
+import { findGuitarDslInlineCommentStart, parseGuitarDsl } from './compiler';
 import { resolveLocale, getMessages, type SupportedLocale } from './i18n';
 import { spliceSourceColumns } from './sourceEdits';
 import { resolveProgressionTargetKey, suggestNextChords, type ProgressionCandidate, type ProgressionTarget } from './progressionSuggestions';
@@ -38,7 +38,7 @@ function measureBeforeCell(score: ReturnType<typeof parseGuitarDsl>, line: numbe
 function findCompletionContext(document: vscode.TextDocument, position: vscode.Position, score: ReturnType<typeof parseGuitarDsl>): CompletionContext | undefined {
   const line = document.lineAt(position.line).text;
   if (isDisallowedLine(line)) return undefined;
-  const comment = line.search(/\s#/);
+  const comment = findGuitarDslInlineCommentStart(line);
   if (comment >= 0 && comment <= position.character) return undefined;
   const cell = currentCellRange(line, position.character);
   if (!cell) return undefined;

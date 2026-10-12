@@ -16,6 +16,7 @@ const assistant: ProgressionAssistantHtmlModel = {
   candidateDsl,
   sessionUri: 'file:///progression.guitardsl',
   sessionVersion: 1,
+  sessionGeneration: 1,
   candidates: [{ id: 'candidate-g', chords: ['G'], rationale: 'G major candidate', score: 3 }],
   activeCandidateId: 'candidate-g',
   side: 'B',
@@ -74,7 +75,8 @@ describe('progression audition runtime', () => {
 
     await runtime.click('progression-side-a');
     assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({
-      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, side: 'A'
+      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion,
+      sessionGeneration: assistant.sessionGeneration, side: 'A'
     }));
     assert.strictEqual(runtime.element('progression-side-a').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(runtime.audioContextCount, 0, 'switching to A does not autoplay');
@@ -85,7 +87,8 @@ describe('progression audition runtime', () => {
 
     await runtime.click('progression-side-b');
     assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({
-      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, side: 'B'
+      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion,
+      sessionGeneration: assistant.sessionGeneration, side: 'B'
     }));
     assert.strictEqual(runtime.intervalCount, 0, 'switching sides stops the current audition');
     const candidateStart = runtime.scheduledOscillators().length;
@@ -122,7 +125,8 @@ describe('progression audition runtime', () => {
     assert.strictEqual(runtime.postedMessages[0].candidateId, 'candidate-g');
     assert.strictEqual(runtime.postedMessages[0].sessionUri, assistant.sessionUri);
     assert.strictEqual(runtime.postedMessages[0].sessionVersion, assistant.sessionVersion);
-    assert.deepStrictEqual(Object.keys(runtime.postedMessages[0]).sort(), ['candidateId', 'command', 'sessionUri', 'sessionVersion']);
+    assert.strictEqual(runtime.postedMessages[0].sessionGeneration, assistant.sessionGeneration);
+    assert.deepStrictEqual(Object.keys(runtime.postedMessages[0]).sort(), ['candidateId', 'command', 'sessionGeneration', 'sessionUri', 'sessionVersion']);
   });
 
   it('auditions one chord, adds melody only in the with-melody mode, and stops through the shared transport', async () => {
@@ -218,7 +222,8 @@ describe('progression audition runtime', () => {
     initial.element('progression-speed').value = '75';
     await initial.change('progression-speed');
     assert.strictEqual(JSON.stringify(initial.postedMessages.at(-1)), JSON.stringify({
-      command: 'progressionSpeedChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, speed: 75
+      command: 'progressionSpeedChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion,
+      sessionGeneration: assistant.sessionGeneration, speed: 75
     }),
       'the selected speed is sent to the host session');
     await initial.click('progression-side-a');

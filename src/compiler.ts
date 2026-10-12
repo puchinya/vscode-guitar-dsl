@@ -639,6 +639,11 @@ export type SourceLineKind =
   | 'measure'
   | 'other';
 
+/** Returns the leading whitespace position of a trailing GuitarDSL comment, or -1 when none is present. */
+export function findGuitarDslInlineCommentStart(rawLine: string): number {
+  return rawLine.search(/\s+#/);
+}
+
 /**
  * Kind of a source line, in the parser's own precedence. `afterMelodyLine` = the previous line was a `mel:` /
  * `lyr:` line or a continuation line (see `continuesMelodyContext`). Shared with tools that scan lines cheaply

@@ -29,6 +29,7 @@ export interface ProgressionAssistantHtmlModel {
   candidateDsl: string;
   sessionUri: string;
   sessionVersion: number;
+  sessionGeneration: number;
   candidates: ProgressionAssistantHtmlCandidate[];
   activeCandidateId: string;
   side: 'A' | 'B';
@@ -106,6 +107,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     }), msgs),
     sessionUri: progressionAssistant.sessionUri,
     sessionVersion: progressionAssistant.sessionVersion,
+    sessionGeneration: progressionAssistant.sessionGeneration,
     candidates: progressionAssistant.candidates,
     activeCandidateId: progressionAssistant.activeCandidateId,
     side: progressionAssistant.side,
@@ -740,6 +742,7 @@ ${cspMeta}
           command,
           sessionUri: progressionAssistantData.sessionUri,
           sessionVersion: progressionAssistantData.sessionVersion,
+          sessionGeneration: progressionAssistantData.sessionGeneration,
           ...(payload || {})
         });
       }

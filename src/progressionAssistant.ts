@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseGuitarDsl } from './compiler';
+import { findGuitarDslInlineCommentStart, parseGuitarDsl } from './compiler';
 import { isGuitarDslDocument } from './documentResolver';
 import { resolveLocale, getMessages, type SupportedLocale } from './i18n';
 import { planProgressionEdit, type ProgressionEditOperation, type ProgressionEditTarget } from './progressionSourceEdits';
@@ -31,6 +31,7 @@ export interface ProgressionAssistantRenderOptions {
 export interface ProgressionAssistantSession {
   uri: string;
   version: number;
+  sessionGeneration: number;
   source: string;
   target: ProgressionEditTarget;
   candidates: ProgressionCandidate[];
@@ -57,6 +58,8 @@ interface CandidatePickItem extends vscode.QuickPickItem {
   candidate: ProgressionCandidate;
 }
 
+let nextProgressionAssistantSessionGeneration = 0;
+
 function chordBefore(score: ReturnType<typeof parseGuitarDsl>, measureIndex: number, line: number, character: number): string | undefined {
   const tokens = (score.codeActionTokens ?? [])
     .filter(token => token.kind === 'chord' && token.measureIndex !== undefined
@@ -78,7 +81,7 @@ function targetAt(score: ReturnType<typeof parseGuitarDsl>, editor: vscode.TextE
     };
   }
   const line = editor.document.lineAt(position.line).text;
-  const commentStart = line.indexOf('#');
+  const commentStart = findGuitarDslInlineCommentStart(line);
   if (!line.trimStart().startsWith('|') || (commentStart >= 0 && position.character >= commentStart)) return undefined;
   const bar = line.lastIndexOf('|', Math.max(0, position.character - 1));
   const cellStart = bar + 1;
@@ -269,6 +272,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     const priorSession = this.session;
     const candidateSession: ProgressionAssistantSession = {
       uri: editor.document.uri.toString(), version, source,
+      sessionGeneration: ++nextProgressionAssistantSessionGeneration,
       target: selectedOperation.target,
       candidates,
       activeCandidateId: candidates[0].id,
@@ -439,7 +443,8 @@ export class ProgressionAssistantController implements vscode.Disposable {
 
   private messageMatchesSession(message: Record<string, unknown>): boolean {
     return !!this.session && message.sessionUri === this.session.uri
-      && Number(message.sessionVersion) === this.session.version;
+      && Number(message.sessionVersion) === this.session.version
+      && message.sessionGeneration === this.session.sessionGeneration;
   }
 
   private updateDecorations(): void {

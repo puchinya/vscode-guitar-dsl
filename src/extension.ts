@@ -318,6 +318,7 @@ export function activate(context: vscode.ExtensionContext) {
         candidateDsl: plan.previewSource,
         sessionUri: session.uri,
         sessionVersion: session.version,
+        sessionGeneration: session.sessionGeneration,
         candidates: session.candidates.map(item => ({
           id: item.id,
           chords: item.chords,

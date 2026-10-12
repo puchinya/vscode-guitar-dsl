@@ -1,10 +1,15 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseGuitarDsl } from '../../src/compiler';
+import { findGuitarDslInlineCommentStart, parseGuitarDsl } from '../../src/compiler';
 import { STANDARD_TUNING } from '../../src/instrumentModel';
 
 describe('compiler - parseGuitarDsl', () => {
+  it('distinguishes sharp chord roots from whitespace-prefixed trailing comments', () => {
+    assert.strictEqual(findGuitarDslInlineCommentStart('| F#   | G | Am | F |'), -1);
+    assert.strictEqual(findGuitarDslInlineCommentStart('| F#   # comment | G | Am | F |'), 4);
+  });
+
   describe('Metadata parsing', () => {
     it('should parse standard score headers', () => {
       const dsl = [
