@@ -4,6 +4,13 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+// Load the already compiled production modules at runtime so the E2E TypeScript
+// project remains rooted under tests/.
+const { getMessages } = require('../../i18n') as { getMessages: (locale: 'en') => Record<string, string> };
+const { renderInspectorHtml } = require('../../render/inspectorHtml') as {
+  renderInspectorHtml: (locale: 'en', context: { kind: 'empty' } | { kind: 'document'; uri: string; version: number }, cspSource: string, nonce: string, generation?: number) => string;
+};
+
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
@@ -3004,6 +3011,123 @@ suite('AI integration: language model tools (Issue #80)', () => {
 });
 
 suite('GuitarDSL Inspector foundation (Issue #133)', () => {
+  test('normal typing and selection changes do not reveal the hidden Inspector', async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+    const source = 'key: C\n| C | G | Am | F |';
+    const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(document);
+    const commands = vscode.commands as unknown as {
+      executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
+    };
+    const originalExecuteCommand = commands.executeCommand;
+    let inspectorFocusCalls = 0;
+    commands.executeCommand = async (command, ...args) => {
+      if (command === 'guitardsl.inspector.focus') inspectorFocusCalls++;
+      return originalExecuteCommand.call(vscode.commands, command, ...args);
+    };
+
+    try {
+      await editor.edit(edit => edit.insert(new vscode.Position(1, 0), '  '));
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await settle(100);
+      assert.strictEqual(inspectorFocusCalls, 0, 'background context refresh never invokes the view focus command');
+    } finally {
+      commands.executeCommand = originalExecuteCommand;
+      await closeAllEditors();
+    }
+  });
+
+  test('the production Inspector shell updates displayed DOM in a real VS Code Webview', async () => {
+    const panel = vscode.window.createWebviewPanel(
+      'guitardsl-inspector-runtime-test',
+      'Inspector runtime test',
+      vscode.ViewColumn.Beside,
+      { enableScripts: true }
+    );
+    type Snapshot = { generation: number; kind: string; status: string; description: string };
+    const snapshots = new Map<number, Snapshot>();
+    const waiters = new Map<number, (snapshot: Snapshot) => void>();
+    const waitForSnapshot = (generation: number): Promise<Snapshot> => {
+      const existing = snapshots.get(generation);
+      if (existing) return Promise.resolve(existing);
+      return new Promise(resolve => waiters.set(generation, resolve));
+    };
+    const messageSubscription = panel.webview.onDidReceiveMessage((message: unknown) => {
+      const candidate = message as { command?: unknown; generation?: unknown; kind?: unknown; status?: unknown; description?: unknown };
+      if (candidate.command !== 'inspectorTestSnapshot' || !Number.isSafeInteger(candidate.generation)) return;
+      const snapshot = candidate as Snapshot & { command: string };
+      snapshots.set(snapshot.generation, snapshot);
+      waiters.get(snapshot.generation)?.(snapshot);
+      waiters.delete(snapshot.generation);
+    });
+
+    try {
+      const nonce = 'inspector-e2e-nonce';
+      const messages = getMessages('en');
+      const probe = [
+        '(() => {',
+        '  const state = document.getElementById("inspector-state");',
+        '  const status = document.getElementById("inspector-status");',
+        '  const description = document.getElementById("inspector-description");',
+        '  const vscode = acquireVsCodeApi();',
+        '  const report = () => vscode.postMessage({',
+        '    command: "inspectorTestSnapshot",',
+        '    generation: Number(state.dataset.generation),',
+        '    kind: state.dataset.contextKind,',
+        '    status: status.textContent,',
+        '    description: description.textContent',
+        '  });',
+        '  window.addEventListener("message", event => { if (event.data?.command === "setContext") report(); });',
+        '  report();',
+        '})();'
+      ].join('\n');
+      const html = renderInspectorHtml(
+        'en',
+        { kind: 'document', uri: 'file:///A.guitardsl', version: 1 },
+        panel.webview.cspSource,
+        nonce,
+        1
+      ).replace('</body>', `<script nonce="${nonce}">${probe}</script>\n</body>`);
+      panel.webview.html = html;
+
+      const initial = await waitForSnapshot(1);
+      assert.strictEqual(initial.kind, 'document');
+      assert.strictEqual(initial.status, messages.inspectorDocumentStatus);
+      assert.strictEqual(initial.description, messages.inspectorDocumentDescription);
+
+      await panel.webview.postMessage({
+        command: 'setContext', generation: 2, kind: 'empty',
+        status: messages.inspectorEmptyStatus, description: messages.inspectorEmptyDescription
+      });
+      const empty = await waitForSnapshot(2);
+      assert.strictEqual(empty.kind, 'empty');
+      assert.strictEqual(empty.status, messages.inspectorEmptyStatus);
+      assert.strictEqual(empty.description, messages.inspectorEmptyDescription);
+
+      await panel.webview.postMessage({
+        command: 'setContext', generation: 3, kind: 'document',
+        status: messages.inspectorDocumentStatus, description: messages.inspectorDocumentDescription
+      });
+      const switched = await waitForSnapshot(3);
+      assert.strictEqual(switched.kind, 'document', 'switching to document B updates the rendered context');
+      assert.strictEqual(switched.status, messages.inspectorDocumentStatus);
+      assert.strictEqual(switched.description, messages.inspectorDocumentDescription);
+
+      await panel.webview.postMessage({
+        command: 'setContext', generation: 4, kind: 'document',
+        status: messages.inspectorDocumentStatus, description: messages.inspectorDocumentDescription
+      });
+      const versionUpdated = await waitForSnapshot(4);
+      assert.strictEqual(versionUpdated.generation, 4, 'a later host version update reaches and updates the real DOM');
+      assert.strictEqual(versionUpdated.kind, 'document');
+      assert.doesNotMatch(versionUpdated.description, /A\.guitardsl|B\.guitardsl|version/i,
+        'URI and version remain host-owned and are not rendered into the Webview');
+    } finally {
+      messageSubscription.dispose();
+      panel.dispose();
+    }
+  });
+
   test('one explicit Secondary Sidebar view opens without editing or falling back to another file', async () => {
     const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
     assert.ok(ext);

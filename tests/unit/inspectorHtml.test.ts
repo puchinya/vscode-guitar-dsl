@@ -35,20 +35,29 @@ describe('renderInspectorHtml', () => {
 
   it('ignores an older asynchronous context message after a newer generation is applied', () => {
     const html = renderInspectorHtml('en', { kind: 'empty' }, 'vscode-webview://unit', 'nonce-3', 1);
+    const scriptIndex = html.indexOf('<script nonce="nonce-3">');
+    const stateIndex = html.indexOf('<main id="inspector-state"');
+    assert.ok(stateIndex >= 0 && scriptIndex > stateIndex, 'the runtime script follows the DOM elements it initializes');
     const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
     assert.strictEqual(typeof script, 'string');
 
-    const root = { dataset: { generation: '1', contextKind: 'empty' } };
-    const status = { textContent: 'empty' };
-    const description = { textContent: 'empty description' };
+    const parsedHtml = html.slice(0, scriptIndex);
+    const rootMatch = parsedHtml.match(/<main id="inspector-state" data-generation="(\d+)" data-context-kind="([^"]+)"/);
+    const statusMatch = parsedHtml.match(/<p id="inspector-status"[^>]*>([\s\S]*?)<\/p>/);
+    const descriptionMatch = parsedHtml.match(/<p id="inspector-description"[^>]*>([\s\S]*?)<\/p>/);
+    assert.ok(rootMatch && statusMatch && descriptionMatch, 'the HTML parser has created all elements before running the script');
+    const elements = new Map<string, { dataset?: Record<string, string>; textContent?: string }>([
+      ['inspector-state', { dataset: { generation: rootMatch[1], contextKind: rootMatch[2] } }],
+      ['inspector-status', { textContent: statusMatch[1] }],
+      ['inspector-description', { textContent: descriptionMatch[1] }]
+    ]);
+    const root = elements.get('inspector-state')!;
+    const status = elements.get('inspector-status')!;
+    const description = elements.get('inspector-description')!;
     let receiveMessage: ((event: { data: unknown }) => void) | undefined;
     runInNewContext(script!, {
       document: {
-        getElementById: (id: string) => ({
-          'inspector-state': root,
-          'inspector-status': status,
-          'inspector-description': description
-        }[id])
+        getElementById: (id: string) => elements.get(id)
       },
       window: {
         addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => {
@@ -61,8 +70,8 @@ describe('renderInspectorHtml', () => {
     receiveMessage!({ data: { command: 'setContext', generation: 3, kind: 'document', status: 'current', description: 'current context' } });
     receiveMessage!({ data: { command: 'setContext', generation: 2, kind: 'empty', status: 'stale', description: 'stale context' } });
 
-    assert.strictEqual(root.dataset.generation, '1', 'the host-rendered baseline is preserved');
-    assert.strictEqual(root.dataset.contextKind, 'document');
+    assert.strictEqual(root.dataset?.generation, '3');
+    assert.strictEqual(root.dataset?.contextKind, 'document');
     assert.strictEqual(status.textContent, 'current');
     assert.strictEqual(description.textContent, 'current context');
   });
