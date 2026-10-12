@@ -26,8 +26,10 @@ export interface ProgressionAssistantHtmlCandidate {
 
 export interface ProgressionAssistantHtmlModel {
   originalDsl: string;
+  candidateDsl: string;
   candidates: ProgressionAssistantHtmlCandidate[];
   activeCandidateId: string;
+  side: 'A' | 'B';
   targetStartMeasure: number;
   bars: number;
   operation: 'replace' | 'append';
@@ -95,8 +97,12 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     originalPlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.originalDsl, {
       expandPageBreakRepeats: options?.expandPageBreakRepeats
     }), msgs),
+    candidatePlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.candidateDsl, {
+      expandPageBreakRepeats: options?.expandPageBreakRepeats
+    }), msgs),
     candidates: progressionAssistant.candidates,
     activeCandidateId: progressionAssistant.activeCandidateId,
+    side: progressionAssistant.side,
     targetStartMeasure: progressionAssistant.targetStartMeasure,
     bars: progressionAssistant.bars,
     operation: progressionAssistant.operation,
@@ -710,11 +716,13 @@ ${cspMeta}
         progressionAssistantData = progressionDataElement ? JSON.parse(progressionDataElement.textContent) : null;
       } catch (_) {}
       const progressionAssistantActive = !!(progressionAssistantData && Array.isArray(progressionAssistantData.candidates));
-      const candidatePlaybackData = playbackData;
+      const candidatePlaybackData = progressionAssistantData && progressionAssistantData.candidatePlayback
+        ? progressionAssistantData.candidatePlayback
+        : playbackData;
       const originalPlaybackData = progressionAssistantData && progressionAssistantData.originalPlayback
         ? progressionAssistantData.originalPlayback
         : null;
-      let progressionSide = 'B';
+      let progressionSide = progressionAssistantData && progressionAssistantData.side === 'A' ? 'A' : 'B';
       let progressionSpeed = 100;
       let playbackAvailable = playbackData.available === true;
       let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
@@ -1019,7 +1027,7 @@ ${cspMeta}
       }
 
       function setProgressionSide(side) {
-        if (!progressionAssistantActive || (side !== 'A' && side !== 'B')) return;
+        if (!progressionAssistantActive || (side !== 'A' && side !== 'B') || side === progressionSide) return;
         stopPlayback();
         progressionSide = side;
         activatePlaybackData(side === 'A' ? originalPlaybackData : candidatePlaybackData);
@@ -1029,6 +1037,7 @@ ${cspMeta}
         if (sideBButton) sideBButton.setAttribute('aria-pressed', String(side === 'B'));
         const status = document.getElementById('progression-status');
         if (status) status.textContent = '';
+        if (vscode) vscode.postMessage({ command: 'progressionSideChanged', side });
       }
 
       function assistantRangeData(data, mode) {
@@ -1935,8 +1944,8 @@ function renderProgressionAssistantPanel(model: ProgressionAssistantHtmlModel, m
     <p id="progression-rationale">${escapeXml(selected.rationale)}</p>
     <p>${escapeXml(msgs.uiProgressionHeuristic)}</p>
     <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">
-      <button id="progression-side-a" type="button" aria-pressed="false">${escapeXml(msgs.uiProgressionSideA)}</button>
-      <button id="progression-side-b" type="button" aria-pressed="true">${escapeXml(msgs.uiProgressionSideB)}</button>
+      <button id="progression-side-a" type="button" aria-pressed="${model.side === 'A'}">${escapeXml(msgs.uiProgressionSideA)}</button>
+      <button id="progression-side-b" type="button" aria-pressed="${model.side === 'B'}">${escapeXml(msgs.uiProgressionSideB)}</button>
       <label for="progression-speed">${escapeXml(msgs.uiProgressionSpeed)}</label>
       <select id="progression-speed" aria-label="${escapeXml(msgs.uiProgressionSpeed)}">
         <option value="50">50%</option><option value="75">75%</option><option value="100" selected>100%</option><option value="125">125%</option><option value="150">150%</option>

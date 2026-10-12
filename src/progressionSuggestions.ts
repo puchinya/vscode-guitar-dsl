@@ -44,6 +44,7 @@ export type ProgressionSuggestionFailureCode =
   | 'invalidKey'
   | 'invalidCapo'
   | 'unsupportedQuality'
+  | 'ambiguousHarmony'
   | 'keyBoundary';
 
 export type ProgressionSuggestionResult =
@@ -126,6 +127,11 @@ function contextFor(score: ParsedScore, target: ProgressionTarget, rangeBars: nu
   const first = score.measures[target.startMeasure];
   if (first) {
     const withinRange = score.measures.slice(target.startMeasure, target.startMeasure + rangeBars);
+    const rangeEnd = target.startMeasure + rangeBars;
+    if (score.events.some(event => event.kind === 'keyChange'
+      && event.beforeMeasure > target.startMeasure && event.beforeMeasure < rangeEnd)) {
+      return { ok: false, code: 'keyBoundary' };
+    }
     if (withinRange.some(measure => measure.context.key !== key)) {
       return { ok: false, code: 'keyBoundary' };
     }
@@ -139,6 +145,10 @@ function contextFor(score: ParsedScore, target: ProgressionTarget, rangeBars: nu
       && diagnostic.measureIndex < target.startMeasure + rangeBars
   );
   if (unsupported) return { ok: false, code: 'unsupportedQuality', detail: unsupported.value };
+  const ambiguous = harmony.chords.find(chord => chord.status === 'ambiguous'
+    && chord.measureIndex >= target.startMeasure
+    && chord.measureIndex < target.startMeasure + rangeBars);
+  if (ambiguous) return { ok: false, code: 'ambiguousHarmony', detail: ambiguous.writtenName };
   return { key, tonicPc: parsedKey.tonicPc, mode: parsedKey.mode, capo };
 }
 
@@ -202,7 +212,7 @@ function buildCandidate(
   const followsPreviousRoot = previousParsed && first && previousParsed.rootPc === first.rootPc ? 4 : 0;
   const identicalOpeningChord = previous && previous === chords[0] ? -1 : 0;
   const tonicQuality = mode === 'major' ? '' : 'm';
-  const tonicEnding = last && mod12(last.rootPc + capo) === mod12(tonicPc + capo) && last.suffix === tonicQuality ? 2 : 0;
+  const tonicEnding = last && mod12(last.rootPc + capo) === mod12(tonicPc) && last.suffix === tonicQuality ? 2 : 0;
   const melody = melodyScore(score, target.startMeasure, chords, capo);
   const total = followsPreviousRoot + identicalOpeningChord + tonicEnding + melody.value;
   const bars = chords.length;

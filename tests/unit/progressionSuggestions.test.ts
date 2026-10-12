@@ -44,6 +44,16 @@ describe('progression suggestions', () => {
     if (tonicPattern) assert.deepStrictEqual(tonicPattern.chords, ['C', 'G', 'Am', 'F']);
   });
 
+  it('scores a capo-adjusted authored tonic against the sounding tonic', () => {
+    const score = parseGuitarDsl('capo: 2\nkey: D\n| C | Am |');
+    const result = suggestProgressions(score, { startMeasure: 2, previousChord: 'Am' }, 4);
+    assert.ok(result.ok);
+    if (!result.ok) return;
+    const endingOnWrittenC = result.candidates.find(item => item.chords[item.chords.length - 1] === 'C');
+    assert.ok(endingOnWrittenC, 'a candidate ends on the C shape that sounds as D with capo 2');
+    if (endingOnWrittenC) assert.strictEqual(endingOnWrittenC.score.tonicEnding, 2);
+  });
+
   it('uses the mid-score @key at the target start', () => {
     const midScore = suggestNextChords(
       parseGuitarDsl('key: C\n| C |\n@key: Am\n| Am | F | G | C |'),
@@ -53,6 +63,16 @@ describe('progression suggestions', () => {
     if (!midScore.ok) return;
     assert.ok(midScore.candidates.every(item => item.key === 'Am' && item.mode === 'minor'));
     assert.ok(midScore.candidates.some(item => item.romanNumerals[0] === 'i'));
+  });
+
+  it('rejects any internal @key event even when its key text repeats, and allows a range starting there', () => {
+    const source = 'key: C\n| C |\n| F |\n@key: C\n| G |\n| Am |\n| F |\n| C |';
+    const score = parseGuitarDsl(source);
+    const crossing = suggestProgressions(score, { startMeasure: 0 }, 4);
+    assert.ok(!crossing.ok && crossing.code === 'keyBoundary');
+
+    const startsAtEvent = suggestProgressions(score, { startMeasure: 2 }, 4);
+    assert.ok(startsAtEvent.ok, startsAtEvent.ok ? '' : startsAtEvent.code);
   });
 
   it('uses duration-weighted melody chord tones to change progression ranking', () => {
@@ -85,5 +105,11 @@ describe('progression suggestions', () => {
     const boundaryScore = parseGuitarDsl('key: C\n| C |\n@key: D\n| D |');
     const boundary = suggestProgressions(boundaryScore, { startMeasure: 0 }, 4);
     assert.ok(!boundary.ok && boundary.code === 'keyBoundary');
+  });
+
+  it('rejects ambiguous thirdless harmony in the target range', () => {
+    const result = suggestProgressions(parseGuitarDsl('key: C\n| Csus4 | Am | G | F |'), { startMeasure: 0 }, 4);
+    assert.ok(!result.ok && result.code === 'ambiguousHarmony');
+    if (!result.ok) assert.strictEqual(result.detail, 'Csus4');
   });
 });

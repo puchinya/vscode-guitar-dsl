@@ -163,6 +163,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const progressionAssistant = require('../../progressionAssistant');
     const controller = progressionAssistant.progressionAssistantProbe.controller;
     assert.ok(controller, 'the active progression assistant controller is registered');
+    const generationWithCandidate = previewCapo.previewLifecycleProbe.generation;
+    await showAndFocus(doc, vscode.ViewColumn.One);
+    assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationWithCandidate,
+      'returning focus to the same source document keeps the assistant Preview generation');
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, candidatePreview,
+      'same-document focus does not replace the candidate Preview with normal source');
+    await vscode.commands.executeCommand('workbench.action.focusNextGroup');
+    await settle(30);
+    assert.strictEqual(previewCapo.previewLifecycleProbe.generation, generationWithCandidate,
+      'returning focus to Preview keeps the same assistant session');
+
+    await controller.handlePreviewMessage({ command: 'progressionSideChanged', side: 'A' });
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, source,
+      'A re-renders the Preview from the original DSL');
+    const aGeneration = previewCapo.previewLifecycleProbe.generation;
+    await controller.handlePreviewMessage({ command: 'progressionSideChanged', side: 'B' });
+    assert.strictEqual(previewCapo.effectiveDslProbe.previewInput, candidatePreview,
+      'B re-renders the Preview from the selected candidate DSL');
+    assert.ok(previewCapo.previewLifecycleProbe.generation > aGeneration, 'each A/B transition rebuilds the Preview');
+
     const workspace = vscode.workspace as unknown as { applyEdit: unknown };
     const originalApplyEdit = workspace.applyEdit;
     let applyCount = 0;
@@ -259,6 +279,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         /^0[0-4]$/.test(completion.sortText ?? '') && typeof completion.detail === 'string'
       ) ?? [];
       assert.strictEqual(progressionItems.length, 0, `${item.label} must not offer chord suggestions`);
+    }
+  });
+
+  test('Issue #129 completions accept sharp chord roots and stop at whitespace-prefixed comments', async () => {
+    const cases = [
+      { label: 'F# chord', source: 'key: C\n| F# |', needle: 'F#', offers: true },
+      { label: 'C# chord', source: 'key: C\n| C# |', needle: 'C#', offers: true },
+      { label: 'real trailing comment', source: 'key: C\n| F# | # comment', needle: 'comment', offers: false }
+    ];
+    for (const item of cases) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: item.source });
+      const offset = item.source.indexOf(item.needle) + item.needle.length;
+      const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+        'vscode.executeCompletionItemProvider', doc.uri, doc.positionAt(offset)
+      );
+      const progressionItems = result?.items.filter(completion =>
+        /^0[0-4]$/.test(completion.sortText ?? '') && typeof completion.detail === 'string'
+      ) ?? [];
+      assert.strictEqual(progressionItems.length > 0, item.offers, `${item.label} completion behavior`);
+      if (item.offers) {
+        assert.ok(progressionItems.every(completion => completion.range instanceof vscode.Range
+          && completion.range.start.character === 2 && completion.range.end.character === 4),
+        `${item.label} replaces only the sharp chord token`);
+      }
     }
   });
 

@@ -45,6 +45,30 @@ describe('progression source edits', () => {
     assert.strictEqual(plan.previewSource.split('@key: Am').length - 1, 1);
   });
 
+  it('rejects same-key @key events inside a replacement and allows starting at the event', () => {
+    const crossingSource = 'key: C\n| C |\n| F |\n@key: C\n| G |\n| Am |\n| F |\n| C |';
+    const validCandidate = candidate('key: C\n| C |\n| F |\n| G |\n| Am |', 0, 4);
+    const crossing = planProgressionEdit(crossingSource, parseGuitarDsl(crossingSource),
+      { startMeasure: 0, bars: 4, operation: 'replace' }, validCandidate);
+    assert.ok(!crossing.ok && crossing.reason === 'keyBoundary');
+
+    const startingSource = 'key: C\n| C |\n| F |\n@key: C\n| G |\n| Am |\n| F |\n| C |';
+    const startingScore = parseGuitarDsl(startingSource);
+    const startingCandidate = candidate(startingSource, 2, 4);
+    const starting = planProgressionEdit(startingSource, startingScore,
+      { startMeasure: 2, bars: 4, operation: 'replace' }, startingCandidate);
+    assert.ok(starting.ok, starting.ok ? '' : starting.reason);
+  });
+
+  it('rejects ambiguous thirdless harmony independently in the source edit planner', () => {
+    const valid = 'key: C\n| C |\n| Am |\n| G |\n| F |';
+    const selected = candidate(valid, 0, 4);
+    const ambiguous = 'key: C\n| Csus4 |\n| Am |\n| G |\n| F |';
+    const plan = planProgressionEdit(ambiguous, parseGuitarDsl(ambiguous),
+      { startMeasure: 0, bars: 4, operation: 'replace' }, selected);
+    assert.ok(!plan.ok && plan.reason === 'ambiguousHarmony');
+  });
+
   it('rejects repeated, multi-chord, duration, labeled, TAB, invalid, and key-crossing targets', () => {
     const unsupported = [
       { source: 'key: C\n| C |\n| % |', start: 1 },

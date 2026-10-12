@@ -382,7 +382,7 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 現在の GuitarDSL エディタと caret を対象に、単一の次コード補完と決定論的な進行候補を提供する。外部サービスや生成 AI は使わない。
 
 - IntelliSense は `.guitardsl` / `.gdsl` のコードセルで、コード入力位置または互換性のあるコード prefix に限り起動する。`mel:`、`lyr:`、`tab:`、コード定義、header、comment、duration、modifier、`@label` 内では候補を出さない。prefix の範囲だけを置換し、最大5件を返す。キャンセル・古い要求・無関係な parser error では候補を返さない。補完の確定はコード文字列のみを挿入し、試聴やほかの文書変更を行わない。
-- コマンドは 4 / 8 / 16 小節または次の1コードを選ばせ、対象範囲を置換するか安全な本文末へ追加する。置換は連続した単純小節のコード名 span のみを変え、リズム・メロディ・歌詞・空白・コメントを保持する。転調後の小節から始められるが、対象範囲が複数の調をまたぐ場合は拒否する。反復小節 `%`、複数コード変更、明示コード duration、custom `@voicing`、対象 TAB、source error、曖昧または一貫しない context、解決不能な span も拒否する。拒否・キャンセルでは編集しない。
+- コマンドは 4 / 8 / 16 小節または次の1コードを選ばせ、対象範囲を置換するか安全な本文末へ追加する。置換は連続した単純小節のコード名 span のみを変え、リズム・メロディ・歌詞・空白・コメントを保持する。転調後の小節から始められるが、対象範囲の内側に `@key` イベントがある場合は値が同じでも拒否する。反復小節 `%`、複数コード変更、明示コード duration、custom `@voicing`、対象 TAB、source error、対象範囲の曖昧または一貫しない和声 context、解決不能な span も拒否する。拒否・キャンセルでは編集しない。
 - カタログは固定の長調・短調各5パターンを使う。8小節は選択した4小節を2回、16小節は4回繰り返す。候補には v1 の反復制約を表示する。自動生成の slash chord は作らず、置換範囲外の既存 slash chord は保持する。
 - 候補は最大5件。開始コードの root pitch class が直前の記述コードと同じなら +4、開始コードが直前と同一なら -1、主音コードで終われば +2 とし、開始コードの加点と減点は同時に適用して個別表示する。対象範囲にメロディがあれば、休符を除く発音 pitch ごとに音価で重み付けし、chord tone +2 / non-chord tone -1 とする。メロディがなければ「メロディ評価なし」と示す。score はヒューリスティックで楽曲品質の客観評価ではない。完全な同点はカタログ順とする。
 - 長調・短調、`@key` を含む対象小節の有効 key、および capo を考慮する。候補は sounding key 上で和声機能を選び、提案 chord の記述形は capo 分を差し引く。メロディ pitch は実音のまま評価する。無効な key、capo、chord quality は明示的な失敗とし、C major へ置き換えない。
@@ -520,7 +520,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 - 単一 chord、進行全体、既存メロディとの同時試聴を提供する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。候補選択時に自動再生しない。
 - 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline`、Preview の既存 AudioContext / transport で再生する。小節番号から独自に時刻を推測しない。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
-- A/B、候補、速度、文書を切り替えたとき、通常 Preview に戻るとき、またはパネルを閉じたときは予約音源を stop/fade し、assistant session を破棄する。Preview の通常再生・Practice・PDF の状態と責務は維持し、二重 scheduler を作らない。
+- A/B と候補を切り替えたときは予約音源を stop/fade し、同じ singleton Preview を選択側の DSL から再描画する。候補選択 session は維持する。速度変更では予約音源と scheduler を停止する。同一文書へフォーカスを戻しても assistant Preview を通常 Preview に差し替えない。文書変更・別文書への切替・通常 Preview への復帰・パネルを閉じたときは session を破棄する。Preview の通常再生・Practice・PDF の状態と責務を維持し、二重 scheduler を作らない。
 - Preview の Webview message は candidate ID など識別子のみを送信する。ホストは session と候補を検証し、Webview が送る DSL を適用しない。Webview の表示は keyboard-operable で、候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
 
 ## 4B. 楽譜設定エディタ (Score Settings Editor)

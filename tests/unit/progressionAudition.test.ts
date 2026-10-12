@@ -13,8 +13,10 @@ const candidateDsl = originalDsl.replace('| C |', '| G |');
 
 const assistant: ProgressionAssistantHtmlModel = {
   originalDsl,
+  candidateDsl,
   candidates: [{ id: 'candidate-g', chords: ['G'], rationale: 'G major candidate', score: 3 }],
   activeCandidateId: 'candidate-g',
+  side: 'B',
   targetStartMeasure: 0,
   bars: 1,
   operation: 'replace'
@@ -40,9 +42,21 @@ function melodyTimeline(data: Record<string, any>): unknown[] {
     }));
 }
 
+function scoreSvgs(html: string): string[] {
+  return Array.from(html.matchAll(/<svg\b[^>]*>[\s\S]*?<\/svg>/g), match => match[0]);
+}
+
 describe('progression audition runtime', () => {
   it('does not autoplay and auditions the original A and candidate B through the shared Preview transport', async () => {
     const html = compileGuitarDslToHtml(candidateDsl, { progressionAssistant: assistant });
+    const originalHtml = compileGuitarDslToHtml(originalDsl, {
+      progressionAssistant: { ...assistant, side: 'A' }
+    });
+    assert.deepStrictEqual(scoreSvgs(originalHtml), scoreSvgs(compileGuitarDslToHtml(originalDsl)),
+      'A renders the original source SVGs');
+    assert.deepStrictEqual(scoreSvgs(html), scoreSvgs(compileGuitarDslToHtml(candidateDsl)),
+      'B renders the selected candidate source SVGs');
+    assert.notDeepStrictEqual(scoreSvgs(originalHtml), scoreSvgs(html), 'A and B show their different chord sheets');
     const runtime = createFakePlaybackWebview(html);
     assert.strictEqual(runtime.audioContextCount, 0, 'opening candidate suggestions does not start audio');
     assert.strictEqual(runtime.progressionData?.activeCandidateId, 'candidate-g');
@@ -56,6 +70,8 @@ describe('progression audition runtime', () => {
     assert.notDeepStrictEqual(candidateChordPitches, originalChordPitches, 'A and B carry different chord pitches');
 
     await runtime.click('progression-side-a');
+    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({ command: 'progressionSideChanged', side: 'A' }));
+    assert.strictEqual(runtime.element('progression-side-a').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(runtime.audioContextCount, 0, 'switching to A does not autoplay');
     await runtime.click('progression-audition-song');
     await flushAsyncWork();
@@ -63,6 +79,7 @@ describe('progression audition runtime', () => {
     assert.ok(originalFrequencies.length > 0, 'A schedules the original score');
 
     await runtime.click('progression-side-b');
+    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({ command: 'progressionSideChanged', side: 'B' }));
     assert.strictEqual(runtime.intervalCount, 0, 'switching sides stops the current audition');
     const candidateStart = runtime.scheduledOscillators().length;
     await runtime.click('progression-audition-song');
@@ -95,7 +112,7 @@ describe('progression audition runtime', () => {
     ].join('\n');
     const candidate = source.replace('| C ', '| G ');
     const html = compileGuitarDslToHtml(candidate, {
-      progressionAssistant: { ...assistant, originalDsl: source, bars: 1 }
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate, bars: 1 }
     });
     const runtime = createFakePlaybackWebview(html);
     await runtime.click('progression-audition-chord');
@@ -133,7 +150,7 @@ describe('progression audition runtime', () => {
     ].join('\n');
     const candidate = source.replace('| C ', '| G ');
     const html = compileGuitarDslToHtml(candidate, {
-      progressionAssistant: { ...assistant, originalDsl: source, bars: 1 }
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate, bars: 1 }
     });
     const firstTimeline = createFakePlaybackWebview(html);
     const secondTimeline = createFakePlaybackWebview(html);
@@ -181,7 +198,7 @@ describe('progression audition runtime', () => {
     ].join('\n');
     const candidate = source.replace('| D ', '| C ');
     const runtime = createFakePlaybackWebview(compileGuitarDslToHtml(candidate, {
-      progressionAssistant: { ...assistant, originalDsl: source, bars: 1 }
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate, bars: 1 }
     }));
     const chordEvent = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
     const melodyEvent = runtime.playbackData.events.find((event: any) => event.kind === 'pitched' && event.source === 'melody');
@@ -205,7 +222,8 @@ describe('progression audition runtime', () => {
     const repeatedCandidate = repeatedOriginal.replace('| C |', '| G |');
     const repeatedAssistant: ProgressionAssistantHtmlModel = {
       ...assistant,
-      originalDsl: repeatedOriginal
+      originalDsl: repeatedOriginal,
+      candidateDsl: repeatedCandidate
     };
     const runtime = createFakePlaybackWebview(compileGuitarDslToHtml(repeatedCandidate, {
       progressionAssistant: repeatedAssistant

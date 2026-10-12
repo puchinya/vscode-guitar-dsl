@@ -1,4 +1,5 @@
 import { parseGuitarDsl, type MeasureData, type ParsedScore } from './compiler';
+import { analyzeHarmony } from './harmonicAnalysis';
 import { spliceSourceOffsets, type SourceOffsetEdit } from './sourceEdits';
 import { supportedSuggestionQuality, type ProgressionCandidate, type ProgressionTarget } from './progressionSuggestions';
 
@@ -13,6 +14,7 @@ export type ProgressionEditFailureCode =
   | 'invalidTarget'
   | 'sourceHasErrors'
   | 'unsupportedMeasure'
+  | 'ambiguousHarmony'
   | 'keyBoundary'
   | 'invalidCandidate'
   | 'sourceSpanMismatch'
@@ -57,6 +59,10 @@ function protectedSemanticsMatch(before: ParsedScore, after: ParsedScore, target
 
 function checkRangeContext(score: ParsedScore, target: ProgressionEditTarget): ProgressionEditPlan | undefined {
   const end = target.startMeasure + (target.operation === 'replace' ? target.bars : 0);
+  if (target.operation === 'replace' && score.events.some(event => event.kind === 'keyChange'
+    && event.beforeMeasure > target.startMeasure && event.beforeMeasure < end)) {
+    return { ok: false, reason: 'keyBoundary' };
+  }
   const measures = score.measures.slice(target.startMeasure, end);
   if (measures.some(measure => measure.context.key !== measures[0]?.context.key)) {
     return { ok: false, reason: 'keyBoundary' };
@@ -97,6 +103,10 @@ export function planProgressionEdit(
     if (target.startMeasure + target.bars > score.measures.length) return { ok: false, reason: 'invalidTarget' };
     const contextFailure = checkRangeContext(score, target);
     if (contextFailure) return contextFailure;
+    const ambiguous = analyzeHarmony(score).chords.find(chord => chord.status === 'ambiguous'
+      && chord.measureIndex >= target.startMeasure
+      && chord.measureIndex < target.startMeasure + target.bars);
+    if (ambiguous) return { ok: false, reason: 'ambiguousHarmony', detail: ambiguous.writtenName };
     for (let offset = 0; offset < target.bars; offset++) {
       const measureIndex = target.startMeasure + offset;
       const measure = score.measures[measureIndex];

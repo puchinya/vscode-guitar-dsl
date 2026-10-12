@@ -315,6 +315,7 @@ export function activate(context: vscode.ExtensionContext) {
       };
       const assistantModel: ProgressionAssistantHtmlModel = {
         originalDsl: session.source,
+        candidateDsl: plan.previewSource,
         candidates: session.candidates.map(item => ({
           id: item.id,
           chords: item.chords,
@@ -322,6 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
           score: item.score.total
         })),
         activeCandidateId: candidate.id,
+        side: session.side,
         targetStartMeasure: session.target.startMeasure,
         bars: session.target.bars,
         operation: session.target.operation
@@ -330,8 +332,9 @@ export function activate(context: vscode.ExtensionContext) {
       const config = vscode.workspace.getConfiguration('guitardsl');
       const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
       const webview = currentPanel.webview;
-      effectiveDslProbe.previewInput = plan.previewSource;
-      webview.html = compileGuitarDslToHtml(plan.previewSource, {
+      const displaySource = session.side === 'A' ? session.source : plan.previewSource;
+      effectiveDslProbe.previewInput = displaySource;
+      webview.html = compileGuitarDslToHtml(displaySource, {
         locale: currentLocale,
         cspSource: webview.cspSource,
         nonce: randomBytes(16).toString('base64'),
@@ -437,9 +440,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   vscode.window.onDidChangeActiveTextEditor((editor) => {
     if (editor && isGuitarDslDocument(editor.document)) {
+      const keepProgressionPreview = progressionAssistantController?.hasActiveSession(editor.document.uri.toString()) ?? false;
       progressionAssistantController?.invalidateIfDifferent(editor.document.uri.toString(), true);
       lastActiveGuitarDslDoc = editor.document;
-      if (currentPanel) {
+      if (currentPanel && !keepProgressionPreview) {
         updateWebview(editor.document);
       }
     } else if (editor) {

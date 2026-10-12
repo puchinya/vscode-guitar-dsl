@@ -138,6 +138,7 @@ export interface Messages {
   progressionInvalidKey: string;
   progressionInvalidCapo: string;
   progressionUnsupportedQuality: string;
+  progressionAmbiguousHarmony: string;
   progressionKeyBoundary: string;
   progressionNoSafeCandidates: string;
   uiProgressionTitle: string;
@@ -362,6 +363,7 @@ export const MESSAGES_JA: Messages = {
   progressionInvalidKey: '対象範囲の調を解釈できません。',
   progressionInvalidCapo: 'カポ設定を解釈できません。',
   progressionUnsupportedQuality: '対象範囲のコード品質は候補生成に対応していません。',
+  progressionAmbiguousHarmony: '対象範囲の和声を判定できないため、コード進行候補を作成できません。',
   progressionKeyBoundary: '候補範囲が調の境界にかかっています。',
   progressionNoSafeCandidates: '候補を安全に適用できる範囲がありません。',
   uiProgressionTitle: 'コード進行候補',
@@ -628,6 +630,7 @@ export const MESSAGES_EN: Messages = {
   progressionInvalidKey: 'The key for the target range could not be interpreted.',
   progressionInvalidCapo: 'The capo setting could not be interpreted.',
   progressionUnsupportedQuality: 'A chord quality in the target range is not supported for suggestions.',
+  progressionAmbiguousHarmony: 'The harmony in the target range is ambiguous, so progression suggestions are unavailable.',
   progressionKeyBoundary: 'The candidate range crosses a key boundary.',
   progressionNoSafeCandidates: 'No candidates can be applied safely to this range.',
   uiProgressionTitle: 'Chord progression suggestions',

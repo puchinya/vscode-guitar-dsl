@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装完了。Issue #129 のコード進行候補、メロディ対応評価、Preview の A/B 試聴と明示適用を実装。`npm test`（1,100 unit＋67 E2E）、Help/AI同期、`npm run vscode:prepublish`、VSIX一覧、Issue文書検証はPASS。スクリーンショットを `docs/status/evidence/` に保存し、current-HEAD self-reviewとPR deliveryを進行中。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装完了。Issue #129 のコード進行候補、メロディ対応評価、Preview の A/B 試聴と明示適用を実装。`npm test`（1,105 unit＋68 E2E）、Help/AI同期、`npm run vscode:prepublish`、VSIX一覧、Issue文書検証はPASS。スクリーンショットを `docs/status/evidence/` に保存し、current-HEAD self-reviewとPR deliveryを進行中。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -90,7 +90,7 @@
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。Section は再生タイムラインで書かれた小節ごとの所属を解決し、複数小節と連続した反復を含める。DSL は変更しない |
-| | コード進行アシスタント（Issue #129） | ✅ 完了 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。A/B切替、選択候補の明示試聴、50〜150%の速度、候補の確認後に単一 WorkspaceEdit で適用。対象範囲が調をまたぐ場合、未対応構文、古いセッションは適用前に拒否 |
+| | コード進行アシスタント（Issue #129） | ✅ 完了 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。A/B切替で譜面と音声の両方を選択側へ再描画し、同一文書の再フォーカスでは Preview session を維持。選択候補の明示試聴、50〜150%の速度、候補の確認後に単一 WorkspaceEdit で適用。内側の `@key` イベント（同じ調を再指定する場合を含む）、対象範囲の曖昧な和声、未対応構文、古いセッションは拒否 |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
@@ -158,8 +158,8 @@
   - `tests/unit/aiTools.test.ts`: ツール入力の実行時検証（範囲・`explicit` の `capo`・絶対パス）、変更ガード、変更系の対象指定（`uri` / 絶対 `path` のちょうど 1 つ）、日英の確認文言、モデル呼び出し・変換処理を持たないこと
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
-  - `tests/unit/progressionSuggestions.test.ts`, `tests/unit/progressionSourceEdits.test.ts`, `tests/unit/progressionAudition.test.ts`: 固定メジャー / マイナーカタログ、調・メロディを使った順位付け、明示キー必須、ソース範囲保持と不正対象の拒否、明示操作までの無再生、A/B 切替と反復時の全曲試聴制限
-- **テスト実行結果**: **1100 / 1100 件 PASS** (0 failures、2026-10-12)
+  - `tests/unit/progressionSuggestions.test.ts`, `tests/unit/progressionSourceEdits.test.ts`, `tests/unit/progressionAudition.test.ts`: 固定メジャー / マイナーカタログ、調・メロディ・カポを使った順位付け、同値 `@key` 境界と曖昧な和声の拒否、ソース範囲保持、A/B の譜面表示と音声切替、明示操作までの無再生、反復時の全曲試聴制限
+- **テスト実行結果**: **1105 / 1105 件 PASS** (0 failures、2026-10-12)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
@@ -174,7 +174,7 @@
   - メロディ行の診断の発行と修正時のクリア
   - 調弦 (Issue #84): 不正 pitch の診断範囲が入力 token と一致し、修正時に消えること。Drop D + capo の Preview/PDF が同じ有効 DSL で描画され、調弦・key・melody を保持すること
   - `chord` 行の CodeLens、コマンドでエディタパネルが開くこと、エディタの保存（挿入・置換・重複・不正）
-  - Issue #129: chord cell の補完が最大5件かつコード prefix だけを置換し、melody / lyrics / TAB / chord定義 / comment / header / duration / `@label` / parser error では候補を出さないこと。候補プレビューでは元文書が不変。確認キャンセル・古い候補・連続適用・`applyEdit=false` は原文を書き換えず、有効候補は一括適用後 Undo 1 回で原文に戻ること
+  - Issue #129: chord cell の補完が最大5件かつコード prefix だけを置換し、`F#` / `C#` を認識してコメントでは候補を出さないこと。候補プレビューでは元文書が不変で、A/B切替時は選択側の DSL から譜面と音声を再描画し、同じ文書へ戻ったとき assistant Preview を保つ。確認キャンセル・古い候補・連続適用・`applyEdit=false` は原文を書き換えず、有効候補は一括適用後 Undo 1 回で原文に戻ること
   - カポ: `guitardsl.editCapo` / `guitardsl.editScoreSettings` の登録、エディタを開いても文書が変わらないこと、適用が最新テキストから再計算されること、1 回の元に戻すで戻ること、プレビューの一時変更（文書不変・ドリフトなし・編集への追従・変換不可での解除）、プレビュー入力と PDF 入力の完全一致、`guitardsl.exportPdf` が一時変更を反映すること、一時変更なしでは `doc.getText()` そのもの、切り替え・プレビューを閉じたときの解除
   - 移調（Issue #68）: 最新テキストからの再計算、移調 + カポ指定の 1 回の編集と 1 回の元に戻す、失敗時は不変、楽譜設定のカポ・初心者モード・移調の 3 セクション、適用後のプレビュー・PDF の再解決（初心者モード有効時を含む）、スコアイベントのアウトライン、高度な記譜のサンプルの PDF 出力
   - 初心者モード: ON で `forbid`・自動・カポ一時変更の解除、プレビュー入力と PDF 入力の一致、OFF でソース表示（カポ一時変更は戻さない）、ON/OFF の繰り返しでドリフトなし、固定カポ・バレーコード変更で自動へ、編集への追従と解なしでの解除（古い PDF なし）、切り替え・ドキュメントを閉じる・プレビューを閉じるでの解除、適用（最新テキスト・1 回の編集・1 回の元に戻す・失敗時は不変）、楽譜設定 `beginner` セクションのモデルと適用

@@ -21,6 +21,7 @@ export interface ProgressionAssistantSession {
   target: ProgressionEditTarget;
   candidates: ProgressionCandidate[];
   activeCandidateId: string;
+  side: 'A' | 'B';
 }
 
 export interface ProgressionAssistantPreviewController {
@@ -83,6 +84,7 @@ function suggestionFailureMessage(code: ProgressionSuggestionFailureCode, messag
     case 'invalidKey': return messages.progressionInvalidKey;
     case 'invalidCapo': return messages.progressionInvalidCapo;
     case 'unsupportedQuality': return messages.progressionUnsupportedQuality;
+    case 'ambiguousHarmony': return messages.progressionAmbiguousHarmony;
     case 'keyBoundary': return messages.progressionKeyBoundary;
     case 'invalidTarget': return messages.progressionInvalidTarget;
   }
@@ -194,7 +196,8 @@ export class ProgressionAssistantController implements vscode.Disposable {
       source,
       target: selectedOperation.target,
       candidates,
-      activeCandidateId: pick.candidate.id
+      activeCandidateId: pick.candidate.id,
+      side: 'B'
     };
     await this.preview.render(this.session);
   }
@@ -209,6 +212,14 @@ export class ProgressionAssistantController implements vscode.Disposable {
       const candidate = this.session.candidates.find(item => item.id === message.candidateId);
       if (!candidate) return true;
       this.session.activeCandidateId = candidate.id;
+      this.session.side = 'B';
+      await this.preview.render(this.session);
+      return true;
+    }
+    if (message.command === 'progressionSideChanged') {
+      if (!this.session || (message.side !== 'A' && message.side !== 'B')) return true;
+      if (this.session.side === message.side) return true;
+      this.session.side = message.side;
       await this.preview.render(this.session);
       return true;
     }
@@ -229,6 +240,10 @@ export class ProgressionAssistantController implements vscode.Disposable {
 
   invalidateIfDifferent(uri: string, restore = false): void {
     if (this.session && this.session.uri !== uri) this.clear(this.session.uri, restore);
+  }
+
+  hasActiveSession(uri: string): boolean {
+    return this.session?.uri === uri;
   }
 
   private async applyCandidate(candidateId: unknown): Promise<void> {
