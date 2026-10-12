@@ -4,9 +4,16 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装済み。Issue #129 は追加レビュー対応中。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。`npm run compile`、`npm test`（1,110 unit＋76 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,594件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。開発ホストからの実音出力は未確認。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装済み。Issue #129 は追加レビュー対応中、Issue #133 は実装済み・PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,120 unit＋77 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,599件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。開発ホストからの実音出力は未確認。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
+
+## Issue #133: Common GuitarDSL Inspector
+
+- **状態**: 実装済み、PR はレビュー待ち。
+- **実装**: Secondary Sidebar に単一の Webview View を登録。Extension Host がアクティブな GuitarDSL 文書の URI / version を所有し、空状態と文書状態を表示する。編集、再生、進行提案は既存の所有者に残す。
+- **検証**: `npm run compile`、単体テスト **1120 / 1120**、VS Code 1.141.0 の E2E **77 / 77**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,599 項目）が PASS。
+- **画面証拠**: [狭幅・暗色](evidence/issue-133/inspector-dark-narrow.png)、[広幅・暗色](evidence/issue-133/inspector-dark-wide.png)、[狭幅・明色](evidence/issue-133/inspector-light-narrow.png)、[広幅・明色](evidence/issue-133/inspector-light-wide.png)。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
@@ -71,6 +78,7 @@
 | | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
 | | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完とコマンドパレットから決定論的な候補を提示。調とメロディを評価し、補完では prefix のみを置換。コマンドは複数小節の置換または末尾追加を候補化 |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
+| | `guitardsl.openInspector` (共通 Inspector を開く, Issue #133) | ✅ 実装済み・PR レビュー待ち | Secondary Sidebar の単一 Webview View。アクティブな GuitarDSL 文書の URI / version のみを表示し、対象がなければローカライズした空状態。ソース編集・音声再生の所有権は既存のまま |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
 | **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | Get Started / Current File（アクティブなエディタのみ）/ Tools。`onView:guitardsl.sidebar` で起動 |
 | **設定** | `guitardsl.gemini.model`, `guitardsl.transcription.compressRepeats`, `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
@@ -161,16 +169,18 @@
   - `tests/unit/documentResolver.test.ts`: 移動したドキュメント解決の順序（明示 URI、アクティブ、表示中、最後のドキュメント、開いているドキュメント、なし）
   - `tests/unit/onboarding.test.ts`: テンプレート・サンプルのクイックピックと無題ドキュメントの作成、キャンセル、失敗時のエラー、テンプレートの構文検証とサンプルからの抜粋、`.vscodeignore` による 5 サンプルの同梱
   - `tests/unit/progressionSuggestions.test.ts`, `tests/unit/progressionSourceEdits.test.ts`, `tests/unit/progressionAudition.test.ts`: 固定メジャー / マイナーカタログ、調・メロディ・カポを使った順位付け、同値 `@key` 境界と曖昧な和声の拒否、ソース範囲保持、A/B の譜面表示と音声切替、明示操作までの無再生、反復時の全曲試聴制限
+  - `tests/unit/inspectorController.test.ts`, `tests/unit/inspectorHtml.test.ts`, `tests/unit/inspectorManifest.test.ts`: アクティブ文書の URI / version、空状態、明示表示、冪等性、generation による古い更新の拒否、CSP・ローカライズ・読み取り専用コンテキスト、manifest の単一 Secondary Sidebar View
   - `tests/e2e/extension.test.ts`: 遅延したS1のPreview初期化完了後も、同じURI/versionの新しいS2の候補表示・セッションを保持し、古い要求の再描画・自動再生を抑止
-- **テスト実行結果**: **1110 / 1110 件 PASS** (0 failures、2026-10-12)
+- **テスト実行結果**: **1120 / 1120 件 PASS** (0 failures、2026-10-12)
 
 ### 2.2 E2Eテスト (Integration / E2E Tests)
 - **フレームワーク**: `@vscode/test-electron`
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.openInspector`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
   - サイドバー: ビュー `guitardsl.sidebar` にフォーカスできること
+  - Issue #133 Inspector: 単一の Secondary Sidebar Webview View、コマンドによる明示表示、再実行の冪等性、GuitarDSL 以外がアクティブな場合の空状態、編集も他の開いているファイルへのフォールバックも起きないこと
   - ヘルプ: GuitarDSL ドキュメントなしで `guitardsl.openHelp` が完了し、テキストドキュメントを変更しないこと
   - ドキュメントシンボル
   - 音楽対応 Code Actions (Issue #87): 無題 URI の選択から抽出し、定義挿入と参照置換を 1 回の元に戻すで復元
@@ -185,7 +195,7 @@
   - 新曲作成（Issue #104）: 伴奏のリズムを書かない構造の下書き（2 セクション、コード・メロディ・歌詞）が検証を通り、分析がセクションを返し、複数セクションの適用が 1 回の編集で伴奏を生成し、最後の検証がエラー 0 件で、1 回の元に戻すで下書きに戻ること（対象が確立済みの状態から始めるツールの動作確認で、Agent の対象選択は検証しない）。既存スコアをアクティブに開いたまま、別の新しい文書を `path` で検証・分析・適用・検証すると、新しい文書だけが編集され、既存スコアはバイト単位で変わらないこと
   - 実モデル smoke（ユーザー実施、2026-09-27）: PR #105 head `362cda23c27d66dbd26a09ae5f67ee5c6965f67a` の build で Skill resources が解決され、別の新規文書で伴奏適用まで完了。候補数で停止せず、サビ1/2に変化がありラスサビが最も強かったため R051/R052 PASS（[Issue evidence](https://github.com/puchinya/vscode-guitar-dsl/issues/104#issuecomment-5856512394)）。VS Code version/model は未記録。apply 入力 JSON は未記録で R041/R042/R046/R047 は未検証、R043 の引数も未記録、R048 は strict PASS としない。R030 は既存ファイルの hash 未取得、R039 はファイル読取ログなし、R040 は failure path 未実行。
   - AI 連携（Issue #80）: モデルなしでの起動と 7 ツールの登録、`vscode.lm.invokeTool` による検証（1 始まりの位置）と弾きやすさ（`inferCapoForDsl` と一致）、読み取り専用ツールと確認作成で文書が変わらないこと、カポ・初心者モード・移調のアダプタ（既存の適用結果と一致・1 回の編集・事後検証・失敗時は不変）、`documentBusy` とガードの解放（成功・失敗・例外）、キャンセル、最新ソースからの再計算、入力が示す文書だけを編集すること（確認後にアクティブなエディタが変わっても対象は変わらない。対象なし・両方指定は `invalidInput`。未知の無題 URI で文書を作らない）、確認メッセージが入力だけから作られること、読み取り専用ツールの `document.uri` を `vscode.lm.invokeTool` 経由で変更系ツールに渡して無題ドキュメントを編集できること
-- **テスト実行結果**: **76 / 76 件 PASS**（2026-10-12、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
+- **テスト実行結果**: **77 / 77 件 PASS**（2026-10-12、VS Code 1.141.0 darwin-arm64 のテストビルド。最小バージョン 1.109.0 と Windows/Linux では未実行）
 
 ### 2.2A Audio MIR (Rust/WASM)
 - **Issue #54 v2 検証 (2026-10-11, macOS arm64)**:

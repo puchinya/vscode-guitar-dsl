@@ -62,6 +62,10 @@
 
 コマンドパレットの **GuitarDSL: テンプレートから新規作成** と **GuitarDSL: サンプルを開く** でも同じ操作ができます。
 
+### GuitarDSL Inspector
+
+Inspector は、機能の移行に合わせて文書ごとの編集補助をまとめる表示先です。コマンドパレットから **GuitarDSL: Inspectorを開く** を実行します。対象はアクティブな GuitarDSL 文書だけで、該当文書がない場合は空状態を表示します。入力、カーソル移動、通常の文書切替では自動表示しません。初期段階は読み取り専用で、ソース編集と音声再生は既存の画面が引き続き担当します。View を移動した場合、VS Code はその配置を保ちます。
+
 ### エディタ支援
 
 - **シンタックスハイライト**: ヘッダー、セクション、コード、リズム、歌詞、メロディ（`mel:` / `lyr:`）、コード定義、スコアイベント、`let` フラグメントを色分けします。
@@ -573,6 +577,7 @@ GuitarDSL は楽譜を描画する拡張機能で、演奏（再生）は行い�
 | コマンド | ID |
 |---|---|
 | GuitarDSL: プレビューを横に開く | `guitardsl.showPreview` |
+| GuitarDSL: Inspectorを開く | `guitardsl.openInspector` |
 | GuitarDSL: PDF出力 / 印刷 | `guitardsl.exportPdf` |
 | GuitarDSL: Guitar Pro 7/8をインポート | `guitardsl.importGuitarPro` |
 | GuitarDSL: Guitar Pro 7へエクスポート | `guitardsl.exportGuitarPro` |

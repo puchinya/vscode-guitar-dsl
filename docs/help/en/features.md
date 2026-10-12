@@ -12,6 +12,11 @@ Click the **GuitarDSL** icon in the Activity Bar to open the **Start Here** view
 
 The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: Open Sample** do the same.
 
+### GuitarDSL Inspector
+<!-- help-sources: extension:4D -->
+
+The Inspector is a shared place for document-aware assistance as features move into it. Use **GuitarDSL: Open Inspector** from the Command Palette. It follows only the active GuitarDSL document and shows an empty state when none is active. Typing, cursor movement, and ordinary document switches do not reveal it. The initial view is read-only; source editing and audio playback keep their existing owners. If you move the view, VS Code keeps it in that location.
+
 ### Editor Support
 <!-- help-sources: extension:2 extension:5 extension:5A extension:5B -->
 

@@ -1,5 +1,6 @@
 {
   "command.showPreview.title": "GuitarDSL: プレビューを横に開く",
+  "command.openInspector.title": "GuitarDSL: Inspectorを開く",
   "command.exportPdf.title": "GuitarDSL: PDF出力 / 印刷",
   "command.importGuitarPro.title": "GuitarDSL: Guitar Pro 7/8をインポート",
   "command.exportGuitarPro.title": "GuitarDSL: Guitar Pro 7へエクスポート",
@@ -31,7 +32,9 @@
   "command.progression.apply.title": "GuitarDSL: コード進行候補を適用",
   "command.progression.close.title": "GuitarDSL: コード進行アシスタントを閉じる",
   "viewsContainer.guitardslSidebar.title": "GuitarDSL",
+  "viewsContainer.guitardslInspector.title": "GuitarDSL Inspector",
   "view.sidebar.name": "はじめに",
+  "view.inspector.name": "Inspector",
   "config.geminiModel.description": "YouTube 音源の実験的な自動採譜に使用する Gemini モデル。",
   "config.compressRepeats.description": "コードとメロディが一致する繰り返しセクションを反復記号（|: :|）と複数行歌詞に圧縮して楽譜を短縮します。",
   "config.expandPageBreakRepeats.description": "改ページ後の先頭小節が小節リピート記号（%）の場合、自動的に展開して前小節の内容を表示します。",

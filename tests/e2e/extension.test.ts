@@ -3002,3 +3002,40 @@ suite('AI integration: language model tools (Issue #80)', () => {
     }
   });
 });
+
+suite('GuitarDSL Inspector foundation (Issue #133)', () => {
+  test('one explicit Secondary Sidebar view opens without editing or falling back to another file', async () => {
+    const ext = vscode.extensions.all.find(e => e.packageJSON?.name === 'vscode-guitar-dsl');
+    assert.ok(ext);
+    const packageJson = ext.packageJSON;
+    const inspectorViews = packageJson.contributes.views.guitardslInspector as Array<{ id: string; type: string }>;
+    assert.deepStrictEqual(inspectorViews.map(view => view.id), ['guitardsl.inspector']);
+    assert.strictEqual(inspectorViews[0].type, 'webview');
+    assert.strictEqual(packageJson.contributes.viewsContainers.secondarySidebar[0].id, 'guitardslInspector');
+    assert.ok(packageJson.contributes.commands.some((command: { command: string }) => command.command === 'guitardsl.openInspector'));
+
+    const source = 'key: C\n| C | G | Am | F |';
+    const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    await showAndFocus(document);
+    try {
+      const before = document.getText();
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      assert.strictEqual(ext.isActive, true, 'the contributed command activates the extension');
+      const registeredCommands = await vscode.commands.getCommands(true);
+      assert.ok(registeredCommands.includes('guitardsl.openInspector'));
+      assert.ok(registeredCommands.includes('guitardsl.inspector.focus'));
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      assert.strictEqual(document.getText(), before, 'explicit open is read-only and repeatable');
+
+      const other = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'leave this alone' });
+      await showAndFocus(other);
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      assert.strictEqual(other.getText(), 'leave this alone', 'an unrelated active editor stays unchanged');
+      assert.strictEqual(document.getText(), before, 'the Inspector does not fall back to another open file');
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+      await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+      await closeAllEditors();
+    }
+  });
+});
