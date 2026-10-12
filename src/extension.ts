@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { compileGuitarDslToHtml } from './render/previewHtml';
+import { compileGuitarDslToHtml, type ProgressionAssistantHtmlModel } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
@@ -19,6 +19,9 @@ import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolve
 import { registerGuitarDslAiTools } from './ai/tools';
 import { registerGp78Commands } from './gp78Commands';
 import { computeCodeActionDiagnostics, registerMusicCodeActions } from './codeActionProvider';
+import { registerProgressionCompletions } from './progressionCompletionProvider';
+import { registerProgressionAssistant, type ProgressionAssistantController } from './progressionAssistant';
+import { planProgressionEdit } from './progressionSourceEdits';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 
@@ -95,6 +98,8 @@ export function computeDocumentDiagnostics(doc: vscode.TextDocument, locale: Sup
 export function activate(context: vscode.ExtensionContext) {
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
+  let progressionAssistantController: ProgressionAssistantController | undefined;
+  let openingPreviewForProgressionAssistant = false;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
@@ -102,6 +107,7 @@ export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
   context.subscriptions.push(diagnosticCollection);
   registerMusicCodeActions(context, currentLocale);
+  registerProgressionCompletions(context, currentLocale);
   const refreshDiagnostics = (doc: vscode.TextDocument) => {
     if (isGuitarDslDocument(doc)) {
       diagnosticCollection.set(doc.uri, [
@@ -160,6 +166,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri) => {
+    if (!openingPreviewForProgressionAssistant) progressionAssistantController?.invalidateActive();
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
@@ -185,6 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.webview.onDidReceiveMessage(
         async (message) => {
+          if (progressionAssistantController && await progressionAssistantController.handlePreviewMessage(message)) return;
           const pageSize: PageSize = isPageSize(message.pageSize) ? message.pageSize : previewPageSize;
           const orientation: PageOrientation = isPageOrientation(message.orientation) ? message.orientation : previewOrientation;
           if (message.command === 'savePdf') {
@@ -236,6 +244,7 @@ export function activate(context: vscode.ExtensionContext) {
           } else if (message.command === 'layoutChanged') {
             previewPageSize = pageSize;
             previewOrientation = orientation;
+            progressionAssistantController?.invalidateActive();
             if (lastActiveGuitarDslDoc) {
               updateWebview(lastActiveGuitarDslDoc);
             }
@@ -248,6 +257,7 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.onDidDispose(() => {
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
         previewLifecycleProbe.lastPlaybackAction = undefined;
+        progressionAssistantController?.invalidateActive();
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();
@@ -255,6 +265,94 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     updateWebview(doc);
+  });
+
+  progressionAssistantController = registerProgressionAssistant(context, currentLocale, {
+    async render(session) {
+      const uri = vscode.Uri.parse(session.uri);
+      const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === session.uri)
+        ?? await vscode.workspace.openTextDocument(uri);
+      if (doc.version !== session.version || doc.getText() !== session.source) {
+        vscode.window.showWarningMessage(msgs.progressionApplyFailed);
+        progressionAssistantController?.invalidate(session.uri);
+        return;
+      }
+      const candidate = session.candidates.find(item => item.id === session.activeCandidateId);
+      if (!candidate) return;
+      const score = parseGuitarDsl(session.source);
+      const plan = planProgressionEdit(session.source, score, session.target, candidate);
+      if (!plan.ok) {
+        vscode.window.showWarningMessage(msgs.progressionApplyFailed);
+        progressionAssistantController?.invalidate(session.uri);
+        return;
+      }
+
+      if (currentPanel && lastActiveGuitarDslDoc?.uri.toString() === session.uri) {
+        currentPanel.reveal(vscode.ViewColumn.Beside);
+      } else {
+        openingPreviewForProgressionAssistant = true;
+        try {
+          await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        } finally {
+          openingPreviewForProgressionAssistant = false;
+        }
+      }
+      if (!currentPanel) {
+        vscode.window.showWarningMessage(msgs.progressionPreviewUnavailable);
+        progressionAssistantController?.invalidate(session.uri);
+        return;
+      }
+      const rationaleFor = (item: typeof candidate) => {
+        const melody = item.melodyEvaluated
+          ? `${item.score.melody >= 0 ? '+' : ''}${item.score.melody}`
+          : currentLocale === 'ja' ? '評価なし' : 'not evaluated';
+        return `${item.key} ${item.mode} · ${item.romanNumerals.join('–')}\n${msgs.progressionScoreBreakdown(
+          item.score.followsPreviousRoot,
+          item.score.identicalOpeningChord,
+          item.score.tonicEnding,
+          melody
+        )}`;
+      };
+      const assistantModel: ProgressionAssistantHtmlModel = {
+        originalDsl: session.source,
+        candidates: session.candidates.map(item => ({
+          id: item.id,
+          chords: item.chords,
+          rationale: rationaleFor(item),
+          score: item.score.total
+        })),
+        activeCandidateId: candidate.id,
+        targetStartMeasure: session.target.startMeasure,
+        bars: session.target.bars,
+        operation: session.target.operation
+      };
+      currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
+      const config = vscode.workspace.getConfiguration('guitardsl');
+      const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
+      const webview = currentPanel.webview;
+      effectiveDslProbe.previewInput = plan.previewSource;
+      webview.html = compileGuitarDslToHtml(plan.previewSource, {
+        locale: currentLocale,
+        cspSource: webview.cspSource,
+        nonce: randomBytes(16).toString('base64'),
+        pageSize: previewPageSize,
+        orientation: previewOrientation,
+        expandPageBreakRepeats,
+        progressionAssistant: assistantModel,
+        fontUris: {
+          regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
+          bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
+        }
+      });
+      previewLifecycleProbe.generation++;
+      previewLifecycleProbe.currentDocumentUri = session.uri;
+    },
+    async restore(uri) {
+      if (!currentPanel) return;
+      const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === uri)
+        ?? await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+      updateWebview(doc);
+    }
   });
 
   const sendPlaybackAction = (action: string) => {
@@ -277,6 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   vscode.workspace.onDidChangeTextDocument((e) => {
+    progressionAssistantController?.invalidate(e.document.uri.toString());
     if (currentPanel && isGuitarDslDocument(e.document)) {
       if (lastActiveGuitarDslDoc && e.document.uri.toString() === lastActiveGuitarDslDoc.uri.toString()) {
         updateWebview(e.document);
@@ -288,6 +387,10 @@ export function activate(context: vscode.ExtensionContext) {
   previewBeginner.onDidChange = doc => updateWebview(doc);
 
   vscode.workspace.onDidCloseTextDocument((doc) => {
+    progressionAssistantController?.invalidate(doc.uri.toString());
+    if (currentPanel && lastActiveGuitarDslDoc?.uri.toString() === doc.uri.toString()) {
+      updateWebview(doc);
+    }
     if (previewCapo.getState()?.documentUri === doc.uri.toString()) {
       previewCapo.clear();
     }
@@ -334,10 +437,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   vscode.window.onDidChangeActiveTextEditor((editor) => {
     if (editor && isGuitarDslDocument(editor.document)) {
+      progressionAssistantController?.invalidateIfDifferent(editor.document.uri.toString(), true);
       lastActiveGuitarDslDoc = editor.document;
       if (currentPanel) {
         updateWebview(editor.document);
       }
+    } else if (editor) {
+      progressionAssistantController?.invalidateActive(true);
     }
   }, null, context.subscriptions);
 

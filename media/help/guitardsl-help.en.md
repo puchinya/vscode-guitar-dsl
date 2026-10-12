@@ -74,6 +74,14 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 - **📄 Save PDF** and the **?** Help button.
 - **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
 
+### Chord Progression Suggestions and Audition
+
+**GuitarDSL: Suggest Chord Progression** offers a next chord or deterministic 4-, 8-, and 16-bar candidates from the caret in the active GuitarDSL editor. Completions in chord cells can also suggest the next chord. Candidates come from a fixed catalog and the current key, capo, and melody. Scores are heuristics for comparing candidates.
+
+- You can replace only the chord names in the target range or append chord-only measures at the end of the score. Rhythm, melody, lyrics, comments, and whitespace are preserved. A range can start after a key change, but it cannot cross into another key. Targets that cannot be resolved safely are unavailable, including repeated measures, multiple chords, explicit chord durations, custom voicings, TAB, and source errors.
+- In Preview, switch between **A Original** and **B Candidate** and audition a single chord, the progression, the progression with melody, or the full song. Audition speed ranges from 50% to 150%. Selecting a candidate does not play audio or edit the document.
+- Choose **Apply candidate** and confirm to write the candidate in one undoable edit. If the document changes before apply, the edit is cancelled.
+
 ### Practice Mode
 
 Turn on **Practice** in the Playback row to show the Practice controls. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo.
@@ -508,6 +516,7 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 | GuitarDSL: Clear Practice Loop | `guitardsl.practice.clearLoop` |
 | GuitarDSL: Practice Slower | `guitardsl.practice.slower` |
 | GuitarDSL: Practice Faster | `guitardsl.practice.faster` |
+| GuitarDSL: Suggest Chord Progression | `guitardsl.suggestChordProgression` |
 
 ## Settings Reference
 

@@ -22,6 +22,7 @@
 | 移調、カポ、弾きやすさ、表示・保存境界 | 拡張機能仕様 §4B.2–§4B.5、言語構文仕様 §14 |
 | ストロークパターンの適用 | 拡張機能仕様 §3.10、§8.7 |
 | Code Actions によるソース保持編集 | Issue #87、拡張機能仕様 §5B |
+| コード進行候補の span 編集と再検証 | Issue #129、拡張機能仕様 §3.17、§4.8 |
 
 ## Architecture
 
@@ -44,6 +45,7 @@ Chord editor は `ChordEditorPanel` を一つ持ち、開いた文書 URI と編
 - `resolvePreviewEffectiveDsl()` は初心者モードを有効にした場合その結果を優先し、そうでなければ preview capo の結果を使う。Preview と Preview PDF / PDF export は同じ解決関数を通す。
 - `planSoundingTranspose()` は冒頭 `key` / `original_key`、`@key`、コード名 token、音高 token のソース範囲だけを更新し、コメント・空白・改行・歌詞・長さ・奏法を AST から書き戻さない。必要な場合は移調後の capo 方針を適用し、最後に再解析して一貫性を確かめる。
 - 伴奏分析・適用は VS Code / Gemini / 採譜に依存しない。プリセット選択は単一カタログと meter / feel 制約で行い、明示パターンまたは検証済みの一小節リズム計画のみをソースの rhythm spans に適用する。
+- コード進行 planner は `ParsedScore` と parser-owned chord/source spans を使い、元 DSL 全体を再シリアライズしない。置換は対象小節の chord-name 部分だけを splice し、候補ソースを通常 parser に通して parse error と対象外 semantics を検査する。append は安全な本文末 insertion span を使う。
 
 ## Data flow and ownership
 
@@ -93,3 +95,9 @@ AST 全体の再シリアライズはコメント、改行、ユーザー書式�
 ### Verification strategy
 
 純粋な planner と span splice にユニットテストを追加し、LF / CRLF、コメント、範囲外空白、無効・古い選択、parse / semantic validation failure、コード衝突、最小 / 最大 duration を確認する。E2E では multi-span 変換の単一 Undo、untitled URI、stale document の拒否を確認する。Issue #87 の contract に列挙された project hooks、Help / AI checks、Schema 2 validation を実行し、実行できない GUI / packaging target は NOT RUN と記録する。
+
+## Issue #129 implementation design
+
+`src/progressionSourceEdits.ts` is pure. It accepts source text, its `ParsedScore`, an explicit target, and a generated candidate. Replacement plans are limited to contiguous simple measures and each edit updates only a parser-owned chord-name span. Safe body-end append uses an exact insertion point and creates chord-only measures without rewriting existing text.
+
+`%`, multiple chord changes, explicit chord duration, custom `@voicing`, affected TAB, source diagnostics, key boundaries, ambiguous target context, and unresolved spans reject the whole plan. After splicing, the planner reparses and verifies that melody pitch/duration, rhythm, lyrics, and measure context outside the target remain unchanged. The host repeats this plan against the latest URI/version and applies it in one WorkspaceEdit; stale, canceled, reentrant, failed, or non-equivalent plans produce no writes.

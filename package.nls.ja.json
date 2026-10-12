@@ -22,6 +22,7 @@
   "command.practice.clearLoop.title": "GuitarDSL: 練習ループを解除",
   "command.practice.slower.title": "GuitarDSL: 練習速度を下げる",
   "command.practice.faster.title": "GuitarDSL: 練習速度を上げる",
+  "command.suggestChordProgression.title": "GuitarDSL: コード進行を提案",
   "viewsContainer.guitardslSidebar.title": "GuitarDSL",
   "view.sidebar.name": "はじめに",
   "config.geminiModel.description": "YouTube 音源の実験的な自動採譜に使用する Gemini モデル。",

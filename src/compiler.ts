@@ -151,6 +151,14 @@ export interface ChordTokenSpan {
   label?: string;
 }
 
+/** Parser-owned source span of one authored measure cell, excluding surrounding bar separators. */
+export interface MeasureSourceSpan {
+  measureIndex: number;
+  line: number;
+  startCol: number;
+  endCol: number;
+}
+
 /** Parser-owned source data for a complete authored token used by music-aware editor actions. */
 export interface CodeActionSourceToken {
   line: number;
@@ -531,6 +539,8 @@ export interface ParsedScore {
   diagnostics: ScoreDiagnostic[];
   /** Chord tokens written in measure lines, in source order (repeats `%` add none). */
   chordTokens?: ChordTokenSpan[];
+  /** Source spans for authored measures, aligned with `measures` (repeats included). */
+  measureSourceSpans?: MeasureSourceSpan[];
   /** Header lines in source order. */
   headerLines?: HeaderLine[];
   /** First line of the body (section, measure, melody, lyric, score event or page break); undefined when none. */
@@ -2557,6 +2567,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     expandPageBreakRepeats,
     diagnostics,
     chordTokens,
+    measureSourceSpans: measureSourceLocations.map((span, measureIndex) => ({ measureIndex, ...span })),
     headerLines,
     firstBodyLine,
     timeSignature,

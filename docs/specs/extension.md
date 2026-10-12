@@ -96,7 +96,7 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の23のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
+拡張機能は以下の24のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
@@ -123,6 +123,7 @@
 | `guitardsl.practice.clearLoop` | `GuitarDSL: Clear Practice Loop` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
 | `guitardsl.practice.slower` | `GuitarDSL: Practice Slower` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
 | `guitardsl.practice.faster` | `GuitarDSL: Practice Faster` | コマンドパレット、ユーザー設定可能なキー割り当て | - |
+| `guitardsl.suggestChordProgression` | `GuitarDSL: Suggest Chord Progression` | コマンドパレット、GuitarDSL エディタ | - |
 
 ### 3.1 `guitardsl.showPreview`
 GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn.Beside`）の Webview パネルとして開く。
@@ -376,6 +377,17 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 - 既存ファイルは上書きしない。保存先はローカル file URI に限り、remote/non-file target URI は理由を示して拒否する。出力待機中に文書 version が変わった場合は保存せず、再実行を促す。競合・書込失敗時に部分ファイルを残さない。
 - ダイアログまたは loss 確認のキャンセルはファイル操作を行わない。出力の公開後にキャンセルが遅すぎる場合は、その状態を通知する。実 Guitar Pro 7 による互換性検証が未完了のとき、公式アプリでの検証済みと表示しない。
 
+### 3.17 `guitardsl.suggestChordProgression`
+
+現在の GuitarDSL エディタと caret を対象に、単一の次コード補完と決定論的な進行候補を提供する。外部サービスや生成 AI は使わない。
+
+- IntelliSense は `.guitardsl` / `.gdsl` のコードセルで、コード入力位置または互換性のあるコード prefix に限り起動する。`mel:`、`lyr:`、`tab:`、コード定義、header、comment、duration、modifier、`@label` 内では候補を出さない。prefix の範囲だけを置換し、最大5件を返す。キャンセル・古い要求・無関係な parser error では候補を返さない。補完の確定はコード文字列のみを挿入し、試聴やほかの文書変更を行わない。
+- コマンドは 4 / 8 / 16 小節または次の1コードを選ばせ、対象範囲を置換するか安全な本文末へ追加する。置換は連続した単純小節のコード名 span のみを変え、リズム・メロディ・歌詞・空白・コメントを保持する。転調後の小節から始められるが、対象範囲が複数の調をまたぐ場合は拒否する。反復小節 `%`、複数コード変更、明示コード duration、custom `@voicing`、対象 TAB、source error、曖昧または一貫しない context、解決不能な span も拒否する。拒否・キャンセルでは編集しない。
+- カタログは固定の長調・短調各5パターンを使う。8小節は選択した4小節を2回、16小節は4回繰り返す。候補には v1 の反復制約を表示する。自動生成の slash chord は作らず、置換範囲外の既存 slash chord は保持する。
+- 候補は最大5件。開始コードの root pitch class が直前の記述コードと同じなら +4、開始コードが直前と同一なら -1、主音コードで終われば +2 とし、開始コードの加点と減点は同時に適用して個別表示する。対象範囲にメロディがあれば、休符を除く発音 pitch ごとに音価で重み付けし、chord tone +2 / non-chord tone -1 とする。メロディがなければ「メロディ評価なし」と示す。score はヒューリスティックで楽曲品質の客観評価ではない。完全な同点はカタログ順とする。
+- 長調・短調、`@key` を含む対象小節の有効 key、および capo を考慮する。候補は sounding key 上で和声機能を選び、提案 chord の記述形は capo 分を差し引く。メロディ pitch は実音のまま評価する。無効な key、capo、chord quality は明示的な失敗とし、C major へ置き換えない。
+- 適用は明示確認後に限る。最新 URI/version の文書から編集計画を作り直し、再parse と対象外の意味保存を検証し、単一 WorkspaceEdit / 単一 `applyEdit` で一度に適用する。古い文書、競合、再入、検証失敗、キャンセル、`applyEdit` 失敗はいずれもゼロ編集とする。
+
 ## 4. プレビュー機能仕様 (Webview Preview Specification)
 
 プレビュー画面は VS Code Webview API を使用して提供される。
@@ -501,6 +513,15 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - TAB を含む段は、ヘッダー・セクション・コードラベル、メロディ譜表と歌詞（あれば）、TAB 譜表と歌詞、表示設定が有効で明示的なリズム内容がある場合のリズム譜表、強弱・下段レーンの順に配置する。TAB 自身の音価だけを理由に既定のリズムスラッシュ譜表を重複表示しない。明示リズムと TAB は共存できる。
 - TAB を含まない段の既存レイアウトは変わらない。ページ Preview と PDF は `renderScoreSheets()` が生成する同じページ SVG を使い、PDF 専用 TAB 描画を持たない。
 - この Issue では TAB の意味音高をコンパイルするが、TAB 再生、TAB から五線譜を生成する機能、およびメロディから TAB を生成する機能は提供しない。
+
+### 4.8 コード進行アシスタントと試聴（Issue #129）
+
+既存 singleton Preview の折りたたみ可能な領域に候補と試聴操作を表示する。独立した再生パネル・AudioContext・scheduler は作らない。
+
+- 単一 chord、進行全体、既存メロディとの同時試聴を提供する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。候補選択時に自動再生しない。
+- 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline`、Preview の既存 AudioContext / transport で再生する。小節番号から独自に時刻を推測しない。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
+- A/B、候補、速度、文書を切り替えたとき、通常 Preview に戻るとき、またはパネルを閉じたときは予約音源を stop/fade し、assistant session を破棄する。Preview の通常再生・Practice・PDF の状態と責務は維持し、二重 scheduler を作らない。
+- Preview の Webview message は candidate ID など識別子のみを送信する。ホストは session と候補を検証し、Webview が送る DSL を適用しない。Webview の表示は keyboard-operable で、候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
 
 ## 4B. 楽譜設定エディタ (Score Settings Editor)
 

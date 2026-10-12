@@ -196,6 +196,8 @@ interface FakeInterval {
 
 export interface FakePlaybackWebview {
   readonly playbackData: Record<string, any>;
+  readonly progressionData: Record<string, any> | undefined;
+  readonly postedMessages: Record<string, unknown>[];
   click(id: string): Promise<void>;
   setRange(id: string, value: number): void;
   setChecked(id: string, value: boolean): void;
@@ -226,14 +228,23 @@ export interface FakePlaybackWebview {
 export function createFakePlaybackWebview(html: string, restoredState?: unknown): FakePlaybackWebview {
   const scripts = Array.from(html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi));
   const dataScript = scripts.find((match) => /\bid=["']playback-data["']/.test(match[1]));
+  const progressionDataScript = scripts.find((match) => /\bid=["']progression-assistant-data["']/.test(match[1]));
   const executableScript = scripts.find((match) => !/\btype=["']application\/json["']/.test(match[1]));
   if (!dataScript || !executableScript) throw new Error('Preview HTML must contain playback JSON and an executable inline script');
 
   const playbackData = JSON.parse(dataScript[2]) as Record<string, any>;
+  const progressionData = progressionDataScript
+    ? JSON.parse(progressionDataScript[2]) as Record<string, any>
+    : undefined;
   const elements = new Map<string, FakeElement>();
   const playbackDataElement = new FakeElement();
   playbackDataElement.textContent = dataScript[2];
   elements.set('playback-data', playbackDataElement);
+  if (progressionDataScript) {
+    const progressionDataElement = new FakeElement();
+    progressionDataElement.textContent = progressionDataScript[2];
+    elements.set('progression-assistant-data', progressionDataElement);
+  }
 
   const windowListeners = new Map<string, Array<(event?: unknown) => unknown>>();
   const documentListeners = new Map<string, Listener[]>();
@@ -377,10 +388,11 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       windowListeners.set(name, values);
     }
   };
+  const postedMessages: Record<string, unknown>[] = [];
   const vscode = {
     getState: () => savedWebviewState,
     setState: (state: unknown) => { savedWebviewState = state; },
-    postMessage: () => undefined
+    postMessage: (message: Record<string, unknown>) => { postedMessages.push(message); return undefined; }
   };
 
   vm.runInNewContext(executableScript[2], {
@@ -394,6 +406,8 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
 
   return {
     playbackData,
+    progressionData,
+    postedMessages,
     click: async (id) => { await getElement(id).dispatch('click'); },
     setRange: (id, value) => { getElement(id).value = String(value); },
     setChecked: (id, value) => { getElement(id).checked = value; },

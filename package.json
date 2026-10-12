@@ -138,6 +138,10 @@
       {
         "command": "guitardsl.practice.faster",
         "title": "%command.practice.faster.title%"
+      },
+      {
+        "command": "guitardsl.suggestChordProgression",
+        "title": "%command.suggestChordProgression.title%"
       }
     ],
     "viewsContainers": {

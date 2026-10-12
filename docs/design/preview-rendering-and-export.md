@@ -22,6 +22,7 @@
 | プレビュー更新、UI、レンダリング、一時カポ・初心者表示 | 拡張機能仕様 §3.1、§4、§4.4–§4.5 |
 | TAB Preview、PDF 同一性、変換制限 | 拡張機能仕様 §4.7、§4B.6 |
 | PDF、Preview playback、Practice Mode | 拡張機能仕様 §3.2、§3.14、§4.6 |
+| コード進行の melody-aware audition と A/B | Issue #129、拡張機能仕様 §3.17、§4.8 |
 
 ## Architecture
 
@@ -77,6 +78,12 @@ Extension Host が登録する Preview actions は `guitardsl.playback.togglePla
 `layoutScore()` remains the sole owner of row and vertical placement. `SystemGeometry` explicitly reports TAB presence, block offset and staff height; TAB lyric baseline, line height and verse count; whether an explicit rhythm staff is rendered and its final offset; and total `unitHeight`. A TAB row orders its blocks as header/section/chord labels, optional melody plus melody lyrics, TAB plus TAB lyrics, optional explicit rhythm, then dynamics/lower lanes. The six evenly spaced lines use a prominent clef-like `TAB` label and enough vertical room to keep fret digits on adjacent strings legible. The rhythm staff appears only when `show_rhythm` is true and the row contains explicitly authored rhythm. TAB's own/default duration does not create a redundant slash staff. Systems without TAB retain current geometry and rendering behavior.
 
 `render/tabStaff.ts` consumes compiled TAB semantics and `SystemGeometry`; it does not parse source, re-resolve pitch, or calculate positions from tuning. `render/svg.ts` includes it in the existing page and continuous SVG routes. The page SVG supplied to Preview is the same page SVG supplied to `src/pdf.ts`; PDF has no TAB-specific rendering or layout path.
+
+### Chord progression audition (Issue #129)
+
+`src/progressionAssistant.ts` owns an ephemeral session keyed to the current document URI/version and candidate IDs. The optional assistant UI lives inside the existing Preview Webview and posts candidate IDs/actions only. The host builds B's temporary DSL in memory from a validated source-edit plan, parses it, and supplies its `PlaybackTimeline` through the existing Preview render path. A is the ordinary source timeline. Both sides retain source melody, rhythm, tempo and synthesis; a playback multiplier changes audio elapsed time only and never mutates score BPM or timeline coordinates.
+
+The existing AudioContext and transport/scheduler remain the only audio execution owner. A candidate occurrence range is resolved from `PlaybackTimeline.occurrences`; if its performance occurrences are noncontiguous, v1 offers full-song audition only. Starting assistant audition stops ordinary playback. Switching side/candidate/speed, source edits, document switches, Preview takeover, or panel disposal stop/fade scheduled nodes and clear ephemeral session state. Preview preferences survive. Audio errors are localized while candidate selection and apply remain available.
 
 ## Data flow and ownership
 

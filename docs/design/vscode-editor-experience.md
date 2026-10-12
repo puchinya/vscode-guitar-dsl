@@ -22,6 +22,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 | サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
 | Code Actions、editor Hint、Quick Fix の登録と文書編集境界 | Issue #87、拡張機能仕様 §5A–§5B、§6.3 |
+| コード進行補完と assistant コマンド | Issue #129、拡張機能仕様 §3.17、§4.8 |
 | public language rules and examples | 言語構文仕様 §1–§18 |
 
 ## Architecture
@@ -75,3 +76,9 @@ Code Action provider は `CodeActionContext.only` を尊重し、キャンセル
 新しい Code Action / Quick Pick / Hint 文言は `src/i18n.ts` の英語・日本語辞書で解決する。Quick Fix をユーザーが実行できるよう Code Action title と diagnostic message を両ロケールで用意し、文書変更・close で Hint state を同期する。
 
 E2E は extension host 上で一回の Undo による完全復元、untitled document URI、複数範囲編集と stale document rejection を確認する。VSIX listing は新しいローカライズ資産と既存 manifest allowlist の同梱を確認する。
+
+## Issue #129 implementation design
+
+`src/progressionCompletionProvider.ts` is a thin VS Code `CompletionItemProvider` over the pure suggestion core. It resolves only parser-owned chord-cell prefixes in `.guitardsl` / `.gdsl`, honors cancellation, and returns a replacement range that covers only that prefix. It never edits or auditions a document.
+
+`src/progressionAssistant.ts` registers `guitardsl.suggestChordProgression` against the active GuitarDSL editor and caret. It passes an explicit target to the pure generator and source-edit planner. Apply reacquires the document by URI/version and replans; Webview messages carry candidate IDs/actions and cannot submit arbitrary DSL. Source changes and document switches invalidate the session.

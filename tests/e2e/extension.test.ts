@@ -110,8 +110,156 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       'Command guitardsl.applyStrummingPattern should be registered'
     );
     assert.ok(commands.includes('guitardsl.openHelp'), 'Command guitardsl.openHelp should be registered');
+    assert.ok(commands.includes('guitardsl.suggestChordProgression'), 'Chord progression suggestions should be registered');
     assert.ok(commands.includes('guitardsl.newDocumentFromTemplate'), 'Command guitardsl.newDocumentFromTemplate should be registered');
     assert.ok(commands.includes('guitardsl.openSample'), 'Command guitardsl.openSample should be registered');
+  });
+
+  test('Issue #129 completions replace only a chord prefix and the command previews candidates without editing', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    const completionPosition = new vscode.Position(1, 3);
+    const completionList = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider', doc.uri, completionPosition
+    );
+    assert.ok(completionList && completionList.items.length > 0, 'a chord cell offers deterministic suggestions');
+    assert.ok(completionList!.items.length <= 5, 'completion shows at most five candidates');
+    assert.ok(completionList!.items.every(item => item.range instanceof vscode.Range
+      && item.range.start.character === 2 && item.range.end.character === 3), 'completion replaces exactly the chord token');
+
+    editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+    const window = vscode.window as unknown as {
+      showQuickPick: (items: unknown[], options?: unknown) => Promise<unknown>;
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalWarningMessage = window.showWarningMessage;
+    let selectedCandidateId: string | undefined;
+    const chooseCandidate = async (items: unknown[]) => {
+      const choices = items as Array<{ bars?: number; description?: string; candidate?: unknown }>;
+      const choice = choices.find(item => item.bars === 4)
+        ?? choices.find(item => item.description === 'replace')
+        ?? choices.find(item => item.candidate !== undefined);
+      const candidate = choice?.candidate as { id?: string } | undefined;
+      if (candidate?.id) selectedCandidateId = candidate.id;
+      return choice;
+    };
+    window.showQuickPick = chooseCandidate;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const previewCapo = require('../../previewCapo');
+    assert.strictEqual(doc.getText(), source, 'candidate selection leaves the source untouched');
+    const candidatePreview = previewCapo.effectiveDslProbe.previewInput as string;
+    assert.ok(candidatePreview !== source, 'the in-memory candidate is rendered in Preview');
+    assert.ok(previewCapo.previewLifecycleProbe.generation > 0, 'the existing Preview lifecycle rendered the candidate');
+    assert.ok(selectedCandidateId, 'the selected candidate has an ID for the Preview apply action');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    assert.ok(controller, 'the active progression assistant controller is registered');
+    const workspace = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalApplyEdit = workspace.applyEdit;
+    let applyCount = 0;
+    const trackingApplyEdit = async (edit: vscode.WorkspaceEdit) => {
+      applyCount++;
+      return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+        .call(vscode.workspace, edit);
+    };
+    try {
+      workspace.applyEdit = trackingApplyEdit;
+      window.showWarningMessage = async () => undefined;
+      const applyMessage = { command: 'progressionApply', candidateId: selectedCandidateId };
+      await controller.handlePreviewMessage(applyMessage);
+      assert.strictEqual(doc.getText(), source, 'cancelling confirmation leaves the source untouched');
+      assert.strictEqual(applyCount, 0, 'confirmation cancellation does not call applyEdit');
+
+      window.showWarningMessage = async (...args) => args[args.length - 1];
+      await Promise.all([
+        controller.handlePreviewMessage(applyMessage),
+        controller.handlePreviewMessage(applyMessage)
+      ]);
+    } finally {
+      window.showWarningMessage = originalWarningMessage;
+      workspace.applyEdit = originalApplyEdit;
+    }
+    assert.strictEqual(applyCount, 1, 'concurrent confirmations still perform exactly one applyEdit');
+    assert.strictEqual(doc.getText(), candidatePreview,
+      'confirmation applies exactly the candidate source shown in Preview');
+    await undoIn(doc);
+    assert.strictEqual(doc.getText(), source, 'one undo restores the exact original source');
+
+    selectedCandidateId = undefined;
+    window.showQuickPick = chooseCandidate;
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    } finally {
+      window.showQuickPick = originalQuickPick;
+    }
+    assert.ok(selectedCandidateId, 'a second preview session is created for stale-source validation');
+
+    applyCount = 0;
+    window.showWarningMessage = async (...args) => args[args.length - 1];
+    workspace.applyEdit = async () => { applyCount++; return false; };
+    try {
+      await controller.handlePreviewMessage({ command: 'progressionApply', candidateId: selectedCandidateId });
+    } finally {
+      window.showWarningMessage = originalWarningMessage;
+      workspace.applyEdit = originalApplyEdit;
+    }
+    assert.strictEqual(doc.getText(), source, 'an applyEdit=false result leaves the source untouched');
+    assert.strictEqual(applyCount, 1, 'the candidate is submitted once to the failing applyEdit');
+
+    const userEdit = new vscode.WorkspaceEdit();
+    userEdit.insert(doc.uri, doc.positionAt(doc.getText().length), '\n# user edit');
+    assert.ok(await (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+      .call(vscode.workspace, userEdit));
+    const editedSource = doc.getText();
+    await settle(30);
+    applyCount = 0;
+    workspace.applyEdit = trackingApplyEdit;
+    try {
+      await controller.handlePreviewMessage({ command: 'progressionApply', candidateId: selectedCandidateId });
+      assert.strictEqual(doc.getText(), editedSource, 'an edit after candidate preview invalidates the candidate without overwriting the user');
+      assert.strictEqual(applyCount, 0, 'stale source is rejected before applyEdit');
+    } finally {
+      workspace.applyEdit = originalApplyEdit;
+    }
+    await closeAllEditors();
+  });
+
+  test('Issue #129 completions ignore non-chord contexts and unrelated parser errors', async () => {
+    const cases = [
+      { label: 'melody', source: 'key: C\nmel: | c4/4 |', needle: 'c4', after: 2 },
+      { label: 'lyrics', source: 'key: C\nlyr: | "words" |', needle: 'words', after: 2 },
+      { label: 'TAB', source: 'key: C\ntab: 6:0/4', needle: '6:0', after: 1 },
+      { label: 'chord definition', source: 'key: C\nchord C@barre = x35553', needle: 'x35553', after: 2 },
+      { label: 'comment', source: 'key: C\n# | C |', needle: 'C |', after: 1 },
+      { label: 'header', source: 'key: C\n| C |', needle: 'key: C', after: 6 },
+      { label: 'explicit duration', source: 'key: C\n| C:2 |', needle: 'C:2', after: 1 },
+      {
+        label: 'custom voicing label',
+        source: 'key: C\nchord C@barre = x35553\n| C@barre |',
+        needle: 'C@barre', after: 'C@barre'.length
+      },
+      { label: 'unrelated parse error', source: 'key: C\n| C bogus |', needle: 'C bogus', after: 1 }
+    ];
+    for (const item of cases) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: item.source });
+      const offset = item.source.indexOf(item.needle) + item.after;
+      const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+        'vscode.executeCompletionItemProvider', doc.uri, doc.positionAt(offset)
+      );
+      const progressionItems = result?.items.filter(completion =>
+        /^0[0-4]$/.test(completion.sortText ?? '') && typeof completion.detail === 'string'
+      ) ?? [];
+      assert.strictEqual(progressionItems.length, 0, `${item.label} must not offer chord suggestions`);
+    }
   });
 
   test('GP import opens an Untitled GuitarDSL source that can be exported, with safe cancel and edit handling', async () => {

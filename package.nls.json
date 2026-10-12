@@ -22,6 +22,7 @@
   "command.practice.clearLoop.title": "GuitarDSL: Clear Practice Loop",
   "command.practice.slower.title": "GuitarDSL: Practice Slower",
   "command.practice.faster.title": "GuitarDSL: Practice Faster",
+  "command.suggestChordProgression.title": "GuitarDSL: Suggest Chord Progression",
   "viewsContainer.guitardslSidebar.title": "GuitarDSL",
   "view.sidebar.name": "Start Here",
   "config.geminiModel.description": "Gemini model to use for experimental YouTube audio transcription.",

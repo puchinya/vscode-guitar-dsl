@@ -17,6 +17,22 @@ export interface ScoreFontUris {
   bold: string;
 }
 
+export interface ProgressionAssistantHtmlCandidate {
+  id: string;
+  chords: string[];
+  rationale: string;
+  score: number;
+}
+
+export interface ProgressionAssistantHtmlModel {
+  originalDsl: string;
+  candidates: ProgressionAssistantHtmlCandidate[];
+  activeCandidateId: string;
+  targetStartMeasure: number;
+  bars: number;
+  operation: 'replace' | 'append';
+}
+
 export interface CompileHtmlOptions {
   locale?: string;
   pageSize?: PageSize;
@@ -28,6 +44,8 @@ export interface CompileHtmlOptions {
   capo?: CapoPreviewUiModel;
   /** Beginner Mode controls in the capo bar (spec extension §4.5); omitted = off. */
   beginner?: BeginnerPreviewUiModel;
+  /** Optional Issue #129 assistant data; original DSL is parsed for A playback and never sent to the Webview. */
+  progressionAssistant?: ProgressionAssistantHtmlModel;
   /** Production Webview CSP source; omitted by non-Webview/test callers. */
   cspSource?: string;
   /** Fresh production nonce for the executable script and main style element. */
@@ -72,6 +90,24 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   });
   const playback = buildPlaybackHtmlData(score, msgs);
   const playbackJson = escapeJsonForHtml(JSON.stringify(playback));
+  const progressionAssistant = options?.progressionAssistant;
+  const progressionAssistantData = progressionAssistant ? {
+    originalPlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.originalDsl, {
+      expandPageBreakRepeats: options?.expandPageBreakRepeats
+    }), msgs),
+    candidates: progressionAssistant.candidates,
+    activeCandidateId: progressionAssistant.activeCandidateId,
+    targetStartMeasure: progressionAssistant.targetStartMeasure,
+    bars: progressionAssistant.bars,
+    operation: progressionAssistant.operation,
+    labels: {
+      audioUnavailable: msgs.uiProgressionAudioUnavailable,
+      fullSongOnly: msgs.uiProgressionFullSongOnly
+    }
+  } : undefined;
+  const progressionAssistantJson = progressionAssistantData
+    ? escapeJsonForHtml(JSON.stringify(progressionAssistantData))
+    : '';
   const nonceAttribute = options?.nonce ? ` nonce="${escapeXml(options.nonce)}"` : '';
   const cspMeta = options?.cspSource && options.nonce
     ? renderCspMeta(options.cspSource, options.nonce)
@@ -86,6 +122,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const capoBar = options?.capo ? renderCapoBar(options.capo, msgs, options.beginner) : '';
+  const progressionAssistantPanel = progressionAssistant ? renderProgressionAssistantPanel(progressionAssistant, msgs) : '';
   const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
     .map(speed => `<option value="${speed}"${speed === 100 ? ' selected' : ''}>${speed}%</option>`)
     .join('');
@@ -289,6 +326,30 @@ ${cspMeta}
     text-overflow: ellipsis;
     font-size: 12px;
   }
+  .progression-assistant {
+    margin: 8px 12px;
+    padding: 8px 10px;
+    border: 1px solid #3c3c3c;
+    border-radius: 6px;
+    background: #1e1e1e;
+    color: #ddd;
+    font-size: 12px;
+  }
+  .progression-assistant summary { cursor: pointer; font-weight: 600; }
+  .progression-assistant-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .progression-assistant select, .progression-assistant button {
+    min-height: 28px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #252526;
+    color: #eee;
+    padding: 4px 8px;
+    font: inherit;
+  }
+  .progression-assistant button { cursor: pointer; }
+  .progression-assistant button:focus-visible, .progression-assistant select:focus-visible { outline: 2px solid #3794ff; outline-offset: 1px; }
+  .progression-assistant button[aria-pressed="true"] { background: #005a9e; }
+  .progression-assistant-status { display: block; min-height: 1.4em; margin-top: 6px; color: #ccc; }
   .toolbar-label {
     font-size: 11px;
     text-transform: uppercase;
@@ -568,6 +629,8 @@ ${cspMeta}
     <span class="practice-status" id="practice-status" role="status" aria-live="polite"></span>
   </div>
 
+  ${progressionAssistantPanel}
+
   ${capoBar}
 
   <div class="sheet-pages-wrapper">
@@ -579,6 +642,7 @@ ${cspMeta}
   </div>
 
   <script type="application/json" id="playback-data"${nonceAttribute}>${playbackJson}</script>
+  ${progressionAssistantData ? `<script type="application/json" id="progression-assistant-data"${nonceAttribute}>${progressionAssistantJson}</script>` : ''}
   <script${nonceAttribute}>
     (function() {
       const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
@@ -640,17 +704,29 @@ ${cspMeta}
       if (!playbackData || typeof playbackData !== 'object') {
         playbackData = { available: false, durationSeconds: 0, events: [], occurrences: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
       }
-      const playbackAvailable = playbackData.available === true;
-      const playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
-      const playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
-      const playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
+      const progressionDataElement = document.getElementById('progression-assistant-data');
+      let progressionAssistantData = null;
+      try {
+        progressionAssistantData = progressionDataElement ? JSON.parse(progressionDataElement.textContent) : null;
+      } catch (_) {}
+      const progressionAssistantActive = !!(progressionAssistantData && Array.isArray(progressionAssistantData.candidates));
+      const candidatePlaybackData = playbackData;
+      const originalPlaybackData = progressionAssistantData && progressionAssistantData.originalPlayback
+        ? progressionAssistantData.originalPlayback
+        : null;
+      let progressionSide = 'B';
+      let progressionSpeed = 100;
+      let playbackAvailable = playbackData.available === true;
+      let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
+      let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
+      let playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
       const playBtn = document.getElementById('btn-play');
       const pauseBtn = document.getElementById('btn-pause');
       const stopBtn = document.getElementById('btn-stop');
       const seekSlider = document.getElementById('playback-seek');
       const playbackTime = document.getElementById('playback-time');
       const playbackError = document.getElementById('playback-error');
-      const audioLabels = playbackData.labels || {};
+      let audioLabels = playbackData.labels || {};
       let transport = 'stopped';
       let positionSeconds = 0;
       let scoreAnchorAudioTime = 0;
@@ -678,6 +754,7 @@ ${cspMeta}
       const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
 
       function effectiveSpeed() {
+        if (progressionAssistantActive) return progressionSpeed / 100;
         return practiceEnabled ? practiceSpeed / 100 : 1;
       }
 
@@ -875,18 +952,18 @@ ${cspMeta}
         body.classList.toggle('has-practice-row', practiceEnabled);
         if (practiceToggle) {
           practiceToggle.setAttribute('aria-pressed', String(practiceEnabled));
-          practiceToggle.disabled = !playbackAvailable || disposed;
+          practiceToggle.disabled = !playbackAvailable || disposed || progressionAssistantActive;
         }
         if (practiceSpeedSelect) {
           practiceSpeedSelect.value = String(practiceSpeed);
-          practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled;
+          practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
         }
         if (practiceLoopSelect) {
           practiceLoopSelect.value = loopMode;
-          practiceLoopSelect.disabled = !playbackAvailable || disposed || !practiceEnabled;
+          practiceLoopSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
         }
         for (const button of [practiceSetAButton, practiceSetBButton, practiceClearButton, practiceFollowButton]) {
-          if (button) button.disabled = !playbackAvailable || disposed || !practiceEnabled;
+          if (button) button.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
         }
         if (practiceFollowButton) practiceFollowButton.setAttribute('aria-pressed', String(followEnabled));
         if (practiceStatus) {
@@ -915,6 +992,117 @@ ${cspMeta}
         if (stopBtn) stopBtn.disabled = disposed || transport === 'stopped';
         updatePracticeUi();
         updateScoreOverlay();
+      }
+
+      function activatePlaybackData(data) {
+        playbackData = data && typeof data === 'object' ? data : {};
+        playbackAvailable = playbackData.available === true;
+        playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
+        playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
+        playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
+        audioLabels = playbackData.labels || {};
+        loopMode = 'off';
+        loopRange = null;
+        abStartPoint = null;
+        abEndPoint = null;
+        positionSeconds = 0;
+        scoreAnchorSeconds = 0;
+        transport = 'stopped';
+        overlayVisible = false;
+        if (seekSlider) {
+          seekSlider.max = String(playbackDuration);
+          seekSlider.value = '0';
+          seekSlider.disabled = !playbackAvailable;
+        }
+        if (playBtn) playBtn.disabled = !playbackAvailable;
+        updatePlaybackUi();
+      }
+
+      function setProgressionSide(side) {
+        if (!progressionAssistantActive || (side !== 'A' && side !== 'B')) return;
+        stopPlayback();
+        progressionSide = side;
+        activatePlaybackData(side === 'A' ? originalPlaybackData : candidatePlaybackData);
+        const sideAButton = document.getElementById('progression-side-a');
+        const sideBButton = document.getElementById('progression-side-b');
+        if (sideAButton) sideAButton.setAttribute('aria-pressed', String(side === 'A'));
+        if (sideBButton) sideBButton.setAttribute('aria-pressed', String(side === 'B'));
+        const status = document.getElementById('progression-status');
+        if (status) status.textContent = '';
+      }
+
+      function assistantRangeData(data, mode) {
+        if (mode === 'song') return data;
+        const startMeasure = Number(progressionAssistantData.targetStartMeasure);
+        const bars = Math.max(1, Number(progressionAssistantData.bars) || 1);
+        const occurrences = Array.isArray(data.occurrences) ? data.occurrences : [];
+        if (mode === 'chord') {
+          const occurrence = occurrences.find(item => item.measureIndex === startMeasure);
+          if (!occurrence) return null;
+          const attack = (data.events || []).find(event => event.occurrenceIndex === occurrence.occurrenceIndex
+            && event.kind === 'rhythmAttack' && Array.isArray(event.midiNotes) && event.midiNotes.length > 0);
+          if (!attack) return null;
+          const duration = Math.max(0.05, Number(attack.durationSeconds) || 0.5);
+          return {
+            ...data,
+            durationSeconds: duration,
+            events: [{ ...attack, timeSeconds: 0, durationSeconds: duration }],
+            occurrences: [{ ...occurrence, startSeconds: 0, durationSeconds: duration, countInDurationSeconds: 0, countInClicks: [] }],
+            countInDurationSeconds: 0,
+            countInClicks: []
+          };
+        }
+        const targetOccurrences = occurrences.map((item, index) => ({ item, index }))
+          .filter(({ item }) => item.measureIndex >= startMeasure && item.measureIndex < startMeasure + bars);
+        const contiguous = targetOccurrences.length === bars
+          && targetOccurrences.every(({ item, index }, offset) => item.measureIndex === startMeasure + offset
+            && (offset === 0 || index === targetOccurrences[offset - 1].index + 1));
+        if (!contiguous) {
+          const status = document.getElementById('progression-status');
+          if (status) status.textContent = progressionAssistantData.labels.fullSongOnly;
+          return null;
+        }
+        const first = targetOccurrences[0].item;
+        const last = targetOccurrences[targetOccurrences.length - 1].item;
+        const startSeconds = first.startSeconds;
+        const endSeconds = last.startSeconds + last.durationSeconds;
+        const occurrenceIds = new Set(targetOccurrences.map(({ item }) => item.occurrenceIndex));
+        const events = (data.events || []).filter(event => occurrenceIds.has(event.occurrenceIndex)
+          && event.timeSeconds >= startSeconds && event.timeSeconds < endSeconds
+          && (mode !== 'bars' || !(event.kind === 'pitched' && event.source === 'melody')))
+          .map(event => ({
+            ...event,
+            timeSeconds: event.timeSeconds - startSeconds,
+            durationSeconds: Math.min(event.durationSeconds, Math.max(0, endSeconds - event.timeSeconds))
+          }));
+        return {
+          ...data,
+          durationSeconds: endSeconds - startSeconds,
+          events,
+          occurrences: targetOccurrences.map(({ item }) => ({ ...item, startSeconds: item.startSeconds - startSeconds })),
+          countInDurationSeconds: 0,
+          countInClicks: []
+        };
+      }
+
+      async function auditionProgression(mode) {
+        if (!progressionAssistantActive) return;
+        const data = progressionSide === 'A' ? originalPlaybackData : candidatePlaybackData;
+        if (!data || !data.available) {
+          setPlaybackError((progressionAssistantData.labels && progressionAssistantData.labels.audioUnavailable) || audioLabels.audioUnavailable);
+          return;
+        }
+        const sliced = assistantRangeData(data, mode);
+        if (!sliced) {
+          if (mode === 'chord') {
+            const status = document.getElementById('progression-status');
+            if (status) status.textContent = progressionAssistantData.labels.audioUnavailable;
+          }
+          return;
+        }
+        stopPlayback();
+        activatePlaybackData(sliced);
+        await startFromPosition(0, false);
       }
 
       function clearScheduler() {
@@ -1525,6 +1713,43 @@ ${cspMeta}
       if (practiceSetBButton) practiceSetBButton.addEventListener('click', setLoopEnd);
       if (practiceClearButton) practiceClearButton.addEventListener('click', clearPracticeLoop);
       if (practiceFollowButton) practiceFollowButton.addEventListener('click', toggleFollow);
+      const progressionCandidateSelect = document.getElementById('progression-candidate');
+      if (progressionCandidateSelect && vscode) {
+        progressionCandidateSelect.addEventListener('change', () => {
+          stopPlayback();
+          vscode.postMessage({ command: 'progressionCandidateChanged', candidateId: progressionCandidateSelect.value });
+        });
+      }
+      const progressionSideAButton = document.getElementById('progression-side-a');
+      const progressionSideBButton = document.getElementById('progression-side-b');
+      if (progressionSideAButton) progressionSideAButton.addEventListener('click', () => setProgressionSide('A'));
+      if (progressionSideBButton) progressionSideBButton.addEventListener('click', () => setProgressionSide('B'));
+      const progressionSpeedSelect = document.getElementById('progression-speed');
+      if (progressionSpeedSelect) {
+        progressionSpeedSelect.addEventListener('change', () => {
+          stopPlayback();
+          progressionSpeed = [50, 75, 100, 125, 150].includes(Number(progressionSpeedSelect.value))
+            ? Number(progressionSpeedSelect.value) : 100;
+        });
+      }
+      const progressionChordButton = document.getElementById('progression-audition-chord');
+      const progressionBarsButton = document.getElementById('progression-audition-bars');
+      const progressionMelodyButton = document.getElementById('progression-audition-melody');
+      const progressionSongButton = document.getElementById('progression-audition-song');
+      if (progressionChordButton) progressionChordButton.addEventListener('click', () => { void auditionProgression('chord'); });
+      if (progressionBarsButton) progressionBarsButton.addEventListener('click', () => { void auditionProgression('bars'); });
+      if (progressionMelodyButton) progressionMelodyButton.addEventListener('click', () => { void auditionProgression('melody'); });
+      if (progressionSongButton) progressionSongButton.addEventListener('click', () => { void auditionProgression('song'); });
+      const progressionApplyButton = document.getElementById('progression-apply');
+      if (progressionApplyButton && vscode) progressionApplyButton.addEventListener('click', () => {
+        const active = progressionAssistantData.candidates.find(candidate => candidate.id === progressionAssistantData.activeCandidateId);
+        if (active) vscode.postMessage({ command: 'progressionApply', candidateId: active.id });
+      });
+      const progressionDismissButton = document.getElementById('progression-dismiss');
+      if (progressionDismissButton && vscode) progressionDismissButton.addEventListener('click', () => {
+        stopPlayback();
+        vscode.postMessage({ command: 'progressionDismiss' });
+      });
       window.addEventListener('message', (event) => {
         const message = event && event.data;
         if (message && message.command === 'playbackAction' && typeof message.action === 'string') {
@@ -1690,6 +1915,43 @@ ${cspMeta}
   </script>
 </body>
 </html>`;
+}
+
+function renderProgressionAssistantPanel(model: ProgressionAssistantHtmlModel, msgs: Messages): string {
+  if (model.candidates.length === 0) return '';
+  const selected = model.candidates.find(candidate => candidate.id === model.activeCandidateId) ?? model.candidates[0];
+  const options = model.candidates.map(candidate =>
+    `<option value="${escapeXml(candidate.id)}"${candidate.id === selected.id ? ' selected' : ''}>${escapeXml(candidate.chords.join('  →  '))}</option>`
+  ).join('');
+  const repeatNotice = model.bars >= 8 ? `<p>${escapeXml(msgs.uiProgressionRepeatNotice)}</p>` : '';
+  const operation = model.operation === 'replace' ? msgs.progressionReplace : msgs.progressionAppend;
+  return `<details class="progression-assistant" id="progression-assistant" open>
+    <summary>${escapeXml(msgs.uiProgressionTitle)}</summary>
+    <p>${escapeXml(msgs.uiProgressionDescription)}</p>
+    <p>${escapeXml(operation)}</p>
+    ${repeatNotice}
+    <label for="progression-candidate">${escapeXml(msgs.uiProgressionTitle)}</label>
+    <select id="progression-candidate" aria-label="${escapeXml(msgs.uiProgressionTitle)}">${options}</select>
+    <p id="progression-rationale">${escapeXml(selected.rationale)}</p>
+    <p>${escapeXml(msgs.uiProgressionHeuristic)}</p>
+    <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">
+      <button id="progression-side-a" type="button" aria-pressed="false">${escapeXml(msgs.uiProgressionSideA)}</button>
+      <button id="progression-side-b" type="button" aria-pressed="true">${escapeXml(msgs.uiProgressionSideB)}</button>
+      <label for="progression-speed">${escapeXml(msgs.uiProgressionSpeed)}</label>
+      <select id="progression-speed" aria-label="${escapeXml(msgs.uiProgressionSpeed)}">
+        <option value="50">50%</option><option value="75">75%</option><option value="100" selected>100%</option><option value="125">125%</option><option value="150">150%</option>
+      </select>
+    </div>
+    <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">
+      <button id="progression-audition-chord" type="button">${escapeXml(msgs.uiProgressionChord)}</button>
+      <button id="progression-audition-bars" type="button">${escapeXml(msgs.uiProgressionBars)}</button>
+      <button id="progression-audition-melody" type="button">${escapeXml(msgs.uiProgressionWithMelody)}</button>
+      <button id="progression-audition-song" type="button">${escapeXml(msgs.uiProgressionFullSong)}</button>
+      <button id="progression-apply" type="button">${escapeXml(msgs.uiProgressionApply)}</button>
+      <button id="progression-dismiss" type="button" aria-label="${escapeXml(msgs.uiProgressionClose)}">×</button>
+    </div>
+    <span class="progression-assistant-status" id="progression-status" role="status" aria-live="polite"></span>
+  </details>`;
 }
 
 function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtmlData {
