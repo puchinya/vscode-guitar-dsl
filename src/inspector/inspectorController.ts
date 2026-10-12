@@ -7,6 +7,7 @@ export const OPEN_INSPECTOR_COMMAND = 'guitardsl.openInspector';
 
 export type InspectorProgressionBars = 4 | 8 | 16;
 export type InspectorProgressionOperation = 'replace' | 'append';
+export type InspectorProgressionAuditionMode = 'chord' | 'bars' | 'melody' | 'song';
 
 export interface InspectorProgressionCandidate {
   readonly id: string;
@@ -31,6 +32,7 @@ export interface InspectorProgressionContext {
   readonly candidates: readonly InspectorProgressionCandidate[];
   readonly selectedCandidateId: string;
   readonly side: 'A' | 'B';
+  readonly auditionMode: InspectorProgressionAuditionMode;
   readonly auditionSpeed: 50 | 75 | 100 | 125 | 150;
   readonly loading: boolean;
   readonly error?: string;
@@ -184,6 +186,7 @@ function isValidProgressionContext(context: InspectorProgressionContext): boolea
     && Number.isSafeInteger(context.target.startMeasure) && context.target.startMeasure >= 0
     && [4, 8, 16].includes(context.target.bars)
     && (context.target.operation === 'replace' || context.target.operation === 'append')
+    && ['chord', 'bars', 'melody', 'song'].includes(context.auditionMode)
     && Array.isArray(context.candidates) && context.candidates.length <= 5
     && (context.selectedCandidateId === '' || context.candidates.some(item => item.id === context.selectedCandidateId));
 }

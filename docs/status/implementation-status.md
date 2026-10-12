@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装済み。Issue #129（PR #131）はマージ済み・完了、Issue #133 と #134 は実装済み・各PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,122 unit＋79 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,597件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。実音再生はユーザーから確認報告あり。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **最終更新日**: 2026-10-13
+- **全体ステータス**: 基本機能実装済み。Issue #129（PR #131）はマージ済み・完了、Issue #133 はPRレビュー待ち、Issue #134 はPR #139レビュー指摘を反映・再検証済み。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile:all`、`npm test`（1,124 unit＋80 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,599件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。実音再生はユーザーから確認報告あり。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -18,10 +18,10 @@
 ## Issue #134: Progression Assistant in the Common Inspector
 
 - **状態**: 実装済み、PR はレビュー待ち。
-- **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Apply は確認後に単一 WorkspaceEdit を適用し、1回の Undo で戻せる。単一コード補完と既存 Preview の音声 transport は維持し、Preview 内の重複した進行編集フォームは除去した。
-- **検証**: `npm run compile`、`npm test`（単体 **1122 / 1122**、VS Code 1.141.0 E2E **79 / 79**）、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、Issue文書検証、Implementation Contract 検証が PASS。
-- **画面証拠**: E2E 起動中の DevTools からタイトルで Extension Development Host のページを選び、候補を選択した狭幅 UI を取得した（[英語・暗色](evidence/issue-134/inspector-en-dark-narrow.png)、[英語・明色](evidence/issue-134/inspector-en-light-narrow.png)）。画像は VS Code renderer の内容で、macOS のネイティブ枠は含まない。
-- **未確認**: 日本語 E2E キャプチャは表示言語パックを渡したが `vscode.env.language` が `en` のままになったため取得を中止。英語/日本語を含む全ロケール・テーマの組み合わせ、キーボードのみでの操作確認、および VoiceOver の実読み上げは未実施。
+- **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Play は chord / bars / melody / song の既存 Preview transport に接続し、A/B切替前に再生を停止する。8/16小節では4小節パターンの反復であることを表示する。Apply は確認後もセッション・候補 revision・対象文書を再検証して単一 WorkspaceEdit を適用し、1回の Undo で戻せる。単一コード補完と既存 Preview の音声 transport は維持し、Preview 内の重複した進行編集フォームは除去した。
+- **検証**: `npm run compile:all`、`npm test`（単体 **1124 / 1124**、VS Code 1.141.0 E2E **80 / 80**。Help/AI同期を含む）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、Issue文書検証、Implementation Contract 検証、`git diff --check` が PASS。E2Eスクリーンショット専用実行もPASS。
+- **画面証拠**: E2E のローカルDevToolsからタイトルでExtension Development Hostのページを特定し、候補一覧と操作部を別々に取得した（英語・暗色：[候補](evidence/issue-134/inspector-en-dark-narrow-review-final-dark.png)、[操作部](evidence/issue-134/inspector-en-dark-narrow-review-final-dark-controls.png)、英語・明色：[候補](evidence/issue-134/inspector-en-light-narrow-review-final-light.png)、[操作部](evidence/issue-134/inspector-en-light-narrow-review-final-light-controls.png)）。画像は VS Code renderer の内容で、macOS のネイティブ枠は含まない。
+- **未確認**: 日本語言語パックを隔離プロファイルへ渡して再実行したが、`vscode.env.language` が `en` のままのため日本語画像は保存していない。全ロケール・テーマの組み合わせ、実際のキーボードフォーカス移動と操作、VoiceOverの実読み上げ、およびスピーカー出力は未確認。ユニットテストでは候補のネイティブbutton意味論と `:focus-visible` の表示を確認した。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 

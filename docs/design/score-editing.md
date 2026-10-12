@@ -46,6 +46,7 @@ Chord editor は `ChordEditorPanel` を一つ持ち、開いた文書 URI と編
 - `planSoundingTranspose()` は冒頭 `key` / `original_key`、`@key`、コード名 token、音高 token のソース範囲だけを更新し、コメント・空白・改行・歌詞・長さ・奏法を AST から書き戻さない。必要な場合は移調後の capo 方針を適用し、最後に再解析して一貫性を確かめる。
 - 伴奏分析・適用は VS Code / Gemini / 採譜に依存しない。プリセット選択は単一カタログと meter / feel 制約で行い、明示パターンまたは検証済みの一小節リズム計画のみをソースの rhythm spans に適用する。
 - コード進行 planner は `ParsedScore` と parser-owned chord/source spans を使い、元 DSL 全体を再シリアライズしない。置換は対象小節の chord-name 部分だけを splice し、候補ソースを通常 parser に通して parse error と対象外 semantics を検査する。append は安全な本文末 insertion span を使う。
+- Apply 確認を待つ間に候補、対象設定、セッションが変わった場合は proposal revision と session identity の再確認で操作を無効にし、`WorkspaceEdit` を作成しても apply 前に再検証する。古い確認応答は文書に書き込まない。
 
 ## Data flow and ownership
 

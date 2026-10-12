@@ -50,11 +50,12 @@ env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS \
   GUITARDSL_E2E_SCREENSHOT_ONLY=1 \
   GUITARDSL_E2E_LOCALE=en \
   GUITARDSL_E2E_THEME='Default Dark Modern' \
+  GUITARDSL_E2E_SCREENSHOT_TAG=review \
   GUITARDSL_E2E_CAPTURE_WAIT_MS=1500 \
   npm run test:e2e
 ```
 
-The capture selects exactly one page target whose title identifies the Extension Development Host and saves under `docs/status/evidence/issue-134/`. Set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory for Japanese screenshots; the isolated profile copies the pack, registers it in its own `extensions.json`, and writes the requested locale to `argv.json`. The test checks `vscode.env.language` and stops instead of saving a screenshot under a mismatched locale. `GUITARDSL_E2E_THEME` accepts the installed theme name, such as `Default Light Modern`. The screenshot includes the VS Code renderer window contents and excludes native OS chrome. Without the capture flag, normal E2E runs do not open a DevTools endpoint or write screenshots.
+The capture selects exactly one page target whose title identifies the Extension Development Host and saves under `docs/status/evidence/issue-134/`. It writes one screenshot with the candidate list, sends a CDP mouse-wheel event over the Inspector pane to reveal the playback controls, then writes a second screenshot. This captures the selected VS Code renderer window and excludes native OS chrome. The capture does not claim keyboard or screen-reader acceptance: unit tests assert native button semantics and visible focus styling, while manual keyboard traversal, VoiceOver, and speaker output must be reported separately as PASS or NOT RUN. Set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory for Japanese screenshots; the isolated profile copies the pack, registers it in its own `extensions.json`, and writes the requested locale to `argv.json`. The test checks `vscode.env.language` and stops instead of saving a screenshot under a mismatched locale. `GUITARDSL_E2E_THEME` accepts the installed theme name, such as `Default Light Modern`. `GUITARDSL_E2E_SCREENSHOT_TAG` is optional; alphanumeric and hyphen tags are appended to the filename so a fresh capture can preserve existing evidence. Without the capture flag, normal E2E runs do not open a DevTools endpoint or write screenshots.
 
 ### 3. Full Test Suite
 Run the Help and AI asset sync gates, then unit and E2E tests:

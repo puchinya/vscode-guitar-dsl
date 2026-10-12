@@ -5,6 +5,7 @@ import { resolveLocale, getMessages, type SupportedLocale } from './i18n';
 import {
   type GuitarDslInspectorController,
   type InspectorProgressionBars,
+  type InspectorProgressionAuditionMode,
   type InspectorProgressionContext,
   type InspectorProgressionMessage,
   type InspectorContext
@@ -28,7 +29,7 @@ export const SHOW_PROGRESSION_B_COMMAND = 'guitardsl.progression.showCandidate';
 export const APPLY_PROGRESSION_CANDIDATE_COMMAND = 'guitardsl.progression.apply';
 export const CLOSE_PROGRESSION_ASSISTANT_COMMAND = 'guitardsl.progression.close';
 
-export type ProgressionAuditionMode = 'chord' | 'bars' | 'melody' | 'song';
+export type ProgressionAuditionMode = InspectorProgressionAuditionMode;
 
 export interface ProgressionAssistantRenderOptions {
   openIfNeeded?: boolean;
@@ -44,7 +45,9 @@ export interface ProgressionAssistantSession {
   target: ProgressionEditTarget;
   candidates: ProgressionCandidate[];
   activeCandidateId: string;
+  proposalRevision: number;
   side: 'A' | 'B';
+  auditionMode: ProgressionAuditionMode;
   auditionSpeed: 50 | 75 | 100 | 125 | 150;
 }
 
@@ -253,7 +256,9 @@ export class ProgressionAssistantController implements vscode.Disposable {
       target: initial.target,
       candidates: initial.candidates,
       activeCandidateId: initial.candidates[0]?.id ?? '',
+      proposalRevision: 0,
       side: 'B',
+      auditionMode: 'melody',
       auditionSpeed: priorSession?.uri === editor.document.uri.toString() ? priorSession.auditionSpeed : 100
     };
     if (!this.isSessionFresh(candidateSession)) {
@@ -357,6 +362,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
       })),
       selectedCandidateId,
       side: session.side,
+      auditionMode: session.auditionMode,
       auditionSpeed: session.auditionSpeed,
       loading: false,
       ...(session.candidates.length === 0 ? { error: current.error ?? this.messages.progressionNoSafeCandidates } : {})
@@ -379,6 +385,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     session.target = result.target;
     session.candidates = result.candidates;
     session.activeCandidateId = selected?.id ?? '';
+    session.proposalRevision++;
     this.preview.stop(session.uri);
     this.updateDecorations();
     this.codeLensChanges.fire();
@@ -395,6 +402,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
       if (typeof message.candidateId !== 'string' || message.selectedCandidateId !== message.candidateId) return;
       const candidate = session.candidates.find(item => item.id === message.candidateId);
       if (!candidate) return;
+      if (session.activeCandidateId !== candidate.id) session.proposalRevision++;
       session.activeCandidateId = candidate.id;
       session.side = 'B';
       this.preview.stop(session.uri);
@@ -425,7 +433,17 @@ export class ProgressionAssistantController implements vscode.Disposable {
       return;
     }
     if (message.command === 'progressionPlay') {
-      if (session.activeCandidateId) await this.preview.render(session, { openIfNeeded: true, startPlayback: 'melody' });
+      if (session.activeCandidateId) {
+        await this.preview.render(session, { openIfNeeded: true, startPlayback: session.auditionMode });
+      }
+      return;
+    }
+    if (message.command === 'progressionAuditionModeChanged') {
+      if (isProgressionAuditionMode(message.mode) && session.auditionMode !== message.mode) {
+        session.auditionMode = message.mode;
+        this.preview.stop(session.uri);
+        this.syncInspector();
+      }
       return;
     }
     if (message.command === 'progressionStop') {
@@ -434,6 +452,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     }
     if (message.command === 'progressionSideChanged') {
       if ((message.side === 'A' || message.side === 'B') && session.side !== message.side) {
+        this.preview.stop(session.uri);
         session.side = message.side;
         this.updateDecorations();
         this.syncInspector();
@@ -491,7 +510,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
   private async play(): Promise<void> {
     const session = await this.currentSession();
     if (!session) return;
-    await this.preview.render(session, { openIfNeeded: true, startPlayback: 'melody' });
+    await this.preview.render(session, { openIfNeeded: true, startPlayback: session.auditionMode });
   }
 
   private async stop(): Promise<void> {
@@ -502,6 +521,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
   private async setSide(side: 'A' | 'B'): Promise<void> {
     const session = await this.currentSession();
     if (!session || session.side === side) return;
+    this.preview.stop(session.uri);
     session.side = side;
     this.updateDecorations();
     this.syncInspector();
@@ -597,18 +617,25 @@ export class ProgressionAssistantController implements vscode.Disposable {
     if (!session || typeof candidateId !== 'string' || candidateId !== session.activeCandidateId) return;
     const candidate = session.candidates.find(item => item.id === candidateId);
     if (!candidate) return;
+    const proposalRevision = session.proposalRevision;
+    const isAuthorizedProposal = () => this.isCurrentSession(session)
+      && session.proposalRevision === proposalRevision
+      && session.activeCandidateId === candidateId
+      && session.candidates.includes(candidate);
     const confirm = await vscode.window.showWarningMessage(
       this.messages.progressionApplyConfirm,
       { modal: true },
       this.messages.uiProgressionApply
     );
     if (confirm !== this.messages.uiProgressionApply) return;
+    if (!isAuthorizedProposal()) return;
     if (this.applyingUris.has(session.uri)) return;
     this.applyingUris.add(session.uri);
     try {
       const uri = vscode.Uri.parse(session.uri);
       const document = vscode.workspace.textDocuments.find(item => item.uri.toString() === session.uri)
         ?? await vscode.workspace.openTextDocument(uri);
+      if (!isAuthorizedProposal()) return;
       if (document.version !== session.version || document.getText() !== session.source) {
         vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
         this.clear(session.uri, true);
@@ -625,6 +652,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
       for (const item of plan.edits) {
         edit.replace(document.uri, new vscode.Range(document.positionAt(item.start), document.positionAt(item.end)), item.text);
       }
+      if (!isAuthorizedProposal()) return;
       if (document.version !== session.version || document.getText() !== session.source) {
         vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
         this.clear(session.uri, true);
@@ -677,6 +705,10 @@ export const progressionAssistantProbe: {
   getInspectorContext?: () => InspectorContext | undefined;
   dispatchInspectorMessage?: (message: Record<string, unknown>) => Promise<boolean>;
 } = {};
+
+function isProgressionAuditionMode(value: unknown): value is ProgressionAuditionMode {
+  return value === 'chord' || value === 'bars' || value === 'melody' || value === 'song';
+}
 
 export function registerProgressionAssistant(
   context: vscode.ExtensionContext,

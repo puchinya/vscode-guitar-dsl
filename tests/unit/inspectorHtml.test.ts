@@ -34,6 +34,56 @@ describe('renderInspectorHtml', () => {
     assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
   });
 
+  it('renders audition modes, repeat guidance, and a native keyboard-operable candidate list', () => {
+    const context = {
+      kind: 'progression',
+      uri: 'file:///song.guitardsl',
+      version: 3,
+      sessionGeneration: 2,
+      target: { startMeasure: 0, bars: 8, operation: 'replace' },
+      availableBars: [4, 8],
+      availableOperations: ['replace', 'append'],
+      candidates: [{ id: 'candidate-1', chords: ['C', 'Dm', 'Em', 'F'], score: 6, scoreText: '+6', rationale: 'C major' }],
+      selectedCandidateId: 'candidate-1',
+      side: 'B',
+      auditionMode: 'bars',
+      auditionSpeed: 100,
+      loading: false
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'progression-nonce');
+    const fourBarHtml = renderInspectorHtml('en', {
+      ...context,
+      target: { ...context.target, bars: 4 }
+    }, 'vscode-webview://unit', 'progression-nonce');
+    const sixteenBarHtml = renderInspectorHtml('en', {
+      ...context,
+      target: { ...context.target, bars: 16 }
+    }, 'vscode-webview://unit', 'progression-nonce');
+
+    assert.match(html, /<option value="chord">Single chord<\/option>/);
+    assert.match(html, /<option value="bars">Full progression<\/option>/);
+    assert.match(html, /<option value="melody">Progression with melody<\/option>/);
+    assert.match(html, /<option value="song">Audition full song<\/option>/);
+    assert.match(html, /<h1 id="inspector-heading">GuitarDSL Inspector<\/h1>/,
+      'the common Inspector heading stays distinct from the progression section heading');
+    assert.match(html, /id="progression-repeat-notice" class="description repeat-notice"><\/p>/,
+      '8-bar proposals show the repeat limitation notice');
+    assert.match(sixteenBarHtml, /id="progression-repeat-notice" class="description repeat-notice"><\/p>/,
+      '16-bar proposals show the repeat limitation notice');
+    assert.match(fourBarHtml, /id="progression-repeat-notice" class="description repeat-notice" hidden><\/p>/,
+      '4-bar proposals hide the repeat limitation notice');
+    assert.match(html, /repeatNotice\.hidden = context\.target\.bars <= 4/);
+    assert.match(html, /id="candidate-list" class="candidate-list"><\/ul>/);
+    assert.match(html, /button\.setAttribute\("aria-pressed", String\(candidate\.id === context\.selectedCandidateId\)\)/);
+    assert.doesNotMatch(html, /role="listbox"|role="option"|aria-selected/);
+    assert.match(html, /auditionMode\.addEventListener\("change"/);
+    assert.match(html, /button:focus-visible/);
+    assert.match(html, /\.mode-control \{ flex: 1 1 100%; flex-direction: column; align-items: stretch; \}/,
+      'the narrow Inspector stacks the audition mode label and select');
+    assert.match(html, /\.mode-control select \{ min-width: 0; width: 100%; box-sizing: border-box; \}/,
+      'the audition mode options remain readable across the available row');
+  });
+
   it('ignores an older asynchronous context message after a newer generation is applied', () => {
     const html = renderInspectorHtml('en', { kind: 'empty' }, 'vscode-webview://unit', 'nonce-3', 1);
     const scriptIndex = html.indexOf('<script nonce="nonce-3">');

@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { captureWorkbenchScreenshot } from './screenshotCapture';
+import { captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -206,6 +206,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(session.source, originalText);
     assert.strictEqual(session.uri, doc.uri.toString());
     assert.strictEqual(inspector.kind, 'progression');
+    assert.strictEqual(inspector.auditionMode, 'melody', 'the default audition mode is the melody accompaniment');
     assert.deepStrictEqual(inspector.target, { startMeasure: 0, bars: 4, operation: 'replace' });
     assert.ok(inspector.candidates.length > 0 && inspector.candidates.length <= 5, 'Inspector shows up to five candidates');
     assert.ok(inspector.candidates.every((candidate: { chords: string[]; scoreText: string; rationale: string }) =>
@@ -220,6 +221,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().activeCandidateId, nextCandidate.id,
       'selecting a candidate updates the host session');
     if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+      await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({ command: 'progressionSetBars', bars: 8 });
+      await settle(50);
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getInspectorContext().target.bars, 8,
+        'the screenshot shows the eight-bar repeat limitation notice');
       const requestedLocale = process.env.GUITARDSL_E2E_LOCALE;
       if (requestedLocale) {
         assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale.toLowerCase()),
@@ -234,7 +239,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       if (Number.isFinite(captureWaitMs) && captureWaitMs > 0) await settle(Math.min(captureWaitMs, 5000));
       const locale = (requestedLocale ?? vscode.env.language).toLowerCase().split('-')[0];
       const theme = /light/i.test(requestedTheme ?? '') ? 'light' : 'dark';
-      await captureWorkbenchScreenshot(`inspector-${locale}-${theme}-narrow.png`);
+      const tag = process.env.GUITARDSL_E2E_SCREENSHOT_TAG;
+      const suffix = tag && /^[a-z0-9-]+$/i.test(tag) ? `-${tag}` : '';
+      const screenshotName = `inspector-${locale}-${theme}-narrow${suffix}`;
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      await settle(200);
+      await captureWorkbenchScreenshot(`${screenshotName}.png`);
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      await scrollInspectorToControls();
+      await settle(200);
+      await captureWorkbenchScreenshot(`${screenshotName}-controls.png`);
     }
     await undoIn(doc);
     assert.strictEqual(doc.getText(), source, 'candidate selection adds no undo step ahead of a pre-existing edit');
@@ -522,8 +536,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.ok(session);
     const calls: Array<{ action: string; options?: Record<string, unknown>; uri?: string }> = [];
     const originalPreview = controller.preview;
+    let holdNextRender = false;
+    let releaseHeldRender: (() => void) | undefined;
     controller.preview = {
-      render: async (_activeSession: unknown, options?: Record<string, unknown>) => { calls.push({ action: 'render', options }); },
+      render: async (_activeSession: unknown, options?: Record<string, unknown>) => {
+        calls.push({ action: 'render', options });
+        if (holdNextRender) {
+          holdNextRender = false;
+          await new Promise<void>(resolve => { releaseHeldRender = resolve; });
+        }
+      },
       stop: (uri: string) => { calls.push({ action: 'stop', uri }); },
       restore: async (uri: string) => { calls.push({ action: 'restore', uri }); }
     };
@@ -534,14 +556,37 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(calls.pop(), {
         action: 'render', options: { openIfNeeded: true, startPlayback: 'melody' }
       }, 'Play explicitly opens the existing Preview and requests its shared melody transport');
+      await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({
+        command: 'progressionAuditionModeChanged', mode: 'bars'
+      });
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().auditionMode, 'bars',
+        'the Inspector stores the selected audition mode in the host session');
+      assert.deepStrictEqual(calls.pop(), { action: 'stop', uri: doc.uri.toString() },
+        'changing audition mode stops audio without starting playback');
+      await vscode.commands.executeCommand('guitardsl.progression.play');
+      assert.deepStrictEqual(calls.pop(), {
+        action: 'render', options: { openIfNeeded: true, startPlayback: 'bars' }
+      }, 'Play routes the selected bars mode through the shared Preview transport');
       await vscode.commands.executeCommand('guitardsl.progression.stop');
       assert.deepStrictEqual(calls.pop(), { action: 'stop', uri: doc.uri.toString() });
-      await vscode.commands.executeCommand('guitardsl.progression.showOriginal');
+      holdNextRender = true;
+      const switchingToOriginal = progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({
+        command: 'progressionSideChanged', side: 'A'
+      });
+      assert.deepStrictEqual(calls.splice(0), [
+        { action: 'stop', uri: doc.uri.toString() },
+        { action: 'render', options: undefined }
+      ], 'the current audition is stopped before the A-side render begins');
+      assert.ok(releaseHeldRender, 'the A-side render remains pending for the ordering assertion');
+      releaseHeldRender();
+      await switchingToOriginal;
       assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'A');
-      assert.deepStrictEqual(calls.pop(), { action: 'render', options: undefined });
       await vscode.commands.executeCommand('guitardsl.progression.showCandidate');
       assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'B');
-      assert.deepStrictEqual(calls.pop(), { action: 'render', options: undefined });
+      assert.deepStrictEqual(calls.splice(0), [
+        { action: 'stop', uri: doc.uri.toString() },
+        { action: 'render', options: undefined }
+      ], 'the legacy B-side command also stops audio before rendering');
       await vscode.commands.executeCommand('guitardsl.progression.apply');
       assert.strictEqual(doc.getText(), source, 'Apply is separately confirmed and cancellation writes nothing');
       assert.ok(progressionAssistant.progressionAssistantProbe.getSession(), 'canceling Apply keeps the session open');
@@ -553,6 +598,76 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     } finally {
       controller.preview = originalPreview;
       window.showWarningMessage = originalWarningMessage;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  test('ED-03 Apply confirmation is discarded after dismissal, candidate switch, or session replacement', async () => {
+    const source = 'key: C\n| C | Dm | Em | F |\n| G | Am | C | G |';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc, vscode.ViewColumn.One);
+    editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+    const window = vscode.window as unknown as {
+      showWarningMessage: (...args: unknown[]) => Promise<unknown>;
+    };
+    const workspace = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalWarningMessage = window.showWarningMessage;
+    const originalApplyEdit = workspace.applyEdit;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionAssistant = require('../../progressionAssistant');
+    const controller = progressionAssistant.progressionAssistantProbe.controller;
+    const originalPreview = controller.preview;
+    controller.preview = { render: () => undefined, stop: () => undefined, restore: () => undefined };
+    let applyCount = 0;
+    workspace.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+      applyCount++;
+      return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+        .call(vscode.workspace, edit);
+    };
+    let resolveConfirmation: (() => void) | undefined;
+    window.showWarningMessage = (...args: unknown[]) => new Promise(resolve => {
+      const affirmative = args[args.length - 1];
+      resolveConfirmation = () => resolve(affirmative);
+    });
+    const beginApply = () => {
+      resolveConfirmation = undefined;
+      const pending = progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({ command: 'progressionApply' });
+      assert.ok(resolveConfirmation, 'the modal confirmation is pending');
+      return { pending, confirm: resolveConfirmation as () => void };
+    };
+    try {
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const firstSession = progressionAssistant.progressionAssistantProbe.getSession();
+      const alternate = firstSession.candidates.find((candidate: { id: string }) => candidate.id !== firstSession.activeCandidateId);
+      assert.ok(alternate, 'the first session offers another candidate');
+      const switchedApply = beginApply();
+      await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({
+        command: 'progressionCandidateChanged', candidateId: alternate.id, selectedCandidateId: alternate.id
+      });
+      switchedApply.confirm();
+      await switchedApply.pending;
+      assert.strictEqual(applyCount, 0, 'a candidate switch invalidates the pending confirmation');
+
+      const dismissedApply = beginApply();
+      await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({ command: 'progressionDismiss' });
+      dismissedApply.confirm();
+      await dismissedApply.pending;
+      assert.strictEqual(applyCount, 0, 'dismissing the session invalidates the pending confirmation');
+
+      editor.selection = new vscode.Selection(new vscode.Position(1, 3), new vscode.Position(1, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const replacedApply = beginApply();
+      editor.selection = new vscode.Selection(new vscode.Position(2, 3), new vscode.Position(2, 3));
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      replacedApply.confirm();
+      await replacedApply.pending;
+      assert.strictEqual(applyCount, 0, 'replacing the session invalidates the pending confirmation');
+      assert.strictEqual(doc.getText(), source, 'all stale confirmations leave the document unchanged');
+    } finally {
+      resolveConfirmation?.();
+      window.showWarningMessage = originalWarningMessage;
+      workspace.applyEdit = originalApplyEdit;
+      controller.preview = originalPreview;
       await vscode.commands.executeCommand('guitardsl.progression.close');
     }
   });

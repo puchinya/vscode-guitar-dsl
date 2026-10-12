@@ -393,7 +393,7 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 - IntelliSense は `.guitardsl` / `.gdsl` のコードセルで、コード入力位置または互換性のあるコード prefix に限り起動する。`mel:`、`lyr:`、`tab:`、コード定義、header、comment、duration、modifier、`@label` 内では候補を出さない。prefix の範囲だけを置換し、最大5件を返す。キャンセル・古い要求・無関係な parser error では候補を返さない。補完の確定はコード文字列のみを挿入し、試聴やほかの文書変更を行わない。
 - 4 / 8 / 16 小節の候補は各対象小節の CodeLens から開き、共通 Inspector に統合する。CodeLens の実行直後に4小節を初期表示し、対象範囲が安全に置換できれば置換、できなければ安全な本文末追加を初期操作とする。Inspector の操作で長さと置換 / 本文末追加を切り替え、無効な選択肢は無効化する。最大5件の決定論的候補をクリックまたはキーボードで選べるリストに表示し、各行にコード列、スコア、調性の根拠を示す。候補選択はDecorationと、既に開いている場合のPreview B表示だけを更新し、ソース、document version、Undo 履歴を変更せず、自動再生もしない。長さ・操作の変更は試聴を停止し、ホスト側で候補を再計算する。単一次コード補完は引き続きエディタの IntelliSense が提供する。
 - 対象範囲を置換するか安全な本文末へ追加する。置換は連続した単純小節のコード名 span のみを変え、リズム・メロディ・歌詞・空白・コメントを保持する。空コードセルでは、その位置の有効な `@key` を前小節の調より優先し、真の本文末追加でも挿入位置に `@key` がなければ前小節の調へフォールバックする。転調後の小節から始められるが、対象範囲の内側に `@key` イベントがある場合は値が同じでも拒否する。反復小節 `%`、複数コード変更、明示コード duration、custom `@voicing`、対象 TAB、source error、対象範囲の曖昧または一貫しない和声 context、解決不能な span も拒否する。拒否・キャンセルでは編集しない。
-- カタログは固定の長調・短調各5パターンを使う。8小節は選択した4小節を2回、16小節は4回繰り返す。候補には v1 の反復制約を表示する。自動生成の slash chord は作らず、置換範囲外の既存 slash chord は保持する。
+- カタログは固定の長調・短調各5パターンを使う。8小節は選択した4小節を2回、16小節は4回繰り返す。Inspector は8小節・16小節候補の表示中に v1 の反復制約を示す。自動生成の slash chord は作らず、置換範囲外の既存 slash chord は保持する。
 - 候補は最大5件。開始コードの root pitch class が直前の記述コードと同じなら +4、開始コードが直前と同一なら -1、主音コードで終われば +2 とし、開始コードの加点と減点は同時に適用して個別表示する。対象範囲にメロディがあれば、休符を除く発音 pitch ごとに音価で重み付けし、chord tone +2 / non-chord tone -1 とする。メロディがなければ「メロディ評価なし」と示す。score はヒューリスティックで楽曲品質の客観評価ではない。完全な同点はカタログ順とする。
 - 長調・短調、`@key` を含む対象小節の有効 key、および capo を考慮する。候補は sounding key 上で和声機能を選び、提案 chord の記述形は capo 分を差し引く。メロディ pitch は実音のまま評価する。無効な key、capo、chord quality は明示的な失敗とし、C major へ置き換えない。
 - 適用は明示確認後に限る。最新 URI/version の文書から編集計画を作り直し、再parse と対象外の意味保存を検証し、単一 WorkspaceEdit / 単一 `applyEdit` で一度に適用する。古い文書、競合、再入、検証失敗、キャンセル、`applyEdit` 失敗はいずれもゼロ編集とする。
@@ -402,7 +402,7 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 現在の候補セッションの Inspector を表示する。候補は Inspector 内で選び、Decorationと既に開いているPreview表示を同期する。文書編集や自動再生は行わない。
 
 ### 3.19 `guitardsl.progression.play`
-Inspector のセッションから選択側を既存Previewへ渡し、既存AudioContextとtransportで進行・メロディを明示試聴する。Inspector の Play は必要なら単一のPreviewを開き、別の再生エンジンは作らない。
+Inspector のセッションから選択側と単一コード・進行全体・メロディ付き進行・全曲の試聴モードを既存Previewへ渡し、既存AudioContextとtransportで明示試聴する。Inspector の Play は必要なら単一のPreviewを開き、別の再生エンジンは作らない。8小節・16小節候補では v1 の反復制約を Inspector に表示する。
 
 ### 3.20 `guitardsl.progression.stop`
 選択セッションの試聴で予約した音源とschedulerを、既存Preview transportから停止する。Inspector にも同じ操作を表示する。
@@ -548,15 +548,15 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - TAB を含まない段の既存レイアウトは変わらない。ページ Preview と PDF は `renderScoreSheets()` が生成する同じページ SVG を使い、PDF 専用 TAB 描画を持たない。
 - この Issue では TAB の意味音高をコンパイルするが、TAB 再生、TAB から五線譜を生成する機能、およびメロディから TAB を生成する機能は提供しない。
 
-### 4.8 コード進行アシスタントと試聴（Issue #129）
+### 4.8 コード進行アシスタントと試聴（Issue #129、Inspector 移行は #134）
 
-4 / 8 / 16 小節候補の選択はエディタの CodeLens と標準 Quick Pick が主画面である。Decoration は対象小節と提案コードをソースを変えずに示し、本文末追加は挿入位置のマーカーで示す。既存 singleton Preview は明示的な試聴時にだけ開き、既に同じ文書を表示していれば同期する副画面として使える。独立した再生パネル・AudioContext・scheduler は作らない。
+コード進行の候補選択・操作は §3.17–§3.24 の共通 Inspector が主画面である。Inspector は候補をクリックまたは通常のキーボード操作で選べるボタンリストとして表示し、各行にコード列、スコア、調性の根拠を示す。Decoration は対象小節と提案コードをソースを変えずに示し、本文末追加は挿入位置のマーカーで示す。既存 singleton Preview は明示的な試聴時にだけ開き、既に同じ文書を表示していれば同期する副画面として使える。独立した再生パネル・AudioContext・scheduler は作らない。
 
-- 単一 chord、進行全体、既存メロディとの同時試聴を提供する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。速度はホストの一時セッションに保持し、A/B と候補の切替後も維持する。候補選択時にPreviewを開いたり自動再生したりしない。
-- エディタの独立コマンドから試聴、停止、A/B、適用、閉じるを行う。A/B は Decoration 表示も切り替えるが試聴を開始しない。Play のみが明示的に再生を開始し、Stop は既存 Preview transport を停止する。Apply は確認後にのみ実行し、閉じる・キャンセルではソースを変更しない。
+- Inspector は単一 chord、進行全体、既存メロディとの同時試聴、および全曲試聴を選べる。8小節・16小節候補は選択した4小節をそれぞれ2回・4回繰り返し、その制約を Inspector に表示する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。速度と再生モードはホストの一時セッションに保持し、A/B と候補の切替後も維持する。候補選択時にPreviewを開いたり自動再生したりしない。
+- Inspector から試聴、停止、A/B、適用、閉じるを行う。A/B は Decoration 表示も切り替えるが試聴を開始しない。Play のみが選択した試聴モードで明示的に再生を開始し、Stop は既存 Preview transport を停止する。Apply は確認後にのみ実行し、閉じる・キャンセルではソースを変更しない。
 - 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline`、Preview の既存 AudioContext / transport で再生する。小節番号から独自に時刻を推測しない。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
 - Preview が候補セッションを表示中に A/B または候補を切り替えたときは予約音源を stop/fade し、同じ singleton Preview を選択側の DSL から再描画する。Preview が閉じていれば候補切替で開かない。速度変更では予約音源と scheduler を停止する。同一文書へフォーカスを戻しても Preview の表示を通常 Preview に差し替えない。文書変更・別文書への切替・通常 Preview への復帰・パネルを閉じたときは session と Decoration を破棄する。Preview の通常再生・Practice・PDF の状態と責務を維持し、二重 scheduler を作らない。
-- Preview の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。Webview の表示は keyboard-operable で、候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
+- Inspector の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
 - Preview を開く非同期ホスト描画は要求世代と現在の session identity を再確認してから HTML・停止・自動再生を更新する。後続の A/B・候補・停止・閉じる操作で古くなった描画要求は現在の Preview 表示と試聴状態に反映しない。
 
 ## 4B. 楽譜設定エディタ (Score Settings Editor)

@@ -139,6 +139,7 @@ describe('GuitarDslInspectorController', () => {
       candidates: [],
       selectedCandidateId: '',
       side: 'B',
+      auditionMode: 'melody',
       auditionSpeed: 100,
       loading: false
     };
@@ -176,6 +177,7 @@ describe('GuitarDslInspectorController', () => {
       candidates: [],
       selectedCandidateId: '',
       side: 'B',
+      auditionMode: 'melody',
       auditionSpeed: 100,
       loading: false
     };

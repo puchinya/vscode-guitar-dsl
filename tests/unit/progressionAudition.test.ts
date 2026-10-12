@@ -85,6 +85,51 @@ describe('progression audition runtime', () => {
     assert.ok(runtime.activeOscillators().every(node => node.stopAt !== undefined), 'Stop schedules a short fade and cancels every active audio node');
   });
 
+  it('preserves single-chord, bars, melody, and full-song audition modes', async () => {
+    const source = [
+      'bpm: 120',
+      'time: 4/4',
+      '| C 4.d 4.d 4.d 4.d | G 4.d 4.d 4.d 4.d |',
+      'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 |'
+    ].join('\n');
+    const candidate = source.replace('| C ', '| Dm ');
+    const playMode = async (mode: NonNullable<ProgressionAssistantHtmlModel['startPlayback']>) => {
+      const runtime = createFakePlaybackWebview(compileGuitarDslToHtml(candidate, {
+        progressionAssistant: {
+          ...assistant,
+          originalDsl: source,
+          candidateDsl: candidate,
+          targetStartMeasure: 0,
+          bars: 1,
+          startPlayback: mode
+        }
+      }));
+      await flushAsyncWork();
+      for (let tick = 0; tick < 220; tick++) {
+        runtime.advanceAudioTime(0.025);
+        runtime.runSchedulerTicks();
+      }
+      return startedFrequencies(runtime);
+    };
+    const frequencyForMidi = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
+    const hasPitch = (frequencies: number[], midi: number) => frequencies.some(frequency =>
+      Math.abs(frequency - frequencyForMidi(midi)) < 0.02
+    );
+
+    const chord = await playMode('chord');
+    const bars = await playMode('bars');
+    const melody = await playMode('melody');
+    const song = await playMode('song');
+
+    assert.ok(chord.length > 0, 'single-chord mode plays the selected chord');
+    assert.ok(!hasPitch(chord, 84) && !hasPitch(chord, 91), 'single-chord mode excludes the score melody');
+    assert.ok(bars.length > 0, 'bars mode plays the selected progression');
+    assert.ok(!hasPitch(bars, 84) && !hasPitch(bars, 91), 'bars mode excludes melody notes');
+    assert.ok(hasPitch(melody, 84), 'melody mode includes the selected target measure melody');
+    assert.ok(!hasPitch(melody, 91), 'melody mode stays within the selected target range');
+    assert.ok(hasPitch(song, 84) && hasPitch(song, 91), 'song mode plays melody across the full score');
+  });
+
   it('maps host-selected 75 percent speed to longer audio intervals without changing the score timeline', async () => {
     const source = [
       'bpm: 120',

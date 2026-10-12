@@ -62,12 +62,52 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
 /** Captures the selected VS Code workbench page through its local DevTools target. */
 export async function captureWorkbenchScreenshot(filename: string): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-134', filename);
+  await withWorkbenchDevTools(async send => {
+    await send('Page.enable');
+    const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+    const data = result.data;
+    if (typeof data !== 'string') throw new Error('DevTools did not return screenshot data');
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+  });
+}
+
+export async function scrollInspectorToControls(): Promise<void> {
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  await withWorkbenchDevTools(async send => {
+    const dimensionsResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight })',
+      returnByValue: true
+    });
+    const dimensionsValue = (dimensionsResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof dimensionsValue !== 'string') throw new Error('Could not read the workbench viewport size');
+    const dimensions = JSON.parse(dimensionsValue) as { width?: unknown; height?: unknown };
+    if (typeof dimensions.width !== 'number' || typeof dimensions.height !== 'number') {
+      throw new Error('The workbench returned an invalid viewport size');
+    }
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: Math.max(0, dimensions.width - 40),
+      y: Math.max(0, dimensions.height - 80),
+      deltaX: 0,
+      deltaY: dimensions.height
+    });
+  });
+}
+
+type SendDevToolsCommand = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('GUITARDSL_E2E_CDP_PORT was not provided by the test runner');
   }
-
   const target = await waitForWorkbenchTarget(port);
+  return withDevToolsTarget(target, run);
+}
+
+async function withDevToolsTarget<T>(target: DevToolsTarget, run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener('open', () => resolve(), { once: true });
@@ -91,7 +131,7 @@ export async function captureWorkbenchScreenshot(filename: string): Promise<void
     else handler.resolve(message.result ?? {});
   });
 
-  const send = (method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
+  const send: SendDevToolsCommand = (method, params = {}) => {
     const id = ++nextId;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject });
@@ -100,13 +140,7 @@ export async function captureWorkbenchScreenshot(filename: string): Promise<void
   };
 
   try {
-    await send('Page.enable');
-    const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
-    const data = result.data;
-    if (typeof data !== 'string') throw new Error('DevTools did not return screenshot data');
-    const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-134', filename);
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+    return await run(send);
   } finally {
     socket.close();
   }

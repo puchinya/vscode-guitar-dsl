@@ -146,6 +146,7 @@ export interface Messages {
   uiProgressionTitle: string;
   uiProgressionDescription: string;
   uiProgressionAudition: string;
+  uiProgressionAuditionMode: string;
   uiProgressionChord: string;
   uiProgressionBars: string;
   uiProgressionWithMelody: string;
@@ -379,6 +380,7 @@ export const MESSAGES_JA: Messages = {
   uiProgressionTitle: 'コード進行候補',
   uiProgressionDescription: '候補を選んでも再生や文書編集は始まりません。',
   uiProgressionAudition: '試聴',
+  uiProgressionAuditionMode: '試聴モード',
   uiProgressionChord: 'コード1つ',
   uiProgressionBars: '進行全体',
   uiProgressionWithMelody: 'メロディと試聴',
@@ -654,6 +656,7 @@ export const MESSAGES_EN: Messages = {
   uiProgressionTitle: 'Chord progression suggestions',
   uiProgressionDescription: 'Selecting a candidate does not play audio or edit the document.',
   uiProgressionAudition: 'Audition',
+  uiProgressionAuditionMode: 'Audition mode',
   uiProgressionChord: 'Single chord',
   uiProgressionBars: 'Full progression',
   uiProgressionWithMelody: 'Progression with melody',
