@@ -214,7 +214,6 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.webview.onDidReceiveMessage(
         async (message) => {
-          if (progressionAssistantController && await progressionAssistantController.handlePreviewMessage(message)) return;
           const pageSize: PageSize = isPageSize(message.pageSize) ? message.pageSize : previewPageSize;
           const orientation: PageOrientation = isPageOrientation(message.orientation) ? message.orientation : previewOrientation;
           if (message.command === 'savePdf') {
@@ -304,7 +303,10 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       const candidate = session.candidates.find(item => item.id === session.activeCandidateId);
-      if (!candidate) return;
+      if (!candidate) {
+        if (isCurrentRender() && currentPanel && previewLifecycleProbe.currentDocumentUri === session.uri) updateWebview(doc);
+        return;
+      }
       const score = parseGuitarDsl(session.source);
       const plan = planProgressionEdit(session.source, score, session.target, candidate);
       if (!plan.ok) {
@@ -329,36 +331,14 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (renderOptions.openIfNeeded) currentPanel.reveal(vscode.ViewColumn.Beside);
-      const rationaleFor = (item: typeof candidate) => {
-        const melody = item.melodyEvaluated
-          ? `${item.score.melody >= 0 ? '+' : ''}${item.score.melody}`
-          : currentLocale === 'ja' ? '評価なし' : 'not evaluated';
-        return `${item.key} ${item.mode} · ${item.romanNumerals.join('–')}\n${msgs.progressionScoreBreakdown(
-          item.score.followsPreviousRoot,
-          item.score.identicalOpeningChord,
-          item.score.tonicEnding,
-          melody
-        )}`;
-      };
       const assistantModel: ProgressionAssistantHtmlModel = {
         originalDsl: session.source,
         candidateDsl: plan.previewSource,
-        sessionUri: session.uri,
-        sessionVersion: session.version,
-        sessionGeneration: session.sessionGeneration,
-        candidates: session.candidates.map(item => ({
-          id: item.id,
-          chords: item.chords,
-          rationale: rationaleFor(item),
-          score: item.score.total
-        })),
-        activeCandidateId: candidate.id,
         side: session.side,
         auditionSpeed: session.auditionSpeed,
         ...(renderOptions.startPlayback ? { startPlayback: renderOptions.startPlayback } : {}),
         targetStartMeasure: session.target.startMeasure,
-        bars: session.target.bars,
-        operation: session.target.operation
+        bars: session.target.bars
       };
       currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
       const config = vscode.workspace.getConfiguration('guitardsl');
@@ -396,7 +376,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (renderGeneration !== progressionRenderGeneration || progressionAssistantController?.hasActiveSession(uri)) return;
       updateWebview(doc);
     }
-  });
+  }, inspector);
 
   const sendPlaybackAction = (action: string) => {
     if (!currentPanel) {

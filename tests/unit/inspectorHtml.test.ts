@@ -16,7 +16,7 @@ describe('renderInspectorHtml', () => {
     assert.match(html, /style-src 'nonce-unit-nonce'/);
     assert.match(html, /script-src 'nonce-unit-nonce'/);
     assert.match(html, /message\.generation <= lastGeneration/);
-    assert.match(html, /status\.textContent = message\.status/);
+    assert.match(html, /status\.textContent = nextStatus/);
     assert.match(html, /postMessage\(\{ command: "ready" \}\)/);
     assert.match(html, /var\(--vscode-sideBar-background\)/);
     assert.match(html, /@media \(max-width: 600px\)/);
@@ -47,10 +47,25 @@ describe('renderInspectorHtml', () => {
     const statusMatch = parsedHtml.match(/<p id="inspector-status"[^>]*>([\s\S]*?)<\/p>/);
     const descriptionMatch = parsedHtml.match(/<p id="inspector-description"[^>]*>([\s\S]*?)<\/p>/);
     assert.ok(rootMatch && statusMatch && descriptionMatch, 'the HTML parser has created all elements before running the script');
-    const elements = new Map<string, { dataset?: Record<string, string>; textContent?: string }>([
-      ['inspector-state', { dataset: { generation: rootMatch[1], contextKind: rootMatch[2] } }],
-      ['inspector-status', { textContent: statusMatch[1] }],
-      ['inspector-description', { textContent: descriptionMatch[1] }]
+    type FakeElement = {
+      dataset: Record<string, string>;
+      textContent: string;
+      hidden: boolean;
+      disabled: boolean;
+      value: string;
+      addEventListener: () => void;
+      setAttribute: () => void;
+      replaceChildren: () => void;
+      append: () => void;
+    };
+    const makeElement = (): FakeElement => ({
+      dataset: {}, textContent: '', hidden: false, disabled: false, value: '',
+      addEventListener: () => {}, setAttribute: () => {}, replaceChildren: () => {}, append: () => {}
+    });
+    const elements = new Map<string, FakeElement>([
+      ['inspector-state', { ...makeElement(), dataset: { generation: rootMatch[1], contextKind: rootMatch[2] } }],
+      ['inspector-status', { ...makeElement(), textContent: statusMatch[1] }],
+      ['inspector-description', { ...makeElement(), textContent: descriptionMatch[1] }]
     ]);
     const root = elements.get('inspector-state')!;
     const status = elements.get('inspector-status')!;
@@ -59,7 +74,10 @@ describe('renderInspectorHtml', () => {
     let readyMessage: unknown;
     runInNewContext(script!, {
       document: {
-        getElementById: (id: string) => elements.get(id)
+        getElementById: (id: string) => {
+          if (!elements.has(id)) elements.set(id, makeElement());
+          return elements.get(id);
+        }
       },
       window: {
         addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => {
@@ -75,8 +93,8 @@ describe('renderInspectorHtml', () => {
       'ready',
       'the initialized DOM requests an authoritative host snapshot'
     );
-    receiveMessage!({ data: { command: 'setContext', generation: 3, kind: 'document', status: 'current', description: 'current context' } });
-    receiveMessage!({ data: { command: 'setContext', generation: 2, kind: 'empty', status: 'stale', description: 'stale context' } });
+    receiveMessage!({ data: { command: 'setContext', generation: 3, kind: 'document', context: { kind: 'document' }, status: 'current', description: 'current context' } });
+    receiveMessage!({ data: { command: 'setContext', generation: 2, kind: 'empty', context: { kind: 'empty' }, status: 'stale', description: 'stale context' } });
 
     assert.strictEqual(root.dataset?.generation, '3');
     assert.strictEqual(root.dataset?.contextKind, 'document');

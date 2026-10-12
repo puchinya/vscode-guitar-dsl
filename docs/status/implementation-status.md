@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装済み。Issue #129（PR #131）はマージ済み・完了、Issue #133 は実装済み・PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,122 unit＋79 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,597件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。実音再生はユーザーから確認報告あり。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装済み。Issue #129（PR #131）はマージ済み・完了、Issue #133 と #134 は実装済み・各PRレビュー待ち。Progression Assistant の URI/version/session generation を Webview message と `showPreview` 内部の非同期document解決後に照合し、同一URI/versionで遅れたS1がS2のPreviewを上書きしないようにした。最新の `npm run compile`、`npm test`（1,122 unit＋79 E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls` はPASS。VSIXは1,597件で必須Help/AIを含み開発ソースを除外。Issue文書検証もPASS。全体テストの初回実行では残存Preview editor groupがUndo E2Eに影響したため、対象テストを既存editor/Previewを閉じた状態から開始し、Undo直前に対象editorへフォーカスするよう修正。Issue #129 E2E subsetと最終フックでPASS。CodeLens・Quick Pick・狭幅レイアウトの実画面証跡を `docs/status/evidence/issue-129-editor-codelens-narrow.png` と `docs/status/evidence/issue-129-editor-quickpick-narrow.png` に保存。既存Preview横長・縦長証跡はIssueへ添付済み。実音再生はユーザーから確認報告あり。契約SHA-256 `15b88b1b1e9700eb07c8a2573aec91ae27d0210eb02cec8048dc97517aa99f38` はIssue #129 comment 6115413405と一致。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -14,6 +14,14 @@
 - **実装**: Secondary Sidebar に単一の Webview View を登録。Extension Host がアクティブな GuitarDSL 文書の URI / version を所有し、空状態と文書状態を表示する。編集、再生、進行提案は既存の所有者に残す。
 - **検証**: `npm run compile`、単体テスト **1122 / 1122**、VS Code 1.141.0 の E2E **79 / 79**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,597 項目）が PASS。実 WebviewView E2E では非表示中に plaintext へ切替、GuitarDSL 文書Bの編集後に再表示し、各回の最初の DOM が最新状態を持つことと、イベント追加なしの再 hide/reveal、可視中の編集更新を確認した。Workbench UI E2E ではCDPマウスイベントでInspectorをSecondary SidebarからPrimary Sidebarへドラッグし、Primary Sidebarを隠してから `guitardsl.openInspector` で再表示後もInspectorがPrimary Sidebarに残り、Secondary Sidebarへ戻らないことを確認した。VS Code E2Eは `docs/agents/testing.md` に従いサンドボックス外で実行した。
 - **画面証拠**: [狭幅・暗色](evidence/issue-133/inspector-dark-narrow.png)、[広幅・暗色](evidence/issue-133/inspector-dark-wide.png)、[狭幅・明色](evidence/issue-133/inspector-light-narrow.png)、[広幅・明色](evidence/issue-133/inspector-light-wide.png)。
+
+## Issue #134: Progression Assistant in the Common Inspector
+
+- **状態**: 実装済み、PR はレビュー待ち。
+- **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Apply は確認後に単一 WorkspaceEdit を適用し、1回の Undo で戻せる。単一コード補完と既存 Preview の音声 transport は維持し、Preview 内の重複した進行編集フォームは除去した。
+- **検証**: `npm run compile`、`npm test`（単体 **1122 / 1122**、VS Code 1.141.0 E2E **79 / 79**）、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、Issue文書検証、Implementation Contract 検証が PASS。
+- **画面証拠**: E2E 起動中の DevTools からタイトルで Extension Development Host のページを選び、候補を選択した狭幅 UI を取得した（[英語・暗色](evidence/issue-134/inspector-en-dark-narrow.png)、[英語・明色](evidence/issue-134/inspector-en-light-narrow.png)）。画像は VS Code renderer の内容で、macOS のネイティブ枠は含まない。
+- **未確認**: 日本語 E2E キャプチャは表示言語パックを渡したが `vscode.env.language` が `en` のままになったため取得を中止。英語/日本語を含む全ロケール・テーマの組み合わせ、キーボードのみでの操作確認、および VoiceOver の実読み上げは未実施。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
@@ -76,7 +84,7 @@
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
 | | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
-| | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完とコマンドパレットから決定論的な候補を提示。調とメロディを評価し、補完では prefix のみを置換。コマンドは複数小節の置換または末尾追加を候補化 |
+| | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完と CodeLens から決定論的な候補を提示。単一コード補完は prefix のみを置換し、多小節の置換・末尾追加は共通 Inspector で選択・確認後に適用 |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
 | | `guitardsl.openInspector` (共通 Inspector を開く, Issue #133) | ✅ 実装済み・PR レビュー待ち | Secondary Sidebar の単一 Webview View。アクティブな GuitarDSL 文書の URI / version のみを表示し、対象がなければローカライズした空状態。ソース編集・音声再生の所有権は既存のまま |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
@@ -181,6 +189,7 @@
   - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.openInspector`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
   - サイドバー: ビュー `guitardsl.sidebar` にフォーカスできること
   - Issue #133 Inspector: 単一の Secondary Sidebar Webview View、コマンドによる明示表示、再実行の冪等性、GuitarDSL 以外がアクティブな場合の空状態、編集も他の開いているファイルへのフォールバックも起きないこと
+  - Issue #134 progression Inspector: CodeLens 起点の既定4小節・末尾追加、4/8/16小節と置換/追加の再計算、候補選択と Preview A/B、未確認候補/連続適用/`applyEdit=false` のソース不変、Apply 後の1回 Undo、古い Inspector message の拒否、選択時に再生しないこと
   - ヘルプ: GuitarDSL ドキュメントなしで `guitardsl.openHelp` が完了し、テキストドキュメントを変更しないこと
   - ドキュメントシンボル
   - 音楽対応 Code Actions (Issue #87): 無題 URI の選択から抽出し、定義挿入と参照置換を 1 回の元に戻すで復元

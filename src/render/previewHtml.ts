@@ -17,27 +17,14 @@ export interface ScoreFontUris {
   bold: string;
 }
 
-export interface ProgressionAssistantHtmlCandidate {
-  id: string;
-  chords: string[];
-  rationale: string;
-  score: number;
-}
-
 export interface ProgressionAssistantHtmlModel {
   originalDsl: string;
   candidateDsl: string;
-  sessionUri: string;
-  sessionVersion: number;
-  sessionGeneration: number;
-  candidates: ProgressionAssistantHtmlCandidate[];
-  activeCandidateId: string;
   side: 'A' | 'B';
   auditionSpeed: 50 | 75 | 100 | 125 | 150;
   startPlayback?: 'chord' | 'bars' | 'melody' | 'song';
   targetStartMeasure: number;
   bars: number;
-  operation: 'replace' | 'append';
 }
 
 export interface CompileHtmlOptions {
@@ -51,7 +38,7 @@ export interface CompileHtmlOptions {
   capo?: CapoPreviewUiModel;
   /** Beginner Mode controls in the capo bar (spec extension §4.5); omitted = off. */
   beginner?: BeginnerPreviewUiModel;
-  /** Optional Issue #129 assistant data; original DSL is parsed for A playback and never sent to the Webview. */
+  /** Optional Inspector audition data; Preview remains the sole audio owner. */
   progressionAssistant?: ProgressionAssistantHtmlModel;
   /** Production Webview CSP source; omitted by non-Webview/test callers. */
   cspSource?: string;
@@ -105,17 +92,11 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     candidatePlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.candidateDsl, {
       expandPageBreakRepeats: options?.expandPageBreakRepeats
     }), msgs),
-    sessionUri: progressionAssistant.sessionUri,
-    sessionVersion: progressionAssistant.sessionVersion,
-    sessionGeneration: progressionAssistant.sessionGeneration,
-    candidates: progressionAssistant.candidates,
-    activeCandidateId: progressionAssistant.activeCandidateId,
     side: progressionAssistant.side,
     auditionSpeed: progressionAssistant.auditionSpeed,
     startPlayback: progressionAssistant.startPlayback,
     targetStartMeasure: progressionAssistant.targetStartMeasure,
     bars: progressionAssistant.bars,
-    operation: progressionAssistant.operation,
     labels: {
       audioUnavailable: msgs.uiProgressionAudioUnavailable,
       fullSongOnly: msgs.uiProgressionFullSongOnly
@@ -138,7 +119,6 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const capoBar = options?.capo ? renderCapoBar(options.capo, msgs, options.beginner) : '';
-  const progressionAssistantPanel = progressionAssistant ? renderProgressionAssistantPanel(progressionAssistant, msgs) : '';
   const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
     .map(speed => `<option value="${speed}"${speed === 100 ? ' selected' : ''}>${speed}%</option>`)
     .join('');
@@ -342,30 +322,6 @@ ${cspMeta}
     text-overflow: ellipsis;
     font-size: 12px;
   }
-  .progression-assistant {
-    margin: 8px 12px;
-    padding: 8px 10px;
-    border: 1px solid #3c3c3c;
-    border-radius: 6px;
-    background: #1e1e1e;
-    color: #ddd;
-    font-size: 12px;
-  }
-  .progression-assistant summary { cursor: pointer; font-weight: 600; }
-  .progression-assistant-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
-  .progression-assistant select, .progression-assistant button {
-    min-height: 28px;
-    border: 1px solid #555;
-    border-radius: 4px;
-    background: #252526;
-    color: #eee;
-    padding: 4px 8px;
-    font: inherit;
-  }
-  .progression-assistant button { cursor: pointer; }
-  .progression-assistant button:focus-visible, .progression-assistant select:focus-visible { outline: 2px solid #3794ff; outline-offset: 1px; }
-  .progression-assistant button[aria-pressed="true"] { background: #005a9e; }
-  .progression-assistant-status { display: block; min-height: 1.4em; margin-top: 6px; color: #ccc; }
   .toolbar-label {
     font-size: 11px;
     text-transform: uppercase;
@@ -645,8 +601,6 @@ ${cspMeta}
     <span class="practice-status" id="practice-status" role="status" aria-live="polite"></span>
   </div>
 
-  ${progressionAssistantPanel}
-
   ${capoBar}
 
   <div class="sheet-pages-wrapper">
@@ -725,7 +679,7 @@ ${cspMeta}
       try {
         progressionAssistantData = progressionDataElement ? JSON.parse(progressionDataElement.textContent) : null;
       } catch (_) {}
-      const progressionAssistantActive = !!(progressionAssistantData && Array.isArray(progressionAssistantData.candidates));
+      const progressionAssistantActive = !!progressionAssistantData;
       const candidatePlaybackData = progressionAssistantData && progressionAssistantData.candidatePlayback
         ? progressionAssistantData.candidatePlayback
         : playbackData;
@@ -736,16 +690,6 @@ ${cspMeta}
       let progressionSpeed = progressionAssistantActive
         && [50, 75, 100, 125, 150].includes(Number(progressionAssistantData.auditionSpeed))
         ? Number(progressionAssistantData.auditionSpeed) : 100;
-      function postProgressionMessage(command, payload) {
-        if (!vscode || !progressionAssistantData) return;
-        vscode.postMessage({
-          command,
-          sessionUri: progressionAssistantData.sessionUri,
-          sessionVersion: progressionAssistantData.sessionVersion,
-          sessionGeneration: progressionAssistantData.sessionGeneration,
-          ...(payload || {})
-        });
-      }
       let playbackAvailable = playbackData.available === true;
       let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
       let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
@@ -1048,20 +992,6 @@ ${cspMeta}
         updatePlaybackUi();
       }
 
-      function setProgressionSide(side) {
-        if (!progressionAssistantActive || (side !== 'A' && side !== 'B') || side === progressionSide) return;
-        stopPlayback();
-        progressionSide = side;
-        activatePlaybackData(side === 'A' ? originalPlaybackData : candidatePlaybackData);
-        const sideAButton = document.getElementById('progression-side-a');
-        const sideBButton = document.getElementById('progression-side-b');
-        if (sideAButton) sideAButton.setAttribute('aria-pressed', String(side === 'A'));
-        if (sideBButton) sideBButton.setAttribute('aria-pressed', String(side === 'B'));
-        const status = document.getElementById('progression-status');
-        if (status) status.textContent = '';
-        postProgressionMessage('progressionSideChanged', { side });
-      }
-
       function assistantRangeData(data, mode) {
         if (mode === 'song') return data;
         const startMeasure = Number(progressionAssistantData.targetStartMeasure);
@@ -1089,8 +1019,6 @@ ${cspMeta}
           && targetOccurrences.every(({ item, index }, offset) => item.measureIndex === startMeasure + offset
             && (offset === 0 || index === targetOccurrences[offset - 1].index + 1));
         if (!contiguous) {
-          const status = document.getElementById('progression-status');
-          if (status) status.textContent = progressionAssistantData.labels.fullSongOnly;
           return null;
         }
         const first = targetOccurrences[0].item;
@@ -1125,10 +1053,9 @@ ${cspMeta}
         }
         const sliced = assistantRangeData(data, mode);
         if (!sliced) {
-          if (mode === 'chord') {
-            const status = document.getElementById('progression-status');
-            if (status) status.textContent = progressionAssistantData.labels.audioUnavailable;
-          }
+          setPlaybackError((progressionAssistantData.labels && progressionAssistantData.labels.fullSongOnly) || audioLabels.audioUnavailable);
+          activatePlaybackData(data);
+          await startFromPosition(0, false);
           return;
         }
         stopPlayback();
@@ -1744,45 +1671,6 @@ ${cspMeta}
       if (practiceSetBButton) practiceSetBButton.addEventListener('click', setLoopEnd);
       if (practiceClearButton) practiceClearButton.addEventListener('click', clearPracticeLoop);
       if (practiceFollowButton) practiceFollowButton.addEventListener('click', toggleFollow);
-      const progressionCandidateSelect = document.getElementById('progression-candidate');
-      if (progressionCandidateSelect && vscode) {
-        progressionCandidateSelect.addEventListener('change', () => {
-          stopPlayback();
-          postProgressionMessage('progressionCandidateChanged', { candidateId: progressionCandidateSelect.value });
-        });
-      }
-      const progressionSideAButton = document.getElementById('progression-side-a');
-      const progressionSideBButton = document.getElementById('progression-side-b');
-      if (progressionSideAButton) progressionSideAButton.addEventListener('click', () => setProgressionSide('A'));
-      if (progressionSideBButton) progressionSideBButton.addEventListener('click', () => setProgressionSide('B'));
-      const progressionSpeedSelect = document.getElementById('progression-speed');
-      if (progressionSpeedSelect) {
-        progressionSpeedSelect.value = String(progressionSpeed);
-        progressionSpeedSelect.addEventListener('change', () => {
-          stopPlayback();
-          progressionSpeed = [50, 75, 100, 125, 150].includes(Number(progressionSpeedSelect.value))
-            ? Number(progressionSpeedSelect.value) : 100;
-          postProgressionMessage('progressionSpeedChanged', { speed: progressionSpeed });
-        });
-      }
-      const progressionChordButton = document.getElementById('progression-audition-chord');
-      const progressionBarsButton = document.getElementById('progression-audition-bars');
-      const progressionMelodyButton = document.getElementById('progression-audition-melody');
-      const progressionSongButton = document.getElementById('progression-audition-song');
-      if (progressionChordButton) progressionChordButton.addEventListener('click', () => { void auditionProgression('chord'); });
-      if (progressionBarsButton) progressionBarsButton.addEventListener('click', () => { void auditionProgression('bars'); });
-      if (progressionMelodyButton) progressionMelodyButton.addEventListener('click', () => { void auditionProgression('melody'); });
-      if (progressionSongButton) progressionSongButton.addEventListener('click', () => { void auditionProgression('song'); });
-      const progressionApplyButton = document.getElementById('progression-apply');
-      if (progressionApplyButton && vscode) progressionApplyButton.addEventListener('click', () => {
-        const active = progressionAssistantData.candidates.find(candidate => candidate.id === progressionAssistantData.activeCandidateId);
-        if (active) postProgressionMessage('progressionApply', { candidateId: active.id });
-      });
-      const progressionDismissButton = document.getElementById('progression-dismiss');
-      if (progressionDismissButton && vscode) progressionDismissButton.addEventListener('click', () => {
-        stopPlayback();
-        postProgressionMessage('progressionDismiss', {});
-      });
       window.addEventListener('message', (event) => {
         const message = event && event.data;
         if (message && message.command === 'playbackAction' && typeof message.action === 'string') {
@@ -1951,43 +1839,6 @@ ${cspMeta}
   </script>
 </body>
 </html>`;
-}
-
-function renderProgressionAssistantPanel(model: ProgressionAssistantHtmlModel, msgs: Messages): string {
-  if (model.candidates.length === 0) return '';
-  const selected = model.candidates.find(candidate => candidate.id === model.activeCandidateId) ?? model.candidates[0];
-  const options = model.candidates.map(candidate =>
-    `<option value="${escapeXml(candidate.id)}"${candidate.id === selected.id ? ' selected' : ''}>${escapeXml(candidate.chords.join('  →  '))}</option>`
-  ).join('');
-  const repeatNotice = model.bars >= 8 ? `<p>${escapeXml(msgs.uiProgressionRepeatNotice)}</p>` : '';
-  const operation = model.operation === 'replace' ? msgs.progressionReplace : msgs.progressionAppend;
-  return `<details class="progression-assistant" id="progression-assistant" open>
-    <summary>${escapeXml(msgs.uiProgressionTitle)}</summary>
-    <p>${escapeXml(msgs.uiProgressionDescription)}</p>
-    <p>${escapeXml(operation)}</p>
-    ${repeatNotice}
-    <label for="progression-candidate">${escapeXml(msgs.uiProgressionTitle)}</label>
-    <select id="progression-candidate" aria-label="${escapeXml(msgs.uiProgressionTitle)}">${options}</select>
-    <p id="progression-rationale">${escapeXml(selected.rationale)}</p>
-    <p>${escapeXml(msgs.uiProgressionHeuristic)}</p>
-    <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">
-      <button id="progression-side-a" type="button" aria-pressed="${model.side === 'A'}">${escapeXml(msgs.uiProgressionSideA)}</button>
-      <button id="progression-side-b" type="button" aria-pressed="${model.side === 'B'}">${escapeXml(msgs.uiProgressionSideB)}</button>
-      <label for="progression-speed">${escapeXml(msgs.uiProgressionSpeed)}</label>
-      <select id="progression-speed" aria-label="${escapeXml(msgs.uiProgressionSpeed)}">
-        ${[50, 75, 100, 125, 150].map(speed => `<option value="${speed}"${speed === model.auditionSpeed ? ' selected' : ''}>${speed}%</option>`).join('')}
-      </select>
-    </div>
-    <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">
-      <button id="progression-audition-chord" type="button">${escapeXml(msgs.uiProgressionChord)}</button>
-      <button id="progression-audition-bars" type="button">${escapeXml(msgs.uiProgressionBars)}</button>
-      <button id="progression-audition-melody" type="button">${escapeXml(msgs.uiProgressionWithMelody)}</button>
-      <button id="progression-audition-song" type="button">${escapeXml(msgs.uiProgressionFullSong)}</button>
-      <button id="progression-apply" type="button">${escapeXml(msgs.uiProgressionApply)}</button>
-      <button id="progression-dismiss" type="button" aria-label="${escapeXml(msgs.uiProgressionClose)}">×</button>
-    </div>
-    <span class="progression-assistant-status" id="progression-status" role="status" aria-live="polite"></span>
-  </details>`;
 }
 
 function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtmlData {

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
@@ -18,11 +19,72 @@ async function main() {
     // Passed to --extensionTestsPath
     const extensionTestsPath = path.resolve(__dirname, './index');
 
+    const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+    let remoteDebuggingArgs: string[] = [];
+    if (captureScreenshots) {
+      const server = net.createServer();
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Could not reserve a local DevTools port');
+      const remoteDebuggingPort = address.port;
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      process.env.GUITARDSL_E2E_CDP_PORT = String(remoteDebuggingPort);
+      remoteDebuggingArgs = [
+        `--remote-debugging-port=${remoteDebuggingPort}`
+      ];
+    }
+
+    const locale = process.env.GUITARDSL_E2E_LOCALE;
+    const languagePackDirectory = captureScreenshots ? process.env.GUITARDSL_E2E_LANGUAGE_PACK_DIR : undefined;
+    let extensionDirectoryArgs: string[] = [];
+    if (captureScreenshots) {
+      if (locale) {
+        fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale }, null, 2));
+      }
+      const extensionDirectory = path.join(userDataDir, 'extensions');
+      fs.mkdirSync(extensionDirectory, { recursive: true });
+      if (languagePackDirectory) {
+        const copiedPackPath = path.join(extensionDirectory, path.basename(languagePackDirectory));
+        fs.cpSync(languagePackDirectory, copiedPackPath, { recursive: true });
+
+        // VS Code uses extensions.json as the installed-extension registry;
+        // copying only the language-pack files does not make the pack visible.
+        const packageJson = JSON.parse(fs.readFileSync(path.join(copiedPackPath, 'package.json'), 'utf8')) as {
+          name: string;
+          publisher: string;
+        };
+        const sourceRegistryPath = path.join(path.dirname(languagePackDirectory), 'extensions.json');
+        const sourceRegistry = JSON.parse(fs.readFileSync(sourceRegistryPath, 'utf8')) as Array<{
+          identifier: { id: string };
+          location: Record<string, unknown>;
+          relativeLocation: string;
+          [key: string]: unknown;
+        }>;
+        const extensionId = `${packageJson.publisher}.${packageJson.name}`.toLowerCase();
+        const languagePackEntry = sourceRegistry.find(entry => entry.identifier.id.toLowerCase() === extensionId);
+        if (!languagePackEntry) throw new Error(`Language pack ${extensionId} is not registered in ${sourceRegistryPath}`);
+        const isolatedEntry = JSON.parse(JSON.stringify(languagePackEntry)) as typeof languagePackEntry;
+        isolatedEntry.location = { ...isolatedEntry.location, path: copiedPackPath };
+        isolatedEntry.relativeLocation = path.basename(copiedPackPath);
+        fs.writeFileSync(path.join(extensionDirectory, 'extensions.json'), JSON.stringify([isolatedEntry]));
+      }
+      extensionDirectoryArgs = [`--extensions-dir=${extensionDirectory}`];
+    }
+
     // Download VS Code, unzip it and run the integration test
     await runTests({
       extensionDevelopmentPath,
       extensionTestsPath,
-      launchArgs: ['--disable-extensions', `--user-data-dir=${userDataDir}`]
+      launchArgs: [
+        ...(captureScreenshots ? [] : ['--disable-extensions']),
+        `--user-data-dir=${userDataDir}`,
+        ...extensionDirectoryArgs,
+        ...remoteDebuggingArgs,
+        ...(locale ? [`--locale=${locale}`] : [])
+      ]
     });
   } catch (err) {
     console.error('Failed to run tests', err);

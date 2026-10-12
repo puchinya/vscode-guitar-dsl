@@ -391,7 +391,7 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 現在の GuitarDSL エディタを主画面に、単一の次コード補完と決定論的な進行候補を提供する。外部サービスや生成 AI は使わない。
 
 - IntelliSense は `.guitardsl` / `.gdsl` のコードセルで、コード入力位置または互換性のあるコード prefix に限り起動する。`mel:`、`lyr:`、`tab:`、コード定義、header、comment、duration、modifier、`@label` 内では候補を出さない。prefix の範囲だけを置換し、最大5件を返す。キャンセル・古い要求・無関係な parser error では候補を返さない。補完の確定はコード文字列のみを挿入し、試聴やほかの文書変更を行わない。
-- 4 / 8 / 16 小節の候補は各対象小節の CodeLens から開く。長さと置換 / 本文末追加を選んだ後、最大5件の決定論的候補を VS Code 標準の単一選択 Quick Pick に表示する。各行にコード列、スコア、調性の根拠を示す。ラジオボタン・チェックボックスや独自の候補一覧 Webview は使わない。Quick Pick の仮選択・確定は対象小節の Decoration だけを更新し、ソース、document version、Undo 履歴を変更せず、自動再生もしない。Escape は前の確定候補へ戻すか、新しい選択を破棄する。
+- 4 / 8 / 16 小節の候補は各対象小節の CodeLens から開き、共通 Inspector に統合する。CodeLens の実行直後に4小節を初期表示し、対象範囲が安全に置換できれば置換、できなければ安全な本文末追加を初期操作とする。Inspector の操作で長さと置換 / 本文末追加を切り替え、無効な選択肢は無効化する。最大5件の決定論的候補をクリックまたはキーボードで選べるリストに表示し、各行にコード列、スコア、調性の根拠を示す。候補選択はDecorationと、既に開いている場合のPreview B表示だけを更新し、ソース、document version、Undo 履歴を変更せず、自動再生もしない。長さ・操作の変更は試聴を停止し、ホスト側で候補を再計算する。単一次コード補完は引き続きエディタの IntelliSense が提供する。
 - 対象範囲を置換するか安全な本文末へ追加する。置換は連続した単純小節のコード名 span のみを変え、リズム・メロディ・歌詞・空白・コメントを保持する。空コードセルでは、その位置の有効な `@key` を前小節の調より優先し、真の本文末追加でも挿入位置に `@key` がなければ前小節の調へフォールバックする。転調後の小節から始められるが、対象範囲の内側に `@key` イベントがある場合は値が同じでも拒否する。反復小節 `%`、複数コード変更、明示コード duration、custom `@voicing`、対象 TAB、source error、対象範囲の曖昧または一貫しない和声 context、解決不能な span も拒否する。拒否・キャンセルでは編集しない。
 - カタログは固定の長調・短調各5パターンを使う。8小節は選択した4小節を2回、16小節は4回繰り返す。候補には v1 の反復制約を表示する。自動生成の slash chord は作らず、置換範囲外の既存 slash chord は保持する。
 - 候補は最大5件。開始コードの root pitch class が直前の記述コードと同じなら +4、開始コードが直前と同一なら -1、主音コードで終われば +2 とし、開始コードの加点と減点は同時に適用して個別表示する。対象範囲にメロディがあれば、休符を除く発音 pitch ごとに音価で重み付けし、chord tone +2 / non-chord tone -1 とする。メロディがなければ「メロディ評価なし」と示す。score はヒューリスティックで楽曲品質の客観評価ではない。完全な同点はカタログ順とする。
@@ -399,25 +399,25 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 - 適用は明示確認後に限る。最新 URI/version の文書から編集計画を作り直し、再parse と対象外の意味保存を検証し、単一 WorkspaceEdit / 単一 `applyEdit` で一度に適用する。古い文書、競合、再入、検証失敗、キャンセル、`applyEdit` 失敗はいずれもゼロ編集とする。
 
 ### 3.18 `guitardsl.progression.chooseCandidate`
-現在の候補セッションに属する候補だけを標準 Quick Pick で選び直す。選択はDecorationとPreview表示を同期するだけで、文書編集や自動再生を行わない。
+現在の候補セッションの Inspector を表示する。候補は Inspector 内で選び、Decorationと既に開いているPreview表示を同期する。文書編集や自動再生は行わない。
 
 ### 3.19 `guitardsl.progression.play`
-セッションの候補と選択側を既存Previewに渡し、既存AudioContextとtransportで進行・メロディを明示試聴する。別の再生エンジンは作らない。
+Inspector のセッションから選択側を既存Previewへ渡し、既存AudioContextとtransportで進行・メロディを明示試聴する。Inspector の Play は必要なら単一のPreviewを開き、別の再生エンジンは作らない。
 
 ### 3.20 `guitardsl.progression.stop`
-選択セッションの試聴で予約した音源とschedulerを、既存Preview transportから停止する。
+選択セッションの試聴で予約した音源とschedulerを、既存Preview transportから停止する。Inspector にも同じ操作を表示する。
 
 ### 3.21 `guitardsl.progression.showOriginal`
-A（原文）を選択し、提案コードDecorationを消す。再生は開始しない。
+A（原文）を選択し、提案コードDecorationを消す。再生は開始しない。Inspector のA/B切替にも反映する。
 
 ### 3.22 `guitardsl.progression.showCandidate`
-B（候補）を選択して提案コードDecorationを表示する。再生は開始しない。
+B（候補）を選択して提案コードDecorationを表示する。再生は開始しない。Inspector のA/B切替にも反映する。
 
 ### 3.23 `guitardsl.progression.apply`
 現在の確定候補を確認後に適用する。適用対象のURI/versionを再検証し、成功時は単一Undoで戻せる編集とする。
 
 ### 3.24 `guitardsl.progression.close`
-候補セッション、試聴音声、Decorationを破棄し、該当文書のPreviewを通常表示へ戻す。ソースは変更しない。
+候補セッション、試聴音声、Decorationを破棄し、Inspector を文書状態へ戻す。Preview が候補セッションを表示中なら通常表示へ戻す。ソースは変更しない。
 
 ### 3.25 `guitardsl.openInspector`
 GuitarDSL 共通 Inspector（§4D）を明示的に開く。対象は現在アクティブなエディタだけとし、GuitarDSL 文書がない場合は空の案内を表示する。他の開いている文書へフォールバックしない。呼び出しを繰り返してもビューは増えない。通常の入力・カーソル移動・文書切替・拡張機能の起動ではビューを表示しない。
@@ -682,7 +682,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 ## 4D. 共通 Inspector (GuitarDSL Inspector)
 
-Inspector は編集補助機能を同じ場所へ段階的に集約するための単一 Webview View であり、この基盤では文書コンテキストを表示するだけでソース編集機能を持たない。既存の Activity Bar サイドバー（§4C）と標準 TextEditor、Preview はそれぞれの役割を維持する。
+Inspector は編集補助機能を同じ場所へ段階的に集約するための単一 Webview View である。共通文書コンテキストとコード進行候補を表示し、候補の一時選択や試聴を操作できる。ソース編集は明示的な Apply だけが行う。既存の Activity Bar サイドバー（§4C）と標準 TextEditor、Preview はそれぞれの役割を維持する。
 
 ### 4D.1 貢献と表示
 - `contributes.viewsContainers.secondarySidebar` にコンテナ ID `guitardslInspector`、タイトル `GuitarDSL Inspector` を登録し、Webview View ID `guitardsl.inspector` を 1 つだけ置く。Activity Bar に Inspector を追加しない。
@@ -690,9 +690,10 @@ Inspector は編集補助機能を同じ場所へ段階的に集約するため�
 - コマンドはアクティブな GuitarDSL TextEditor の URI と文書 version だけを対象とする。対象がなければローカライズされた空状態を表示し、他の開いている文書から選ばない。コマンドは冪等であり、Webview View Provider を複数作らない。
 
 ### 4D.2 コンテキストと境界
-- ホストが `{kind:'empty'}` または `{kind:'document'; uri:string; version:number}` の現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、文書切替・クローズでは古い URI の状態を無効化する。ビューが非表示でも状態更新はビューを表示しない。
+- ホストが `{kind:'empty'}`、`{kind:'document'; uri:string; version:number}`、または URI/version/session generation と対象・操作・候補一覧・選択・A/B・速度を含む `{kind:'progression'}` の現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、文書切替・クローズでは古い URI の状態を無効化する。通常の文書状態更新はビューを表示しない。CodeLens から進行提案を始める操作だけは Inspector を表示する。
 - View の再解決時にはホストの最新スナップショットだけを描画する。解決済み View へのコンテキスト更新は単調増加 generation 付きで送り、Webview は古い更新を無視する。文書コンテキストは一時状態で、保存・編集・Undo を作らない。適用可能な操作も提供しない。
-- Inspector に AudioContext / scheduler を置かない。Preview を唯一の音声再生所有者として維持し、既存 Preview / Practice / PDF / 進行提案 / コードエディタの動作を変えない。
+- Inspector に AudioContext / scheduler を置かない。Preview を唯一の音声再生所有者として維持し、進行の一時選択と操作を Inspector に置く。適用はホストで再検証し単一 undoable edit とし、既存 Preview / Practice / PDF / コードエディタの動作を維持する。
+- 進行セッションの Webview メッセージはコマンド、session generation、対象 URI/version、および選択候補 ID をホスト状態と照合する。長さ・操作の変更はホストが再計算し、Webview から候補 DSL を受け取らない。Cancel、ビュー破棄、文書切替、Preview 破棄では試聴を止め、セッションと Decoration を破棄する。
 - 1 列のレスポンシブ配置、VS Code テーマ色、見出し・状態の ARIA 名、キーボードとスクリーンリーダーで読める状態表示を用いる。nonce 付き CSP を設定し、リモートの script/style/resource は読み込まない。
 
 ---

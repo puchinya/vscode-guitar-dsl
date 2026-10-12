@@ -42,6 +42,20 @@ npm run test:e2e
 - Compiles the extension and test files (`npm run compile:all`).
 - Launches VS Code and runs the E2E test suite.
 
+For an Inspector UI screenshot, the same test can capture the Extension Development Host renderer through its loopback-only DevTools endpoint:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS \
+  GUITARDSL_E2E_CAPTURE_SCREENSHOTS=1 \
+  GUITARDSL_E2E_SCREENSHOT_ONLY=1 \
+  GUITARDSL_E2E_LOCALE=en \
+  GUITARDSL_E2E_THEME='Default Dark Modern' \
+  GUITARDSL_E2E_CAPTURE_WAIT_MS=1500 \
+  npm run test:e2e
+```
+
+The capture selects exactly one page target whose title identifies the Extension Development Host and saves under `docs/status/evidence/issue-134/`. Set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory for Japanese screenshots; the isolated profile copies the pack, registers it in its own `extensions.json`, and writes the requested locale to `argv.json`. The test checks `vscode.env.language` and stops instead of saving a screenshot under a mismatched locale. `GUITARDSL_E2E_THEME` accepts the installed theme name, such as `Default Light Modern`. The screenshot includes the VS Code renderer window contents and excludes native OS chrome. Without the capture flag, normal E2E runs do not open a DevTools endpoint or write screenshots.
+
 ### 3. Full Test Suite
 Run the Help and AI asset sync gates, then unit and E2E tests:
 ```bash

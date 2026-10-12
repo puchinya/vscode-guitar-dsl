@@ -2,6 +2,13 @@ import * as vscode from 'vscode';
 import { findGuitarDslInlineCommentStart, parseGuitarDsl } from './compiler';
 import { isGuitarDslDocument } from './documentResolver';
 import { resolveLocale, getMessages, type SupportedLocale } from './i18n';
+import {
+  type GuitarDslInspectorController,
+  type InspectorProgressionBars,
+  type InspectorProgressionContext,
+  type InspectorProgressionMessage,
+  type InspectorContext
+} from './inspector/inspectorController';
 import { planProgressionEdit, type ProgressionEditOperation, type ProgressionEditTarget } from './progressionSourceEdits';
 import {
   suggestProgressions,
@@ -33,6 +40,7 @@ export interface ProgressionAssistantSession {
   version: number;
   sessionGeneration: number;
   source: string;
+  originTarget: ProgressionTarget;
   target: ProgressionEditTarget;
   candidates: ProgressionCandidate[];
   activeCandidateId: string;
@@ -60,8 +68,10 @@ interface ProgressionCodeLensTarget {
   character: number;
 }
 
-interface CandidatePickItem extends vscode.QuickPickItem {
-  candidate: ProgressionCandidate;
+interface ProgressionCandidateResult {
+  target: ProgressionEditTarget;
+  candidates: ProgressionCandidate[];
+  error?: string;
 }
 
 let nextProgressionAssistantSessionGeneration = 0;
@@ -138,8 +148,6 @@ function suggestionFailureMessage(code: ProgressionSuggestionFailureCode, messag
 
 export class ProgressionAssistantController implements vscode.Disposable {
   private session: ProgressionAssistantSession | undefined;
-  private provisionalSession: ProgressionAssistantSession | undefined;
-  private candidatePicker: vscode.QuickPick<CandidatePickItem> | undefined;
   private readonly applyingUris = new Set<string>();
   private readonly locale: SupportedLocale;
   private readonly messages: ReturnType<typeof getMessages>;
@@ -155,7 +163,11 @@ export class ProgressionAssistantController implements vscode.Disposable {
     after: { color: new vscode.ThemeColor('editorCodeLens.foreground'), fontStyle: 'italic' }
   });
 
-  constructor(private readonly preview: ProgressionAssistantPreviewController, locale?: string) {
+  constructor(
+    private readonly preview: ProgressionAssistantPreviewController,
+    locale?: string,
+    private readonly inspector?: GuitarDslInspectorController
+  ) {
     this.locale = resolveLocale(locale ?? vscode.env.language);
     this.messages = getMessages(this.locale);
   }
@@ -176,6 +188,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_B_COMMAND, () => this.setSide('B')));
     context.subscriptions.push(vscode.commands.registerCommand(APPLY_PROGRESSION_CANDIDATE_COMMAND, () => this.applyCandidate(this.session?.activeCandidateId)));
     context.subscriptions.push(vscode.commands.registerCommand(CLOSE_PROGRESSION_ASSISTANT_COMMAND, () => this.closeSession()));
+    this.inspector?.setProgressionMessageHandler(message => this.handleInspectorMessage(message));
     void vscode.commands.executeCommand('setContext', 'guitardsl.progressionAssistantActive', false);
     context.subscriptions.push(this);
   }
@@ -228,75 +241,31 @@ export class ProgressionAssistantController implements vscode.Disposable {
       return;
     }
     const { editor, score, source, version, target: cursorTarget } = resolved;
-    const length = await vscode.window.showQuickPick([
-      { label: this.messages.progressionLengthFour, bars: 4 as const },
-      { label: this.messages.progressionLengthEight, bars: 8 as const },
-      { label: this.messages.progressionLengthSixteen, bars: 16 as const }
-    ], { placeHolder: this.messages.progressionLengthPrompt, ignoreFocusOut: true });
-    if (!length) return;
-    if (editor.document.version !== version
-      || editor.document.getText() !== source) {
-      vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
-      return;
-    }
-
-    const replaceTarget = { ...cursorTarget, bars: length.bars, operation: 'replace' as const };
-    const appendTarget = {
-      ...cursorTarget,
-      ...targetForMeasure(score, score.measures.length),
-      bars: length.bars,
-      operation: 'append' as const
-    };
-    const operations: { label: string; operation: ProgressionEditOperation; target: ProgressionEditTarget }[] = [];
-    if (cursorTarget.startMeasure + length.bars <= score.measures.length) operations.push({ label: this.messages.progressionReplace, operation: 'replace', target: replaceTarget });
-    operations.push({ label: this.messages.progressionAppend, operation: 'append', target: appendTarget });
-    const operationChoice = await vscode.window.showQuickPick(operations.map(item => ({ label: item.label, description: item.operation })), {
-      placeHolder: this.messages.progressionOperationPrompt,
-      ignoreFocusOut: true
-    });
-    if (!operationChoice) return;
-    if (editor.document.version !== version || editor.document.getText() !== source) {
-      vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
-      return;
-    }
-    const selectedOperation = operations.find(item => item.label === operationChoice.label);
-    if (!selectedOperation) return;
-
-    const target: ProgressionTarget = selectedOperation.target;
-    const suggestions = suggestProgressions(score, target, length.bars as ProgressionBars);
-    if (!suggestions.ok) {
-      vscode.window.showWarningMessage(suggestionFailureMessage(suggestions.code, this.messages));
-      return;
-    }
-    const candidates = suggestions.candidates.filter(candidate =>
-      planProgressionEdit(source, score, selectedOperation.target, candidate).ok
-    );
-    if (candidates.length === 0) {
-      vscode.window.showWarningMessage(this.messages.progressionNoSafeCandidates);
-      return;
-    }
     const priorSession = this.session;
+    const replace = this.candidateResult(source, score, cursorTarget, 4, 'replace');
+    const append = this.candidateResult(source, score, cursorTarget, 4, 'append');
+    const initial = replace.candidates.length > 0 ? replace : append;
+    if (!initial.target) return;
     const candidateSession: ProgressionAssistantSession = {
       uri: editor.document.uri.toString(), version, source,
       sessionGeneration: ++nextProgressionAssistantSessionGeneration,
-      target: selectedOperation.target,
-      candidates,
-      activeCandidateId: candidates[0].id,
+      originTarget: cursorTarget,
+      target: initial.target,
+      candidates: initial.candidates,
+      activeCandidateId: initial.candidates[0]?.id ?? '',
       side: 'B',
       auditionSpeed: priorSession?.uri === editor.document.uri.toString() ? priorSession.auditionSpeed : 100
     };
-    const pick = await this.chooseCandidate(candidateSession);
-    if (!pick) return;
     if (!this.isSessionFresh(candidateSession)) {
       vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
       return;
     }
-    candidateSession.activeCandidateId = pick.id;
-    this.provisionalSession = undefined;
+    if (priorSession) this.clear(priorSession.uri, false);
     this.session = candidateSession;
     void vscode.commands.executeCommand('setContext', 'guitardsl.progressionAssistantActive', true);
     this.codeLensChanges.fire();
     this.updateDecorations();
+    this.syncInspector(true);
     await this.preview.render(this.session);
   }
 
@@ -334,57 +303,159 @@ export class ProgressionAssistantController implements vscode.Disposable {
     return { editor, source, version, score, target };
   }
 
-  private chooseCandidate(session: ProgressionAssistantSession): Promise<ProgressionCandidate | undefined> {
-    const quickPick = vscode.window.createQuickPick<CandidatePickItem>();
-    this.candidatePicker = quickPick;
-    quickPick.title = this.messages.progressionCandidatePrompt;
-    quickPick.placeholder = this.messages.progressionCandidatePrompt;
-    quickPick.ignoreFocusOut = true;
-    quickPick.canSelectMany = false;
-    quickPick.matchOnDescription = true;
-    quickPick.matchOnDetail = true;
-    const items: CandidatePickItem[] = session.candidates.slice(0, 5).map(candidate => ({
-      label: candidate.chords.join('  →  '),
-      description: this.messages.progressionCompletionDetail(candidate.score.total),
-      detail: candidate.key + ' ' + candidate.mode + ' · ' + candidate.romanNumerals.join('–') + '\n'
-        + formatBreakdown(candidate, this.locale, this.messages),
-      candidate
-    }));
-    quickPick.items = items;
-    const currentItem = items.find(item => item.candidate.id === session.activeCandidateId) ?? items[0];
-    if (currentItem) quickPick.activeItems = [currentItem];
-    let accepted: ProgressionCandidate | undefined;
-    return new Promise(resolve => {
-      quickPick.onDidChangeActive(active => {
-        const item = active[0];
-        if (!item) return;
-        this.provisionalSession = { ...session, activeCandidateId: item.candidate.id };
-        this.updateDecorations();
-      });
-      quickPick.onDidAccept(() => {
-        const item = quickPick.selectedItems[0] ?? quickPick.activeItems[0];
-        if (!item || !this.isSessionFresh(session)) {
-          if (item) vscode.window.showWarningMessage(this.messages.progressionApplyFailed);
-          quickPick.hide();
-          return;
-        }
-        accepted = item.candidate;
-        quickPick.hide();
-      });
-      quickPick.onDidHide(() => {
-        this.candidatePicker = undefined;
-        this.provisionalSession = undefined;
-        if (!accepted) this.updateDecorations();
-        quickPick.dispose();
-        resolve(accepted);
-      });
-      const selected = items.find(item => item.candidate.id === session.activeCandidateId) ?? items[0];
-      if (selected) {
-        this.provisionalSession = { ...session, activeCandidateId: selected.candidate.id };
-        this.updateDecorations();
+  private candidateResult(
+    source: string,
+    score: ReturnType<typeof parseGuitarDsl>,
+    originTarget: ProgressionTarget,
+    bars: ProgressionBars,
+    operation: ProgressionEditOperation
+  ): ProgressionCandidateResult {
+    const baseTarget = operation === 'replace' ? originTarget : targetForMeasure(score, score.measures.length);
+    const target: ProgressionEditTarget = { ...baseTarget, bars, operation };
+    const suggestions = suggestProgressions(score, target, bars);
+    if (!suggestions.ok) return { target, candidates: [], error: suggestionFailureMessage(suggestions.code, this.messages) };
+    const candidates = suggestions.candidates.filter(candidate =>
+      planProgressionEdit(source, score, target, candidate).ok
+    ).slice(0, 5);
+    return candidates.length > 0
+      ? { target, candidates }
+      : { target, candidates, error: this.messages.progressionNoSafeCandidates };
+  }
+
+  private inspectorContext(session: ProgressionAssistantSession): InspectorProgressionContext {
+    const score = parseGuitarDsl(session.source);
+    const operations: ProgressionEditOperation[] = ['replace', 'append'];
+    const barsOptions: ProgressionBars[] = [4, 8, 16];
+    const availableBars = barsOptions.filter(bars => operations.some(operation =>
+      this.candidateResult(session.source, score, session.originTarget, bars, operation).candidates.length > 0
+    ));
+    const availableOperations = operations.filter(operation =>
+      this.candidateResult(session.source, score, session.originTarget, session.target.bars as ProgressionBars, operation).candidates.length > 0
+    );
+    const current = this.candidateResult(session.source, score, session.originTarget, session.target.bars as ProgressionBars, session.target.operation);
+    const selectedCandidateId = session.candidates.some(candidate => candidate.id === session.activeCandidateId)
+      ? session.activeCandidateId
+      : '';
+    return {
+      kind: 'progression',
+      uri: session.uri,
+      version: session.version,
+      sessionGeneration: session.sessionGeneration,
+      target: {
+        startMeasure: session.target.startMeasure,
+        bars: session.target.bars as InspectorProgressionBars,
+        operation: session.target.operation
+      },
+      availableBars,
+      availableOperations,
+      candidates: session.candidates.slice(0, 5).map(candidate => ({
+        id: candidate.id,
+        chords: candidate.chords,
+        score: candidate.score.total,
+        scoreText: this.messages.progressionCompletionDetail(candidate.score.total),
+        rationale: `${candidate.key} ${candidate.mode} · ${candidate.romanNumerals.join('–')}\n${formatBreakdown(candidate, this.locale, this.messages)}`
+      })),
+      selectedCandidateId,
+      side: session.side,
+      auditionSpeed: session.auditionSpeed,
+      loading: false,
+      ...(session.candidates.length === 0 ? { error: current.error ?? this.messages.progressionNoSafeCandidates } : {})
+    };
+  }
+
+  private syncInspector(reveal = false): void {
+    if (!this.inspector || !this.session) return;
+    const context = this.inspectorContext(this.session);
+    if (reveal) void this.inspector.showProgression(context);
+    else this.inspector.updateProgression(context);
+  }
+
+  private async updateControls(bars: ProgressionBars, operation: ProgressionEditOperation): Promise<void> {
+    const session = this.session;
+    if (!session || !this.isSessionFresh(session)) return;
+    const score = parseGuitarDsl(session.source);
+    const result = this.candidateResult(session.source, score, session.originTarget, bars, operation);
+    const selected = result.candidates.find(candidate => candidate.id === session.activeCandidateId) ?? result.candidates[0];
+    session.target = result.target;
+    session.candidates = result.candidates;
+    session.activeCandidateId = selected?.id ?? '';
+    this.preview.stop(session.uri);
+    this.updateDecorations();
+    this.codeLensChanges.fire();
+    this.syncInspector();
+    await this.preview.render(session);
+  }
+
+  private async handleInspectorMessage(message: InspectorProgressionMessage): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    if (message.sessionUri !== session.uri || message.sessionVersion !== session.version
+      || message.sessionGeneration !== session.sessionGeneration || !this.isSessionFresh(session)) return;
+    if (message.command === 'progressionCandidateChanged') {
+      if (typeof message.candidateId !== 'string' || message.selectedCandidateId !== message.candidateId) return;
+      const candidate = session.candidates.find(item => item.id === message.candidateId);
+      if (!candidate) return;
+      session.activeCandidateId = candidate.id;
+      session.side = 'B';
+      this.preview.stop(session.uri);
+      this.updateDecorations();
+      this.codeLensChanges.fire();
+      this.syncInspector();
+      await this.preview.render(session);
+      return;
+    }
+    if (message.selectedCandidateId !== session.activeCandidateId) return;
+    if (message.command === 'progressionSetBars') {
+      const bars = Number(message.bars);
+      if ((bars === 4 || bars === 8 || bars === 16) && this.inspectorContext(session).availableBars.includes(bars)) {
+        const nextContext = this.inspectorContext({ ...session, target: { ...session.target, bars }, candidates: [] });
+        const nextOperation = nextContext.availableOperations.includes(session.target.operation)
+          ? session.target.operation
+          : nextContext.availableOperations[0];
+        if (nextOperation) await this.updateControls(bars as ProgressionBars, nextOperation);
       }
-      quickPick.show();
-    });
+      return;
+    }
+    if (message.command === 'progressionSetOperation') {
+      const operation = message.operation;
+      if ((operation === 'replace' || operation === 'append')
+        && this.inspectorContext(session).availableOperations.includes(operation)) {
+        await this.updateControls(session.target.bars as ProgressionBars, operation);
+      }
+      return;
+    }
+    if (message.command === 'progressionPlay') {
+      if (session.activeCandidateId) await this.preview.render(session, { openIfNeeded: true, startPlayback: 'melody' });
+      return;
+    }
+    if (message.command === 'progressionStop') {
+      this.preview.stop(session.uri);
+      return;
+    }
+    if (message.command === 'progressionSideChanged') {
+      if ((message.side === 'A' || message.side === 'B') && session.side !== message.side) {
+        session.side = message.side;
+        this.updateDecorations();
+        this.syncInspector();
+        await this.preview.render(session);
+      }
+      return;
+    }
+    if (message.command === 'progressionSpeedChanged') {
+      const speed = Number(message.speed);
+      if ([50, 75, 100, 125, 150].includes(speed)) {
+        session.auditionSpeed = speed as ProgressionAssistantSession['auditionSpeed'];
+        this.preview.stop(session.uri);
+        this.syncInspector();
+        await this.preview.render(session);
+      }
+      return;
+    }
+    if (message.command === 'progressionApply') {
+      if (session.activeCandidateId) await this.applyCandidate(session.activeCandidateId);
+      return;
+    }
+    if (message.command === 'progressionDismiss') this.clear(session.uri, true);
   }
 
   private isSessionFresh(session: ProgressionAssistantSession): boolean {
@@ -414,13 +485,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
       if (targetRef.uri !== session.uri || targetRef.version !== session.version
         || targetRef.measureIndex !== session.target.startMeasure && session.target.operation !== 'append') return;
     }
-    const picked = await this.chooseCandidate(session);
-    if (!picked || !this.isSessionFresh(session)) return;
-    session.activeCandidateId = picked.id;
-    session.side = 'B';
-    this.updateDecorations();
-    this.codeLensChanges.fire();
-    await this.preview.render(session);
+    this.syncInspector(true);
   }
 
   private async play(): Promise<void> {
@@ -439,6 +504,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     if (!session || session.side === side) return;
     session.side = side;
     this.updateDecorations();
+    this.syncInspector();
     await this.preview.render(session);
   }
 
@@ -447,19 +513,13 @@ export class ProgressionAssistantController implements vscode.Disposable {
     if (session) this.clear(session.uri, true);
   }
 
-  private messageMatchesSession(message: Record<string, unknown>): boolean {
-    return !!this.session && message.sessionUri === this.session.uri
-      && Number(message.sessionVersion) === this.session.version
-      && message.sessionGeneration === this.session.sessionGeneration;
-  }
-
   private updateDecorations(): void {
     const editors = vscode.window.visibleTextEditors;
     for (const editor of editors) {
       editor.setDecorations(this.targetDecoration, []);
       editor.setDecorations(this.proposalDecoration, []);
     }
-    const session = this.provisionalSession ?? this.session;
+    const session = this.session;
     if (!session) return;
     const editor = editors.find(item => item.document.uri.toString() === session.uri);
     if (!editor || editor.document.version !== session.version || editor.document.getText() !== session.source) return;
@@ -491,55 +551,17 @@ export class ProgressionAssistantController implements vscode.Disposable {
     editor.setDecorations(this.proposalDecoration, proposalRanges);
   }
 
-  async handlePreviewMessage(message: Record<string, unknown>): Promise<boolean> {
-    if (message.command === 'progressionDismiss') {
-      if (this.messageMatchesSession(message) && this.session) this.clear(this.session.uri, true);
-      return true;
-    }
-    if (message.command === 'progressionCandidateChanged') {
-      if (!this.messageMatchesSession(message) || !this.session || typeof message.candidateId !== 'string' || !this.isSessionFresh(this.session)) return true;
-      const candidate = this.session.candidates.find(item => item.id === message.candidateId);
-      if (!candidate) return true;
-      this.session.activeCandidateId = candidate.id;
-      this.session.side = 'B';
-      this.updateDecorations();
-      this.codeLensChanges.fire();
-      await this.preview.render(this.session);
-      return true;
-    }
-    if (message.command === 'progressionSideChanged') {
-      if (!this.messageMatchesSession(message) || !this.session || (message.side !== 'A' && message.side !== 'B') || !this.isSessionFresh(this.session)) return true;
-      if (this.session.side === message.side) return true;
-      this.session.side = message.side;
-      this.updateDecorations();
-      await this.preview.render(this.session);
-      return true;
-    }
-    if (message.command === 'progressionSpeedChanged') {
-      if (!this.messageMatchesSession(message) || !this.session || !this.isSessionFresh(this.session)) return true;
-      if ([50, 75, 100, 125, 150].includes(Number(message.speed))) {
-        this.session.auditionSpeed = Number(message.speed) as ProgressionAssistantSession['auditionSpeed'];
-      }
-      return true;
-    }
-    if (message.command === 'progressionApply') {
-      if (this.messageMatchesSession(message)) await this.applyCandidate(message.candidateId);
-      return true;
-    }
-    return false;
-  }
-
   invalidate(uri: string): void {
-    if (this.session?.uri === uri || this.provisionalSession?.uri === uri) this.clear(uri, false);
+    if (this.session?.uri === uri) this.clear(uri, false);
   }
 
   invalidateActive(restore = false): void {
-    const uri = this.session?.uri ?? this.provisionalSession?.uri;
+    const uri = this.session?.uri;
     if (uri) this.clear(uri, restore);
   }
 
   invalidateIfDifferent(uri: string, restore = false): void {
-    const activeUri = this.session?.uri ?? this.provisionalSession?.uri;
+    const activeUri = this.session?.uri;
     if (activeUri && activeUri !== uri) this.clear(activeUri, restore);
   }
 
@@ -563,7 +585,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
   }
 
   getProvisionalCandidateIdForTest(): string | undefined {
-    return this.provisionalSession?.activeCandidateId;
+    return undefined;
   }
 
   getLastResolvedTargetForTest(): ProgressionTarget | undefined {
@@ -620,24 +642,23 @@ export class ProgressionAssistantController implements vscode.Disposable {
   }
 
   private clear(uri: string, restore: boolean): void {
-    if (this.session?.uri !== uri && this.provisionalSession?.uri !== uri) return;
+    if (this.session?.uri !== uri) return;
     this.preview.stop(uri);
-    if (this.candidatePicker) this.candidatePicker.hide();
-    if (this.session?.uri === uri) this.session = undefined;
-    if (this.provisionalSession?.uri === uri) this.provisionalSession = undefined;
+    this.session = undefined;
     void vscode.commands.executeCommand('setContext', 'guitardsl.progressionAssistantActive', false);
     this.codeLensChanges.fire();
     this.updateDecorations();
+    this.inspector?.restoreDocumentAfterProgression(uri);
     if (restore) void this.preview.restore(uri);
   }
 
   dispose(): void {
-    const uri = this.session?.uri ?? this.provisionalSession?.uri;
+    const uri = this.session?.uri;
     this.session = undefined;
-    this.provisionalSession = undefined;
-    if (this.candidatePicker) this.candidatePicker.hide();
+    this.inspector?.setProgressionMessageHandler(undefined);
     if (uri) {
       this.preview.stop(uri);
+      this.inspector?.restoreDocumentAfterProgression(uri);
       void this.preview.restore(uri);
     }
     this.updateDecorations();
@@ -653,18 +674,34 @@ export const progressionAssistantProbe: {
   getSession?: () => ProgressionAssistantSession | undefined;
   getProvisionalCandidateId?: () => string | undefined;
   getLastResolvedTarget?: () => ProgressionTarget | undefined;
+  getInspectorContext?: () => InspectorContext | undefined;
+  dispatchInspectorMessage?: (message: Record<string, unknown>) => Promise<boolean>;
 } = {};
 
 export function registerProgressionAssistant(
   context: vscode.ExtensionContext,
   locale: string | undefined,
-  preview: ProgressionAssistantPreviewController
+  preview: ProgressionAssistantPreviewController,
+  inspector?: GuitarDslInspectorController
 ): ProgressionAssistantController {
-  const controller = new ProgressionAssistantController(preview, locale);
+  const controller = new ProgressionAssistantController(preview, locale, inspector);
   progressionAssistantProbe.controller = controller;
   progressionAssistantProbe.getSession = () => controller.getActiveSessionForTest();
   progressionAssistantProbe.getProvisionalCandidateId = () => controller.getProvisionalCandidateIdForTest();
   progressionAssistantProbe.getLastResolvedTarget = () => controller.getLastResolvedTargetForTest();
+  progressionAssistantProbe.getInspectorContext = () => inspector?.currentContext;
+  progressionAssistantProbe.dispatchInspectorMessage = message => {
+    if (!inspector || inspector.currentContext.kind !== 'progression') return Promise.resolve(false);
+    const current = inspector.currentContext;
+    return inspector.handleWebviewMessage({
+      generation: inspector.currentGeneration,
+      sessionUri: current.uri,
+      sessionVersion: current.version,
+      sessionGeneration: current.sessionGeneration,
+      selectedCandidateId: current.selectedCandidateId,
+      ...message
+    });
+  };
   controller.register(context);
   return controller;
 }
