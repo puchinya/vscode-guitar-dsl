@@ -4,13 +4,6 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-// Load the already compiled production modules at runtime so the E2E TypeScript
-// project remains rooted under tests/.
-const { getMessages } = require('../../i18n') as { getMessages: (locale: 'en') => Record<string, string> };
-const { renderInspectorHtml } = require('../../render/inspectorHtml') as {
-  renderInspectorHtml: (locale: 'en', context: { kind: 'empty' } | { kind: 'document'; uri: string; version: number }, cspSource: string, nonce: string, generation?: number) => string;
-};
-
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
@@ -3037,33 +3030,41 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
     }
   });
 
-  test('the production Inspector shell updates displayed DOM in a real VS Code Webview', async () => {
-    const panel = vscode.window.createWebviewPanel(
-      'guitardsl-inspector-runtime-test',
-      'Inspector runtime test',
-      vscode.ViewColumn.Beside,
-      { enableScripts: true }
-    );
-    type Snapshot = { generation: number; kind: string; status: string; description: string };
-    const snapshots = new Map<number, Snapshot>();
-    const waiters = new Map<number, (snapshot: Snapshot) => void>();
-    const waitForSnapshot = (generation: number): Promise<Snapshot> => {
-      const existing = snapshots.get(generation);
-      if (existing) return Promise.resolve(existing);
-      return new Promise(resolve => waiters.set(generation, resolve));
+  test('the production Inspector WebviewView displays active document, empty, and version updates', async () => {
+    const sourceA = 'key: C\n| C | G | Am | F |';
+    const documentA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: sourceA });
+    await showAndFocus(documentA);
+    await vscode.commands.executeCommand('guitardsl.openInspector');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
+      inspectorViewTestProbe: { resolvedView?: vscode.WebviewView };
     };
-    const messageSubscription = panel.webview.onDidReceiveMessage((message: unknown) => {
-      const candidate = message as { command?: unknown; generation?: unknown; kind?: unknown; status?: unknown; description?: unknown };
+    for (let attempt = 0; attempt < 100 && !inspectorViewTestProbe.resolvedView; attempt++) await settle(20);
+    const inspectorView = inspectorViewTestProbe.resolvedView;
+    assert.ok(inspectorView, 'the explicit command resolves the registered production WebviewView');
+
+    type Snapshot = { generation: number; kind: string; status: string; description: string };
+    const snapshots: Snapshot[] = [];
+    const waiters: Array<{ predicate: (snapshot: Snapshot) => boolean; resolve: (snapshot: Snapshot) => void }> = [];
+    const waitForSnapshot = (predicate: (snapshot: Snapshot) => boolean): Promise<Snapshot> => {
+      const existing = snapshots.find(predicate);
+      if (existing) return Promise.resolve(existing);
+      return new Promise(resolve => waiters.push({ predicate, resolve }));
+    };
+    const messageSubscription = inspectorView.webview.onDidReceiveMessage((message: unknown) => {
+      const candidate = message as { command?: unknown; generation?: number; kind?: string; status?: string; description?: string };
       if (candidate.command !== 'inspectorTestSnapshot' || !Number.isSafeInteger(candidate.generation)) return;
       const snapshot = candidate as Snapshot & { command: string };
-      snapshots.set(snapshot.generation, snapshot);
-      waiters.get(snapshot.generation)?.(snapshot);
-      waiters.delete(snapshot.generation);
+      snapshots.push(snapshot);
+      const waiterIndex = waiters.findIndex(waiter => waiter.predicate(snapshot));
+      if (waiterIndex >= 0) waiters.splice(waiterIndex, 1)[0].resolve(snapshot);
     });
 
     try {
-      const nonce = 'inspector-e2e-nonce';
-      const messages = getMessages('en');
+      const currentHtml = inspectorView.webview.html;
+      const nonce = currentHtml.match(/<script nonce="([^"]+)">/)?.[1];
+      assert.ok(nonce, 'the production Inspector HTML contains its CSP nonce');
       const probe = [
         '(() => {',
         '  const state = document.getElementById("inspector-state");',
@@ -3081,50 +3082,46 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
         '  report();',
         '})();'
       ].join('\n');
-      const html = renderInspectorHtml(
-        'en',
-        { kind: 'document', uri: 'file:///A.guitardsl', version: 1 },
-        panel.webview.cspSource,
-        nonce,
-        1
-      ).replace('</body>', `<script nonce="${nonce}">${probe}</script>\n</body>`);
-      panel.webview.html = html;
+      const probedHtml = currentHtml.replace('</body>', `<script nonce="${nonce}">${probe}</script>\n</body>`);
+      assert.notStrictEqual(probedHtml, currentHtml, 'the resolved Inspector renders its production shell');
+      inspectorView.webview.html = probedHtml;
 
-      const initial = await waitForSnapshot(1);
+      const initial = await waitForSnapshot(snapshot => snapshot.kind === 'document');
       assert.strictEqual(initial.kind, 'document');
-      assert.strictEqual(initial.status, messages.inspectorDocumentStatus);
-      assert.strictEqual(initial.description, messages.inspectorDocumentDescription);
+      assert.ok(initial.status.length > 0);
+      assert.ok(initial.description.length > 0);
+      assert.doesNotMatch(initial.status + initial.description, /A\.guitardsl|version/i,
+        'the initial DOM does not expose the host-owned URI/version');
 
-      await panel.webview.postMessage({
-        command: 'setContext', generation: 2, kind: 'empty',
-        status: messages.inspectorEmptyStatus, description: messages.inspectorEmptyDescription
-      });
-      const empty = await waitForSnapshot(2);
+      const emptyUpdate = waitForSnapshot(snapshot => snapshot.generation > initial.generation && snapshot.kind === 'empty');
+      const unrelatedDocument = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'not GuitarDSL' });
+      await showAndFocus(unrelatedDocument);
+      const empty = await emptyUpdate;
       assert.strictEqual(empty.kind, 'empty');
-      assert.strictEqual(empty.status, messages.inspectorEmptyStatus);
-      assert.strictEqual(empty.description, messages.inspectorEmptyDescription);
+      assert.notStrictEqual(empty.status, initial.status, 'switching to a non-GuitarDSL editor changes visible status text');
 
-      await panel.webview.postMessage({
-        command: 'setContext', generation: 3, kind: 'document',
-        status: messages.inspectorDocumentStatus, description: messages.inspectorDocumentDescription
-      });
-      const switched = await waitForSnapshot(3);
-      assert.strictEqual(switched.kind, 'document', 'switching to document B updates the rendered context');
-      assert.strictEqual(switched.status, messages.inspectorDocumentStatus);
-      assert.strictEqual(switched.description, messages.inspectorDocumentDescription);
+      const documentBUpdate = waitForSnapshot(snapshot => snapshot.generation > empty.generation && snapshot.kind === 'document');
+      const documentB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: G\n| G | D | Em | C |' });
+      const editorB = await showAndFocus(documentB);
+      const switched = await documentBUpdate;
+      assert.strictEqual(switched.kind, 'document', 'switching to GuitarDSL document B restores document context');
+      assert.strictEqual(switched.status, initial.status);
+      assert.strictEqual(switched.description, initial.description);
 
-      await panel.webview.postMessage({
-        command: 'setContext', generation: 4, kind: 'document',
-        status: messages.inspectorDocumentStatus, description: messages.inspectorDocumentDescription
-      });
-      const versionUpdated = await waitForSnapshot(4);
-      assert.strictEqual(versionUpdated.generation, 4, 'a later host version update reaches and updates the real DOM');
+      const previousVersion = documentB.version;
+      const versionUpdate = waitForSnapshot(snapshot => snapshot.generation > switched.generation && snapshot.kind === 'document');
+      await editorB.edit(edit => edit.insert(new vscode.Position(1, 0), '  '));
+      assert.ok(documentB.version > previousVersion, 'the source edit advances the document version');
+      const versionUpdated = await versionUpdate;
+      assert.ok(versionUpdated.generation > switched.generation, 'the new host version reaches and updates the rendered DOM');
       assert.strictEqual(versionUpdated.kind, 'document');
       assert.doesNotMatch(versionUpdated.description, /A\.guitardsl|B\.guitardsl|version/i,
         'URI and version remain host-owned and are not rendered into the Webview');
     } finally {
       messageSubscription.dispose();
-      panel.dispose();
+      await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+      await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+      await closeAllEditors();
     }
   });
 

@@ -4,6 +4,9 @@ import { getMessages, type SupportedLocale } from '../i18n';
 import { renderInspectorHtml } from '../render/inspectorHtml';
 import type { InspectorContext, InspectorPresentation } from './inspectorController';
 
+/** Internal E2E probe for the resolved production view; not used by runtime behavior. */
+export const inspectorViewTestProbe: { resolvedView?: vscode.WebviewView } = {};
+
 export class GuitarDslInspectorView implements vscode.WebviewViewProvider, InspectorPresentation {
   private view: vscode.WebviewView | undefined;
   private viewSubscriptions: vscode.Disposable[] = [];
@@ -22,6 +25,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     if (this.disposed) return;
     if (this.view) this.releaseView(this.view);
     this.view = webviewView;
+    inspectorViewTestProbe.resolvedView = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: []
@@ -80,6 +84,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   private releaseView(view: vscode.WebviewView): void {
     if (this.view !== view) return;
     this.view = undefined;
+    if (inspectorViewTestProbe.resolvedView === view) inspectorViewTestProbe.resolvedView = undefined;
     const subscriptions = this.viewSubscriptions;
     this.viewSubscriptions = [];
     for (const subscription of subscriptions) subscription.dispose();
