@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { parseGuitarDsl } from './compiler';
 import { resolveLocale, getMessages, type SupportedLocale } from './i18n';
 import { spliceSourceColumns } from './sourceEdits';
-import { suggestNextChords, type ProgressionCandidate, type ProgressionTarget } from './progressionSuggestions';
+import { resolveProgressionTargetKey, suggestNextChords, type ProgressionCandidate, type ProgressionTarget } from './progressionSuggestions';
 
 interface CompletionContext {
   target: ProgressionTarget;
@@ -71,9 +71,7 @@ function findCompletionContext(document: vscode.TextDocument, position: vscode.P
 
   if (!cell.empty) return undefined;
   const measureIndex = measureBeforeCell(score, position.line, cell.start);
-  const contextKey = score.measures[Math.max(0, measureIndex - 1)]?.context.key
-    ?? score.measures[measureIndex]?.context.key
-    ?? score.originalKey;
+  const contextKey = resolveProgressionTargetKey(score, measureIndex, true);
   const prior = (score.codeActionTokens ?? [])
     .filter(token => token.kind === 'chord' && token.measureIndex !== undefined && token.measureIndex < measureIndex)
     .sort((a, b) => (a.measureIndex ?? 0) - (b.measureIndex ?? 0) || a.startCol - b.startCol)

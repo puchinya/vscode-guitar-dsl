@@ -20,7 +20,7 @@ import { registerGuitarDslAiTools } from './ai/tools';
 import { registerGp78Commands } from './gp78Commands';
 import { computeCodeActionDiagnostics, registerMusicCodeActions } from './codeActionProvider';
 import { registerProgressionCompletions } from './progressionCompletionProvider';
-import { registerProgressionAssistant, type ProgressionAssistantController } from './progressionAssistant';
+import { registerProgressionAssistant, type ProgressionAssistantController, type ProgressionAssistantRenderOptions } from './progressionAssistant';
 import { planProgressionEdit } from './progressionSourceEdits';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
@@ -268,7 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   progressionAssistantController = registerProgressionAssistant(context, currentLocale, {
-    async render(session) {
+    async render(session, renderOptions: ProgressionAssistantRenderOptions = {}) {
       const uri = vscode.Uri.parse(session.uri);
       const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === session.uri)
         ?? await vscode.workspace.openTextDocument(uri);
@@ -287,9 +287,8 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      if (currentPanel && lastActiveGuitarDslDoc?.uri.toString() === session.uri) {
-        currentPanel.reveal(vscode.ViewColumn.Beside);
-      } else {
+      const panelShowsSession = !!currentPanel && previewLifecycleProbe.currentDocumentUri === session.uri;
+      if (!panelShowsSession && renderOptions.openIfNeeded) {
         openingPreviewForProgressionAssistant = true;
         try {
           await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
@@ -297,11 +296,12 @@ export function activate(context: vscode.ExtensionContext) {
           openingPreviewForProgressionAssistant = false;
         }
       }
-      if (!currentPanel) {
+      if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== session.uri) {
+        if (!renderOptions.openIfNeeded) return;
         vscode.window.showWarningMessage(msgs.progressionPreviewUnavailable);
-        progressionAssistantController?.invalidate(session.uri);
         return;
       }
+      if (renderOptions.openIfNeeded) currentPanel.reveal(vscode.ViewColumn.Beside);
       const rationaleFor = (item: typeof candidate) => {
         const melody = item.melodyEvaluated
           ? `${item.score.melody >= 0 ? '+' : ''}${item.score.melody}`
@@ -316,6 +316,8 @@ export function activate(context: vscode.ExtensionContext) {
       const assistantModel: ProgressionAssistantHtmlModel = {
         originalDsl: session.source,
         candidateDsl: plan.previewSource,
+        sessionUri: session.uri,
+        sessionVersion: session.version,
         candidates: session.candidates.map(item => ({
           id: item.id,
           chords: item.chords,
@@ -324,6 +326,8 @@ export function activate(context: vscode.ExtensionContext) {
         })),
         activeCandidateId: candidate.id,
         side: session.side,
+        auditionSpeed: session.auditionSpeed,
+        ...(renderOptions.startPlayback ? { startPlayback: renderOptions.startPlayback } : {}),
         targetStartMeasure: session.target.startMeasure,
         bars: session.target.bars,
         operation: session.target.operation
@@ -350,8 +354,13 @@ export function activate(context: vscode.ExtensionContext) {
       previewLifecycleProbe.generation++;
       previewLifecycleProbe.currentDocumentUri = session.uri;
     },
+    stop(uri) {
+      if (currentPanel && previewLifecycleProbe.currentDocumentUri === uri) {
+        currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
+      }
+    },
     async restore(uri) {
-      if (!currentPanel) return;
+      if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== uri) return;
       const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === uri)
         ?? await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
       updateWebview(doc);

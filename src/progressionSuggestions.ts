@@ -16,6 +16,21 @@ export interface ProgressionTarget {
   key?: string;
 }
 
+/** Resolves an authored target cell before falling back to the previous measure for a true append. */
+export function resolveProgressionTargetKey(score: ParsedScore, measureIndex: number, includePendingKeyChange = true): string {
+  const measureKey = score.measures[measureIndex]?.context.key;
+  if (measureKey) return measureKey;
+  if (includePendingKeyChange) {
+    const keyChange = score.events
+      .filter((event): event is Extract<typeof event, { kind: 'keyChange' }> => event.kind === 'keyChange'
+        && event.beforeMeasure <= measureIndex)
+      .sort((left, right) => left.beforeMeasure - right.beforeMeasure || left.line - right.line)
+      .at(-1);
+    if (keyChange) return keyChange.key;
+  }
+  return score.measures[measureIndex - 1]?.context.key ?? score.originalKey;
+}
+
 export interface ProgressionScoreBreakdown {
   followsPreviousRoot: number;
   identicalOpeningChord: number;

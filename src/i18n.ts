@@ -121,7 +121,9 @@ export interface Messages {
   progressionScoreBreakdown: (follow: number, identical: number, tonic: number, melody: string) => string;
   progressionNoDocument: string;
   progressionLengthPrompt: string;
-  progressionLengthNext: string;
+  progressionSuggestLabel: string;
+  progressionChooseCandidate: string;
+  progressionAppendPreview: (chords: string) => string;
   progressionLengthFour: string;
   progressionLengthEight: string;
   progressionLengthSixteen: string;
@@ -346,7 +348,9 @@ export const MESSAGES_JA: Messages = {
   progressionScoreBreakdown: (follow, identical, tonic, melody) => `直前ルート ${follow >= 0 ? '+' : ''}${follow}、同一開始 ${identical}、主音終止 +${tonic}、メロディ ${melody}`,
   progressionNoDocument: 'アクティブな GuitarDSL エディタを開いてください。',
   progressionLengthPrompt: '提案する範囲を選択',
-  progressionLengthNext: '次のコード',
+  progressionSuggestLabel: 'コード進行を提案',
+  progressionChooseCandidate: '候補を選択',
+  progressionAppendPreview: (chords: string) => '追加位置: ' + chords,
   progressionLengthFour: '4小節',
   progressionLengthEight: '8小節',
   progressionLengthSixteen: '16小節',
@@ -613,7 +617,9 @@ export const MESSAGES_EN: Messages = {
   progressionScoreBreakdown: (follow, identical, tonic, melody) => `Previous root ${follow >= 0 ? '+' : ''}${follow}, identical opening ${identical}, tonic ending +${tonic}, melody ${melody}`,
   progressionNoDocument: 'Open an active GuitarDSL editor first.',
   progressionLengthPrompt: 'Choose a suggestion range',
-  progressionLengthNext: 'Next chord',
+  progressionSuggestLabel: 'Suggest progression',
+  progressionChooseCandidate: 'Choose candidate',
+  progressionAppendPreview: (chords: string) => 'Append here: ' + chords,
   progressionLengthFour: '4 bars',
   progressionLengthEight: '8 bars',
   progressionLengthSixteen: '16 bars',

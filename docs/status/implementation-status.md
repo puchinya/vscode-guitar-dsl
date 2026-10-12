@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-12
-- **全体ステータス**: 基本機能実装完了。Issue #129 のコード進行候補、メロディ対応評価、Preview の A/B 試聴と明示適用を実装。`npm test`（1,105 unit＋68 E2E）、Help/AI同期、`npm run vscode:prepublish`、VSIX一覧、Issue文書検証はPASS。スクリーンショットを `docs/status/evidence/` に保存し、current-HEAD self-reviewとPR deliveryを進行中。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
+- **全体ステータス**: 基本機能実装完了。Issue #129 のコード進行候補、メロディ対応評価、Preview の A/B 試聴と明示適用を実装。`npm test`（1,109 unit＋72 E2E）、Help/AI同期、`npm run vscode:prepublish`、VSIX一覧、Issue文書検証はPASS。既存のPreview横長・縦長画像は `docs/status/evidence/` に保存してIssueへ添付済み。エディタを第一画面とするCodeLens / Quick Pick UIはmacOS開発ホストで目視確認し、E2Eでも検証。追加のエディタ画面画像は未添付。Issue #124 のレビュー指摘と Issue #97 の契約機能・GP8 native writer確認も完了。GP8 8.1.5では全ての表現可能fixtureを開いて再保存・再取込し意味一致を確認。GP7 native app verificationはユーザー指示により `NOT RUN / EXCLUDED`。
 
 ---
 
@@ -90,7 +90,7 @@
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。Section は再生タイムラインで書かれた小節ごとの所属を解決し、複数小節と連続した反復を含める。DSL は変更しない |
-| | コード進行アシスタント（Issue #129） | ✅ 完了 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。A/B切替で譜面と音声の両方を選択側へ再描画し、同一文書の再フォーカスでは Preview session を維持。選択候補の明示試聴、50〜150%の速度、候補の確認後に単一 WorkspaceEdit で適用。内側の `@key` イベント（同じ調を再指定する場合を含む）、対象範囲の曖昧な和声、未対応構文、古いセッションは拒否 |
+| | コード進行アシスタント（Issue #129） | ✅ 完了 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。CodeLens と標準 Quick Pick でエディタから選び、Decoration で元ソースを変えずに候補を表示。選択は自動再生せず、Play/Stop/A/B/Apply/Close は独立操作。Preview の既存 Web Audio engine を再利用し、50〜150%の試聴速度をA/B・候補切替後も保持。確認後に単一 WorkspaceEdit で適用。転調直後の対象調、曖昧な和声、未対応構文、古いセッションは拒否 |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |

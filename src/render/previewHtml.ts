@@ -27,9 +27,13 @@ export interface ProgressionAssistantHtmlCandidate {
 export interface ProgressionAssistantHtmlModel {
   originalDsl: string;
   candidateDsl: string;
+  sessionUri: string;
+  sessionVersion: number;
   candidates: ProgressionAssistantHtmlCandidate[];
   activeCandidateId: string;
   side: 'A' | 'B';
+  auditionSpeed: 50 | 75 | 100 | 125 | 150;
+  startPlayback?: 'chord' | 'bars' | 'melody' | 'song';
   targetStartMeasure: number;
   bars: number;
   operation: 'replace' | 'append';
@@ -100,9 +104,13 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     candidatePlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.candidateDsl, {
       expandPageBreakRepeats: options?.expandPageBreakRepeats
     }), msgs),
+    sessionUri: progressionAssistant.sessionUri,
+    sessionVersion: progressionAssistant.sessionVersion,
     candidates: progressionAssistant.candidates,
     activeCandidateId: progressionAssistant.activeCandidateId,
     side: progressionAssistant.side,
+    auditionSpeed: progressionAssistant.auditionSpeed,
+    startPlayback: progressionAssistant.startPlayback,
     targetStartMeasure: progressionAssistant.targetStartMeasure,
     bars: progressionAssistant.bars,
     operation: progressionAssistant.operation,
@@ -723,7 +731,18 @@ ${cspMeta}
         ? progressionAssistantData.originalPlayback
         : null;
       let progressionSide = progressionAssistantData && progressionAssistantData.side === 'A' ? 'A' : 'B';
-      let progressionSpeed = 100;
+      let progressionSpeed = progressionAssistantActive
+        && [50, 75, 100, 125, 150].includes(Number(progressionAssistantData.auditionSpeed))
+        ? Number(progressionAssistantData.auditionSpeed) : 100;
+      function postProgressionMessage(command, payload) {
+        if (!vscode || !progressionAssistantData) return;
+        vscode.postMessage({
+          command,
+          sessionUri: progressionAssistantData.sessionUri,
+          sessionVersion: progressionAssistantData.sessionVersion,
+          ...(payload || {})
+        });
+      }
       let playbackAvailable = playbackData.available === true;
       let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
       let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
@@ -1037,7 +1056,7 @@ ${cspMeta}
         if (sideBButton) sideBButton.setAttribute('aria-pressed', String(side === 'B'));
         const status = document.getElementById('progression-status');
         if (status) status.textContent = '';
-        if (vscode) vscode.postMessage({ command: 'progressionSideChanged', side });
+        postProgressionMessage('progressionSideChanged', { side });
       }
 
       function assistantRangeData(data, mode) {
@@ -1726,7 +1745,7 @@ ${cspMeta}
       if (progressionCandidateSelect && vscode) {
         progressionCandidateSelect.addEventListener('change', () => {
           stopPlayback();
-          vscode.postMessage({ command: 'progressionCandidateChanged', candidateId: progressionCandidateSelect.value });
+          postProgressionMessage('progressionCandidateChanged', { candidateId: progressionCandidateSelect.value });
         });
       }
       const progressionSideAButton = document.getElementById('progression-side-a');
@@ -1735,10 +1754,12 @@ ${cspMeta}
       if (progressionSideBButton) progressionSideBButton.addEventListener('click', () => setProgressionSide('B'));
       const progressionSpeedSelect = document.getElementById('progression-speed');
       if (progressionSpeedSelect) {
+        progressionSpeedSelect.value = String(progressionSpeed);
         progressionSpeedSelect.addEventListener('change', () => {
           stopPlayback();
           progressionSpeed = [50, 75, 100, 125, 150].includes(Number(progressionSpeedSelect.value))
             ? Number(progressionSpeedSelect.value) : 100;
+          postProgressionMessage('progressionSpeedChanged', { speed: progressionSpeed });
         });
       }
       const progressionChordButton = document.getElementById('progression-audition-chord');
@@ -1752,12 +1773,12 @@ ${cspMeta}
       const progressionApplyButton = document.getElementById('progression-apply');
       if (progressionApplyButton && vscode) progressionApplyButton.addEventListener('click', () => {
         const active = progressionAssistantData.candidates.find(candidate => candidate.id === progressionAssistantData.activeCandidateId);
-        if (active) vscode.postMessage({ command: 'progressionApply', candidateId: active.id });
+        if (active) postProgressionMessage('progressionApply', { candidateId: active.id });
       });
       const progressionDismissButton = document.getElementById('progression-dismiss');
       if (progressionDismissButton && vscode) progressionDismissButton.addEventListener('click', () => {
         stopPlayback();
-        vscode.postMessage({ command: 'progressionDismiss' });
+        postProgressionMessage('progressionDismiss', {});
       });
       window.addEventListener('message', (event) => {
         const message = event && event.data;
@@ -1920,6 +1941,9 @@ ${cspMeta}
       });
 
       updateView();
+      if (progressionAssistantData && ['chord', 'bars', 'melody', 'song'].includes(progressionAssistantData.startPlayback)) {
+        void auditionProgression(progressionAssistantData.startPlayback);
+      }
     })();
   </script>
 </body>
@@ -1948,7 +1972,7 @@ function renderProgressionAssistantPanel(model: ProgressionAssistantHtmlModel, m
       <button id="progression-side-b" type="button" aria-pressed="${model.side === 'B'}">${escapeXml(msgs.uiProgressionSideB)}</button>
       <label for="progression-speed">${escapeXml(msgs.uiProgressionSpeed)}</label>
       <select id="progression-speed" aria-label="${escapeXml(msgs.uiProgressionSpeed)}">
-        <option value="50">50%</option><option value="75">75%</option><option value="100" selected>100%</option><option value="125">125%</option><option value="150">150%</option>
+        ${[50, 75, 100, 125, 150].map(speed => `<option value="${speed}"${speed === model.auditionSpeed ? ' selected' : ''}>${speed}%</option>`).join('')}
       </select>
     </div>
     <div class="progression-assistant-controls" role="group" aria-label="${escapeXml(msgs.uiProgressionAudition)}">

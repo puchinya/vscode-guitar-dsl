@@ -14,9 +14,12 @@ const candidateDsl = originalDsl.replace('| C |', '| G |');
 const assistant: ProgressionAssistantHtmlModel = {
   originalDsl,
   candidateDsl,
+  sessionUri: 'file:///progression.guitardsl',
+  sessionVersion: 1,
   candidates: [{ id: 'candidate-g', chords: ['G'], rationale: 'G major candidate', score: 3 }],
   activeCandidateId: 'candidate-g',
   side: 'B',
+  auditionSpeed: 100,
   targetStartMeasure: 0,
   bars: 1,
   operation: 'replace'
@@ -70,7 +73,9 @@ describe('progression audition runtime', () => {
     assert.notDeepStrictEqual(candidateChordPitches, originalChordPitches, 'A and B carry different chord pitches');
 
     await runtime.click('progression-side-a');
-    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({ command: 'progressionSideChanged', side: 'A' }));
+    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({
+      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, side: 'A'
+    }));
     assert.strictEqual(runtime.element('progression-side-a').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(runtime.audioContextCount, 0, 'switching to A does not autoplay');
     await runtime.click('progression-audition-song');
@@ -79,7 +84,9 @@ describe('progression audition runtime', () => {
     assert.ok(originalFrequencies.length > 0, 'A schedules the original score');
 
     await runtime.click('progression-side-b');
-    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({ command: 'progressionSideChanged', side: 'B' }));
+    assert.strictEqual(JSON.stringify(runtime.postedMessages.at(-1)), JSON.stringify({
+      command: 'progressionSideChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, side: 'B'
+    }));
     assert.strictEqual(runtime.intervalCount, 0, 'switching sides stops the current audition');
     const candidateStart = runtime.scheduledOscillators().length;
     await runtime.click('progression-audition-song');
@@ -94,13 +101,28 @@ describe('progression audition runtime', () => {
     assert.strictEqual(runtime.activeOscillators().length, 0);
   });
 
+  it('starts the existing Preview transport only for an explicit host Play request', async () => {
+    const html = compileGuitarDslToHtml(candidateDsl, {
+      progressionAssistant: { ...assistant, startPlayback: 'melody' }
+    });
+    const runtime = createFakePlaybackWebview(html);
+    await flushAsyncWork();
+    assert.strictEqual(runtime.audioContextCount, 1, 'an explicit Play request opens the shared Preview audio context');
+    assert.ok(runtime.intervalCount > 0, 'the requested melody audition uses the shared scheduler');
+    assert.ok(startedFrequencies(runtime, 0).length > 0, 'the explicit Play request schedules real playback events');
+    await runtime.click('btn-stop');
+    assert.strictEqual(runtime.intervalCount, 0, 'the shared Stop control cancels host-requested playback');
+  });
+
   it('sends only the selected candidate ID for apply and never writes candidate source from the Webview', async () => {
     const runtime = createFakePlaybackWebview(compileGuitarDslToHtml(candidateDsl, { progressionAssistant: assistant }));
     await runtime.click('progression-apply');
     assert.strictEqual(runtime.postedMessages.length, 1);
     assert.strictEqual(runtime.postedMessages[0].command, 'progressionApply');
     assert.strictEqual(runtime.postedMessages[0].candidateId, 'candidate-g');
-    assert.deepStrictEqual(Object.keys(runtime.postedMessages[0]).sort(), ['candidateId', 'command']);
+    assert.strictEqual(runtime.postedMessages[0].sessionUri, assistant.sessionUri);
+    assert.strictEqual(runtime.postedMessages[0].sessionVersion, assistant.sessionVersion);
+    assert.deepStrictEqual(Object.keys(runtime.postedMessages[0]).sort(), ['candidateId', 'command', 'sessionUri', 'sessionVersion']);
   });
 
   it('auditions one chord, adds melody only in the with-melody mode, and stops through the shared transport', async () => {
@@ -185,6 +207,34 @@ describe('progression audition runtime', () => {
     const slowInterval = at75[1] - at75[0];
     assert.ok(Math.abs(slowInterval / normalInterval - (100 / 75)) < 0.03,
       `75% speed lengthens audio timing (${slowInterval}s vs ${normalInterval}s)`);
+  });
+
+  it('restores the host-selected audition speed after A/B and candidate HTML rebuilds', async () => {
+    const source = ['bpm: 120', 'time: 4/4', '| C 4.d 4.d 4.d 4.d |', 'mel: | c4/4 d4/4 e4/4 f4/4 |'].join('\n');
+    const candidate = source.replace('| C ', '| G ');
+    const initial = createFakePlaybackWebview(compileGuitarDslToHtml(candidate, {
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate }
+    }));
+    initial.element('progression-speed').value = '75';
+    await initial.change('progression-speed');
+    assert.strictEqual(JSON.stringify(initial.postedMessages.at(-1)), JSON.stringify({
+      command: 'progressionSpeedChanged', sessionUri: assistant.sessionUri, sessionVersion: assistant.sessionVersion, speed: 75
+    }),
+      'the selected speed is sent to the host session');
+    await initial.click('progression-side-a');
+    await initial.click('progression-side-b');
+    assert.strictEqual(initial.audioContextCount, 0, 'A/B controls do not autoplay');
+
+    const rerenderedA = createFakePlaybackWebview(compileGuitarDslToHtml(source, {
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate, side: 'A', auditionSpeed: 75 }
+    }));
+    const rerenderedCandidate = createFakePlaybackWebview(compileGuitarDslToHtml(candidate, {
+      progressionAssistant: { ...assistant, originalDsl: source, candidateDsl: candidate, activeCandidateId: 'candidate-next', auditionSpeed: 75 }
+    }));
+    assert.strictEqual(rerenderedA.element('progression-speed').value, '75', 'A re-render receives 75% from the host');
+    assert.strictEqual(rerenderedCandidate.element('progression-speed').value, '75', 'candidate re-render receives 75% from the host');
+    assert.strictEqual(rerenderedA.audioContextCount, 0);
+    assert.strictEqual(rerenderedCandidate.audioContextCount, 0);
   });
 
   it('plays a capo-relative candidate chord in the sounding key while melody pitches stay untransposed', async () => {

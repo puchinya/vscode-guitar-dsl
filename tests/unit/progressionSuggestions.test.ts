@@ -1,8 +1,15 @@
 import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
-import { suggestNextChords, suggestProgressions } from '../../src/progressionSuggestions';
+import { resolveProgressionTargetKey, suggestNextChords, suggestProgressions } from '../../src/progressionSuggestions';
 
 describe('progression suggestions', () => {
+  it('uses a pending @key for an authored empty target cell and only falls back at a true append', () => {
+    const score = parseGuitarDsl('key: C\n| C | Dm | Em | F |\n@key: D\n|   |');
+    assert.strictEqual(score.measures.length, 4, 'the parser does not invent a measure for the empty source cell');
+    assert.strictEqual(resolveProgressionTargetKey(score, 4, true), 'D', 'an authored target cell uses the pending key event');
+    assert.strictEqual(resolveProgressionTargetKey(score, 4, false), 'C', 'a true append falls back to the previous measure context');
+  });
+
   it('returns five deterministic next-chord candidates and scores both opening rules', () => {
     const score = parseGuitarDsl('key: C\n| C | Am |');
     const first = suggestNextChords(score, { startMeasure: 2, previousChord: 'C' });
