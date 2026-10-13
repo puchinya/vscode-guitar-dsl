@@ -402,10 +402,10 @@ InterchangeScore にあるセクション名と二重小節線は GPIF へ書き
 現在の候補セッションの Inspector を表示する。候補は Inspector 内で選び、Decorationと既に開いているPreview表示を同期する。文書編集や自動再生は行わない。
 
 ### 3.19 `guitardsl.progression.play`
-Inspector のセッションから選択側と単一コード・進行全体・メロディ付き進行・全曲の試聴モードを既存Previewへ渡し、既存AudioContextとtransportで明示試聴する。Inspector の Play は必要なら単一のPreviewを開き、別の再生エンジンは作らない。8小節・16小節候補では v1 の反復制約を Inspector に表示する。
+選択側と単一コード・進行全体・メロディ付き進行・全曲の試聴モードを、Inspector 内の一時的な再生 runtime で明示試聴する。Play ボタンの直接クリックで Inspector の AudioContext を同期的に `resume()` してからホストへ再生要求を送り、Preview を開く操作や追加クリックを要求しない。Extension Host は再生 lease を取得し、開いている Preview の再生を停止して確認応答を受け取ってから Inspector に開始を許可する。lease が無効・取得失敗の場合は再生しない。8小節・16小節候補では v1 の反復制約を Inspector に表示する。
 
 ### 3.20 `guitardsl.progression.stop`
-選択セッションの試聴で予約した音源とschedulerを、既存Preview transportから停止する。Inspector にも同じ操作を表示する。
+選択セッションの試聴で予約した音源と scheduler を Inspector で停止し、再生 lease を解放する。Preview の通常再生と Practice は lease 解放後に使用できる。Inspector にも同じ操作を表示する。
 
 ### 3.21 `guitardsl.progression.showOriginal`
 A（原文）を選択し、提案コードDecorationを消す。再生は開始しない。Inspector のA/B切替にも反映する。
@@ -550,14 +550,14 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 ### 4.8 コード進行アシスタントと試聴（Issue #129、Inspector 移行は #134）
 
-コード進行の候補選択・操作は §3.17–§3.24 の共通 Inspector が主画面である。Inspector は候補をクリックまたは通常のキーボード操作で選べるボタンリストとして表示し、各行にコード列、スコア、調性の根拠を示す。Decoration は対象小節と提案コードをソースを変えずに示し、本文末追加は挿入位置のマーカーで示す。既存 singleton Preview は明示的な試聴時にだけ開き、既に同じ文書を表示していれば同期する副画面として使える。独立した再生パネル・AudioContext・scheduler は作らない。
+コード進行の候補選択・操作は §3.17–§3.24 の共通 Inspector が主画面である。Inspector は候補をクリックまたは通常のキーボード操作で選べるボタンリストとして表示し、各行にコード列、スコア、調性の根拠を示す。Decoration は対象小節と提案コードをソースを変えずに示し、本文末追加は挿入位置のマーカーで示す。進行試聴は Inspector の明示クリックで開始し、Preview を開かなくてもよい。Inspector は一時的な progression AudioContext / scheduler を所有し、Preview は通常の playback / Practice を所有する。Extension Host が排他 lease を調停し、両 Webview から同時に音が出ないようにする。
 
-- Inspector は単一 chord、進行全体、既存メロディとの同時試聴、および全曲試聴を選べる。8小節・16小節候補は選択した4小節をそれぞれ2回・4回繰り返し、その制約を Inspector に表示する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。速度と再生モードはホストの一時セッションに保持し、A/B と候補の切替後も維持する。候補選択時にPreviewを開いたり自動再生したりしない。
-- Inspector から試聴、停止、A/B、適用、閉じるを行う。A/B は Decoration 表示も切り替えるが試聴を開始しない。Play のみが選択した試聴モードで明示的に再生を開始し、Stop は既存 Preview transport を停止する。Apply は確認後にのみ実行し、閉じる・キャンセルではソースを変更しない。
-- 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline`、Preview の既存 AudioContext / transport で再生する。小節番号から独自に時刻を推測しない。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
-- Preview が候補セッションを表示中に A/B または候補を切り替えたときは予約音源を stop/fade し、同じ singleton Preview を選択側の DSL から再描画する。Preview が閉じていれば候補切替で開かない。速度変更では予約音源と scheduler を停止する。同一文書へフォーカスを戻しても Preview の表示を通常 Preview に差し替えない。文書変更・別文書への切替・通常 Preview への復帰・パネルを閉じたときは session と Decoration を破棄する。Preview の通常再生・Practice・PDF の状態と責務を維持し、二重 scheduler を作らない。
+- Inspector は単一 chord、進行全体、既存メロディとの同時試聴、および全曲試聴を選べる。8小節・16小節候補は選択した4小節をそれぞれ2回・4回繰り返し、その制約を Inspector に表示する。A は現在のソース、B はメモリ内の候補ソースであり、メロディ・リズム・テンポ・音色を保つ。再生速度は 50 / 75 / 100 / 125 / 150% とし、score BPM と `PlaybackTimeline` は変更しない。速度と再生モードはホストの一時セッションに保持し、A/B と候補の切替後も維持する。候補選択時に再生せず、Preview も開かない。
+- Inspector から試聴、停止、A/B、適用、閉じるを行う。A/B は Decoration 表示も切り替えるが試聴を開始しない。Play の直接クリックだけが選択した試聴モードを明示的に開始する。クリック内で Inspector の AudioContext を `resume()` してからホストへ lease を要求し、ホストは既存 Preview をロックして停止確認を待つ。停止確認と有効な lease を受け取った Inspector だけが再生する。Apply は確認後にのみ実行し、閉じる・キャンセルではソースを変更しない。
+- 候補テキストは一時的にメモリ内で生成し、通常 parser と既存 `PlaybackTimeline` からホストが A/B の正規再生イベントを作る。Inspector は小節番号から独自に時刻を推測せず、正規 payload の event のみを再生する。Performance occurrence が非連続となる範囲は進行単位で試聴せず、全曲試聴のみを許可する。
+- Preview が候補セッションを表示中に A/B または候補を切り替えたときは Inspector の予約音源を stop/fade し、同じ singleton Preview の表示だけを選択側 DSL へ同期する。Preview が閉じていれば候補切替で開かない。速度・モード変更では予約音源と scheduler を停止する。Inspector の再生中は Preview の UI / command start をロックし、Preview の再構築後もロック状態を適用する。試聴の自然終了または Stop は lease を解放し、通常の Preview / Practice 再生を再び許可する。文書変更・別文書への切替・Inspector / Preview の破棄・通常 Preview への復帰時は必要な音声を止め、session と Decoration を破棄する。同一文書へフォーカスを戻しても Preview の表示を通常 Preview に差し替えない。
 - Inspector の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
-- Preview を開く非同期ホスト描画は要求世代と現在の session identity を再確認してから HTML・停止・自動再生を更新する。後続の A/B・候補・停止・閉じる操作で古くなった描画要求は現在の Preview 表示と試聴状態に反映しない。
+- lease 取得・解放の非同期メッセージは要求世代、lease ID、現在の session identity を再確認する。Preview の停止確認が遅延・欠落した場合は Inspector の再生を開始しない。後続の A/B・候補・停止・閉じる操作で古くなった許可・描画要求は現在の Preview 表示や再生状態に反映しない。
 
 ## 4B. 楽譜設定エディタ (Score Settings Editor)
 
@@ -692,7 +692,7 @@ Inspector は編集補助機能を同じ場所へ段階的に集約するため�
 ### 4D.2 コンテキストと境界
 - ホストが `{kind:'empty'}`、`{kind:'document'; uri:string; version:number}`、または URI/version/session generation と対象・操作・候補一覧・選択・A/B・速度を含む `{kind:'progression'}` の現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、文書切替・クローズでは古い URI の状態を無効化する。通常の文書状態更新はビューを表示しない。CodeLens から進行提案を始める操作だけは Inspector を表示する。
 - View の再解決時にはホストの最新スナップショットだけを描画する。解決済み View へのコンテキスト更新は単調増加 generation 付きで送り、Webview は古い更新を無視する。文書コンテキストは一時状態で、保存・編集・Undo を作らない。適用可能な操作も提供しない。
-- Inspector に AudioContext / scheduler を置かない。Preview を唯一の音声再生所有者として維持し、進行の一時選択と操作を Inspector に置く。適用はホストで再検証し単一 undoable edit とし、既存 Preview / Practice / PDF / コードエディタの動作を維持する。
+- 通常再生と Practice は Preview が所有し、コード進行の試聴は Inspector の一時 AudioContext / scheduler が所有する。Extension Host の排他 lease は片方だけが音を出せるようにし、Preview の停止確認後にだけ Inspector を許可する。Inspector はホスト生成 `PlaybackTimeline` のイベントを使い、候補を正規化する独自タイムラインを作らない。適用はホストで再検証し単一 undoable edit とし、既存 Preview / Practice / PDF / コードエディタの動作を維持する。
 - 進行セッションの Webview メッセージはコマンド、session generation、対象 URI/version、および選択候補 ID をホスト状態と照合する。長さ・操作の変更はホストが再計算し、Webview から候補 DSL を受け取らない。Cancel、ビュー破棄、文書切替、Preview 破棄では試聴を止め、セッションと Decoration を破棄する。
 - 1 列のレスポンシブ配置、VS Code テーマ色、見出し・状態の ARIA 名、キーボードとスクリーンリーダーで読める状態表示を用いる。nonce 付き CSP を設定し、リモートの script/style/resource は読み込まない。
 

@@ -96,7 +96,7 @@ export async function scrollInspectorToControls(): Promise<void> {
   });
 }
 
-export async function activateInspectorControlWithKeyboard(control: 'candidate' | 'bars' | 'operation', key: string): Promise<boolean> {
+export async function activateInspectorControlWithKeyboard(control: 'candidate' | 'bars' | 'operation' | 'play' | 'stop', key: string): Promise<boolean> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const targets = await getTargets(port);
@@ -124,6 +124,24 @@ export async function activateInspectorControlWithKeyboard(control: 'candidate' 
       const value = (focused.result as { value?: unknown } | undefined)?.value;
       if (typeof value !== 'string') return undefined;
       return JSON.parse(value) as { control?: string; key?: string; pressed?: string; tag?: string };
+    };
+    const readAudioState = async (): Promise<string | undefined> => {
+      const result = await send('Runtime.evaluate', {
+        contextId: executionContextId,
+        expression: 'document.getElementById("inspector-state")?.dataset.audioState',
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      return typeof value === 'string' ? value : undefined;
+    };
+    const readAudioStatus = async (): Promise<string> => {
+      const result = await send('Runtime.evaluate', {
+        contextId: executionContextId,
+        expression: 'JSON.stringify({state:document.getElementById("inspector-state")?.dataset.audioState,status:document.getElementById("progression-audio-status")?.textContent})',
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      return typeof value === 'string' ? value : '<unavailable>';
     };
     const hasFocusedAccessibilityButton = async (): Promise<boolean> => {
       await send('DOM.enable');
@@ -159,6 +177,14 @@ export async function activateInspectorControlWithKeyboard(control: 'candidate' 
       if (focused?.tag === 'BUTTON' && focused.control === control && focused.key === key) {
         await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        if (control === 'play' || control === 'stop') {
+          const expectedState = control === 'play' ? 'playing' : 'idle';
+          for (let attempt = 0; attempt < 40; attempt++) {
+            if (await readAudioState() === expectedState) return true;
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
+          throw new Error(`Inspector ${control} did not reach audio state ${expectedState}: ${await readAudioStatus()}`);
+        }
         for (let attempt = 0; attempt < 20; attempt++) {
           await new Promise(resolve => setTimeout(resolve, 25));
           const updated = await readFocusedButton();

@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-13
-- **全体ステータス**: Issue #129（PR #131）はマージ済み、Issue #133 はPRレビュー待ち。Issue #134 / PR #139 の追加コード指摘2件を修正。現HEADで `npm run compile`、`npm test`（1,125 unit / 80 VS Code E2E、Help/AI同期）、`npm run vscode:prepublish`、VSIX一覧（1,597項目）を確認。PR #139 のEN/JA dark/light狭幅画面、連続キーボード操作、Chromiumアクセシビリティツリー証跡を更新した。VoiceOverの実読み上げは未確認で、PROG-INS-07の受け入れ判断が残る。
+- **最終更新日**: 2026-10-14
+- **全体ステータス**: Issue #129（PR #131）とIssue #133（PR #138）はマージ済み。Issue #134 / PR #139 は実装・検証済みで、現HEADのセルフレビュー準備中。Inspector Play のユーザー操作制約を解消するため、Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。`npm run compile`、`npm test`（1,124 unit / 81 VS Code E2E、Help/AI同期）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,598項目）、workflow `verify_final` が PASS。VoiceOver と実機スピーカー出力は未確認。
 
 ---
 
@@ -17,10 +17,11 @@
 
 ## Issue #134: Progression Assistant in the Common Inspector
 
-- **状態**: 実装済み、PR はレビュー待ち。
-- **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Play は chord / bars / melody / song の既存 Preview transport に接続し、A/B切替前に再生を停止する。部分範囲が演奏順で非連続なら既存再生を停止してローカライズ済み案内を表示し、明示的にsongを選ぶまで全曲再生しない。8/16小節では4小節パターンの反復を表示する。Apply は確認後もセッション・候補 revision・対象文書を再検証して単一 WorkspaceEdit を適用し、1回の Undo で戻せる。
-- **画面証拠**: E2EがタイトルでExtension Development Hostのwindow targetを選び、CDPで撮影した。英語・暗色：[候補一覧](evidence/issue-134/inspector-en-dark-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd-controls.png)。英語・明色：[候補一覧](evidence/issue-134/inspector-en-light-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd-controls.png)。日本語・暗色：[候補一覧](evidence/issue-134/inspector-ja-dark-narrow-ja-registered.png)、[キーボード操作後](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd-controls.png)。日本語・明色：[候補一覧](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light.png)、[キーボード操作後](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd-controls.png)。画像はVS Code rendererで、macOSのネイティブ枠は含まない。
-- **未確認**: VoiceOverの実読み上げは未実施のため、PROG-INS-07のスクリーンリーダー受け入れ判断が残る。スピーカー出力も未実施で、契約どおり未確認として記録する。キーボード操作後に名前付きbuttonとしてフォーカスされることはCDPのAX treeで確認したが、VoiceOver確認の代替とは扱わない。
+- **状態**: 実装・検証済み、PR #139 はオープン。現HEADのセルフレビューを準備中。
+- **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Play の直接クリック内で Inspector が AudioContext を同期的に再開してから Host に要求し、Host は Preview をロックして停止確認を受け取った後に限り正規 timeline payload と排他 lease を渡す。Inspector は chord / bars / melody / song の選択範囲をローカル Web Audio で再生し、Stop・自然終了・文書切替・Preview dispose 時に lease を解放する。Preview は lease 中の再生と Practice 操作を拒否する。A/B切替前は Inspector の再生を止める。部分範囲が演奏順で非連続なら既存再生を停止してローカライズ済み案内を表示し、明示的にsongを選ぶまで全曲再生しない。8/16小節では4小節パターンの反復を表示する。Apply は確認後もセッション・候補 revision・対象文書を再検証して単一 WorkspaceEdit を適用し、1回の Undo で戻せる。
+- **検証**: `npm run compile`、`check:help`、`check:ai`、`npm test`（単体 **1,124 件** / VS Code E2E **81 件**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,598 項目**）、`verify-implementation-contract`、`validate-docs`、`verify_final`、`git diff --check` が PASS。ウィンドウタイトルで Extension Development Host の window target を選択した CDP E2E では、信頼されたキーボード操作による Inspector 再生、Preview 停止確認後の lease 取得、Preview のロック、Stop 後の lease 解放を確認した。スピーカーからの実音確認は未実施。
+- **画面証拠**: E2EがタイトルでExtension Development Hostのwindow targetを選び、CDPで撮影した。英語・暗色：[候補一覧](evidence/issue-134/inspector-en-dark-narrow.png)、[キーボード操作後](evidence/issue-134/inspector-en-dark-narrow-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-dark-narrow-kbd-controls.png)、[Inspector再生中](evidence/issue-134/inspector-en-dark-audio-playing.png)。英語・明色：[候補一覧](evidence/issue-134/inspector-en-light-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd-controls.png)。日本語・暗色：[候補一覧](evidence/issue-134/inspector-ja-dark-narrow-ja-registered.png)、[キーボード操作後](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd-controls.png)。日本語・明色：[候補一覧](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light.png)、[キーボード操作後](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd-controls.png)。画像はVS Code rendererで、macOSのネイティブ枠は含まない。
+- **未確認**: VoiceOverの実読み上げは未実施で、PROG-INS-07のスクリーンリーダー受け入れ判断が残る。E2E の Chromium AX tree 確認は VoiceOver の代替ではない。スピーカー出力も未実施で、ローカル AudioContext と lease の動作確認とは分けて記録する。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 

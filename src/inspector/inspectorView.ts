@@ -71,6 +71,11 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     return true;
   }
 
+  async postMessage(message: unknown): Promise<boolean> {
+    if (!this.view || this.disposed) return false;
+    return this.view.webview.postMessage(message);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

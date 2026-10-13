@@ -45,7 +45,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 
 `guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホストの Controller が `{kind:'empty'} | {kind:'document'; uri; version} | {kind:'progression'; uri; version; sessionGeneration; ...}` を所有し、切替・close 時に古い URI/version を無効化する。進行提案 CodeLens の実行は例外的に Inspector を表示して一時セッションを始める。非表示中は DOM 更新メッセージを送らず、状態変更ごとに generation を進める。View が再表示されたら最新 snapshot で HTML を作り直す。Webview は message listener を登録してから `ready` を送り、ホストは最新 snapshot を新しい generation で再送するため、非表示中または DOM 再生成中に失われたメッセージへ依存しない。古い generation のメッセージは拒否する。ユーザーが移動した View をコードから移動し直さない。
 
-Inspector はソースや Undo を所有しない。進行候補の一時選択と Apply 操作を表示するが、適用時の再検証と単一 WorkspaceEdit は Extension Host が行う。Preview Panel は引き続き唯一の Web Audio transport owner である。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
+Inspector はソースや Undo を所有しない。進行候補の一時選択と Apply 操作を表示するが、適用時の再検証と単一 WorkspaceEdit は Extension Host が行う。通常再生と Practice は Preview Panel が所有し、コード進行の明示試聴は Inspector 内の一時 AudioContext / scheduler が行う。Extension Host は Preview の停止確認と排他 lease を調停し、同時再生を防ぐ。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
 
 ### Help とローカライズ
 

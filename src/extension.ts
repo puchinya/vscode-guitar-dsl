@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { compileGuitarDslToHtml, type ProgressionAssistantHtmlModel } from './render/previewHtml';
+import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
@@ -23,8 +23,10 @@ import { computeCodeActionDiagnostics, registerMusicCodeActions } from './codeAc
 import { registerProgressionCompletions } from './progressionCompletionProvider';
 import { registerProgressionAssistant, type ProgressionAssistantController, type ProgressionAssistantRenderOptions, type ProgressionAssistantSessionIdentity } from './progressionAssistant';
 import { planProgressionEdit } from './progressionSourceEdits';
+import { ProgressionAudioLeaseCoordinator } from './progressionAudioLease';
 
 export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
+export const progressionAudioLeaseProbe: { coordinator?: ProgressionAudioLeaseCoordinator } = {};
 
 export interface ExportPdfOptions {
   /** Effective DSL to render instead of `doc.getText()` (Preview Beginner Mode / capo override, spec extension §4.4, §4.5). */
@@ -104,6 +106,24 @@ export function activate(context: vscode.ExtensionContext) {
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   const inspector = registerGuitarDslInspector(context, currentLocale);
+  const audioLeaseCoordinator = new ProgressionAudioLeaseCoordinator({
+    hasPreview: () => !!currentPanel,
+    lockPreview: async leaseId => currentPanel ? await currentPanel.webview.postMessage({ command: 'progressionAudioLock', leaseId }) : false,
+    unlockPreview: leaseId => { void currentPanel?.webview.postMessage({ command: 'progressionAudioUnlock', leaseId }); },
+    startInspector: message => inspector.postProgressionAudioMessage(message),
+    stopInspector: (leaseId, requestId) => inspector.postProgressionAudioMessage({
+      command: 'progressionAudioStop', leaseId, requestId
+    }),
+    reportStartError: (requestId, message) => {
+      void inspector.postProgressionAudioMessage({ command: 'progressionAudioError', requestId, message });
+    }
+  }, 2500, () => randomBytes(16).toString('hex'));
+  progressionAudioLeaseProbe.coordinator = audioLeaseCoordinator;
+  inspector.setProgressionAudioAcknowledgementHandler(message => audioLeaseCoordinator.acknowledge(message));
+  context.subscriptions.push({ dispose: () => {
+    audioLeaseCoordinator.dispose();
+    if (progressionAudioLeaseProbe.coordinator === audioLeaseCoordinator) progressionAudioLeaseProbe.coordinator = undefined;
+  } });
   const refreshInspectorContext = (document?: vscode.TextDocument) => {
     if (isGuitarDslDocument(document)) {
       inspector.showDocument(document.uri.toString(), document.version);
@@ -171,6 +191,7 @@ export function activate(context: vscode.ExtensionContext) {
         expandPageBreakRepeats,
         capo: effective.capo,
         beginner: effective.beginner,
+        ...(audioLeaseCoordinator.activeLeaseId ? { progressionAudioLeaseId: audioLeaseCoordinator.activeLeaseId } : {}),
         fontUris: {
           regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
           bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
@@ -183,9 +204,13 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri, progressionSessionIdentity?: ProgressionAssistantSessionIdentity) => {
-    if (!progressionSessionIdentity) progressionAssistantController?.invalidateActive();
-    const isCurrentProgressionSession = () => !progressionSessionIdentity
-      || progressionAssistantController?.isCurrentSessionIdentity(progressionSessionIdentity) === true;
+    const sessionIdentityAtInvocation = progressionSessionIdentity ?? progressionAssistantController?.getActiveSessionIdentity();
+    const sameSessionIdentity = (left: ProgressionAssistantSessionIdentity | undefined, right: ProgressionAssistantSessionIdentity | undefined) =>
+      left === undefined && right === undefined || !!left && !!right && left.uri === right.uri
+        && left.version === right.version && left.sessionGeneration === right.sessionGeneration;
+    const isCurrentProgressionSession = () => progressionSessionIdentity
+      ? progressionAssistantController?.isCurrentSessionIdentity(progressionSessionIdentity) === true
+      : sameSessionIdentity(progressionAssistantController?.getActiveSessionIdentity(), sessionIdentityAtInvocation);
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!isCurrentProgressionSession()) return;
     if (!doc) {
@@ -194,6 +219,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     if (progressionSessionIdentity && (doc.uri.toString() !== progressionSessionIdentity.uri
       || doc.version !== progressionSessionIdentity.version)) return;
+    if (!progressionSessionIdentity) progressionAssistantController?.invalidateIfDifferent(doc.uri.toString());
 
     lastActiveGuitarDslDoc = doc;
 
@@ -214,6 +240,10 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.webview.onDidReceiveMessage(
         async (message) => {
+          if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
+            audioLeaseCoordinator.acknowledgePreviewStopped(message.leaseId);
+            return;
+          }
           const pageSize: PageSize = isPageSize(message.pageSize) ? message.pageSize : previewPageSize;
           const orientation: PageOrientation = isPageOrientation(message.orientation) ? message.orientation : previewOrientation;
           if (message.command === 'savePdf') {
@@ -278,6 +308,7 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.onDidDispose(() => {
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
         previewLifecycleProbe.lastPlaybackAction = undefined;
+        audioLeaseCoordinator.previewDisposed();
         progressionAssistantController?.invalidateActive();
         currentPanel = undefined;
         previewCapo.clear();
@@ -331,15 +362,6 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (renderOptions.openIfNeeded) currentPanel.reveal(vscode.ViewColumn.Beside);
-      const assistantModel: ProgressionAssistantHtmlModel = {
-        originalDsl: session.source,
-        candidateDsl: plan.previewSource,
-        side: session.side,
-        auditionSpeed: session.auditionSpeed,
-        ...(renderOptions.startPlayback ? { startPlayback: renderOptions.startPlayback } : {}),
-        targetStartMeasure: session.target.startMeasure,
-        bars: session.target.bars
-      };
       currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
       const config = vscode.workspace.getConfiguration('guitardsl');
       const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
@@ -353,7 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
         pageSize: previewPageSize,
         orientation: previewOrientation,
         expandPageBreakRepeats,
-        progressionAssistant: assistantModel,
+        ...(audioLeaseCoordinator.activeLeaseId ? { progressionAudioLeaseId: audioLeaseCoordinator.activeLeaseId } : {}),
         fontUris: {
           regular: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Regular.ttf')).toString(),
           bold: webview.asWebviewUri(vscode.Uri.joinPath(fontsRoot, 'NotoSansJP-Bold.ttf')).toString()
@@ -362,8 +384,45 @@ export function activate(context: vscode.ExtensionContext) {
       previewLifecycleProbe.generation++;
       previewLifecycleProbe.currentDocumentUri = session.uri;
     },
+    async playAudition(session, request) {
+      const candidate = session.candidates.find(item => item.id === request.candidateId);
+      if (!candidate) {
+        void inspector.postProgressionAudioMessage({ command: 'progressionAudioError', requestId: request.requestId, message: msgs.uiProgressionAudioUnavailable });
+        return;
+      }
+      const score = parseGuitarDsl(session.source);
+      const plan = planProgressionEdit(session.source, score, session.target, candidate);
+      if (!plan.ok) {
+        void inspector.postProgressionAudioMessage({ command: 'progressionAudioError', requestId: request.requestId, message: msgs.uiProgressionAudioUnavailable });
+        return;
+      }
+      const source = request.side === 'A' ? session.source : plan.previewSource;
+      const config = vscode.workspace.getConfiguration('guitardsl');
+      const playback = buildProgressionAuditionPlaybackData(source, {
+        startMeasure: session.target.startMeasure,
+        bars: session.target.bars,
+        mode: request.mode,
+        locale: currentLocale,
+        expandPageBreakRepeats: config.get<boolean>('expandPageBreakRepeats', true)
+      });
+      if (!playback.ok) {
+        void inspector.postProgressionAudioMessage({ command: 'progressionAudioError', requestId: request.requestId, message: playback.message });
+        return;
+      }
+      const isCurrent = () => progressionAssistantController?.isCurrentSession(session) === true
+        && inspector.currentGeneration === request.generation
+        && session.activeCandidateId === request.candidateId && session.side === request.side
+        && session.auditionMode === request.mode && session.auditionSpeed === request.speed
+        && request.sessionUri === session.uri && request.sessionVersion === session.version
+        && request.sessionGeneration === session.sessionGeneration;
+      await audioLeaseCoordinator.start(request, playback.data, isCurrent, msgs.uiProgressionAudioUnavailable);
+    },
     stop(uri) {
       progressionRenderGeneration++;
+      const activeInspectorContext = inspector.currentContext;
+      if (audioLeaseCoordinator.activeLeaseId && activeInspectorContext.kind === 'progression' && activeInspectorContext.uri === uri) {
+        void audioLeaseCoordinator.stop();
+      }
       if (currentPanel && previewLifecycleProbe.currentDocumentUri === uri) {
         currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
       }
@@ -379,6 +438,11 @@ export function activate(context: vscode.ExtensionContext) {
   }, inspector);
 
   const sendPlaybackAction = (action: string) => {
+    if (audioLeaseCoordinator.activeLeaseId) {
+      if (action === 'stop') void audioLeaseCoordinator.stop();
+      else vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
+      return;
+    }
     if (!currentPanel) {
       vscode.window.showWarningMessage(msgs.msgPlaybackNoPreview);
       return;

@@ -136,8 +136,8 @@ describe('renderInspectorHtml', () => {
         }
       },
       window: {
-        addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => {
-          receiveMessage = listener;
+        addEventListener: (type: string, listener: (event: { data: unknown }) => void) => {
+          if (type === 'message') receiveMessage = listener;
         }
       },
       acquireVsCodeApi: () => ({ postMessage: (message: unknown) => { readyMessage = message; } })

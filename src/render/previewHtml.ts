@@ -17,16 +17,6 @@ export interface ScoreFontUris {
   bold: string;
 }
 
-export interface ProgressionAssistantHtmlModel {
-  originalDsl: string;
-  candidateDsl: string;
-  side: 'A' | 'B';
-  auditionSpeed: 50 | 75 | 100 | 125 | 150;
-  startPlayback?: 'chord' | 'bars' | 'melody' | 'song';
-  targetStartMeasure: number;
-  bars: number;
-}
-
 export interface CompileHtmlOptions {
   locale?: string;
   pageSize?: PageSize;
@@ -38,8 +28,8 @@ export interface CompileHtmlOptions {
   capo?: CapoPreviewUiModel;
   /** Beginner Mode controls in the capo bar (spec extension §4.5); omitted = off. */
   beginner?: BeginnerPreviewUiModel;
-  /** Optional Inspector audition data; Preview remains the sole audio owner. */
-  progressionAssistant?: ProgressionAssistantHtmlModel;
+  /** Host-owned Inspector progression-audition lease; locks playback on newly rendered Preview pages. */
+  progressionAudioLeaseId?: string;
   /** Production Webview CSP source; omitted by non-Webview/test callers. */
   cspSource?: string;
   /** Fresh production nonce for the executable script and main style element. */
@@ -69,7 +59,25 @@ interface PlaybackHtmlData {
   countInClicks: { timeSeconds: number; accent: boolean }[];
   labels: Record<string, string>;
   error?: string;
+  progressionAudioLeaseId?: string;
 }
+
+export type ProgressionAuditionMode = 'chord' | 'bars' | 'melody' | 'song';
+
+export interface ProgressionAuditionPlaybackData {
+  readonly durationSeconds: number;
+  readonly events: readonly {
+    readonly kind: 'pitched' | 'rhythmAttack';
+    readonly source?: 'melody' | 'inline' | 'rhythm';
+    readonly timeSeconds: number;
+    readonly durationSeconds: number;
+    readonly midiNotes: readonly number[];
+  }[];
+}
+
+export type ProgressionAuditionPlaybackResult =
+  | { readonly ok: true; readonly data: ProgressionAuditionPlaybackData }
+  | { readonly ok: false; readonly code: 'audioUnavailable' | 'fullSongOnly'; readonly message: string };
 
 const PX_PER_PT = 96 / 72;
 
@@ -83,28 +91,8 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     expandPageBreakRepeats: options?.expandPageBreakRepeats
   });
   const playback = buildPlaybackHtmlData(score, msgs);
+  if (options?.progressionAudioLeaseId) playback.progressionAudioLeaseId = options.progressionAudioLeaseId;
   const playbackJson = escapeJsonForHtml(JSON.stringify(playback));
-  const progressionAssistant = options?.progressionAssistant;
-  const progressionAssistantData = progressionAssistant ? {
-    originalPlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.originalDsl, {
-      expandPageBreakRepeats: options?.expandPageBreakRepeats
-    }), msgs),
-    candidatePlayback: buildPlaybackHtmlData(parseGuitarDsl(progressionAssistant.candidateDsl, {
-      expandPageBreakRepeats: options?.expandPageBreakRepeats
-    }), msgs),
-    side: progressionAssistant.side,
-    auditionSpeed: progressionAssistant.auditionSpeed,
-    startPlayback: progressionAssistant.startPlayback,
-    targetStartMeasure: progressionAssistant.targetStartMeasure,
-    bars: progressionAssistant.bars,
-    labels: {
-      audioUnavailable: msgs.uiProgressionAudioUnavailable,
-      fullSongOnly: msgs.uiProgressionFullSongOnly
-    }
-  } : undefined;
-  const progressionAssistantJson = progressionAssistantData
-    ? escapeJsonForHtml(JSON.stringify(progressionAssistantData))
-    : '';
   const nonceAttribute = options?.nonce ? ` nonce="${escapeXml(options.nonce)}"` : '';
   const cspMeta = options?.cspSource && options.nonce
     ? renderCspMeta(options.cspSource, options.nonce)
@@ -612,7 +600,6 @@ ${cspMeta}
   </div>
 
   <script type="application/json" id="playback-data"${nonceAttribute}>${playbackJson}</script>
-  ${progressionAssistantData ? `<script type="application/json" id="progression-assistant-data"${nonceAttribute}>${progressionAssistantJson}</script>` : ''}
   <script${nonceAttribute}>
     (function() {
       const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
@@ -674,22 +661,6 @@ ${cspMeta}
       if (!playbackData || typeof playbackData !== 'object') {
         playbackData = { available: false, durationSeconds: 0, events: [], occurrences: [], countInClicks: [], countInDurationSeconds: 0, labels: {}, error: '' };
       }
-      const progressionDataElement = document.getElementById('progression-assistant-data');
-      let progressionAssistantData = null;
-      try {
-        progressionAssistantData = progressionDataElement ? JSON.parse(progressionDataElement.textContent) : null;
-      } catch (_) {}
-      const progressionAssistantActive = !!progressionAssistantData;
-      const candidatePlaybackData = progressionAssistantData && progressionAssistantData.candidatePlayback
-        ? progressionAssistantData.candidatePlayback
-        : playbackData;
-      const originalPlaybackData = progressionAssistantData && progressionAssistantData.originalPlayback
-        ? progressionAssistantData.originalPlayback
-        : null;
-      let progressionSide = progressionAssistantData && progressionAssistantData.side === 'A' ? 'A' : 'B';
-      let progressionSpeed = progressionAssistantActive
-        && [50, 75, 100, 125, 150].includes(Number(progressionAssistantData.auditionSpeed))
-        ? Number(progressionAssistantData.auditionSpeed) : 100;
       let playbackAvailable = playbackData.available === true;
       let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
       let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
@@ -701,6 +672,8 @@ ${cspMeta}
       const playbackTime = document.getElementById('playback-time');
       const playbackError = document.getElementById('playback-error');
       let audioLabels = playbackData.labels || {};
+      let progressionAudioLeaseId = typeof playbackData.progressionAudioLeaseId === 'string'
+        ? playbackData.progressionAudioLeaseId : '';
       let transport = 'stopped';
       let positionSeconds = 0;
       let scoreAnchorAudioTime = 0;
@@ -728,7 +701,6 @@ ${cspMeta}
       const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
 
       function effectiveSpeed() {
-        if (progressionAssistantActive) return progressionSpeed / 100;
         return practiceEnabled ? practiceSpeed / 100 : 1;
       }
 
@@ -926,18 +898,18 @@ ${cspMeta}
         body.classList.toggle('has-practice-row', practiceEnabled);
         if (practiceToggle) {
           practiceToggle.setAttribute('aria-pressed', String(practiceEnabled));
-          practiceToggle.disabled = !playbackAvailable || disposed || progressionAssistantActive;
+          practiceToggle.disabled = !playbackAvailable || disposed || !!progressionAudioLeaseId;
         }
         if (practiceSpeedSelect) {
           practiceSpeedSelect.value = String(practiceSpeed);
-          practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
+          practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || !!progressionAudioLeaseId;
         }
         if (practiceLoopSelect) {
           practiceLoopSelect.value = loopMode;
-          practiceLoopSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
+          practiceLoopSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || !!progressionAudioLeaseId;
         }
         for (const button of [practiceSetAButton, practiceSetBButton, practiceClearButton, practiceFollowButton]) {
-          if (button) button.disabled = !playbackAvailable || disposed || !practiceEnabled || progressionAssistantActive;
+          if (button) button.disabled = !playbackAvailable || disposed || !practiceEnabled || !!progressionAudioLeaseId;
         }
         if (practiceFollowButton) practiceFollowButton.setAttribute('aria-pressed', String(followEnabled));
         if (practiceStatus) {
@@ -960,9 +932,9 @@ ${cspMeta}
           playBtn.textContent = '▶ ' + (playLabel || 'Play');
           playBtn.setAttribute('aria-label', playLabel || 'Play');
           playBtn.title = playLabel || 'Play';
-          playBtn.disabled = !playbackAvailable || startPending || disposed || transport === 'playing' || transport === 'counting-in';
+          playBtn.disabled = !playbackAvailable || startPending || disposed || !!progressionAudioLeaseId || transport === 'playing' || transport === 'counting-in';
         }
-        if (pauseBtn) pauseBtn.disabled = disposed || (transport !== 'playing' && transport !== 'counting-in');
+        if (pauseBtn) pauseBtn.disabled = disposed || !!progressionAudioLeaseId || (transport !== 'playing' && transport !== 'counting-in');
         if (stopBtn) stopBtn.disabled = disposed || transport === 'stopped';
         updatePracticeUi();
         updateScoreOverlay();
@@ -990,76 +962,6 @@ ${cspMeta}
         }
         if (playBtn) playBtn.disabled = !playbackAvailable;
         updatePlaybackUi();
-      }
-
-      function assistantRangeData(data, mode) {
-        if (mode === 'song') return data;
-        const startMeasure = Number(progressionAssistantData.targetStartMeasure);
-        const bars = Math.max(1, Number(progressionAssistantData.bars) || 1);
-        const occurrences = Array.isArray(data.occurrences) ? data.occurrences : [];
-        if (mode === 'chord') {
-          const occurrence = occurrences.find(item => item.measureIndex === startMeasure);
-          if (!occurrence) return null;
-          const attack = (data.events || []).find(event => event.occurrenceIndex === occurrence.occurrenceIndex
-            && event.kind === 'rhythmAttack' && Array.isArray(event.midiNotes) && event.midiNotes.length > 0);
-          if (!attack) return null;
-          const duration = Math.max(0.05, Number(attack.durationSeconds) || 0.5);
-          return {
-            ...data,
-            durationSeconds: duration,
-            events: [{ ...attack, timeSeconds: 0, durationSeconds: duration }],
-            occurrences: [{ ...occurrence, startSeconds: 0, durationSeconds: duration, countInDurationSeconds: 0, countInClicks: [] }],
-            countInDurationSeconds: 0,
-            countInClicks: []
-          };
-        }
-        const targetOccurrences = occurrences.map((item, index) => ({ item, index }))
-          .filter(({ item }) => item.measureIndex >= startMeasure && item.measureIndex < startMeasure + bars);
-        const contiguous = targetOccurrences.length === bars
-          && targetOccurrences.every(({ item, index }, offset) => item.measureIndex === startMeasure + offset
-            && (offset === 0 || index === targetOccurrences[offset - 1].index + 1));
-        if (!contiguous) {
-          return null;
-        }
-        const first = targetOccurrences[0].item;
-        const last = targetOccurrences[targetOccurrences.length - 1].item;
-        const startSeconds = first.startSeconds;
-        const endSeconds = last.startSeconds + last.durationSeconds;
-        const occurrenceIds = new Set(targetOccurrences.map(({ item }) => item.occurrenceIndex));
-        const events = (data.events || []).filter(event => occurrenceIds.has(event.occurrenceIndex)
-          && event.timeSeconds >= startSeconds && event.timeSeconds < endSeconds
-          && (mode !== 'bars' || !(event.kind === 'pitched' && event.source === 'melody')))
-          .map(event => ({
-            ...event,
-            timeSeconds: event.timeSeconds - startSeconds,
-            durationSeconds: Math.min(event.durationSeconds, Math.max(0, endSeconds - event.timeSeconds))
-          }));
-        return {
-          ...data,
-          durationSeconds: endSeconds - startSeconds,
-          events,
-          occurrences: targetOccurrences.map(({ item }) => ({ ...item, startSeconds: item.startSeconds - startSeconds })),
-          countInDurationSeconds: 0,
-          countInClicks: []
-        };
-      }
-
-      async function auditionProgression(mode) {
-        if (!progressionAssistantActive) return;
-        const data = progressionSide === 'A' ? originalPlaybackData : candidatePlaybackData;
-        if (!data || !data.available) {
-          setPlaybackError((progressionAssistantData.labels && progressionAssistantData.labels.audioUnavailable) || audioLabels.audioUnavailable);
-          return;
-        }
-        const sliced = assistantRangeData(data, mode);
-        if (!sliced) {
-          stopPlayback();
-          setPlaybackError((progressionAssistantData.labels && progressionAssistantData.labels.fullSongOnly) || audioLabels.audioUnavailable);
-          return;
-        }
-        stopPlayback();
-        activatePlaybackData(sliced);
-        await startFromPosition(0, false);
       }
 
       function clearScheduler() {
@@ -1302,7 +1204,7 @@ ${cspMeta}
         updatePlaybackUi();
         try {
           const ctx = await ensureAudioContext();
-          if (!ctx) return;
+          if (!ctx || progressionAudioLeaseId) return;
           cancelScheduledNodes();
           positionSeconds = normalizedSeekTarget(scoreSeconds);
           scoreAnchorSeconds = positionSeconds;
@@ -1338,7 +1240,7 @@ ${cspMeta}
       }
 
       async function playOrResume() {
-        if (transport === 'playing' || transport === 'counting-in' || startPending || disposed) return;
+        if (progressionAudioLeaseId || transport === 'playing' || transport === 'counting-in' || startPending || disposed) return;
         if (transport === 'paused') {
           await startFromPosition(positionSeconds, false);
           return;
@@ -1556,7 +1458,7 @@ ${cspMeta}
       }
 
       function togglePractice() {
-        if (disposed) return;
+        if (disposed || progressionAudioLeaseId) return;
         if (!playbackAvailable) {
           announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
           return;
@@ -1608,6 +1510,7 @@ ${cspMeta}
       }
 
       function performPlaybackAction(action) {
+        if (progressionAudioLeaseId && action !== 'stop') return;
         if (!playbackAvailable && action !== 'stop') {
           announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
           return;
@@ -1672,6 +1575,21 @@ ${cspMeta}
       if (practiceFollowButton) practiceFollowButton.addEventListener('click', toggleFollow);
       window.addEventListener('message', (event) => {
         const message = event && event.data;
+        if (message && message.command === 'progressionAudioLock' && typeof message.leaseId === 'string') {
+          if (progressionAudioLeaseId && progressionAudioLeaseId !== message.leaseId) return;
+          progressionAudioLeaseId = message.leaseId;
+          body.dataset.progressionAudioLocked = 'true';
+          updatePlaybackUi();
+          stopPlayback();
+          if (vscode) vscode.postMessage({ command: 'progressionAudioPreviewStopped', leaseId: progressionAudioLeaseId });
+          return;
+        }
+        if (message && message.command === 'progressionAudioUnlock' && message.leaseId === progressionAudioLeaseId) {
+          progressionAudioLeaseId = '';
+          body.dataset.progressionAudioLocked = 'false';
+          updatePlaybackUi();
+          return;
+        }
         if (message && message.command === 'playbackAction' && typeof message.action === 'string') {
           performPlaybackAction(message.action);
         }
@@ -1831,8 +1749,10 @@ ${cspMeta}
       });
 
       updateView();
-      if (progressionAssistantData && ['chord', 'bars', 'melody', 'song'].includes(progressionAssistantData.startPlayback)) {
-        void auditionProgression(progressionAssistantData.startPlayback);
+      body.dataset.progressionAudioLocked = String(!!progressionAudioLeaseId);
+      if (progressionAudioLeaseId && vscode) {
+        stopPlayback();
+        vscode.postMessage({ command: 'progressionAudioPreviewStopped', leaseId: progressionAudioLeaseId });
       }
     })();
   </script>
@@ -1907,6 +1827,78 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
     countInDurationSeconds,
     countInClicks,
     labels
+  };
+}
+
+/** Builds a normalized, renderer-ready event payload for one explicit Inspector audition. */
+export function buildProgressionAuditionPlaybackData(
+  dslContent: string,
+  options: {
+    startMeasure: number;
+    bars: number;
+    mode: ProgressionAuditionMode;
+    locale?: string;
+    expandPageBreakRepeats?: boolean;
+  }
+): ProgressionAuditionPlaybackResult {
+  const msgs = getMessages(resolveLocale(options.locale));
+  const score = parseGuitarDsl(dslContent, { expandPageBreakRepeats: options.expandPageBreakRepeats });
+  const playback = buildPlaybackHtmlData(score, msgs);
+  if (!playback.available) {
+    return { ok: false, code: 'audioUnavailable', message: msgs.uiProgressionAudioUnavailable || playback.error || '' };
+  }
+
+  let durationSeconds = playback.durationSeconds;
+  let events = playback.events;
+  if (options.mode === 'chord') {
+    const occurrence = playback.occurrences.find(item => item.measureIndex === options.startMeasure);
+    const attack = occurrence && playback.events.find(event => event.occurrenceIndex === occurrence.occurrenceIndex
+      && event.kind === 'rhythmAttack' && event.midiNotes.length > 0);
+    if (!attack) return { ok: false, code: 'fullSongOnly', message: msgs.uiProgressionFullSongOnly };
+    durationSeconds = Math.max(0.05, Number(attack.durationSeconds) || 0.5);
+    events = [{ ...attack, timeSeconds: 0, durationSeconds }];
+  } else if (options.mode !== 'song') {
+    const targetOccurrences = playback.occurrences.map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.measureIndex >= options.startMeasure && item.measureIndex < options.startMeasure + options.bars);
+    const contiguous = targetOccurrences.length === options.bars
+      && targetOccurrences.every(({ item, index }, offset) => item.measureIndex === options.startMeasure + offset
+        && (offset === 0 || index === targetOccurrences[offset - 1].index + 1));
+    if (!contiguous) return { ok: false, code: 'fullSongOnly', message: msgs.uiProgressionFullSongOnly };
+
+    const first = targetOccurrences[0].item;
+    const last = targetOccurrences[targetOccurrences.length - 1].item;
+    const startSeconds = first.startSeconds;
+    const endSeconds = last.startSeconds + last.durationSeconds;
+    const occurrenceIds = new Set(targetOccurrences.map(({ item }) => item.occurrenceIndex));
+    events = playback.events.filter(event => occurrenceIds.has(event.occurrenceIndex)
+      && event.timeSeconds >= startSeconds && event.timeSeconds < endSeconds
+      && (options.mode !== 'bars' || !(event.kind === 'pitched' && event.source === 'melody')))
+      .map(event => ({
+        ...event,
+        timeSeconds: event.timeSeconds - startSeconds,
+        durationSeconds: Math.min(event.durationSeconds, Math.max(0, endSeconds - event.timeSeconds))
+      }));
+    durationSeconds = endSeconds - startSeconds;
+  }
+
+  const auditionEvents = events.filter(event => (event.kind === 'pitched' || event.kind === 'rhythmAttack')
+    && event.midiNotes.length > 0)
+    .map(event => ({
+      kind: event.kind as 'pitched' | 'rhythmAttack',
+      ...(event.kind === 'pitched' ? { source: event.source } : {}),
+      timeSeconds: event.timeSeconds,
+      durationSeconds: event.durationSeconds,
+      midiNotes: event.midiNotes
+    }));
+  if (auditionEvents.length === 0) {
+    return { ok: false, code: 'audioUnavailable', message: msgs.uiProgressionAudioUnavailable };
+  }
+  return {
+    ok: true,
+    data: {
+      durationSeconds,
+      events: auditionEvents
+    }
   };
 }
 

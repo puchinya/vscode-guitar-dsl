@@ -11,6 +11,7 @@ import {
   type InspectorContext
 } from './inspector/inspectorController';
 import { planProgressionEdit, type ProgressionEditOperation, type ProgressionEditTarget } from './progressionSourceEdits';
+import type { ProgressionAudioStartRequest } from './progressionAudioLease';
 import {
   suggestProgressions,
   resolveProgressionTargetKey,
@@ -33,7 +34,6 @@ export type ProgressionAuditionMode = InspectorProgressionAuditionMode;
 
 export interface ProgressionAssistantRenderOptions {
   openIfNeeded?: boolean;
-  startPlayback?: ProgressionAuditionMode;
 }
 
 export interface ProgressionAssistantSession {
@@ -59,6 +59,7 @@ export interface ProgressionAssistantSessionIdentity {
 
 export interface ProgressionAssistantPreviewController {
   render(session: ProgressionAssistantSession, options?: ProgressionAssistantRenderOptions): Promise<void> | void;
+  playAudition(session: ProgressionAssistantSession, request: ProgressionAudioStartRequest): Promise<void> | void;
   stop(uri: string): void;
   restore(uri: string): Promise<void> | void;
 }
@@ -433,9 +434,30 @@ export class ProgressionAssistantController implements vscode.Disposable {
       return;
     }
     if (message.command === 'progressionPlay') {
-      if (session.activeCandidateId) {
-        await this.preview.render(session, { openIfNeeded: true, startPlayback: session.auditionMode });
+      if (!session.activeCandidateId) return;
+      if (message.userGesture !== true || typeof message.requestId !== 'string' || !message.requestId) {
+        if (typeof message.requestId === 'string') this.inspector?.postProgressionAudioMessage({
+          command: 'progressionAudioError', requestId: message.requestId, message: this.messages.uiProgressionAudioUnavailable
+        });
+        return;
       }
+      if (message.audioReady !== true) {
+        await this.inspector?.postProgressionAudioMessage({
+          command: 'progressionAudioError', requestId: message.requestId, message: this.messages.uiProgressionAudioUnavailable
+        });
+        return;
+      }
+      await this.preview.playAudition(session, {
+        requestId: message.requestId,
+        generation: message.generation,
+        sessionUri: session.uri,
+        sessionVersion: session.version,
+        sessionGeneration: session.sessionGeneration,
+        candidateId: session.activeCandidateId,
+        side: session.side,
+        mode: session.auditionMode,
+        speed: session.auditionSpeed
+      });
       return;
     }
     if (message.command === 'progressionAuditionModeChanged') {
@@ -510,7 +532,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
   private async play(): Promise<void> {
     const session = await this.currentSession();
     if (!session) return;
-    await this.preview.render(session, { openIfNeeded: true, startPlayback: session.auditionMode });
+    await this.preview.render(session, { openIfNeeded: true });
   }
 
   private async stop(): Promise<void> {
@@ -598,6 +620,11 @@ export class ProgressionAssistantController implements vscode.Disposable {
       && this.session.sessionGeneration === identity.sessionGeneration
       && this.session.uri === identity.uri
       && this.session.version === identity.version;
+  }
+
+  getActiveSessionIdentity(): ProgressionAssistantSessionIdentity | undefined {
+    const session = this.session;
+    return session ? { uri: session.uri, version: session.version, sessionGeneration: session.sessionGeneration } : undefined;
   }
 
   getActiveSessionForTest(): ProgressionAssistantSession | undefined {

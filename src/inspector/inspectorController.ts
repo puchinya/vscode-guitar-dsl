@@ -53,6 +53,15 @@ export interface InspectorProgressionMessage extends Record<string, unknown> {
 
 export type InspectorProgressionMessageHandler = (message: InspectorProgressionMessage) => void | Promise<void>;
 
+export interface InspectorProgressionAudioAcknowledgement extends Record<string, unknown> {
+  readonly command: 'progressionAudioStarted' | 'progressionAudioStopped' | 'progressionAudioFailed';
+  readonly leaseId: string;
+  readonly requestId: string;
+}
+
+export type InspectorProgressionAudioAcknowledgementHandler =
+  (message: InspectorProgressionAudioAcknowledgement) => void | Promise<void>;
+
 export interface InspectorActiveDocument {
   readonly uri: string;
   readonly version: number;
@@ -61,6 +70,7 @@ export interface InspectorActiveDocument {
 export interface InspectorPresentation extends vscode.Disposable {
   contextChanged(): void;
   show(preserveFocus: boolean): boolean;
+  postMessage(message: unknown): Promise<boolean>;
 }
 
 const EMPTY_CONTEXT: InspectorContext = Object.freeze({ kind: 'empty' });
@@ -71,6 +81,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private disposed = false;
   private generation = 0;
   private progressionMessageHandler: InspectorProgressionMessageHandler | undefined;
+  private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
 
   constructor(
     private readonly presentation: InspectorPresentation,
@@ -127,6 +138,15 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     this.progressionMessageHandler = handler;
   }
 
+  setProgressionAudioAcknowledgementHandler(handler: InspectorProgressionAudioAcknowledgementHandler | undefined): void {
+    this.progressionAudioAcknowledgementHandler = handler;
+  }
+
+  postProgressionAudioMessage(message: unknown): Promise<boolean> {
+    if (this.disposed) return Promise.resolve(false);
+    return this.presentation.postMessage(message);
+  }
+
   noteWebviewGeneration(generation: number): void {
     if (Number.isSafeInteger(generation) && generation >= this.generation) this.generation = generation;
   }
@@ -136,6 +156,10 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   }
 
   async handleWebviewMessage(message: unknown): Promise<boolean> {
+    if (isProgressionAudioAcknowledgement(message)) {
+      await this.progressionAudioAcknowledgementHandler?.(message);
+      return true;
+    }
     if (!isProgressionMessage(message) || this.context.kind !== 'progression') return false;
     const context = this.context;
     if (message.generation !== this.generation
@@ -199,6 +223,15 @@ function isProgressionMessage(message: unknown): message is InspectorProgression
     && 'sessionUri' in message && typeof (message as { sessionUri?: unknown }).sessionUri === 'string'
     && 'sessionVersion' in message && Number.isSafeInteger((message as { sessionVersion?: unknown }).sessionVersion)
     && 'sessionGeneration' in message && Number.isSafeInteger((message as { sessionGeneration?: unknown }).sessionGeneration);
+}
+
+function isProgressionAudioAcknowledgement(message: unknown): message is InspectorProgressionAudioAcknowledgement {
+  if (typeof message !== 'object' || message === null || !('command' in message)) return false;
+  const value = message as { command?: unknown; leaseId?: unknown; requestId?: unknown };
+  return (value.command === 'progressionAudioStarted' || value.command === 'progressionAudioStopped'
+    || value.command === 'progressionAudioFailed')
+    && typeof value.leaseId === 'string' && value.leaseId.length > 0
+    && typeof value.requestId === 'string' && value.requestId.length > 0;
 }
 
 /**

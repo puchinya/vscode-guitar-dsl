@@ -61,7 +61,7 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 
 ## Data flow and ownership
 
-共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が一時的な `{kind:'empty'} | {kind:'document'; uri; version}` snapshot と明示表示を所有し、View は最新 snapshot を読み取り専用で描画する。非表示中の状態変更は generation に記録し、再表示時は最新 snapshot で HTML を再生成する。Webview は message listener 登録後に `ready` を送り、ホストが最新 snapshot を再送するため、隠れた Webview や DOM 再生成との競合で状態を失わない。Inspector は DSL、編集、Undo、AudioContext / scheduler を所有せず、既存 Preview が唯一の音声 transport owner である。
+共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が一時的な `{kind:'empty'} | {kind:'document'; uri; version}` snapshot と明示表示を所有し、View は最新 snapshot を読み取り専用で描画する。非表示中の状態変更は generation に記録し、再表示時は最新 snapshot で HTML を再生成する。Webview は message listener 登録後に `ready` を送り、ホストが最新 snapshot を再送するため、隠れた Webview や DOM 再生成との競合で状態を失わない。Inspector は DSL、文書編集、Undo を所有しない。通常再生と Practice は Preview が所有し、コード進行試聴だけは Inspector の一時 AudioContext / scheduler が所有する。Extension Core の排他 lease が Preview を停止・ロックしてから Inspector に再生を許可し、両 Webview が同時に音を出さない。
 
 | データ | 作成者 | 消費者 / 所有境界 |
 |---|---|---|
@@ -71,6 +71,8 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 | GP7/8 archive bytes と GPIF | 純粋な `src/gp78/` adapter | container/XML validation、明示的ID解決、`InterchangeScore` 変換。VS Code file I/O は `src/gp78Commands.ts` が所有 |
 | `TabVoiceMeasure` / `TabBeat` / `TabNote` | Compiler と共有 `InstrumentModel` | layout / TAB SVG helper / 安全な変換判定 |
 | ページ / SVG / HTML | layout・Renderer | Preview Webview、PDF exporter |
+| Inspector progression audition | Extension Core session と canonical `PlaybackTimeline` events | Inspector Webview は一時再生のみを実行。Extension Core が Preview 停止確認付きの exclusive audio lease を管理する |
+| Preview playback / Practice | `ParsedScore.playOrder` と `PlaybackTimeline` | Preview Webview が通常再生と Practice を実行。Inspector lease 中は Host が開始操作をロックする |
 | Music IR (`TranscribedSong`) | 採譜アダプター | validator、serializer、文書挿入フロー |
 | AI tool 入出力 | VS Code Agent / Chat と tool adapter | 既存のドメイン API。会話・モデル選択は拡張機能外が所有する |
 

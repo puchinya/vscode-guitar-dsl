@@ -325,6 +325,50 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     await vscode.commands.executeCommand('guitardsl.progression.close');
   });
 
+  test('ED-08 Inspector Play starts local audio after locking Preview and Stop releases the lease', async () => {
+    if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+    const source = [
+      'key: C',
+      'bpm: 120',
+      'time: 4/4',
+      '| C | Dm | Em | F |',
+      'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 | d6/4 e6/4 f6/4 g6/4 | a6/4 b6/4 c7/4 d7/4 |'
+    ].join('\n');
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await settle(250);
+    await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(3, 3), new vscode.Position(3, 3));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    await settle(250);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const session = require('../../progressionAssistant').progressionAssistantProbe.getSession();
+    assert.strictEqual(session?.uri, doc.uri.toString(), 'Inspector opened a session for this test document');
+    assert.strictEqual(session?.version, doc.version, 'Inspector session matches the current source version');
+
+    assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play'), true,
+      'a real keyboard activation in the Inspector starts its local AudioContext');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    assert.ok(audioLeaseCoordinator.activeLeaseId,
+      'Inspector playback begins only after the open Preview acknowledges that it stopped and locked');
+    const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+    const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? '';
+    const theme = /light/i.test(requestedTheme) ? 'light' : 'dark';
+    await vscode.commands.executeCommand('notifications.clearAll');
+    await scrollInspectorToControls();
+    await settle(100);
+    await captureWorkbenchScreenshot(`inspector-${requestedLocale}-${theme}-audio-playing.png`);
+
+    assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
+      'Inspector Stop terminates its local audio scheduler');
+    await settle(100);
+    assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined,
+      'Preview unlocks after Inspector acknowledges that audio has stopped');
+    await vscode.commands.executeCommand('guitardsl.progression.close');
+  });
+
   test('Inspector messages from an earlier session are ignored when URI and version are unchanged', async () => {
     const source = 'key: C\n| C | Dm | Em | F |\n| G | Am | C | G |';
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
@@ -582,8 +626,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     try {
       await vscode.commands.executeCommand('guitardsl.progression.play');
       assert.deepStrictEqual(calls.pop(), {
-        action: 'render', options: { openIfNeeded: true, startPlayback: 'melody' }
-      }, 'Play explicitly opens the existing Preview and requests its shared melody transport');
+        action: 'render', options: { openIfNeeded: true }
+      }, 'the command opens the score Preview without bypassing Inspector user activation');
       await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({
         command: 'progressionAuditionModeChanged', mode: 'bars'
       });
@@ -593,8 +637,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'changing audition mode stops audio without starting playback');
       await vscode.commands.executeCommand('guitardsl.progression.play');
       assert.deepStrictEqual(calls.pop(), {
-        action: 'render', options: { openIfNeeded: true, startPlayback: 'bars' }
-      }, 'Play routes the selected bars mode through the shared Preview transport');
+        action: 'render', options: { openIfNeeded: true }
+      }, 'the command does not auto-start the Preview transport');
       await vscode.commands.executeCommand('guitardsl.progression.stop');
       assert.deepStrictEqual(calls.pop(), { action: 'stop', uri: doc.uri.toString() });
       holdNextRender = true;
