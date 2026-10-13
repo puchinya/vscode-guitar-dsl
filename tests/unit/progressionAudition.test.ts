@@ -226,14 +226,48 @@ describe('progression audition runtime', () => {
       'the shared Preview scheduler emits the capo-adjusted chord root');
   });
 
-  it('uses full-song audition when the target range repeats noncontiguously in play order', async () => {
+  it('reports unavailable partial auditions without audio and requires explicit full-song mode', async () => {
     const repeatedOriginal = ['bpm: 120', 'arrangement {', 'Verse x2', '}', '[Verse]', '| C |'].join('\n');
     const repeatedCandidate = repeatedOriginal.replace('| C |', '| G |');
-    const runtime = createFakePlaybackWebview(compileGuitarDslToHtml(repeatedCandidate, {
-      progressionAssistant: { ...assistant, originalDsl: repeatedOriginal, candidateDsl: repeatedCandidate, bars: 1, startPlayback: 'melody' }
+    const makeRuntime = (mode: NonNullable<ProgressionAssistantHtmlModel['startPlayback']>) => createFakePlaybackWebview(compileGuitarDslToHtml(repeatedCandidate, {
+      progressionAssistant: { ...assistant, originalDsl: repeatedOriginal, candidateDsl: repeatedCandidate, bars: 1, startPlayback: mode }
     }));
-    assert.strictEqual(runtime.playbackData.occurrences.filter((item: any) => item.measureIndex === 0).length, 2);
+
+    for (const mode of ['bars', 'melody'] as const) {
+      const runtime = makeRuntime(mode);
+      assert.strictEqual(runtime.playbackData.occurrences.filter((item: any) => item.measureIndex === 0).length, 2);
+      await flushAsyncWork();
+      assert.strictEqual(runtime.audioContextCount, 0, `${mode} mode reports fullSongOnly without opening audio`);
+      assert.strictEqual(runtime.intervalCount, 0, `${mode} mode schedules no audio events`);
+      assert.strictEqual(runtime.scheduledOscillators().length, 0, `${mode} mode creates no audio nodes`);
+      assert.strictEqual(runtime.element('playback-error').textContent,
+        'The target range is noncontiguous in play order; only full-song audition is available.');
+    }
+
+    const fullSong = makeRuntime('song');
     await flushAsyncWork();
-    assert.ok(runtime.audioContextCount > 0, 'the noncontiguous target does not partially audition; it starts the whole score');
+    assert.strictEqual(fullSong.audioContextCount, 1, 'explicit song mode opens the shared audio context');
+    assert.ok(fullSong.intervalCount > 0, 'explicit song mode starts the shared scheduler');
+    assert.ok(startedFrequencies(fullSong).length > 0, 'explicit song mode schedules events across the score');
+  });
+
+  it('stops an existing song audition before reporting an unavailable partial range', async () => {
+    const repeatedOriginal = ['bpm: 120', 'arrangement {', 'Verse x2', '}', '[Verse]', '| C |'].join('\n');
+    const repeatedCandidate = repeatedOriginal.replace('| C |', '| G |');
+    const html = compileGuitarDslToHtml(repeatedCandidate, {
+      progressionAssistant: { ...assistant, originalDsl: repeatedOriginal, candidateDsl: repeatedCandidate, bars: 1, startPlayback: 'song' }
+    });
+    const startMarker = 'void auditionProgression(progressionAssistantData.startPlayback);';
+    assert.ok(html.includes(startMarker), 'the test can invoke the runtime audition path in sequence');
+    const sequentialHtml = html.replace(startMarker,
+      'void (async () => { await auditionProgression("song"); await auditionProgression("bars"); await auditionProgression("melody"); })();');
+    const runtime = createFakePlaybackWebview(sequentialHtml);
+    await flushAsyncWork();
+
+    assert.ok(runtime.scheduledOscillators().some(node => node.startAt !== undefined), 'the initial explicit song audition started');
+    assert.strictEqual(runtime.intervalCount, 0, 'unavailable partial modes stop the earlier song scheduler');
+    assert.ok(runtime.scheduledOscillators().every(node => node.stopAt !== undefined), 'the old song nodes received stop times');
+    assert.strictEqual(runtime.element('playback-error').textContent,
+      'The target range is noncontiguous in play order; only full-song audition is available.');
   });
 });

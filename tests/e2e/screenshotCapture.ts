@@ -96,7 +96,7 @@ export async function scrollInspectorToControls(): Promise<void> {
   });
 }
 
-export async function activateInspectorCandidateWithKeyboard(candidateLabel: string): Promise<boolean> {
+export async function activateInspectorControlWithKeyboard(control: 'candidate' | 'bars' | 'operation', key: string): Promise<boolean> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const targets = await getTargets(port);
@@ -115,19 +115,39 @@ export async function activateInspectorCandidateWithKeyboard(candidateLabel: str
     const isolatedWorld = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-e2e-keyboard-check' });
     const executionContextId = isolatedWorld.executionContextId;
     if (typeof executionContextId !== 'number') throw new Error('Could not create an Inspector frame execution context');
-    const normalizedLabel = candidateLabel.replace(/\s+/g, '').toLowerCase();
-    const readFocusedButton = async (): Promise<boolean> => {
+    const readFocusedButton = async (): Promise<{ control?: string; key?: string; pressed?: string; tag?: string } | undefined> => {
       const focused = await send('Runtime.evaluate', {
         contextId: executionContextId,
-        expression: "JSON.stringify({tag:document.activeElement?.tagName,text:document.activeElement?.innerText,pressed:document.activeElement?.getAttribute('aria-pressed')})",
+        expression: "JSON.stringify({tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,pressed:document.activeElement?.getAttribute('aria-pressed')})",
         returnByValue: true
       });
       const value = (focused.result as { value?: unknown } | undefined)?.value;
-      if (typeof value !== 'string') return false;
-      const element = JSON.parse(value) as { tag?: unknown; text?: unknown; pressed?: unknown };
-      return element.tag === 'BUTTON' && element.pressed !== null
-        && typeof element.text === 'string'
-        && element.text.replace(/\s+/g, '').toLowerCase().includes(normalizedLabel);
+      if (typeof value !== 'string') return undefined;
+      return JSON.parse(value) as { control?: string; key?: string; pressed?: string; tag?: string };
+    };
+    const hasFocusedAccessibilityButton = async (): Promise<boolean> => {
+      await send('DOM.enable');
+      await send('Accessibility.enable');
+      const activeElement = await send('Runtime.evaluate', {
+        contextId: executionContextId,
+        expression: 'document.activeElement',
+        returnByValue: false
+      });
+      const objectId = (activeElement.result as { objectId?: unknown } | undefined)?.objectId;
+      if (typeof objectId !== 'string') return false;
+      const described = await send('DOM.describeNode', { objectId });
+      const backendNodeId = (described.node as { backendNodeId?: unknown } | undefined)?.backendNodeId;
+      if (typeof backendNodeId !== 'number') return false;
+      const tree = await send('Accessibility.getPartialAXTree', { backendNodeId, fetchRelatives: false });
+      const nodes = Array.isArray(tree.nodes) ? tree.nodes as Array<Record<string, unknown>> : [];
+      const focused = nodes.find(node => Array.isArray(node.properties)
+        && (node.properties as Array<Record<string, unknown>>).some(property => {
+          const value = property.value as { value?: unknown } | undefined;
+          return property.name === 'focused' && value?.value === true;
+        }));
+      const role = focused?.role as { value?: unknown } | undefined;
+      const name = focused?.name as { value?: unknown } | undefined;
+      return role?.value === 'button' && typeof name?.value === 'string' && name.value.length > 0;
     };
     const dispatchTab = async (): Promise<void> => {
       await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
@@ -135,10 +155,17 @@ export async function activateInspectorCandidateWithKeyboard(candidateLabel: str
     };
     for (let tab = 0; tab < 40; tab++) {
       await dispatchTab();
-      if (await readFocusedButton()) {
+      const focused = await readFocusedButton();
+      if (focused?.tag === 'BUTTON' && focused.control === control && focused.key === key) {
         await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
-        return true;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 25));
+          const updated = await readFocusedButton();
+          if (updated?.tag === 'BUTTON' && updated.control === control && updated.key === key && updated.pressed === 'true'
+            && await hasFocusedAccessibilityButton()) return true;
+        }
+        return false;
       }
     }
     return false;
@@ -183,7 +210,7 @@ async function withDevToolsTarget<T>(target: DevToolsTarget, run: (send: SendDev
   const send: SendDevToolsCommand = (method, params = {}) => {
     const id = ++nextId;
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      pending.set(id, { resolve, reject: error => reject(new Error(`${method}: ${error.message}`)) });
       socket.send(JSON.stringify({ id, method, params }));
     });
   };

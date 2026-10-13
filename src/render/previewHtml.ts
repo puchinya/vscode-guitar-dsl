@@ -1053,9 +1053,8 @@ ${cspMeta}
         }
         const sliced = assistantRangeData(data, mode);
         if (!sliced) {
+          stopPlayback();
           setPlaybackError((progressionAssistantData.labels && progressionAssistantData.labels.fullSongOnly) || audioLabels.audioUnavailable);
-          activatePlaybackData(data);
-          await startFromPosition(0, false);
           return;
         }
         stopPlayback();

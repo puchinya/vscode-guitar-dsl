@@ -76,6 +76,12 @@ describe('renderInspectorHtml', () => {
     assert.match(html, /id="candidate-list" class="candidate-list"><\/ul>/);
     assert.match(html, /button\.setAttribute\("aria-pressed", String\(candidate\.id === context\.selectedCandidateId\)\)/);
     assert.doesNotMatch(html, /role="listbox"|role="option"|aria-selected/);
+    assert.match(html, /existingCandidates = new Map\(Array\.from\(candidateList\.children\)/,
+      'candidate rows are reconciled by ID so a host refresh can retain the focused button');
+    assert.match(html, /restoreControlFocus\(focusedControl, focusedKey\)/,
+      'a removed or disabled focused choice moves focus to its selected or first enabled fallback');
+    assert.doesNotMatch(html, /candidateList\.replaceChildren\(\)|container\.replaceChildren\(\)/,
+      'context updates do not discard every focused choice node');
     assert.match(html, /auditionMode\.addEventListener\("change"/);
     assert.match(html, /button:focus-visible/);
     assert.match(html, /\.mode-control \{ flex: 1 1 100%; flex-direction: column; align-items: stretch; \}/,

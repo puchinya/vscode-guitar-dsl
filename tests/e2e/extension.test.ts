@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorCandidateWithKeyboard, captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -221,14 +221,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().activeCandidateId, nextCandidate.id,
       'selecting a candidate updates the host session');
     if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
-      await progressionAssistant.progressionAssistantProbe.dispatchInspectorMessage({ command: 'progressionSetBars', bars: 8 });
-      await settle(50);
-      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getInspectorContext().target.bars, 8,
-        'the screenshot shows the eight-bar repeat limitation notice');
       const requestedLocale = process.env.GUITARDSL_E2E_LOCALE;
       if (requestedLocale) {
+        const requestedLanguagePack = requestedLocale.toLowerCase().startsWith('ja')
+          ? vscode.extensions.getExtension('MS-CEINTL.vscode-language-pack-ja')
+          : undefined;
         assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale.toLowerCase()),
-          `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}`);
+          `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}; Japanese language pack ${requestedLanguagePack?.packageJSON.version ?? 'not visible to the Extension Host'}`);
       }
       const requestedTheme = process.env.GUITARDSL_E2E_THEME;
       if (requestedTheme) {
@@ -248,14 +247,29 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
       const keyboardCandidate = session.candidates.find((candidate: { id: string }) => candidate.id !== session.activeCandidateId);
       assert.ok(keyboardCandidate, 'keyboard selection has an alternate candidate');
-      const tabReachedCandidate = await activateInspectorCandidateWithKeyboard(keyboardCandidate.chords.join('→'));
-      assert.ok(tabReachedCandidate, 'Tab reaches the alternate native candidate button in the Inspector webview');
+      const candidateFocusRetained = await activateInspectorControlWithKeyboard('candidate', keyboardCandidate.id);
+      assert.ok(candidateFocusRetained, 'Tab and Space select a candidate and retain focus on its keyed button after the host update');
       await settle(100);
       assert.strictEqual(session.activeCandidateId, keyboardCandidate.id,
         'Space selects the focused candidate without mouse input');
+      const sequentialCandidate = session.candidates.find((candidate: { id: string }) => candidate.id !== keyboardCandidate.id);
+      assert.ok(sequentialCandidate, 'a second candidate is available for a sequential keyboard action');
+      const sequentialFocusRetained = await activateInspectorControlWithKeyboard('candidate', sequentialCandidate.id);
+      assert.ok(sequentialFocusRetained, 'a second Tab and Space action remains usable after the first candidate update');
+      await settle(100);
+      assert.strictEqual(session.activeCandidateId, sequentialCandidate.id,
+        'the second sequential keyboard action updates the host candidate');
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getInspectorContext().target.bars, 4,
+        'the keyboard regression begins at the default four-bar target');
+      const barsFocusRetained = await activateInspectorControlWithKeyboard('bars', '8');
+      assert.ok(barsFocusRetained, 'Space changes four bars to eight and retains focus on the updated choice');
+      await settle(100);
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getInspectorContext().target.bars, 8,
+        'the keyboard action updates the host target to eight bars');
+      await captureWorkbenchScreenshot(`${screenshotName}-kbd.png`);
       await scrollInspectorToControls();
       await settle(200);
-      await captureWorkbenchScreenshot(`${screenshotName}-controls.png`);
+      await captureWorkbenchScreenshot(`${screenshotName}-kbd-controls.png`);
     }
     await undoIn(doc);
     assert.strictEqual(doc.getText(), source, 'candidate selection adds no undo step ahead of a pre-existing edit');
