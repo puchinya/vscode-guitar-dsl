@@ -9,6 +9,7 @@ async function main() {
   // a small fixed limit and the default profile lives under the checkout.
   const tempRoot = process.platform === 'win32' ? os.tmpdir() : '/tmp';
   const userDataDir = fs.mkdtempSync(path.join(tempRoot, 'guitar-dsl-vscode-test-'));
+  const previousPortableDir = process.env.VSCODE_PORTABLE;
 
   try {
     // The folder containing the Extension Manifest package.json
@@ -42,6 +43,11 @@ async function main() {
     let extensionDirectoryArgs: string[] = [];
     if (captureScreenshots) {
       if (locale) {
+        // VS Code resolves argv.json from VSCODE_PORTABLE (or the real
+        // application data folder), not from --user-data-dir. Point portable
+        // mode at this isolated test profile so locale selection is honored
+        // without reading or changing the user's normal argv.json.
+        process.env.VSCODE_PORTABLE = userDataDir;
         fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale }, null, 2));
       }
       const extensionDirectory = path.join(userDataDir, 'extensions');
@@ -90,6 +96,8 @@ async function main() {
     console.error('Failed to run tests', err);
     process.exitCode = 1;
   } finally {
+    if (previousPortableDir === undefined) delete process.env.VSCODE_PORTABLE;
+    else process.env.VSCODE_PORTABLE = previousPortableDir;
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 }

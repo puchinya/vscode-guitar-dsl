@@ -226,8 +226,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const requestedLanguagePack = requestedLocale.toLowerCase().startsWith('ja')
           ? vscode.extensions.getExtension('MS-CEINTL.vscode-language-pack-ja')
           : undefined;
+        const nlsLocale = (() => {
+          try {
+            return JSON.parse(process.env.VSCODE_NLS_CONFIG ?? '{}').locale ?? '<unset>';
+          } catch {
+            return '<invalid>';
+          }
+        })();
         assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale.toLowerCase()),
-          `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}; Japanese language pack ${requestedLanguagePack?.packageJSON.version ?? 'not visible to the Extension Host'}`);
+          `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}; NLS locale ${nlsLocale}; portable profile ${process.env.VSCODE_PORTABLE ?? '<unset>'}; Japanese language pack ${requestedLanguagePack?.packageJSON.version ?? 'not visible to the Extension Host'}`);
       }
       const requestedTheme = process.env.GUITARDSL_E2E_THEME;
       if (requestedTheme) {
