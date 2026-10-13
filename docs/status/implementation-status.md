@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-13
-- **全体ステータス**: Issue #129（PR #131）はマージ済み、Issue #133 はPRレビュー待ち。Issue #134 / PR #139 の追加コード指摘2件を修正。現HEADで `npm run compile`、`npm test`（1,125 unit / 80 VS Code E2E、Help/AI同期）、`npm run vscode:prepublish`、VSIX一覧（1,597項目）を確認。PR #139 のEN dark/light狭幅画面とキーボード・アクセシビリティツリー証跡を更新した。日本語localeとVoiceOverの実機確認は未完了で、PROG-INS-07の受け入れ判断が残る。
+- **全体ステータス**: Issue #129（PR #131）はマージ済み、Issue #133 はPRレビュー待ち。Issue #134 / PR #139 の追加コード指摘2件を修正。現HEADで `npm run compile`、`npm test`（1,125 unit / 80 VS Code E2E、Help/AI同期）、`npm run vscode:prepublish`、VSIX一覧（1,597項目）を確認。PR #139 のEN/JA dark/light狭幅画面、連続キーボード操作、Chromiumアクセシビリティツリー証跡を更新した。VoiceOverの実読み上げは未確認で、PROG-INS-07の受け入れ判断が残る。
 
 ---
 
@@ -19,9 +19,8 @@
 
 - **状態**: 実装済み、PR はレビュー待ち。
 - **実装**: コード進行の CodeLens から共通 Inspector を開き、4/8/16 小節・置換/末尾追加・最大5候補を表示する。Inspector の操作はホスト所有セッションで対象 URI/version と候補 ID を再検証し、選択は Decoration と既存 Preview の A/B 表示を更新するだけでソース編集・自動再生をしない。Play は chord / bars / melody / song の既存 Preview transport に接続し、A/B切替前に再生を停止する。部分範囲が演奏順で非連続なら既存再生を停止してローカライズ済み案内を表示し、明示的にsongを選ぶまで全曲再生しない。8/16小節では4小節パターンの反復を表示する。Apply は確認後もセッション・候補 revision・対象文書を再検証して単一 WorkspaceEdit を適用し、1回の Undo で戻せる。
-- **検証**: `npm run compile`、`npm test`（単体 **1125 / 1125**、VS Code 1.141.0 E2E **80 / 80**、Help/AI同期）、`npm run vscode:prepublish`、VSIX一覧（1,597項目、必須Help/AIを含み`docs/help/`は除外）が PASS。暗色・明色のスクリーンショットE2Eも各1件PASS。候補を続けて2件選択し、4→8小節へキーボードで変更した後もDOM/AX focusが維持されること、部分試聴不可時にschedulerが0件であることを確認した。
-- **画面証拠**: E2EがタイトルでExtension Development Hostのwindow targetを選び、CDPで撮影した。英語・暗色：[候補一覧](evidence/issue-134/inspector-en-dark-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd-controls.png)。英語・明色：[候補一覧](evidence/issue-134/inspector-en-light-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd-controls.png)。画像はVS Code rendererで、macOSのネイティブ枠は含まない。
-- **未確認**: 日本語言語パック1.131はテストExtension Hostから見え、隔離した`VSCODE_PORTABLE`プロファイルのNLS localeも`ja`になったが、VS Code 1.141.0の`vscode.env.language`は`en`のままのためロケールガードが保存を中止した。誤った英語画像は日本語証跡として保存していない。現行言語パックの取得はMarketplace DNS解決失敗で実施できなかった。VoiceOverの実読み上げとスピーカー出力も未実施。CDPのAX treeでは、キーボード選択後に名前付きbuttonとしてフォーカスされることを確認したが、VoiceOver確認の代替とは扱わない。
+- **画面証拠**: E2EがタイトルでExtension Development Hostのwindow targetを選び、CDPで撮影した。英語・暗色：[候補一覧](evidence/issue-134/inspector-en-dark-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-dark-narrow-focusfix5-kbd-controls.png)。英語・明色：[候補一覧](evidence/issue-134/inspector-en-light-narrow-focusfix5.png)、[キーボード操作後](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd.png)、[再生操作部](evidence/issue-134/inspector-en-light-narrow-focusfix5-kbd-controls.png)。日本語・暗色：[候補一覧](evidence/issue-134/inspector-ja-dark-narrow-ja-registered.png)、[キーボード操作後](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-dark-narrow-ja-registered-kbd-controls.png)。日本語・明色：[候補一覧](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light.png)、[キーボード操作後](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd.png)、[再生操作部](evidence/issue-134/inspector-ja-light-narrow-ja-registered-light-kbd-controls.png)。画像はVS Code rendererで、macOSのネイティブ枠は含まない。
+- **未確認**: VoiceOverの実読み上げは未実施のため、PROG-INS-07のスクリーンリーダー受け入れ判断が残る。スピーカー出力も未実施で、契約どおり未確認として記録する。キーボード操作後に名前付きbuttonとしてフォーカスされることはCDPのAX treeで確認したが、VoiceOver確認の代替とは扱わない。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 

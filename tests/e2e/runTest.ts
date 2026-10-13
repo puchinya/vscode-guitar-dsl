@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { createHash } from 'crypto';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
@@ -50,6 +51,8 @@ async function main() {
         process.env.VSCODE_PORTABLE = userDataDir;
         fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale }, null, 2));
       }
+      const profileUserDataDir = path.join(userDataDir, 'user-data');
+      fs.mkdirSync(profileUserDataDir, { recursive: true });
       const extensionDirectory = path.join(userDataDir, 'extensions');
       fs.mkdirSync(extensionDirectory, { recursive: true });
       if (languagePackDirectory) {
@@ -61,10 +64,17 @@ async function main() {
         const packageJson = JSON.parse(fs.readFileSync(path.join(copiedPackPath, 'package.json'), 'utf8')) as {
           name: string;
           publisher: string;
+          version: string;
+          contributes?: {
+            localizations?: Array<{
+              languageId: string;
+              translations: Array<{ id: string; path: string }>;
+            }>;
+          };
         };
         const sourceRegistryPath = path.join(path.dirname(languagePackDirectory), 'extensions.json');
         const sourceRegistry = JSON.parse(fs.readFileSync(sourceRegistryPath, 'utf8')) as Array<{
-          identifier: { id: string };
+          identifier: { id: string; uuid?: string };
           location: Record<string, unknown>;
           relativeLocation: string;
           [key: string]: unknown;
@@ -76,6 +86,28 @@ async function main() {
         isolatedEntry.location = { ...isolatedEntry.location, path: copiedPackPath };
         isolatedEntry.relativeLocation = path.basename(copiedPackPath);
         fs.writeFileSync(path.join(extensionDirectory, 'extensions.json'), JSON.stringify([isolatedEntry]));
+
+        if (locale) {
+          const localization = packageJson.contributes?.localizations?.find(
+            item => item.languageId.toLowerCase() === locale.toLowerCase()
+          );
+          if (!localization) throw new Error(`Language pack ${extensionId} does not provide locale ${locale}`);
+          const translations = Object.fromEntries(localization.translations.map(translation => [
+            translation.id,
+            path.resolve(copiedPackPath, translation.path)
+          ]));
+          if (typeof translations.vscode !== 'string') {
+            throw new Error(`Language pack ${extensionId} has no core VS Code translation for locale ${locale}`);
+          }
+          const hash = createHash('sha256').update(`${extensionId}@${packageJson.version}`).digest('hex');
+          fs.writeFileSync(path.join(profileUserDataDir, 'languagepacks.json'), JSON.stringify({
+            [localization.languageId]: {
+              hash,
+              extensions: [{ extensionIdentifier: languagePackEntry.identifier, version: packageJson.version }],
+              translations
+            }
+          }));
+        }
       }
       extensionDirectoryArgs = [`--extensions-dir=${extensionDirectory}`];
     }
