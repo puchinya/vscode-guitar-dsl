@@ -325,8 +325,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     await vscode.commands.executeCommand('guitardsl.progression.close');
   });
 
-  test('ED-08 Inspector Play starts local audio after locking Preview and Stop releases the lease', async () => {
-    if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  const audioE2eTest = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1' ? test : test.skip;
+  audioE2eTest('ED-08 Inspector Play starts local audio after locking Preview and Stop releases the lease', async () => {
     const source = [
       'key: C',
       'bpm: 120',
