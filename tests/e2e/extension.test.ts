@@ -653,12 +653,19 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       releaseHeldRender();
       await switchingToOriginal;
       assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'A');
-      await vscode.commands.executeCommand('guitardsl.progression.showCandidate');
-      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'B');
+      releaseHeldRender = undefined;
+      holdNextRender = true;
+      const switchingToCandidate = vscode.commands.executeCommand('guitardsl.progression.showCandidate');
+      for (let attempt = 0; attempt < 20 && !releaseHeldRender; attempt++) await settle(10);
       assert.deepStrictEqual(calls.splice(0), [
         { action: 'stop', uri: doc.uri.toString() },
         { action: 'render', options: undefined }
-      ], 'the legacy B-side command also stops audio before rendering');
+      ], 'the legacy B-side command stops audio before its delayed render completes');
+      const releaseLegacyRender = releaseHeldRender as (() => void) | undefined;
+      assert.ok(releaseLegacyRender, 'the legacy B-side render remains pending for the ordering assertion');
+      releaseLegacyRender();
+      await switchingToCandidate;
+      assert.strictEqual(progressionAssistant.progressionAssistantProbe.getSession().side, 'B');
       await vscode.commands.executeCommand('guitardsl.progression.apply');
       assert.strictEqual(doc.getText(), source, 'Apply is separately confirmed and cancellation writes nothing');
       assert.ok(progressionAssistant.progressionAssistantProbe.getSession(), 'canceling Apply keeps the session open');
