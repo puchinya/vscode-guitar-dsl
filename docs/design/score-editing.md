@@ -46,6 +46,7 @@ Chord editor は `ChordEditorPanel` を一つ持ち、開いた文書 URI と編
 - `planSoundingTranspose()` は冒頭 `key` / `original_key`、`@key`、コード名 token、音高 token のソース範囲だけを更新し、コメント・空白・改行・歌詞・長さ・奏法を AST から書き戻さない。必要な場合は移調後の capo 方針を適用し、最後に再解析して一貫性を確かめる。
 - 伴奏分析・適用は VS Code / Gemini / 採譜に依存しない。プリセット選択は単一カタログと meter / feel 制約で行い、明示パターンまたは検証済みの一小節リズム計画のみをソースの rhythm spans に適用する。
 - コード進行 planner は `ParsedScore` と parser-owned chord/source spans を使い、元 DSL 全体を再シリアライズしない。置換は対象小節の chord-name 部分だけを splice し、候補ソースを通常 parser に通して parse error と対象外 semantics を検査する。append は安全な本文末 insertion span を使う。
+- Apply 確認を待つ間に候補、対象設定、セッションが変わった場合は proposal revision と session identity の再確認で操作を無効にし、`WorkspaceEdit` を作成しても apply 前に再検証する。古い確認応答は文書に書き込まない。
 
 ## Data flow and ownership
 
@@ -102,6 +103,6 @@ AST 全体の再シリアライズはコメント、改行、ユーザー書式�
 
 `%`, multiple chord changes, explicit chord duration, custom `@voicing`, affected TAB, source diagnostics, key boundaries, ambiguous target harmony, and unresolved spans reject the whole plan. A key-change event strictly inside the replacement range rejects the plan even if it repeats the current key; starting the range at that event is allowed. After splicing, the planner reparses and verifies that melody pitch/duration, rhythm, lyrics, and measure context outside the target remain unchanged. The host repeats this plan against the latest URI/version and applies it in one WorkspaceEdit; stale, canceled, reentrant, failed, or non-equivalent plans produce no writes.
 
-The editor CodeLens and Decoration adapter consumes the same validated plan. Replacement annotations use only the plan's parser-owned source spans; append shows the planned chord sequence after the safe body-end position. A/B and Quick Pick provisional selection clear or update Decorations only. Candidate selection never calls the source-edit apply path, so document text, version and undo history remain unchanged until the separately confirmed Apply command.
+The editor CodeLens and Decoration adapter consumes the same validated plan. Replacement annotations use only the plan's parser-owned source spans; append shows the planned chord sequence after the safe body-end position. Inspector candidate selection clears or updates Decorations only. Candidate selection never calls the source-edit apply path, so document text, version and undo history remain unchanged until the separately confirmed Apply command.
 
 For a chord cell, an explicit key change at the target position (including a pending `@key` before an empty cell) takes precedence over previous-measure context. Previous measure context is the fallback only when the target is a true append position with no measure or pending key change at that index. The completion provider and editor command use this same target-first rule after `@key`.

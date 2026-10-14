@@ -16,11 +16,23 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   private getContext: () => InspectorContext = () => ({ kind: 'empty' });
   private disposed = false;
   private generation = 0;
+  private handleMessage: (message: unknown) => boolean | Promise<boolean> = () => false;
+  private noteGeneration: (generation: number) => void = () => {};
+  private onViewDisposed: () => void = () => {};
 
   constructor(private readonly locale: SupportedLocale) {}
 
-  setContextProvider(getContext: () => InspectorContext): void {
+  setContextProvider(
+    getContext: () => InspectorContext,
+    handleMessage: (message: unknown) => boolean | Promise<boolean> = () => false,
+    noteGeneration: (generation: number) => void = () => {},
+    onViewDisposed: () => void = () => {}
+  ): void {
     this.getContext = getContext;
+    this.handleMessage = handleMessage;
+    this.noteGeneration = noteGeneration;
+    this.onViewDisposed = onViewDisposed;
+    this.noteGeneration(this.generation);
     this.render();
   }
 
@@ -39,6 +51,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
       }),
       webviewView.webview.onDidReceiveMessage(message => {
         if (isReadyMessage(message)) this.replayCurrentContext();
+        else void this.handleMessage(message);
       }),
       webviewView.onDidDispose(() => this.releaseView(webviewView))
     ];
@@ -48,6 +61,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   contextChanged(): void {
     if (this.disposed) return;
     this.generation++;
+    this.noteGeneration(this.generation);
     if (this.view?.visible) this.postCurrentContext();
   }
 
@@ -55,6 +69,11 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     if (!this.view) return false;
     this.view.show(preserveFocus);
     return true;
+  }
+
+  async postMessage(message: unknown): Promise<boolean> {
+    if (!this.view || this.disposed) return false;
+    return this.view.webview.postMessage(message);
   }
 
   dispose(): void {
@@ -79,27 +98,32 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   private replayCurrentContext(): void {
     if (!this.view || this.disposed) return;
     this.generation++;
+    this.noteGeneration(this.generation);
     this.postCurrentContext();
   }
 
   private postCurrentContext(): void {
     if (!this.view || this.disposed) return;
     const context = this.getContext();
+    const webviewContext = context.kind === 'document' ? { kind: 'document' } : context;
     const messages = getMessages(this.locale);
     void this.view.webview.postMessage({
       command: 'setContext',
       generation: this.generation,
       kind: context.kind,
-      status: context.kind === 'document' ? messages.inspectorDocumentStatus : messages.inspectorEmptyStatus,
+      context: webviewContext,
+      status: context.kind === 'document' ? messages.inspectorDocumentStatus
+        : context.kind === 'progression' ? messages.uiProgressionTitle : messages.inspectorEmptyStatus,
       description: context.kind === 'document'
         ? messages.inspectorDocumentDescription
-        : messages.inspectorEmptyDescription
+        : context.kind === 'progression' ? messages.uiProgressionDescription : messages.inspectorEmptyDescription
     });
   }
 
   private releaseView(view: vscode.WebviewView): void {
     if (this.view !== view) return;
     this.view = undefined;
+    this.onViewDisposed();
     if (inspectorViewTestProbe.resolvedView === view) inspectorViewTestProbe.resolvedView = undefined;
     const subscriptions = this.viewSubscriptions;
     this.viewSubscriptions = [];

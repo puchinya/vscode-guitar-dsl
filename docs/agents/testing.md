@@ -42,6 +42,21 @@ npm run test:e2e
 - Compiles the extension and test files (`npm run compile:all`).
 - Launches VS Code and runs the E2E test suite.
 
+For an Inspector UI screenshot, the same test can capture the Extension Development Host renderer through its loopback-only DevTools endpoint:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS \
+  GUITARDSL_E2E_CAPTURE_SCREENSHOTS=1 \
+  GUITARDSL_E2E_SCREENSHOT_ONLY=1 \
+  GUITARDSL_E2E_LOCALE=en \
+  GUITARDSL_E2E_THEME='Default Dark Modern' \
+  GUITARDSL_E2E_SCREENSHOT_TAG=review \
+  GUITARDSL_E2E_CAPTURE_WAIT_MS=1500 \
+  npm run test:e2e
+```
+
+The capture selects exactly one page target whose title identifies the Extension Development Host and saves under `docs/status/evidence/issue-134/`. It writes a candidate-list screenshot, then uses the active Inspector Webview frame to select one candidate with Tab and Space, select a second candidate with a following Tab and Space, and change the target from four to eight bars with the keyboard. After each host refresh it checks that DOM focus remains on the corresponding native button, the focused node is exposed as a button with the expected name in Chromium's accessibility tree, and the next keyboard action still works. A CDP mouse-wheel event over the Inspector pane reveals the playback controls before the final screenshot. This captures the selected VS Code renderer window and excludes native OS chrome. The accessibility-tree and keyboard checks are not a substitute for VoiceOver; report VoiceOver and speaker output separately as PASS or NOT RUN. Unit tests also assert native button semantics and the selected/first-enabled focus fallback when a choice becomes unavailable. Set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory for Japanese screenshots; the isolated portable profile copies the pack, registers it in its own `extensions.json`, and writes `user-data/languagepacks.json` from the pack's localization manifest so VS Code resolves the translated UI. It sets `VSCODE_PORTABLE` to that temporary profile so VS Code reads its isolated `argv.json`, passes the requested locale, and checks `vscode.env.language` before saving; a mismatch fails the run instead of producing a mislabeled screenshot. `GUITARDSL_E2E_THEME` accepts the installed theme name, such as `Default Light Modern`. `GUITARDSL_E2E_SCREENSHOT_TAG` is optional; alphanumeric and hyphen tags are appended to the filename so a fresh capture can preserve existing evidence. Without the capture flag, normal E2E runs do not open a DevTools endpoint or write screenshots.
+
 ### 3. Full Test Suite
 Run the Help and AI asset sync gates, then unit and E2E tests:
 ```bash

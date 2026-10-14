@@ -124,6 +124,72 @@ describe('GuitarDslInspectorController', () => {
     });
   });
 
+  it('reveals progression state and routes only messages for the current view and session identity', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
+    const context: InspectorContext = {
+      kind: 'progression',
+      uri: 'file:///song.guitardsl',
+      version: 7,
+      sessionGeneration: 3,
+      target: { bars: 4, operation: 'replace', startMeasure: 0 },
+      availableBars: [4, 8],
+      availableOperations: ['replace', 'append'],
+      candidates: [],
+      selectedCandidateId: '',
+      side: 'B',
+      auditionMode: 'melody',
+      auditionSpeed: 100,
+      loading: false
+    };
+    let routed = 0;
+    controller.setProgressionMessageHandler(() => { routed++; });
+
+    await controller.showProgression(context);
+    const generation = controller.currentGeneration;
+    const message = {
+      command: 'progressionSelectCandidate',
+      generation,
+      sessionUri: context.uri,
+      sessionVersion: context.version,
+      sessionGeneration: context.sessionGeneration
+    };
+
+    assert.strictEqual(controller.currentContext, context);
+    assert.deepStrictEqual(presentation.shown, [false]);
+    await controller.handleWebviewMessage(message);
+    await controller.handleWebviewMessage({ ...message, sessionVersion: context.version - 1 });
+    await controller.handleWebviewMessage({ ...message, generation: generation - 1 });
+    assert.strictEqual(routed, 1, 'stale URI/version/session/view messages never reach the feature handler');
+  });
+
+  it('dismisses the active progression session when its Webview is disposed', async () => {
+    const controller = new GuitarDslInspectorController(new FakePresentation(), () => undefined, () => Promise.resolve());
+    const context: InspectorContext = {
+      kind: 'progression',
+      uri: 'file:///song.guitardsl',
+      version: 7,
+      sessionGeneration: 3,
+      target: { bars: 4, operation: 'replace', startMeasure: 0 },
+      availableBars: [4],
+      availableOperations: ['replace'],
+      candidates: [],
+      selectedCandidateId: '',
+      side: 'B',
+      auditionMode: 'melody',
+      auditionSpeed: 100,
+      loading: false
+    };
+    const messages: string[] = [];
+    controller.setProgressionMessageHandler(message => { messages.push(message.command); });
+    await controller.showProgression(context);
+
+    controller.handleViewDisposed();
+
+    assert.deepStrictEqual(messages, ['progressionDismiss']);
+  });
+
   it('disposes its presentation once and ignores later context changes', () => {
     const presentation = new FakePresentation();
     const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());

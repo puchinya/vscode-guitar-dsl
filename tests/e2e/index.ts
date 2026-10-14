@@ -10,6 +10,10 @@ export async function run(): Promise<void> {
     timeout: 10000
   });
 
+  if (process.env.GUITARDSL_E2E_SCREENSHOT_ONLY === '1') {
+    mocha.grep('ED-01/ED-02 CodeLens opens the Inspector and candidate selection only decorates the editor');
+  }
+
   const testsRoot = path.resolve(__dirname, '.');
 
   const files = await glob('**/**.test.js', { cwd: testsRoot });

@@ -146,6 +146,7 @@ export interface Messages {
   uiProgressionTitle: string;
   uiProgressionDescription: string;
   uiProgressionAudition: string;
+  uiProgressionAuditionMode: string;
   uiProgressionChord: string;
   uiProgressionBars: string;
   uiProgressionWithMelody: string;
@@ -155,6 +156,9 @@ export interface Messages {
   uiProgressionApply: string;
   uiProgressionNoCandidates: string;
   uiProgressionAudioUnavailable: string;
+  uiProgressionAudioStarting: string;
+  uiProgressionAudioPlaying: string;
+  uiProgressionAudioStopped: string;
   uiProgressionFullSongOnly: string;
   uiProgressionFullSong: string;
   uiProgressionHeuristic: string;
@@ -379,6 +383,7 @@ export const MESSAGES_JA: Messages = {
   uiProgressionTitle: 'コード進行候補',
   uiProgressionDescription: '候補を選んでも再生や文書編集は始まりません。',
   uiProgressionAudition: '試聴',
+  uiProgressionAuditionMode: '試聴モード',
   uiProgressionChord: 'コード1つ',
   uiProgressionBars: '進行全体',
   uiProgressionWithMelody: 'メロディと試聴',
@@ -388,6 +393,9 @@ export const MESSAGES_JA: Messages = {
   uiProgressionApply: '候補を適用…',
   uiProgressionNoCandidates: '候補がありません。',
   uiProgressionAudioUnavailable: '音声を開始できません。候補の適用は引き続き利用できます。',
+  uiProgressionAudioStarting: '再生を準備しています…',
+  uiProgressionAudioPlaying: 'コード候補を再生中です。',
+  uiProgressionAudioStopped: '再生を停止しました。',
   uiProgressionFullSongOnly: '演奏順で対象範囲が連続しないため、全曲試聴のみ利用できます。',
   uiProgressionFullSong: '全曲を試聴',
   uiProgressionHeuristic: 'スコアは候補比較用のヒューリスティックで、曲の良さを評価するものではありません。',
@@ -654,6 +662,7 @@ export const MESSAGES_EN: Messages = {
   uiProgressionTitle: 'Chord progression suggestions',
   uiProgressionDescription: 'Selecting a candidate does not play audio or edit the document.',
   uiProgressionAudition: 'Audition',
+  uiProgressionAuditionMode: 'Audition mode',
   uiProgressionChord: 'Single chord',
   uiProgressionBars: 'Full progression',
   uiProgressionWithMelody: 'Progression with melody',
@@ -663,6 +672,9 @@ export const MESSAGES_EN: Messages = {
   uiProgressionApply: 'Apply candidate…',
   uiProgressionNoCandidates: 'No candidates are available.',
   uiProgressionAudioUnavailable: 'Audio could not start. Candidate apply is still available.',
+  uiProgressionAudioStarting: 'Preparing playback…',
+  uiProgressionAudioPlaying: 'Playing the chord progression.',
+  uiProgressionAudioStopped: 'Playback stopped.',
   uiProgressionFullSongOnly: 'The target range is noncontiguous in play order; only full-song audition is available.',
   uiProgressionFullSong: 'Audition full song',
   uiProgressionHeuristic: 'Scores are heuristics for comparing candidates, not objective song-quality ratings.',
