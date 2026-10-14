@@ -71,6 +71,10 @@ export class ProgressionAudioLeaseCoordinator {
     return this.active?.leaseId;
   }
 
+  get activeSessionUri(): string | undefined {
+    return this.active?.request.sessionUri;
+  }
+
   async start(
     request: ProgressionAudioStartRequest,
     playback: ProgressionAuditionPlaybackData,

@@ -96,7 +96,42 @@ export async function scrollInspectorToControls(): Promise<void> {
   });
 }
 
-export async function activateInspectorControlWithKeyboard(control: 'candidate' | 'bars' | 'operation' | 'play' | 'stop', key: string): Promise<boolean> {
+/** Evaluates a test expression in the selected GuitarDSL Inspector renderer. */
+export async function evaluateInspectorWebview<T>(expression: string): Promise<T> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const targets = await getTargets(port);
+  const inspectorTargets = targets.filter(item => item.type === 'iframe'
+    && item.url.includes('purpose=webviewView')
+    && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
+  if (inspectorTargets.length !== 1) {
+    throw new Error(`Expected one GuitarDSL Inspector webview target, found ${inspectorTargets.length}`);
+  }
+  return withDevToolsTarget(inspectorTargets[0], async send => {
+    await send('Runtime.enable');
+    const tree = await send('Page.getFrameTree');
+    let activeFrameId: string | undefined;
+    const visit = (node: Record<string, unknown>): void => {
+      const frame = node.frame as { id?: string; name?: string } | undefined;
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+    };
+    if (tree.frameTree) visit(tree.frameTree as Record<string, unknown>);
+    if (!activeFrameId) throw new Error('Could not find the active Inspector webview frame');
+    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-e2e-evaluation' });
+    const contextId = isolated.executionContextId;
+    if (typeof contextId !== 'number') throw new Error('Could not create an Inspector evaluation context');
+    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+    if (response.exceptionDetails) throw new Error('Inspector Webview evaluation raised an exception');
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    return value as T;
+  });
+}
+
+export async function activateInspectorControlWithKeyboard(
+  control: 'candidate' | 'bars' | 'operation' | 'play' | 'stop',
+  key: string,
+  waitForAudioState = true
+): Promise<boolean> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const targets = await getTargets(port);
@@ -178,6 +213,7 @@ export async function activateInspectorControlWithKeyboard(control: 'candidate' 
         await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         if (control === 'play' || control === 'stop') {
+          if (!waitForAudioState) return true;
           const expectedState = control === 'play' ? 'playing' : 'idle';
           for (let attempt = 0; attempt < 40; attempt++) {
             if (await readAudioState() === expectedState) return true;

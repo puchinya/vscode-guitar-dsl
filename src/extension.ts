@@ -419,8 +419,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
     stop(uri) {
       progressionRenderGeneration++;
-      const activeInspectorContext = inspector.currentContext;
-      if (audioLeaseCoordinator.activeLeaseId && activeInspectorContext.kind === 'progression' && activeInspectorContext.uri === uri) {
+      if (audioLeaseCoordinator.activeSessionUri === uri) {
         void audioLeaseCoordinator.stop();
       }
       if (currentPanel && previewLifecycleProbe.currentDocumentUri === uri) {

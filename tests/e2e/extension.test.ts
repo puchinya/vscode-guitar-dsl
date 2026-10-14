@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, scrollInspectorToControls } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, evaluateInspectorWebview, scrollInspectorToControls } from './screenshotCapture';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -38,6 +38,62 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
 async function closeAllEditors(): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   for (let i = 0; i < 100 && (vscode.window.visibleTextEditors.length > 0 || vscode.window.activeTextEditor); i++) await settle(10);
+}
+
+type InspectorAudioMetrics = {
+  resumeRequests: number;
+  resumeResolutions: number;
+  grants: number;
+  oscillatorCreations: number;
+};
+
+function instrumentInspectorDeferredAudioResume(html: string): string {
+  const scriptTag = html.match(/<script nonce="([^"]+)">/);
+  assert.ok(scriptTag, 'the Inspector shell includes its nonce-protected runtime script');
+  const probe = [
+    '(() => {',
+    '  const probe = document.createElement("div");',
+    '  probe.id = "guitardsl-e2e-audio-probe"; probe.hidden = true;',
+    '  const metrics = { resumeRequests: 0, resumeResolutions: 0, grants: 0, oscillatorCreations: 0 };',
+    '  const publish = () => { for (const [key, value] of Object.entries(metrics)) probe.dataset[key] = String(value); };',
+    '  document.body.append(probe); publish();',
+    '  let releaseResume;',
+    '  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;',
+    '  if (AudioContextConstructor) {',
+    '    const prototype = AudioContextConstructor.prototype;',
+    '    const originalResume = prototype.resume;',
+    '    const originalCreateOscillator = prototype.createOscillator;',
+    '    prototype.resume = function(...args) {',
+    '      metrics.resumeRequests++; publish();',
+    '      return originalResume.apply(this, args).then(() => new Promise(resolve => {',
+    '        releaseResume = () => { metrics.resumeResolutions++; publish(); resolve(); };',
+    '      }));',
+    '    };',
+    '    prototype.createOscillator = function(...args) {',
+    '      metrics.oscillatorCreations++; publish();',
+    '      return originalCreateOscillator.apply(this, args);',
+    '    };',
+    '  }',
+    '  window.addEventListener("message", event => {',
+    '    const message = event.data;',
+    '    if (message && message.command === "progressionAudioStart") { metrics.grants++; publish(); }',
+    '    if (message && message.command === "inspectorE2eResolveResume" && releaseResume) { const release = releaseResume; releaseResume = undefined; release(); }',
+    '  });',
+    '})();'
+  ].join('\n');
+  return html.replace(scriptTag[0], `<script nonce="${scriptTag[1]}">${probe}</script>\n${scriptTag[0]}`);
+}
+
+async function waitForInspectorAudioMetrics(predicate: (metrics: InspectorAudioMetrics) => boolean): Promise<InspectorAudioMetrics> {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const encoded = await evaluateInspectorWebview<string>('(() => { const p = document.getElementById("guitardsl-e2e-audio-probe"); return p ? JSON.stringify({ resumeRequests: Number(p.dataset.resumeRequests), resumeResolutions: Number(p.dataset.resumeResolutions), grants: Number(p.dataset.grants), oscillatorCreations: Number(p.dataset.oscillatorCreations) }) : ""; })()');
+    if (encoded) {
+      const metrics = JSON.parse(encoded) as InspectorAudioMetrics;
+      if (predicate(metrics)) return metrics;
+    }
+    await settle(20);
+  }
+  assert.fail('Inspector audio metrics did not reach the expected state');
 }
 
 suite('GuitarDSL Extension E2E Test Suite', () => {
@@ -367,6 +423,135 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined,
       'Preview unlocks after Inspector acknowledges that audio has stopped');
     await vscode.commands.executeCommand('guitardsl.progression.close');
+  });
+
+  audioE2eTest('ED-09 Stop cancels a granted audition while AudioContext resume is pending', async () => {
+    const source = [
+      'key: C',
+      'bpm: 120',
+      'time: 4/4',
+      '| C | Dm | Em | F |',
+      'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 | d6/4 e6/4 f6/4 g6/4 | a6/4 b6/4 c7/4 d7/4 |'
+    ].join('\n');
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await settle(250);
+    await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(3, 3), new vscode.Position(3, 3));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    await settle(250);
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspectorViewProbe = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    const inspectorView = inspectorViewProbe.resolvedView as vscode.WebviewView | undefined;
+    assert.ok(inspectorView, 'the progression session resolves its production Inspector Webview');
+    const originalHtml = inspectorView.webview.html;
+    const protocolMessages: Array<{ command?: unknown }> = [];
+    const subscription = inspectorView.webview.onDidReceiveMessage((message: unknown) => {
+      const candidate = message as { command?: unknown };
+      if (typeof candidate.command === 'string' && candidate.command.startsWith('progressionAudio')) protocolMessages.push(candidate);
+    });
+
+    try {
+      inspectorView.webview.html = instrumentInspectorDeferredAudioResume(originalHtml);
+      await settle(150);
+      assert.strictEqual(await evaluateInspectorWebview<boolean>('Boolean(document.getElementById("guitardsl-e2e-audio-probe"))'), true,
+        'the selected Inspector renderer installed its deferred-resume probe');
+      assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play', false), true,
+        'Play is activated by a real keyboard gesture while the test shim holds resume completion');
+      await waitForInspectorAudioMetrics(metrics => metrics.resumeRequests > 0);
+      const grant = await waitForInspectorAudioMetrics(metrics => metrics.grants > 0);
+      assert.strictEqual(grant.oscillatorCreations, 0, 'the grant is waiting for resume and has not scheduled audio');
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+      assert.ok(audioLeaseCoordinator.activeLeaseId, 'the Host granted an exclusive lease before the deferred resume resolves');
+      assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
+        'Stop reaches the Inspector while the granted start is awaiting resume');
+      for (let attempt = 0; attempt < 100 && !protocolMessages.some(message => message.command === 'progressionAudioStopped'); attempt++) await settle(20);
+      assert.strictEqual(protocolMessages.filter(message => message.command === 'progressionAudioStopped').length, 1,
+        'the Inspector acknowledges local silence for the pending grant');
+      assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined,
+        'the Host releases the lease after the stop acknowledgement');
+
+      // The Host must now accept Preview commands; Stop is harmless and proves the lease no longer blocks Preview.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const previewLifecycleProbe = require('../../previewCapo').previewLifecycleProbe;
+      previewLifecycleProbe.lastPlaybackAction = undefined;
+      await vscode.commands.executeCommand('guitardsl.playback.stop');
+      assert.strictEqual(previewLifecycleProbe.lastPlaybackAction, 'stop', 'Preview accepts commands after the lease is released');
+
+      await inspectorView.webview.postMessage({ command: 'inspectorE2eResolveResume' });
+      const resumed = await waitForInspectorAudioMetrics(metrics => metrics.resumeResolutions === 1);
+      await settle(100);
+      assert.strictEqual(resumed.oscillatorCreations, 0, 'resolving the stale resume does not create any audio nodes');
+      assert.strictEqual(protocolMessages.some(message => message.command === 'progressionAudioStarted'), false,
+        'the cancelled start never acknowledges that audio began');
+      assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined);
+    } finally {
+      subscription.dispose();
+      await inspectorView.webview.postMessage({ command: 'inspectorE2eResolveResume' });
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      inspectorView.webview.html = originalHtml;
+      await settle(100);
+    }
+  });
+
+  audioE2eTest('ED-10 changing documents updates Inspector context before invalidation and still releases its lease', async () => {
+    const source = [
+      'key: C',
+      'bpm: 120',
+      'time: 4/4',
+      '| C | Dm | Em | F |',
+      'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 | d6/4 e6/4 f6/4 g6/4 | a6/4 b6/4 c7/4 d7/4 |'
+    ].join('\n');
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await settle(250);
+    await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(3, 3), new vscode.Position(3, 3));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    await settle(250);
+    assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play'), true);
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progressionProbe = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    const controller = progressionProbe.controller;
+    const previewController = controller.preview;
+    const originalStop = previewController.stop;
+    let contextAtStop: { kind: string; uri?: string } | undefined;
+    previewController.stop = (uri: string) => {
+      if (uri === doc.uri.toString() && !contextAtStop) contextAtStop = progressionProbe.getInspectorContext();
+      return originalStop.call(previewController, uri);
+    };
+
+    try {
+      assert.strictEqual(audioLeaseCoordinator.activeSessionUri, doc.uri.toString(), 'the active lease records its owning document');
+      const nextDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: G\n| G | D | Em | C |' });
+      await showAndFocus(nextDoc);
+      for (let attempt = 0; attempt < 100 && progressionProbe.getSession(); attempt++) await settle(20);
+      for (let attempt = 0; attempt < 100 && audioLeaseCoordinator.activeLeaseId; attempt++) await settle(20);
+
+      assert.strictEqual(contextAtStop?.kind, 'document', 'the Inspector already shows the new document when session invalidation calls Preview.stop');
+      assert.strictEqual(contextAtStop?.uri, nextDoc.uri.toString());
+      assert.strictEqual(progressionProbe.getSession(), undefined, 'switching documents clears the old progression session');
+      assert.strictEqual(progressionProbe.getInspectorContext().kind, 'document');
+      assert.strictEqual(progressionProbe.getInspectorContext().uri, nextDoc.uri.toString());
+      assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined, 'the pending stop acknowledgement releases the old document lease');
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const previewLifecycleProbe = require('../../previewCapo').previewLifecycleProbe;
+      previewLifecycleProbe.lastPlaybackAction = undefined;
+      await vscode.commands.executeCommand('guitardsl.playback.stop');
+      assert.strictEqual(previewLifecycleProbe.lastPlaybackAction, 'stop', 'Preview accepts commands after context-first invalidation');
+    } finally {
+      previewController.stop = originalStop;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
   });
 
   test('Inspector messages from an earlier session are ignored when URI and version are unchanged', async () => {

@@ -66,6 +66,7 @@ describe('ProgressionAudioLeaseCoordinator', () => {
     coordinator.acknowledge({ command: 'progressionAudioStarted', leaseId: 'lease-1', requestId: 'request-1' });
     assert.strictEqual(await started, true);
     assert.strictEqual(coordinator.activeLeaseId, 'lease-1');
+    assert.strictEqual(coordinator.activeSessionUri, request.sessionUri);
 
     const stopping = coordinator.stop();
     await flush();
@@ -74,7 +75,30 @@ describe('ProgressionAudioLeaseCoordinator', () => {
     coordinator.acknowledge({ command: 'progressionAudioStopped', leaseId: 'lease-1', requestId: 'request-1' });
     await stopping;
     assert.strictEqual(coordinator.activeLeaseId, undefined);
+    assert.strictEqual(coordinator.activeSessionUri, undefined);
     assert.deepStrictEqual(port.events, ['lock:lease-1', 'start:lease-1', 'stop:lease-1:request-1', 'unlock:lease-1']);
+  });
+
+  it('stops a granted Inspector lease while its local audio start is still pending', async () => {
+    const port = new FakeLeasePort();
+    const coordinator = new ProgressionAudioLeaseCoordinator(port, 200, () => 'lease-pending-start');
+    const started = coordinator.start(request, playback, () => true, 'unavailable');
+    coordinator.acknowledgePreviewStopped('lease-pending-start');
+    await flush();
+
+    assert.strictEqual(port.startMessage?.leaseId, 'lease-pending-start');
+    assert.strictEqual(coordinator.activeSessionUri, request.sessionUri);
+    const stopping = coordinator.stop();
+    await flush();
+    assert.ok(port.events.includes('stop:lease-pending-start:request-1'));
+    assert.strictEqual(coordinator.activeSessionUri, request.sessionUri,
+      'the Host keeps the lease while it waits for the Inspector silence acknowledgement');
+
+    coordinator.acknowledge({ command: 'progressionAudioStopped', leaseId: 'lease-pending-start', requestId: 'request-1' });
+    await Promise.all([started, stopping]);
+    assert.strictEqual(coordinator.activeLeaseId, undefined);
+    assert.strictEqual(coordinator.activeSessionUri, undefined);
+    assert.ok(port.events.includes('unlock:lease-pending-start'), 'Preview unlocks only after the stop acknowledgement');
   });
 
   it('does not grant audio when the request becomes stale while Preview is stopping', async () => {
