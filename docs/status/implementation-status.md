@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-14
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は phase:implementation。実装は feature/135-settings-inspector で進行中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。実装ブランチは feature/135-settings-inspector。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## Issue #135: Score Settings in the Common Inspector
 
-- **状態**: phase:implementation。承認済み契約 comment 6168286692 に沿う実装は完了し、feature/135-settings-inspector で PR handoff を準備中。基準は main@428c30f。
+- **状態**: PR #140 は open、Issue は phase:review。承認済み契約 comment 6168286692 に沿う実装は feature/135-settings-inspector にあり、基準は main@428c30f。
 - **実装**: Capo / Beginner / Transpose の3節を既存 Inspector View に統合。設定セッションと候補モデル、文書識別、確認後のApplyを Extension Host が所有する。候補比較はDSLを編集せず、既存 Preview override を一時利用する。Applyは対象文書を再検証し、一つの WorkspaceEdit にまとめる。進行音声leaseの停止確認後に設定を開く。旧Score Settings Panelと専用HTML/JSを廃止。
 - **検証**: `npm test` PASS（Help/AI同期、単体 **1,128件 PASS**、VS Code 1.141.1 E2E **80件 PASS・3件 pending**）。設定UIのCDP有効E2EはEN/JA × dark/light の4組で各1件PASSし、幅800pxのExtension Development Hostから3節画像を取得。`npm run vscode:prepublish` PASS。`npx @vscode/vsce ls` は **1,598項目**で、新しいInspector rendererを含み旧Panel資産を含まない。`verify-implementation-contract` と `validate-docs --issue 135` PASS。VoiceOver、Windows/Linux、最小VS Code版は未実施。
 - **画面証拠（Extension Development Host、幅800px）**: EN/dark [Capo](evidence/issue-135/settings-en-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-dark-narrow-transpose.png)。EN/light [Capo](evidence/issue-135/settings-en-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-light-narrow-transpose.png)。JA/dark [Capo](evidence/issue-135/settings-ja-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-dark-narrow-transpose.png)。JA/light [Capo](evidence/issue-135/settings-ja-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-light-narrow-transpose.png)。
