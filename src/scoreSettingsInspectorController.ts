@@ -42,6 +42,11 @@ interface SettingsSession {
   applying: boolean;
 }
 
+/** Host-side E2E access to the same validated message path used by Inspector Webview messages. */
+export const scoreSettingsInspectorProbe: {
+  dispatchMessage?: (command: string, fields?: Record<string, unknown>) => Promise<boolean>;
+} = {};
+
 /** Owns one transactional settings session displayed by the common Inspector. */
 export class ScoreSettingsInspectorController implements vscode.Disposable {
   private session: SettingsSession | undefined;
@@ -63,22 +68,26 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     inspector.setSettingsSessionEndHandler(uri => {
       if (this.session?.uri === uri) this.finish(this.session, true);
     });
+    scoreSettingsInspectorProbe.dispatchMessage = (command, fields = {}) => {
+      const context = inspector.currentContext;
+      if (context.kind !== 'settings') return Promise.resolve(false);
+      return inspector.handleWebviewMessage({
+        ...fields,
+        command,
+        generation: inspector.currentGeneration,
+        sessionUri: context.uri,
+        sessionVersion: context.version,
+        sessionGeneration: context.sessionGeneration,
+        revision: context.revision,
+        section: context.section
+      });
+    };
   }
 
   async open(doc: vscode.TextDocument, section: InspectorSettingsSection = 'capo'): Promise<void> {
     if (this.disposed) return;
     const uri = doc.uri.toString();
     const sectionId = isSettingsSection(section) ? section : 'capo';
-    if (this.session?.uri === uri && this.isFresh(this.session)) {
-      const session = this.session;
-      if (session.section !== sectionId) {
-        this.restorePreview(session);
-        session.section = sectionId;
-        session.revision++;
-      }
-      await this.inspector.showSettings(this.context(session));
-      return;
-    }
     if (this.session) this.finish(this.session, true);
 
     const previewSnapshot = this.isPreviewOpenForUri(uri)
@@ -131,6 +140,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     if (this.session) this.finish(this.session, true);
     this.inspector.setSettingsMessageHandler(undefined);
     this.inspector.setSettingsSessionEndHandler(undefined);
+    scoreSettingsInspectorProbe.dispatchMessage = undefined;
   }
 
   private async handleMessage(message: InspectorSettingsMessage): Promise<void> {
@@ -140,7 +150,17 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
       this.finish(session, true);
       return;
     }
-    if (session.applying) return;
+    if (session.applying) {
+      if (!isSettingsMutation(message.command) || !this.matchesMessage(session, message)) return;
+      if (!this.isFresh(session)) {
+        this.finish(session, true);
+        return;
+      }
+      session.applying = false;
+      session.revision++;
+      this.publish(session);
+      return;
+    }
     if (!this.matchesMessage(session, message) || !this.isFresh(session)) {
       if (this.session === session && !this.isFresh(session)) this.finish(session, true);
       return;
@@ -227,12 +247,14 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     const isCurrent = () => this.session === session && session.applying
       && session.revision === revision && session.section === sectionId && this.isFresh(session);
     if (confirmed !== this.editorMessages.apply) {
-      session.applying = false;
-      if (this.session === session && !this.isFresh(session)) this.finish(session, true);
+      if (this.session === session && session.revision === revision && session.applying) {
+        session.applying = false;
+        if (!this.isFresh(session)) this.finish(session, true);
+      }
       return;
     }
     if (!isCurrent()) {
-      if (this.session === session) {
+      if (this.session === session && !this.isFresh(session)) {
         this.finish(session, true);
         void vscode.window.showWarningMessage(this.editorMessages.staleDocument);
       }
@@ -309,14 +331,16 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     this.capturePreviewSnapshot(session);
     if (session.section === 'capo') {
       const model = session.sections.capo.buildModel(this.sectionContext(session)) as { selectedCapo: number };
-      this.previewBeginner.disable(session.doc);
-      this.previewCapo.setTarget(session.doc, model.selectedCapo);
+      this.previewBeginner.disable(session.doc, false);
+      this.previewCapo.setTarget(session.doc, model.selectedCapo, false);
+      this.previewCapo.onDidChange?.(session.doc);
     } else if (session.section === 'beginner') {
       const options = session.sections.beginner.getOptions();
       this.previewCapo.clear();
-      this.previewBeginner.enable(session.doc);
-      this.previewBeginner.setBarrePolicy(session.doc, options.barrePolicy);
-      if (options.targetCapo !== undefined) this.previewBeginner.setTargetCapo(session.doc, options.targetCapo);
+      this.previewBeginner.enable(session.doc, false);
+      this.previewBeginner.setBarrePolicy(session.doc, options.barrePolicy, false);
+      if (options.targetCapo !== undefined) this.previewBeginner.setTargetCapo(session.doc, options.targetCapo, false);
+      this.previewBeginner.onDidChange?.(session.doc);
     }
   }
 
@@ -410,4 +434,10 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
 
 function isSettingsSection(value: unknown): value is InspectorSettingsSection {
   return value === 'capo' || value === 'beginner' || value === 'transpose';
+}
+
+function isSettingsMutation(command: string): boolean {
+  return command === 'settingsSelectSection' || command === 'settingsSelectCapo'
+    || command === 'settingsSetBarrePolicy' || command === 'settingsSelectBeginnerCapo'
+    || command === 'settingsSetSemitones' || command === 'settingsSetTransposeCapoMode';
 }

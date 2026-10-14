@@ -62,27 +62,27 @@ export class PreviewBeginnerController {
   }
 
   /** Turns Beginner Mode on for `doc` (barre chords forbidden, auto capo); clears the capo override. */
-  enable(doc: vscode.TextDocument): boolean {
+  enable(doc: vscode.TextDocument, notify = true): boolean {
     this.capo.clear();
-    return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy: 'forbid' });
+    return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy: 'forbid' }, notify);
   }
 
   /** Turns Beginner Mode off; the Preview shows the source (a previous capo override is not restored). */
-  disable(doc: vscode.TextDocument): void {
+  disable(doc: vscode.TextDocument, notify = true): void {
     this.clear();
-    this.onDidChange?.(doc);
+    if (notify) this.onDidChange?.(doc);
   }
 
   /** New barre policy; the capo returns to auto. */
-  setBarrePolicy(doc: vscode.TextDocument, barrePolicy: BarrePolicy): boolean {
+  setBarrePolicy(doc: vscode.TextDocument, barrePolicy: BarrePolicy, notify = true): boolean {
     if (!this.isActive(doc)) return false;
-    return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy });
+    return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy }, notify);
   }
 
   /** Fixes the capo (manual); substitutions are recomputed for it. */
-  setTargetCapo(doc: vscode.TextDocument, targetCapo: number): boolean {
+  setTargetCapo(doc: vscode.TextDocument, targetCapo: number, notify = true): boolean {
     if (!this.isActive(doc) || !this.state || !isValidCapo(targetCapo)) return false;
-    return this.update(doc, { ...this.state, targetCapo });
+    return this.update(doc, { ...this.state, targetCapo }, notify);
   }
 
   clear(): void {
@@ -119,11 +119,11 @@ export class PreviewBeginnerController {
     return this.notice;
   }
 
-  private update(doc: vscode.TextDocument, next: PreviewBeginnerState): boolean {
+  private update(doc: vscode.TextDocument, next: PreviewBeginnerState, notify: boolean): boolean {
     this.state = next;
     this.notice = undefined;
     const ok = this.resolve(doc) !== undefined;
-    this.onDidChange?.(doc);
+    if (notify) this.onDidChange?.(doc);
     return ok;
   }
 

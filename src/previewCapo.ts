@@ -59,20 +59,20 @@ export class PreviewCapoController {
   }
 
   /** Sets the Preview capo for `doc`; returns false when the target is not valid for its source. */
-  setTarget(doc: vscode.TextDocument, targetCapo: number): boolean {
+  setTarget(doc: vscode.TextDocument, targetCapo: number, notify = true): boolean {
     if (!isValidCapo(targetCapo)) return false;
     const text = doc.getText();
     const result = resolveEffectiveDsl(text, targetCapo);
     if (!result.ok) {
       this.clear();
       this.notify(this.messages().capoFailures[result.code]);
-      this.onDidChange?.(doc);
+      if (notify) this.onDidChange?.(doc);
       return false;
     }
     const sourceCapo = parseCapoValue(parseGuitarDsl(text).capo);
     this.notice = undefined;
     this.state = sourceCapo === targetCapo ? undefined : { documentUri: doc.uri.toString(), targetCapo };
-    this.onDidChange?.(doc);
+    if (notify) this.onDidChange?.(doc);
     return true;
   }
 

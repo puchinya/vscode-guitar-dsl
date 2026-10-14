@@ -211,6 +211,42 @@ describe('GuitarDslInspectorController', () => {
     assert.deepStrictEqual(routed, ['settingsSelectBeginnerCapo', 'settingsCancel']);
   });
 
+  it('ends Settings synchronously before replacing its context with the active document', async () => {
+    const presentation = new FakePresentation();
+    const activeDocument: InspectorActiveDocument = { uri: 'file:///song.guitardsl', version: 9 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => Promise.resolve());
+    const settings: InspectorContext = {
+      kind: 'settings',
+      uri: 'file:///song.guitardsl',
+      version: 8,
+      sessionGeneration: 4,
+      revision: 0,
+      section: 'capo',
+      sections: [
+        { id: 'capo', title: 'Capo' },
+        { id: 'beginner', title: 'Beginner' },
+        { id: 'transpose', title: 'Transpose' }
+      ],
+      model: { canApply: false },
+      status: 'Capo',
+      description: 'Temporary preview'
+    };
+    await controller.showSettings(settings);
+    let endedBeforeReplacement = false;
+    controller.setSettingsSessionEndHandler(uri => {
+      endedBeforeReplacement = uri === settings.uri && controller.currentContext.kind === 'settings';
+      controller.restoreDocumentAfterSettings(uri);
+    });
+
+    await controller.openForActiveEditor();
+
+    assert.strictEqual(endedBeforeReplacement, true, 'the session-end callback runs while Settings is still current');
+    assert.deepStrictEqual(controller.currentContext, {
+      kind: 'document', uri: activeDocument.uri, version: activeDocument.version
+    });
+    assert.strictEqual(presentation.contextChanges, 2, 'Settings is replaced by the requested document in one context update');
+  });
+
   it('dismisses the active progression session when its Webview is disposed', async () => {
     const controller = new GuitarDslInspectorController(new FakePresentation(), () => undefined, () => Promise.resolve());
     const context: InspectorContext = {

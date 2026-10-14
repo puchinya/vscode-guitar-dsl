@@ -112,6 +112,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private settingsMessageHandler: InspectorSettingsMessageHandler | undefined;
   private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
   private settingsSessionEndHandler: ((uri: string) => void) | undefined;
+  private endingSettingsForContextChange = false;
 
   constructor(
     private readonly presentation: InspectorPresentation,
@@ -146,7 +147,6 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   async showProgression(context: InspectorProgressionContext): Promise<void> {
     if (this.disposed || !isValidProgressionContext(context)) return;
-    if (this.context.kind === 'settings') this.settingsSessionEndHandler?.(this.context.uri);
     this.setContext(context);
     if (!this.presentation.show(false)) await this.focusView();
   }
@@ -165,6 +165,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   }
 
   restoreDocumentAfterSettings(uri: string): void {
+    if (this.endingSettingsForContextChange) return;
     if (this.context.kind !== 'settings' || this.context.uri !== uri) return;
     const document = this.getActiveDocument();
     if (document) this.setContext({ kind: 'document', uri: document.uri, version: document.version });
@@ -279,6 +280,16 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   private setContext(context: InspectorContext): void {
     if (this.disposed) return;
+    if (this.context.kind === 'settings' && context.kind !== 'settings') {
+      const uri = this.context.uri;
+      this.endingSettingsForContextChange = true;
+      try {
+        this.settingsSessionEndHandler?.(uri);
+      } finally {
+        this.endingSettingsForContextChange = false;
+      }
+      if (this.disposed) return;
+    }
     this.context = context;
     this.generation++;
     this.presentation.contextChanged();

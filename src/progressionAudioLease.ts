@@ -34,6 +34,7 @@ export interface ProgressionAudioLeasePort {
 }
 
 type LeaseState = 'lockingPreview' | 'startingInspector' | 'playing' | 'stopping';
+type StopReturnState = Extract<LeaseState, 'startingInspector' | 'playing'>;
 
 interface ActiveLease {
   readonly leaseId: string;
@@ -42,6 +43,7 @@ interface ActiveLease {
   readonly started: Deferred<boolean>;
   readonly stopped: Deferred<boolean>;
   state: LeaseState;
+  stateBeforeStopping?: StopReturnState;
   cancelled: boolean;
   unlockPreview: boolean;
 }
@@ -133,7 +135,7 @@ export class ProgressionAudioLeaseCoordinator {
 
     const started = await this.wait(lease.started.promise);
     if (started === true && this.active === lease) {
-      lease.state = 'playing';
+      if (lease.state === 'startingInspector') lease.state = 'playing';
       return true;
     }
     if (started === false) {
@@ -157,7 +159,10 @@ export class ProgressionAudioLeaseCoordinator {
     const lease = this.active;
     if (!lease || lease.leaseId !== message.leaseId || lease.request.requestId !== message.requestId) return;
     if (message.command === 'progressionAudioStarted') {
-      if (lease.state === 'startingInspector') lease.started.resolve(true);
+      if (lease.state === 'startingInspector'
+        || lease.state === 'stopping' && lease.stateBeforeStopping === 'startingInspector') {
+        lease.started.resolve(true);
+      }
       return;
     }
     lease.started.resolve(false);
@@ -183,11 +188,16 @@ export class ProgressionAudioLeaseCoordinator {
       return stopped === true && this.active !== lease;
     }
 
+    const stateBeforeStop = lease.state as StopReturnState;
+    lease.stateBeforeStopping = stateBeforeStop;
     lease.state = 'stopping';
     const posted = await this.port.stopInspector(lease.leaseId, lease.request.requestId);
     if (!posted) {
-      this.finish(lease);
-      return this.active !== lease;
+      if (this.active === lease && lease.state === 'stopping') {
+        lease.state = stateBeforeStop;
+        lease.stateBeforeStopping = undefined;
+      }
+      return false;
     }
     const stopped = await this.wait(lease.stopped.promise);
     if (stopped === true && this.active === lease) this.finish(lease);

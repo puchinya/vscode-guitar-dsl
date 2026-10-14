@@ -105,6 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
   let progressionAssistantController: ProgressionAssistantController | undefined;
   let settingsController: ScoreSettingsInspectorController | undefined;
   let progressionRenderGeneration = 0;
+  let scoreSettingsCommandGeneration = 0;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   const inspector = registerGuitarDslInspector(context, currentLocale);
@@ -574,19 +575,26 @@ export function activate(context: vscode.ExtensionContext) {
 
   // The existing commands share the Inspector and resolve their URI before revealing it.
   const openScoreSettings = async (uri: vscode.Uri | undefined, section: string) => {
+    const requestGeneration = ++scoreSettingsCommandGeneration;
+    const isCurrentRequest = () => requestGeneration === scoreSettingsCommandGeneration;
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!isCurrentRequest()) return;
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
     const progressionUri = progressionAssistantController?.getActiveSessionIdentity()?.uri;
-    if (progressionUri) progressionAssistantController?.invalidateActive(false);
     const audioUri = audioLeaseCoordinator.activeSessionUri;
     if (audioUri && !await audioLeaseCoordinator.stopForSession(audioUri)) {
-      vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
+      if (isCurrentRequest()) vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
       return;
     }
-    if (progressionUri) await progressionAssistantController?.restoreAfterExternalStop(progressionUri);
+    if (!isCurrentRequest()) return;
+    if (progressionUri) {
+      progressionAssistantController?.invalidateActive(false);
+      await progressionAssistantController?.restoreAfterExternalStop(progressionUri);
+      if (!isCurrentRequest()) return;
+    }
     await settingsController?.open(doc, section === 'beginner' || section === 'transpose' ? section : 'capo');
   };
   context.subscriptions.push(
