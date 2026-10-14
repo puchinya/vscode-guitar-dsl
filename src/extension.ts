@@ -105,7 +105,6 @@ export function activate(context: vscode.ExtensionContext) {
   let progressionAssistantController: ProgressionAssistantController | undefined;
   let settingsController: ScoreSettingsInspectorController | undefined;
   let progressionRenderGeneration = 0;
-  let scoreSettingsCommandGeneration = 0;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   const inspector = registerGuitarDslInspector(context, currentLocale);
@@ -575,25 +574,44 @@ export function activate(context: vscode.ExtensionContext) {
 
   // The existing commands share the Inspector and resolve their URI before revealing it.
   const openScoreSettings = async (uri: vscode.Uri | undefined, section: string) => {
-    const requestGeneration = ++scoreSettingsCommandGeneration;
-    const isCurrentRequest = () => requestGeneration === scoreSettingsCommandGeneration;
+    const requestGeneration = inspector.beginExplicitIntent();
+    const isCurrentRequest = () => requestGeneration === inspector.currentExplicitIntentGeneration;
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
     if (!isCurrentRequest()) return;
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
-    const progressionUri = progressionAssistantController?.getActiveSessionIdentity()?.uri;
+    const progressionIdentity = progressionAssistantController?.getActiveSessionIdentity();
     const audioUri = audioLeaseCoordinator.activeSessionUri;
-    if (audioUri && !await audioLeaseCoordinator.stopForSession(audioUri)) {
-      if (isCurrentRequest()) vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
-      return;
+    const audioLeaseId = audioLeaseCoordinator.activeLeaseId;
+    const isSameProgressionSession = () => {
+      const current = progressionAssistantController?.getActiveSessionIdentity();
+      return progressionIdentity === undefined
+        ? current === undefined
+        : current?.uri === progressionIdentity.uri && current.version === progressionIdentity.version
+          && current.sessionGeneration === progressionIdentity.sessionGeneration;
+    };
+    if ((audioUri === undefined) !== (audioLeaseId === undefined)) return;
+    if (audioUri && audioLeaseId) {
+      const stopped = await audioLeaseCoordinator.stopForSession(audioUri);
+      if (!isCurrentRequest() || !isSameProgressionSession()) return;
+      if (!stopped) {
+        vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
+        return;
+      }
+      if (audioLeaseCoordinator.activeLeaseId !== undefined || audioLeaseCoordinator.activeSessionUri !== undefined) return;
     }
-    if (!isCurrentRequest()) return;
-    if (progressionUri) {
+    if (!isCurrentRequest() || !isSameProgressionSession()) return;
+    if (progressionIdentity) {
+      if (audioLeaseCoordinator.activeLeaseId !== undefined || audioLeaseCoordinator.activeSessionUri !== undefined) return;
       progressionAssistantController?.invalidateActive(false);
-      await progressionAssistantController?.restoreAfterExternalStop(progressionUri);
-      if (!isCurrentRequest()) return;
+      if (progressionAssistantController?.getActiveSessionIdentity() !== undefined) return;
+      await progressionAssistantController?.restoreAfterExternalStop(progressionIdentity.uri);
+      if (!isCurrentRequest()
+        || progressionAssistantController?.getActiveSessionIdentity() !== undefined
+        || audioLeaseCoordinator.activeLeaseId !== undefined
+        || audioLeaseCoordinator.activeSessionUri !== undefined) return;
     }
     await settingsController?.open(doc, section === 'beginner' || section === 'transpose' ? section : 'capo');
   };

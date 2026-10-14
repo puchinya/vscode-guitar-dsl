@@ -108,6 +108,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private context: InspectorContext = EMPTY_CONTEXT;
   private disposed = false;
   private generation = 0;
+  private explicitIntentGeneration = 0;
   private progressionMessageHandler: InspectorProgressionMessageHandler | undefined;
   private settingsMessageHandler: InspectorSettingsMessageHandler | undefined;
   private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
@@ -137,22 +138,26 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   showDocument(uri: string, version: number): void {
     if (!uri || !Number.isSafeInteger(version) || version < 0) {
+      if (this.context.kind !== 'empty') this.beginExplicitIntent();
       this.setContext(EMPTY_CONTEXT);
       return;
     }
     if (this.context.kind === 'document' && this.context.uri === uri && this.context.version === version) return;
     if (this.context.kind === 'progression' && this.context.uri === uri && this.context.version === version) return;
+    this.beginExplicitIntent();
     this.setContext({ kind: 'document', uri, version });
   }
 
   async showProgression(context: InspectorProgressionContext): Promise<void> {
     if (this.disposed || !isValidProgressionContext(context)) return;
+    this.beginExplicitIntent();
     this.setContext(context);
     if (!this.presentation.show(false)) await this.focusView();
   }
 
   async showSettings(context: InspectorSettingsContext): Promise<void> {
     if (this.disposed || !isValidSettingsContext(context)) return;
+    this.beginExplicitIntent();
     this.setContext(context);
     if (!this.presentation.show(false)) await this.focusView();
   }
@@ -215,6 +220,16 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     return this.generation;
   }
 
+  get currentExplicitIntentGeneration(): number {
+    return this.explicitIntentGeneration;
+  }
+
+  /** Starts a user-directed Inspector intent that supersedes pending context requests. */
+  beginExplicitIntent(): number {
+    this.explicitIntentGeneration++;
+    return this.explicitIntentGeneration;
+  }
+
   async handleWebviewMessage(message: unknown): Promise<boolean> {
     if (isProgressionAudioAcknowledgement(message)) {
       await this.progressionAudioAcknowledgementHandler?.(message);
@@ -235,6 +250,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
       || message.sessionUri !== context.uri
       || message.sessionVersion !== context.version
       || message.sessionGeneration !== context.sessionGeneration) return true;
+    this.beginExplicitIntent();
     await this.progressionMessageHandler?.(message);
     return true;
   }
@@ -268,6 +284,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   invalidate(uri: string): void {
     if ((this.context.kind === 'document' || this.context.kind === 'settings' || this.context.kind === 'progression') && this.context.uri === uri) {
+      this.beginExplicitIntent();
       this.setContext(EMPTY_CONTEXT);
     }
   }

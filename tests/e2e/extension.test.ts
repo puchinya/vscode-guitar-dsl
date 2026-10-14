@@ -2511,9 +2511,12 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     assert.deepStrictEqual(titles, ['カポ / 弾きやすさ', '初心者モード', '移調']);
   });
 
-  test('S135-07 a pending settings Apply is invalidated by reopening, selection input, and section input', async () => {
+  test('S135-07 a pending settings Apply validates input before invalidating and applies valid selections', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
+    const preview = previewCapo();
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => preview.effectiveDslProbe.previewInput === SOURCE, 'the source Preview is open before Settings');
     await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
@@ -2527,7 +2530,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     const originalWarning = windowApi.showWarningMessage;
     const originalApplyEdit = workspaceApi.applyEdit;
     let applyCount = 0;
-    let confirmations: Array<() => void> = [];
+    let confirmations: Array<(accept?: boolean) => void> = [];
     workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
       applyCount++;
       return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
@@ -2535,7 +2538,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     };
     windowApi.showWarningMessage = (...args: unknown[]) => new Promise(resolve => {
       const affirmative = args[args.length - 1];
-      confirmations.push(() => resolve(affirmative));
+      confirmations.push((accept = true) => resolve(accept ? affirmative : undefined));
     });
     const selectDifferentCapo = async () => {
       const context = inspector.getContext?.();
@@ -2574,22 +2577,52 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
       await selectDifferentCapo();
       const beforeSelection = inspector.getContext?.();
       const changedSelection = await beginApply();
-      const next = beforeSelection.model.candidates.find((item: any) => item.supported && item.capo !== beforeSelection.model.selectedCapo);
+      const next = beforeSelection.model.candidates.find((item: any) => item.supported
+        && item.capo !== beforeSelection.model.selectedCapo && item.capo !== beforeSelection.model.sourceCapo);
       assert.ok(next, 'another supported Capo candidate is available');
+      const expectedPreview = require('../../capo').planCapoTransform(SOURCE, next.capo);
+      assert.ok(expectedPreview.ok, 'the selected supported Capo has a valid Preview transform');
       await dispatch('settingsSelectCapo', { capo: next.capo });
-      await waitFor(() => inspector.getContext?.()?.revision !== beforeSelection.revision,
-        'the candidate request advances the settings revision while confirmation is pending');
+      await waitFor(() => inspector.getContext?.()?.revision !== beforeSelection.revision
+          && inspector.getContext?.()?.model?.selectedCapo === next.capo,
+        'a valid candidate request advances the revision and changes the selection while confirmation is pending');
+      await waitFor(() => preview.effectiveDslProbe.previewInput === expectedPreview.text,
+        'the valid candidate updates the Preview while invalidating the pending confirmation');
       changedSelection.confirm();
       await changedSelection.pending;
       assert.strictEqual(applyCount, 0, 'the old confirmation cannot edit after a candidate request');
       assert.strictEqual(inspector.getContext?.()?.kind, 'settings', 'the current settings session remains available');
 
+      const beforeInvalidCandidate = inspector.getContext?.();
+      const invalidCandidateApply = await beginApply();
+      const invalidRevision = inspector.getContext?.()?.revision;
+      await dispatch('settingsSelectCapo', { capo: 999 });
+      assert.strictEqual(inspector.getContext?.()?.revision, invalidRevision,
+        'an unsupported candidate leaves the session revision unchanged');
+      assert.strictEqual(inspector.getContext?.()?.model?.selectedCapo, beforeInvalidCandidate.model.selectedCapo,
+        'an unsupported candidate leaves the current selection unchanged');
+      invalidCandidateApply.confirm(false);
+      await invalidCandidateApply.pending;
+      assert.strictEqual(applyCount, 0, 'an invalid candidate cannot invalidate Apply or edit the source');
+
+      const invalidSectionApply = await beginApply();
+      const beforeInvalidSection = inspector.getContext?.();
+      await dispatch('settingsSelectSection', { nextSection: 'unknown' });
+      assert.strictEqual(inspector.getContext?.()?.revision, beforeInvalidSection.revision,
+        'an invalid section leaves the session revision unchanged');
+      assert.strictEqual(inspector.getContext?.()?.section, beforeInvalidSection.section,
+        'an invalid section leaves the current section unchanged');
+      invalidSectionApply.confirm(false);
+      await invalidSectionApply.pending;
+      assert.strictEqual(applyCount, 0, 'an invalid section cannot invalidate Apply or edit the source');
+
       await selectDifferentCapo();
       const beforeSection = inspector.getContext?.();
       const changedSection = await beginApply();
       await dispatch('settingsSelectSection', { nextSection: 'beginner' });
-      await waitFor(() => inspector.getContext?.()?.revision !== beforeSection.revision,
-        'the section request advances the settings revision while confirmation is pending');
+      await waitFor(() => inspector.getContext?.()?.revision !== beforeSection.revision
+          && inspector.getContext?.()?.section === 'beginner',
+        'a valid section request changes section and advances revision while confirmation is pending');
       changedSection.confirm();
       await changedSection.pending;
       assert.strictEqual(applyCount, 0, 'the old confirmation cannot edit after a section request');
@@ -2705,6 +2738,146 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
       await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-13 a new progression context supersedes a pending Settings document resolution', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    try {
+      const openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const progressionB = progression.getSession();
+      assert.ok(progressionB, 'the new explicit command opens a progression session');
+      await waitFor(() => inspector.getContext?.()?.kind === 'progression'
+          && inspector.getContext?.()?.sessionGeneration === progressionB.sessionGeneration,
+        'the Inspector shows the new progression session before the older document resolution completes');
+
+      releaseSettings!(doc);
+      await openingSettings;
+      assert.strictEqual(progression.getSession(), progressionB,
+        'the stale Settings resolver does not invalidate the new progression session');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression',
+        'the stale Settings resolver does not replace the new progression context');
+      assert.strictEqual(inspector.getContext?.()?.sessionGeneration, progressionB.sessionGeneration);
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      await require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-14 a new progression session survives a pending Settings Stop acknowledgement', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    const port = (audioLease as any).port as {
+      hasPreview: () => boolean;
+      lockPreview: (leaseId: string) => Promise<boolean>;
+      startInspector: (message: any) => Promise<boolean>;
+      stopInspector: (leaseId: string, requestId: string) => Promise<boolean>;
+    };
+    assert.strictEqual(audioLease.activeLeaseId, undefined, 'the audio coordinator starts without an active lease');
+    const originalPort = {
+      hasPreview: port.hasPreview,
+      lockPreview: port.lockPreview,
+      startInspector: port.startInspector,
+      stopInspector: port.stopInspector
+    };
+    let stopRequest: { leaseId: string; requestId: string } | undefined;
+    let signalStopStarted!: () => void;
+    const stopStarted = new Promise<void>(resolve => { signalStopStarted = resolve; });
+    let openingSettings: Thenable<unknown> | undefined;
+    port.hasPreview = () => false;
+    port.lockPreview = async () => true;
+    port.startInspector = async message => {
+      audioLease.acknowledge({ command: 'progressionAudioStarted', leaseId: message.leaseId, requestId: message.requestId });
+      return true;
+    };
+    port.stopInspector = async (leaseId, requestId) => {
+      stopRequest = { leaseId, requestId };
+      signalStopStarted();
+      return true;
+    };
+    try {
+      const sessionA = progression.getSession();
+      const started = await audioLease.start({
+        requestId: `s135-14-${Date.now()}`,
+        generation: inspector.getContext?.().kind === 'progression' ? inspector.getContext().generation : 0,
+        sessionUri: sessionA.uri,
+        sessionVersion: sessionA.version,
+        sessionGeneration: sessionA.sessionGeneration,
+        candidateId: sessionA.activeCandidateId,
+        side: 'B',
+        mode: 'melody',
+        speed: 100
+      }, {} as any, () => true, 'unavailable');
+      assert.strictEqual(started, true, 'the test coordinator holds an active acknowledged lease');
+      const leaseId = audioLease.activeLeaseId as string;
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await stopStarted;
+      assert.strictEqual(audioLease.activeLeaseId, leaseId, 'Settings is waiting while the audio lease remains active');
+
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const progressionB = progression.getSession();
+      assert.ok(progressionB && progressionB.sessionGeneration !== sessionA.sessionGeneration,
+        'the new command installs a distinct progression session while Stop is pending');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression');
+      assert.strictEqual(inspector.getContext?.()?.sessionGeneration, progressionB.sessionGeneration);
+
+      audioLease.acknowledge({
+        command: 'progressionAudioStopped',
+        leaseId: stopRequest!.leaseId,
+        requestId: stopRequest!.requestId
+      });
+      await openingSettings;
+      assert.strictEqual(progression.getSession(), progressionB,
+        'the older Settings request does not invalidate the new session after Stop acknowledgement');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression',
+        'the older Settings request does not replace the new Inspector context after Stop acknowledgement');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the acknowledged Stop releases the old lease');
+    } finally {
+      if (audioLease.activeLeaseId && stopRequest) {
+        audioLease.acknowledge({ command: 'progressionAudioStopped', ...stopRequest });
+      }
+      if (openingSettings) await openingSettings;
+      port.hasPreview = originalPort.hasPreview;
+      port.lockPreview = originalPort.lockPreview;
+      port.startInspector = originalPort.startInspector;
+      port.stopInspector = originalPort.stopInspector;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
     }
   });
 

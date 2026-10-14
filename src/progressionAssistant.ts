@@ -184,14 +184,22 @@ export class ProgressionAssistantController implements vscode.Disposable {
     context.subscriptions.push(vscode.languages.registerCodeLensProvider({ language: 'guitardsl' }, codeLensProvider));
     context.subscriptions.push(this.codeLensChanges, this.targetDecoration, this.proposalDecoration);
     context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => this.updateDecorations()));
-    context.subscriptions.push(vscode.commands.registerCommand(SUGGEST_CHORD_PROGRESSION_COMMAND, target => this.runCommand(target)));
-    context.subscriptions.push(vscode.commands.registerCommand(CHOOSE_PROGRESSION_CANDIDATE_COMMAND, target => this.chooseFromSession(target)));
-    context.subscriptions.push(vscode.commands.registerCommand(PLAY_PROGRESSION_AUDITION_COMMAND, () => this.play()));
-    context.subscriptions.push(vscode.commands.registerCommand(STOP_PROGRESSION_AUDITION_COMMAND, () => this.stop()));
-    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_A_COMMAND, () => this.setSide('A')));
-    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_B_COMMAND, () => this.setSide('B')));
-    context.subscriptions.push(vscode.commands.registerCommand(APPLY_PROGRESSION_CANDIDATE_COMMAND, () => this.applyCandidate(this.session?.activeCandidateId)));
-    context.subscriptions.push(vscode.commands.registerCommand(CLOSE_PROGRESSION_ASSISTANT_COMMAND, () => this.closeSession()));
+    context.subscriptions.push(vscode.commands.registerCommand(SUGGEST_CHORD_PROGRESSION_COMMAND,
+      target => this.withExplicitIntent(() => this.runCommand(target))));
+    context.subscriptions.push(vscode.commands.registerCommand(CHOOSE_PROGRESSION_CANDIDATE_COMMAND,
+      target => this.withExplicitIntent(() => this.chooseFromSession(target))));
+    context.subscriptions.push(vscode.commands.registerCommand(PLAY_PROGRESSION_AUDITION_COMMAND,
+      () => this.withExplicitIntent(() => this.play())));
+    context.subscriptions.push(vscode.commands.registerCommand(STOP_PROGRESSION_AUDITION_COMMAND,
+      () => this.withExplicitIntent(() => this.stop())));
+    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_A_COMMAND,
+      () => this.withExplicitIntent(() => this.setSide('A'))));
+    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_B_COMMAND,
+      () => this.withExplicitIntent(() => this.setSide('B'))));
+    context.subscriptions.push(vscode.commands.registerCommand(APPLY_PROGRESSION_CANDIDATE_COMMAND,
+      () => this.withExplicitIntent(() => this.applyCandidate(this.session?.activeCandidateId))));
+    context.subscriptions.push(vscode.commands.registerCommand(CLOSE_PROGRESSION_ASSISTANT_COMMAND,
+      () => this.withExplicitIntent(() => this.closeSession())));
     this.inspector?.setProgressionMessageHandler(message => this.handleInspectorMessage(message));
     void vscode.commands.executeCommand('setContext', 'guitardsl.progressionAssistantActive', false);
     context.subscriptions.push(this);
@@ -236,6 +244,11 @@ export class ProgressionAssistantController implements vscode.Disposable {
       }));
     }
     return lenses;
+  }
+
+  private withExplicitIntent<T>(action: () => T): T {
+    this.inspector?.beginExplicitIntent();
+    return action();
   }
 
   private async runCommand(targetRef?: unknown): Promise<void> {

@@ -156,10 +156,6 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
         this.finish(session, true);
         return;
       }
-      session.applying = false;
-      session.revision++;
-      this.publish(session);
-      return;
     }
     if (!this.matchesMessage(session, message) || !this.isFresh(session)) {
       if (this.session === session && !this.isFresh(session)) this.finish(session, true);
@@ -175,6 +171,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
       if (!isSettingsSection(section) || section === session.section) return;
       this.restorePreview(session);
       session.section = section;
+      session.applying = false;
       session.revision++;
       this.publish(session);
       return;
@@ -229,6 +226,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
         return;
     }
     if (!changed) return;
+    session.applying = false;
     session.revision++;
     this.publish(session);
   }
