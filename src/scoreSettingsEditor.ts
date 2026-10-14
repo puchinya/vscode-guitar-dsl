@@ -1,15 +1,12 @@
-// Score settings editor panel (webview): a generic, section-based editor for score-wide settings.
-// Each section computes its model from the document's current source and applies changes through
-// one undoable WorkspaceEdit; the webview only reports intents. Sections: capo / playability, Beginner Mode,
-// sounding transposition.
+// Host-owned models and transforms for score-wide settings. The shared Inspector reports typed
+// intents; ScoreSettingsInspectorController owns confirmation and document edits.
 
 import * as vscode from 'vscode';
 import { BarrePolicy, BeginnerFailureCode, BeginnerModeOptions, inferBeginnerModeForDsl, isBarrePolicy, planBeginnerTransform, sourcePlayability } from './beginnerMode';
 import { MAX_CAPO, MIN_CAPO, PlayabilityResult, inferCapoForDsl, isValidCapo, parseCapoValue, planCapoTransform } from './capo';
 import { chordKey } from './chordDefinition';
 import { parseGuitarDsl } from './compiler';
-import { Messages, ScoreSettingsEditorMessages, SupportedLocale, getMessages, getScoreSettingsEditorMessages } from './i18n';
-import { renderScoreSettingsEditorHtml } from './render/scoreSettingsEditorHtml';
+import { Messages, ScoreSettingsEditorMessages } from './i18n';
 import { CapoMode, MAX_SEMITONES, MIN_SEMITONES, TransposeFailureCode, isValidSemitones, planTransposeWithCapo, transposeKeyName } from './transpose';
 
 export const EDIT_SCORE_SETTINGS_COMMAND = 'guitardsl.editScoreSettings';
@@ -17,28 +14,54 @@ export const EDIT_CAPO_COMMAND = 'guitardsl.editCapo';
 
 export type CapoApplyResult =
   | { ok: true; changed: boolean; targetCapo: number; unusedDefinitions: string[] }
-  | { ok: false; code: import('./capo').CapoTransformFailureCode | 'editRejected'; detail?: string };
+  | { ok: false; code: import('./capo').CapoTransformFailureCode | 'editRejected' | 'staleDocument'; detail?: string };
+
+export interface ExpectedDocumentState {
+  readonly version: number;
+  readonly source: string;
+}
+
+function matchesExpectedDocument(doc: vscode.TextDocument, expected: ExpectedDocumentState | undefined, isSessionCurrent: () => boolean): boolean {
+  return isSessionCurrent() && (!expected || (doc.version === expected.version && doc.getText() === expected.source));
+}
 
 /**
  * Applies a capo change to the document at `uri`: re-reads the current source, recomputes the
  * transform from it (never from webview-provided text) and applies one undoable WorkspaceEdit.
  */
-export async function applyCapoTransform(uri: vscode.Uri, targetCapo: number): Promise<CapoApplyResult> {
+export async function applyCapoTransform(uri: vscode.Uri, targetCapo: number, expected?: ExpectedDocumentState): Promise<CapoApplyResult> {
+  return applyCapoTransformForSettings(uri, targetCapo, expected, () => true);
+}
+
+export async function applyCapoTransformForSettings(
+  uri: vscode.Uri,
+  targetCapo: number,
+  expected?: ExpectedDocumentState,
+  isSessionCurrent: () => boolean = () => true
+): Promise<CapoApplyResult> {
   const doc = await vscode.workspace.openTextDocument(uri);
   const text = doc.getText();
+  if (!matchesExpectedDocument(doc, expected, isSessionCurrent)) return { ok: false, code: 'staleDocument' };
   const plan = planCapoTransform(text, targetCapo);
   if (!plan.ok) return plan;
   if (plan.text === text) {
     return { ok: true, changed: false, targetCapo, unusedDefinitions: plan.unusedDefinitions };
   }
-  const applied = await replaceDocumentText(doc, text, plan.text);
+  const applied = await replaceDocumentText(doc, text, plan.text, expected, isSessionCurrent);
+  if (applied === undefined) return { ok: false, code: 'staleDocument' };
   return applied
     ? { ok: true, changed: true, targetCapo, unusedDefinitions: plan.unusedDefinitions }
     : { ok: false, code: 'editRejected' };
 }
 
 /** Replaces only the changed middle so cursors / folding elsewhere are kept; still one edit. */
-async function replaceDocumentText(doc: vscode.TextDocument, text: string, next: string): Promise<boolean> {
+async function replaceDocumentText(
+  doc: vscode.TextDocument,
+  text: string,
+  next: string,
+  expected: ExpectedDocumentState | undefined,
+  isSessionCurrent: () => boolean
+): Promise<boolean | undefined> {
   let start = 0;
   while (start < text.length && start < next.length && text[start] === next[start]) start++;
   let endOld = text.length;
@@ -49,26 +72,38 @@ async function replaceDocumentText(doc: vscode.TextDocument, text: string, next:
   }
   const edit = new vscode.WorkspaceEdit();
   edit.replace(doc.uri, new vscode.Range(doc.positionAt(start), doc.positionAt(endOld)), next.slice(start, endNew));
+  if (!matchesExpectedDocument(doc, expected, isSessionCurrent)) return undefined;
   return vscode.workspace.applyEdit(edit);
 }
 
 export type BeginnerApplyResult =
   | { ok: true; changed: boolean; targetCapo: number; substitutions: number; unusedDefinitions: string[] }
-  | { ok: false; code: BeginnerFailureCode | 'editRejected'; detail?: string };
+  | { ok: false; code: BeginnerFailureCode | 'editRejected' | 'staleDocument'; detail?: string };
 
 /**
  * Applies the Beginner Mode transform to the document at `uri`: re-reads the current source,
  * recomputes the plan from it with `options` (never from webview-provided text) and applies one
  * undoable WorkspaceEdit (capo value and chord names together).
  */
-export async function applyBeginnerTransform(uri: vscode.Uri, options: BeginnerModeOptions): Promise<BeginnerApplyResult> {
+export async function applyBeginnerTransform(uri: vscode.Uri, options: BeginnerModeOptions, expected?: ExpectedDocumentState): Promise<BeginnerApplyResult> {
+  return applyBeginnerTransformForSettings(uri, options, expected, () => true);
+}
+
+export async function applyBeginnerTransformForSettings(
+  uri: vscode.Uri,
+  options: BeginnerModeOptions,
+  expected?: ExpectedDocumentState,
+  isSessionCurrent: () => boolean = () => true
+): Promise<BeginnerApplyResult> {
   const doc = await vscode.workspace.openTextDocument(uri);
   const text = doc.getText();
+  if (!matchesExpectedDocument(doc, expected, isSessionCurrent)) return { ok: false, code: 'staleDocument' };
   const plan = planBeginnerTransform(text, options);
   if (!plan.ok) return plan;
   const done = { targetCapo: plan.targetCapo, substitutions: plan.candidate.uniqueSubstitutions, unusedDefinitions: plan.unusedDefinitions };
   if (plan.text === text) return { ok: true, changed: false, ...done };
-  const applied = await replaceDocumentText(doc, text, plan.text);
+  const applied = await replaceDocumentText(doc, text, plan.text, expected, isSessionCurrent);
+  if (applied === undefined) return { ok: false, code: 'staleDocument' };
   return applied ? { ok: true, changed: true, ...done } : { ok: false, code: 'editRejected' };
 }
 
@@ -79,25 +114,36 @@ export interface TransposeRequest {
 
 export type TransposeApplyResult =
   | { ok: true; changed: boolean; targetKey: string; targetCapo: number | null; warnings: string[]; unusedDefinitions: string[] }
-  | { ok: false; code: TransposeFailureCode | 'editRejected'; detail?: string };
+  | { ok: false; code: TransposeFailureCode | 'editRejected' | 'staleDocument'; detail?: string };
 
 /**
  * Applies a sounding transposition (+ capo choice) to the document at `uri`: re-reads the current source,
  * recomputes the whole plan from it (never from webview-provided text or a previous model) and applies one
  * undoable WorkspaceEdit. Nothing is edited when any stage fails.
  */
-export async function applyTransposeTransform(uri: vscode.Uri, request: TransposeRequest): Promise<TransposeApplyResult> {
+export async function applyTransposeTransform(uri: vscode.Uri, request: TransposeRequest, expected?: ExpectedDocumentState): Promise<TransposeApplyResult> {
+  return applyTransposeTransformForSettings(uri, request, expected, () => true);
+}
+
+export async function applyTransposeTransformForSettings(
+  uri: vscode.Uri,
+  request: TransposeRequest,
+  expected?: ExpectedDocumentState,
+  isSessionCurrent: () => boolean = () => true
+): Promise<TransposeApplyResult> {
   const doc = await vscode.workspace.openTextDocument(uri);
   const text = doc.getText();
+  if (!matchesExpectedDocument(doc, expected, isSessionCurrent)) return { ok: false, code: 'staleDocument' };
   const plan = planTransposeWithCapo(text, request.semitones, request.capoMode);
   if (!plan.ok) return { ok: false, code: plan.code, detail: plan.detail };
   const done = { targetKey: plan.targetKey, targetCapo: plan.targetCapo, warnings: plan.warnings, unusedDefinitions: plan.unusedDefinitions };
   if (plan.text === text) return { ok: true, changed: false, ...done };
-  const applied = await replaceDocumentText(doc, text, plan.text);
+  const applied = await replaceDocumentText(doc, text, plan.text, expected, isSessionCurrent);
+  if (applied === undefined) return { ok: false, code: 'staleDocument' };
   return applied ? { ok: true, changed: true, ...done } : { ok: false, code: 'editRejected' };
 }
 
-/** Context handed to a section: the document's current state plus panel callbacks. */
+/** Context handed to a section: the document's current state plus session callbacks. */
 export interface ScoreSettingsSectionContext {
   readonly doc: vscode.TextDocument;
   readonly messages: Messages;
@@ -112,7 +158,7 @@ export interface ScoreSettingsSection {
   title(m: ScoreSettingsEditorMessages): string;
   buildModel(ctx: ScoreSettingsSectionContext): unknown;
   onMessage(ctx: ScoreSettingsSectionContext, msg: any): Promise<void>;
-  /** Called when the panel switches to another document. */
+  /** Called when the session switches to another document. */
   reset(): void;
 }
 
@@ -150,6 +196,16 @@ export class CapoSection implements ScoreSettingsSection {
     this.selected = undefined;
   }
 
+  selectCapo(capo: number): boolean {
+    if (!isValidCapo(capo)) return false;
+    this.selected = capo;
+    return true;
+  }
+
+  getSelectedCapo(sourceCapo: number): number {
+    return this.selected ?? sourceCapo;
+  }
+
   buildModel(ctx: ScoreSettingsSectionContext): CapoSectionModel {
     const m = ctx.messages;
     const text = ctx.doc.getText();
@@ -172,7 +228,7 @@ export class CapoSection implements ScoreSettingsSection {
     if (sourceCapo === null || inference === null) {
       return { ...empty, error: m.capoFailures.invalidSourceCapo };
     }
-    const selected = this.selected ?? sourceCapo;
+    const selected = this.getSelectedCapo(sourceCapo);
     const candidate = inference.candidates[selected];
     const plan = planCapoTransform(text, selected);
     const map = plan.ok ? plan.chordMap : candidate.chordMap;
@@ -203,17 +259,7 @@ export class CapoSection implements ScoreSettingsSection {
     const capo = Number(msg.capo);
     if (!isValidCapo(capo)) return;
     if (msg.command === 'select') {
-      this.selected = capo;
-      ctx.refresh();
-    } else if (msg.command === 'apply') {
-      const result = await applyCapoTransform(ctx.doc.uri, capo);
-      if (result.ok) {
-        this.selected = undefined;
-        ctx.status(ctx.messages.msgCapoApplied(capo));
-      } else {
-        const reason = result.code === 'editRejected' ? ctx.messages.msgCapoEditRejected : ctx.messages.capoFailures[result.code];
-        ctx.status(ctx.messages.msgCapoApplyFailed(reason), true);
-      }
+      if (!this.selectCapo(capo)) return;
       ctx.refresh();
     }
   }
@@ -258,13 +304,31 @@ export class BeginnerSection implements ScoreSettingsSection {
     this.selected = undefined;
   }
 
+  setBarrePolicy(policy: BarrePolicy): boolean {
+    if (!isBarrePolicy(policy)) return false;
+    if (this.barrePolicy !== policy) this.selected = undefined;
+    this.barrePolicy = policy;
+    return true;
+  }
+
+  selectCapo(capo: number | undefined): boolean {
+    if (capo !== undefined && !isValidCapo(capo)) return false;
+    this.selected = capo;
+    return true;
+  }
+
+  getOptions(): BeginnerModeOptions {
+    return { barrePolicy: this.barrePolicy, targetCapo: this.selected };
+  }
+
   buildModel(ctx: ScoreSettingsSectionContext): BeginnerSectionModel {
     const m = ctx.messages;
     const text = ctx.doc.getText();
     const score = parseGuitarDsl(text);
     const playability = (p: PlayabilityResult | undefined) => (p ? { score: p.score, levelLabel: m.playabilityLevels[p.level] } : undefined);
-    const inference = inferBeginnerModeForDsl(text, this.barrePolicy);
-    const plan = planBeginnerTransform(text, { barrePolicy: this.barrePolicy, targetCapo: this.selected }, inference);
+    const options = this.getOptions();
+    const inference = inferBeginnerModeForDsl(text, options.barrePolicy);
+    const plan = planBeginnerTransform(text, options, inference);
     const candidate = plan.ok ? plan.candidate : undefined;
     return {
       sourceCapo: parseCapoValue(score.capo),
@@ -293,26 +357,15 @@ export class BeginnerSection implements ScoreSettingsSection {
   async onMessage(ctx: ScoreSettingsSectionContext, msg: any): Promise<void> {
     if (msg.command === 'setPolicy') {
       if (!isBarrePolicy(msg.policy)) return;
-      this.barrePolicy = msg.policy;
-      this.selected = undefined;
+      if (!this.setBarrePolicy(msg.policy)) return;
       ctx.refresh();
     } else if (msg.command === 'select') {
       if (msg.capo === 'auto') {
-        this.selected = undefined;
+        this.selectCapo(undefined);
       } else if (isValidCapo(Number(msg.capo))) {
-        this.selected = Number(msg.capo);
+        this.selectCapo(Number(msg.capo));
       } else {
         return;
-      }
-      ctx.refresh();
-    } else if (msg.command === 'apply') {
-      const result = await applyBeginnerTransform(ctx.doc.uri, { barrePolicy: this.barrePolicy, targetCapo: this.selected });
-      if (result.ok) {
-        this.selected = undefined;
-        ctx.status(ctx.messages.msgBeginnerApplied(result.targetCapo, result.substitutions));
-      } else {
-        const reason = result.code === 'editRejected' ? ctx.messages.msgCapoEditRejected : ctx.messages.beginnerFailure(result.code, result.detail);
-        ctx.status(ctx.messages.msgBeginnerApplyFailed(reason), true);
       }
       ctx.refresh();
     }
@@ -360,6 +413,23 @@ export class TransposeSection implements ScoreSettingsSection {
     return { semitones: this.semitones, capoMode };
   }
 
+  setSemitones(semitones: number): boolean {
+    if (!isValidSemitones(semitones)) return false;
+    this.semitones = semitones;
+    return true;
+  }
+
+  setCapoMode(mode: CapoMode['kind'], capo?: number): boolean {
+    if (mode === 'keep' || mode === 'recommended') {
+      this.capoMode = mode;
+      return true;
+    }
+    if (mode !== 'explicit' || capo === undefined || !isValidCapo(capo)) return false;
+    this.capoMode = mode;
+    this.explicitCapo = capo;
+    return true;
+  }
+
   buildModel(ctx: ScoreSettingsSectionContext): TransposeSectionModel {
     const m = ctx.messages;
     const text = ctx.doc.getText();
@@ -399,134 +469,17 @@ export class TransposeSection implements ScoreSettingsSection {
     if (msg.command === 'setSemitones') {
       const n = Number(msg.semitones);
       if (!isValidSemitones(n)) return;
-      this.semitones = n;
+      if (!this.setSemitones(n)) return;
       ctx.refresh();
     } else if (msg.command === 'setCapoMode') {
       if (msg.mode === 'keep' || msg.mode === 'recommended') {
-        this.capoMode = msg.mode;
+        this.setCapoMode(msg.mode);
       } else if (msg.mode === 'explicit' && isValidCapo(Number(msg.capo))) {
-        this.capoMode = 'explicit';
-        this.explicitCapo = Number(msg.capo);
+        this.setCapoMode('explicit', Number(msg.capo));
       } else {
         return;
       }
       ctx.refresh();
-    } else if (msg.command === 'apply') {
-      // The request comes from the host state; the plan is recomputed from the latest document text.
-      const request = this.request(parseCapoValue(parseGuitarDsl(ctx.doc.getText()).capo));
-      const result = await applyTransposeTransform(ctx.doc.uri, request);
-      if (result.ok) {
-        const shift = this.semitones;
-        this.reset();
-        ctx.status(ctx.messages.msgTransposeApplied(shift, result.targetKey));
-      } else {
-        const reason = result.code === 'editRejected' ? ctx.messages.msgCapoEditRejected : ctx.messages.transposeFailure(result.code, result.detail);
-        ctx.status(ctx.messages.msgTransposeApplyFailed(reason), true);
-      }
-      ctx.refresh();
-    }
-  }
-}
-
-export class ScoreSettingsEditorPanel {
-  private static current: ScoreSettingsEditorPanel | undefined;
-
-  private readonly panel: vscode.WebviewPanel;
-  private readonly m: ScoreSettingsEditorMessages;
-  private readonly messages: Messages;
-  private readonly sections: ScoreSettingsSection[] = [new CapoSection(), new BeginnerSection(), new TransposeSection()];
-  private readonly disposables: vscode.Disposable[] = [];
-  private doc!: vscode.TextDocument;
-  private activeSection = 'capo';
-  private ready = false;
-
-  static show(extensionUri: vscode.Uri, doc: vscode.TextDocument, locale: SupportedLocale, sectionId = 'capo'): void {
-    if (!ScoreSettingsEditorPanel.current) {
-      ScoreSettingsEditorPanel.current = new ScoreSettingsEditorPanel(extensionUri, locale);
-    }
-    ScoreSettingsEditorPanel.current.load(doc, sectionId);
-  }
-
-  static isOpen(): boolean {
-    return ScoreSettingsEditorPanel.current !== undefined;
-  }
-
-  private constructor(extensionUri: vscode.Uri, locale: SupportedLocale) {
-    this.m = getScoreSettingsEditorMessages(locale);
-    this.messages = getMessages(locale);
-    const mediaRoot = vscode.Uri.joinPath(extensionUri, 'media');
-    this.panel = vscode.window.createWebviewPanel('guitardslScoreSettings', this.m.panelTitle, vscode.ViewColumn.Active, {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [mediaRoot]
-    });
-    const scriptUri = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'scoreSettingsEditor.js')).toString();
-    this.panel.webview.html = renderScoreSettingsEditorHtml(this.m, scriptUri, locale);
-    this.panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), undefined, this.disposables);
-    vscode.workspace.onDidChangeTextDocument(e => {
-      if (this.doc && e.document.uri.toString() === this.doc.uri.toString()) {
-        this.doc = e.document;
-        this.postModel();
-      }
-    }, undefined, this.disposables);
-    this.panel.onDidDispose(() => {
-      ScoreSettingsEditorPanel.current = undefined;
-      this.disposables.forEach(d => d.dispose());
-    });
-  }
-
-  private load(doc: vscode.TextDocument, sectionId: string): void {
-    if (!this.doc || this.doc.uri.toString() !== doc.uri.toString()) {
-      this.sections.forEach(s => s.reset());
-    }
-    this.doc = doc;
-    if (this.sections.some(s => s.id === sectionId)) this.activeSection = sectionId;
-    const name = doc.uri.path.split('/').pop() ?? '';
-    this.panel.title = name ? `${this.m.panelTitle}: ${name}` : this.m.panelTitle;
-    this.panel.reveal();
-    if (this.ready) this.postModel();
-  }
-
-  private context(): ScoreSettingsSectionContext {
-    return {
-      doc: this.doc,
-      messages: this.messages,
-      editorMessages: this.m,
-      refresh: () => this.postModel(),
-      status: (text, error) => {
-        void this.panel.webview.postMessage({ type: 'status', text, error: error === true });
-      }
-    };
-  }
-
-  private postModel(): void {
-    if (!this.ready || !this.doc) return;
-    const ctx = this.context();
-    const section = this.sections.find(s => s.id === this.activeSection) ?? this.sections[0];
-    void this.panel.webview.postMessage({
-      type: 'load',
-      sections: this.sections.map(s => ({ id: s.id, title: s.title(this.m) })),
-      active: section.id,
-      model: section.buildModel(ctx),
-      capoRange: [MIN_CAPO, MAX_CAPO]
-    });
-  }
-
-  private async onMessage(msg: any): Promise<void> {
-    if (!msg || typeof msg.command !== 'string') return;
-    if (msg.command === 'ready') {
-      this.ready = true;
-      this.postModel();
-    } else if (msg.command === 'close') {
-      this.panel.dispose();
-    } else if (msg.command === 'showSection') {
-      if (this.sections.some(s => s.id === msg.section)) {
-        this.activeSection = msg.section;
-        this.postModel();
-      }
-    } else {
-      const section = this.sections.find(s => s.id === msg.section);
-      if (section && this.doc) await section.onMessage(this.context(), msg);
     }
   }
 }

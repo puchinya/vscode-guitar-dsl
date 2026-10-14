@@ -21,6 +21,10 @@ class FakePresentation implements InspectorPresentation {
     return this.resolved;
   }
 
+  async postMessage(): Promise<boolean> {
+    return true;
+  }
+
   dispose(): void {
     this.disposeCalls++;
   }
@@ -162,6 +166,49 @@ describe('GuitarDslInspectorController', () => {
     await controller.handleWebviewMessage({ ...message, sessionVersion: context.version - 1 });
     await controller.handleWebviewMessage({ ...message, generation: generation - 1 });
     assert.strictEqual(routed, 1, 'stale URI/version/session/view messages never reach the feature handler');
+  });
+
+  it('routes only the current settings revision and cancels settings when the view is disposed', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
+    const context: InspectorContext = {
+      kind: 'settings',
+      uri: 'file:///song.guitardsl',
+      version: 7,
+      sessionGeneration: 4,
+      revision: 2,
+      section: 'beginner',
+      sections: [
+        { id: 'capo', title: 'Capo' },
+        { id: 'beginner', title: 'Beginner' },
+        { id: 'transpose', title: 'Transpose' }
+      ],
+      model: { canApply: false },
+      status: 'Beginner',
+      description: 'Temporary preview'
+    };
+    const routed: string[] = [];
+    controller.setSettingsMessageHandler(message => { routed.push(message.command); });
+    await controller.showSettings(context);
+    const message = {
+      command: 'settingsSelectBeginnerCapo',
+      generation: controller.currentGeneration,
+      sessionUri: context.uri,
+      sessionVersion: context.version,
+      sessionGeneration: context.sessionGeneration,
+      revision: context.revision,
+      section: context.section,
+      capo: 2
+    };
+
+    await controller.handleWebviewMessage(message);
+    await controller.handleWebviewMessage({ ...message, revision: 1 });
+    await controller.handleWebviewMessage({ ...message, section: 'capo' });
+    assert.deepStrictEqual(routed, ['settingsSelectBeginnerCapo']);
+
+    controller.handleViewDisposed();
+    assert.deepStrictEqual(routed, ['settingsSelectBeginnerCapo', 'settingsCancel']);
   });
 
   it('dismisses the active progression session when its Webview is disposed', async () => {

@@ -11,6 +11,11 @@ export interface PreviewCapoState {
   targetCapo: number;
 }
 
+export interface PreviewCapoSnapshot {
+  readonly state?: PreviewCapoState;
+  readonly notice?: string;
+}
+
 export interface EffectiveDsl {
   text: string;
   /** Capo UI model for the Preview toolbar. */
@@ -38,6 +43,19 @@ export class PreviewCapoController {
 
   getState(): PreviewCapoState | undefined {
     return this.state ? { ...this.state } : undefined;
+  }
+
+  captureSettingsSnapshot(documentUri: string): PreviewCapoSnapshot {
+    return {
+      ...(this.state?.documentUri === documentUri ? { state: { ...this.state } } : {}),
+      ...(this.notice !== undefined ? { notice: this.notice } : {})
+    };
+  }
+
+  restoreSettingsSnapshot(doc: vscode.TextDocument, snapshot: PreviewCapoSnapshot, notify = true): void {
+    this.state = snapshot.state ? { ...snapshot.state } : undefined;
+    this.notice = snapshot.notice;
+    if (notify) this.onDidChange?.(doc);
   }
 
   /** Sets the Preview capo for `doc`; returns false when the target is not valid for its source. */

@@ -23,6 +23,11 @@ export interface PreviewBeginnerState {
   targetCapo?: number;
 }
 
+export interface PreviewBeginnerSnapshot {
+  readonly state?: PreviewBeginnerState;
+  readonly notice?: string;
+}
+
 export interface PreviewEffectiveDsl extends EffectiveDsl {
   beginner: BeginnerPreviewUiModel;
 }
@@ -37,6 +42,19 @@ export class PreviewBeginnerController {
 
   getState(): PreviewBeginnerState | undefined {
     return this.state ? { ...this.state } : undefined;
+  }
+
+  captureSettingsSnapshot(documentUri: string): PreviewBeginnerSnapshot {
+    return {
+      ...(this.state?.documentUri === documentUri ? { state: { ...this.state } } : {}),
+      ...(this.notice !== undefined ? { notice: this.notice } : {})
+    };
+  }
+
+  restoreSettingsSnapshot(doc: vscode.TextDocument, snapshot: PreviewBeginnerSnapshot, notify = true): void {
+    this.state = snapshot.state ? { ...snapshot.state } : undefined;
+    this.notice = snapshot.notice;
+    if (notify) this.onDidChange?.(doc);
   }
 
   isActive(doc: vscode.TextDocument): boolean {

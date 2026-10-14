@@ -164,10 +164,11 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
   - 変換に失敗した場合はエラーメッセージを表示し、保存先に不完全なファイルを残さない。
 
 ### 3.9 `guitardsl.editScoreSettings` / `guitardsl.editCapo`
-楽譜設定エディタ（§4B）を開く。
+共通 Inspector の楽譜設定（§4B、§4D）を開く。
 
 - **引数**: `(uri?: Uri)`。対象ドキュメントは `showPreview` と同一規則（§3.1）。見つからない場合は警告を表示する。
-- `guitardsl.editScoreSettings` は楽譜設定エディタを開く。`guitardsl.editCapo` は同じエディタを「カポ / 弾きやすさ」セクションで開く。
+- `guitardsl.editScoreSettings` は共通 Inspector の「カポ / 弾きやすさ」セクションを開く。`guitardsl.editCapo` も同じセクションを開く。両コマンドの ID、URI 引数、対象解決規則を維持する。
+- 対象 URI は Inspector を表示する前に解決する。Inspector View の再表示ではなく、新しい Webview Panel やタブを作成しない。
 - 開くだけではドキュメントを変更しない。
 
 ### 3.3 `guitardsl.editChordDiagram`
@@ -559,14 +560,16 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - Inspector の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
 - lease 取得・解放の非同期メッセージは要求世代、lease ID、現在の session identity を再確認する。Preview の停止確認が遅延・欠落した場合は Inspector の再生を開始しない。後続の A/B・候補・停止・閉じる操作で古くなった許可・描画要求は現在の Preview 表示や再生状態に反映しない。
 
-## 4B. 楽譜設定エディタ (Score Settings Editor)
+## 4B. 楽譜設定 (Score Settings)
 
-楽曲全体の設定をまとめて編集する Webview パネル。セクション（タブ）単位で構成し、今後カポ以外の設定のセクションを追加できる。現在のセクションは「カポ / 弾きやすさ」、「初心者モード」、「移調」。
+楽曲全体の設定をまとめて編集する画面は、共通 Inspector の既存 Webview View（§4D）に表示する。設定画面は「カポ / 弾きやすさ」「初心者モード」「移調」の3セクションで構成し、各セクションは既存のホスト側モデルと変換処理を使う。独立した設定 Panel は作成しない。
 
-### 4B.1 パネル
-- アクティブなエディタグループに開く。パネルはシングルトンで、別のドキュメントで開くと内容を切り替える。タイトルは `楽譜設定: <ファイル名>`。
-- 表示内容は拡張機能ホストがドキュメントの現在のテキストから計算し、ドキュメントの編集に追従して更新する。Webview は操作（選択・適用・閉じる）を伝えるだけで、計算やドキュメントの変更はしない。
-- **閉じる**: パネルを閉じる。適用しなければドキュメントは変わらない。
+### 4B.1 Inspector セッション
+- `guitardsl.editScoreSettings` と `guitardsl.editCapo` は §3.9 の対象解決後、単一の `guitardsl.inspector` View に設定セッションを表示する。既に表示済みならその View の内容を置き換える。ユーザーが View を移動している場合はその配置を維持する。
+- 拡張機能ホストは対象 URI、文書 version、元テキスト、session generation、revision、現在のセクションと3つのセクションモデルを所有する。表示モデルはホストが現在のテキストから計算する。Webview はセクション ID・候補値などの操作だけを送り、DSL、変換計画、対象文書を保持または生成しない。
+- 文書 version または元テキストが変化した場合、対象文書が閉じた場合、別の文書種別へ切り替わった場合、Inspector View が破棄された場合は設定セッションを失効し、古い Apply を拒否する。入力や通常の文書切替だけで Inspector を自動表示しない。
+- 候補選択、セクション切替、比較表示、Cancel はソース編集を行わない。Apply は明示確認の肯定後にだけ実行し、ホストが対象 URI / version / source / generation / revision と現在の選択を再確認する。古い確認、無効計画、または `applyEdit` の拒否は編集を残さない。成功した Apply は一つの `WorkspaceEdit` と一回の Undo にまとめる。結果が元テキストと同じ場合は Apply を無効にする。
+- Cancel、セッションの失効、Inspector の破棄では未適用の選択を破棄する。設定画面を開くだけではドキュメントを変更しない。
 
 ### 4B.2 カポ / 弾きやすさ セクション
 - 現在のカポと選択中のカポ（初期値は現在のカポ）。
@@ -682,19 +685,28 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 ## 4D. 共通 Inspector (GuitarDSL Inspector)
 
-Inspector は編集補助機能を同じ場所へ段階的に集約するための単一 Webview View である。共通文書コンテキストとコード進行候補を表示し、候補の一時選択や試聴を操作できる。ソース編集は明示的な Apply だけが行う。既存の Activity Bar サイドバー（§4C）と標準 TextEditor、Preview はそれぞれの役割を維持する。
+Inspector は編集補助機能を同じ場所へ段階的に集約するための単一 Webview View である。共通文書コンテキスト、コード進行候補、楽譜設定の3セクション（§4B）を表示する。設定や進行候補の一時選択はソースを変更せず、ソース編集は明示確認後の Apply だけが行う。既存の Activity Bar サイドバー（§4C）と標準 TextEditor、Preview はそれぞれの役割を維持する。
 
 ### 4D.1 貢献と表示
+- 楽譜設定コマンドは §3.9 の対象をこの View に表示し、コード進行 CodeLens は進行セッションを表示する。どちらもこの View を再利用し、新しい Panel、タブ、View を作らない。
 - `contributes.viewsContainers.secondarySidebar` にコンテナ ID `guitardslInspector`、タイトル `GuitarDSL Inspector` を登録し、Webview View ID `guitardsl.inspector` を 1 つだけ置く。Activity Bar に Inspector を追加しない。
 - `guitardsl.openInspector` または明示的な View 表示で開く。拡張機能起動、入力、選択・カーソル移動、通常の文書切替だけでは自動表示しない。ユーザーが View を移動した場合はその配置を維持する。
 - コマンドはアクティブな GuitarDSL TextEditor の URI と文書 version だけを対象とする。対象がなければローカライズされた空状態を表示し、他の開いている文書から選ばない。コマンドは冪等であり、Webview View Provider を複数作らない。
 
 ### 4D.2 コンテキストと境界
-- ホストが `{kind:'empty'}`、`{kind:'document'; uri:string; version:number}`、または URI/version/session generation と対象・操作・候補一覧・選択・A/B・速度を含む `{kind:'progression'}` の現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、文書切替・クローズでは古い URI の状態を無効化する。通常の文書状態更新はビューを表示しない。CodeLens から進行提案を始める操作だけは Inspector を表示する。
+- ホストは `{kind:'empty'}`、`{kind:'document'; uri:string; version:number}`、設定対象 URI/version/session generation/revision/セクションとモデルを含む `{kind:'settings'}`、または URI/version/session generation と対象・操作・候補一覧・選択・A/B・速度を含む `{kind:'progression'}` のいずれか一つの現在コンテキストを所有する。テキスト変更ではアクティブ文書の version を更新し、該当する設定・進行セッションを失効する。文書切替・クローズでは古い URI の状態を無効化する。通常の文書状態更新はビューを表示しない。設定コマンドまたは CodeLens からの明示操作だけがセッションを表示する。
 - View の再解決時にはホストの最新スナップショットだけを描画する。解決済み View へのコンテキスト更新は単調増加 generation 付きで送り、Webview は古い更新を無視する。文書コンテキストは一時状態で、保存・編集・Undo を作らない。適用可能な操作も提供しない。
 - 通常再生と Practice は Preview が所有し、コード進行の試聴は Inspector の一時 AudioContext / scheduler が所有する。Extension Host の排他 lease は片方だけが音を出せるようにし、Preview の停止確認後にだけ Inspector を許可する。Inspector はホスト生成 `PlaybackTimeline` のイベントを使い、候補を正規化する独自タイムラインを作らない。適用はホストで再検証し単一 undoable edit とし、既存 Preview / Practice / PDF / コードエディタの動作を維持する。
 - 進行セッションの Webview メッセージはコマンド、session generation、対象 URI/version、および選択候補 ID をホスト状態と照合する。長さ・操作の変更はホストが再計算し、Webview から候補 DSL を受け取らない。Cancel、ビュー破棄、文書切替、Preview 破棄では試聴を止め、セッションと Decoration を破棄する。
 - 1 列のレスポンシブ配置、VS Code テーマ色、見出し・状態の ARIA 名、キーボードとスクリーンリーダーで読める状態表示を用いる。nonce 付き CSP を設定し、リモートの script/style/resource は読み込まない。
+
+### 4D.3 設定セッションと Preview
+- 設定コンテキストは対象 URI / version、session generation、revision、選択中セクション、およびホストが生成した3つのセクションモデルを持つ。Webview はセクション・候補選択と操作 ID だけを送り、DSL・変換計画・対象文書を所有しない。設定と進行セッションを同時に表示・実行しない。
+- Capo / Beginner の候補選択はホストの既存モデルと PreviewCapoController / PreviewBeginnerController を使い、一時比較として既に開いている同じ対象の Preview に反映する。Preview が開いていない場合は自動表示せず、設定セッション中にユーザーが明示的に開いたときは現在の草稿を投影する。Cancel では Preview を開く直前の一時状態へ戻す。Preview と PDF は既存の resolvePreviewEffectiveDsl で同じ有効 DSL を解決する。
+- 設定開始時に対象 URI の Preview 一時状態を保存する。Cancel、別セクションへの切替、設定セッション破棄では保存時点の状態へ戻す。ただし開始後にユーザーが Preview を独立操作した場合は設定セッションを失効させ、新しい Preview 状態を残す。古い保存状態で外部操作を上書きしない。
+- Transpose は差分・キー・mapping・警告を表示するだけで、Preview に一時移調を適用しない。Transpose Apply 後に既存の Capo / Beginner override があれば、新しい文書テキストから有効 DSL を再計算する。
+- Apply は明示確認後にだけ実行する。ホストが URI / version / source / session generation / revision と現在の選択を再確認し、一つの WorkspaceEdit にまとめる。古い確認、無効計画、applyEdit の拒否は編集を残さず、成功した Apply は一回の Undo で戻る。
+- 文書 version / source の変更、対象クローズ、別文書種別への切替、View 破棄は設定セッションを失効させる。設定から進行へ切り替えるときは設定草稿を破棄して Preview を復元してから進行を開始する。進行から設定へ切り替えるときは既存試聴の Stop ACK まで Preview ロックを保ち、その後に設定を表示する。古い非同期応答は新しいセッションへ適用しない。
 
 ---
 

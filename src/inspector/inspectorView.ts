@@ -8,6 +8,7 @@ import type { InspectorContext, InspectorPresentation } from './inspectorControl
 export const inspectorViewTestProbe: {
   resolvedView?: vscode.WebviewView;
   transformHtml?: (html: string) => string;
+  getContext?: () => InspectorContext;
 } = {};
 
 export class GuitarDslInspectorView implements vscode.WebviewViewProvider, InspectorPresentation {
@@ -20,7 +21,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   private noteGeneration: (generation: number) => void = () => {};
   private onViewDisposed: () => void = () => {};
 
-  constructor(private readonly locale: SupportedLocale) {}
+  constructor(private readonly locale: SupportedLocale, private readonly extensionUri: vscode.Uri) {}
 
   setContextProvider(
     getContext: () => InspectorContext,
@@ -29,6 +30,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     onViewDisposed: () => void = () => {}
   ): void {
     this.getContext = getContext;
+    inspectorViewTestProbe.getContext = getContext;
     this.handleMessage = handleMessage;
     this.noteGeneration = noteGeneration;
     this.onViewDisposed = onViewDisposed;
@@ -43,7 +45,7 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     inspectorViewTestProbe.resolvedView = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: []
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'media')]
     };
     this.viewSubscriptions = [
       webviewView.onDidChangeVisibility(() => {
@@ -85,12 +87,16 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
   private render(): void {
     if (!this.view || this.disposed) return;
     const nonce = randomBytes(16).toString('base64');
+    const settingsScriptUri = this.view.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'inspectorSettings.js')
+    ).toString();
     const html = renderInspectorHtml(
       this.locale,
       this.getContext(),
       this.view.webview.cspSource,
       nonce,
-      this.generation
+      this.generation,
+      settingsScriptUri
     );
     this.view.webview.html = inspectorViewTestProbe.transformHtml?.(html) ?? html;
   }
@@ -113,10 +119,12 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
       kind: context.kind,
       context: webviewContext,
       status: context.kind === 'document' ? messages.inspectorDocumentStatus
-        : context.kind === 'progression' ? messages.uiProgressionTitle : messages.inspectorEmptyStatus,
+        : context.kind === 'progression' ? messages.uiProgressionTitle
+          : context.kind === 'settings' ? context.status : messages.inspectorEmptyStatus,
       description: context.kind === 'document'
         ? messages.inspectorDocumentDescription
-        : context.kind === 'progression' ? messages.uiProgressionDescription : messages.inspectorEmptyDescription
+        : context.kind === 'progression' ? messages.uiProgressionDescription
+          : context.kind === 'settings' ? context.description : messages.inspectorEmptyDescription
     });
   }
 

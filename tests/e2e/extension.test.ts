@@ -1740,20 +1740,23 @@ suite('Capo / playability (Issue #62)', () => {
     assert.ok(commands.includes('guitardsl.editScoreSettings'));
   });
 
-  test('E2E-02 opening the score settings editor does not mutate the source', async () => {
+  test('E2E-02 opening score settings reuses the Inspector and does not mutate the source', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const version = doc.version;
     await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
-    let tab: vscode.Tab | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
+      inspectorViewTestProbe: { getContext?: () => any };
+    };
     await waitFor(() => {
-      tab = vscode.window.tabGroups.all.flatMap(g => g.tabs)
-        .find(t => t.input instanceof vscode.TabInputWebview && /^(Score Settings|楽譜設定)/.test(t.label));
-      return tab !== undefined;
-    }, 'score settings editor tab should open');
-    await sleep(300);
+      return inspectorViewTestProbe.getContext?.()?.kind === 'settings';
+    }, 'score settings should open in the shared Inspector');
     assert.strictEqual(doc.getText(), SOURCE);
     assert.strictEqual(doc.version, version);
+    assert.ok(!vscode.window.tabGroups.all.flatMap(g => g.tabs)
+      .some(t => t.input instanceof vscode.TabInputWebview && /^(Score Settings|楽譜設定)/.test(t.label)),
+    'score settings must not open a second webview panel');
   });
 
   test('EDITOR-01 apply recomputes from the latest source', async () => {
@@ -2102,7 +2105,7 @@ suite('Beginner Mode (Issue #65)', () => {
     assert.strictEqual(doc.getText(), '| Bm |\n', 'a failed apply does not modify the source');
   });
 
-  test('BEG-E2E-06 the Score Settings beginner section model shows the mapping and applies its own selection', async () => {
+  test('BEG-E2E-06 the Beginner section model shows mapping but never applies edits itself', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const section = new (scoreSettings().BeginnerSection)();
@@ -2131,12 +2134,13 @@ suite('Beginner Mode (Issue #65)', () => {
     await section.onMessage(ctx, { command: 'setPolicy', policy: 'forbid' });
     assert.strictEqual(section.buildModel(ctx).selectedCapo, null, 'a policy change returns to auto');
     await section.onMessage(ctx, { command: 'select', capo: 0 });
-    // The webview sends only the intent; the host applies its own selection to the latest source.
+    // The settings controller alone owns Apply; a section message cannot edit the document.
+    const sourceBeforeApplyMessage = doc.getText();
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text' });
-    assert.strictEqual(doc.getText(), FORBID_AT_0);
-    assert.ok(statuses.length > 0 && refreshed > 0);
-    await undoIn(doc);
-    assert.strictEqual(doc.getText(), SOURCE);
+    assert.strictEqual(doc.getText(), sourceBeforeApplyMessage);
+    assert.strictEqual(section.buildModel(ctx).canApply, true);
+    assert.strictEqual(statuses.length, 0);
+    assert.ok(refreshed > 0);
   });
 });
 
@@ -2192,7 +2196,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     if (ext && !ext.isActive) await ext.activate();
   });
 
-  test('TR-E2E-01 apply recomputes from the latest source, not from the previous model (T042)', async () => {
+  test('TR-E2E-01 settings sections cannot edit; a stale expected source is rejected (T042)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const statuses: string[] = [];
@@ -2200,15 +2204,25 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     const section = new (scoreSettings().TransposeSection)();
     await section.onMessage(ctx, { command: 'setSemitones', semitones: 2 });
     const model = section.buildModel(ctx);
+    const expected = { version: doc.version, source: doc.getText() };
     assert.strictEqual(model.targetKey, 'D');
     assert.deepStrictEqual(model.mapping, [['C', 'D'], ['F', 'G']]);
     assert.ok(model.canApply);
-    // The document changes after the model was shown; apply must use the new text.
+    // The document changes after the model was shown; the approved session cannot edit that newer source.
     await replaceAll(doc, SOURCE.replace('| C | F |', '| C | F | G |').replace('| a4/1 |', '| a4/1 | b4/1 |'));
+    const stale = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'keep' } }, expected);
+    assert.ok(!stale.ok && stale.code === 'staleDocument');
+    const changedSource = doc.getText();
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text', model });
+    assert.strictEqual(doc.getText(), changedSource, 'section messages never apply edits directly');
+    const result = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'keep' } }, {
+      version: doc.version,
+      source: doc.getText()
+    });
+    assert.ok(result.ok && result.changed);
     assert.strictEqual(doc.getText(), ['title: Transpose Test', 'capo: 0', 'key: D', '', '| D | G | A |', 'mel: | d5/1 | b4/1 | c#5/1 |', ''].join('\n'));
-    assert.ok(statuses[statuses.length - 1].includes('+2'));
-    assert.strictEqual(section.buildModel(ctx).semitones, 0, 'the selection resets after apply');
+    assert.strictEqual(statuses.length, 0, 'section models do not own apply status or document edits');
+    assert.strictEqual(section.buildModel(ctx).semitones, 2, 'only the settings controller resets a session after apply');
   });
 
   test('TR-E2E-02 transpose + explicit capo is one WorkspaceEdit and one undo (T043)', async () => {
@@ -2229,24 +2243,120 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     assert.strictEqual(doc.getText(), 'chord C@x = x32010\n| C@x |\n');
   });
 
-  test('TR-E2E-03 Score Settings exposes Capo, Beginner and Transpose sections side by side (T044)', async () => {
+  test('TR-E2E-03 score settings use the single Inspector and keep all three host-owned section models (T044)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
+      inspectorViewTestProbe: { resolvedView?: vscode.WebviewView; getContext?: () => any };
+    };
     await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
-    const panel = (scoreSettings().ScoreSettingsEditorPanel as any).current;
-    assert.ok(panel, 'panel open');
-    assert.deepStrictEqual(panel.sections.map((s: any) => s.id), ['capo', 'beginner', 'transpose']);
+    await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind === 'settings' && !!inspectorViewTestProbe.resolvedView,
+      'settings context is shown in the resolved Inspector view');
+    const inspectorView = inspectorViewTestProbe.resolvedView;
+    assert.ok(inspectorView, 'the registered Inspector view is reused');
+    const settingsContext = inspectorViewTestProbe.getContext?.();
+    assert.strictEqual(settingsContext.section, 'capo');
+    assert.deepStrictEqual(settingsContext.sections.map((s: any) => s.id), ['capo', 'beginner', 'transpose']);
+    if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+      const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale),
+        `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}`);
+      const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand('notifications.clearAll');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const captureWaitMs = Number(process.env.GUITARDSL_E2E_CAPTURE_WAIT_MS ?? 500);
+      if (Number.isFinite(captureWaitMs) && captureWaitMs > 0) await settle(Math.min(captureWaitMs, 5000));
+      const theme = /light/i.test(requestedTheme) ? 'light' : 'dark';
+
+      assert.strictEqual(await evaluateInspectorWebview<boolean>('!document.getElementById("settings-state").hidden'), true,
+        'the production Inspector renders settings without a second panel');
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'beginner'), true,
+        'section navigation is available by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'beginner', 'Beginner section switch reaches the host');
+      const sourceBeforeSelection = doc.getText();
+      const beginnerModel = inspectorViewTestProbe.getContext?.()?.model;
+      const candidate = beginnerModel?.candidates?.find((item: any) => item.supported);
+      assert.ok(candidate, 'the Beginner model exposes a supported capo candidate');
+      const candidateActivated = await activateInspectorControlWithKeyboard('candidate', String(candidate.capo));
+      if (!candidateActivated) {
+        const state = await evaluateInspectorWebview<string>(
+          'JSON.stringify({active:{tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,pressed:document.activeElement?.getAttribute("aria-pressed")},section:window.guitarDslInspectorContext?.section,candidates:Array.from(document.querySelectorAll("[data-inspector-control=candidate]")).map(node=>({key:node.dataset.inspectorKey,disabled:node.disabled,pressed:node.getAttribute("aria-pressed"),name:node.getAttribute("aria-label")}))})'
+        );
+        assert.fail(`candidate selection is not reachable by keyboard: ${state}`);
+      }
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.model?.selectedCapo === candidate.capo,
+        'candidate selection updates the host model');
+      assert.strictEqual(doc.getText(), sourceBeforeSelection, 'candidate selection never edits the DSL');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-beginner.png`, 135);
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'transpose'), true,
+        'Transpose navigation is available by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'transpose', 'Transpose section switch reaches the host');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-transpose.png`, 135);
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'capo'), true,
+        'Capo navigation remains available after changing settings');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'capo', 'Capo section returns from the keyboard');
+      const capoModel = inspectorViewTestProbe.getContext?.()?.model;
+      const capoCandidate = capoModel?.candidates?.find((item: any) => item.supported && item.capo !== capoModel.selectedCapo);
+      assert.ok(capoCandidate, 'the Capo model exposes a different supported candidate');
+      const sourceBeforeCapoSelection = doc.getText();
+      assert.strictEqual(await activateInspectorControlWithKeyboard('candidate', String(capoCandidate.capo)), true,
+        'a Capo candidate is selectable by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.model?.selectedCapo === capoCandidate.capo,
+        'Capo candidate selection updates the host model');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'Capo preview selection never edits the DSL');
+      assert.strictEqual(inspectorViewTestProbe.getContext?.()?.model?.canApply, true,
+        'a valid Capo selection enables Apply');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-capo.png`, 135);
+      const previewProbe = previewCapo().effectiveDslProbe;
+      previewProbe.previewInput = undefined;
+      const capoPlan = require('../../capo').planCapoTransform(doc.getText(), capoCandidate.capo);
+      assert.ok(capoPlan.ok);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitFor(() => previewProbe.previewInput === capoPlan.text,
+        'an explicit Preview opened after settings projects the current Capo draft');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'opening Preview and comparing a draft never edits the DSL');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const applyReachable = await activateInspectorControlWithKeyboard('action', 'apply', true, false);
+      if (!applyReachable) {
+        const state = await evaluateInspectorWebview<string>(
+          'JSON.stringify({active:{tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,label:document.activeElement?.getAttribute("aria-label"),text:document.activeElement?.textContent},apply:{disabled:document.getElementById("settings-apply")?.disabled,label:document.getElementById("settings-apply")?.getAttribute("aria-label"),text:document.getElementById("settings-apply")?.textContent},controls:Array.from(document.querySelectorAll("#settings-tabs button,#settings-content button,#settings-actions button")).map(node=>({control:node.dataset.inspectorControl,key:node.dataset.inspectorKey,disabled:node.disabled,label:node.getAttribute("aria-label"),text:node.textContent}))})'
+        );
+        assert.fail(`the enabled Apply action is not reachable by keyboard or exposed as a named button: ${state}`);
+      }
+      assert.strictEqual(await activateInspectorControlWithKeyboard('action', 'close'), true,
+        'Close is reachable and activates from the keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind !== 'settings', 'keyboard Close ends the settings session');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'keyboard Close applies no source edit');
+      await waitFor(() => previewProbe.previewInput === doc.getText(),
+        'Close restores the Preview state that existed before the explicit Preview was opened');
+    }
+
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind === 'settings', 'the capo command routes to the Inspector');
+    assert.strictEqual(inspectorViewTestProbe.resolvedView, inspectorView, 'both commands reuse one Inspector view');
+    assert.strictEqual(inspectorViewTestProbe.getContext?.()?.section, 'capo');
+
     const ctx = sectionContext(doc, []);
-    const [, beginnerSection, transposeSection] = panel.sections;
-    await transposeSection.onMessage(ctx, { command: 'setSemitones', semitones: 5 });
-    await transposeSection.onMessage(ctx, { command: 'setCapoMode', mode: 'recommended' });
-    await beginnerSection.onMessage(ctx, { command: 'setPolicy', policy: 'allow' });
+    const capoSection = new (scoreSettings().CapoSection)();
+    const beginnerSection = new (scoreSettings().BeginnerSection)();
+    const transposeSection = new (scoreSettings().TransposeSection)();
+    assert.strictEqual(capoSection.selectCapo(2), true);
+    assert.strictEqual(beginnerSection.setBarrePolicy('allow'), true);
+    assert.strictEqual(beginnerSection.selectCapo(3), true);
+    assert.strictEqual(transposeSection.setSemitones(5), true);
+    assert.strictEqual(transposeSection.setCapoMode('recommended'), true);
     assert.strictEqual(beginnerSection.buildModel(ctx).barrePolicy, 'allow');
+    assert.deepStrictEqual(beginnerSection.getOptions(), { barrePolicy: 'allow', targetCapo: 3 });
     assert.strictEqual(transposeSection.buildModel(ctx).semitones, 5, 'sections keep their own state');
     assert.strictEqual(transposeSection.buildModel(ctx).capoMode, 'recommended');
-    const titles = panel.sections.map((s: any) => s.title(i18n().getScoreSettingsEditorMessages('ja')));
+    const titles = [capoSection, beginnerSection, transposeSection].map((s: any) => s.title(i18n().getScoreSettingsEditorMessages('ja')));
     assert.deepStrictEqual(titles, ['カポ / 弾きやすさ', '初心者モード', '移調']);
-    panel.panel.dispose();
   });
 
   test('TR-E2E-04 Preview / PDF re-resolve from the transposed source, including Beginner Mode (T045)', async () => {

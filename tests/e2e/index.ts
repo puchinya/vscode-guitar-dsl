@@ -10,7 +10,9 @@ export async function run(): Promise<void> {
     timeout: 10000
   });
 
-  if (process.env.GUITARDSL_E2E_SCREENSHOT_ONLY === '1') {
+  if (process.env.GUITARDSL_E2E_GREP) {
+    mocha.grep(process.env.GUITARDSL_E2E_GREP);
+  } else if (process.env.GUITARDSL_E2E_SCREENSHOT_ONLY === '1') {
     mocha.grep('ED-01/ED-02 CodeLens opens the Inspector and candidate selection only decorates the editor');
   }
 

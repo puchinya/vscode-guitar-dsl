@@ -99,7 +99,7 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 ### Capo and Playability
 <!-- help-sources: extension:4 -->
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the Score Settings editor. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
+The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the shared Inspector at Score Settings. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
 
 ### Beginner Mode
 <!-- help-sources: extension:4 -->
@@ -109,13 +109,13 @@ Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning a
 ### Score Settings
 <!-- help-sources: extension:3 extension:4B -->
 
-**GuitarDSL: Edit Score Settings** opens a settings panel for the whole song with three sections:
+**GuitarDSL: Edit Score Settings** opens the shared Inspector for the whole song with three sections:
 
 - **Capo / Playability**: every capo position with its score, the recommendation, and the chord mapping.
 - **Beginner Mode**: the settings and chord substitutions described above.
 - **Transpose**: transposes the whole song by −11 to +11 semitones or to a target key. This changes the sounding key, melody and chords. The capo can stay the same, follow the recommendation, or be set to a value you choose.
 
-Each section applies its result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same panel at the capo section. For a score with TAB, source-changing capo and transpose operations are reported as unsupported; the transform does not partially rewrite the document.
+Selecting a Capo or Beginner candidate temporarily compares it in an already-open Preview for the same document. It does not open Preview or edit the DSL. If you open Preview yourself while Score Settings is still open, the current draft appears there; closing Score Settings restores the Preview state from just before it opened. Transpose does not change Preview before Apply. **Apply to DSL** asks for confirmation, then applies the selected result as one undoable edit. **GuitarDSL: Edit Capo / Playability** opens the same Inspector at the capo section. For a score with TAB, source-changing capo and transpose operations are reported as unsupported; the transform does not partially rewrite the document.
 
 ### Change Accompaniment Pattern
 <!-- help-sources: extension:3 -->

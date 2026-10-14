@@ -211,6 +211,7 @@ export interface Messages {
   msgCapoApplied: (capo: number) => string;
   msgCapoApplyFailed: (reason: string) => string;
   msgCapoEditRejected: string;
+  msgDocumentChanged: string;
   msgCapoUnusedDefinitions: (keys: string) => string;
 
   // Beginner Mode (preview capo bar, score settings editor, host notifications)
@@ -471,6 +472,7 @@ export const MESSAGES_JA: Messages = {
   msgCapoApplied: (capo: number) => `カポ ${capo} をDSLに適用しました。`,
   msgCapoApplyFailed: (reason: string) => `カポを適用できません: ${reason}`,
   msgCapoEditRejected: 'エディタが変更を受け付けませんでした',
+  msgDocumentChanged: '文書が変更されたため、操作を中止しました。',
   msgCapoUnusedDefinitions: (keys: string) => `次のコード定義は使われなくなる可能性があります（削除はしません）: ${keys}`,
 
   uiBeginnerMode: '初心者モード',
@@ -750,6 +752,7 @@ export const MESSAGES_EN: Messages = {
   msgCapoApplied: (capo: number) => `Applied capo ${capo} to the DSL.`,
   msgCapoApplyFailed: (reason: string) => `Cannot apply capo: ${reason}`,
   msgCapoEditRejected: 'the editor rejected the change',
+  msgDocumentChanged: 'The document changed, so the operation was canceled.',
   msgCapoUnusedDefinitions: (keys: string) => `These chord definitions may become unused (they are not deleted): ${keys}`,
 
   uiBeginnerMode: 'Beginner mode',
@@ -1192,6 +1195,8 @@ export interface ScoreSettingsEditorMessages {
   unresolvedChords: string;
   apply: string;
   close: string;
+  confirmApply: string;
+  staleDocument: string;
   barreChords: string;
   barreAllow: string;
   barreForbid: string;
@@ -1241,6 +1246,8 @@ const SCORE_SETTINGS_JA: ScoreSettingsEditorMessages = {
   unresolvedChords: '押さえ方が不明なコード',
   apply: 'DSLに適用',
   close: '閉じる',
+  confirmApply: '選択した設定をDSLに適用しますか？',
+  staleDocument: '文書が変更されたため、設定セッションを終了しました。もう一度開いてください。',
   barreChords: 'バレーコード',
   barreAllow: '許可する',
   barreForbid: '使用しない',
@@ -1290,6 +1297,8 @@ const SCORE_SETTINGS_EN: ScoreSettingsEditorMessages = {
   unresolvedChords: 'Chords without a known shape',
   apply: 'Apply to DSL',
   close: 'Close',
+  confirmApply: 'Apply the selected settings to the DSL?',
+  staleDocument: 'The document changed. The settings session has ended; open it again to continue.',
   barreChords: 'Barre chords',
   barreAllow: 'Allow',
   barreForbid: 'Do not use',

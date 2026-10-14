@@ -6,6 +6,8 @@
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #93](https://github.com/puchinya/vscode-guitar-dsl/issues/93)
+- Related Issue: [Issue #134](https://github.com/puchinya/vscode-guitar-dsl/issues/134)
+- Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -23,6 +25,7 @@
 | TAB Preview、PDF 同一性、変換制限 | 拡張機能仕様 §4.7、§4B.6 |
 | PDF、Preview playback、Practice Mode | 拡張機能仕様 §3.2、§3.14、§4.6 |
 | コード進行の melody-aware audition と A/B | Issue #129、拡張機能仕様 §3.17、§4.8 |
+| Inspector の設定比較、Preview state restore、進行との排他 | Issue #135、拡張機能仕様 §4B、§4D |
 
 ## Architecture
 
@@ -85,6 +88,14 @@ Extension Host が登録する Preview actions は `guitardsl.playback.togglePla
 
 Progression audition uses a transient AudioContext and scheduler in the Inspector Webview. Its Play click calls `resume()` on that context synchronously before the asynchronous Host request, preserving the browser activation delivered to that Webview. The Extension Host grants an exclusive playback lease only after it locks Preview start actions, stops current Preview audio, and receives a stop acknowledgement. A missing or stale acknowledgement never starts Inspector audio. Preview remains the owner of ordinary playback and Practice; the Host lease prevents simultaneous execution and is released on natural completion, Stop, context change, cancellation, invalidation, or teardown. Release unlocks Preview without resuming its previous position. A candidate occurrence range is resolved from canonical `PlaybackTimeline.occurrences`; if its performance occurrences are noncontiguous, v1 offers full-song audition only. Switching side or candidate stops/fades scheduled Inspector nodes while retaining the session; changing mode or speed stops/fades scheduled nodes. The selected mode and 50/75/100/125/150% audition speed are reported to and retained by the host session; they are not written to `vscode.getState`, BPM or the timeline. Source edits, document switches, Inspector/Preview disposal, or lease revocation stop/fade the relevant audio and clear editor decorations and ephemeral session state. Preview preferences survive. Audio errors are localized while candidate selection and apply remain available.
 
+### Settings comparison (Issue #135)
+
+The host projects Capo and Beginner candidate selections through the existing PreviewCapoController and PreviewBeginnerController only for an already-open Preview that displays the settings session's target URI. Selecting a candidate never opens Preview. If the user explicitly opens that document's Preview during the settings session, the host snapshots its current overrides and projects the current settings draft; Cancel restores the state from immediately before the Preview opened. Preview and PDF continue to resolve the same effective DSL through resolvePreviewEffectiveDsl.
+
+On settings-session entry, the host snapshots the target URI's temporary Preview overrides. Cancel, settings-section navigation, or session invalidation restores that snapshot only if no independent Preview action has superseded it. A direct Preview action invalidates the settings session and remains in effect; stale cleanup must not overwrite it. Transpose shows its mapping and warnings without a temporary Preview transform. After Transpose Apply, existing capo or beginner overrides are recomputed from the new source text.
+
+Settings and progression are mutually exclusive Inspector sessions. Moving from progression to settings keeps the existing Preview lock until the audio stop acknowledgement arrives. The progression session retains its Inspector-local AudioContext and Host lease; this settings transition does not create another audio owner or change ordinary Preview playback and Practice.
+
 ## Data flow and ownership
 
 | フロー | 変換 | 結果の所有者 |
@@ -93,6 +104,7 @@ Progression audition uses a transient AudioContext and scheduler in the Inspecto
 | PDF | 有効 DSL → Compiler / `renderScoreSheets()` → PDF exporter → 保存先 | `src/pdf.ts` は VS Code に依存せず PDF bytes / write を担う。保存先選択は Extension Core |
 | Playback / Practice | `ParsedScore.playOrder` / 音価 / `sectionName` → `PlaybackTimeline` と occurrence payload → Preview Web Audio | `PlaybackTimeline` は score time、Preview Webview は通常 transport・Practice・overlay・音声実行を管理。Host は panel と action forwarding を管理 |
 | Inspector progression audition | Validated source/candidate → canonical `PlaybackTimeline` event payload → Inspector Web Audio | Inspector Webview は一時 audition のみを管理。Extension Host は Preview 停止確認付き exclusive lease を管理し、最大1つの Webview playback owner を許可 |
+| Inspector settings comparison | URI-scoped settings candidate → existing Preview capo/beginner override → shared effective DSL | Settings controller owns snapshot/restore precedence; Preview/PDF rendering remains shared and candidate changes do not edit source |
 
 プレビューでの一時カポや初心者モードは、対象の有効 DSL / UI モデルをホストが解決して描画へ渡す。正式な保存変換と一時表示変換の契約は拡張機能仕様に従う。
 

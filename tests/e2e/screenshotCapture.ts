@@ -60,10 +60,19 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
 }
 
 /** Captures the selected VS Code workbench page through its local DevTools target. */
-export async function captureWorkbenchScreenshot(filename: string): Promise<void> {
+export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
-  const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-134', filename);
+  const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
   await withWorkbenchDevTools(async send => {
+    const width = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 800);
+    if (Number.isFinite(width) && width >= 320) {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+    }
     await send('Page.enable');
     const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
     const data = result.data;
@@ -128,9 +137,10 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
 }
 
 export async function activateInspectorControlWithKeyboard(
-  control: 'candidate' | 'bars' | 'operation' | 'play' | 'stop',
+  control: 'candidate' | 'bars' | 'operation' | 'play' | 'stop' | 'section' | 'action',
   key: string,
-  waitForAudioState = true
+  waitForAudioState = true,
+  activate = true
 ): Promise<boolean> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
@@ -150,15 +160,15 @@ export async function activateInspectorControlWithKeyboard(
     const isolatedWorld = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-e2e-keyboard-check' });
     const executionContextId = isolatedWorld.executionContextId;
     if (typeof executionContextId !== 'number') throw new Error('Could not create an Inspector frame execution context');
-    const readFocusedButton = async (): Promise<{ control?: string; key?: string; pressed?: string; tag?: string } | undefined> => {
+    const readFocusedButton = async (): Promise<{ control?: string; key?: string; pressed?: string; selected?: string; tag?: string } | undefined> => {
       const focused = await send('Runtime.evaluate', {
         contextId: executionContextId,
-        expression: "JSON.stringify({tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,pressed:document.activeElement?.getAttribute('aria-pressed')})",
+        expression: "JSON.stringify({tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,pressed:document.activeElement?.getAttribute('aria-pressed'),selected:document.activeElement?.getAttribute('aria-selected')})",
         returnByValue: true
       });
       const value = (focused.result as { value?: unknown } | undefined)?.value;
       if (typeof value !== 'string') return undefined;
-      return JSON.parse(value) as { control?: string; key?: string; pressed?: string; tag?: string };
+      return JSON.parse(value) as { control?: string; key?: string; pressed?: string; selected?: string; tag?: string };
     };
     const readAudioState = async (): Promise<string | undefined> => {
       const result = await send('Runtime.evaluate', {
@@ -178,7 +188,7 @@ export async function activateInspectorControlWithKeyboard(
       const value = (result.result as { value?: unknown } | undefined)?.value;
       return typeof value === 'string' ? value : '<unavailable>';
     };
-    const hasFocusedAccessibilityButton = async (): Promise<boolean> => {
+    const hasFocusedAccessibilityControl = async (expectedRole: 'button' | 'tab'): Promise<boolean> => {
       await send('DOM.enable');
       await send('Accessibility.enable');
       const activeElement = await send('Runtime.evaluate', {
@@ -200,7 +210,7 @@ export async function activateInspectorControlWithKeyboard(
         }));
       const role = focused?.role as { value?: unknown } | undefined;
       const name = focused?.name as { value?: unknown } | undefined;
-      return role?.value === 'button' && typeof name?.value === 'string' && name.value.length > 0;
+      return role?.value === expectedRole && typeof name?.value === 'string' && name.value.length > 0;
     };
     const dispatchTab = async (): Promise<void> => {
       await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
@@ -210,8 +220,10 @@ export async function activateInspectorControlWithKeyboard(
       await dispatchTab();
       const focused = await readFocusedButton();
       if (focused?.tag === 'BUTTON' && focused.control === control && focused.key === key) {
+        if (!activate) return hasFocusedAccessibilityControl(control === 'section' ? 'tab' : 'button');
         await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        if (control === 'action' && key === 'close') return true;
         if (control === 'play' || control === 'stop') {
           if (!waitForAudioState) return true;
           const expectedState = control === 'play' ? 'playing' : 'idle';
@@ -224,8 +236,9 @@ export async function activateInspectorControlWithKeyboard(
         for (let attempt = 0; attempt < 20; attempt++) {
           await new Promise(resolve => setTimeout(resolve, 25));
           const updated = await readFocusedButton();
-          if (updated?.tag === 'BUTTON' && updated.control === control && updated.key === key && updated.pressed === 'true'
-            && await hasFocusedAccessibilityButton()) return true;
+          const activated = control === 'section' ? updated?.selected === 'true' : updated?.pressed === 'true';
+          if (updated?.tag === 'BUTTON' && updated.control === control && updated.key === key && activated
+            && await hasFocusedAccessibilityControl(control === 'section' ? 'tab' : 'button')) return true;
         }
         return false;
       }

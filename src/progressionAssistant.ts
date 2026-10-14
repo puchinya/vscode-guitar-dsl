@@ -607,6 +607,12 @@ export class ProgressionAssistantController implements vscode.Disposable {
     if (activeUri && activeUri !== uri) this.clear(activeUri, restore);
   }
 
+  /** Restores the Preview only after a caller has stopped and released any active audio lease. */
+  async restoreAfterExternalStop(uri: string): Promise<void> {
+    if (this.session) return;
+    await this.preview.restore(uri);
+  }
+
   hasActiveSession(uri: string): boolean {
     return this.session?.uri === uri;
   }
