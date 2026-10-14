@@ -165,6 +165,11 @@ export class ProgressionAudioLeaseCoordinator {
     this.finish(lease);
   }
 
+  async stopForSession(sessionUri: string): Promise<void> {
+    if (this.active?.request.sessionUri !== sessionUri) return;
+    await this.stop();
+  }
+
   async stop(): Promise<void> {
     const lease = this.active;
     if (!lease) return;

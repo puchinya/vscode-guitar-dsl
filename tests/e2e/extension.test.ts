@@ -447,9 +447,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const inspectorView = inspectorViewProbe.resolvedView as vscode.WebviewView | undefined;
     assert.ok(inspectorView, 'the progression session resolves its production Inspector Webview');
     const originalHtml = inspectorView.webview.html;
-    const protocolMessages: Array<{ command?: unknown }> = [];
+    const protocolMessages: Array<{ command?: unknown; leaseId?: unknown; requestId?: unknown }> = [];
     const subscription = inspectorView.webview.onDidReceiveMessage((message: unknown) => {
-      const candidate = message as { command?: unknown };
+      const candidate = message as { command?: unknown; leaseId?: unknown; requestId?: unknown };
       if (typeof candidate.command === 'string' && candidate.command.startsWith('progressionAudio')) protocolMessages.push(candidate);
     });
 
@@ -466,7 +466,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
-      assert.ok(audioLeaseCoordinator.activeLeaseId, 'the Host granted an exclusive lease before the deferred resume resolves');
+      const cancelledLeaseId = audioLeaseCoordinator.activeLeaseId;
+      assert.ok(cancelledLeaseId, 'the Host granted an exclusive lease before the deferred resume resolves');
       assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
         'Stop reaches the Inspector while the granted start is awaiting resume');
       for (let attempt = 0; attempt < 100 && !protocolMessages.some(message => message.command === 'progressionAudioStopped'); attempt++) await settle(20);
@@ -489,6 +490,46 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.strictEqual(protocolMessages.some(message => message.command === 'progressionAudioStarted'), false,
         'the cancelled start never acknowledges that audio began');
       assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined);
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play', false), true,
+        'a fresh audition can start after the cancelled lease has been released');
+      await waitForInspectorAudioMetrics(metrics => metrics.resumeRequests >= 2 && metrics.grants >= 2);
+      const newerLeaseId = audioLeaseCoordinator.activeLeaseId;
+      assert.ok(newerLeaseId && newerLeaseId !== cancelledLeaseId, 'the second audition owns a different lease');
+      await inspectorView.webview.postMessage({ command: 'inspectorE2eResolveResume' });
+      await waitForInspectorAudioMetrics(metrics => metrics.resumeResolutions === 2 && metrics.oscillatorCreations > 0);
+      for (let attempt = 0; attempt < 100 && !protocolMessages.some(message => message.command === 'progressionAudioStarted' && message.leaseId === newerLeaseId); attempt++) await settle(20);
+      assert.ok(protocolMessages.some(message => message.command === 'progressionAudioStarted' && message.leaseId === newerLeaseId),
+        'the newer audition becomes active after its own resume resolves');
+
+      const stopEnabledBeforeStaleStart = await evaluateInspectorWebview<boolean>(
+        'document.getElementById("progression-stop")?.disabled === false'
+      );
+      assert.strictEqual(stopEnabledBeforeStaleStart, true, 'the current audition exposes an enabled Stop control');
+      await inspectorView.webview.postMessage({
+        command: 'progressionAudioStart',
+        leaseId: cancelledLeaseId,
+        requestId: 'stale-request-from-cancelled-session',
+        playback: { events: [{ kind: 'pitched', source: 'melody', timeSeconds: 0, durationSeconds: 1, midiNotes: [60] }] }
+      });
+      for (let attempt = 0; attempt < 100 && !protocolMessages.some(message =>
+        message.command === 'progressionAudioFailed' && message.leaseId === cancelledLeaseId && message.requestId === 'stale-request-from-cancelled-session'); attempt++) await settle(20);
+      assert.ok(protocolMessages.some(message =>
+        message.command === 'progressionAudioFailed' && message.leaseId === cancelledLeaseId && message.requestId === 'stale-request-from-cancelled-session'),
+      'the delayed stale start is rejected and acknowledged against its old lease');
+      assert.strictEqual(audioLeaseCoordinator.activeLeaseId, newerLeaseId,
+        'the stale start acknowledgement cannot release the newer lease');
+      assert.strictEqual(await evaluateInspectorWebview<boolean>(
+        'document.getElementById("progression-stop")?.disabled === false'
+      ), true, 'the stale start does not cancel the newer local audition');
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
+        'the newer audition can still be stopped normally');
+      for (let attempt = 0; attempt < 100 && !protocolMessages.some(message =>
+        message.command === 'progressionAudioStopped' && message.leaseId === newerLeaseId); attempt++) await settle(20);
+      assert.ok(protocolMessages.some(message => message.command === 'progressionAudioStopped' && message.leaseId === newerLeaseId),
+        'the newer lease receives its own Stopped acknowledgement');
+      assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined, 'the newer lease is released after its own Stop');
     } finally {
       subscription.dispose();
       await inspectorView.webview.postMessage({ command: 'inspectorE2eResolveResume' });

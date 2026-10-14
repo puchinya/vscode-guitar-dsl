@@ -419,9 +419,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
     stop(uri) {
       progressionRenderGeneration++;
-      if (audioLeaseCoordinator.activeSessionUri === uri) {
-        void audioLeaseCoordinator.stop();
-      }
+      void audioLeaseCoordinator.stopForSession(uri);
       if (currentPanel && previewLifecycleProbe.currentDocumentUri === uri) {
         currentPanel.webview.postMessage({ command: 'playbackAction', action: 'stop' });
       }

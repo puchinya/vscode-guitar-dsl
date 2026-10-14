@@ -101,6 +101,34 @@ describe('ProgressionAudioLeaseCoordinator', () => {
     assert.ok(port.events.includes('unlock:lease-pending-start'), 'Preview unlocks only after the stop acknowledgement');
   });
 
+  it('ignores stale old-session stop and audio-failure signals while a newer lease is active', async () => {
+    const port = new FakeLeasePort();
+    const newerRequest = { ...request, requestId: 'request-new', sessionUri: 'file:///new-score.guitardsl' };
+    const coordinator = new ProgressionAudioLeaseCoordinator(port, 200, () => 'lease-new');
+    const started = coordinator.start(newerRequest, playback, () => true, 'unavailable');
+    coordinator.acknowledgePreviewStopped('lease-new');
+    await flush();
+    assert.strictEqual(port.startMessage?.leaseId, 'lease-new');
+    coordinator.acknowledge({ command: 'progressionAudioStarted', leaseId: 'lease-new', requestId: 'request-new' });
+    assert.strictEqual(await started, true);
+
+    const eventsBeforeStaleSignals = [...port.events];
+    await coordinator.stopForSession(request.sessionUri);
+    coordinator.acknowledge({ command: 'progressionAudioFailed', leaseId: 'stale-lease', requestId: request.requestId });
+    assert.deepStrictEqual(port.events, eventsBeforeStaleSignals,
+      'late cleanup and a stale start failure from the old session do not stop or unlock the newer lease');
+    assert.strictEqual(coordinator.activeLeaseId, 'lease-new');
+    assert.strictEqual(coordinator.activeSessionUri, newerRequest.sessionUri);
+
+    const stopping = coordinator.stopForSession(newerRequest.sessionUri);
+    await flush();
+    assert.ok(port.events.includes('stop:lease-new:request-new'));
+    coordinator.acknowledge({ command: 'progressionAudioStopped', leaseId: 'lease-new', requestId: 'request-new' });
+    await stopping;
+    assert.strictEqual(coordinator.activeLeaseId, undefined);
+    assert.ok(port.events.includes('unlock:lease-new'));
+  });
+
   it('does not grant audio when the request becomes stale while Preview is stopping', async () => {
     const port = new FakeLeasePort();
     const coordinator = new ProgressionAudioLeaseCoordinator(port, 100, () => 'lease-2');
