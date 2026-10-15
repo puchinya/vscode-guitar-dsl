@@ -6,6 +6,7 @@
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
+- Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 
 ## Context and goals
@@ -21,6 +22,7 @@
 | Guitar Pro 7/8 GPIF reader/writer と InterchangeScore 変換 | [Guitar Pro 7/8 interchange](gp78-interchange.md) |
 | プレビュー、レンダリング、ページ構成、PDF、再生 | [Preview, rendering, and export](preview-rendering-and-export.md) |
 | コード図・楽譜設定・カポ・初心者モード・移調・伴奏編集 | [Score editing](score-editing.md) |
+| Inspector の文書・進行・設定コンテキストと Preview lease 境界 | [VS Code editor experience](vscode-editor-experience.md), [Score editing](score-editing.md), [Preview, rendering, and export](preview-rendering-and-export.md) |
 | 音声採譜と結果のDSL化 | [Audio transcription](audio-transcription.md) |
 | VS Code の言語機能、コマンド、診断、UI、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md) |
 | VS Code Agent / Chat 連携 | [AI integration](ai-integration.md) |
@@ -61,7 +63,7 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 
 ## Data flow and ownership
 
-共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が一時的な `{kind:'empty'} | {kind:'document'; uri; version}` snapshot と明示表示を所有し、View は最新 snapshot を読み取り専用で描画する。非表示中の状態変更は generation に記録し、再表示時は最新 snapshot で HTML を再生成する。Webview は message listener 登録後に `ready` を送り、ホストが最新 snapshot を再送するため、隠れた Webview や DOM 再生成との競合で状態を失わない。Inspector は DSL、文書編集、Undo を所有しない。通常再生と Practice は Preview が所有し、コード進行試聴だけは Inspector の一時 AudioContext / scheduler が所有する。Extension Core の排他 lease が Preview を停止・ロックしてから Inspector に再生を許可し、両 Webview が同時に音を出さない。
+共通 GuitarDSL Inspector は `guitardslInspector` Secondary Sidebar 内の単一 Webview View である。Extension Core の Inspector Controller が empty / document / progression / settings の現在 snapshot と明示表示を所有し、View は最新 snapshot を描画する。非表示中の状態変更は generation に記録し、再表示時は最新 snapshot で HTML を再生成する。Webview は message listener 登録後に `ready` を送り、ホストが最新 snapshot を再送するため、隠れた Webview や DOM 再生成との競合で状態を失わない。Settings controller は対象 URI/version/source、session generation/revision、3つの既存 section model と Preview snapshot を所有する。Inspector は DSL や source text を生成せず、文書編集と Undo はホストの再検証済み Apply だけが所有する。通常再生と Practice は Preview が所有し、コード進行試聴だけは Inspector の一時 AudioContext / scheduler が所有する。Extension Core の排他 lease が Preview を停止・ロックしてから Inspector に再生を許可し、両 Webview が同時に音を出さない。Settings と progression のセッションは相互排他である。
 
 | データ | 作成者 | 消費者 / 所有境界 |
 |---|---|---|

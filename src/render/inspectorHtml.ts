@@ -1,4 +1,4 @@
-import { getMessages, type SupportedLocale } from '../i18n';
+import { getMessages, getScoreSettingsEditorMessages, type SupportedLocale } from '../i18n';
 import type { InspectorContext } from '../inspector/inspectorController';
 
 export function renderInspectorHtml(
@@ -6,14 +6,18 @@ export function renderInspectorHtml(
   context: InspectorContext,
   cspSource: string,
   nonce: string,
-  generation = 0
+  generation = 0,
+  settingsScriptUri = ''
 ): string {
   const messages = getMessages(locale);
   const status = context.kind === 'document' ? messages.inspectorDocumentStatus
-    : context.kind === 'progression' ? messages.uiProgressionTitle : messages.inspectorEmptyStatus;
+    : context.kind === 'progression' ? messages.uiProgressionTitle
+      : context.kind === 'settings' ? context.status : messages.inspectorEmptyStatus;
   const description = context.kind === 'document' ? messages.inspectorDocumentDescription
-    : context.kind === 'progression' ? messages.uiProgressionDescription : messages.inspectorEmptyDescription;
+    : context.kind === 'progression' ? messages.uiProgressionDescription
+      : context.kind === 'settings' ? context.description : messages.inspectorEmptyDescription;
   const safeNonce = escapeHtml(nonce);
+  const safeSettingsScriptUri = escapeHtml(settingsScriptUri);
   const safeGeneration = Number.isSafeInteger(generation) && generation >= 0 ? generation : 0;
   const labels = {
     heading: messages.inspectorHeading,
@@ -49,13 +53,14 @@ export function renderInspectorHtml(
   const repeatNoticeVisibility = context.kind === 'progression' && context.target.bars > 4 ? '' : ' hidden';
   const initial = { context: webviewContext, status, description };
   const safeLabels = escapeJsonForHtml(JSON.stringify(labels));
+  const safeSettingsLabels = escapeJsonForHtml(JSON.stringify(getScoreSettingsEditorMessages(locale)));
   const safeInitial = escapeJsonForHtml(JSON.stringify(initial));
   const csp = [
     "default-src 'none'",
     'img-src ' + escapeHtml(cspSource),
     "font-src 'none'",
     "style-src 'nonce-" + safeNonce + "'",
-    "script-src 'nonce-" + safeNonce + "'",
+    "script-src 'nonce-" + safeNonce + "' " + escapeHtml(cspSource),
     "connect-src 'none'",
     "base-uri 'none'",
     "form-action 'none'"
@@ -105,6 +110,32 @@ export function renderInspectorHtml(
     '    .actions { display: flex; gap: 6px; margin-top: 14px; }',
     '    #progression-apply { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }',
     '    #progression-apply:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }',
+    '    #settings-state h2 { margin-top: 16px; }',
+    '    #settings-heading { margin: 0 0 10px; }',
+    '    .settings-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 12px; }',
+    '    .settings-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; }',
+    '    .settings-tab[aria-selected="true"] { border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }',
+    '    .settings-facts, .settings-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 8px; margin: 12px 0; }',
+    '    .settings-fact { display: grid; gap: 2px; min-width: 0; padding: 8px; border: 1px solid var(--vscode-panel-border); overflow-wrap: anywhere; }',
+    '    .settings-fact span, #settings-content h3 { color: var(--vscode-descriptionForeground); }',
+    '    #settings-content h3 { margin: 16px 0 6px; font-size: .92em; font-weight: 600; }',
+    '    .settings-control-grid label { display: grid; gap: 4px; min-width: 0; color: var(--vscode-descriptionForeground); }',
+    '    .settings-control-grid select { width: 100%; }',
+    '    .settings-candidates { display: grid; gap: 6px; }',
+    '    .settings-candidate { display: grid; gap: 4px; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }',
+    '    .settings-candidate[aria-pressed="true"] { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }',
+    '    .settings-candidate-reason { color: var(--vscode-descriptionForeground); }',
+    '    .settings-chips { display: flex; flex-wrap: wrap; gap: 5px; }',
+    '    .settings-chip { padding: 1px 6px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; font-family: var(--vscode-editor-font-family); }',
+    '    .settings-table-scroll { max-width: 100%; overflow-x: auto; }',
+    '    .settings-table { width: 100%; border-collapse: collapse; }',
+    '    .settings-table th, .settings-table td { padding: 5px 7px; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }',
+    '    .settings-table.mapping td { font-family: var(--vscode-editor-font-family); }',
+    '    .settings-table .substituted td { color: var(--vscode-editorWarning-foreground); font-weight: 600; }',
+    '    .settings-note, .settings-warning { color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }',
+    '    .settings-error { color: var(--vscode-errorForeground); overflow-wrap: anywhere; }',
+    '    #settings-apply { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }',
+    '    #settings-apply:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }',
     '    .error { margin: 10px 0 0; color: var(--vscode-errorForeground); }',
     '    @media (max-width: 600px) { main { padding: 12px; } .mode-control { flex: 1 1 100%; flex-direction: column; align-items: stretch; } .mode-control select { min-width: 0; width: 100%; box-sizing: border-box; } .speed-control { margin-left: 0; } .toolbar { align-items: stretch; } }',
     '  </style>',
@@ -116,6 +147,15 @@ export function renderInspectorHtml(
     '      <p id="inspector-status" class="status" role="status" aria-live="polite">' + escapeHtml(status) + '</p>',
     '      <p id="inspector-description" class="description">' + escapeHtml(description) + '</p>',
     '    </div>',
+    '    <section id="settings-state" aria-labelledby="settings-heading" hidden>',
+    '      <h2 id="settings-heading" tabindex="-1"></h2>',
+    '      <div id="settings-tabs" class="settings-tabs" role="tablist"></div>',
+    '      <div id="settings-content"></div>',
+    '      <div id="settings-actions" class="actions" hidden>',
+    '        <button id="settings-apply" type="button" data-inspector-control="action" data-inspector-key="apply" disabled></button>',
+    '        <button id="settings-cancel" type="button" data-inspector-control="action" data-inspector-key="close"></button>',
+    '      </div>',
+    '    </section>',
     '    <section id="progression-state" aria-labelledby="progression-heading" hidden>',
     '      <h2 id="progression-heading"></h2>',
     '      <p id="progression-description" class="description"></p>',
@@ -154,6 +194,7 @@ export function renderInspectorHtml(
     '      const root = document.getElementById("inspector-state");',
     '      const documentState = document.getElementById("document-state");',
     '      const progressionState = document.getElementById("progression-state");',
+    '      const settingsState = document.getElementById("settings-state");',
     '      const status = document.getElementById("inspector-status");',
     '      const description = document.getElementById("inspector-description");',
     '      const progressionDescription = document.getElementById("progression-description");',
@@ -177,6 +218,8 @@ export function renderInspectorHtml(
     '      const activeNodes = new Set();',
     '      let completionTimer = undefined;',
     '      const vscodeApi = acquireVsCodeApi();',
+    '      window.guitarDslInspectorPostSettings = (command, extra = {}) => { const context = currentContext; if (!context || context.kind !== "settings") return; vscodeApi.postMessage({ ...extra, command, generation: lastGeneration, sessionUri: context.uri, sessionVersion: context.version, sessionGeneration: context.sessionGeneration, revision: context.revision, section: context.section }); };',
+    '      window.guitarDslInspectorContext = currentContext;',
     '      document.getElementById("bars-legend").textContent = labels.bars;',
     '      document.getElementById("operation-legend").textContent = labels.operation;',
     '      document.getElementById("candidate-heading").textContent = labels.candidates;',
@@ -340,11 +383,14 @@ export function renderInspectorHtml(
     '        const sameSession = previousContext && previousContext.kind === "progression" && context.kind === "progression" && previousContext.uri === context.uri && previousContext.version === context.version && previousContext.sessionGeneration === context.sessionGeneration && previousContext.selectedCandidateId === context.selectedCandidateId && previousContext.side === context.side && previousContext.auditionMode === context.auditionMode && previousContext.auditionSpeed === context.auditionSpeed;',
     '        if (!sameSession && (pendingRequestId || activeLeaseId)) stopLocalAudio(labels.audioStopped);',
     '        currentContext = context;',
+    '        window.guitarDslInspectorContext = context;',
     '        root.dataset.contextKind = context.kind;',
     '        document.getElementById("inspector-heading").textContent = labels.heading;',
-    '        documentState.hidden = context.kind === "progression";',
+    '        documentState.hidden = context.kind === "progression" || context.kind === "settings";',
     '        progressionState.hidden = context.kind !== "progression";',
-    '        if (context.kind !== "progression") { status.textContent = nextStatus; description.textContent = nextDescription; return; }',
+    '        settingsState.hidden = context.kind !== "settings";',
+    '        if (context.kind === "settings") { status.textContent = nextStatus; description.textContent = nextDescription; document.getElementById("settings-heading").textContent = nextStatus; if (typeof window.renderSettingsInspector === "function") window.renderSettingsInspector(context); return; }',
+    '        if (context.kind !== "progression") { status.textContent = nextStatus; description.textContent = nextDescription; if (typeof window.renderSettingsInspector === "function") window.renderSettingsInspector(context); return; }',
     '        progressionDescription.textContent = context.loading ? labels.loading : nextDescription;',
     '        repeatNotice.hidden = context.target.bars <= 4;',
     '        progressionError.textContent = context.error || "";',
@@ -403,7 +449,7 @@ export function renderInspectorHtml(
     '        const message = event.data;',
     '        if (message && handleAudioMessage(message)) return;',
     '        if (!message || message.command !== "setContext" || !Number.isSafeInteger(message.generation) || message.generation <= lastGeneration) return;',
-    '        if (!message.context || !["empty", "document", "progression"].includes(message.context.kind)) return;',
+    '        if (!message.context || !["empty", "document", "settings", "progression"].includes(message.context.kind)) return;',
     '        lastGeneration = message.generation;',
     '        root.dataset.generation = String(message.generation);',
     '        render(message.context, message.status, message.description);',
@@ -413,6 +459,8 @@ export function renderInspectorHtml(
     '      vscodeApi.postMessage({ command: "ready" });',
     '    })();',
     '  </script>',
+    '  <script type="application/json" id="settings-labels">' + safeSettingsLabels + '</script>',
+    ...(safeSettingsScriptUri ? ['  <script nonce="' + safeNonce + '" src="' + safeSettingsScriptUri + '"></script>'] : []),
     '</body>',
     '</html>'
   ].join('\n');

@@ -27,6 +27,7 @@ class FakeLeasePort implements ProgressionAudioLeasePort {
   readonly events: string[] = [];
   startMessage: ProgressionAudioStartMessage | undefined;
   stopPosted = false;
+  stopDelivery = true;
   report: string | undefined;
 
   constructor(public previewOpen = true) {}
@@ -42,7 +43,7 @@ class FakeLeasePort implements ProgressionAudioLeasePort {
   async stopInspector(leaseId: string, requestId: string): Promise<boolean> {
     this.stopPosted = true;
     this.events.push(`stop:${leaseId}:${requestId}`);
-    return true;
+    return this.stopDelivery;
   }
   reportStartError(_requestId: string, message: string): void { this.report = message; }
 }
@@ -142,6 +143,47 @@ describe('ProgressionAudioLeaseCoordinator', () => {
     assert.strictEqual(coordinator.activeLeaseId, undefined);
     assert.strictEqual(port.report, 'unavailable');
     assert.ok(port.events.includes('unlock:lease-2'));
+  });
+
+  it('keeps the Inspector lease and Preview lock when Stop delivery fails, then releases after a later acknowledgement', async () => {
+    const port = new FakeLeasePort();
+    const coordinator = new ProgressionAudioLeaseCoordinator(port, 100, () => 'lease-stop-failure');
+    const started = coordinator.start(request, playback, () => true, 'unavailable');
+    coordinator.acknowledgePreviewStopped('lease-stop-failure');
+    await flush();
+    coordinator.acknowledge({ command: 'progressionAudioStarted', leaseId: 'lease-stop-failure', requestId: request.requestId });
+    assert.strictEqual(await started, true);
+
+    port.stopDelivery = false;
+    assert.strictEqual(await coordinator.stopForSession(request.sessionUri), false,
+      'a failed webview post is not a stop acknowledgement');
+    assert.strictEqual(coordinator.activeLeaseId, 'lease-stop-failure');
+    assert.ok(!port.events.includes('unlock:lease-stop-failure'), 'Preview stays locked while Inspector may still be sounding');
+
+    port.stopDelivery = true;
+    const stopping = coordinator.stopForSession(request.sessionUri);
+    await flush();
+    coordinator.acknowledge({ command: 'progressionAudioStopped', leaseId: 'lease-stop-failure', requestId: request.requestId });
+    assert.strictEqual(await stopping, true);
+    assert.strictEqual(coordinator.activeLeaseId, undefined);
+    assert.ok(port.events.includes('unlock:lease-stop-failure'));
+  });
+
+  it('keeps the Preview locked after a Stop acknowledgement timeout until late silence proof arrives', async () => {
+    const port = new FakeLeasePort();
+    const coordinator = new ProgressionAudioLeaseCoordinator(port, 5, () => 'lease-stop-timeout');
+    const started = coordinator.start(request, playback, () => true, 'unavailable');
+    coordinator.acknowledgePreviewStopped('lease-stop-timeout');
+    await flush();
+    coordinator.acknowledge({ command: 'progressionAudioStarted', leaseId: 'lease-stop-timeout', requestId: request.requestId });
+    assert.strictEqual(await started, true);
+
+    assert.strictEqual(await coordinator.stop(), false, 'a missing Stopped acknowledgement times out as uncertain');
+    assert.strictEqual(coordinator.activeLeaseId, 'lease-stop-timeout');
+    assert.ok(!port.events.includes('unlock:lease-stop-timeout'));
+    coordinator.acknowledge({ command: 'progressionAudioStopped', leaseId: 'lease-stop-timeout', requestId: request.requestId });
+    assert.strictEqual(coordinator.activeLeaseId, undefined);
+    assert.ok(port.events.includes('unlock:lease-stop-timeout'));
   });
 
   it('does not wait for or unlock a nonexistent Preview panel', async () => {

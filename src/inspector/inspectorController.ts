@@ -38,9 +38,25 @@ export interface InspectorProgressionContext {
   readonly error?: string;
 }
 
+export type InspectorSettingsSection = 'capo' | 'beginner' | 'transpose';
+
+export interface InspectorSettingsContext {
+  readonly kind: 'settings';
+  readonly uri: string;
+  readonly version: number;
+  readonly sessionGeneration: number;
+  readonly revision: number;
+  readonly section: InspectorSettingsSection;
+  readonly sections: readonly { readonly id: InspectorSettingsSection; readonly title: string }[];
+  readonly model: unknown;
+  readonly status: string;
+  readonly description: string;
+}
+
 export type InspectorContext =
   | { readonly kind: 'empty' }
   | { readonly kind: 'document'; readonly uri: string; readonly version: number }
+  | InspectorSettingsContext
   | InspectorProgressionContext;
 
 export interface InspectorProgressionMessage extends Record<string, unknown> {
@@ -52,6 +68,19 @@ export interface InspectorProgressionMessage extends Record<string, unknown> {
 }
 
 export type InspectorProgressionMessageHandler = (message: InspectorProgressionMessage) => void | Promise<void>;
+export type InspectorProgressionIntentPredicate = (message: InspectorProgressionMessage) => boolean;
+
+export interface InspectorSettingsMessage extends Record<string, unknown> {
+  readonly command: string;
+  readonly generation: number;
+  readonly sessionUri: string;
+  readonly sessionVersion: number;
+  readonly sessionGeneration: number;
+  readonly revision: number;
+  readonly section: InspectorSettingsSection;
+}
+
+export type InspectorSettingsMessageHandler = (message: InspectorSettingsMessage) => void | Promise<void>;
 
 export interface InspectorProgressionAudioAcknowledgement extends Record<string, unknown> {
   readonly command: 'progressionAudioStarted' | 'progressionAudioStopped' | 'progressionAudioFailed';
@@ -80,8 +109,13 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private context: InspectorContext = EMPTY_CONTEXT;
   private disposed = false;
   private generation = 0;
+  private explicitIntentGeneration = 0;
   private progressionMessageHandler: InspectorProgressionMessageHandler | undefined;
+  private progressionIntentPredicate: InspectorProgressionIntentPredicate | undefined;
+  private settingsMessageHandler: InspectorSettingsMessageHandler | undefined;
   private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
+  private settingsSessionEndHandler: ((uri: string) => void) | undefined;
+  private endingSettingsForContextChange = false;
 
   constructor(
     private readonly presentation: InspectorPresentation,
@@ -95,6 +129,9 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   async openForActiveEditor(preserveFocus = false): Promise<void> {
     if (this.disposed) return;
+    // The public open command is an explicit user action even when the active
+    // document is already the current context and showDocument is a no-op.
+    this.beginExplicitIntent();
     const document = this.getActiveDocument();
     if (document) this.showDocument(document.uri, document.version);
     else if (this.context.kind !== 'progression') this.setContext(EMPTY_CONTEXT);
@@ -106,18 +143,43 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   showDocument(uri: string, version: number): void {
     if (!uri || !Number.isSafeInteger(version) || version < 0) {
+      if (this.context.kind !== 'empty') this.beginExplicitIntent();
       this.setContext(EMPTY_CONTEXT);
       return;
     }
     if (this.context.kind === 'document' && this.context.uri === uri && this.context.version === version) return;
     if (this.context.kind === 'progression' && this.context.uri === uri && this.context.version === version) return;
+    this.beginExplicitIntent();
     this.setContext({ kind: 'document', uri, version });
   }
 
   async showProgression(context: InspectorProgressionContext): Promise<void> {
     if (this.disposed || !isValidProgressionContext(context)) return;
+    this.beginExplicitIntent();
     this.setContext(context);
     if (!this.presentation.show(false)) await this.focusView();
+  }
+
+  async showSettings(context: InspectorSettingsContext): Promise<void> {
+    if (this.disposed || !isValidSettingsContext(context)) return;
+    this.beginExplicitIntent();
+    this.setContext(context);
+    if (!this.presentation.show(false)) await this.focusView();
+  }
+
+  updateSettings(context: InspectorSettingsContext): void {
+    if (this.disposed || !isValidSettingsContext(context) || this.context.kind !== 'settings'
+      || this.context.uri !== context.uri || this.context.sessionGeneration !== context.sessionGeneration
+      || context.revision < this.context.revision) return;
+    this.setContext(context);
+  }
+
+  restoreDocumentAfterSettings(uri: string): void {
+    if (this.endingSettingsForContextChange) return;
+    if (this.context.kind !== 'settings' || this.context.uri !== uri) return;
+    const document = this.getActiveDocument();
+    if (document) this.setContext({ kind: 'document', uri: document.uri, version: document.version });
+    else this.setContext(EMPTY_CONTEXT);
   }
 
   updateProgression(context: InspectorProgressionContext): void {
@@ -134,8 +196,20 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     else this.setContext(EMPTY_CONTEXT);
   }
 
-  setProgressionMessageHandler(handler: InspectorProgressionMessageHandler | undefined): void {
+  setProgressionMessageHandler(
+    handler: InspectorProgressionMessageHandler | undefined,
+    intentPredicate?: InspectorProgressionIntentPredicate
+  ): void {
     this.progressionMessageHandler = handler;
+    this.progressionIntentPredicate = handler ? intentPredicate : undefined;
+  }
+
+  setSettingsMessageHandler(handler: InspectorSettingsMessageHandler | undefined): void {
+    this.settingsMessageHandler = handler;
+  }
+
+  setSettingsSessionEndHandler(handler: ((uri: string) => void) | undefined): void {
+    this.settingsSessionEndHandler = handler;
   }
 
   setProgressionAudioAcknowledgementHandler(handler: InspectorProgressionAudioAcknowledgementHandler | undefined): void {
@@ -155,9 +229,28 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     return this.generation;
   }
 
+  get currentExplicitIntentGeneration(): number {
+    return this.explicitIntentGeneration;
+  }
+
+  /** Starts a user-directed Inspector intent that supersedes pending context requests. */
+  beginExplicitIntent(): number {
+    this.explicitIntentGeneration++;
+    return this.explicitIntentGeneration;
+  }
+
   async handleWebviewMessage(message: unknown): Promise<boolean> {
     if (isProgressionAudioAcknowledgement(message)) {
       await this.progressionAudioAcknowledgementHandler?.(message);
+      return true;
+    }
+    if (isSettingsMessage(message)) {
+      if (this.context.kind !== 'settings') return true;
+      const context = this.context;
+      if (message.generation !== this.generation || message.sessionUri !== context.uri
+        || message.sessionVersion !== context.version || message.sessionGeneration !== context.sessionGeneration
+        || message.revision !== context.revision || message.section !== context.section) return true;
+      await this.settingsMessageHandler?.(message);
       return true;
     }
     if (!isProgressionMessage(message) || this.context.kind !== 'progression') return false;
@@ -166,12 +259,27 @@ export class GuitarDslInspectorController implements vscode.Disposable {
       || message.sessionUri !== context.uri
       || message.sessionVersion !== context.version
       || message.sessionGeneration !== context.sessionGeneration) return true;
+    if (this.progressionIntentPredicate?.(message)) this.beginExplicitIntent();
     await this.progressionMessageHandler?.(message);
     return true;
   }
 
   handleViewDisposed(): void {
-    if (this.disposed || this.context.kind !== 'progression') return;
+    if (this.disposed) return;
+    if (this.context.kind === 'settings') {
+      const context = this.context;
+      void this.settingsMessageHandler?.({
+        command: 'settingsCancel',
+        generation: this.generation,
+        sessionUri: context.uri,
+        sessionVersion: context.version,
+        sessionGeneration: context.sessionGeneration,
+        revision: context.revision,
+        section: context.section
+      });
+      return;
+    }
+    if (this.context.kind !== 'progression') return;
     const context = this.context;
     void this.progressionMessageHandler?.({
       command: 'progressionDismiss',
@@ -184,7 +292,8 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   }
 
   invalidate(uri: string): void {
-    if ((this.context.kind === 'document' || this.context.kind === 'progression') && this.context.uri === uri) {
+    if ((this.context.kind === 'document' || this.context.kind === 'settings' || this.context.kind === 'progression') && this.context.uri === uri) {
+      this.beginExplicitIntent();
       this.setContext(EMPTY_CONTEXT);
     }
   }
@@ -197,6 +306,16 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   private setContext(context: InspectorContext): void {
     if (this.disposed) return;
+    if (this.context.kind === 'settings' && context.kind !== 'settings') {
+      const uri = this.context.uri;
+      this.endingSettingsForContextChange = true;
+      try {
+        this.settingsSessionEndHandler?.(uri);
+      } finally {
+        this.endingSettingsForContextChange = false;
+      }
+      if (this.disposed) return;
+    }
     this.context = context;
     this.generation++;
     this.presentation.contextChanged();
@@ -215,6 +334,17 @@ function isValidProgressionContext(context: InspectorProgressionContext): boolea
     && (context.selectedCandidateId === '' || context.candidates.some(item => item.id === context.selectedCandidateId));
 }
 
+function isValidSettingsContext(context: InspectorSettingsContext): boolean {
+  return context.kind === 'settings' && typeof context.uri === 'string' && context.uri.length > 0
+    && Number.isSafeInteger(context.version) && context.version >= 0
+    && Number.isSafeInteger(context.sessionGeneration) && context.sessionGeneration > 0
+    && Number.isSafeInteger(context.revision) && context.revision >= 0
+    && ['capo', 'beginner', 'transpose'].includes(context.section)
+    && Array.isArray(context.sections) && context.sections.length === 3
+    && typeof context.status === 'string' && typeof context.description === 'string'
+    && typeof context.model === 'object' && context.model !== null;
+}
+
 function isProgressionMessage(message: unknown): message is InspectorProgressionMessage {
   if (typeof message !== 'object' || message === null || !('command' in message)) return false;
   const command = (message as { command?: unknown }).command;
@@ -223,6 +353,18 @@ function isProgressionMessage(message: unknown): message is InspectorProgression
     && 'sessionUri' in message && typeof (message as { sessionUri?: unknown }).sessionUri === 'string'
     && 'sessionVersion' in message && Number.isSafeInteger((message as { sessionVersion?: unknown }).sessionVersion)
     && 'sessionGeneration' in message && Number.isSafeInteger((message as { sessionGeneration?: unknown }).sessionGeneration);
+}
+
+function isSettingsMessage(message: unknown): message is InspectorSettingsMessage {
+  if (typeof message !== 'object' || message === null || !('command' in message)) return false;
+  const value = message as Record<string, unknown>;
+  return typeof value.command === 'string' && value.command.startsWith('settings')
+    && Number.isSafeInteger(value.generation)
+    && typeof value.sessionUri === 'string'
+    && Number.isSafeInteger(value.sessionVersion)
+    && Number.isSafeInteger(value.sessionGeneration)
+    && Number.isSafeInteger(value.revision)
+    && (value.section === 'capo' || value.section === 'beginner' || value.section === 'transpose');
 }
 
 function isProgressionAudioAcknowledgement(message: unknown): message is InspectorProgressionAudioAcknowledgement {
@@ -250,7 +392,7 @@ export function registerGuitarDslInspector(
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { GuitarDslInspectorView } = require('./inspectorView') as typeof import('./inspectorView');
 
-  const view = new GuitarDslInspectorView(locale);
+  const view = new GuitarDslInspectorView(locale, context.extensionUri);
   const controller = new GuitarDslInspectorController(
     view,
     () => {

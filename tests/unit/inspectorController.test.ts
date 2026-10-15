@@ -21,6 +21,10 @@ class FakePresentation implements InspectorPresentation {
     return this.resolved;
   }
 
+  async postMessage(): Promise<boolean> {
+    return true;
+  }
+
   dispose(): void {
     this.disposeCalls++;
   }
@@ -56,6 +60,26 @@ describe('GuitarDslInspectorController', () => {
       version: activeDocument.version
     });
     assert.deepStrictEqual(presentation.shown, [true], 'resolved views can preserve editor focus on explicit reveal');
+  });
+
+  it('starts a new intent for an explicit same-document open while same-context refresh stays passive', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const activeDocument: InspectorActiveDocument = { uri: 'file:///active.guitardsl', version: 3 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => Promise.resolve());
+
+    controller.showDocument(activeDocument.uri, activeDocument.version);
+    const initialIntent = controller.currentExplicitIntentGeneration;
+    controller.showDocument(activeDocument.uri, activeDocument.version);
+    assert.strictEqual(controller.currentExplicitIntentGeneration, initialIntent,
+      'a passive same-document refresh does not create a user intent');
+
+    await controller.openForActiveEditor();
+    assert.strictEqual(controller.currentExplicitIntentGeneration, initialIntent + 1,
+      'the public open command supersedes pending requests even when its context is unchanged');
+    assert.deepStrictEqual(controller.currentContext, {
+      kind: 'document', uri: activeDocument.uri, version: activeDocument.version
+    });
   });
 
   it('updates versions without revealing and ignores stale invalidation', () => {
@@ -136,7 +160,7 @@ describe('GuitarDslInspectorController', () => {
       target: { bars: 4, operation: 'replace', startMeasure: 0 },
       availableBars: [4, 8],
       availableOperations: ['replace', 'append'],
-      candidates: [],
+      candidates: [{ id: 'candidate', chords: [], score: 0, scoreText: '', rationale: '' }],
       selectedCandidateId: '',
       side: 'B',
       auditionMode: 'melody',
@@ -144,24 +168,116 @@ describe('GuitarDslInspectorController', () => {
       loading: false
     };
     let routed = 0;
-    controller.setProgressionMessageHandler(() => { routed++; });
+    controller.setProgressionMessageHandler(
+      () => { routed++; },
+      candidateMessage => candidateMessage.command === 'progressionCandidateChanged'
+        && candidateMessage.candidateId === 'candidate'
+    );
 
     await controller.showProgression(context);
     const generation = controller.currentGeneration;
     const message = {
-      command: 'progressionSelectCandidate',
+      command: 'progressionCandidateChanged',
       generation,
       sessionUri: context.uri,
       sessionVersion: context.version,
-      sessionGeneration: context.sessionGeneration
+      sessionGeneration: context.sessionGeneration,
+      candidateId: 'candidate',
+      selectedCandidateId: 'candidate'
     };
 
     assert.strictEqual(controller.currentContext, context);
     assert.deepStrictEqual(presentation.shown, [false]);
+    const intentBeforeMessage = controller.currentExplicitIntentGeneration;
     await controller.handleWebviewMessage(message);
+    assert.strictEqual(controller.currentExplicitIntentGeneration, intentBeforeMessage + 1,
+      'an accepted progression action starts its intent before routing');
+    const intentAfterAcceptedMessage = controller.currentExplicitIntentGeneration;
+    await controller.handleWebviewMessage({ ...message, command: 'progressionBogus' });
+    assert.strictEqual(controller.currentExplicitIntentGeneration, intentAfterAcceptedMessage,
+      'unknown progression messages do not supersede pending explicit requests');
     await controller.handleWebviewMessage({ ...message, sessionVersion: context.version - 1 });
     await controller.handleWebviewMessage({ ...message, generation: generation - 1 });
-    assert.strictEqual(routed, 1, 'stale URI/version/session/view messages never reach the feature handler');
+    assert.strictEqual(routed, 2, 'current-envelope messages route, while stale URI/version/view messages do not');
+  });
+
+  it('routes only the current settings revision and cancels settings when the view is disposed', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
+    const context: InspectorContext = {
+      kind: 'settings',
+      uri: 'file:///song.guitardsl',
+      version: 7,
+      sessionGeneration: 4,
+      revision: 2,
+      section: 'beginner',
+      sections: [
+        { id: 'capo', title: 'Capo' },
+        { id: 'beginner', title: 'Beginner' },
+        { id: 'transpose', title: 'Transpose' }
+      ],
+      model: { canApply: false },
+      status: 'Beginner',
+      description: 'Temporary preview'
+    };
+    const routed: string[] = [];
+    controller.setSettingsMessageHandler(message => { routed.push(message.command); });
+    await controller.showSettings(context);
+    const message = {
+      command: 'settingsSelectBeginnerCapo',
+      generation: controller.currentGeneration,
+      sessionUri: context.uri,
+      sessionVersion: context.version,
+      sessionGeneration: context.sessionGeneration,
+      revision: context.revision,
+      section: context.section,
+      capo: 2
+    };
+
+    await controller.handleWebviewMessage(message);
+    await controller.handleWebviewMessage({ ...message, revision: 1 });
+    await controller.handleWebviewMessage({ ...message, section: 'capo' });
+    assert.deepStrictEqual(routed, ['settingsSelectBeginnerCapo']);
+
+    controller.handleViewDisposed();
+    assert.deepStrictEqual(routed, ['settingsSelectBeginnerCapo', 'settingsCancel']);
+  });
+
+  it('ends Settings synchronously before replacing its context with the active document', async () => {
+    const presentation = new FakePresentation();
+    const activeDocument: InspectorActiveDocument = { uri: 'file:///song.guitardsl', version: 9 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => Promise.resolve());
+    const settings: InspectorContext = {
+      kind: 'settings',
+      uri: 'file:///song.guitardsl',
+      version: 8,
+      sessionGeneration: 4,
+      revision: 0,
+      section: 'capo',
+      sections: [
+        { id: 'capo', title: 'Capo' },
+        { id: 'beginner', title: 'Beginner' },
+        { id: 'transpose', title: 'Transpose' }
+      ],
+      model: { canApply: false },
+      status: 'Capo',
+      description: 'Temporary preview'
+    };
+    await controller.showSettings(settings);
+    let endedBeforeReplacement = false;
+    controller.setSettingsSessionEndHandler(uri => {
+      endedBeforeReplacement = uri === settings.uri && controller.currentContext.kind === 'settings';
+      controller.restoreDocumentAfterSettings(uri);
+    });
+
+    await controller.openForActiveEditor();
+
+    assert.strictEqual(endedBeforeReplacement, true, 'the session-end callback runs while Settings is still current');
+    assert.deepStrictEqual(controller.currentContext, {
+      kind: 'document', uri: activeDocument.uri, version: activeDocument.version
+    });
+    assert.strictEqual(presentation.contextChanges, 2, 'Settings is replaced by the requested document in one context update');
   });
 
   it('dismisses the active progression session when its Webview is disposed', async () => {

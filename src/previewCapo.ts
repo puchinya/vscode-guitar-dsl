@@ -11,6 +11,11 @@ export interface PreviewCapoState {
   targetCapo: number;
 }
 
+export interface PreviewCapoSnapshot {
+  readonly state?: PreviewCapoState;
+  readonly notice?: string;
+}
+
 export interface EffectiveDsl {
   text: string;
   /** Capo UI model for the Preview toolbar. */
@@ -40,21 +45,34 @@ export class PreviewCapoController {
     return this.state ? { ...this.state } : undefined;
   }
 
+  captureSettingsSnapshot(documentUri: string): PreviewCapoSnapshot {
+    return {
+      ...(this.state?.documentUri === documentUri ? { state: { ...this.state } } : {}),
+      ...(this.notice !== undefined ? { notice: this.notice } : {})
+    };
+  }
+
+  restoreSettingsSnapshot(doc: vscode.TextDocument, snapshot: PreviewCapoSnapshot, notify = true): void {
+    this.state = snapshot.state ? { ...snapshot.state } : undefined;
+    this.notice = snapshot.notice;
+    if (notify) this.onDidChange?.(doc);
+  }
+
   /** Sets the Preview capo for `doc`; returns false when the target is not valid for its source. */
-  setTarget(doc: vscode.TextDocument, targetCapo: number): boolean {
+  setTarget(doc: vscode.TextDocument, targetCapo: number, notify = true): boolean {
     if (!isValidCapo(targetCapo)) return false;
     const text = doc.getText();
     const result = resolveEffectiveDsl(text, targetCapo);
     if (!result.ok) {
       this.clear();
       this.notify(this.messages().capoFailures[result.code]);
-      this.onDidChange?.(doc);
+      if (notify) this.onDidChange?.(doc);
       return false;
     }
     const sourceCapo = parseCapoValue(parseGuitarDsl(text).capo);
     this.notice = undefined;
     this.state = sourceCapo === targetCapo ? undefined : { documentUri: doc.uri.toString(), targetCapo };
-    this.onDidChange?.(doc);
+    if (notify) this.onDidChange?.(doc);
     return true;
   }
 

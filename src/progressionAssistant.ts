@@ -184,15 +184,26 @@ export class ProgressionAssistantController implements vscode.Disposable {
     context.subscriptions.push(vscode.languages.registerCodeLensProvider({ language: 'guitardsl' }, codeLensProvider));
     context.subscriptions.push(this.codeLensChanges, this.targetDecoration, this.proposalDecoration);
     context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => this.updateDecorations()));
-    context.subscriptions.push(vscode.commands.registerCommand(SUGGEST_CHORD_PROGRESSION_COMMAND, target => this.runCommand(target)));
-    context.subscriptions.push(vscode.commands.registerCommand(CHOOSE_PROGRESSION_CANDIDATE_COMMAND, target => this.chooseFromSession(target)));
-    context.subscriptions.push(vscode.commands.registerCommand(PLAY_PROGRESSION_AUDITION_COMMAND, () => this.play()));
-    context.subscriptions.push(vscode.commands.registerCommand(STOP_PROGRESSION_AUDITION_COMMAND, () => this.stop()));
-    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_A_COMMAND, () => this.setSide('A')));
-    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_B_COMMAND, () => this.setSide('B')));
-    context.subscriptions.push(vscode.commands.registerCommand(APPLY_PROGRESSION_CANDIDATE_COMMAND, () => this.applyCandidate(this.session?.activeCandidateId)));
-    context.subscriptions.push(vscode.commands.registerCommand(CLOSE_PROGRESSION_ASSISTANT_COMMAND, () => this.closeSession()));
-    this.inspector?.setProgressionMessageHandler(message => this.handleInspectorMessage(message));
+    context.subscriptions.push(vscode.commands.registerCommand(SUGGEST_CHORD_PROGRESSION_COMMAND,
+      target => this.withExplicitIntent(() => this.runCommand(target))));
+    context.subscriptions.push(vscode.commands.registerCommand(CHOOSE_PROGRESSION_CANDIDATE_COMMAND,
+      target => this.withExplicitIntent(() => this.chooseFromSession(target))));
+    context.subscriptions.push(vscode.commands.registerCommand(PLAY_PROGRESSION_AUDITION_COMMAND,
+      () => this.withExplicitIntent(() => this.play())));
+    context.subscriptions.push(vscode.commands.registerCommand(STOP_PROGRESSION_AUDITION_COMMAND,
+      () => this.withExplicitIntent(() => this.stop())));
+    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_A_COMMAND,
+      () => this.withExplicitIntent(() => this.setSide('A'))));
+    context.subscriptions.push(vscode.commands.registerCommand(SHOW_PROGRESSION_B_COMMAND,
+      () => this.withExplicitIntent(() => this.setSide('B'))));
+    context.subscriptions.push(vscode.commands.registerCommand(APPLY_PROGRESSION_CANDIDATE_COMMAND,
+      () => this.withExplicitIntent(() => this.applyCandidate(this.session?.activeCandidateId))));
+    context.subscriptions.push(vscode.commands.registerCommand(CLOSE_PROGRESSION_ASSISTANT_COMMAND,
+      () => this.withExplicitIntent(() => this.closeSession())));
+    this.inspector?.setProgressionMessageHandler(
+      message => this.handleInspectorMessage(message),
+      message => this.isAcceptedInspectorIntent(message)
+    );
     void vscode.commands.executeCommand('setContext', 'guitardsl.progressionAssistantActive', false);
     context.subscriptions.push(this);
   }
@@ -236,6 +247,11 @@ export class ProgressionAssistantController implements vscode.Disposable {
       }));
     }
     return lenses;
+  }
+
+  private withExplicitIntent<T>(action: () => T): T {
+    this.inspector?.beginExplicitIntent();
+    return action();
   }
 
   private async runCommand(targetRef?: unknown): Promise<void> {
@@ -415,7 +431,7 @@ export class ProgressionAssistantController implements vscode.Disposable {
     }
     if (message.selectedCandidateId !== session.activeCandidateId) return;
     if (message.command === 'progressionSetBars') {
-      const bars = Number(message.bars);
+      const bars = message.bars;
       if ((bars === 4 || bars === 8 || bars === 16) && this.inspectorContext(session).availableBars.includes(bars)) {
         const nextContext = this.inspectorContext({ ...session, target: { ...session.target, bars }, candidates: [] });
         const nextOperation = nextContext.availableOperations.includes(session.target.operation)
@@ -483,8 +499,8 @@ export class ProgressionAssistantController implements vscode.Disposable {
       return;
     }
     if (message.command === 'progressionSpeedChanged') {
-      const speed = Number(message.speed);
-      if ([50, 75, 100, 125, 150].includes(speed)) {
+      const speed = message.speed;
+      if (typeof speed === 'number' && [50, 75, 100, 125, 150].includes(speed)) {
         session.auditionSpeed = speed as ProgressionAssistantSession['auditionSpeed'];
         this.preview.stop(session.uri);
         this.syncInspector();
@@ -497,6 +513,54 @@ export class ProgressionAssistantController implements vscode.Disposable {
       return;
     }
     if (message.command === 'progressionDismiss') this.clear(session.uri, true);
+  }
+
+  private isAcceptedInspectorIntent(message: InspectorProgressionMessage): boolean {
+    const session = this.session;
+    const context = this.inspector?.currentContext;
+    if (!session || !context || context.kind !== 'progression'
+      || message.sessionUri !== session.uri || message.sessionVersion !== session.version
+      || message.sessionGeneration !== session.sessionGeneration
+      || context.uri !== session.uri || context.version !== session.version
+      || context.sessionGeneration !== session.sessionGeneration || !this.isSessionFresh(session)) return false;
+
+    const hasCandidate = (id: unknown) => typeof id === 'string'
+      && session.candidates.some(candidate => candidate.id === id);
+    if (message.command === 'progressionCandidateChanged') {
+      return typeof message.candidateId === 'string'
+        && message.selectedCandidateId === message.candidateId
+        && hasCandidate(message.candidateId);
+    }
+    if (message.selectedCandidateId !== session.activeCandidateId) return false;
+
+    const current = this.inspectorContext(session);
+    switch (message.command) {
+      case 'progressionSetBars':
+        return typeof message.bars === 'number'
+          && (message.bars === 4 || message.bars === 8 || message.bars === 16)
+          && current.availableBars.includes(message.bars);
+      case 'progressionSetOperation':
+        return (message.operation === 'replace' || message.operation === 'append')
+          && current.availableOperations.includes(message.operation);
+      case 'progressionPlay':
+        return hasCandidate(session.activeCandidateId) && message.userGesture === true
+          && typeof message.requestId === 'string' && message.requestId.length > 0
+          && typeof message.audioReady === 'boolean';
+      case 'progressionStop':
+      case 'progressionDismiss':
+        return true;
+      case 'progressionAuditionModeChanged':
+        return isProgressionAuditionMode(message.mode);
+      case 'progressionSideChanged':
+        return message.side === 'A' || message.side === 'B';
+      case 'progressionSpeedChanged':
+        return typeof message.speed === 'number'
+          && [50, 75, 100, 125, 150].includes(message.speed);
+      case 'progressionApply':
+        return hasCandidate(session.activeCandidateId);
+      default:
+        return false;
+    }
   }
 
   private isSessionFresh(session: ProgressionAssistantSession): boolean {
@@ -605,6 +669,12 @@ export class ProgressionAssistantController implements vscode.Disposable {
   invalidateIfDifferent(uri: string, restore = false): void {
     const activeUri = this.session?.uri;
     if (activeUri && activeUri !== uri) this.clear(activeUri, restore);
+  }
+
+  /** Restores the Preview only after a caller has stopped and released any active audio lease. */
+  async restoreAfterExternalStop(uri: string): Promise<void> {
+    if (this.session) return;
+    await this.preview.restore(uri);
   }
 
   hasActiveSession(uri: string): boolean {

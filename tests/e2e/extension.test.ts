@@ -96,6 +96,25 @@ async function waitForInspectorAudioMetrics(predicate: (metrics: InspectorAudioM
   assert.fail('Inspector audio metrics did not reach the expected state');
 }
 
+async function openProgressionForSettingsAudioTest(): Promise<{ doc: vscode.TextDocument; source: string }> {
+  const source = [
+    'key: C',
+    'bpm: 120',
+    'time: 4/4',
+    '| C | Dm | Em | F |',
+    'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 | d6/4 e6/4 f6/4 g6/4 | a6/4 b6/4 c7/4 d7/4 |'
+  ].join('\n');
+  const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+  const editor = await showAndFocus(doc);
+  await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+  await settle(250);
+  await showAndFocus(doc);
+  editor.selection = new vscode.Selection(new vscode.Position(3, 3), new vscode.Position(3, 3));
+  await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+  await settle(250);
+  return { doc, source };
+}
+
 suite('GuitarDSL Extension E2E Test Suite', () => {
   suiteSetup(async () => {
     const ext =
@@ -423,6 +442,139 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(audioLeaseCoordinator.activeLeaseId, undefined,
       'Preview unlocks after Inspector acknowledges that audio has stopped');
     await vscode.commands.executeCommand('guitardsl.progression.close');
+  });
+
+  audioE2eTest('S135-11 opening Settings waits for the real Inspector Stop acknowledgement', async () => {
+    const { doc, source } = await openProgressionForSettingsAudioTest();
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspectorView = require('../../inspector/inspectorView').inspectorViewTestProbe.resolvedView as vscode.WebviewView;
+    assert.ok(inspectorView, 'the real Inspector Webview is active');
+    const acknowledgements: Array<{ command?: unknown; leaseId?: unknown }> = [];
+    const subscription = inspectorView.webview.onDidReceiveMessage(message => {
+      const value = message as { command?: unknown; leaseId?: unknown };
+      if (value.command === 'progressionAudioStopped') acknowledgements.push(value);
+    });
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    try {
+      assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play'), true,
+        'a real Inspector gesture starts the local audition');
+      const leaseId = audioLease.activeLeaseId as string | undefined;
+      assert.ok(leaseId, 'the audition owns the Preview exclusion lease');
+      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.kind !== 'settings'; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.()?.kind, 'settings', 'Settings opens after the Inspector stops');
+      assert.ok(acknowledgements.some(message => message.leaseId === leaseId),
+        'the real Inspector delivered its Stopped acknowledgement before Settings opened');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the exclusive lease releases only after local silence is confirmed');
+      assert.strictEqual(doc.getText(), source, 'opening Settings leaves the document unchanged');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      await require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe.dispatchMessage('settingsCancel');
+    } finally {
+      subscription.dispose();
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  audioE2eTest('S135-11 a failed Stop message delivery keeps Settings closed and Preview locked', async () => {
+    const { doc, source } = await openProgressionForSettingsAudioTest();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspectorViewProbe = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    const inspectorView = inspectorViewProbe.resolvedView as vscode.WebviewView | undefined;
+    assert.ok(inspectorView, 'the real Inspector Webview is active');
+    const originalPostMessage = inspectorView.webview.postMessage;
+    const postMessage = originalPostMessage.bind(inspectorView.webview);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    let rejectedStopMessages = 0;
+    inspectorView.webview.postMessage = message => {
+      if ((message as { command?: unknown }).command === 'progressionAudioStop') {
+        rejectedStopMessages++;
+        return Promise.resolve(false);
+      }
+      return postMessage(message);
+    };
+
+    try {
+      assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play'), true,
+        'a real Inspector gesture starts the local audition');
+      const leaseId = audioLease.activeLeaseId as string | undefined;
+      assert.ok(leaseId, 'the active audition owns the Preview exclusion lease');
+
+      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+
+      assert.strictEqual(rejectedStopMessages, 1, 'the Settings transition attempted a Stop message');
+      assert.strictEqual(audioLease.activeLeaseId, leaseId,
+        'a false delivery result retains the active lease and Preview exclusion');
+      assert.strictEqual(inspectorViewProbe.getContext?.().kind, 'progression',
+        'Settings stays closed when Stop delivery fails');
+      assert.strictEqual(await evaluateInspectorWebview<boolean>(
+        'document.getElementById("progression-stop")?.disabled === false'
+      ), true, 'the Inspector continues the active audition until it acknowledges Stop');
+      assert.strictEqual(doc.getText(), source, 'the failed transition leaves the document unchanged');
+
+      inspectorView.webview.postMessage = originalPostMessage;
+      assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
+        'the active Inspector audition can still be stopped after restoring message delivery');
+      for (let attempt = 0; attempt < 100 && audioLease.activeLeaseId; attempt++) await settle(20);
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the real Stopped acknowledgement releases the lease');
+    } finally {
+      inspectorView.webview.postMessage = originalPostMessage;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  audioE2eTest('S135-11 a Stop acknowledgement timeout keeps Settings closed and Preview locked', async () => {
+    const { doc, source } = await openProgressionForSettingsAudioTest();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspectorViewProbe = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    const inspectorView = inspectorViewProbe.resolvedView as vscode.WebviewView | undefined;
+    assert.ok(inspectorView, 'the real Inspector Webview is active');
+    const originalPostMessage = inspectorView.webview.postMessage;
+    const postMessage = originalPostMessage.bind(inspectorView.webview);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    let suppressedStopMessages = 0;
+    inspectorView.webview.postMessage = message => {
+      if ((message as { command?: unknown }).command === 'progressionAudioStop') {
+        suppressedStopMessages++;
+        return Promise.resolve(true);
+      }
+      return postMessage(message);
+    };
+
+    try {
+      assert.strictEqual(await activateInspectorControlWithKeyboard('play', 'play'), true,
+        'a real Inspector gesture starts the local audition');
+      const leaseId = audioLease.activeLeaseId as string | undefined;
+      assert.ok(leaseId, 'the active audition owns the Preview exclusion lease');
+
+      const stopStartedAt = Date.now();
+      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+
+      assert.strictEqual(suppressedStopMessages, 1, 'the Settings transition attempted one Stop message');
+      assert.ok(Date.now() - stopStartedAt >= 2000, 'Settings waited for the bounded Stop acknowledgement timeout');
+      assert.strictEqual(audioLease.activeLeaseId, leaseId,
+        'an unacknowledged Stop retains the active lease and Preview exclusion');
+      assert.strictEqual(inspectorViewProbe.getContext?.().kind, 'progression',
+        'Settings stays closed without proof that the Inspector stopped');
+      assert.strictEqual(await evaluateInspectorWebview<boolean>(
+        'document.getElementById("progression-stop")?.disabled === false'
+      ), true, 'the Inspector continues the active audition until it acknowledges Stop');
+      assert.strictEqual(doc.getText(), source, 'the timed-out transition leaves the document unchanged');
+
+      inspectorView.webview.postMessage = originalPostMessage;
+      assert.strictEqual(await activateInspectorControlWithKeyboard('stop', 'stop'), true,
+        'the Inspector can still send a real Stop acknowledgement after the timeout');
+      for (let attempt = 0; attempt < 100 && audioLease.activeLeaseId; attempt++) await settle(20);
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the late real Stopped acknowledgement releases the lease');
+    } finally {
+      inspectorView.webview.postMessage = originalPostMessage;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
   });
 
   audioE2eTest('ED-09 Stop cancels a granted audition while AudioContext resume is pending', async () => {
@@ -1740,20 +1892,23 @@ suite('Capo / playability (Issue #62)', () => {
     assert.ok(commands.includes('guitardsl.editScoreSettings'));
   });
 
-  test('E2E-02 opening the score settings editor does not mutate the source', async () => {
+  test('E2E-02 opening score settings reuses the Inspector and does not mutate the source', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const version = doc.version;
     await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
-    let tab: vscode.Tab | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
+      inspectorViewTestProbe: { getContext?: () => any };
+    };
     await waitFor(() => {
-      tab = vscode.window.tabGroups.all.flatMap(g => g.tabs)
-        .find(t => t.input instanceof vscode.TabInputWebview && /^(Score Settings|楽譜設定)/.test(t.label));
-      return tab !== undefined;
-    }, 'score settings editor tab should open');
-    await sleep(300);
+      return inspectorViewTestProbe.getContext?.()?.kind === 'settings';
+    }, 'score settings should open in the shared Inspector');
     assert.strictEqual(doc.getText(), SOURCE);
     assert.strictEqual(doc.version, version);
+    assert.ok(!vscode.window.tabGroups.all.flatMap(g => g.tabs)
+      .some(t => t.input instanceof vscode.TabInputWebview && /^(Score Settings|楽譜設定)/.test(t.label)),
+    'score settings must not open a second webview panel');
   });
 
   test('EDITOR-01 apply recomputes from the latest source', async () => {
@@ -2102,7 +2257,7 @@ suite('Beginner Mode (Issue #65)', () => {
     assert.strictEqual(doc.getText(), '| Bm |\n', 'a failed apply does not modify the source');
   });
 
-  test('BEG-E2E-06 the Score Settings beginner section model shows the mapping and applies its own selection', async () => {
+  test('BEG-E2E-06 the Beginner section model shows mapping but never applies edits itself', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const section = new (scoreSettings().BeginnerSection)();
@@ -2131,12 +2286,13 @@ suite('Beginner Mode (Issue #65)', () => {
     await section.onMessage(ctx, { command: 'setPolicy', policy: 'forbid' });
     assert.strictEqual(section.buildModel(ctx).selectedCapo, null, 'a policy change returns to auto');
     await section.onMessage(ctx, { command: 'select', capo: 0 });
-    // The webview sends only the intent; the host applies its own selection to the latest source.
+    // The settings controller alone owns Apply; a section message cannot edit the document.
+    const sourceBeforeApplyMessage = doc.getText();
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text' });
-    assert.strictEqual(doc.getText(), FORBID_AT_0);
-    assert.ok(statuses.length > 0 && refreshed > 0);
-    await undoIn(doc);
-    assert.strictEqual(doc.getText(), SOURCE);
+    assert.strictEqual(doc.getText(), sourceBeforeApplyMessage);
+    assert.strictEqual(section.buildModel(ctx).canApply, true);
+    assert.strictEqual(statuses.length, 0);
+    assert.ok(refreshed > 0);
   });
 });
 
@@ -2192,7 +2348,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     if (ext && !ext.isActive) await ext.activate();
   });
 
-  test('TR-E2E-01 apply recomputes from the latest source, not from the previous model (T042)', async () => {
+  test('TR-E2E-01 settings sections cannot edit; a stale expected source is rejected (T042)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
     const statuses: string[] = [];
@@ -2200,15 +2356,25 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     const section = new (scoreSettings().TransposeSection)();
     await section.onMessage(ctx, { command: 'setSemitones', semitones: 2 });
     const model = section.buildModel(ctx);
+    const expected = { version: doc.version, source: doc.getText() };
     assert.strictEqual(model.targetKey, 'D');
     assert.deepStrictEqual(model.mapping, [['C', 'D'], ['F', 'G']]);
     assert.ok(model.canApply);
-    // The document changes after the model was shown; apply must use the new text.
+    // The document changes after the model was shown; the approved session cannot edit that newer source.
     await replaceAll(doc, SOURCE.replace('| C | F |', '| C | F | G |').replace('| a4/1 |', '| a4/1 | b4/1 |'));
+    const stale = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'keep' } }, expected);
+    assert.ok(!stale.ok && stale.code === 'staleDocument');
+    const changedSource = doc.getText();
     await section.onMessage(ctx, { command: 'apply', text: 'stale webview text', model });
+    assert.strictEqual(doc.getText(), changedSource, 'section messages never apply edits directly');
+    const result = await scoreSettings().applyTransposeTransform(doc.uri, { semitones: 2, capoMode: { kind: 'keep' } }, {
+      version: doc.version,
+      source: doc.getText()
+    });
+    assert.ok(result.ok && result.changed);
     assert.strictEqual(doc.getText(), ['title: Transpose Test', 'capo: 0', 'key: D', '', '| D | G | A |', 'mel: | d5/1 | b4/1 | c#5/1 |', ''].join('\n'));
-    assert.ok(statuses[statuses.length - 1].includes('+2'));
-    assert.strictEqual(section.buildModel(ctx).semitones, 0, 'the selection resets after apply');
+    assert.strictEqual(statuses.length, 0, 'section models do not own apply status or document edits');
+    assert.strictEqual(section.buildModel(ctx).semitones, 2, 'only the settings controller resets a session after apply');
   });
 
   test('TR-E2E-02 transpose + explicit capo is one WorkspaceEdit and one undo (T043)', async () => {
@@ -2229,24 +2395,635 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     assert.strictEqual(doc.getText(), 'chord C@x = x32010\n| C@x |\n');
   });
 
-  test('TR-E2E-03 Score Settings exposes Capo, Beginner and Transpose sections side by side (T044)', async () => {
+  test('TR-E2E-03 score settings use the single Inspector and keep all three host-owned section models (T044)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { inspectorViewTestProbe } = require('../../inspector/inspectorView') as {
+      inspectorViewTestProbe: { resolvedView?: vscode.WebviewView; getContext?: () => any };
+    };
     await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
-    const panel = (scoreSettings().ScoreSettingsEditorPanel as any).current;
-    assert.ok(panel, 'panel open');
-    assert.deepStrictEqual(panel.sections.map((s: any) => s.id), ['capo', 'beginner', 'transpose']);
+    await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind === 'settings' && !!inspectorViewTestProbe.resolvedView,
+      'settings context is shown in the resolved Inspector view');
+    const inspectorView = inspectorViewTestProbe.resolvedView;
+    assert.ok(inspectorView, 'the registered Inspector view is reused');
+    const settingsContext = inspectorViewTestProbe.getContext?.();
+    assert.strictEqual(settingsContext.section, 'capo');
+    assert.deepStrictEqual(settingsContext.sections.map((s: any) => s.id), ['capo', 'beginner', 'transpose']);
+    if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+      const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale),
+        `screenshot locale ${requestedLocale} must match VS Code locale ${vscode.env.language}`);
+      const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand('notifications.clearAll');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const captureWaitMs = Number(process.env.GUITARDSL_E2E_CAPTURE_WAIT_MS ?? 500);
+      if (Number.isFinite(captureWaitMs) && captureWaitMs > 0) await settle(Math.min(captureWaitMs, 5000));
+      const theme = /light/i.test(requestedTheme) ? 'light' : 'dark';
+
+      assert.strictEqual(await evaluateInspectorWebview<boolean>('!document.getElementById("settings-state").hidden'), true,
+        'the production Inspector renders settings without a second panel');
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'beginner'), true,
+        'section navigation is available by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'beginner', 'Beginner section switch reaches the host');
+      const sourceBeforeSelection = doc.getText();
+      const beginnerModel = inspectorViewTestProbe.getContext?.()?.model;
+      const candidate = beginnerModel?.candidates?.find((item: any) => item.supported);
+      assert.ok(candidate, 'the Beginner model exposes a supported capo candidate');
+      const candidateActivated = await activateInspectorControlWithKeyboard('candidate', String(candidate.capo));
+      if (!candidateActivated) {
+        const state = await evaluateInspectorWebview<string>(
+          'JSON.stringify({active:{tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,pressed:document.activeElement?.getAttribute("aria-pressed")},section:window.guitarDslInspectorContext?.section,candidates:Array.from(document.querySelectorAll("[data-inspector-control=candidate]")).map(node=>({key:node.dataset.inspectorKey,disabled:node.disabled,pressed:node.getAttribute("aria-pressed"),name:node.getAttribute("aria-label")}))})'
+        );
+        assert.fail(`candidate selection is not reachable by keyboard: ${state}`);
+      }
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.model?.selectedCapo === candidate.capo,
+        'candidate selection updates the host model');
+      assert.strictEqual(doc.getText(), sourceBeforeSelection, 'candidate selection never edits the DSL');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-beginner.png`, 135);
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'transpose'), true,
+        'Transpose navigation is available by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'transpose', 'Transpose section switch reaches the host');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-transpose.png`, 135);
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+
+      assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'capo'), true,
+        'Capo navigation remains available after changing settings');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.section === 'capo', 'Capo section returns from the keyboard');
+      const capoModel = inspectorViewTestProbe.getContext?.()?.model;
+      const capoCandidate = capoModel?.candidates?.find((item: any) => item.supported && item.capo !== capoModel.selectedCapo);
+      assert.ok(capoCandidate, 'the Capo model exposes a different supported candidate');
+      const sourceBeforeCapoSelection = doc.getText();
+      assert.strictEqual(await activateInspectorControlWithKeyboard('candidate', String(capoCandidate.capo)), true,
+        'a Capo candidate is selectable by keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.model?.selectedCapo === capoCandidate.capo,
+        'Capo candidate selection updates the host model');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'Capo preview selection never edits the DSL');
+      assert.strictEqual(inspectorViewTestProbe.getContext?.()?.model?.canApply, true,
+        'a valid Capo selection enables Apply');
+      await captureWorkbenchScreenshot(`settings-${requestedLocale}-${theme}-narrow-capo.png`, 135);
+      const previewProbe = previewCapo().effectiveDslProbe;
+      previewProbe.previewInput = undefined;
+      const capoPlan = require('../../capo').planCapoTransform(doc.getText(), capoCandidate.capo);
+      assert.ok(capoPlan.ok);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitFor(() => previewProbe.previewInput === capoPlan.text,
+        'an explicit Preview opened after settings projects the current Capo draft');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'opening Preview and comparing a draft never edits the DSL');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const applyReachable = await activateInspectorControlWithKeyboard('action', 'apply', true, false);
+      if (!applyReachable) {
+        const state = await evaluateInspectorWebview<string>(
+          'JSON.stringify({active:{tag:document.activeElement?.tagName,control:document.activeElement?.dataset?.inspectorControl,key:document.activeElement?.dataset?.inspectorKey,label:document.activeElement?.getAttribute("aria-label"),text:document.activeElement?.textContent},apply:{disabled:document.getElementById("settings-apply")?.disabled,label:document.getElementById("settings-apply")?.getAttribute("aria-label"),text:document.getElementById("settings-apply")?.textContent},controls:Array.from(document.querySelectorAll("#settings-tabs button,#settings-content button,#settings-actions button")).map(node=>({control:node.dataset.inspectorControl,key:node.dataset.inspectorKey,disabled:node.disabled,label:node.getAttribute("aria-label"),text:node.textContent}))})'
+        );
+        assert.fail(`the enabled Apply action is not reachable by keyboard or exposed as a named button: ${state}`);
+      }
+      assert.strictEqual(await activateInspectorControlWithKeyboard('action', 'close'), true,
+        'Close is reachable and activates from the keyboard');
+      await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind !== 'settings', 'keyboard Close ends the settings session');
+      assert.strictEqual(doc.getText(), sourceBeforeCapoSelection, 'keyboard Close applies no source edit');
+      await waitFor(() => previewProbe.previewInput === doc.getText(),
+        'Close restores the Preview state that existed before the explicit Preview was opened');
+    }
+
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    await waitFor(() => inspectorViewTestProbe.getContext?.()?.kind === 'settings', 'the capo command routes to the Inspector');
+    assert.strictEqual(inspectorViewTestProbe.resolvedView, inspectorView, 'both commands reuse one Inspector view');
+    assert.strictEqual(inspectorViewTestProbe.getContext?.()?.section, 'capo');
+
     const ctx = sectionContext(doc, []);
-    const [, beginnerSection, transposeSection] = panel.sections;
-    await transposeSection.onMessage(ctx, { command: 'setSemitones', semitones: 5 });
-    await transposeSection.onMessage(ctx, { command: 'setCapoMode', mode: 'recommended' });
-    await beginnerSection.onMessage(ctx, { command: 'setPolicy', policy: 'allow' });
+    const capoSection = new (scoreSettings().CapoSection)();
+    const beginnerSection = new (scoreSettings().BeginnerSection)();
+    const transposeSection = new (scoreSettings().TransposeSection)();
+    assert.strictEqual(capoSection.selectCapo(2), true);
+    assert.strictEqual(beginnerSection.setBarrePolicy('allow'), true);
+    assert.strictEqual(beginnerSection.selectCapo(3), true);
+    assert.strictEqual(transposeSection.setSemitones(5), true);
+    assert.strictEqual(transposeSection.setCapoMode('recommended'), true);
     assert.strictEqual(beginnerSection.buildModel(ctx).barrePolicy, 'allow');
+    assert.deepStrictEqual(beginnerSection.getOptions(), { barrePolicy: 'allow', targetCapo: 3 });
     assert.strictEqual(transposeSection.buildModel(ctx).semitones, 5, 'sections keep their own state');
     assert.strictEqual(transposeSection.buildModel(ctx).capoMode, 'recommended');
-    const titles = panel.sections.map((s: any) => s.title(i18n().getScoreSettingsEditorMessages('ja')));
+    const titles = [capoSection, beginnerSection, transposeSection].map((s: any) => s.title(i18n().getScoreSettingsEditorMessages('ja')));
     assert.deepStrictEqual(titles, ['カポ / 弾きやすさ', '初心者モード', '移調']);
-    panel.panel.dispose();
+  });
+
+  test('S135-07 a pending settings Apply validates input before invalidating and applies valid selections', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    const preview = previewCapo();
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => preview.effectiveDslProbe.previewInput === SOURCE, 'the source Preview is open before Settings');
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    const dispatch = (command: string, fields?: Record<string, unknown>) => settings.dispatchMessage!(command, fields);
+    await waitFor(() => inspector.getContext?.()?.kind === 'settings', 'the Settings session is open');
+
+    const windowApi = vscode.window as unknown as { showWarningMessage: (...args: unknown[]) => Promise<unknown> };
+    const workspaceApi = vscode.workspace as unknown as { applyEdit: unknown };
+    const originalWarning = windowApi.showWarningMessage;
+    const originalApplyEdit = workspaceApi.applyEdit;
+    let applyCount = 0;
+    let confirmations: Array<(accept?: boolean) => void> = [];
+    workspaceApi.applyEdit = async (edit: vscode.WorkspaceEdit) => {
+      applyCount++;
+      return (originalApplyEdit as (this: typeof vscode.workspace, edit: vscode.WorkspaceEdit) => Promise<boolean>)
+        .call(vscode.workspace, edit);
+    };
+    windowApi.showWarningMessage = (...args: unknown[]) => new Promise(resolve => {
+      const affirmative = args[args.length - 1];
+      confirmations.push((accept = true) => resolve(accept ? affirmative : undefined));
+    });
+    const selectDifferentCapo = async () => {
+      const context = inspector.getContext?.();
+      if (context?.model?.canApply) return;
+      const candidate = context?.model?.candidates?.find((item: any) => item.supported && item.capo !== context.model.sourceCapo);
+      assert.ok(candidate, 'a different supported Capo candidate is available');
+      await dispatch('settingsSelectCapo', { capo: candidate.capo });
+      await waitFor(() => inspector.getContext?.()?.model?.selectedCapo === candidate.capo
+          && inspector.getContext?.()?.model?.canApply === true,
+        'the candidate is selected before Apply');
+    };
+    const beginApply = async () => {
+      confirmations = [];
+      const context = inspector.getContext?.();
+      assert.strictEqual(context?.model?.canApply, true,
+        `Apply must be enabled before the test opens its modal: ${JSON.stringify(context?.model)}`);
+      const pending = dispatch('settingsApply');
+      for (let attempt = 0; attempt < 50 && confirmations.length === 0; attempt++) await settle(20);
+      assert.ok(confirmations.length > 0,
+        `the modal Apply confirmation is pending: ${JSON.stringify(inspector.getContext?.())}`);
+      const confirm = confirmations.shift();
+      if (!confirm) throw new Error('the modal Apply confirmation did not open');
+      return { pending, confirm };
+    };
+    try {
+      await selectDifferentCapo();
+      const beforeReopen = inspector.getContext?.();
+      const reopened = await beginApply();
+      await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+      await waitFor(() => inspector.getContext?.()?.sessionGeneration !== beforeReopen.sessionGeneration,
+        'explicitly reopening the same document creates a new settings generation');
+      reopened.confirm();
+      await reopened.pending;
+      assert.strictEqual(applyCount, 0, 'the old confirmation cannot edit after explicit reopen');
+
+      await selectDifferentCapo();
+      const beforeSelection = inspector.getContext?.();
+      const changedSelection = await beginApply();
+      const next = beforeSelection.model.candidates.find((item: any) => item.supported
+        && item.capo !== beforeSelection.model.selectedCapo && item.capo !== beforeSelection.model.sourceCapo);
+      assert.ok(next, 'another supported Capo candidate is available');
+      const expectedPreview = require('../../capo').planCapoTransform(SOURCE, next.capo);
+      assert.ok(expectedPreview.ok, 'the selected supported Capo has a valid Preview transform');
+      await dispatch('settingsSelectCapo', { capo: next.capo });
+      await waitFor(() => inspector.getContext?.()?.revision !== beforeSelection.revision
+          && inspector.getContext?.()?.model?.selectedCapo === next.capo,
+        'a valid candidate request advances the revision and changes the selection while confirmation is pending');
+      await waitFor(() => preview.effectiveDslProbe.previewInput === expectedPreview.text,
+        'the valid candidate updates the Preview while invalidating the pending confirmation');
+      changedSelection.confirm();
+      await changedSelection.pending;
+      assert.strictEqual(applyCount, 0, 'the old confirmation cannot edit after a candidate request');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'settings', 'the current settings session remains available');
+
+      const beforeInvalidCandidate = inspector.getContext?.();
+      const invalidCandidateApply = await beginApply();
+      const invalidRevision = inspector.getContext?.()?.revision;
+      await dispatch('settingsSelectCapo', { capo: 999 });
+      assert.strictEqual(inspector.getContext?.()?.revision, invalidRevision,
+        'an unsupported candidate leaves the session revision unchanged');
+      assert.strictEqual(inspector.getContext?.()?.model?.selectedCapo, beforeInvalidCandidate.model.selectedCapo,
+        'an unsupported candidate leaves the current selection unchanged');
+      invalidCandidateApply.confirm(false);
+      await invalidCandidateApply.pending;
+      assert.strictEqual(applyCount, 0, 'an invalid candidate cannot invalidate Apply or edit the source');
+
+      const invalidSectionApply = await beginApply();
+      const beforeInvalidSection = inspector.getContext?.();
+      await dispatch('settingsSelectSection', { nextSection: 'unknown' });
+      assert.strictEqual(inspector.getContext?.()?.revision, beforeInvalidSection.revision,
+        'an invalid section leaves the session revision unchanged');
+      assert.strictEqual(inspector.getContext?.()?.section, beforeInvalidSection.section,
+        'an invalid section leaves the current section unchanged');
+      invalidSectionApply.confirm(false);
+      await invalidSectionApply.pending;
+      assert.strictEqual(applyCount, 0, 'an invalid section cannot invalidate Apply or edit the source');
+
+      await selectDifferentCapo();
+      const beforeSection = inspector.getContext?.();
+      const changedSection = await beginApply();
+      await dispatch('settingsSelectSection', { nextSection: 'beginner' });
+      await waitFor(() => inspector.getContext?.()?.revision !== beforeSection.revision
+          && inspector.getContext?.()?.section === 'beginner',
+        'a valid section request changes section and advances revision while confirmation is pending');
+      changedSection.confirm();
+      await changedSection.pending;
+      assert.strictEqual(applyCount, 0, 'the old confirmation cannot edit after a section request');
+      assert.strictEqual(doc.getText(), SOURCE, 'all stale confirmations preserve the DSL');
+    } finally {
+      confirmations.shift()?.();
+      await dispatch('settingsCancel');
+      windowApi.showWarningMessage = originalWarning;
+      workspaceApi.applyEdit = originalApplyEdit;
+    }
+  });
+
+  test('S135-06 one Capo or Beginner candidate change rebuilds Preview only once', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    const preview = previewCapo();
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => preview.previewLifecycleProbe.currentDocumentUri === doc.uri.toString(), 'Preview is open for the test document');
+    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'settings', 'the Settings session is open');
+
+    const capoContext = inspector.getContext?.();
+    const capoCandidate = capoContext.model.candidates.find((item: any) => item.supported && item.capo !== capoContext.model.selectedCapo);
+    assert.ok(capoCandidate, 'a different supported Capo candidate is available');
+    let generation = preview.previewLifecycleProbe.generation;
+    await settings.dispatchMessage!('settingsSelectCapo', { capo: capoCandidate.capo });
+    await waitFor(() => preview.previewLifecycleProbe.generation > generation, 'Preview receives the Capo comparison');
+    assert.strictEqual(preview.previewLifecycleProbe.generation, generation + 1,
+      'one Capo selection causes exactly one Preview HTML generation');
+
+    await settings.dispatchMessage!('settingsSelectSection', { nextSection: 'beginner' });
+    await waitFor(() => inspector.getContext?.()?.section === 'beginner', 'Beginner settings are selected');
+    const beginnerContext = inspector.getContext?.();
+    const beginnerCandidate = beginnerContext.model.candidates.find((item: any) => item.supported);
+    assert.ok(beginnerCandidate, 'a supported Beginner candidate is available');
+    generation = preview.previewLifecycleProbe.generation;
+    await settings.dispatchMessage!('settingsSelectBeginnerCapo', { capo: beginnerCandidate.capo });
+    await waitFor(() => preview.previewLifecycleProbe.generation > generation, 'Preview receives the Beginner comparison');
+    assert.strictEqual(preview.previewLifecycleProbe.generation, generation + 1,
+      'one Beginner selection causes exactly one Preview HTML generation');
+    assert.strictEqual(doc.getText(), SOURCE, 'temporary comparison does not edit the DSL');
+    await settings.dispatchMessage!('settingsCancel');
+  });
+
+  test('S135-12 openInspector ends Settings and restores the effective Preview and PDF DSL', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    const preview = previewCapo();
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitFor(() => preview.effectiveDslProbe.previewInput === SOURCE, 'Preview starts from the source DSL');
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'settings', 'the Settings session is open');
+    const context = inspector.getContext?.();
+    const candidate = context.model.candidates.find((item: any) => item.supported && item.capo !== context.model.selectedCapo);
+    assert.ok(candidate, 'a different supported Capo candidate is available');
+    await settings.dispatchMessage!('settingsSelectCapo', { capo: candidate.capo });
+    await waitFor(() => preview.effectiveDslProbe.previewInput !== SOURCE, 'Preview shows the temporary Capo comparison');
+
+    await vscode.commands.executeCommand('guitardsl.openInspector');
+    await waitFor(() => inspector.getContext?.()?.kind === 'document', 'openInspector replaces Settings with the active document');
+    await waitFor(() => preview.effectiveDslProbe.previewInput === SOURCE, 'leaving Settings restores its Preview snapshot');
+    assert.strictEqual(inspector.getContext?.()?.kind, 'document', 'the Settings session no longer accepts edits after context replacement');
+
+    const pdfUri = tmpPdf(`settings-context-restore-${Date.now()}.pdf`);
+    preview.effectiveDslProbe.pdfInput = undefined;
+    await vscode.commands.executeCommand('guitardsl.exportPdf', doc.uri, pdfUri);
+    assert.strictEqual(preview.effectiveDslProbe.pdfInput, SOURCE, 'PDF export uses the restored source DSL');
+    await fs.promises.unlink(pdfUri.fsPath).catch(() => undefined);
+  });
+
+  test('S135-01 later settings command wins when an earlier document resolution completes last', async () => {
+    const docA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const docB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: `${SOURCE}\n# B` });
+    await showAndFocus(docB);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseA: ((document: vscode.TextDocument) => void) | undefined;
+    let signalAStarted!: () => void;
+    const aStarted = new Promise<void>(resolve => { signalAStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === docA.uri.toString()) {
+        signalAStarted();
+        return new Promise(resolve => { releaseA = resolve; });
+      }
+      if (uri?.toString() === docB.uri.toString()) return Promise.resolve(docB);
+      return Promise.resolve(undefined);
+    };
+    try {
+      const openingA = vscode.commands.executeCommand('guitardsl.editCapo', docA.uri);
+      await aStarted;
+      await vscode.commands.executeCommand('guitardsl.editCapo', docB.uri);
+      await waitFor(() => inspector.getContext?.()?.kind === 'settings' && inspector.getContext()?.uri === docB.uri.toString(),
+        'the later B request opens its settings context');
+      releaseA!(docA);
+      await openingA;
+      assert.strictEqual(inspector.getContext?.()?.uri, docB.uri.toString(),
+        'the stale A request cannot steal the Inspector after B opens');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+      await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-13 a new progression context supersedes a pending Settings document resolution', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    try {
+      const openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const progressionB = progression.getSession();
+      assert.ok(progressionB, 'the new explicit command opens a progression session');
+      await waitFor(() => inspector.getContext?.()?.kind === 'progression'
+          && inspector.getContext?.()?.sessionGeneration === progressionB.sessionGeneration,
+        'the Inspector shows the new progression session before the older document resolution completes');
+
+      releaseSettings!(doc);
+      await openingSettings;
+      assert.strictEqual(progression.getSession(), progressionB,
+        'the stale Settings resolver does not invalidate the new progression session');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression',
+        'the stale Settings resolver does not replace the new progression context');
+      assert.strictEqual(inspector.getContext?.()?.sessionGeneration, progressionB.sessionGeneration);
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      await require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-14 a new progression session survives a pending Settings Stop acknowledgement', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+    const port = (audioLease as any).port as {
+      hasPreview: () => boolean;
+      lockPreview: (leaseId: string) => Promise<boolean>;
+      startInspector: (message: any) => Promise<boolean>;
+      stopInspector: (leaseId: string, requestId: string) => Promise<boolean>;
+    };
+    assert.strictEqual(audioLease.activeLeaseId, undefined, 'the audio coordinator starts without an active lease');
+    const originalPort = {
+      hasPreview: port.hasPreview,
+      lockPreview: port.lockPreview,
+      startInspector: port.startInspector,
+      stopInspector: port.stopInspector
+    };
+    let stopRequest: { leaseId: string; requestId: string } | undefined;
+    let signalStopStarted!: () => void;
+    const stopStarted = new Promise<void>(resolve => { signalStopStarted = resolve; });
+    let openingSettings: Thenable<unknown> | undefined;
+    port.hasPreview = () => false;
+    port.lockPreview = async () => true;
+    port.startInspector = async message => {
+      audioLease.acknowledge({ command: 'progressionAudioStarted', leaseId: message.leaseId, requestId: message.requestId });
+      return true;
+    };
+    port.stopInspector = async (leaseId, requestId) => {
+      stopRequest = { leaseId, requestId };
+      signalStopStarted();
+      return true;
+    };
+    try {
+      const sessionA = progression.getSession();
+      const started = await audioLease.start({
+        requestId: `s135-14-${Date.now()}`,
+        generation: inspector.getContext?.().kind === 'progression' ? inspector.getContext().generation : 0,
+        sessionUri: sessionA.uri,
+        sessionVersion: sessionA.version,
+        sessionGeneration: sessionA.sessionGeneration,
+        candidateId: sessionA.activeCandidateId,
+        side: 'B',
+        mode: 'melody',
+        speed: 100
+      }, {} as any, () => true, 'unavailable');
+      assert.strictEqual(started, true, 'the test coordinator holds an active acknowledged lease');
+      const leaseId = audioLease.activeLeaseId as string;
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await stopStarted;
+      assert.strictEqual(audioLease.activeLeaseId, leaseId, 'Settings is waiting while the audio lease remains active');
+
+      await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+      const progressionB = progression.getSession();
+      assert.ok(progressionB && progressionB.sessionGeneration !== sessionA.sessionGeneration,
+        'the new command installs a distinct progression session while Stop is pending');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression');
+      assert.strictEqual(inspector.getContext?.()?.sessionGeneration, progressionB.sessionGeneration);
+
+      audioLease.acknowledge({
+        command: 'progressionAudioStopped',
+        leaseId: stopRequest!.leaseId,
+        requestId: stopRequest!.requestId
+      });
+      await openingSettings;
+      assert.strictEqual(progression.getSession(), progressionB,
+        'the older Settings request does not invalidate the new session after Stop acknowledgement');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression',
+        'the older Settings request does not replace the new Inspector context after Stop acknowledgement');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the acknowledged Stop releases the old lease');
+    } finally {
+      if (audioLease.activeLeaseId && stopRequest) {
+        audioLease.acknowledge({ command: 'progressionAudioStopped', ...stopRequest });
+      }
+      if (openingSettings) await openingSettings;
+      port.hasPreview = originalPort.hasPreview;
+      port.lockPreview = originalPort.lockPreview;
+      port.startInspector = originalPort.startInspector;
+      port.stopInspector = originalPort.stopInspector;
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
+  test('S135-15 explicit openInspector supersedes a pending Settings resolution in the same document context', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.openInspector');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'document'
+      && inspector.getContext?.()?.uri === doc.uri.toString(), 'the active document is the Inspector context');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'the repeated public open keeps the existing document context');
+      releaseSettings!(doc);
+      await openingSettings;
+
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'the older Settings request cannot replace a later same-context open');
+      assert.strictEqual(inspector.getContext?.()?.uri, doc.uri.toString());
+      assert.strictEqual(settings.hasSession?.(), false, 'no hidden Settings session was created');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-16 a validated Settings Close supersedes a pending newer Settings request', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'settings', 'the first Settings session is open');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+      await settings.dispatchMessage?.('settingsCancel');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document', 'the validated Close restores the document context');
+
+      releaseSettings!(doc);
+      await openingSettings;
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'a request started before Close cannot reopen the dismissed Settings context');
+      assert.strictEqual(settings.hasSession?.(), false, 'Close leaves no Settings session behind');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-17 unknown and invalid progression messages do not supersede pending Settings', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    assert.strictEqual(inspector.getContext?.()?.kind, 'progression');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await progression.dispatchInspectorMessage?.({ command: 'progressionBogus' });
+      await progression.dispatchInspectorMessage?.({ command: 'progressionSetBars', bars: 999 });
+      releaseSettings!(doc);
+      await openingSettings;
+
+      assert.strictEqual(inspector.getContext?.()?.kind, 'settings',
+        'rejected progression messages leave the valid pending Settings request current');
+      assert.strictEqual(inspector.getContext?.()?.uri, doc.uri.toString());
+      assert.strictEqual(settings.hasSession?.(), true, 'the valid Settings request opens its host session');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
   });
 
   test('TR-E2E-04 Preview / PDF re-resolve from the transposed source, including Beginner Mode (T045)', async () => {

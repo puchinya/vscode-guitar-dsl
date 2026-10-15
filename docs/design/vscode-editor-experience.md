@@ -6,7 +6,9 @@
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
+- Related Issue: [Issue #134](https://github.com/puchinya/vscode-guitar-dsl/issues/134)
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
+- Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -21,7 +23,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 | 言語ID、拡張子、language configuration、TextMate grammar | 拡張機能仕様 §2 |
 | コマンドと設定 | 拡張機能仕様 §3 |
 | サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
-| 共通 Inspector の登録、表示、文書コンテキスト | Issue #133、拡張機能仕様 §3.25、§4D |
+| 共通 Inspector の登録、表示、文書・進行・設定コンテキスト | Issue #133–#135、拡張機能仕様 §3.9、§3.25、§4B、§4D |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
 | Code Actions、editor Hint、Quick Fix の登録と文書編集境界 | Issue #87、拡張機能仕様 §5A–§5B、§6.3 |
 | コード進行補完と assistant コマンド | Issue #129、拡張機能仕様 §3.17、§4.8 |
@@ -32,7 +34,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 - `package.json` が VS Code の言語・コマンド・設定・表示の貢献を宣言し、`language-configuration.json` と `syntaxes/guitardsl.tmLanguage.json` が編集補助と TextMate grammar を提供する。
 - `src/extension.ts` はコマンド登録、文書イベント購読、Document resolver、Preview Panel 等を束ねる。Compiler 診断は `DiagnosticCollection` に反映される。Outline は `src/symbols.ts` の `DocumentSymbolProvider` が提供する。
 - サイドバーと初回利用導線は `src/sidebar.ts` / `src/onboarding.ts`、Help のローカル表示は `src/help.ts` と生成済み `media/help/` が担う。Help は仕様・package metadata 由来の生成物であり、仕様の正本ではない。
-- 共通 Inspector は `src/inspector/inspectorController.ts` が URI/version 付きの現在コンテキストと明示表示を管理し、`src/inspector/inspectorView.ts` が単一の `WebviewViewProvider` を登録する。HTML builder は `src/render/inspectorHtml.ts` にあり、この基盤では読み取り専用の空状態／文書状態だけを描画する。
+- 共通 Inspector は `src/inspector/inspectorController.ts` が URI/version 付きの現在コンテキストと明示表示を管理し、`src/inspector/inspectorView.ts` が単一の `WebviewViewProvider` を登録する。HTML builder は `src/render/inspectorHtml.ts` にあり、空状態・文書・progression・settings を単一 View に描画する。progression / settings の状態と編集権限は各ホスト controller が所有し、Inspector controller は最新 snapshot を投影する。
 - ローカライズは `src/i18n.ts` と VS Code の `package.nls*.json` / Webview locale message を通じて拡張機能ホストと UI に提供する。
 
 ### Navigation と初回利用
@@ -43,9 +45,9 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 
 ### Common Inspector
 
-`guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホストの Controller が `{kind:'empty'} | {kind:'document'; uri; version} | {kind:'progression'; uri; version; sessionGeneration; ...}` を所有し、切替・close 時に古い URI/version を無効化する。進行提案 CodeLens の実行は例外的に Inspector を表示して一時セッションを始める。非表示中は DOM 更新メッセージを送らず、状態変更ごとに generation を進める。View が再表示されたら最新 snapshot で HTML を作り直す。Webview は message listener を登録してから `ready` を送り、ホストは最新 snapshot を新しい generation で再送するため、非表示中または DOM 再生成中に失われたメッセージへ依存しない。古い generation のメッセージは拒否する。ユーザーが移動した View をコードから移動し直さない。
+`guitardslInspector` Secondary Sidebar container は `guitardsl.inspector` Webview View を 1 つだけ持つ。明示的な `guitardsl.openInspector` は現在アクティブな GuitarDSL TextEditor だけを使い、該当文書がなければ空状態を表示する。通常の編集・選択移動・文書切替・extension activation は View を表示しない。ホスト Controller は `{kind:'empty'} | {kind:'document'; uri; version} | {kind:'progression'; uri; version; sessionGeneration; ...} | {kind:'settings'; uri; version; sessionGeneration; revision; activeSection; model}` の現在 snapshot を一つ所有し、切替・close 時に古い URI/version/session を無効化する。進行 CodeLens と楽譜設定コマンドはそれぞれの明示操作で Inspector を表示する。設定コマンドは §3.9 の解決済み URI を View reveal 前に渡す。非表示中は DOM 更新メッセージを送らず、状態変更ごとに generation を進める。View が再表示されたら最新 snapshot で HTML を作り直す。Webview は message listener を登録してから `ready` を送り、ホストは最新 snapshot を新しい generation で再送するため、非表示中または DOM 再生成中に失われたメッセージへ依存しない。古い generation のメッセージは拒否する。ユーザーが移動した View をコードから移動し直さない。
 
-Inspector はソースや Undo を所有しない。進行候補の一時選択と Apply 操作を表示するが、適用時の再検証と単一 WorkspaceEdit は Extension Host が行う。通常再生と Practice は Preview Panel が所有し、コード進行の明示試聴は Inspector 内の一時 AudioContext / scheduler が行う。Extension Host は Preview の停止確認と排他 lease を調停し、同時再生を防ぐ。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
+Inspector はソースや Undo を所有しない。進行候補と設定の一時選択および Apply 操作を表示するが、適用時の再検証と単一 WorkspaceEdit は Extension Host が行う。通常再生と Practice は Preview Panel が所有し、コード進行の明示試聴は Inspector 内の一時 AudioContext / scheduler が行う。Extension Host は Preview の停止確認と排他 lease を調停し、同時再生を防ぐ。設定表示は host-owned models と操作 ID を使い、Webview が DSL や変換計画を生成しない。Webview は nonce 付き strict CSP、VS Code theme token、1 列 responsive layout、ARIA 状態表示を使い、外部 resource を読み込まない。
 
 ### Help とローカライズ
 
@@ -95,4 +97,18 @@ E2E は extension host 上で一回の Undo による完全復元、untitled doc
 
 `src/progressionAssistant.ts` registers a `CodeLensProvider` for parser-owned chord measures and `guitardsl.suggestChordProgression` against the exact document URI/version and target measure. Issue #134 moves the 4/8/16-bar operation controls and candidate list into the common Inspector. The first model uses four bars and chooses safe replacement when possible, otherwise safe append. Single-chord IntelliSense remains unchanged.
 
-The controller owns one ephemeral session and exposes commands that open the Inspector, Play, Stop, switch A/B, Apply and Close. Inspector actions carry the host-issued session generation, bound URI/version, and selected candidate ID; stale messages are ignored. Candidate rows are ordinary buttons in a semantic list, so Tab, Enter and Space use native Webview keyboard behavior. The host recomputes candidates after operation changes and accepts no DSL from the Webview. `TextEditorDecorationType` annotates parser-owned source spans with proposed chords; append uses an insertion marker. Decorations never edit text. A/B changes only the editor annotation and session side. Preview is rendered or reopened only after explicit Play; if the same document's Preview is already open, it mirrors candidate, side and speed changes without taking focus. The Inspector keeps single-chord, bars, melody and full-song audition mode in the host session; 8/16-bar proposals display the v1 repeat limitation. The Preview remains the sole playback owner. Apply reacquires the document by URI/version and replans; source changes and document switches invalidate the session and clear decorations.
+The controller owns one ephemeral session and exposes commands that open the Inspector, Play, Stop, switch A/B, Apply and Close. Inspector actions carry the host-issued session generation, bound URI/version, and selected candidate ID; stale messages are ignored. Candidate rows are ordinary buttons in a semantic list, so Tab, Enter and Space use native Webview keyboard behavior. The host recomputes candidates after operation changes and accepts no DSL from the Webview. `TextEditorDecorationType` annotates parser-owned source spans with proposed chords; append uses an insertion marker. Decorations never edit text. A/B and candidate changes update only the editor annotation and session side; if the same document's Preview is already showing this session, its displayed side is synchronized without opening Preview or taking focus. Play uses the Inspector's transient AudioContext and scheduler after the Extension Host receives Preview's stop acknowledgement and grants the exclusive lease. The Inspector keeps single-chord, bars, melody and full-song audition mode in the host session; 8/16-bar proposals display the v1 repeat limitation. Preview remains the ordinary playback and Practice owner. Apply reacquires the document by URI/version and replans; source changes and document switches invalidate the session and clear decorations.
+
+## Issue #135 implementation design
+
+The existing Inspector controller remains the single View and ready/replay owner. Its settings context carries the target URI, document version, session generation, revision, active section, and one host-built section model. The settings controller owns the three model instances and validates every message against that current identity. Settings and progression cannot coexist in the same View; switching contexts invalidates the previous session before publishing a new snapshot.
+
+The existing editScoreSettings and editCapo command IDs resolve their target before revealing the Inspector and start at the Capo section. They do not create a WebviewPanel. The chord diagram command remains bound to ChordEditorPanel; any optional detailed-edit action delegates to that existing command with the same target URI.
+
+Settings controls are single-column native buttons and inputs that preserve selection and focus after host refresh. The Webview sends section IDs and bounded values only. Apply requires host confirmation and freshness checks; Cancel, navigation, and candidate comparison never edit source. Settings UI uses the established i18n dictionaries, VS Code theme tokens, ARIA labels/status, and existing relocated View position.
+
+The transition to progression must request lease stop and wait for its acknowledgement while Preview remains locked. The transition back to settings first discards and restores its draft, then closes the progression session and its decorations. Stale messages, text version changes, close, disposal, or a newer explicit command cannot restore a prior session.
+
+### Verification strategy
+
+Issue #135 E2E coverage verifies both legacy commands, Preview editCapo routing, URI selection before reveal, one View across repeated operations, settings/progression replacement, ready/replay after relocation, keyboard focus retention, and absence of a duplicate settings WebviewPanel. Visual evidence is captured from the actual Extension Development Host; automated accessibility-tree results and manual VoiceOver evidence are reported separately.

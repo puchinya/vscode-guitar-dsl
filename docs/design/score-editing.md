@@ -6,6 +6,7 @@
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
+- Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -17,7 +18,7 @@
 
 | 仕様上の要件 | 対象 |
 |---|---|
-| コード図の編集・保存、楽譜設定コマンド | 拡張機能仕様 §3.3、§3.9、§4A、§4B |
+| コード図の編集・保存、楽譜設定コマンドと Inspector セッション | 拡張機能仕様 §3.3、§3.9、§4A、§4B、§4D |
 | プレビュー中のカポと初心者モード | 拡張機能仕様 §4.4–§4.5 |
 | 移調、カポ、弾きやすさ、表示・保存境界 | 拡張機能仕様 §4B.2–§4B.5、言語構文仕様 §14 |
 | ストロークパターンの適用 | 拡張機能仕様 §3.10、§8.7 |
@@ -54,6 +55,7 @@ Chord editor は `ChordEditorPanel` を一つ持ち、開いた文書 URI と編
 |---|---|---|
 | コード図 | Webview state → sanitize / model validation → chord preview → save plan | 対象 `chord` 行の確認後、ホストが文書へ反映 |
 | 設定変換 | document text → parse / transform / re-parse → editor result or preview model | 永続変換とプレビュー専用 override の区別は仕様のコマンド・節に従う |
+| Issue #135 Inspector 設定 | ホストの Capo / Beginner / Transpose モデル → read-only Inspector 投影 → 検証済み Apply または Preview 比較 | ScoreSettingsInspectorController は session/revision を所有し、既存 transform API と Preview controllers を再利用する |
 | 伴奏適用 | parse → section / measure analysis → validated pattern → source-span transform | `MeasureData.rhythmSource` の範囲に限定。コード、歌詞、`%` 展開を編集しない |
 
 VS Code 文書が原文を所有し、純粋な変換モジュールは変換結果と診断を返す。UI は状態とユーザー操作を運び、変換ルールを複製しない。
@@ -106,3 +108,25 @@ AST 全体の再シリアライズはコメント、改行、ユーザー書式�
 The editor CodeLens and Decoration adapter consumes the same validated plan. Replacement annotations use only the plan's parser-owned source spans; append shows the planned chord sequence after the safe body-end position. Inspector candidate selection clears or updates Decorations only. Candidate selection never calls the source-edit apply path, so document text, version and undo history remain unchanged until the separately confirmed Apply command.
 
 For a chord cell, an explicit key change at the target position (including a pending `@key` before an empty cell) takes precedence over previous-measure context. Previous measure context is the fallback only when the target is a true append position with no measure or pending key change at that index. The completion provider and editor command use this same target-first rule after `@key`.
+
+## Issue #135 implementation design
+
+### Settings ownership and model projection
+
+The former ScoreSettingsEditorPanel is removed as an editing surface. ScoreSettingsInspectorController owns one SettingsSession for the target URI, source version/text, session generation, revision, active section, the three existing section models, and the Preview snapshot. The Inspector controller only projects the current host model; its Webview sends section and candidate IDs and never constructs DSL, transformation plans, or target-document state.
+
+CapoSection, BeginnerSection, and TransposeSection remain the source of candidate ranking, mapping, warnings, and section state. The new controller extracts typed setters/getters and calls the existing pure transformation planners. It does not change capo, beginner-mode, transpose, tuning, or instrument algorithms. Existing command IDs and apply APIs remain compatible; optional expected version/source guards are used only by the Inspector path.
+
+### Apply and Preview flow
+
+Candidate changes and section navigation do not write source text. Capo and Beginner selections project temporary overrides through the existing Preview controllers only when the target document is already displayed by Preview. A session snapshots only that URI's overrides. Cancel and section switching restore the snapshot unless an independent Preview action has superseded it; that external action invalidates the settings session and remains authoritative.
+
+Transpose displays its plan without applying a temporary Preview transform. Apply recomputes against the latest target text, confirms the host's current choice, revalidates URI/version/source/generation/revision, and submits one WorkspaceEdit. A stale confirmation, duplicate Apply, invalid plan, or rejected edit produces no source change. A successful edit is one undo step. After Apply, existing Preview overrides are recalculated from the new source text.
+
+### Session switching and failure handling
+
+Settings and progression sessions are mutually exclusive. User-directed document, settings, and progression actions share an explicit-intent generation, so a pending Settings request is superseded as soon as a newer action begins. After every asynchronous document resolution, audio Stop acknowledgement, or Preview restore, the request rechecks that generation, its captured progression session identity, and the audio lease state before continuing. Leaving settings discards its draft before progression starts. Leaving progression waits for the existing ProgressionAudioLeaseCoordinator stop acknowledgement while the Preview lock remains held before settings becomes active. Document edits, URI changes, close, View disposal, and extension shutdown invalidate the session; stale Webview messages and late confirmations are no-ops. Cleanup is scoped to the session URI so it cannot restore or render into another document's Preview.
+
+### Verification strategy
+
+Issue #135 tests S135-02 through S135-10 cover the reused section models, source preservation, stale/reentrant Apply, Preview snapshot precedence, and one-Undo behavior. S135-11 and S135-12 cover progression lease handoff, View replay, document switching, and relocation. S135-13 and S135-14 verify that a new progression intent supersedes pending Settings resolution and survives a delayed Stop acknowledgement; S135-07 verifies invalid candidate/section messages are no-ops while valid changes update the selection. Run the configured unit/E2E and final hooks, plus Issue-scoped Schema 2 validation and Help synchronization; GUI states not observed in the Extension Development Host remain NOT RUN.

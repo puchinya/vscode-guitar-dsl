@@ -34,6 +34,7 @@ export interface ProgressionAudioLeasePort {
 }
 
 type LeaseState = 'lockingPreview' | 'startingInspector' | 'playing' | 'stopping';
+type StopReturnState = Extract<LeaseState, 'startingInspector' | 'playing'>;
 
 interface ActiveLease {
   readonly leaseId: string;
@@ -42,6 +43,7 @@ interface ActiveLease {
   readonly started: Deferred<boolean>;
   readonly stopped: Deferred<boolean>;
   state: LeaseState;
+  stateBeforeStopping?: StopReturnState;
   cancelled: boolean;
   unlockPreview: boolean;
 }
@@ -133,7 +135,7 @@ export class ProgressionAudioLeaseCoordinator {
 
     const started = await this.wait(lease.started.promise);
     if (started === true && this.active === lease) {
-      lease.state = 'playing';
+      if (lease.state === 'startingInspector') lease.state = 'playing';
       return true;
     }
     if (started === false) {
@@ -157,7 +159,10 @@ export class ProgressionAudioLeaseCoordinator {
     const lease = this.active;
     if (!lease || lease.leaseId !== message.leaseId || lease.request.requestId !== message.requestId) return;
     if (message.command === 'progressionAudioStarted') {
-      if (lease.state === 'startingInspector') lease.started.resolve(true);
+      if (lease.state === 'startingInspector'
+        || lease.state === 'stopping' && lease.stateBeforeStopping === 'startingInspector') {
+        lease.started.resolve(true);
+      }
       return;
     }
     lease.started.resolve(false);
@@ -165,33 +170,40 @@ export class ProgressionAudioLeaseCoordinator {
     this.finish(lease);
   }
 
-  async stopForSession(sessionUri: string): Promise<void> {
-    if (this.active?.request.sessionUri !== sessionUri) return;
-    await this.stop();
+  async stopForSession(sessionUri: string): Promise<boolean> {
+    if (this.active?.request.sessionUri !== sessionUri) return true;
+    return this.stop();
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<boolean> {
     const lease = this.active;
-    if (!lease) return;
+    if (!lease) return true;
     if (lease.state === 'lockingPreview') {
       lease.cancelled = true;
-      return;
+      const stopped = await this.wait(lease.stopped.promise);
+      return stopped === true && this.active !== lease;
     }
     if (lease.state === 'stopping') {
-      await this.wait(lease.stopped.promise);
-      return;
+      const stopped = await this.wait(lease.stopped.promise);
+      return stopped === true && this.active !== lease;
     }
 
+    const stateBeforeStop = lease.state as StopReturnState;
+    lease.stateBeforeStopping = stateBeforeStop;
     lease.state = 'stopping';
     const posted = await this.port.stopInspector(lease.leaseId, lease.request.requestId);
     if (!posted) {
-      this.finish(lease);
-      return;
+      if (this.active === lease && lease.state === 'stopping') {
+        lease.state = stateBeforeStop;
+        lease.stateBeforeStopping = undefined;
+      }
+      return false;
     }
     const stopped = await this.wait(lease.stopped.promise);
     if (stopped === true && this.active === lease) this.finish(lease);
     // On timeout keep the lease and the Preview lock. Unlocking without a local
     // stop acknowledgement could allow two Webviews to produce sound together.
+    return this.active !== lease;
   }
 
   inspectorDisposed(): void {

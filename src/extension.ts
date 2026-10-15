@@ -15,7 +15,8 @@ import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { isBarrePolicy } from './beginnerMode';
-import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, ScoreSettingsEditorPanel, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
+import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
+import { ScoreSettingsInspectorController } from './scoreSettingsInspectorController';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { registerGuitarDslAiTools } from './ai/tools';
 import { registerGp78Commands } from './gp78Commands';
@@ -102,6 +103,7 @@ export function activate(context: vscode.ExtensionContext) {
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   let progressionAssistantController: ProgressionAssistantController | undefined;
+  let settingsController: ScoreSettingsInspectorController | undefined;
   let progressionRenderGeneration = 0;
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
@@ -125,6 +127,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (progressionAudioLeaseProbe.coordinator === audioLeaseCoordinator) progressionAudioLeaseProbe.coordinator = undefined;
   } });
   const refreshInspectorContext = (document?: vscode.TextDocument) => {
+    settingsController?.invalidateIfDifferent(isGuitarDslDocument(document) ? document.uri.toString() : undefined);
     if (isGuitarDslDocument(document)) {
       inspector.showDocument(document.uri.toString(), document.version);
     } else if (inspector.currentContext.kind === 'document') {
@@ -134,11 +137,15 @@ export function activate(context: vscode.ExtensionContext) {
   refreshInspectorContext(vscode.window.activeTextEditor?.document);
   vscode.window.onDidChangeActiveTextEditor(editor => refreshInspectorContext(editor?.document), null, context.subscriptions);
   vscode.workspace.onDidChangeTextDocument(event => {
+    settingsController?.invalidate(event.document.uri.toString());
     if (vscode.window.activeTextEditor?.document.uri.toString() === event.document.uri.toString()) {
       refreshInspectorContext(event.document);
     }
   }, null, context.subscriptions);
-  vscode.workspace.onDidCloseTextDocument(document => inspector.invalidate(document.uri.toString()), null, context.subscriptions);
+  vscode.workspace.onDidCloseTextDocument(document => {
+    settingsController?.invalidate(document.uri.toString());
+    inspector.invalidate(document.uri.toString());
+  }, null, context.subscriptions);
   registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
@@ -170,6 +177,14 @@ export function activate(context: vscode.ExtensionContext) {
   const previewBeginner = new PreviewBeginnerController(() => msgs, previewCapo);
   setPreviewBeginnerController(previewBeginner);
   context.subscriptions.push({ dispose: () => setPreviewBeginnerController(undefined) });
+  settingsController = new ScoreSettingsInspectorController(
+    inspector,
+    previewCapo,
+    previewBeginner,
+    currentLocale,
+    uri => !!currentPanel && previewLifecycleProbe.currentDocumentUri === uri
+  );
+  context.subscriptions.push(settingsController);
   const effectiveText = (doc: vscode.TextDocument) => resolvePreviewEffectiveDsl(doc, previewBeginner, previewCapo).text;
 
   const updateWebview = (doc: vscode.TextDocument) => {
@@ -261,6 +276,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
           } else if (message.command === 'capoChanged') {
             if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
+              settingsController?.externalPreviewChanged(lastActiveGuitarDslDoc.uri.toString());
               if (previewBeginner.isActive(lastActiveGuitarDslDoc)) {
                 previewBeginner.setTargetCapo(lastActiveGuitarDslDoc, message.capo);
               } else {
@@ -269,6 +285,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
           } else if (message.command === 'applyCapo') {
+            if (lastActiveGuitarDslDoc) settingsController?.externalPreviewChanged(lastActiveGuitarDslDoc.uri.toString());
             if (lastActiveGuitarDslDoc && previewBeginner.isActive(lastActiveGuitarDslDoc)) {
               await applyPreviewBeginner(lastActiveGuitarDslDoc);
             } else if (lastActiveGuitarDslDoc && typeof message.capo === 'number') {
@@ -276,6 +293,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
           } else if (message.command === 'beginnerToggled') {
             if (lastActiveGuitarDslDoc && typeof message.enabled === 'boolean') {
+              settingsController?.externalPreviewChanged(lastActiveGuitarDslDoc.uri.toString());
               if (message.enabled) {
                 previewBeginner.enable(lastActiveGuitarDslDoc);
               } else {
@@ -284,6 +302,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
           } else if (message.command === 'barrePolicyChanged') {
             if (lastActiveGuitarDslDoc && isBarrePolicy(message.policy)) {
+              settingsController?.externalPreviewChanged(lastActiveGuitarDslDoc.uri.toString());
               previewBeginner.setBarrePolicy(lastActiveGuitarDslDoc, message.policy);
             }
           } else if (message.command === 'editCapo') {
@@ -295,6 +314,7 @@ export function activate(context: vscode.ExtensionContext) {
           } else if (message.command === 'layoutChanged') {
             previewPageSize = pageSize;
             previewOrientation = orientation;
+            if (lastActiveGuitarDslDoc) settingsController?.externalPreviewChanged(lastActiveGuitarDslDoc.uri.toString());
             progressionAssistantController?.invalidateActive();
             if (lastActiveGuitarDslDoc) {
               updateWebview(lastActiveGuitarDslDoc);
@@ -309,6 +329,7 @@ export function activate(context: vscode.ExtensionContext) {
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
         previewLifecycleProbe.lastPlaybackAction = undefined;
         audioLeaseCoordinator.previewDisposed();
+        if (previewLifecycleProbe.currentDocumentUri) settingsController?.externalPreviewChanged(previewLifecycleProbe.currentDocumentUri);
         progressionAssistantController?.invalidateActive();
         currentPanel = undefined;
         previewCapo.clear();
@@ -317,6 +338,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     updateWebview(doc);
+    settingsController?.previewOpened(doc);
   });
 
   progressionAssistantController = registerProgressionAssistant(context, currentLocale, {
@@ -435,6 +457,7 @@ export function activate(context: vscode.ExtensionContext) {
   }, inspector);
 
   const sendPlaybackAction = (action: string) => {
+    if (previewLifecycleProbe.currentDocumentUri) settingsController?.externalPreviewChanged(previewLifecycleProbe.currentDocumentUri);
     if (audioLeaseCoordinator.activeLeaseId) {
       if (action === 'stop') void audioLeaseCoordinator.stop();
       else vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
@@ -471,6 +494,7 @@ export function activate(context: vscode.ExtensionContext) {
   previewBeginner.onDidChange = doc => updateWebview(doc);
 
   vscode.workspace.onDidCloseTextDocument((doc) => {
+    settingsController?.invalidate(doc.uri.toString());
     progressionAssistantController?.invalidate(doc.uri.toString());
     if (currentPanel && lastActiveGuitarDslDoc?.uri.toString() === doc.uri.toString()) {
       updateWebview(doc);
@@ -493,7 +517,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
       }
     } else {
-      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected : msgs.capoFailures[result.code];
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected
+        : result.code === 'staleDocument' ? msgs.msgDocumentChanged : msgs.capoFailures[result.code];
       vscode.window.showWarningMessage(msgs.msgCapoApplyFailed(reason));
     }
     const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
@@ -512,7 +537,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
       }
     } else {
-      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected : msgs.beginnerFailure(result.code, result.detail);
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected
+        : result.code === 'staleDocument' ? msgs.msgDocumentChanged : msgs.beginnerFailure(result.code, result.detail);
       vscode.window.showWarningMessage(msgs.msgBeginnerApplyFailed(reason));
     }
     const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
@@ -546,14 +572,48 @@ export function activate(context: vscode.ExtensionContext) {
     });
   });
 
-  // Score settings editor (generic); `editCapo` opens it on the capo / playability section.
+  // The existing commands share the Inspector and resolve their URI before revealing it.
   const openScoreSettings = async (uri: vscode.Uri | undefined, section: string) => {
+    const requestGeneration = inspector.beginExplicitIntent();
+    const isCurrentRequest = () => requestGeneration === inspector.currentExplicitIntentGeneration;
     const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    if (!isCurrentRequest()) return;
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
     }
-    ScoreSettingsEditorPanel.show(context.extensionUri, doc, currentLocale, section);
+    const progressionIdentity = progressionAssistantController?.getActiveSessionIdentity();
+    const audioUri = audioLeaseCoordinator.activeSessionUri;
+    const audioLeaseId = audioLeaseCoordinator.activeLeaseId;
+    const isSameProgressionSession = () => {
+      const current = progressionAssistantController?.getActiveSessionIdentity();
+      return progressionIdentity === undefined
+        ? current === undefined
+        : current?.uri === progressionIdentity.uri && current.version === progressionIdentity.version
+          && current.sessionGeneration === progressionIdentity.sessionGeneration;
+    };
+    if ((audioUri === undefined) !== (audioLeaseId === undefined)) return;
+    if (audioUri && audioLeaseId) {
+      const stopped = await audioLeaseCoordinator.stopForSession(audioUri);
+      if (!isCurrentRequest() || !isSameProgressionSession()) return;
+      if (!stopped) {
+        vscode.window.showWarningMessage(msgs.uiProgressionAudioUnavailable);
+        return;
+      }
+      if (audioLeaseCoordinator.activeLeaseId !== undefined || audioLeaseCoordinator.activeSessionUri !== undefined) return;
+    }
+    if (!isCurrentRequest() || !isSameProgressionSession()) return;
+    if (progressionIdentity) {
+      if (audioLeaseCoordinator.activeLeaseId !== undefined || audioLeaseCoordinator.activeSessionUri !== undefined) return;
+      progressionAssistantController?.invalidateActive(false);
+      if (progressionAssistantController?.getActiveSessionIdentity() !== undefined) return;
+      await progressionAssistantController?.restoreAfterExternalStop(progressionIdentity.uri);
+      if (!isCurrentRequest()
+        || progressionAssistantController?.getActiveSessionIdentity() !== undefined
+        || audioLeaseCoordinator.activeLeaseId !== undefined
+        || audioLeaseCoordinator.activeSessionUri !== undefined) return;
+    }
+    await settingsController?.open(doc, section === 'beginner' || section === 'transpose' ? section : 'capo');
   };
   context.subscriptions.push(
     vscode.commands.registerCommand(EDIT_SCORE_SETTINGS_COMMAND, (uri?: vscode.Uri) => openScoreSettings(uri, 'capo')),

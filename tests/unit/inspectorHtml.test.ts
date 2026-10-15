@@ -34,6 +34,36 @@ describe('renderInspectorHtml', () => {
     assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
   });
 
+  it('renders the settings state inside the shared Inspector and loads its nonce-authorized renderer', () => {
+    const context = {
+      kind: 'settings',
+      uri: 'file:///song.guitardsl',
+      version: 3,
+      sessionGeneration: 2,
+      revision: 0,
+      section: 'capo',
+      sections: [
+        { id: 'capo', title: 'Capo / Playability' },
+        { id: 'beginner', title: 'Beginner Mode' },
+        { id: 'transpose', title: 'Transpose' }
+      ],
+      model: { sourceCapo: 0, selectedCapo: 0, candidates: [], canApply: false },
+      status: 'Capo / Playability',
+      description: 'Choose a capo'
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'settings-nonce', 2,
+      'vscode-webview://unit/media/inspectorSettings.js');
+
+    assert.match(html, /data-context-kind="settings"/);
+    assert.match(html, /id="settings-state"/);
+    assert.match(html, /id="settings-tabs" class="settings-tabs" role="tablist"/);
+    assert.match(html, /id="settings-apply" type="button" data-inspector-control="action" data-inspector-key="apply" disabled/);
+    assert.match(html, /id="settings-cancel" type="button" data-inspector-control="action" data-inspector-key="close"/);
+    assert.match(html, /script-src 'nonce-settings-nonce' vscode-webview:\/\/unit/);
+    assert.match(html, /<script nonce="settings-nonce" src="vscode-webview:\/\/unit\/media\/inspectorSettings\.js"><\/script>/);
+    assert.doesNotMatch(html, /Choose a capo.{0,50}file:\/\/\/song/);
+  });
+
   it('renders audition modes, repeat guidance, and a native keyboard-operable candidate list', () => {
     const context = {
       kind: 'progression',
@@ -75,7 +105,9 @@ describe('renderInspectorHtml', () => {
     assert.match(html, /repeatNotice\.hidden = context\.target\.bars <= 4/);
     assert.match(html, /id="candidate-list" class="candidate-list"><\/ul>/);
     assert.match(html, /button\.setAttribute\("aria-pressed", String\(candidate\.id === context\.selectedCandidateId\)\)/);
-    assert.doesNotMatch(html, /role="listbox"|role="option"|aria-selected/);
+    assert.doesNotMatch(html, /role="listbox"|role="option"/);
+    assert.match(html, /settings-tab/);
+    assert.match(html, /aria-selected/, 'settings navigation uses a selected tab state');
     assert.match(html, /existingCandidates = new Map\(Array\.from\(candidateList\.children\)/,
       'candidate rows are reconciled by ID so a host refresh can retain the focused button');
     assert.match(html, /restoreControlFocus\(focusedControl, focusedKey\)/,
