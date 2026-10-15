@@ -60,6 +60,10 @@ export interface Messages {
 
   // Webview Toolbar messages
   uiView: string;
+  uiViewAndExport: string;
+  uiViewAndExportTitle: string;
+  uiPlaybackOptions: string;
+  uiPlaybackOptionsTitle: string;
   uiSinglePage: string;
   uiSinglePageTitle: string;
   uiSpread: string;
@@ -298,6 +302,10 @@ export const MESSAGES_JA: Messages = {
   dialogSaveGp78Title: 'Guitar Pro 7互換ファイルとして保存',
 
   uiView: '表示',
+  uiViewAndExport: '表示・出力',
+  uiViewAndExportTitle: '表示と出力の設定',
+  uiPlaybackOptions: '再生設定',
+  uiPlaybackOptionsTitle: '再生設定を開く',
   uiSinglePage: '1ページ',
   uiSinglePageTitle: '1ページ単位表示（縦スクロール）',
   uiSpread: '見開き',
@@ -578,6 +586,10 @@ export const MESSAGES_EN: Messages = {
   dialogSaveGp78Title: 'Save as a Guitar Pro 7 compatible file',
 
   uiView: 'View',
+  uiViewAndExport: 'View & Export',
+  uiViewAndExportTitle: 'View and export settings',
+  uiPlaybackOptions: 'Playback settings',
+  uiPlaybackOptionsTitle: 'Open playback settings',
   uiSinglePage: 'Single Page',
   uiSinglePageTitle: 'Single page view (vertical scroll)',
   uiSpread: 'Spread',

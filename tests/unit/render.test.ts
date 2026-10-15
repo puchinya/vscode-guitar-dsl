@@ -11,7 +11,7 @@ import {
   layoutScore
 } from '../../src/render/layout';
 import { compileGuitarDslToSvg, renderContinuousSvg, renderScoreSheets } from '../../src/render/svg';
-import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
+import { compileGuitarDslToHtml, isPreviewLayoutFocusControl } from '../../src/render/previewHtml';
 
 function barLines(count: number): string {
   const lines: string[] = [];
@@ -223,7 +223,7 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(defaultHtml.includes('>Orientation<'));
     assert.ok(defaultHtml.includes('>Portrait<'));
     assert.ok(defaultHtml.includes('>Landscape<'));
-    assert.ok(defaultHtml.includes(' Help</button>'));
+    assert.ok(defaultHtml.includes(' Help</span></button>'));
     assert.ok(defaultHtml.includes('>📄 Save PDF<'));
 
     const enHtml = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
@@ -242,7 +242,7 @@ describe('render - i18n toolbar rendering', () => {
     assert.ok(jaHtml.includes('>向き<'));
     assert.ok(jaHtml.includes('>縦<'));
     assert.ok(jaHtml.includes('>横（見開き）<'));
-    assert.ok(jaHtml.includes(' ヘルプ</button>'));
+    assert.ok(jaHtml.includes(' ヘルプ</span></button>'));
     assert.ok(jaHtml.includes('>📄 PDF保存<'));
   });
 
@@ -256,42 +256,31 @@ describe('render - i18n toolbar rendering', () => {
 });
 
 describe('render - narrow Preview toolbar', () => {
-  it('keeps settings scrollable and actions outside the scroll region', () => {
+  it('keeps transport in one fixed row and places secondary controls in accessible disclosures', () => {
     const html = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
-    const toolbarStart = html.indexOf('<div class="toolbar-container">');
-    const scrollStart = html.indexOf('<div class="toolbar-scroll">', toolbarStart);
-    const leftStart = html.indexOf('<div class="toolbar-left">', scrollStart);
-    const centerStart = html.indexOf('<div class="toolbar-center">', scrollStart);
-    const scrollEnd = html.indexOf('    </div>\n\n    <div class="toolbar-right">', centerStart);
-    const rightStart = html.indexOf('<div class="toolbar-right">', scrollEnd);
-
-    assert.ok(toolbarStart >= 0, 'Preview top toolbar exists');
-    assert.ok(scrollStart > toolbarStart, 'scroll region is inside the top toolbar');
-    assert.ok(leftStart > scrollStart && leftStart < scrollEnd, 'View controls are inside the scroll region');
-    assert.ok(centerStart > leftStart && centerStart < scrollEnd, 'Paper and orientation controls are inside the scroll region');
-    assert.ok(scrollEnd > centerStart, 'scroll region closes before the right action group');
-    assert.ok(rightStart > scrollEnd, 'right actions follow and are outside the scroll region');
+    assert.ok(html.includes('<div class="toolbar-container" role="group"'));
+    for (const control of ['id="btn-play"', 'id="btn-pause"', 'id="btn-stop"', 'id="playback-seek"', 'id="playback-time"']) {
+      assert.ok(html.indexOf(control) < html.indexOf('class="toolbar-actions"'), `${control} stays in the transport row`);
+    }
+    assert.match(html, /id="playback-options-toggle"[^>]*aria-expanded="false" aria-controls="playback-options-panel"/);
+    assert.match(html, /id="view-export-toggle"[^>]*aria-expanded="false" aria-controls="view-export-panel"/);
+    assert.match(html, /id="playback-options-panel" role="group"[^>]* hidden>/);
+    assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
+    assert.ok(!html.includes('role="menu"'));
+    assert.ok(html.includes('id="practice-toggle"'));
+    assert.ok(html.includes('id="count-in-toggle"') && html.includes('id="metronome-toggle"'));
+    assert.ok(!html.includes('id="capo-bar"') && !html.includes('id="btn-beginner"'));
 
     const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
     assert.ok(css, 'Preview HTML contains its toolbar styles');
     const toolbarRule = css.match(/\.toolbar-container\s*\{([^}]*)\}/)?.[1];
     assert.ok(toolbarRule, 'top toolbar has a dedicated CSS rule');
     assert.match(toolbarRule, /height:\s*48px;/);
-    const scrollRule = css.match(/\.toolbar-scroll\s*\{([^}]*)\}/)?.[1];
-    assert.ok(scrollRule, 'scroll region has a dedicated CSS rule');
-    assert.match(scrollRule, /display:\s*flex;/);
-    assert.match(scrollRule, /align-items:\s*center;/);
-    assert.match(scrollRule, /flex:\s*1 1 auto;/);
-    assert.match(scrollRule, /min-width:\s*0;/);
-    assert.match(scrollRule, /overflow-x:\s*auto;/);
-    assert.match(scrollRule, /overflow-y:\s*hidden;/);
-
-    const groupRule = css.match(/\.toolbar-left,\s*\.toolbar-center,\s*\.toolbar-right\s*\{([^}]*)\}/)?.[1];
-    assert.ok(groupRule, 'toolbar control groups share a CSS rule');
-    assert.match(groupRule, /flex:\s*0 0 auto;/, 'toolbar groups do not shrink');
-    const rightRule = css.match(/(?:^|\n)\s*\.toolbar-right\s*\{([^}]*)\}/)?.[1];
-    assert.ok(rightRule, 'right action group has a dedicated CSS rule');
-    assert.match(rightRule, /white-space:\s*nowrap;/);
+    assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
+    assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
+    assert.match(css, /@media \(max-width: 660px\)\s*\{[^}]*\.toolbar-action-label\s*\{\s*display:\s*none/s);
+    assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*48px;[^}]*height:\s*42px;/s);
+    assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*108px !important;/);
   });
 
   it('preserves localized, accessible Help and PDF actions', () => {
@@ -300,12 +289,27 @@ describe('render - narrow Preview toolbar', () => {
       { locale: 'ja', help: 'ヘルプ', pdf: '📄 PDF保存' }
     ]) {
       const html = compileGuitarDslToHtml(sampleDsl, { locale });
-      assert.ok(html.includes(` ${help}</button>`), `${locale} Help label remains present`);
+      assert.ok(html.includes(` ${help}</span></button>`), `${locale} Help label remains present`);
       assert.ok(html.includes(`>${pdf}</button>`), `${locale} PDF label remains present`);
-      assert.ok(html.indexOf('id="btn-save-pdf"') > html.indexOf('id="btn-help"'), `${locale} Help precedes Save PDF`);
+      assert.ok(html.indexOf('id="btn-save-pdf"') < html.indexOf('id="btn-help"'), `${locale} PDF is in the disclosure before Help`);
       assert.match(html, /id="btn-help" type="button" title="[^"]+" aria-label="[^"]+"/);
-      assert.match(html, /id="btn-save-pdf" title="[^"]+"/);
+      assert.match(html, /id="btn-save-pdf" type="button" title="[^"]+" aria-label="[^"]+"/);
+      assert.ok(html.includes(locale === 'ja' ? '表示・出力' : 'View &amp; Export'));
     }
+  });
+
+  it('accepts only the three host-approved layout focus controls', () => {
+    assert.strictEqual(isPreviewLayoutFocusControl('select-page-size'), true);
+    assert.strictEqual(isPreviewLayoutFocusControl('orientation-portrait'), true);
+    assert.strictEqual(isPreviewLayoutFocusControl('orientation-landscape'), true);
+    assert.strictEqual(isPreviewLayoutFocusControl('constructor'), false);
+    const html = compileGuitarDslToHtml(sampleDsl, {
+      documentUri: 'file:///score.guitardsl', documentVersion: 7, previewGeneration: 4,
+      restoreFocusControl: 'orientation-landscape'
+    });
+    assert.ok(html.includes('const restoreFocusControl = "orientation-landscape";'));
+    assert.ok(html.includes('"previewGeneration":4'));
+    assert.ok(html.includes('"documentVersion":7'));
   });
 });
 

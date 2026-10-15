@@ -59,6 +59,22 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
   throw new Error(`Could not find the Extension Development Host window. DevTools page titles: ${lastTitles.join(', ')}`);
 }
 
+async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
+  let lastTargets: DevToolsTarget[] = [];
+  for (let attempt = 0; attempt < 50; attempt++) {
+    lastTargets = await getTargets(port);
+    // Recent VS Code releases expose an opaque vscode-webview:// URL without
+    // the older purpose/extensionId query parameters. The Preview E2E opens
+    // only one webview panel, so the sole webview iframe is the target.
+    const previewTargets = lastTargets.filter(item => item.type === 'iframe'
+      && item.url.startsWith('vscode-webview://'));
+    if (previewTargets.length === 1) return previewTargets[0];
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
+  throw new Error(`Expected one GuitarDSL Preview webview target; available targets: ${available || '(none)'}`);
+}
+
 /** Captures the selected VS Code workbench page through its local DevTools target. */
 export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
@@ -133,6 +149,66 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
     if (response.exceptionDetails) throw new Error('Inspector Webview evaluation raised an exception');
     const value = (response.result as { value?: unknown } | undefined)?.value;
     return value as T;
+  });
+}
+
+/** Evaluates an expression in the singleton Preview WebviewPanel renderer. */
+export async function evaluatePreviewWebview<T>(expression: string): Promise<T> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const target = await waitForPreviewTarget(port);
+  return withDevToolsTarget(target, async send => {
+    await send('Runtime.enable');
+    const tree = await send('Page.getFrameTree');
+    let activeFrameId: string | undefined;
+    const frames: string[] = [];
+    const visit = (node: Record<string, unknown>): void => {
+      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+      if (frame) frames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+    };
+    if (tree.frameTree) {
+      const frameTree = tree.frameTree as Record<string, unknown>;
+      visit(frameTree);
+      if (!activeFrameId) {
+        const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+        if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+      }
+    }
+    if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${frames.join(' | ')}`);
+    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
+    const contextId = isolated.executionContextId;
+    if (typeof contextId !== 'number') throw new Error('Could not create a Preview evaluation context');
+    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+    if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    return value as T;
+  });
+}
+
+export async function waitForPreviewDocument(): Promise<void> {
+  let lastState: unknown;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try {
+      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: !!document.querySelector('.toolbar-container'), url: location.href,
+        name: window.name, body: document.body?.innerHTML.slice(0, 600), iframes: [...document.querySelectorAll('iframe')].map(frame => ({ name: frame.name, src: frame.src })) })`);
+      if (JSON.parse(lastState as string).ready) return;
+    } catch (error) {
+      // The webview target can exist before its document and active frame finish loading.
+      lastState = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`The GuitarDSL Preview webview did not render its toolbar: ${JSON.stringify(lastState)}`);
+}
+
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape'): Promise<void> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const target = await waitForPreviewTarget(port);
+  const code = key === 'Tab' ? 9 : 27;
+  await withDevToolsTarget(target, async send => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
   });
 }
 

@@ -9,6 +9,7 @@
 - Related Issue: [Issue #134](https://github.com/puchinya/vscode-guitar-dsl/issues/134)
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
+- Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -108,6 +109,16 @@ The existing editScoreSettings and editCapo command IDs resolve their target bef
 Settings controls are single-column native buttons and inputs that preserve selection and focus after host refresh. The Webview sends section IDs and bounded values only. Apply requires host confirmation and freshness checks; Cancel, navigation, and candidate comparison never edit source. Settings UI uses the established i18n dictionaries, VS Code theme tokens, ARIA labels/status, and existing relocated View position.
 
 The transition to progression must request lease stop and wait for its acknowledgement while Preview remains locked. The transition back to settings first discards and restores its draft, then closes the progression session and its decorations. Stale messages, text version changes, close, disposal, or a newer explicit command cannot restore a prior session.
+
+## Issue #136 implementation design
+
+The singleton Preview uses one 48 px top row for ordinary playback transport, Practice toggle, two settings disclosures, and Help. View, paper, orientation, and PDF are grouped in View & Export; Count-in and Metronome are grouped in Playback settings. These remain native buttons and form controls with localized names and ARIA state. The disclosures are nonmodal hidden groups, permit one open panel at a time, close on Escape/outside pointer/focus, and preserve focus unless Escape returns it to the trigger. Closed controls are absent from the keyboard and accessibility order.
+
+Practice adds a 42 px row immediately below the main toolbar only while enabled. Its established speed, loop, A/B, Follow, and status behavior remains Preview-owned. An unavailable transport remains visible and disabled with a localized reason in a wrapping status line before the score. At 600 px, transport, Practice, both disclosure triggers, and Help remain visible; narrower widths switch action labels to named icons and allow supplemental actions to scroll without moving transport into overflow.
+
+Paper and orientation retain the existing host `layoutChanged` and render path. The Webview includes its current URI, document version, and Preview render generation in layout requests. The host allowlists the target focus ID and binds it to that identity, then consumes or discards the hint on the next HTML render. A current-document render opens View & Export and focuses the changed control once. Mode changes, disclosure state, and PDF save do not rebuild HTML or touch the playback source time. Capo, Beginner, and progression editing controls remain in the Inspector; Preview/PDF continue to use the same host-resolved effective DSL.
+
+Issue #136 verification checks rendered DOM/CSS, keyboard and pointer disclosure behavior, 600 px layouts, layout rebuild focus, unchanged playback/Practice behavior, Inspector effective DSL and PDF equivalence, lease ownership, CSP/SVG isolation, and real Extension Development Host screenshots. Screen-reader testing is reported separately from automated accessibility-tree checks.
 
 ### Verification strategy
 

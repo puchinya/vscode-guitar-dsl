@@ -43,15 +43,16 @@ describe('Preview Help control', () => {
     for (const locale of ['en', 'ja'] as const) {
       const m = getMessages(locale);
       const html = compileGuitarDslToHtml(DSL, { locale });
-      const button = /<button class="btn-help" id="btn-help"[^>]*>[\s\S]*?<\/button>/.exec(html);
+      const button = /<button class="toolbar-action btn-help" id="btn-help"[^>]*>[\s\S]*?<\/button>/.exec(html);
       assert.ok(button, `${locale}: Help button exists`);
       assert.ok(button[0].includes('type="button"'));
       assert.ok(button[0].includes(`title="${m.uiHelpTitle}"`));
       assert.ok(button[0].includes(`aria-label="${m.uiHelpTitle}"`));
       assert.ok(button[0].includes(m.uiHelp) && button[0].includes('?'));
       assert.ok(!/tabindex="-1"/.test(button[0]) && !/disabled/.test(button[0]));
-      const right = html.slice(html.indexOf('<div class="toolbar-right">'));
-      assert.ok(right.indexOf('id="btn-help"') < right.indexOf('id="btn-save-pdf"'), 'next to the PDF action');
+      const actions = html.slice(html.indexOf('class="toolbar-actions"'));
+      assert.ok(actions.indexOf('id="btn-help"') >= 0, 'Help remains in the toolbar actions');
+      assert.ok(html.slice(html.indexOf('id="view-export-panel"')).includes('id="btn-save-pdf"'), 'PDF remains in View & Export');
       assert.ok(/vscode\.postMessage\(\{ command: 'openHelp' \}\)/.test(html), 'posts only the openHelp intent');
     }
   });

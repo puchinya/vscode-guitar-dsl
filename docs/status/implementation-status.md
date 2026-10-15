@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-15
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。実装ブランチは feature/135-settings-inspector。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **最終更新日**: 2026-10-16
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。Issue #136 は承認済み要件に基づいて feature/136-simplify-preview-toolbar で実装中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -31,6 +31,14 @@
 - **検証**: 今回の `npm test` PASS（Help/AI同期、単体 **1,132件 PASS**、VS Code 1.142.0 E2E **89件 PASS・6件 pending**）。S135-01 非同期解決順、S135-06 Preview 1回描画、S135-07 Apply確認中の再オープン/有効・無効候補/有効・無効な節の検証、S135-12 `openInspector` 後の Preview/PDF 復元に加え、S135-13 は新しい進行コンテキストが設定要求の文書解決を無効化すること、S135-14 はStop ACK待ちに開始した新セッションを古い設定要求が維持することを確認。S135-15 は同じ Document context への明示的 `openInspector` が保留中の Settings 要求を失効させること、S135-16 はホスト検証済み Settings Close 後に先行要求が Settings を再表示しないこと、S135-17 は未知の進行コマンドと範囲外の小節数が保留中 Settings を失効させないことをE2Eで確認。S135-11もVS Code 1.141.2で実Inspector音声を再生中にSettingsを開き、Stop ACK成功・配送失敗・ACK timeoutの3ケースを個別E2EでPASS。配送失敗とACK timeoutではSettingsを閉じたままleaseとPreviewロックを保持し、後続の実Stop ACKで解除することを確認。通常フルスイートの6件pendingは画面/音声E2Eの実行条件に依存する。設定UIのCDP有効E2EはEN/JA × dark/light の4組で各1件PASSし、幅800pxのExtension Development Hostから3節画像を取得。`npm run vscode:prepublish` PASS。`npx @vscode/vsce ls` は **1,598項目**で、新しいInspector rendererを含み旧Panel資産を含まない。`verify-implementation-contract` と `validate-docs --issue 135` PASS。VoiceOver、Windows/Linux、最小VS Code版は未実施。音声停止ACK/古いセッション解放自体は `progressionAudioLease` unit test と ED-09/ED-10 でも確認。
 - **画面証拠（Extension Development Host、幅800px）**: EN/dark [Capo](evidence/issue-135/settings-en-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-dark-narrow-transpose.png)。EN/light [Capo](evidence/issue-135/settings-en-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-light-narrow-transpose.png)。JA/dark [Capo](evidence/issue-135/settings-ja-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-dark-narrow-transpose.png)。JA/light [Capo](evidence/issue-135/settings-ja-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-light-narrow-transpose.png)。
 - **文書オーナー**: docs/specs/extension.md、docs/design/score-editing.md、docs/design/vscode-editor-experience.md、docs/design/architecture.md、docs/design/preview-rendering-and-export.md、本書、EN/JA Help とその digest。
+
+## Issue #136: Simplify the Preview Toolbar
+
+- **状態**: phase:implementation。承認済み契約 comment 6198022256 の SHA-256 `e6437802f21f358016c95cab2d5b4a3a0c29e126f3787f487971f58b1e0f6ea1` と 33,918 bytes は取得したコメント本文で一致。Issue の Implementation Contract pointer には規定外の本文が含まれるため、`verify-implementation-contract` の正式な検証は未完了。pointer は編集していない。
+- **実装**: 通常再生 transport を 48 px の1行に集約し、Playback settings と View & Export を非モーダル disclosure にまとめる。Practice ON 時だけ 42 px 行を表示。Capo / Beginner / progression の Preview 編集 UI は除き、Inspector で選んだ有効 DSL は Preview と PDF で共有する。紙面・向き変更は既存の `layoutChanged` を保ち、URI・文書 version・Preview generation に結び付いた一度限りのフォーカス復帰を追加。
+- **検証**: macOS arm64 / VS Code 1.142.0。`npm run compile`、`npm run test:unit`（1,133 passing）、`npm test`（Help/AI同期を含み E2E 90 passing / 6 pending）、P136 CDP E2E（1 passing）、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,598 項目）、`validate-docs --issue 136`、`git diff --check` は PASS。P136 実ブラウザー E2E は Preview の開閉、Tab/Escape、Practice ON/OFF、layoutChanged 後のフォーカス復帰を検証した。`verify-implementation-contract 136` は Issue の pointer が規定形式でないため BLOCKED。テストホストの Preview CSS 幅は 421 px で、契約の 600 px 表示は未検証。VoiceOver / NVDA、Windows / Linux は未実施。
+- **画面証拠**: EN・dark の Extension Development Host capture（Preview 実幅 421 px）を保存して目視確認した：[Practice OFF / View & Export](evidence/issue-136/preview-en-dark-421-practice-off-view-open-issue-136-en-dark.png)、[Practice ON / View & Export](evidence/issue-136/preview-en-dark-421-practice-on-view-open-issue-136-en-dark.png)。600 px および JA/light の capture は未実施。
+- **文書オーナー**: docs/specs/extension.md、docs/design/preview-rendering-and-export.md、docs/design/vscode-editor-experience.md、本書、EN/JA Help とその digest、生成済み media/help。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
@@ -87,7 +95,7 @@
 | | `guitardsl.exportPdf` (PDF保存 / 印刷) | ✅ 完了 | コマンドパレットおよびプレビュー内から起動可能 |
 | | Issue #93 再生 / Practice Mode コマンド | ✅ 完了 | `guitardsl.playback.togglePlayPause` / `guitardsl.playback.stop`、`guitardsl.practice.toggle` / `setLoopStart` / `setLoopEnd` / `clearLoop` / `slower` / `faster` |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
-| | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレット、プレビューのカポバー「編集…」。セクション方式の楽譜設定エディタ（カポ / 弾きやすさ、初心者モード、移調） |
+| | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレットから共通 Inspector の Capo / Playability を開く。Capo / Beginner / Transpose の設定 UI は Inspector に集約 |
 | | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ新規エディタを開く。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、非実験的な分類を支える根拠がなく、生成結果は下書きとして要確認 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
@@ -106,8 +114,8 @@
 | **カポ推論・弾きやすさ** | `src/capo.ts`（汎用推論 API、弾きやすさ、ソースを保つカポ変換、有効 DSL） | ✅ 完了 | 純粋モジュール（VS Code・採譜に非依存）。候補 0〜12、スコアの調弦で各カポの形を解決。推奨は最高スコア・同点は小さいカポ。ラベル付きコード・定義との衝突は変換不可。採譜への組み込みは未実施 |
 | **初心者モード** | `src/beginnerMode.ts`（カポ + 簡単なコードへの置き換え）、`src/previewBeginner.ts`、楽譜設定の `beginner` セクション | ✅ 完了 | スコアの調弦を原曲と変換後の評価に保持。バレーコード許可／使用しない（絶対条件）、置き換えは固定の規則のみ。評価する押さえ方は描画されるもの（`chord` 定義または既定の押さえ方）だけ。既定の押さえ方がセーハの長三和音／短三和音は `forbid` で `maj7` / `m7` へ置き換え、両方セーハ（例 `Bm`）はそのカポで不可 |
 | **楽譜設定エディタ** | Webview（カポ候補一覧、推奨、コード対応、警告、DSLに適用） | ✅ 完了 | 調弦を含むスコア状態から候補を再計算。適用は最新テキストから再計算し 1 回の元に戻せる編集。Webview 内のクリック操作は自動テストの対象外 |
-| **プレビュー画面** | カポの一時変更（カポバー） | ✅ 完了 | DSL を変えずにプレビューと PDF を同じ有効 DSL で描画。切り替え・クローズ・変換不可で解除 |
-| | 初心者モード（カポバーの ON/OFF・バレーコード選択） | ✅ 完了 | 有効中はカポの一時変更より優先し、プレビューと PDF は同じ有効 DSL。Webview 内のクリック操作は自動テストの対象外 |
+| **プレビュー画面** | Inspector で選んだカポの一時比較 | ✅ 完了 | Preview に重複編集バーはなく、ホスト解決済み有効 DSL を Preview と PDF で共有 |
+| | Inspector の Beginner Mode 一時比較 | ✅ 完了 | Preview に重複編集バーはなく、ホスト解決済み有効 DSL を Preview と PDF で共有 |
 | | リアルタイム同期（テキスト編集追従） | ✅ 完了 | キーストロークによる変更を即座に再コンパイル |
 | | アクティブエディタ追従 | ✅ 完了 | エディタタブ切り替え時にプレビュー対象を自動更新 |
 | | 表示モード（1ページ / 見開き / Web） | ✅ 完了 | シート SVG の縦並び・横並び、連続 SVG |
@@ -122,7 +130,7 @@
 | **文法定義** | TextMate Grammar (`guitardsl.tmLanguage.json`) | ✅ 完了 | シンタックスハイライト |
 | | Language Configuration | ✅ 完了 | コメント記号、括弧自動閉じ |
 | **多言語対応 (i18n)** | ロケール解決・メッセージ辞書 (`src/i18n.ts`) | ✅ 完了 | `vscode.env.language` に基づく日本語/英語切り替え |
-| | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | ラベル・ボタン・ツールチップを動的にローカライズ。幅が狭い場合は設定領域が横スクロールし、ヘルプと PDF 保存は表示される |
+| | Webview ツールバー多言語化 (`src/render/previewHtml.ts`) | ✅ 完了 | transport と disclosure のラベル・アクセシブル名・ツールチップをローカライズ。幅 600 px では主要操作を表示し、さらに狭い幅では補助操作をスクロール |
 | | コマンド・ダイアログ多言語化 (`package.nls*.json`) | ✅ 完了 | コマンドパレット・保存ダイアログ等の多言語化 |
 | **AI 連携** | Skill `guitardsl-language` / 指示 `guitardsl.instructions.md`（`ai/`） | ✅ 完了 | 最小 VS Code 1.109.0。参照資料は `generate:ai` で構文仕様から生成し、`check:ai` で同期を検査。指示は `applyTo` とタスク関連性の `description` の 2 経路で選ばれ、Skill の `description` も新曲作成を含む。新曲作成の手順（構造の下書き → validate → analyze → 1 回の apply → validate、失敗時に手書きへ代用しない）と、対象の同一性（最初に別の新しい文書を作り、開いている既存スコアを出力先に再利用せず、すべての手順をその文書に固定する）を指示・Skill・伴奏ガイド・ツール説明に記載し、`check:ai` が順序と対象の固定を検査。Skill は補助資料（構文仕様・伴奏ガイド）を Markdown の相対リンクで参照し、新曲作成では既存スコアやサンプルを仕様の代わりに使わない（読み込めない場合は報告する）ことを Skill と指示に記載し、`check:ai` がリンクと代替禁止を検査。一般的な新曲作成の伴奏計画は最小限の意図（`subdivision: auto`、ユーザーが求めない任意制約を付けない、スコア全体の分析から 1 回の適用、エンジンが選ぶ、`finale` の余地、切替は例外・エンディング候補は 1＋代替 1 まで、失敗後の 1 回だけの緩和）とし、ガイド・指示・ツール説明に記載して `check:ai` が検査（エンジンは不変）。ユーザー実施の実モデル smoke で R051/R052 PASS。exact apply payload、既存ファイル hash、file-read log、resource-failure path は未検証 |
 | | 伴奏エンジンと正規プリセットカタログ（`src/accompaniment.ts`、`src/strummingPatterns.ts`） | ✅ 完了 | 58 件のカタログ（メタデータの機械検査）、intent / preset / grid / dsl、物理的なダウン / アップ、シンコペーション判定、コード区間の提示（D3）、フレーズ末の変化・`arrangementGroup`・`adapt`、弱起の保持、`%`・インライン音高の安全性、セクション切替とエンディング（歌唱タイミング）。小節のリズム範囲（`rhythmSource`）だけを編集。実モデル smoke で候補数による阻害なし・ラスサビの強さを確認（R051/R052、詳細はテスト欄） |
@@ -255,7 +263,7 @@
 
 ### 2.2C Practice Mode (Issue #93)
 - **自動検証**: `npm test` で unit 981 件、E2E 56 件 PASS。Help 同期、AI 資産同期を含む。`npm run compile` と `npm run vscode:prepublish` も PASS。
-- **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Pause後にSingle PageからWebへ切り替え、再生位置と停止状態を保ったままハイライトと再生位置表示が即時に移動することも確認。Preview 幅約 365 CSS px で各操作列が独立して横スクロールし、ヘルプと PDF 保存が表示されたままになることも確認。Windows / Linux は未検証。
+- **手動 GUI smoke**: macOS arm64 / VS Code 1.141.0 の日本語 Extension Development Host で、Practice OFF/ON、再生中の 75% 速度、小節ループ、譜面ハイライトと再生位置追従を確認。Pause後にSingle PageからWebへ切り替え、再生位置と停止状態を保ったままハイライトと再生位置表示が即時に移動することも確認。Preview 幅約 365 CSS px で操作列を横スクロールした画面証拠は Issue #93 時点の UI であり、Issue #136 の disclosure 配置を検証するものではない。Windows / Linux は未検証。
 - **画面証拠**: [Practice OFF の再生](evidence/issue-93/practice-off-playing.png)、[速度 75% と小節ループ](evidence/issue-93/practice-loop-playing.png)、[狭幅でスクロールした操作列](evidence/issue-93/narrow-scroll.png)、[Pause後のSingle→Web切替](evidence/issue-93/pause-single-web.png)。
 
 ### 2.3 静的解析・型チェック

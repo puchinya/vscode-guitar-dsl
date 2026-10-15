@@ -29,12 +29,13 @@ The Inspector is a shared place for document-aware assistance as features move i
 ### Score Preview
 <!-- help-sources: extension:4 syntax:11 -->
 
-**GuitarDSL: Open Preview to the Side** shows the rendered score next to the editor. The preview follows your edits and the active GuitarDSL editor. The toolbar offers:
+**GuitarDSL: Open Preview to the Side** shows the rendered score next to the editor. The preview follows your edits and the active GuitarDSL editor. Its single 48 px toolbar row keeps Play, Pause, Stop, seek, and elapsed/total time visible. When playback is unavailable, the controls remain visible with a reason.
 
-- **View**: *Single Page*, *Spread* (two pages side by side) or *Web* (one continuous page, with manual page breaks shown as a dotted line).
-- **Paper** (A4, A3, A5, B4, B5, Letter) and **Orientation** (*Portrait*, or *Landscape*, which puts two pages on one sheet).
-- **📄 Save PDF** and the **?** Help button.
-- **Playback**: play or resume, pause, stop, seek, and see the current and total time. It uses a simple synthesized sound preview. **Count-in** and **Metronome** are optional and off by default; count-in plays one full measure before playback, including when the score starts with a pickup.
+- **Practice** shows its own row only while enabled.
+- **Playback settings** opens a disclosure for **Count-in** and **Metronome**, both off by default.
+- **View & Export** opens a disclosure for *Single Page*, *Spread*, *Web*, paper size (A4, A3, A5, B4, B5, Letter), orientation (*Portrait* or *Landscape*), and **📄 Save PDF**. Web mode is one continuous page with manual page breaks shown as a dotted line.
+- **? Help** opens this guide. Disclosure panels can be opened by click or keyboard; press Escape to close and return to the trigger.
+- Playback uses a simple synthesized sound preview. Count-in plays one full measure before playback, including when the score starts with a pickup.
 
 ### Chord Progression Suggestions and Audition
 <!-- help-sources: extension:3 extension:4 -->
@@ -48,7 +49,7 @@ The Inspector is a shared place for document-aware assistance as features move i
 ### Practice Mode
 <!-- help-sources: extension:3 extension:4 -->
 
-Turn on **Practice** in the Playback row to show the Practice controls. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo.
+Turn on **Practice** in the Preview toolbar to show the Practice row below it. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo. Turn it off to remove the row and its keyboard stops.
 
 - **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
 - During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.
@@ -57,7 +58,7 @@ Turn on **Practice** in the Playback row to show the Practice controls. Practice
 - **Follow** keeps the active measure in view by scrolling the Preview. Scrolling or navigating manually in the Preview turns Follow off. It does not move the source editor's selection or cursor.
 - The Command Palette also offers **GuitarDSL: Play / Pause Preview Playback**, **Stop Preview Playback**, **Toggle Practice Mode**, **Set Practice Loop Start (A)**, **Set Practice Loop End (B)**, **Clear Practice Loop**, **Practice Slower** and **Practice Faster**. You can assign your own keybindings to these commands.
 
-At narrow widths, the View, Paper and Orientation settings can scroll horizontally while Help and Save PDF remain visible and available.
+At 600 px wide, the transport, Practice, both disclosure buttons, and Help remain visible. On narrow panels the action labels give way to icons with accessible names. In still narrower panels the supplemental action buttons can scroll horizontally; the transport stays in the toolbar.
 
 Measures wrap onto rows automatically (4 per row by default, set with `measures_per_row`). Pages break automatically when a row does not fit, and at every manual `pagebreak` / `---` line. Page 1 shows the full header with chord diagrams. Later pages show a compact running header.
 
@@ -99,12 +100,12 @@ In the editor, pick a preset, click frets, open and mute strings, and set finger
 ### Capo and Playability
 <!-- help-sources: extension:4 -->
 
-The preview's second toolbar row (the capo bar) lets you try another capo position without changing your file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. Each position shows a playability score (0–100, *Very easy* to *Very hard*), and the easiest one is marked *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. **Edit…** opens the shared Inspector at Score Settings. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
+Use **GuitarDSL: Edit Score Settings** or **GuitarDSL: Edit Capo / Playability** to open the shared Inspector and compare capo positions without changing the file. Using the current tuning, the chords are rewritten so they sound the same. `tuning`, `key` and melody remain unchanged. The Inspector shows a playability score (0–100, *Very easy* to *Very hard*) and marks the easiest position as *★ Recommended*. **Apply to DSL** writes the change to the file in one undoable edit. For a score with TAB, capo changes that would rewrite the source are reported as unsupported until a TAB-aware transform is available.
 
 ### Beginner Mode
 <!-- help-sources: extension:4 -->
 
-Turn on **Beginner mode** in the capo bar to rate shapes in the score's tuning and see the song with an easy capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. Beginner mode is a preview-only view until you choose **Apply to DSL**, and the PDF uses the same result as the preview. Beginner transforms are unsupported for scores with TAB until they can preserve explicit string/fret positions.
+Use the Inspector's **Beginner Mode** section to compare an easier capo position and simpler chords, for example `F → Fmaj7` or `G7 → G`. The key and melody's sounding pitches do not change. **Barre chords** can be *Allow* or *Do not use*. With *Do not use*, no shape that needs a barre is used. The Preview and PDF use the same selected effective score; **Apply to DSL** writes it in one undoable edit. Beginner transforms are unsupported for scores with TAB until they can preserve explicit string/fret positions.
 
 ### Score Settings
 <!-- help-sources: extension:3 extension:4B -->

@@ -16,7 +16,6 @@ export interface ScoreFontUris {
   regular: string;
   bold: string;
 }
-
 export interface CompileHtmlOptions {
   locale?: string;
   pageSize?: PageSize;
@@ -24,9 +23,9 @@ export interface CompileHtmlOptions {
   /** Webview URIs of the bundled Noto Sans JP fonts. When omitted, the preview falls back to installed fonts. */
   fontUris?: ScoreFontUris;
   expandPageBreakRepeats?: boolean;
-  /** Precomputed capo / playability state; when present the capo bar is shown (never printed). */
+  /** Precomputed capo / playability state retained for the host's effective DSL and export flow. */
   capo?: CapoPreviewUiModel;
-  /** Beginner Mode controls in the capo bar (spec extension §4.5); omitted = off. */
+  /** Beginner Mode state retained for the host's effective DSL and export flow. */
   beginner?: BeginnerPreviewUiModel;
   /** Host-owned Inspector progression-audition lease; locks playback on newly rendered Preview pages. */
   progressionAudioLeaseId?: string;
@@ -34,6 +33,18 @@ export interface CompileHtmlOptions {
   cspSource?: string;
   /** Fresh production nonce for the executable script and main style element. */
   nonce?: string;
+  /** One-shot target to focus after the host rebuilds Preview for a paper/orientation change. */
+  restoreFocusControl?: PreviewLayoutFocusControl;
+  /** Identity bound to the one-shot focus hint so stale messages cannot restore focus. */
+  documentUri?: string;
+  documentVersion?: number;
+  previewGeneration?: number;
+}
+
+export type PreviewLayoutFocusControl = 'select-page-size' | 'orientation-portrait' | 'orientation-landscape';
+
+export function isPreviewLayoutFocusControl(value: unknown): value is PreviewLayoutFocusControl {
+  return value === 'select-page-size' || value === 'orientation-portrait' || value === 'orientation-landscape';
 }
 
 type PlaybackHtmlEvent = PlaybackEvent & {
@@ -106,7 +117,14 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const continuousSvg = renderContinuousSvg(score, pageSize);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
-  const capoBar = options?.capo ? renderCapoBar(options.capo, msgs, options.beginner) : '';
+  const previewIdentityJson = escapeJsonForHtml(JSON.stringify({
+    documentUri: options?.documentUri ?? null,
+    documentVersion: Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : null,
+    previewGeneration: Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : null
+  }));
+  const restoreFocusControlJson = JSON.stringify(isPreviewLayoutFocusControl(options?.restoreFocusControl)
+    ? options.restoreFocusControl
+    : null);
   const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
     .map(speed => `<option value="${speed}"${speed === 100 ? ' selected' : ''}>${speed}%</option>`)
     .join('');
@@ -139,7 +157,7 @@ ${cspMeta}
     font-family: ${FONT_FAMILY_SANS};
     color: #111;
     margin: 0;
-    padding: 108px 16px 36px 16px;
+    padding: 66px 16px 36px 16px;
     background: #e9ecef;
     min-height: 100vh;
   }
@@ -151,104 +169,114 @@ ${cspMeta}
     left: 0;
     right: 0;
     height: 48px;
-    background: #252526;
-    border-bottom: 1px solid #3c3c3c;
+    background: var(--vscode-editorWidget-background, #252526);
+    border-bottom: 1px solid var(--vscode-editorWidget-border, #3c3c3c);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px;
+    padding: 0 8px;
     z-index: 1000;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-    color: #cccccc;
+    color: var(--vscode-foreground, #cccccc);
     user-select: none;
   }
-  .toolbar-scroll {
+  .toolbar-transport, .toolbar-actions {
     display: flex;
     align-items: center;
-    flex: 1 1 auto;
+    gap: 6px;
+    flex: 0 0 auto;
     min-width: 0;
+  }
+  .toolbar-transport {
+    flex: 1 1 auto;
+    gap: 4px;
+  }
+  .toolbar-actions {
+    position: relative;
+    max-width: 52%;
     overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: thin;
   }
-  .toolbar-left, .toolbar-center, .toolbar-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .toolbar-action, .playback-control-btn {
     flex: 0 0 auto;
-  }
-  .toolbar-right {
-    white-space: nowrap;
-  }
-  .playback-toolbar {
-    position: fixed;
-    top: 48px;
-    left: 0;
-    right: 0;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 16px;
-    background: #2d2d30;
-    border-bottom: 1px solid #3c3c3c;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-    color: #eeeeee;
-    z-index: 999;
-    white-space: nowrap;
-    overflow-x: auto;
-    user-select: none;
-  }
-  .playback-control-btn {
-    flex: 0 0 auto;
-    border: 1px solid #555;
+    min-height: 30px;
+    border: 1px solid var(--vscode-button-border, #555);
     border-radius: 4px;
-    background: #252526;
-    color: #eeeeee;
-    padding: 4px 9px;
+    background: var(--vscode-button-secondaryBackground, #252526);
+    color: var(--vscode-button-secondaryForeground, #eeeeee);
+    padding: 4px 8px;
     font: inherit;
     font-size: 12px;
     cursor: pointer;
   }
-  .playback-control-btn:hover:not(:disabled) { background: #3c3c3c; }
-  .playback-control-btn:focus-visible, .playback-seek:focus-visible, .playback-toggle:focus-within {
-    outline: 2px solid #3794ff;
+  .toolbar-action:hover, .playback-control-btn:hover:not(:disabled) {
+    background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
+  }
+  .toolbar-action:focus-visible, .playback-control-btn:focus-visible,
+  .playback-seek:focus-visible, .toolbar-disclosure-panel :focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #3794ff);
     outline-offset: 1px;
   }
   .playback-control-btn:disabled { opacity: 0.45; cursor: default; }
   .playback-seek {
-    flex: 1 1 180px;
-    min-width: 80px;
-    accent-color: #3794ff;
+    flex: 1 1 120px;
+    min-width: 44px;
+    accent-color: var(--vscode-focusBorder, #3794ff);
   }
   .playback-time {
     flex: 0 0 auto;
-    min-width: 96px;
-    color: #cccccc;
+    min-width: 88px;
+    color: var(--vscode-descriptionForeground, #cccccc);
     font-variant-numeric: tabular-nums;
     font-size: 12px;
+    white-space: nowrap;
   }
+  .toolbar-action-label { white-space: nowrap; }
+  .practice-toggle[aria-pressed="true"] {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #fff);
+  }
+  .toolbar-disclosure { position: relative; flex: 0 0 auto; }
+  .toolbar-disclosure-panel {
+    position: fixed;
+    z-index: 1200;
+    width: min(360px, calc(100vw - 16px));
+    max-height: calc(100vh - 64px);
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 6px;
+    background: var(--vscode-editorWidget-background, #252526);
+    color: var(--vscode-foreground, #eeeeee);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .toolbar-disclosure-panel[hidden] { display: none; }
+  .toolbar-panel-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .toolbar-panel-section + .toolbar-panel-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--vscode-widget-border, #555); }
+  .toolbar-panel-label { flex: 0 0 100%; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
+  .toolbar-disclosure-panel .segmented-control { background: var(--vscode-input-background, #1e1e1e); }
+  .toolbar-disclosure-panel .tool-btn { color: var(--vscode-foreground, #aaa); }
+  .toolbar-disclosure-panel .tool-btn.active { background: var(--vscode-button-background, #007acc); color: var(--vscode-button-foreground, #fff); }
+  .toolbar-disclosure-panel .tool-select { background: var(--vscode-input-background, #1e1e1e); color: var(--vscode-input-foreground, #eee); }
   .playback-toggle {
     display: inline-flex;
-    flex: 0 0 auto;
     align-items: center;
     gap: 4px;
-    color: #cccccc;
+    color: var(--vscode-foreground, #cccccc);
     font-size: 12px;
     cursor: pointer;
   }
   .playback-error {
-    flex: 0 0 auto;
-    color: #f48771;
+    margin: 0 16px 8px;
+    color: var(--vscode-errorForeground, #f48771);
     font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .playback-error:empty { display: none; }
-  .practice-toggle[aria-pressed="true"] {
-    background: #2e7d32;
-    border-color: #2e7d32;
-  }
   .practice-toolbar {
     position: fixed;
-    top: 90px;
+    top: 48px;
     left: 0;
     right: 0;
     height: 42px;
@@ -256,21 +284,22 @@ ${cspMeta}
     align-items: center;
     gap: 8px;
     padding: 0 16px;
-    background: #2d2d30;
-    border-bottom: 1px solid #3c3c3c;
-    color: #eeeeee;
+    background: var(--vscode-editorWidget-background, #2d2d30);
+    border-bottom: 1px solid var(--vscode-editorWidget-border, #3c3c3c);
+    color: var(--vscode-foreground, #eeeeee);
     z-index: 998;
     white-space: nowrap;
     overflow-x: auto;
     user-select: none;
   }
+  body.has-practice-row { padding-top: 108px !important; }
   body.has-practice-row .practice-toolbar { display: flex; }
   .practice-control-label {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
     gap: 4px;
-    color: #cccccc;
+    color: var(--vscode-foreground, #cccccc);
     font-size: 12px;
   }
   .practice-select {
@@ -278,35 +307,35 @@ ${cspMeta}
     min-width: 68px;
     border: 1px solid #555;
     border-radius: 4px;
-    background: #252526;
-    color: #eeeeee;
+    background: var(--vscode-input-background, #252526);
+    color: var(--vscode-input-foreground, #eeeeee);
     padding: 3px 6px;
     font: inherit;
     font-size: 12px;
   }
   .practice-button {
     flex: 0 0 auto;
-    border: 1px solid #555;
+    border: 1px solid var(--vscode-widget-border, #555);
     border-radius: 4px;
-    background: #252526;
-    color: #eeeeee;
+    background: var(--vscode-button-secondaryBackground, #252526);
+    color: var(--vscode-button-secondaryForeground, #eeeeee);
     padding: 4px 9px;
     font: inherit;
     font-size: 12px;
     cursor: pointer;
   }
-  .practice-button:hover:not(:disabled) { background: #3c3c3c; }
+  .practice-button:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground, #3c3c3c); }
   .practice-button:focus-visible, .practice-select:focus-visible {
-    outline: 2px solid #3794ff;
+    outline: 2px solid var(--vscode-focusBorder, #3794ff);
     outline-offset: 1px;
   }
   .practice-button:disabled, .practice-select:disabled { opacity: 0.45; cursor: default; }
-  .practice-button[aria-pressed="true"] { background: #2e7d32; border-color: #2e7d32; }
+  .practice-button[aria-pressed="true"] { background: var(--vscode-button-background, #0e639c); border-color: var(--vscode-button-background, #0e639c); }
   .practice-status {
     flex: 1 0 140px;
     min-width: 140px;
     overflow: hidden;
-    color: #cccccc;
+    color: var(--vscode-descriptionForeground, #cccccc);
     text-overflow: ellipsis;
     font-size: 12px;
   }
@@ -446,75 +475,24 @@ ${cspMeta}
     cursor: pointer;
   }
 
-  /* Capo / playability bar (toolbar UI only: not part of the SVG / PDF) */
-  body.has-capo-bar {
-    padding-top: 144px;
+  @media (max-width: 660px) {
+    .toolbar-action-label { display: none; }
+    .toolbar-action, .playback-control-btn { padding-left: 6px; padding-right: 6px; }
+    .toolbar-actions { max-width: 48%; }
   }
-  body.has-practice-row:not(.has-capo-bar) {
-    padding-top: 150px;
+  @media (max-width: 440px) {
+    .toolbar-container { padding-left: 4px; padding-right: 4px; gap: 3px; }
+    .toolbar-transport { gap: 2px; }
+    .transport-label { display: none; }
+    .playback-time { min-width: 70px; font-size: 10px; }
+    .playback-control-btn { width: 30px; padding: 3px 2px; font-size: 11px; }
+    .toolbar-actions { max-width: 36%; gap: 3px; }
   }
-  body.has-practice-row.has-capo-bar {
-    padding-top: 186px;
-  }
-  body.has-practice-row .capo-bar {
-    top: 132px;
-  }
-  .capo-bar {
-    position: fixed;
-    top: 90px;
-    left: 0;
-    right: 0;
-    height: 36px;
-    background: #2d2d30;
-    border-bottom: 1px solid #3c3c3c;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 16px;
-    z-index: 999;
-    color: #eeeeee;
-    font-size: 12px;
-    white-space: nowrap;
-    overflow-x: auto;
-  }
-  .capo-badge {
-    border-radius: 10px;
-    padding: 2px 10px;
-    font-weight: bold;
-    background: #3c3c3c;
-  }
-  .capo-badge[data-level="veryEasy"], .capo-badge[data-level="easy"] { background: #2e7d32; }
-  .capo-badge[data-level="moderate"] { background: #8d6e00; }
-  .capo-badge[data-level="hard"], .capo-badge[data-level="veryHard"] { background: #b71c1c; }
-  .capo-note {
-    color: #f0c674;
-  }
-  .capo-warning {
-    color: #ff8a80;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .capo-btn {
-    background: #3c3c3c;
-    color: #eeeeee;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 3px 10px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .beginner-toggle[aria-pressed="true"] {
-    background: #2e7d32;
-    color: #fff;
-    border-color: #2e7d32;
-  }
-  .capo-btn:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .capo-btn.primary:not(:disabled) {
-    background: #007acc;
-    border-color: #007acc;
+  @media (max-width: 360px) {
+    .playback-time { min-width: 62px; font-size: 9px; }
+    .playback-seek { min-width: 28px; }
+    .playback-control-btn { width: 28px; }
+    .toolbar-actions { max-width: 32%; }
   }
   .chord-diagram:hover > rect:first-child {
     fill: #0078d4;
@@ -522,52 +500,53 @@ ${cspMeta}
   }
 </style>
 </head>
-<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"${capoBar ? ' class="has-capo-bar"' : ''}>
-  <div class="toolbar-container">
-    <div class="toolbar-scroll">
-      <div class="toolbar-left">
-        <span class="toolbar-label">${escapeXml(msgs.uiView)}</span>
-        <div class="segmented-control">
-          <button class="tool-btn active" data-mode="single" title="${escapeXml(msgs.uiSinglePageTitle)}">${escapeXml(msgs.uiSinglePage)}</button>
-          <button class="tool-btn" data-mode="spread" title="${escapeXml(msgs.uiSpreadTitle)}">${escapeXml(msgs.uiSpread)}</button>
-          <button class="tool-btn" data-mode="web" title="${escapeXml(msgs.uiWebTitle)}">${escapeXml(msgs.uiWeb)}</button>
-        </div>
-      </div>
-
-      <div class="toolbar-center">
-        <span class="toolbar-label">${escapeXml(msgs.uiPaper)}</span>
-        <select id="select-page-size" class="tool-select" title="${escapeXml(msgs.uiPaperTitle)}">
-          <option value="A4" selected>A4 (210×297mm)</option>
-          <option value="A3">A3 (297×420mm)</option>
-          <option value="A5">A5 (148×210mm)</option>
-          <option value="B4">B4 (250×353mm)</option>
-          <option value="B5">B5 (176×250mm)</option>
-          <option value="Letter">Letter (8.5×11")</option>
-        </select>
-        <span class="toolbar-label" style="margin-left: 8px;">${escapeXml(msgs.uiOrientation)}</span>
-        <div class="segmented-control">
-          <button class="tool-btn active" data-orientation="portrait" title="${escapeXml(msgs.uiPortraitTitle)}">${escapeXml(msgs.uiPortrait)}</button>
-          <button class="tool-btn" data-orientation="landscape" title="${escapeXml(msgs.uiLandscapeTitle)}">${escapeXml(msgs.uiLandscape)}</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="toolbar-right">
-      <button class="btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span> ${escapeXml(msgs.uiHelp)}</button>
-      <button class="btn-pdf" id="btn-save-pdf" title="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
-    </div>
-  </div>
-
-  <div class="playback-toolbar" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
-    <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}>▶ ${escapeXml(msgs.uiPlay)}</button>
-    <button class="playback-control-btn" id="btn-pause" type="button" title="${escapeXml(msgs.uiPause)}" aria-label="${escapeXml(msgs.uiPause)}" disabled>Ⅱ ${escapeXml(msgs.uiPause)}</button>
-    <button class="playback-control-btn" id="btn-stop" type="button" title="${escapeXml(msgs.uiStop)}" aria-label="${escapeXml(msgs.uiStop)}" disabled>■ ${escapeXml(msgs.uiStop)}</button>
+<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}">
+  <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
+    <div class="toolbar-transport">
+    <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
+    <button class="playback-control-btn" id="btn-pause" type="button" title="${escapeXml(msgs.uiPause)}" aria-label="${escapeXml(msgs.uiPause)}" disabled><span aria-hidden="true">Ⅱ</span> <span class="transport-label">${escapeXml(msgs.uiPause)}</span></button>
+    <button class="playback-control-btn" id="btn-stop" type="button" title="${escapeXml(msgs.uiStop)}" aria-label="${escapeXml(msgs.uiStop)}" disabled><span aria-hidden="true">■</span> <span class="transport-label">${escapeXml(msgs.uiStop)}</span></button>
     <input class="playback-seek" id="playback-seek" type="range" min="0" max="${playback.durationSeconds}" step="0.01" value="0" aria-label="${escapeXml(msgs.uiSeek)}"${playback.available ? '' : ' disabled'}>
     <span class="playback-time" id="playback-time" aria-label="${escapeXml(msgs.uiPlaybackTime)}">00:00 / ${formatPlaybackTime(playback.durationSeconds)}</span>
-    <label class="playback-toggle"><input id="count-in-toggle" type="checkbox">${escapeXml(msgs.uiCountIn)}</label>
-    <label class="playback-toggle"><input id="metronome-toggle" type="checkbox">${escapeXml(msgs.uiMetronome)}</label>
-    <button class="playback-control-btn practice-toggle" id="practice-toggle" type="button" aria-pressed="false" title="${escapeXml(msgs.uiPracticeTitle)}" aria-label="${escapeXml(msgs.uiPracticeTitle)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPractice)}</button>
-    <span class="playback-error" id="playback-error" role="status" aria-live="polite">${escapeXml(playback.error ?? '')}</span>
+    </div>
+    <div id="toolbar-actions" class="toolbar-actions">
+      <button class="toolbar-action practice-toggle" id="practice-toggle" type="button" aria-pressed="false" title="${escapeXml(msgs.uiPracticeTitle)}" aria-label="${escapeXml(msgs.uiPracticeTitle)}"${playback.available ? '' : ' disabled'}><span aria-hidden="true">◎</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPractice)}</span></button>
+      <div class="toolbar-disclosure">
+        <button class="toolbar-action" id="playback-options-toggle" type="button" aria-expanded="false" aria-controls="playback-options-panel" aria-label="${escapeXml(msgs.uiPlaybackOptionsTitle)}" title="${escapeXml(msgs.uiPlaybackOptionsTitle)}"><span aria-hidden="true">⚙</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPlaybackOptions)}</span></button>
+        <div class="toolbar-disclosure-panel" id="playback-options-panel" role="group" aria-label="${escapeXml(msgs.uiPlaybackOptions)}" hidden>
+          <label class="playback-toggle"><input id="count-in-toggle" type="checkbox">${escapeXml(msgs.uiCountIn)}</label>
+          <label class="playback-toggle"><input id="metronome-toggle" type="checkbox">${escapeXml(msgs.uiMetronome)}</label>
+        </div>
+      </div>
+      <div class="toolbar-disclosure">
+        <button class="toolbar-action" id="view-export-toggle" type="button" aria-expanded="false" aria-controls="view-export-panel" aria-label="${escapeXml(msgs.uiViewAndExportTitle)}" title="${escapeXml(msgs.uiViewAndExportTitle)}"><span aria-hidden="true">▤</span> <span class="toolbar-action-label">${escapeXml(msgs.uiViewAndExport)}</span></button>
+        <div class="toolbar-disclosure-panel" id="view-export-panel" role="group" aria-label="${escapeXml(msgs.uiViewAndExport)}" hidden>
+          <div class="toolbar-panel-section">
+            <span class="toolbar-panel-label">${escapeXml(msgs.uiView)}</span>
+            <div class="segmented-control">
+              <button class="tool-btn active" data-mode="single" aria-pressed="true" title="${escapeXml(msgs.uiSinglePageTitle)}">${escapeXml(msgs.uiSinglePage)}</button>
+              <button class="tool-btn" data-mode="spread" aria-pressed="false" title="${escapeXml(msgs.uiSpreadTitle)}">${escapeXml(msgs.uiSpread)}</button>
+              <button class="tool-btn" data-mode="web" aria-pressed="false" title="${escapeXml(msgs.uiWebTitle)}">${escapeXml(msgs.uiWeb)}</button>
+            </div>
+          </div>
+          <div class="toolbar-panel-section">
+            <label class="toolbar-panel-label" for="select-page-size">${escapeXml(msgs.uiPaper)}</label>
+            <select id="select-page-size" class="tool-select" title="${escapeXml(msgs.uiPaperTitle)}">
+              <option value="A4" selected>A4 (210×297mm)</option><option value="A3">A3 (297×420mm)</option>
+              <option value="A5">A5 (148×210mm)</option><option value="B4">B4 (250×353mm)</option>
+              <option value="B5">B5 (176×250mm)</option><option value="Letter">Letter (8.5×11")</option>
+            </select>
+            <span class="toolbar-panel-label">${escapeXml(msgs.uiOrientation)}</span>
+            <div class="segmented-control">
+              <button class="tool-btn active" id="orientation-portrait" data-orientation="portrait" aria-pressed="true" title="${escapeXml(msgs.uiPortraitTitle)}">${escapeXml(msgs.uiPortrait)}</button>
+              <button class="tool-btn" id="orientation-landscape" data-orientation="landscape" aria-pressed="false" title="${escapeXml(msgs.uiLandscapeTitle)}">${escapeXml(msgs.uiLandscape)}</button>
+            </div>
+            <button class="toolbar-action btn-pdf" id="btn-save-pdf" type="button" title="${escapeXml(msgs.uiSavePdfTitle)}" aria-label="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
+          </div>
+        </div>
+      </div>
+      <button class="toolbar-action btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span><span class="toolbar-action-label"> ${escapeXml(msgs.uiHelp)}</span></button>
+    </div>
   </div>
 
   <div class="practice-toolbar" id="practice-toolbar" role="group" aria-label="${escapeXml(msgs.uiPractice)}">
@@ -589,7 +568,7 @@ ${cspMeta}
     <span class="practice-status" id="practice-status" role="status" aria-live="polite"></span>
   </div>
 
-  ${capoBar}
+  <div class="playback-error" id="playback-error" role="status" aria-live="polite" aria-atomic="true">${escapeXml(playback.error ?? '')}</div>
 
   <div class="sheet-pages-wrapper">
     ${spreadGroups.join('\n')}
@@ -608,6 +587,8 @@ ${cspMeta}
       // only the display mode is restored from webview state.
       const currentPageSize = body.getAttribute('data-page-size');
       const currentOrientation = body.getAttribute('data-orientation');
+      const previewIdentity = ${previewIdentityJson};
+      const restoreFocusControl = ${restoreFocusControlJson};
       let currentMode = 'single';
       let countInEnabled = false;
       let metronomeEnabled = false;
@@ -633,6 +614,12 @@ ${cspMeta}
       const orientationButtons = document.querySelectorAll('.tool-btn[data-orientation]');
       const pageSizeSelect = document.getElementById('select-page-size');
       const savePdfBtn = document.getElementById('btn-save-pdf');
+      const playbackOptionsToggle = document.getElementById('playback-options-toggle');
+      const viewExportToggle = document.getElementById('view-export-toggle');
+      const disclosureItems = [
+        { button: playbackOptionsToggle, panel: document.getElementById('playback-options-panel') },
+        { button: viewExportToggle, panel: document.getElementById('view-export-panel') }
+      ].filter(item => item.button && item.panel);
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
       const practiceToggle = document.getElementById('practice-toggle');
@@ -666,6 +653,7 @@ ${cspMeta}
       let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
       let playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
       const playBtn = document.getElementById('btn-play');
+      const playLabelNode = document.getElementById('play-label');
       const pauseBtn = document.getElementById('btn-pause');
       const stopBtn = document.getElementById('btn-stop');
       const seekSlider = document.getElementById('playback-seek');
@@ -929,7 +917,7 @@ ${cspMeta}
         if (playbackTime) playbackTime.textContent = formatClock(shownTime) + ' / ' + formatClock(playbackDuration);
         if (playBtn) {
           const playLabel = transport === 'paused' ? audioLabels.resume : audioLabels.play;
-          playBtn.textContent = '▶ ' + (playLabel || 'Play');
+          if (playLabelNode) playLabelNode.textContent = playLabel || 'Play';
           playBtn.setAttribute('aria-label', playLabel || 'Play');
           playBtn.title = playLabel || 'Play';
           playBtn.disabled = !playbackAvailable || startPending || disposed || !!progressionAudioLeaseId || transport === 'playing' || transport === 'counting-in';
@@ -1650,18 +1638,87 @@ ${cspMeta}
 
       function requestLayout(pageSize, orientation) {
         if (vscode) {
-          vscode.postMessage({ command: 'layoutChanged', pageSize, orientation });
+          const focusControl = orientation !== currentOrientation
+            ? (orientation === 'landscape' ? 'orientation-landscape' : 'orientation-portrait')
+            : 'select-page-size';
+          vscode.postMessage({
+            command: 'layoutChanged', pageSize, orientation, focusControl,
+            documentUri: previewIdentity.documentUri,
+            documentVersion: previewIdentity.documentVersion,
+            previewGeneration: previewIdentity.previewGeneration
+          });
         }
       }
+
+      function positionDisclosure(item) {
+        if (!item || !item.button || !item.panel || item.panel.hidden) return;
+        const trigger = item.button.getBoundingClientRect();
+        const width = Math.min(360, Math.max(0, window.innerWidth - 16));
+        const panelHeight = Math.min(item.panel.scrollHeight, Math.max(0, window.innerHeight - 64));
+        item.panel.style.width = width + 'px';
+        item.panel.style.left = Math.max(8, Math.min(window.innerWidth - width - 8, trigger.right - width)) + 'px';
+        item.panel.style.top = Math.max(56, Math.min(trigger.bottom + 4, window.innerHeight - panelHeight - 8)) + 'px';
+      }
+
+      function closeDisclosure(item, returnFocus) {
+        if (!item || !item.panel || item.panel.hidden) return;
+        item.panel.hidden = true;
+        item.button.setAttribute('aria-expanded', 'false');
+        item.button.setAttribute('aria-controls', item.panel.id);
+        if (returnFocus) item.button.focus();
+      }
+
+      disclosureItems.forEach(item => {
+        const handleDisclosureKeydown = event => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closeDisclosure(item, true);
+          }
+        };
+        item.button.addEventListener('click', () => {
+          const open = item.panel.hidden;
+          disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
+          item.panel.hidden = !open;
+          item.button.setAttribute('aria-expanded', String(open));
+          if (open) positionDisclosure(item);
+        });
+        item.button.addEventListener('keydown', handleDisclosureKeydown);
+        item.panel.addEventListener('keydown', handleDisclosureKeydown);
+      });
+      document.addEventListener('pointerdown', event => {
+        disclosureItems.forEach(item => {
+          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+            closeDisclosure(item, false);
+          }
+        });
+      });
+      document.addEventListener('focusin', event => {
+        disclosureItems.forEach(item => {
+          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+            closeDisclosure(item, false);
+          }
+        });
+      });
+      const toolbarActions = document.getElementById('toolbar-actions');
+      if (toolbarActions) toolbarActions.addEventListener('focusin', event => {
+        if (event.target && typeof event.target.scrollIntoView === 'function') {
+          event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      });
+      window.addEventListener('resize', () => disclosureItems.forEach(positionDisclosure));
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
         updateScoreOverlay();
         modeButtons.forEach(btn => {
-          btn.classList.toggle('active', btn.getAttribute('data-mode') === currentMode);
+          const active = btn.getAttribute('data-mode') === currentMode;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-pressed', String(active));
         });
         orientationButtons.forEach(btn => {
-          btn.classList.toggle('active', btn.getAttribute('data-orientation') === currentOrientation);
+          const active = btn.getAttribute('data-orientation') === currentOrientation;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-pressed', String(active));
         });
         persistWebviewState();
       }
@@ -1688,6 +1745,20 @@ ${cspMeta}
         });
       }
 
+      function restoreLayoutFocus() {
+        if (!restoreFocusControl) return;
+        const item = disclosureItems.find(entry => entry.button === viewExportToggle);
+        if (item) {
+          disclosureItems.forEach(other => closeDisclosure(other, false));
+          item.panel.hidden = false;
+          item.button.setAttribute('aria-expanded', 'true');
+          positionDisclosure(item);
+        }
+        const target = document.getElementById(restoreFocusControl);
+        (target || viewExportToggle).focus();
+        if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+
       if (savePdfBtn) {
         savePdfBtn.addEventListener('click', () => {
           if (vscode) {
@@ -1708,38 +1779,6 @@ ${cspMeta}
         });
       }
 
-      // Capo bar: intents only; the extension host computes and re-renders.
-      const capoSelect = document.getElementById('select-capo');
-      if (capoSelect && vscode) {
-        capoSelect.addEventListener('change', (e) => {
-          vscode.postMessage({ command: 'capoChanged', capo: Number(e.target.value) });
-        });
-      }
-      const applyCapoBtn = document.getElementById('btn-apply-capo');
-      if (applyCapoBtn && vscode) {
-        applyCapoBtn.addEventListener('click', () => {
-          vscode.postMessage({ command: 'applyCapo', capo: Number(capoSelect ? capoSelect.value : NaN) });
-        });
-      }
-      const beginnerBtn = document.getElementById('btn-beginner');
-      if (beginnerBtn && vscode) {
-        beginnerBtn.addEventListener('click', () => {
-          vscode.postMessage({ command: 'beginnerToggled', enabled: beginnerBtn.getAttribute('aria-pressed') !== 'true' });
-        });
-      }
-      const barreSelect = document.getElementById('select-barre');
-      if (barreSelect && vscode) {
-        barreSelect.addEventListener('change', (e) => {
-          vscode.postMessage({ command: 'barrePolicyChanged', policy: e.target.value });
-        });
-      }
-      const editCapoBtn = document.getElementById('btn-edit-capo');
-      if (editCapoBtn && vscode) {
-        editCapoBtn.addEventListener('click', () => {
-          vscode.postMessage({ command: 'editCapo' });
-        });
-      }
-
       // Clicking a chord diagram opens the chord diagram editor.
       document.addEventListener('click', (e) => {
         const diagram = e.target.closest && e.target.closest('.chord-diagram');
@@ -1749,6 +1788,7 @@ ${cspMeta}
       });
 
       updateView();
+      restoreLayoutFocus();
       body.dataset.progressionAudioLocked = String(!!progressionAudioLeaseId);
       if (progressionAudioLeaseId && vscode) {
         stopPlayback();
@@ -1927,55 +1967,4 @@ function renderCspMeta(cspSource: string, nonce: string): string {
     "worker-src 'none'"
   ].join('; ');
   return `<meta http-equiv="Content-Security-Policy" content="${escapeXml(policy)}">`;
-}
-
-/** Beginner Mode toggle and barre policy (shown before the capo buttons). */
-function renderBeginnerControls(beginner: BeginnerPreviewUiModel | undefined, msgs: Messages, disabled: string): string {
-  const active = beginner?.active === true;
-  const toggle = `<button class="capo-btn beginner-toggle" id="btn-beginner" aria-pressed="${active}" title="${escapeXml(msgs.uiBeginnerModeTitle)}"${disabled}>${escapeXml(`${msgs.uiBeginnerMode}: ${active ? msgs.uiBeginnerOn : msgs.uiBeginnerOff}`)}</button>`;
-  if (!active || !beginner) return toggle;
-  const policy = (value: string, label: string) => `<option value="${value}"${beginner.barrePolicy === value ? ' selected' : ''}>${escapeXml(label)}</option>`;
-  return `${toggle}
-    <span class="toolbar-label">${escapeXml(msgs.uiBarreChords)}</span>
-    <select id="select-barre" class="tool-select" title="${escapeXml(msgs.uiBarreTitle)}">${policy('allow', msgs.uiBarreAllow)}${policy('forbid', msgs.uiBarreForbid)}</select>`;
-}
-
-/** Beginner Mode notes (auto capo, substitution summary), shown after the capo buttons. */
-function renderBeginnerNotes(beginner: BeginnerPreviewUiModel | undefined, msgs: Messages): string {
-  if (!beginner?.active) return '';
-  const subs = beginner.substitutions.map(([from, to]) => `${from} → ${to}`).join(', ');
-  return `${beginner.autoCapo ? `<span class="capo-note" id="beginner-auto">${escapeXml(`${msgs.uiCapo}: ${msgs.uiBeginnerAuto}`)}</span>` : ''}
-    ${subs ? `<span class="capo-note" id="beginner-substitutions">${escapeXml(`${msgs.uiBeginnerSubstitutions}: ${subs}`)}</span>` : ''}`;
-}
-
-function renderCapoBar(model: CapoPreviewUiModel, msgs: Messages, beginner?: BeginnerPreviewUiModel): string {
-  const options = model.candidates.map(c => {
-    const parts = [`${msgs.uiCapo} ${c.capo}`];
-    if (c.score !== undefined) parts.push(`${c.score}`);
-    if (c.recommended) parts.push(`★ ${msgs.uiRecommended}`);
-    if (!c.supported) parts.push('—');
-    const attrs = [`value="${c.capo}"`];
-    if (c.capo === model.targetCapo) attrs.push('selected');
-    if (!c.supported) attrs.push('disabled');
-    return `<option ${attrs.join(' ')}>${escapeXml(parts.join(' · '))}</option>`;
-  }).join('');
-  const recommended = model.candidates.find(c => c.recommended);
-  const play = model.currentPlayability;
-  const badge = play
-    ? `<span class="capo-badge" id="capo-playability" data-level="${play.level}" data-score="${play.score}">${escapeXml(`${msgs.playabilityLevels[play.level]} ${play.score}/100`)}</span>`
-    : `<span class="capo-badge" id="capo-playability">${escapeXml(msgs.uiPlayabilityUnavailable)}</span>`;
-  const disabled = model.sourceCapo === null ? ' disabled' : '';
-  return `<div class="capo-bar" id="capo-bar" data-source-capo="${model.sourceCapo ?? ''}" data-target-capo="${model.targetCapo}" data-beginner="${beginner?.active === true}">
-    <span class="toolbar-label">${escapeXml(msgs.uiCapo)}</span>
-    <select id="select-capo" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${disabled}>${options}</select>
-    <span class="toolbar-label">${escapeXml(msgs.uiPlayability)}</span>
-    ${badge}
-    ${recommended ? `<span class="toolbar-label">★ ${escapeXml(msgs.uiRecommended)}: ${escapeXml(`${msgs.uiCapo} ${recommended.capo}`)}</span>` : ''}
-    ${model.overridden ? `<span class="capo-note">${escapeXml(msgs.uiCapoPreviewOnly)}</span>` : ''}
-    ${renderBeginnerControls(beginner, msgs, disabled)}
-    <button class="capo-btn primary" id="btn-apply-capo" title="${escapeXml(msgs.uiApplyToDslTitle)}"${model.canApply ? '' : ' disabled'}>${escapeXml(msgs.uiApplyToDsl)}</button>
-    <button class="capo-btn" id="btn-edit-capo" title="${escapeXml(msgs.uiEditCapoTitle)}">${escapeXml(msgs.uiEditCapo)}</button>
-    ${renderBeginnerNotes(beginner, msgs)}
-    ${model.warning ? `<span class="capo-warning" id="capo-warning">${escapeXml(model.warning)}</span>` : ''}
-  </div>`;
 }

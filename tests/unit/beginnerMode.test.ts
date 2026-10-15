@@ -391,10 +391,10 @@ describe('beginnerMode - source preservation and reparse', () => {
   });
 });
 
-describe('beginnerMode - preview model, HTML and i18n', () => {
+describe('beginnerMode - effective Preview DSL and i18n', () => {
   const src = 'capo: 0\n| F | C | G | Am |\n';
 
-  it('BEG-29 renders the beginner controls in the existing capo bar only', () => {
+  it('BEG-29 preserves the effective DSL without duplicating Inspector controls in Preview', () => {
     const inference = inferBeginnerModeForDsl(src, 'forbid');
     const p = plan(src, 'forbid');
     const models = buildBeginnerPreviewUiModel(src, p, inference);
@@ -403,17 +403,14 @@ describe('beginnerMode - preview model, HTML and i18n', () => {
     for (const locale of ['ja', 'en'] as const) {
       const m = locale === 'ja' ? MESSAGES_JA : MESSAGES_EN;
       const html = compileGuitarDslToHtml(p.text, { locale, capo: models.capo, beginner: models.beginner });
-      assert.ok(html.includes('id="btn-beginner" aria-pressed="true"'));
-      assert.ok(html.includes(`${m.uiBeginnerMode}: ${m.uiBeginnerOn}`));
-      assert.ok(html.includes(`<option value="forbid" selected>${m.uiBarreForbid}</option>`));
-      assert.ok(html.includes(`<option value="allow">${m.uiBarreAllow}</option>`));
-      assert.ok(html.includes('F → Fmaj7'));
-      assert.strictEqual((html.match(/class="capo-bar"/g) ?? []).length, 1);
-      const svgPart = html.slice(html.indexOf('<div class="sheet-pages-wrapper">'));
-      assert.ok(!svgPart.includes('id="btn-beginner"'));
+      assert.ok(html.includes('Fmaj7'));
+      assert.ok(!html.includes('id="btn-beginner"'));
+      assert.ok(!html.includes('id="select-barre"'));
+      assert.ok(!html.includes('class="capo-bar"'));
+      assert.ok(!html.includes(`${m.uiBeginnerMode}: ${m.uiBeginnerOn}`));
     }
     const off = compileGuitarDslToHtml(src, { locale: 'ja', capo: models.capo });
-    assert.ok(off.includes('id="btn-beginner" aria-pressed="false"'));
+    assert.ok(!off.includes('id="btn-beginner"'));
     assert.ok(!off.includes('id="select-barre"'));
   });
 
