@@ -68,6 +68,7 @@ export interface InspectorProgressionMessage extends Record<string, unknown> {
 }
 
 export type InspectorProgressionMessageHandler = (message: InspectorProgressionMessage) => void | Promise<void>;
+export type InspectorProgressionIntentPredicate = (message: InspectorProgressionMessage) => boolean;
 
 export interface InspectorSettingsMessage extends Record<string, unknown> {
   readonly command: string;
@@ -110,6 +111,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private generation = 0;
   private explicitIntentGeneration = 0;
   private progressionMessageHandler: InspectorProgressionMessageHandler | undefined;
+  private progressionIntentPredicate: InspectorProgressionIntentPredicate | undefined;
   private settingsMessageHandler: InspectorSettingsMessageHandler | undefined;
   private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
   private settingsSessionEndHandler: ((uri: string) => void) | undefined;
@@ -127,6 +129,9 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   async openForActiveEditor(preserveFocus = false): Promise<void> {
     if (this.disposed) return;
+    // The public open command is an explicit user action even when the active
+    // document is already the current context and showDocument is a no-op.
+    this.beginExplicitIntent();
     const document = this.getActiveDocument();
     if (document) this.showDocument(document.uri, document.version);
     else if (this.context.kind !== 'progression') this.setContext(EMPTY_CONTEXT);
@@ -191,8 +196,12 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     else this.setContext(EMPTY_CONTEXT);
   }
 
-  setProgressionMessageHandler(handler: InspectorProgressionMessageHandler | undefined): void {
+  setProgressionMessageHandler(
+    handler: InspectorProgressionMessageHandler | undefined,
+    intentPredicate?: InspectorProgressionIntentPredicate
+  ): void {
     this.progressionMessageHandler = handler;
+    this.progressionIntentPredicate = handler ? intentPredicate : undefined;
   }
 
   setSettingsMessageHandler(handler: InspectorSettingsMessageHandler | undefined): void {
@@ -250,7 +259,7 @@ export class GuitarDslInspectorController implements vscode.Disposable {
       || message.sessionUri !== context.uri
       || message.sessionVersion !== context.version
       || message.sessionGeneration !== context.sessionGeneration) return true;
-    this.beginExplicitIntent();
+    if (this.progressionIntentPredicate?.(message)) this.beginExplicitIntent();
     await this.progressionMessageHandler?.(message);
     return true;
   }

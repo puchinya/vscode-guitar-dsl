@@ -2881,6 +2881,151 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
     }
   });
 
+  test('S135-15 explicit openInspector supersedes a pending Settings resolution in the same document context', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.openInspector');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'document'
+      && inspector.getContext?.()?.uri === doc.uri.toString(), 'the active document is the Inspector context');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await vscode.commands.executeCommand('guitardsl.openInspector');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'the repeated public open keeps the existing document context');
+      releaseSettings!(doc);
+      await openingSettings;
+
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'the older Settings request cannot replace a later same-context open');
+      assert.strictEqual(inspector.getContext?.()?.uri, doc.uri.toString());
+      assert.strictEqual(settings.hasSession?.(), false, 'no hidden Settings session was created');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-16 a validated Settings Close supersedes a pending newer Settings request', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.editCapo', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    await waitFor(() => inspector.getContext?.()?.kind === 'settings', 'the first Settings session is open');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+      await settings.dispatchMessage?.('settingsCancel');
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document', 'the validated Close restores the document context');
+
+      releaseSettings!(doc);
+      await openingSettings;
+      assert.strictEqual(inspector.getContext?.()?.kind, 'document',
+        'a request started before Close cannot reopen the dismissed Settings context');
+      assert.strictEqual(settings.hasSession?.(), false, 'Close leaves no Settings session behind');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+    }
+  });
+
+  test('S135-17 unknown and invalid progression messages do not supersede pending Settings', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
+    const editor = await showAndFocus(doc);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    await vscode.commands.executeCommand('guitardsl.suggestChordProgression');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    assert.strictEqual(inspector.getContext?.()?.kind, 'progression');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const documentResolver = require('../../documentResolver') as {
+      resolveGuitarDslDocument: (uri?: vscode.Uri, fallback?: vscode.TextDocument) => Promise<vscode.TextDocument | undefined>;
+    };
+    const originalResolve = documentResolver.resolveGuitarDslDocument;
+    let releaseSettings: ((document: vscode.TextDocument) => void) | undefined;
+    let signalStarted!: () => void;
+    const settingsStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+    documentResolver.resolveGuitarDslDocument = (uri?: vscode.Uri) => {
+      if (uri?.toString() === doc.uri.toString()) {
+        signalStarted();
+        return new Promise(resolve => { releaseSettings = resolve; });
+      }
+      return Promise.resolve(undefined);
+    };
+    let openingSettings: Thenable<unknown> | undefined;
+    try {
+      openingSettings = vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await settingsStarted;
+
+      await progression.dispatchInspectorMessage?.({ command: 'progressionBogus' });
+      await progression.dispatchInspectorMessage?.({ command: 'progressionSetBars', bars: 999 });
+      releaseSettings!(doc);
+      await openingSettings;
+
+      assert.strictEqual(inspector.getContext?.()?.kind, 'settings',
+        'rejected progression messages leave the valid pending Settings request current');
+      assert.strictEqual(inspector.getContext?.()?.uri, doc.uri.toString());
+      assert.strictEqual(settings.hasSession?.(), true, 'the valid Settings request opens its host session');
+    } finally {
+      documentResolver.resolveGuitarDslDocument = originalResolve;
+      releaseSettings?.(doc);
+      if (openingSettings) await openingSettings;
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+      await vscode.commands.executeCommand('guitardsl.progression.close');
+    }
+  });
+
   test('TR-E2E-04 Preview / PDF re-resolve from the transposed source, including Beginner Mode (T045)', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: SOURCE });
     await showAndFocus(doc, vscode.ViewColumn.One);

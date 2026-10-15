@@ -45,6 +45,7 @@ interface SettingsSession {
 /** Host-side E2E access to the same validated message path used by Inspector Webview messages. */
 export const scoreSettingsInspectorProbe: {
   dispatchMessage?: (command: string, fields?: Record<string, unknown>) => Promise<boolean>;
+  hasSession?: () => boolean;
 } = {};
 
 /** Owns one transactional settings session displayed by the common Inspector. */
@@ -68,6 +69,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     inspector.setSettingsSessionEndHandler(uri => {
       if (this.session?.uri === uri) this.finish(this.session, true);
     });
+    scoreSettingsInspectorProbe.hasSession = () => this.session !== undefined;
     scoreSettingsInspectorProbe.dispatchMessage = (command, fields = {}) => {
       const context = inspector.currentContext;
       if (context.kind !== 'settings') return Promise.resolve(false);
@@ -141,31 +143,23 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     this.inspector.setSettingsMessageHandler(undefined);
     this.inspector.setSettingsSessionEndHandler(undefined);
     scoreSettingsInspectorProbe.dispatchMessage = undefined;
+    scoreSettingsInspectorProbe.hasSession = undefined;
   }
 
   private async handleMessage(message: InspectorSettingsMessage): Promise<void> {
     const session = this.session;
     if (!session) return;
-    if (session.applying && message.command === 'settingsCancel') {
-      this.finish(session, true);
-      return;
-    }
-    if (session.applying) {
-      if (!isSettingsMutation(message.command) || !this.matchesMessage(session, message)) return;
-      if (!this.isFresh(session)) {
-        this.finish(session, true);
-        return;
-      }
-    }
     if (!this.matchesMessage(session, message) || !this.isFresh(session)) {
       if (this.session === session && !this.isFresh(session)) this.finish(session, true);
       return;
     }
 
     if (message.command === 'settingsCancel') {
+      this.inspector.beginExplicitIntent();
       this.finish(session, true);
       return;
     }
+    if (session.applying && !isSettingsMutation(message.command)) return;
     if (message.command === 'settingsSelectSection') {
       const section = message.nextSection;
       if (!isSettingsSection(section) || section === session.section) return;
