@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-16
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。Issue #136 は PR #141 で phase:review。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **最終更新日**: 2026-10-17
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 は PR #141 で phase:review。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## Issue #135: Score Settings in the Common Inspector
 
-- **状態**: PR #140 は open、Issue は phase:review。承認済み契約 comment 6168286692 に沿う実装は feature/135-settings-inspector にあり、基準は main@428c30f。
+- **状態**: PR #140 は 2026-10-16 (JST) に `main` へマージ済み、Issue #135 は closed。承認済み契約 comment 6168286692 に沿う実装は feature/135-settings-inspector にあり、基準は main@428c30f。
 - **実装**: Capo / Beginner / Transpose の3節を既存 Inspector View に統合。設定セッションと候補モデル、文書識別、確認後のApplyを Extension Host が所有する。候補比較はDSLを編集せず、既存 Preview override を一時利用する。Applyは対象文書を再検証し、一つの WorkspaceEdit にまとめる。進行音声leaseの停止確認後に設定を開く。旧Score Settings Panelと専用HTML/JSを廃止。
 - **検証**: 今回の `npm test` PASS（Help/AI同期、単体 **1,132件 PASS**、VS Code 1.142.0 E2E **89件 PASS・6件 pending**）。S135-01 非同期解決順、S135-06 Preview 1回描画、S135-07 Apply確認中の再オープン/有効・無効候補/有効・無効な節の検証、S135-12 `openInspector` 後の Preview/PDF 復元に加え、S135-13 は新しい進行コンテキストが設定要求の文書解決を無効化すること、S135-14 はStop ACK待ちに開始した新セッションを古い設定要求が維持することを確認。S135-15 は同じ Document context への明示的 `openInspector` が保留中の Settings 要求を失効させること、S135-16 はホスト検証済み Settings Close 後に先行要求が Settings を再表示しないこと、S135-17 は未知の進行コマンドと範囲外の小節数が保留中 Settings を失効させないことをE2Eで確認。S135-11もVS Code 1.141.2で実Inspector音声を再生中にSettingsを開き、Stop ACK成功・配送失敗・ACK timeoutの3ケースを個別E2EでPASS。配送失敗とACK timeoutではSettingsを閉じたままleaseとPreviewロックを保持し、後続の実Stop ACKで解除することを確認。通常フルスイートの6件pendingは画面/音声E2Eの実行条件に依存する。設定UIのCDP有効E2EはEN/JA × dark/light の4組で各1件PASSし、幅800pxのExtension Development Hostから3節画像を取得。`npm run vscode:prepublish` PASS。`npx @vscode/vsce ls` は **1,598項目**で、新しいInspector rendererを含み旧Panel資産を含まない。`verify-implementation-contract` と `validate-docs --issue 135` PASS。VoiceOver、Windows/Linux、最小VS Code版は未実施。音声停止ACK/古いセッション解放自体は `progressionAudioLease` unit test と ED-09/ED-10 でも確認。
 - **画面証拠（Extension Development Host、幅800px）**: EN/dark [Capo](evidence/issue-135/settings-en-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-dark-narrow-transpose.png)。EN/light [Capo](evidence/issue-135/settings-en-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-en-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-en-light-narrow-transpose.png)。JA/dark [Capo](evidence/issue-135/settings-ja-dark-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-dark-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-dark-narrow-transpose.png)。JA/light [Capo](evidence/issue-135/settings-ja-light-narrow-capo.png) · [Beginner](evidence/issue-135/settings-ja-light-narrow-beginner.png) · [Transpose](evidence/issue-135/settings-ja-light-narrow-transpose.png)。
