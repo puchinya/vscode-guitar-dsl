@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-16
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。Issue #136 は承認済み要件に基づいて feature/136-simplify-preview-toolbar で実装中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）はマージ済み。Issue #135 は PR #140 を作成して phase:review。Issue #136 は PR #141 で phase:review。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -34,7 +34,7 @@
 
 ## Issue #136: Simplify the Preview Toolbar
 
-- **状態**: phase:implementation。承認済み契約 comment 6198022256 の SHA-256 `e6437802f21f358016c95cab2d5b4a3a0c29e126f3787f487971f58b1e0f6ea1` と 33,918 bytes は取得したコメント本文で一致。Issue の Implementation Contract pointer は規定形式と一致し、`verify-implementation-contract 136` は PASS。
+- **状態**: phase:review（[PR #141](https://github.com/puchinya/vscode-guitar-dsl/pull/141)）。承認済み契約 comment 6198022256 の SHA-256 `e6437802f21f358016c95cab2d5b4a3a0c29e126f3787f487971f58b1e0f6ea1` と 33,918 bytes は取得したコメント本文で一致。Issue の Implementation Contract pointer は規定形式と一致し、`verify-implementation-contract 136` は PASS。
 - **実装**: 通常再生 transport を 48 px の1行に集約し、Playback settings と View & Export を非モーダル disclosure にまとめる。Practice ON 時だけ 42 px 行を表示。Capo / Beginner / progression の Preview 編集 UI は除き、Inspector で選んだ有効 DSL は Preview と PDF で共有する。紙面・向き変更は既存の `layoutChanged` を保ち、URI・文書 version・Preview generation に結び付いた一度限りのフォーカス復帰を追加。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm run compile`、`npm run test:unit`（1,133 passing）、`npm test`（Help/AI同期を含み E2E 90 passing / 6 pending）、P136 CDP E2E（1 passing）、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,598 項目）、`validate-docs --issue 136`、`verify-implementation-contract 136`、`git diff --check` は PASS。P136 実ブラウザー E2E は Preview の開閉、Tab/Escape、Practice ON/OFF、layoutChanged 後のフォーカス復帰を検証した。テストホストの Preview CSS 幅は 421 px で、契約の 600 px 表示は未検証。VoiceOver / NVDA、Windows / Linux は未実施。
 - **画面証拠**: EN・dark の Extension Development Host capture（Preview 実幅 421 px）を保存して目視確認した：[Practice OFF / View & Export](evidence/issue-136/preview-en-dark-421-practice-off-view-open-issue-136-en-dark.png)、[Practice ON / View & Export](evidence/issue-136/preview-en-dark-421-practice-on-view-open-issue-136-en-dark.png)。600 px および JA/light の capture は未実施。
