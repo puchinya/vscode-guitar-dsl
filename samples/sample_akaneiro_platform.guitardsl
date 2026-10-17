@@ -1,0 +1,85 @@
+title: 茜色のプラットホーム
+artist: GuitarDSL Original
+tuning: Standard
+capo: 0
+key: C
+bpm: 116
+time: 4/4
+feel: straight
+measures_per_row: 4
+memo: 16分音符やシンコペーションを織り交ぜた王道J-POPナンバー。
+
+# 分数コードのカスタムフォーム定義（§7.4）
+chord E7/G# = 420100 fingers:42-1--
+
+# リズムパターンの再利用フラグメント定義（§17）
+let intro_arp    = 4.d.arp 8.d 8.u 4.d.arp 8.d 8.u
+let verse_beat   = 4.d 8.d 8.u 8.d 8.u 4.d
+let pre_beat     = 8.d.pm 8.d.pm 8.d.pm 8.d.pm 8.d 8.u 4.d.a
+let chorus_beat  = 8.d 8.u 4.d.a 8.u 8.d 8.d.a 8.u
+let chorus_drive = 8.d 16.d 16.u 8.d 8.u 8.d 8.u 8.d 8.u
+
+[Intro]
+@dynamic: mf
+| Fmaj7     | $intro_arp |
+| G         | $intro_arp |
+| Em7 Am7   | $intro_arp |
+| Dm7:2 Gsus4:1 G:1 | 4.d 4.d 4.d.a 4.d ||
+
+[Aメロ]
+@dynamic: mp
+| C   | $verse_beat |
+| G/B | %           |
+| Am7 | $verse_beat |
+| Em7 | %           |
+mel: | r/8 e4/8 g4/8 a4/8 g4/8 e4/8 d4/8 c4/8 | d4/8 e4/8 g4/8 d4/8 e4/8 d4/4 r/8 | r/8 c4/8 e4/8 a4/8 g4/8 e4/8 d4/8 c4/8 | b3/8 c4/8 d4/8 e4/4 g4/8 e4/4 |
+lyr: | ゆうぐれ そまる                        | えきの ホーム                     | のびる ふたつの                        | かげを みてた                 |
+
+| Fmaj7       | $verse_beat       |
+| Em7 Am7     | $verse_beat       |
+| Dm7         | $verse_beat       |
+| Gsus4:2 G:2 | 4.d 8.d 8.u 2.d ||
+mel: | f4/8 g4/8 a4/8 c5/8 b4/8 a4/8 g4/8 f4/8 | e4/8 g4/8 b4/4 a4/8 g4/8 e4/4 | r/8 d4/8 e4/8 f4/8 a4/8 g4/8 f4/8 e4/8 | d4/8 e4/8 f4/8 g4/8 g4/4 r/4 |
+lyr: | いいかけた ことば                       | かぜに とけて                 | つぎの でんしゃを                      | まって いた                  |
+
+[Bメロ]
+@dynamic: mf
+| Dm7          | $pre_beat              |
+| Em7          | %                      |
+| Fmaj7        | $verse_beat            |
+| E7:2 E7/G#:2 | 4.d 4.d 8.d 8.u 4.d.a |
+mel: | f4/8 f4/8 e4/8 d4/8 f4/8 a4/8 g4/8 f4/8 | g4/8 g4/8 f4/8 e4/8 g4/8 b4/8 a4/8 g4/8 | a4/8 a4/8 g4/8 f4/4 a4/8 b4/8 c5/8 | b4/8 c5/8 d5/8 b4/8 g#4/8 a4/8 b4/4 |
+lyr: | ポケットの なかで                       | にぎりしめた ての                       | ぬくもり だけが                    | うそじゃ なかった                   |
+
+| Am7             | $verse_beat               |
+| Em7             | %                         |
+| Dm7:2 Em7:1 F:1 | 4.d 4.d 4.d 4.d           |
+| Gsus4:2 G:2     | 8.d 8.d 8.d 8.d 4.d.a r4 ||
+mel: | c5/8 b4/8 a4/8 e4/8 a4/8 b4/8 c5/8 d5/8 | b4/8 a4/8 g4/8 e4/8 g4/8 a4/8 b4/4 | a4/8 g4/8 f4/8 a4/8 g4/8 a4/8 b4/8 c5/8 | d5/8 c5/8 d5/8 e5/8 d5/4 r/4 |
+lyr: | ベルが なりひびく                       | とびらが しまる                    | ぼくらの きせつが                       | うごき だす                  |
+
+---
+
+[サビ]
+@dynamic: f
+| C                | $chorus_beat  |
+| G/B              | $chorus_drive |
+| Am7:2 Gm7:1 C7:1 | $chorus_beat  |
+| Fmaj7:2 Fm:2     | $chorus_drive |
+mel: | g4/8 c5/8 d5/8 e5/8 e5/8 d5/8 c5/8 e5/8 | d5/8 b4/8 g4/8 a4/8 b4/8 d5/8 b4/4 | c5/8 b4/8 a4/8 g4/8 bb4/8 a4/8 g4/8 c5/8 | a4/8 c5/8 d5/8 c5/8 ab4/8 g4/8 f4/4 |
+lyr: | あかねいろの そら                       | てを ふりながら                    | さよなら じゃなくて                      | またねと わらう                     |
+
+| Em7 Am7     | $chorus_beat             |
+| Dm7 G       | $chorus_drive            |
+| Dm7:2 G7:2  | $chorus_beat             |
+| Csus4:2 C:2 | 8.d 8.u 4.d 2.d.fermata ||
+mel: | g4/8 b4/8 e5/8 d5/8 c5/8 b4/8 a4/8 g4/8 | f4/8 a4/8 d5/8 c5/8 b4/8 a4/8 g4/4 | f4/8 g4/8 a4/8 c5/8 d5/8 c5/8 b4/8 a4/8 | f5/8 e5/8 d5/8 c5/8 d5/4 c5/4 |
+lyr: | とおざかる まちの                       | ひかりの むこう                    | あたらしい あさが                       | ぼくらを まつ                 |
+
+[Outro]
+@dynamic: mp
+| Fmaj7 G    | $intro_arp       |
+| Em7 Am7    | $intro_arp       |
+@tempo: rit.
+| Dm7:2 G7:2 | 2.d.arp 2.d.arp  |
+| Cadd9      | 1.d.arp.fermata |

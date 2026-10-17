@@ -1,0 +1,268 @@
+title: 午前零時のページ (Standard Barre & Syncopated Strum)
+artist: GuitarDSL Original
+tuning: Standard
+capo: 0
+key: Am
+bpm: 128
+time: 4/4
+feel: straight
+measures_per_row: 4
+memo: リズムスラッシュのタイ（.t）に対応。定番バレーコード（F, Fm, Bm7）と正確なシンコペーション譜表による全128小節。
+
+# タイ（.t）を用いた定番ストロークパターン定義（§17）
+let arp_basic    = 4.d.arp 8.d 8.u 4.d.arp 8.d 8.u
+let beat8_basic  = 4.d 8.d 8.u 4.d 8.d 8.u
+let beat8_sync   = 4.d 8.d 8.u.a.t 8 8.u 8.d 8.u
+let beat16_mix   = 4.d 8.d 16.d 16.u 4.d 8.d 16.d 16.u
+let pre_mute     = 8.d.pm 8.d.pm 8.d.pm 8.d.pm 8.d 8.u 4.d.a
+let chorus_sync  = 8.d 8.u 8.d 8.u.a.t 8 8.u 8.d 8.u
+let chorus_drive = 8.d 8.u 4.d.a 8.d 16.d 16.u 8.d.a 8.u
+
+[Intro]
+@dynamic: mp
+| Fmaj7  | $arp_basic      |
+| G      | %               |
+| Em7 Am | $arp_basic      |
+| Dm7 G  | 2.d 4.d 8.d 8.u |
+
+@dynamic: mf
+| F      | $beat16_mix     |
+| G      | $beat8_sync     |
+| Em7 Am | $beat16_mix     |
+| Dm7 E7 | 4.d 4.d 4.d r4 ||
+
+[1番 Aメロ]
+@dynamic: mp
+| F   | $beat8_basic |
+| G   | $beat8_sync  |
+| Em7 | $beat8_basic |
+| Am  | $beat8_sync  |
+mel: | r/8 a4/8 c5/8 d5/8 e5/8 d5/8 c5/8 a4/8 | b4/8 c5/8 d5/8 b4/8 g4/4 r/4 | r/8 g4/8 b4/8 c5/8 d5/8 c5/8 b4/8 g4/8 | a4/8 b4/8 c5/8 e5/8 a4/4 r/4 |
+lyr: | へやの あかりを                        | けした なら                  | まどの むこうに                        | あおい つき                  |
+
+| Dm7   | $beat8_basic |
+| G     | $beat8_sync  |
+| C G/B | $beat8_basic |
+| Am E7 | 4.d 4.d 2.d  |
+mel: | r/8 f4/8 a4/8 c5/8 d5/8 c5/8 a4/8 f4/8 | g4/8 a4/8 b4/8 c5/8 d5/4 b4/4 | c5/8 b4/8 a4/8 g4/8 e4/8 g4/8 a4/8 c5/8 | b4/8 c5/8 d5/8 c5/8 b4/4 r/4 |
+lyr: | ねむれない よる                        | しろい ページ                 | きみの こえが いま                      | ひびい てる                  |
+
+| F   | $beat16_mix |
+| G   | $beat8_sync |
+| Em7 | $beat16_mix |
+| Am  | $beat8_sync |
+mel: | r/8 a4/8 c5/8 d5/8 e5/8 d5/8 c5/8 a4/8 | b4/8 c5/8 d5/8 b4/8 g4/4 r/4 | r/8 g4/8 b4/8 c5/8 d5/8 c5/8 b4/8 g4/8 | a4/8 b4/8 c5/8 d5/8 e5/4 c5/4 |
+lyr: | つくえの うえで                        | ゆれる かげ                  | きのうの ぼくが                        | のこした うた                 |
+
+| Dm7 | $beat16_mix |
+| Em7 | %           |
+| F G | $beat16_mix |
+| Am  | 4.d 4.d 2.d ||
+mel: | r/8 f4/8 a4/8 c5/8 d5/8 c5/8 a4/8 f4/8 | g4/8 a4/8 b4/8 c5/8 b4/4 g4/4 | a4/8 b4/8 c5/8 d5/8 e5/8 d5/8 c5/8 b4/8 | a4/8 b4/8 c5/8 b4/8 a4/4 r/4 |
+lyr: | ためいき ひとつ                        | よるに とけて                 | こころの かたすみ                       | うごき だす                  |
+
+[1番 Bメロ]
+@dynamic: mf
+| Dm7    | $pre_mute       |
+| Em7    | %               |
+| Fmaj7  | $beat8_basic    |
+| Bm7 E7 | 4.d 4.d 4.d 4.d |
+mel: | f4/8 f4/8 e4/8 d4/8 f4/8 a4/8 g4/4 | g4/8 g4/8 f4/8 e4/8 g4/8 b4/8 a4/4 | a4/8 a4/8 g4/8 f4/8 a4/8 b4/8 c5/4 | b4/8 c5/8 d5/8 c5/8 b4/4 r/4 |
+lyr: | とまった ままの                    | とけいの はりが                    | ごぜん れいじを                    | こえて ゆく                  |
+
+| Dm7 | $beat16_mix   |
+| Em7 | %             |
+| F   | $chorus_drive |
+| G   | 4.d.a r4 r2   ||
+mel: | a4/8 b4/8 c5/8 d5/8 c5/8 b4/8 a4/8 g4/8 | b4/8 c5/8 d5/8 e5/8 d5/8 c5/8 b4/4 | c5/8 b4/8 a4/8 c5/8 d5/8 c5/8 d5/8 e5/8 | d5/4 r/4 g4/8 a4/8 b4/8 d5/8 |
+lyr: | かきかけの ことば                       | ひかり だしたら                    | あたらしい せかい                       | へ かけだす                  |
+
+---
+
+[1番 サビ]
+@dynamic: f
+| F   | $chorus_sync  |
+| G   | $chorus_drive |
+| Em7 | $chorus_sync  |
+| Am  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | e5/8 d5/8 c5/8 b4/8 c5/4 r/4 |
+lyr: | よるを かけぬけ                    | ほしを つないで                    | まだ しらない あす                      | を さがして                  |
+
+| Dm7   | $chorus_sync  |
+| G     | $chorus_drive |
+| C G/B | $chorus_drive |
+| Am E7 | $chorus_drive |
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 c5/8 d5/8 e5/4 | b4/8 c5/8 d5/8 e5/8 b4/4 r/4 |
+lyr: | なみだの あとさえ                       | ひかりに かえて                    | こころの ままに                    | うたい だす                  |
+
+| F      | $chorus_sync  |
+| G      | $chorus_drive |
+| Em7 A7 | $chorus_drive |
+| Dm7 G  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | f5/8 e5/8 d5/8 c5/8 d5/4 r/4 |
+lyr: | かぜを おいこし                    | そらを みあげて                    | いま みつけた ゆめ                      | を しんじて                  |
+
+| Dm7    | $chorus_sync       |
+| G      | $chorus_drive      |
+| Em7 E7 | $chorus_drive      |
+| Am     | 8.d 8.u 4.d.a 2.d ||
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 g#4/8 a4/8 b4/8 c5/8 | b4/8 c5/8 b4/8 a4/8 a4/4 r/4 |
+lyr: | とざされた ドアを                       | ひらいて ゆこう                    | おわらない ゆめを                        | えがく から                  |
+
+[間奏]
+@dynamic: mf
+| F      | $chorus_sync  |
+| G      | $chorus_drive |
+| Em7 Am | $chorus_drive |
+| Dm7 G  | $beat16_mix   |
+
+| F Fm   | $chorus_drive |
+| Em7 Am | $chorus_drive |
+| Dm7 E7 | $beat16_mix   |
+| Am     | 4.d 4.d 2.d   ||
+
+---
+
+[2番 Aメロ]
+@dynamic: mp
+| F   | $beat8_basic |
+| G   | $beat8_sync  |
+| Em7 | $beat8_basic |
+| Am  | $beat8_sync  |
+mel: | r/8 a4/8 c5/8 d5/8 e5/8 d5/8 c5/8 a4/8 | b4/8 c5/8 d5/8 b4/8 g4/4 r/4 | r/8 g4/8 b4/8 c5/8 d5/8 c5/8 b4/8 g4/8 | a4/8 b4/8 c5/8 e5/8 a4/4 r/4 |
+lyr: | まちの ざわめき                        | とおざ かる                  | ひとり あるいた                        | かえり みち                  |
+
+| Dm7   | $beat16_mix |
+| G     | $beat8_sync |
+| C G/B | $beat16_mix |
+| Am E7 | 4.d 4.d 2.d ||
+mel: | r/8 f4/8 a4/8 c5/8 d5/8 c5/8 a4/8 f4/8 | g4/8 a4/8 b4/8 c5/8 d5/4 b4/4 | c5/8 b4/8 a4/8 g4/8 e4/8 g4/8 a4/8 c5/8 | b4/8 c5/8 d5/8 c5/8 b4/4 r/4 |
+lyr: | スマホの がめん                        | ひかる もじが                 | ぼくの むねを いま                      | ゆらし てる                  |
+
+[2番 Bメロ]
+@dynamic: mf
+| Dm7    | $pre_mute       |
+| Em7    | %               |
+| Fmaj7  | $beat8_basic    |
+| Bm7 E7 | 4.d 4.d 4.d 4.d |
+mel: | f4/8 f4/8 e4/8 d4/8 f4/8 a4/8 g4/4 | g4/8 g4/8 f4/8 e4/8 g4/8 b4/8 a4/4 | a4/8 a4/8 g4/8 f4/8 a4/8 b4/8 c5/4 | b4/8 c5/8 d5/8 c5/8 b4/4 r/4 |
+lyr: | なくした ものと                    | であえた ものを                    | かぞえる たびに                    | つよく なる                  |
+
+| Dm7 | $beat16_mix   |
+| Em7 | %             |
+| F   | $chorus_drive |
+| G   | 4.d.a r4 r2   ||
+mel: | a4/8 b4/8 c5/8 d5/8 c5/8 b4/8 a4/8 g4/8 | b4/8 c5/8 d5/8 e5/8 d5/8 c5/8 b4/4 | c5/8 b4/8 a4/8 c5/8 d5/8 c5/8 d5/8 e5/8 | d5/4 r/4 g4/8 a4/8 b4/8 d5/8 |
+lyr: | かさねた ページの                       | つづきを かこう                    | とまらない こどう                       | を しんじて                  |
+
+[2番 サビ]
+@dynamic: f
+| F   | $chorus_sync  |
+| G   | $chorus_drive |
+| Em7 | $chorus_sync  |
+| Am  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | e5/8 d5/8 c5/8 b4/8 c5/4 r/4 |
+lyr: | よるを かけぬけ                    | こえを かさねて                    | まだ みぬ けしきを                      | おい かけて                  |
+
+| Dm7   | $chorus_sync  |
+| G     | $chorus_drive |
+| C G/B | $chorus_drive |
+| Am E7 | $chorus_drive |
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 c5/8 d5/8 e5/4 | b4/8 c5/8 d5/8 e5/8 b4/4 r/4 |
+lyr: | いたみの わけさえ                       | つよさに かえて                    | ぼくらは ここで                    | いきを する                  |
+
+| F      | $chorus_sync  |
+| G      | $chorus_drive |
+| Em7 A7 | $chorus_drive |
+| Dm7 G  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | f5/8 e5/8 d5/8 c5/8 d5/4 r/4 |
+lyr: | ほしが ながれる                    | まどの むこうへ                    | ぼくらの あしあと                       | を きざんで                  |
+
+| Dm7    | $chorus_sync       |
+| G      | $chorus_drive      |
+| Em7 E7 | $chorus_drive      |
+| Am     | 8.d 8.u 4.d.a 2.d ||
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 g#4/8 a4/8 b4/8 c5/8 | b4/8 c5/8 b4/8 a4/8 a4/4 r/4 |
+lyr: | あけない よるなど                       | どこにも ないと                    | たしかに きこえた                        | あさの おと                  |
+
+---
+
+[Cメロ]
+@dynamic: mp
+| Fmaj7 | $arp_basic |
+| Em7   | %          |
+| Dm7   | $arp_basic |
+| Cmaj7 | %          |
+mel: | r/4 c5/4 b4/4 a4/4 | b4/4 g4/4 e4/2 | f4/8 g4/8 a4/8 b4/8 c5/4 a4/4 | g4/4 e4/4 g4/2 |
+lyr: | ふいに             | かぜが         | ほほを なでる                 | ように         |
+
+@dynamic: mf
+| Dm7    | $beat8_basic    |
+| Em7    | $beat16_mix     |
+| F      | $beat16_mix     |
+| Bm7 E7 | 4.d 4.d 2.d.a   ||
+mel: | f4/8 g4/8 a4/8 c5/8 b4/4 a4/4 | g4/8 a4/8 b4/8 d5/8 c5/4 b4/4 | a4/8 b4/8 c5/8 d5/8 e5/4 c5/4 | b4/8 c5/8 d5/8 e5/8 b4/2 |
+lyr: | あおい そらの                 | いろが すこし                 | まどの そとに                 | みえて きた              |
+
+[落ちサビ]
+@dynamic: p
+| Fmaj7 | 1.d.arp         |
+| G     | 1.d.arp         |
+| Em7   | 2.d.arp 2.d.arp |
+| Am    | 2.d.arp 4.d 4.d |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | e5/8 d5/8 c5/8 b4/8 c5/4 r/4 |
+lyr: | よるを かけぬけ                    | ほしを つないで                    | まだ しらない あす                      | を さがして                  |
+
+@dynamic: mf
+| Dm7 | $beat8_basic  |
+| Em7 | $beat16_mix   |
+| F   | $chorus_drive |
+| G   | 4.d.a r4 r2   ||
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | c5/8 b4/8 a4/8 c5/8 d5/8 c5/8 d5/8 e5/8 | d5/4 r/4 g4/8 a4/8 b4/8 d5/8 |
+lyr: | ふるえる ゆびさき                       | つよく にぎって                    | はじまりの ベルが                       | いま ひびく                  |
+
+---
+
+[ラストサビ]
+@dynamic: ff
+| F   | $chorus_sync  |
+| G   | $chorus_drive |
+| Em7 | $chorus_sync  |
+| Am  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | e5/8 d5/8 c5/8 b4/8 c5/4 r/4 |
+lyr: | よるを かけぬけ                    | ほしを つないで                    | まだ しらない あす                      | を さがして                  |
+
+| Dm7   | $chorus_sync  |
+| G     | $chorus_drive |
+| C G/B | $chorus_drive |
+| Am E7 | $chorus_drive |
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 c5/8 d5/8 e5/4 | b4/8 c5/8 d5/8 e5/8 b4/4 r/4 |
+lyr: | なみだの あとさえ                       | ひかりに かえて                    | こころの ままに                    | うたい だす                  |
+
+| F      | $chorus_sync  |
+| G      | $chorus_drive |
+| Em7 A7 | $chorus_drive |
+| Dm7 G  | $chorus_drive |
+mel: | e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/4 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 b4/8 g4/8 b4/8 d5/8 e5/8 g5/8 | f5/8 e5/8 d5/8 c5/8 d5/4 r/4 |
+lyr: | かぜを おいこし                    | そらを みあげて                    | いま みつけた ゆめ                      | を しんじて                  |
+
+| Dm7    | $chorus_sync       |
+| G      | $chorus_drive      |
+| Em7 E7 | $chorus_drive      |
+| Am     | 8.d 8.u 4.d.a 2.d ||
+mel: | f5/8 e5/8 d5/8 c5/8 a4/8 c5/8 d5/8 e5/8 | d5/8 c5/8 b4/8 g4/8 b4/8 c5/8 d5/4 | e5/8 d5/8 c5/8 b4/8 g#4/8 a4/8 b4/8 c5/8 | b4/8 c5/8 b4/8 a4/8 a4/4 r/4 |
+lyr: | あたらしい あさに                       | てを のばしたら                    | おわらない ゆめを                        | えがく から                  |
+
+[Outro]
+@dynamic: f
+| F Fm   | $chorus_drive |
+| Em7 Am | $chorus_drive |
+| Dm7 G  | $beat16_mix   |
+| C E7   | $beat16_mix   |
+
+@dynamic: mp
+| Fmaj7  | $arp_basic      |
+| G      | %               |
+@tempo: rit.
+| Em7 Am | 2.d.arp 2.d.arp |
+| Fmaj7  | 1.d.arp.fermata |
