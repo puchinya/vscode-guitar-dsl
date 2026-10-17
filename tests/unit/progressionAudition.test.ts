@@ -62,6 +62,44 @@ describe('Inspector progression audition', () => {
     if (chord.ok) assert.deepStrictEqual([chord.data.events[0].kind, chord.data.events[0].timeSeconds], ['rhythmAttack', 0]);
   });
 
+  it('starts chord and melody auditions with the earliest tied continuation attack', () => {
+    const tied = [
+      'bpm: 120',
+      '| G | 4 4 4 8 8.t |',
+      '| G 4 C 4.d 4.d 4.d |',
+      'mel: | c6/4 d6/4 e6/4 f6/4 | g6/4 a6/4 b6/4 c7/4 |'
+    ].join('\n');
+    const baseline = buildProgressionAuditionPlaybackData([
+      'bpm: 120',
+      '| G | 4 4 4 4 |'
+    ].join('\n'), { startMeasure: 0, bars: 1, mode: 'chord', locale: 'en' });
+    const bars = buildProgressionAuditionPlaybackData(tied, {
+      startMeasure: 1, bars: 1, mode: 'bars', locale: 'en'
+    });
+    const chord = buildProgressionAuditionPlaybackData(tied, {
+      startMeasure: 1, bars: 1, mode: 'chord', locale: 'en'
+    });
+    const melody = buildProgressionAuditionPlaybackData(tied, {
+      startMeasure: 1, bars: 1, mode: 'melody', locale: 'en'
+    });
+
+    assert.ok(baseline.ok && bars.ok && chord.ok && melody.ok);
+    if (!baseline.ok || !bars.ok || !chord.ok || !melody.ok) return;
+
+    const expectedG = { midiNotes: [43, 55, 59, 62], timeSeconds: 0, durationSeconds: 0.5 };
+    assert.deepStrictEqual(baseline.data.events[0].midiNotes, expectedG.midiNotes);
+    assert.deepStrictEqual(bars.data.events.filter(event => event.kind === 'rhythmAttack' && event.timeSeconds === 0).map(event => ({
+      midiNotes: event.midiNotes, timeSeconds: event.timeSeconds, durationSeconds: event.durationSeconds
+    })), [expectedG]);
+    assert.deepStrictEqual(chord.data.events.map(event => ({
+      midiNotes: event.midiNotes, timeSeconds: event.timeSeconds, durationSeconds: event.durationSeconds
+    })), [expectedG]);
+    assert.deepStrictEqual(melody.data.events.filter(event => event.kind === 'rhythmAttack' && event.timeSeconds === 0).map(event => ({
+      midiNotes: event.midiNotes, timeSeconds: event.timeSeconds, durationSeconds: event.durationSeconds
+    })), [expectedG]);
+    assert.ok(melody.data.events.some(event => event.source === 'melody' && event.timeSeconds === 0));
+  });
+
   it('resumes Web Audio in the Play click handler before sending the Host request', () => {
     const html = renderInspectorHtml('en', { kind: 'empty' }, 'vscode-webview://test', 'nonce', 1);
     const resume = html.indexOf('pendingResume = prepareAudioFromGesture()');

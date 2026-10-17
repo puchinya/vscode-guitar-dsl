@@ -42,9 +42,9 @@
 
 ## Issue #142: ギター・リズム符のタイによるシンコペーション
 
-- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) はopen中。レビュー指摘 A1 / A2 / B1 を修正し、再レビュー待ち。
-- **実装**: `.t` / `.tie` による直後のリズム符へのタイをコンパイラで検証し、隣接小節、連結音価、`let` 境界、`%` 境界、コード押さえ方の一致を扱う。Preview / PDF は段・ページ端でタイ弧を分割し、演奏順に隣接しない再生区間では通常の攻撃音に戻す。Practice loop が継続小節から始まる場合も小節頭で一度だけ再アタックする。
-- **検証**: `npm run check:help`、`npm run check:ai`、sandbox外の `npm test`（1149 unit passing、90 E2E passing、6件 pending）、`npm run compile`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`git diff --check` がPASS。workflowの承認済み契約照合もPASS。通常のvsce依存検出を省いた一覧も確認済み。
+- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) はopen中。レビュー指摘 A1 / A2 / B1 / A3 / A4 を修正し、再レビュー待ち。
+- **実装**: `.t` / `.tie` による直後のリズム符へのタイをコンパイラで検証し、隣接小節、連結音価、`let` 境界、`%` 境界、コード押さえ方の一致を扱う。未使用 `let` 定義でもタイの構造と定義境界を検証する。Preview / PDF は段・ページ端でタイ弧を分割し、演奏順に隣接しない再生区間では通常の攻撃音に戻す。Inspector の単一コード試聴は最初の有効アタックを選び、小節・メロディ試聴は開始位置が継続符なら冒頭に一度だけ再アタックを含める。
+- **検証**: `npm run check:help`、`npm run check:ai`、sandbox外の `npm test`（1151 unit passing、90 E2E passing、6件 pending）、`npm run compile`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、`git diff --check` がPASS。workflowの承認済み契約照合もPASS。
 - **表示証拠**: [Issue #142のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/142#issuecomment-6228612671) に、共通 `renderScoreSheets()` SVGから作成したライト/ダーク画像を添付し、タイ弧と連桁を目視確認した：[ライト](evidence/issue-142/preview-light.png)、[ダーク](evidence/issue-142/preview-dark.png)。実Extension Development Hostの画面キャプチャではなく、Preview/PDF共有SVGのラスタライズ結果。
 - **サンプル**: [`sample_rhythm_tie_syncopation.guitardsl`](../../samples/sample_rhythm_tie_syncopation.guitardsl)。
 - **文書オーナー**: docs/specs/guitardsl-syntax.md、docs/design/language-and-score-processing.md、docs/design/preview-rendering-and-export.md、本書、EN/JA Help とその digest、生成済み media/help、AI syntax reference。

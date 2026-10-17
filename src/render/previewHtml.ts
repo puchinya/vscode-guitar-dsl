@@ -1912,8 +1912,10 @@ export function buildProgressionAuditionPlaybackData(
   if (options.mode === 'chord') {
     const occurrence = playback.occurrences.find(item => item.measureIndex === options.startMeasure);
     const availableAttacks = [...playback.events, ...(playback.rhythmTieRestartEvents ?? [])];
-    const attack = occurrence && availableAttacks.find(event => event.occurrenceIndex === occurrence.occurrenceIndex
-      && event.kind === 'rhythmAttack' && event.midiNotes.length > 0);
+    const attack = occurrence && availableAttacks
+      .filter(event => event.occurrenceIndex === occurrence.occurrenceIndex
+        && event.kind === 'rhythmAttack' && event.midiNotes.length > 0)
+      .sort((left, right) => left.timeSeconds - right.timeSeconds)[0];
     if (!attack) return { ok: false, code: 'fullSongOnly', message: msgs.uiProgressionFullSongOnly };
     durationSeconds = Math.max(0.05, Number(attack.durationSeconds) || 0.5);
     events = [{ ...attack, timeSeconds: 0, durationSeconds }];
@@ -1938,18 +1940,18 @@ export function buildProgressionAuditionPlaybackData(
         timeSeconds: event.timeSeconds - startSeconds,
         durationSeconds: Math.min(event.durationSeconds, Math.max(0, endSeconds - event.timeSeconds))
       }));
-    if (options.mode === 'bars') {
-      const firstOccurrence = first.occurrenceIndex;
-      const startRestarts = (playback.rhythmTieRestartEvents ?? [])
-        .filter(event => event.occurrenceIndex === firstOccurrence && Math.abs(event.timeSeconds - startSeconds) < 0.000001)
-        .map(event => ({
-          ...event,
-          timeSeconds: 0,
-          durationSeconds: Math.min(event.durationSeconds, endSeconds - startSeconds)
-        }));
-      events.push(...startRestarts);
-      events.sort((left, right) => left.timeSeconds - right.timeSeconds);
-    }
+    const firstOccurrence = first.occurrenceIndex;
+    const startRestarts = (playback.rhythmTieRestartEvents ?? [])
+      .filter(event => event.occurrenceIndex === firstOccurrence && Math.abs(event.timeSeconds - startSeconds) < 0.000001)
+      .filter(restart => !events.some(event => event.kind === 'rhythmAttack'
+        && event.occurrenceIndex === restart.occurrenceIndex && Math.abs(event.timeSeconds) < 0.000001))
+      .map(event => ({
+        ...event,
+        timeSeconds: 0,
+        durationSeconds: Math.min(event.durationSeconds, endSeconds - startSeconds)
+      }));
+    events.push(...startRestarts);
+    events.sort((left, right) => left.timeSeconds - right.timeSeconds);
     durationSeconds = endSeconds - startSeconds;
   }
 

@@ -1028,12 +1028,29 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'invalidVariableValue', { name: def.name, token: entry.token, reason });
       ok = false;
     };
+    const sameFragmentScope = (left: readonly string[] | undefined, right: readonly string[] | undefined) => {
+      const a = left ?? [];
+      const b = right ?? [];
+      return a.length === b.length && a.every((value, index) => value === b[index]);
+    };
+    const isRhythmSlash = (rhythm: RhythmItem | undefined): rhythm is RhythmItem => !!rhythm
+      && !rhythm.isRest && !rhythm.ghost && !rhythm.pitch && !rhythm.pitches;
     const nonTabEntries = entries.filter((e): e is FragmentEntry & { event: Exclude<FragmentEvent, { kind: 'tab' }> } => e.event.kind !== 'tab');
     const items = nonTabEntries.map(e => e.event.kind === 'rhythm' ? e.event.item : e.event.note);
     let openSlur: FragmentEntry | undefined;
     items.forEach((item, i) => {
       const entry = nonTabEntries[i];
       const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
+      if (entry.event.kind === 'rhythm' && entry.event.item.tie) {
+        const sourceRhythm = entry.event.item;
+        const nextEntry = nonTabEntries[i + 1];
+        const nextRhythm = nextEntry?.event.kind === 'rhythm' ? nextEntry.event.item : undefined;
+        if (!isRhythmSlash(sourceRhythm)) fail(entry, 'rhythmTieEvents');
+        else if (!nextEntry) fail(entry, 'openTie');
+        else if (!sameFragmentScope(entry.fragmentScopes, nextEntry.fragmentScopes)) fail(entry, 'unsupportedBoundary');
+        else if (!isRhythmSlash(nextRhythm)) fail(entry, 'rhythmTieEvents');
+        else if (nextRhythm.down || nextRhythm.up || nextRhythm.accent || nextRhythm.arpeggio) fail(entry, 'rhythmTieModifier');
+      }
       if (tied && entry.event.kind !== 'rhythm') {
         // The tie continues into the very next event, which must be a valid target inside the fragment.
         const next = items[i + 1];

@@ -406,7 +406,39 @@ describe('compiler - parseGuitarDsl', () => {
         'let source = 8.t',
         '| G | $source 8 4 4 4 |'
       ].join('\n'));
-      assert.strictEqual(boundary.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'unsupportedBoundary');
+      assert.strictEqual(boundary.diagnostics.find(d => d.code === 'invalidVariableValue')?.args?.reason, 'openTie');
+      assert.deepStrictEqual(boundary.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+    });
+
+    it('validates rhythm tie structure in unused and nested let definitions', () => {
+      const invalidDefinitions = [
+        'let orphan = 8.t',
+        'let rests = 8.t r8',
+        'let pitched = 8.t c4/8',
+        'let target = 8\nlet crosses = 8.t $target',
+        'let modified = 8.t 8.d'
+      ];
+      for (const definition of invalidDefinitions) {
+        const parsed = parseGuitarDsl(definition);
+        assert.strictEqual(parsed.diagnostics.filter(d => d.code === 'invalidVariableValue').length, 1, definition);
+        assert.deepStrictEqual(parsed.diagnostics.filter(d => d.code === 'invalidRhythmTie'), [], definition);
+      }
+
+      const used = parseGuitarDsl([
+        'let broken = 8.t r8',
+        '| G | $broken 4 4 4 4 |'
+      ].join('\n'));
+      assert.strictEqual(used.diagnostics.filter(d => d.code === 'invalidVariableValue').length, 1);
+      assert.deepStrictEqual(used.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+
+      const nested = parseGuitarDsl([
+        'let pair = 8.t 8',
+        'let wrapper = $pair',
+        '| G | $wrapper 4 4 4 |'
+      ].join('\n'));
+      assert.deepStrictEqual(nested.diagnostics.filter(d => d.code === 'invalidVariableValue'), []);
+      assert.deepStrictEqual(nested.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+      assert.strictEqual(nested.measures[0].rhythms[1].tiedFromPrev, true);
     });
   });
 
