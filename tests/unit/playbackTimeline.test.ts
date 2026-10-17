@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
 import { fnum } from '../../src/duration';
 import {
@@ -29,6 +31,99 @@ describe('playbackTimeline', () => {
     const underfilled = validTimeline('bpm: 120\n| C | 4.d |');
     assert.strictEqual(underfilled.durationSeconds, 2);
     assert.deepStrictEqual(eventsOf(underfilled, 'rhythmAttack').map(event => [event.timeSeconds, event.durationSeconds]), [[0, 0.5]]);
+  });
+
+  it('sustains a rhythm tie once across a barline at the same tempo and accumulates seconds per tempo', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../samples/sample_rhythm_tie_syncopation.guitardsl'), 'utf8');
+    const timeline = validTimeline(source);
+    const attacks = eventsOf(timeline, 'rhythmAttack');
+    const tiedAttack = attacks.find(event => event.measureIndex === 0 && fnum(event.beatInMeasure) === 3.5)!;
+    assert.deepStrictEqual([tiedAttack.timeSeconds, tiedAttack.durationSeconds], [1.75, 0.75]);
+    assert.deepStrictEqual(attacks.filter(event => event.measureIndex === 1).map(event => event.timeSeconds), [2.5, 3, 3.5]);
+    const restart = timeline.rhythmTieRestartEvents?.[0];
+    assert.ok(restart?.kind === 'rhythmAttack');
+    assert.deepStrictEqual([restart.measureIndex, restart.timeSeconds, restart.durationSeconds], [1, 2, 0.5]);
+
+    const slowerTarget = validTimeline([
+      'bpm: 120',
+      '| C 4.d 4.d 4.d 8.d G 8.u.t |',
+      '@tempo: 60',
+      '| G 4 4.d 4.d 4.d |'
+    ].join('\n'));
+    const slowedAttack = eventsOf(slowerTarget, 'rhythmAttack')
+      .find(event => event.measureIndex === 0 && fnum(event.beatInMeasure) === 3.5)!;
+    assert.deepStrictEqual([slowedAttack.timeSeconds, slowedAttack.durationSeconds], [1.75, 1.25]);
+    assert.strictEqual(slowerTarget.rhythmTieRestartEvents?.[0].durationSeconds, 1);
+  });
+
+  it('keeps compound tie chord identity from the source attack through the held duration', () => {
+    const sameChord = validTimeline('| C:1 C:3 | 4+8.t 4 4 8 |');
+    const sameChordAttacks = eventsOf(sameChord, 'rhythmAttack');
+    assert.deepStrictEqual(sameChordAttacks.map(event => [event.chord?.name, fnum(event.beatInMeasure), fnum(event.durationBeats)]), [
+      ['C', 0, 2.5],
+      ['C', 2.5, 1],
+      ['C', 3.5, 0.5]
+    ]);
+
+    const changedAtCompoundHead = parseGuitarDsl('| C:1 D:3 | 4+8.t 4 4 8 |');
+    assert.strictEqual(changedAtCompoundHead.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch');
+    const changedTimeline = buildPlaybackTimeline(changedAtCompoundHead);
+    assert.ok(changedTimeline.ok);
+    const changedAttacks = eventsOf(changedTimeline.timeline, 'rhythmAttack');
+    assert.deepStrictEqual(changedAttacks.slice(0, 2).map(event => [event.chord?.name, fnum(event.beatInMeasure)]), [
+      ['C', 0],
+      ['D', 1.5]
+    ]);
+    assert.strictEqual(changedAttacks.filter(event => fnum(event.beatInMeasure) === 1.5).length, 1,
+      'a chord change leaves the destination as a distinct attack');
+
+    const changedDuringHeldTarget = parseGuitarDsl('| C:1 D:3 | 8.t 4 4 4 8 |');
+    assert.strictEqual(changedDuringHeldTarget.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch',
+      'a chord change inside the target duration breaks the sustained chord identity');
+  });
+
+  it('treats a tied target as an attack after a nonadjacent play-order jump', () => {
+    const score = parseGuitarDsl([
+      'bpm: 120',
+      '| G | 4 4 4 8 8.t |',
+      '| G | 4 4 4 4 |',
+      '| D | 4 4 4 4 |'
+    ].join('\n'));
+    const original = score.playOrder.occurrences;
+    original.splice(0, original.length,
+      { ...original[0], occurrenceIndex: 0, measureIndex: 0 },
+      { ...original[2], occurrenceIndex: 1, measureIndex: 2 },
+      { ...original[1], occurrenceIndex: 2, measureIndex: 1 });
+
+    const result = buildPlaybackTimeline(score);
+    assert.ok(result.ok);
+    const attacks = eventsOf(result.timeline, 'rhythmAttack');
+    const sourceAttack = attacks.find(event => event.measureIndex === 0 && fnum(event.beatInMeasure) === 3.5)!;
+    const destinationAttack = attacks.find(event => event.measureIndex === 1 && fnum(event.beatInMeasure) === 0)!;
+    assert.deepStrictEqual([sourceAttack.timeSeconds, sourceAttack.durationSeconds], [1.75, 0.25]);
+    assert.deepStrictEqual([destinationAttack.timeSeconds, destinationAttack.durationSeconds], [4, 0.5]);
+  });
+
+  it('repeats a rhythm tie completed inside each performed % measure occurrence', () => {
+    const timeline = validTimeline([
+      'bpm: 120',
+      '|: G | 8.t 8 4 4 4 |',
+      '| G | % :|'
+    ].join('\n'));
+    assert.deepStrictEqual(timeline.occurrences.map(item => item.measureIndex), [0, 1, 0, 1]);
+
+    const attacks = eventsOf(timeline, 'rhythmAttack');
+    assert.strictEqual(attacks.length, 16);
+    const tiedAttacks = attacks.filter(event => fnum(event.beatInMeasure) === 0);
+    assert.deepStrictEqual(tiedAttacks.map(event => [event.occurrenceIndex, event.timeSeconds, event.durationSeconds]), [
+      [0, 0, 0.5],
+      [1, 2, 0.5],
+      [2, 4, 0.5],
+      [3, 6, 0.5]
+    ]);
+    for (const continuationTime of [0.25, 2.25, 4.25, 6.25]) {
+      assert.ok(!attacks.some(event => event.timeSeconds === continuationTime), `no re-attack at continuation ${continuationTime}`);
+    }
   });
 
   it('S121-01 resolves written section membership without changing occurrence identity or timing', () => {

@@ -40,6 +40,15 @@
 - **画面証拠**: 実Extension Development Host の 600 CSS px Previewを目視確認し、JA/EN × Dark/LightそれぞれPractice OFF/ONの計8枚を保存した：`preview-en-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-en-light-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-light-600-practice-{off,on}-view-open-pr141.png`。旧421px captureは履歴証拠として保持。
 - **文書オーナー**: docs/specs/extension.md、docs/design/preview-rendering-and-export.md、docs/design/vscode-editor-experience.md、本書、EN/JA Help とその digest、生成済み media/help。
 
+## Issue #142: ギター・リズム符のタイによるシンコペーション
+
+- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) はopen中。レビュー指摘 A1 / A2 / B1 / A3 / A4 を修正し、再レビュー待ち。
+- **実装**: `.t` / `.tie` による直後のリズム符へのタイをコンパイラで検証し、隣接小節、連結音価、`let` 境界、`%` 境界、コード押さえ方の一致を扱う。未使用 `let` 定義でもタイの構造と定義境界を検証する。Preview / PDF は段・ページ端でタイ弧を分割し、演奏順に隣接しない再生区間では通常の攻撃音に戻す。Inspector の単一コード試聴は最初の有効アタックを選び、小節・メロディ試聴は開始位置が継続符なら冒頭に一度だけ再アタックを含める。
+- **検証**: `npm run check:help`、`npm run check:ai`、sandbox外の `npm test`（1151 unit passing、90 E2E passing、6件 pending）、`npm run compile`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、`git diff --check` がPASS。workflowの承認済み契約照合もPASS。
+- **表示証拠**: [Issue #142のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/142#issuecomment-6228612671) に、共通 `renderScoreSheets()` SVGから作成したライト/ダーク画像を添付し、タイ弧と連桁を目視確認した：[ライト](evidence/issue-142/preview-light.png)、[ダーク](evidence/issue-142/preview-dark.png)。実Extension Development Hostの画面キャプチャではなく、Preview/PDF共有SVGのラスタライズ結果。
+- **サンプル**: [`sample_rhythm_tie_syncopation.guitardsl`](../../samples/sample_rhythm_tie_syncopation.guitardsl)。
+- **文書オーナー**: docs/specs/guitardsl-syntax.md、docs/design/language-and-score-processing.md、docs/design/preview-rendering-and-export.md、本書、EN/JA Help とその digest、生成済み media/help、AI syntax reference。
+
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
 ### 1.1 言語構文・コンパイラ / 描画機能 (`src/compiler.ts`, `src/render/`)
@@ -69,6 +78,7 @@
 | | タイ記号 `_` | ✅ 完了 | 音符間を弧線で連結 |
 | | 休符指定 `r4`, `r8` 等 | ✅ 完了 | 音楽フォント準拠の休符記号を描画 |
 | | 3連符 `8t`、一般の連符 `8{5:4}`、加算 `4+8` | ✅ 完了 | 連符の数字（actual）、完結しない連符は警告、加算はタイで結んだスラッシュ |
+| | リズム符タイ `.t` / `.tie` | ✅ 完了 | 隣接小節までの連結を検証し、Preview / PDF で分割描画。再生は1回の攻撃音と小節ごとの BPM を使う |
 | | 奏法修飾子 `.pm` `.lr` `.stacc` `.ten` `.fermata` `.vib` `.breath` `.arp` | ✅ 完了 | `P.M.` / `let ring` は範囲にまとめ、段をまたぐと分割 |
 | **メロディ** | `mel:` 行（音高・音価・休符・タイ・`%`） | ✅ 完了 | メロディ譜表、加線、付点、連桁、3連、段をまたぐタイ |
 | | 調号・臨時記号 | ✅ 完了 | `key:` から調号を算出。臨時記号は小節内で持続し必要時のみ表示 |
@@ -286,6 +296,7 @@
 - `sample_voicing_song.guitardsl`: 押さえ方を使い分けるサンプル曲（Aメロはローポジション、サビはハイポジション。メロディ・歌詞付き）
 - `sample_variables.guitardsl`: `let` フラグメント（リズムの再利用、`mel:` での音符のみのフラグメント、リズムと音符の混在、入れ子の参照）と同時複数音
 - `sample_advanced_notation.guitardsl`: スコアイベントと高度な記譜（弱起、テンポ変更・rit./accel./a tempo/tempo primo、転調、拍子の変更 6/8・7/8、swing/shuffle、リハーサルマーク、テキスト、強弱、8va、5連符、装飾音符、ハンマリング・プリング・スライド・チョーキング・ビブラート、スタッカート・テヌート・フェルマータ・ブレス、パームミュート・レットリング、アルペジアート、スラー）
+- `sample_rhythm_tie_syncopation.guitardsl`: 4/4・120 BPM の小節またぎシンコペーション、ストローク方向、1回の攻撃音と2小節目の再アタック位置
 
 ---
 

@@ -14,6 +14,7 @@ import {
   frac,
   fsub,
   parseBeats,
+  partBeats,
   parseNoteValue,
   parseRhythmDuration,
   parseRhythmDurationDetailed,
@@ -86,6 +87,8 @@ export interface RhythmItem {
   up: boolean;
   ghost: boolean;
   accent: boolean;
+  /** Compiler-validated incoming rhythm slash tie. Melody and TAB ties use their own fields. */
+  tiedFromPrev?: boolean;
   tie: boolean;
   arpeggio?: boolean;
   /** Single inline pitch; undefined for slashes, rests and note groups. */
@@ -268,6 +271,7 @@ export type DiagnosticCode =
   | 'melodyRepeatWithoutPrevious'
   | 'lyricsWithoutMelody'
   | 'beatCountMismatch'
+  | 'invalidRhythmTie'
   | 'syllableCountMismatch'
   | 'lyricBarMismatch'
   | 'measureLyricWithMelody'
@@ -331,6 +335,7 @@ const DIAGNOSTIC_SEVERITY: Record<DiagnosticCode, DiagnosticSeverity> = {
   melodyRepeatWithoutPrevious: 'error',
   lyricsWithoutMelody: 'error',
   beatCountMismatch: 'warning',
+  invalidRhythmTie: 'error',
   syllableCountMismatch: 'warning',
   lyricBarMismatch: 'warning',
   measureLyricWithMelody: 'warning',
@@ -676,6 +681,8 @@ export function measureCellsOf(rawLine: string): string[] {
 
 export interface ParseGuitarDslOptions {
   expandPageBreakRepeats?: boolean;
+  /** Allows a chordless pair only when compiling a structural rhythm-only pattern. */
+  allowChordlessRhythmPatternTies?: boolean;
 }
 
 function explicitNoteDurationSpan(token: string, tokenStartCol: number): CodeActionSourceToken['duration'] | undefined {
@@ -768,6 +775,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   interface NoteLocation { line: number; startCol: number; endCol: number }
   const melodyLocations = new WeakMap<MelodyNote, NoteLocation>();
   const inlineLocations = new WeakMap<RhythmItem, NoteLocation>();
+  const rhythmSourceLocations = new WeakMap<RhythmItem, NoteLocation>();
+  const rhythmTokenItems = new WeakSet<RhythmItem>();
+  const rhythmFragmentOwners = new WeakMap<RhythmItem, object>();
+  const rhythmFragmentScopes = new WeakMap<RhythmItem, readonly string[]>();
   const tabNoteLocations = new WeakMap<TabNote, NoteLocation>();
   const newMeasure = (fields: Omit<MeasureData, 'measureIndex' | 'context' | 'eventsBefore' | 'expectedBeats'>): MeasureData => ({
     ...fields,
@@ -795,8 +806,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   const CTX_MEASURE = 1;
   const CTX_MELODY = 2;
   const CTX_TAB = 4;
-  type FragmentEvent = { kind: 'rhythm'; item: RhythmItem } | { kind: 'note'; note: MelodyNote } | { kind: 'tab'; beat: ParsedTabBeat } | { kind: 'dualRest'; beat: ParsedTabBeat; note: MelodyNote };
-  interface FragmentEntry { event: FragmentEvent; loc: NoteLocation; token: string }
+  type FragmentEvent = ({ kind: 'rhythm'; item: RhythmItem } | { kind: 'note'; note: MelodyNote } | { kind: 'tab'; beat: ParsedTabBeat } | { kind: 'dualRest'; beat: ParsedTabBeat; note: MelodyNote }) & { fragmentScopes?: string[] };
+  interface FragmentEntry { event: FragmentEvent; loc: NoteLocation; token: string; fragmentScopes?: string[] }
   interface FragmentElement { entry?: FragmentEntry; ref?: string; ctx: number; loc: NoteLocation; token: string }
   interface LetDefinition {
     name: string;
@@ -970,7 +981,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     for (const el of def.elements) {
       if (el.ref === undefined) {
         ctx &= el.ctx;
-        entries.push(el.entry!);
+        entries.push({ ...el.entry!, fragmentScopes: [def.name] });
         continue;
       }
       const target = letDefinitions.get(el.ref);
@@ -992,7 +1003,12 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       }
       ctx &= target.ctx;
       // Nested entries are attributed to the reference inside this definition.
-      entries.push(...sub.map(e => ({ event: e.event, loc: el.loc, token: el.token })));
+      entries.push(...sub.map(e => ({
+        event: e.event,
+        loc: el.loc,
+        token: el.token,
+        fragmentScopes: [def.name, ...(e.fragmentScopes ?? [])]
+      })));
     }
     if (!def.invalid && ctx === 0) {
       report(def.nameLoc.line, def.nameLoc.startCol, def.nameLoc.endCol, 'invalidVariableValue', { name: def.name, token: def.name, reason: 'noContext' });
@@ -1012,13 +1028,30 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       report(entry.loc.line, entry.loc.startCol, entry.loc.endCol, 'invalidVariableValue', { name: def.name, token: entry.token, reason });
       ok = false;
     };
+    const sameFragmentScope = (left: readonly string[] | undefined, right: readonly string[] | undefined) => {
+      const a = left ?? [];
+      const b = right ?? [];
+      return a.length === b.length && a.every((value, index) => value === b[index]);
+    };
+    const isRhythmSlash = (rhythm: RhythmItem | undefined): rhythm is RhythmItem => !!rhythm
+      && !rhythm.isRest && !rhythm.ghost && !rhythm.pitch && !rhythm.pitches;
     const nonTabEntries = entries.filter((e): e is FragmentEntry & { event: Exclude<FragmentEvent, { kind: 'tab' }> } => e.event.kind !== 'tab');
     const items = nonTabEntries.map(e => e.event.kind === 'rhythm' ? e.event.item : e.event.note);
     let openSlur: FragmentEntry | undefined;
     items.forEach((item, i) => {
       const entry = nonTabEntries[i];
       const tied = 'tieToNext' in item ? item.tieToNext : item.tie;
-      if (tied) {
+      if (entry.event.kind === 'rhythm' && entry.event.item.tie) {
+        const sourceRhythm = entry.event.item;
+        const nextEntry = nonTabEntries[i + 1];
+        const nextRhythm = nextEntry?.event.kind === 'rhythm' ? nextEntry.event.item : undefined;
+        if (!isRhythmSlash(sourceRhythm)) fail(entry, 'rhythmTieEvents');
+        else if (!nextEntry) fail(entry, 'openTie');
+        else if (!sameFragmentScope(entry.fragmentScopes, nextEntry.fragmentScopes)) fail(entry, 'unsupportedBoundary');
+        else if (!isRhythmSlash(nextRhythm)) fail(entry, 'rhythmTieEvents');
+        else if (nextRhythm.down || nextRhythm.up || nextRhythm.accent || nextRhythm.arpeggio) fail(entry, 'rhythmTieModifier');
+      }
+      if (tied && entry.event.kind !== 'rhythm') {
         // The tie continues into the very next event, which must be a valid target inside the fragment.
         const next = items[i + 1];
         if (!next) fail(entry, 'openTie');
@@ -1093,8 +1126,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       return null;
     }
     return def.entries.map(e => {
-      if (e.event.kind !== 'dualRest') return e.event;
-      return ctx === CTX_TAB ? { kind: 'tab', beat: e.event.beat } : { kind: 'note', note: e.event.note };
+      const event = e.event.kind !== 'dualRest'
+        ? e.event
+        : ctx === CTX_TAB ? { kind: 'tab' as const, beat: e.event.beat } : { kind: 'note' as const, note: e.event.note };
+      return { ...event, fragmentScopes: [...(e.fragmentScopes ?? [])] };
     });
   }
 
@@ -1492,14 +1527,22 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             referenceToken.eventRange = { collection: 'rhythm', start: eventStart, end: eventStart };
             continue;
           }
+          const fragmentOwner = {};
           for (const ev of fragment) {
             if (ev.kind === 'rhythm') {
               const item = cloneData(ev.item);
+              const sourceLocation = rhythmSourceLocations.get(ev.item);
+              if (sourceLocation) rhythmSourceLocations.set(item, sourceLocation);
+              if (rhythmTokenItems.has(ev.item)) rhythmTokenItems.add(item);
+              rhythmFragmentOwners.set(item, fragmentOwner);
+              rhythmFragmentScopes.set(item, ev.fragmentScopes ?? []);
               rhythms.push(item);
               runningBeat = fadd(runningBeat, rhythmBeatsFraction(item.duration));
             } else if (ev.kind === 'note') {
               const item = inlineItem(cloneData(ev.note));
               rhythms.push(item);
+              rhythmFragmentOwners.set(item, fragmentOwner);
+              rhythmFragmentScopes.set(item, ev.fragmentScopes ?? []);
               inlineLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
               runningBeat = fadd(runningBeat, ev.note.beats);
             }
@@ -1862,6 +1905,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       inlineLyric: inlineL
     };
     if (Object.keys(techniques).length > 0) item.techniques = techniques;
+    rhythmSourceLocations.set(item, { line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length });
+    rhythmTokenItems.add(item);
     return item;
   }
 
@@ -2105,6 +2150,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   resolveMeasures();
+  resolveRhythmTies();
   compileTabGroups();
   validateConnections();
 
@@ -2175,6 +2221,158 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       code: playDiagnostic.code,
       args: playDiagnostic.args
     });
+  }
+
+  function resolveRhythmTies() {
+    const reported = new Set<string>();
+    const reportInvalid = (item: RhythmItem, reason: string) => {
+      const loc = rhythmSourceLocations.get(item);
+      if (!loc) return;
+      const key = `${loc.line}:${loc.startCol}:${loc.endCol}:${reason}`;
+      if (reported.has(key)) return;
+      reported.add(key);
+      report(loc.line, loc.startCol, loc.endCol, 'invalidRhythmTie', { reason });
+    };
+    const chordAt = (measure: MeasureData, beat: Fraction): { name: string; label?: string } | undefined => {
+      const targetBeat = fnum(beat);
+      let selectedIndex = -1;
+      let selectedBeat = -Infinity;
+      for (let index = 0; index < measure.chords.length; index++) {
+        const chord = measure.chords[index];
+        const chordBeat = measure.chordBeatOffsets[index] ? fnum(measure.chordBeatOffsets[index]) : chord.beat;
+        if (chordBeat <= targetBeat && chordBeat >= selectedBeat) {
+          selectedIndex = index;
+          selectedBeat = chordBeat;
+        }
+      }
+      if (selectedIndex < 0) return undefined;
+      const selected = measure.chords[selectedIndex];
+      return selected.label === undefined ? { name: selected.name } : { name: selected.name, label: selected.label };
+    };
+    const sameChordIdentity = (
+      left: { name: string; label?: string } | undefined,
+      right: { name: string; label?: string } | undefined
+    ): boolean => left === undefined || right === undefined
+      ? left === right
+      : left.name === right.name && left.label === right.label;
+    const chordRemainsUnchanged = (
+      measure: MeasureData,
+      start: Fraction,
+      end: Fraction,
+      expected: { name: string; label?: string } | undefined
+    ): boolean => {
+      const startBeat = fnum(start);
+      const endBeat = fnum(end);
+      if (!sameChordIdentity(chordAt(measure, start), expected)) return false;
+      for (let index = 0; index < measure.chords.length; index++) {
+        const chord = measure.chords[index];
+        const changeBeat = measure.chordBeatOffsets[index] ? fnum(measure.chordBeatOffsets[index]) : chord.beat;
+        if (changeBeat <= startBeat || changeBeat >= endBeat) continue;
+        if (!sameChordIdentity(chordAt(measure, frac(changeBeat)), expected)) return false;
+      }
+      return true;
+    };
+    const sameFragmentScope = (left: readonly string[] | undefined, right: readonly string[] | undefined) => {
+      const a = left ?? [];
+      const b = right ?? [];
+      return a.length === b.length && a.every((value, index) => value === b[index]);
+    };
+
+    for (const measure of measures) {
+      for (const item of measure.rhythms) delete item.tiedFromPrev;
+    }
+
+    for (const measure of measures) {
+      const offsets: Fraction[] = [];
+      let beat = ZERO;
+      for (const item of measure.rhythms) {
+        offsets.push(beat);
+        beat = fadd(beat, rhythmItemBeats(item));
+      }
+
+      for (let itemIndex = 0; itemIndex < measure.rhythms.length; itemIndex++) {
+        const source = measure.rhythms[itemIndex];
+        if (!rhythmTokenItems.has(source) || !source.tie) continue;
+        if (source.isRest || source.ghost) {
+          reportInvalid(source, 'restOrGhost');
+          continue;
+        }
+        if (source.pitch || source.pitches) {
+          reportInvalid(source, 'pitchMismatch');
+          continue;
+        }
+
+        let targetMeasure = measure;
+        let target = measure.rhythms[itemIndex + 1];
+        let targetOnset = offsets[itemIndex + 1];
+        let crossesMeasure = false;
+        if (!target) {
+          const nextMeasure = measures[measure.measureIndex + 1];
+          if (nextMeasure?.isMeasureRepeat) {
+            reportInvalid(source, 'unsupportedBoundary');
+            continue;
+          }
+          if (nextMeasure) {
+            targetMeasure = nextMeasure;
+            target = nextMeasure.rhythms[0];
+            targetOnset = ZERO;
+            crossesMeasure = true;
+          }
+        }
+        if (!target) {
+          reportInvalid(source, rhythmFragmentOwners.has(source) ? 'unsupportedBoundary' : 'missingTarget');
+          continue;
+        }
+
+        const sourceOwner = rhythmFragmentOwners.get(source);
+        const targetOwner = rhythmFragmentOwners.get(target);
+        if (sourceOwner !== targetOwner || !sameFragmentScope(rhythmFragmentScopes.get(source), rhythmFragmentScopes.get(target))) {
+          reportInvalid(source, 'unsupportedBoundary');
+          continue;
+        }
+        if (target.isRest || target.ghost) {
+          reportInvalid(source, 'restOrGhost');
+          continue;
+        }
+        if (target.pitch || target.pitches) {
+          reportInvalid(source, 'pitchMismatch');
+          continue;
+        }
+        if (!rhythmTokenItems.has(target) || !rhythmSourceLocations.has(target)) {
+          reportInvalid(source, 'missingTarget');
+          continue;
+        }
+
+        const sourceEnd = fadd(offsets[itemIndex], rhythmItemBeats(source));
+        if (crossesMeasure
+          ? !feq(sourceEnd, measure.expectedBeats) || !feq(targetOnset, ZERO)
+          : !feq(sourceEnd, targetOnset)) {
+          reportInvalid(source, 'nonAdjacent');
+          continue;
+        }
+
+        const sourceOnset = offsets[itemIndex];
+        const targetEnd = fadd(targetOnset, rhythmItemBeats(target));
+        const fromChord = chordAt(measure, sourceOnset);
+        const toChord = chordAt(targetMeasure, targetOnset);
+        const chordlessPair = fromChord === undefined && toChord === undefined;
+        const chordIdentityMatches = sameChordIdentity(fromChord, toChord)
+          && (!chordlessPair || options?.allowChordlessRhythmPatternTies === true);
+        const chordStaysTheSame = crossesMeasure
+          ? chordRemainsUnchanged(measure, sourceOnset, measure.expectedBeats, fromChord)
+            && chordRemainsUnchanged(targetMeasure, targetOnset, targetEnd, fromChord)
+          : chordRemainsUnchanged(measure, sourceOnset, targetEnd, fromChord);
+        if (!chordIdentityMatches || !chordStaysTheSame) {
+          reportInvalid(source, 'chordMismatch');
+          continue;
+        }
+        if (target.down || target.up || target.accent || target.arpeggio) {
+          reportInvalid(source, 'continuationAttackModifier');
+          continue;
+        }
+        target.tiedFromPrev = true;
+      }
+    }
   }
 
   /** Applies score events, resolves each measure's context and runs the length / meter checks. */

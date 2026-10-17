@@ -443,6 +443,33 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.intervalCount, 1);
   });
 
+  it('re-attacks a tied rhythm once when a Practice measure loop starts at its continuation bar', async () => {
+    const tied = [
+      'bpm: 120',
+      '| G | 4 4 4 8 8.t |',
+      '| G | 4 4 4 4 |'
+    ].join('\n');
+    const runtime = createRuntime(tied);
+    await runtime.click('practice-toggle');
+    runtime.setRange('playback-seek', 2);
+    await runtime.change('playback-seek');
+    runtime.element('practice-loop').value = 'measure';
+    await runtime.change('practice-loop');
+
+    assert.strictEqual(runtime.element('practice-loop').value, 'measure');
+    assert.strictEqual(Number(runtime.element('playback-seek').value), 2);
+    const restart = runtime.playbackData.rhythmTieRestartEvents.find((event: any) => event.timeSeconds === 2);
+    assert.ok(restart, 'timeline exposes a continuation restart at the loop boundary');
+
+    await runtime.click('btn-play');
+    const scheduledAtLoopStart = runtime.scheduledOscillators().filter(node =>
+      Math.abs((node.startAt ?? Infinity) - 0.025) < 0.002
+    );
+    assert.strictEqual(scheduledAtLoopStart.length, restart.midiNotes.length,
+      'the continuation chord is attacked exactly once at loop start');
+    assert.ok(scheduledAtLoopStart.length > 0);
+  });
+
   it('T10a A/B points stay separate from Measure and Section loops, and invalid Section selection preserves the current loop', async () => {
     for (const selection of [
       { score: SECTION_SCORE, mode: 'measure', outside: 2.5 },

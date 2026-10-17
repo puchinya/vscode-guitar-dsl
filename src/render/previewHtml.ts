@@ -65,6 +65,7 @@ interface PlaybackHtmlData {
   available: boolean;
   durationSeconds: number;
   events: PlaybackHtmlEvent[];
+  rhythmTieRestartEvents?: PlaybackHtmlEvent[];
   occurrences: PlaybackHtmlOccurrence[];
   countInDurationSeconds: number;
   countInClicks: { timeSeconds: number; accent: boolean }[];
@@ -651,6 +652,7 @@ ${cspMeta}
       let playbackAvailable = playbackData.available === true;
       let playbackDuration = Math.max(0, Number(playbackData.durationSeconds) || 0);
       let playbackEvents = Array.isArray(playbackData.events) ? playbackData.events : [];
+      let rhythmTieRestartEvents = Array.isArray(playbackData.rhythmTieRestartEvents) ? playbackData.rhythmTieRestartEvents : [];
       let playbackOccurrences = Array.isArray(playbackData.occurrences) ? playbackData.occurrences : [];
       const playBtn = document.getElementById('btn-play');
       const playLabelNode = document.getElementById('play-label');
@@ -1087,6 +1089,15 @@ ${cspMeta}
           if (event.timeSeconds < scoreStart) continue;
           const when = audioStart + (event.timeSeconds - scoreStart) / speed;
           if (when >= audioContext.currentTime - 0.005) schedulePlaybackEvent(audioContext, event, when, speed);
+        }
+        // A practice loop jumps to its start instead of carrying sound from before the range.
+        // Re-attack a tie continuation exactly at that boundary, then keep its remaining chain.
+        if (loopRange && Math.abs(scoreStart - loopRange.startSeconds) < 0.000001) {
+          for (const event of rhythmTieRestartEvents) {
+            if (Math.abs(event.timeSeconds - scoreStart) >= 0.000001) continue;
+            if (event.kind !== 'rhythmAttack') continue;
+            if (audioStart >= audioContext.currentTime - 0.005) schedulePlaybackEvent(audioContext, event, audioStart, speed);
+          }
         }
       }
 
@@ -1868,6 +1879,9 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
     available: true,
     durationSeconds: timeline.durationSeconds,
     events: timeline.events.map(event => ({ ...event, midiNotes: playbackEventMidiNotes(event, effectiveCapo) })),
+    ...(timeline.rhythmTieRestartEvents ? {
+      rhythmTieRestartEvents: timeline.rhythmTieRestartEvents.map(event => ({ ...event, midiNotes: playbackEventMidiNotes(event, effectiveCapo) }))
+    } : {}),
     occurrences,
     countInDurationSeconds,
     countInClicks,
@@ -1897,8 +1911,11 @@ export function buildProgressionAuditionPlaybackData(
   let events = playback.events;
   if (options.mode === 'chord') {
     const occurrence = playback.occurrences.find(item => item.measureIndex === options.startMeasure);
-    const attack = occurrence && playback.events.find(event => event.occurrenceIndex === occurrence.occurrenceIndex
-      && event.kind === 'rhythmAttack' && event.midiNotes.length > 0);
+    const availableAttacks = [...playback.events, ...(playback.rhythmTieRestartEvents ?? [])];
+    const attack = occurrence && availableAttacks
+      .filter(event => event.occurrenceIndex === occurrence.occurrenceIndex
+        && event.kind === 'rhythmAttack' && event.midiNotes.length > 0)
+      .sort((left, right) => left.timeSeconds - right.timeSeconds)[0];
     if (!attack) return { ok: false, code: 'fullSongOnly', message: msgs.uiProgressionFullSongOnly };
     durationSeconds = Math.max(0.05, Number(attack.durationSeconds) || 0.5);
     events = [{ ...attack, timeSeconds: 0, durationSeconds }];
@@ -1923,6 +1940,18 @@ export function buildProgressionAuditionPlaybackData(
         timeSeconds: event.timeSeconds - startSeconds,
         durationSeconds: Math.min(event.durationSeconds, Math.max(0, endSeconds - event.timeSeconds))
       }));
+    const firstOccurrence = first.occurrenceIndex;
+    const startRestarts = (playback.rhythmTieRestartEvents ?? [])
+      .filter(event => event.occurrenceIndex === firstOccurrence && Math.abs(event.timeSeconds - startSeconds) < 0.000001)
+      .filter(restart => !events.some(event => event.kind === 'rhythmAttack'
+        && event.occurrenceIndex === restart.occurrenceIndex && Math.abs(event.timeSeconds) < 0.000001))
+      .map(event => ({
+        ...event,
+        timeSeconds: 0,
+        durationSeconds: Math.min(event.durationSeconds, endSeconds - startSeconds)
+      }));
+    events.push(...startRestarts);
+    events.sort((left, right) => left.timeSeconds - right.timeSeconds);
     durationSeconds = endSeconds - startSeconds;
   }
 

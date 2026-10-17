@@ -271,6 +271,13 @@ describe('canonical accompaniment preset catalog (Issue #101)', () => {
     assert.deepStrictEqual(classifySyncopation(ts('4/4'), events('8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u')), []);
   });
 
+  it('parses structural chordless rhythm ties with the shared compiler validator', () => {
+    const parsed = parseRhythmPattern('8.t 8 4 4 4');
+    assert.ok(parsed.ok);
+    assert.strictEqual(parsed.rhythms[0].tie, true);
+    assert.strictEqual(parsed.rhythms[1].tiedFromPrev, true);
+  });
+
   it('parseRhythmPattern rejects pitches, chords and garbage', () => {
     assert.strictEqual(parseRhythmPattern('c4/8 8.d').ok, false);
     assert.strictEqual(parseRhythmPattern('8.d xyz').ok, false);

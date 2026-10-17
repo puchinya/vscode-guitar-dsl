@@ -29,6 +29,7 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 - `src/arrangement.ts` は編曲ブロックの走査と仮想演奏順への lowering を担い、元の小節・メロディ値を書き換えずに出現情報を付与する。
 - `src/scoreEvents.ts` はスコアイベントと小節コンテキストを処理する。`src/duration.ts` / `src/melody.ts` は音価、連符、奏法、メロディと音節歌詞の処理を支える。
 - `let` フラグメントの定義・参照は解析時に解決され、参照位置の診断と、使用ごとのイベント展開を作る。ノートグループは複数音を一つのリズムイベントとして扱う構文機能であり、別の文書や保存先を導入しない。
+- リズム符タイ（Issue #142）は、Compiler が通常のリズムトークンの source span を内部に保持し、解決済み小節の正確な Fraction onset とコード位置で接続を検証する。正しい接続先にだけ `RhythmItem.tiedFromPrev` を付ける。これは rendering / playback が共有する導出データであり、melody/TAB のタイや公開の `MeasureData` ソース位置を変更しない。
 - `src/harmonicAnalysis.ts` は入力スコアから決定論的に調性・ハーモニー情報を分析する。解析機能は明示されたコードを暗黙に別のコードへ置換しない。
 
 ### スコアモデルと保持する順序
@@ -43,6 +44,7 @@ GuitarDSL のテキストを、編集・表示・再生・変換機能が共有�
 - スコアイベントは小節前後の有効コンテキストへ解決され、描画・再生が使う値を提供する。調号など冒頭メタデータと途中変更を混同しない。
 - `let` の定義・参照は Compiler 内で解決する。入れ子参照は記述順に展開し、各参照は独立したイベント列を持つ。未知名、重複、循環、文脈に合わない fragment はソース上の位置で診断する。定義内 `%` の扱いなど、許容構文の最終規則は言語仕様 §17 を参照する。
 - Note group は1つの発音位置・音価・歌詞対応を保ったまま複数 pitch を持つ。休符・スラッシュは pitch を持たず、単音と複数音を区別する。音高を読む利用側は単一 `.pitch` を仮定せず `eventPitches()` を通して扱う。
+- リズム符タイは攻撃位置から継続イベントの音価終了まで同じコード名・明示ラベルを保つ隣接イベントだけを結ぶ。複合音価でもコード検証は最初の攻撃位置を基準にし、区間内のコード変更を許さない。リズム専用パターンの検証では両側コードなしの対を構造的に許可するが、通常スコアで片側だけコードなしの場合は拒否する。`let` の内外境界、`%` 小節境界、隙間、休符、ghost、音高付きイベント、不一致コード、継続符の `.d` / `.u` / `.a` / `.arp` は位置付き error とし、無効な接続情報を公開しない。記譜順の接続検証と演奏順の実接続判断は別で、後者は playback timeline が担当する。
 - `src/melody.ts` は音符と音節歌詞を処理する。音節グループ・複数番・melisma の解釈は言語仕様 §13 と Compiler の位置付き診断に従い、serialization 側のかな正規化とも同じ規則を共有する。
 
 ### 決定論的ハーモニー分析
@@ -79,3 +81,7 @@ Effect structure is parsed generically, then semantic validation enforces the #8
 ## Verification strategy
 
 構文適合は `tests/unit/compiler.test.ts`、演奏順・編曲・フラグメント・音符処理は対応する compiler / play-order / melody ユニット検証、ハーモニー分析は `src/harmonicAnalysis.ts` の既存検証を参照する。文書構造の検証は workflow の Schema 2 validator で行う。
+
+### Rhythm ties (Issue #142)
+
+Rhythm-token ties are compiler-validated connections between adjacent slash events. The compiler owns source spans, exact event onsets, code identity and supported boundaries; renderers and playback consume only valid `tiedFromPrev` links. Melodic and TAB ties retain their separate owners and semantics.
