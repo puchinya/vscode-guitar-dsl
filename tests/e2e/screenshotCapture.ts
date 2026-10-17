@@ -283,10 +283,10 @@ export async function waitForPreviewIdentity(identity: {
   throw new Error(`Preview did not load the expected document identity ${JSON.stringify(identity)}; current=${lastState}`);
 }
 
-export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape'): Promise<void> {
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter'): Promise<void> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const target = await waitForPreviewTarget(port);
-  const code = key === 'Tab' ? 9 : 27;
+  const code = key === 'Tab' ? 9 : key === 'Escape' ? 27 : 13;
   await withDevToolsTarget(target, async send => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });

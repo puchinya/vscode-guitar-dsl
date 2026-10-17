@@ -115,6 +115,8 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const orientation = options?.orientation ?? 'portrait';
   const capoUi = options?.capo;
   const beginnerUi = options?.beginner ?? { active: false, barrePolicy: 'forbid' as const, autoCapo: true, substitutions: [] };
+  const hasPreviewDetails = Boolean((beginnerUi.active && beginnerUi.substitutions.length > 0) || capoUi?.warning);
+  const previewDetailsIndicator = capoUi?.warning ? '⚠' : 'ⓘ';
   const capoCandidates: CapoPreviewUiModel['candidates'] = capoUi?.candidates.length === 13
     ? capoUi.candidates
     : Array.from({ length: 13 }, (_, capo) => ({ capo, supported: false, recommended: false }));
@@ -292,6 +294,9 @@ ${cspMeta}
   .score-settings-beginner input { margin: 0; }
   .score-settings-overflow { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
   .score-settings-overflow-toggle { display: none; }
+  .score-settings-row .score-settings-details-toggle { width: 28px; min-width: 28px; justify-content: center; padding-left: 0; padding-right: 0; }
+  .score-settings-details-toggle[hidden],
+  .score-settings-details-close[hidden] { display: none !important; }
   .score-settings-row .temporary-score-settings-panel[data-inline="true"] {
     position: static;
     display: flex;
@@ -320,8 +325,37 @@ ${cspMeta}
   .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-action { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
   .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-field > span,
   .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-label { display: none; }
-  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-section:has(.settings-substitutions),
-  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-section:has(.settings-warning) { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"]:not([data-details-open="true"]) .toolbar-panel-section:has(.settings-substitutions),
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"]:not([data-details-open="true"]) .toolbar-panel-section:has(.settings-warning) { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] {
+    position: fixed;
+    z-index: 1200;
+    display: block;
+    align-items: stretch;
+    gap: 0;
+    width: min(360px, calc(100vw - 16px));
+    max-width: none;
+    max-height: calc(100vh - 64px);
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 6px;
+    background: var(--vscode-editorWidget-background, #252526);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:not(:has(.settings-substitutions, .settings-warning)) { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-substitutions),
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-warning) {
+    align-items: flex-start;
+    gap: 8px;
+    margin: 10px 0 0;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--vscode-widget-border, #555);
+    flex-wrap: wrap;
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-substitutions) { margin-top: 0; padding-top: 0; border-top: 0; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-label { display: block; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .score-settings-details-close { display: inline-flex; }
   .toolbar-transport, .toolbar-actions {
     display: flex;
     align-items: center;
@@ -652,6 +686,7 @@ ${cspMeta}
   @media (max-width: 839px) {
     .score-settings-overflow { flex: 0 0 auto; }
     .score-settings-overflow-toggle { display: inline-flex; }
+    .score-settings-details-toggle { display: none !important; }
     .score-settings-row .temporary-score-settings-panel[data-inline="false"] {
       position: fixed;
       display: block;
@@ -743,7 +778,9 @@ ${cspMeta}
     </div>
     <div class="score-settings-overflow">
       <button class="toolbar-action score-settings-overflow-toggle" id="temporary-score-settings-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiMoreScoreSettings)}" title="${escapeXml(msgs.uiMoreScoreSettings)}">⋯ <span>${escapeXml(msgs.uiMoreScoreSettings)}</span></button>
-      <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiMoreScoreSettings)}" data-inline="false" hidden>
+      <button class="toolbar-action score-settings-details-toggle" id="score-settings-details-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiPreviewDetails)}" title="${escapeXml(msgs.uiPreviewDetails)}" data-has-details="${hasPreviewDetails}" hidden>${previewDetailsIndicator}</button>
+      <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiMoreScoreSettings)}" data-group-label="${escapeXml(msgs.uiMoreScoreSettings)}" data-details-label="${escapeXml(msgs.uiPreviewDetails)}" data-inline="false" data-details-open="false" hidden>
+        <button class="toolbar-action score-settings-details-close" id="close-score-settings-details" type="button" aria-label="${escapeXml(msgs.uiClosePreviewDetails)}" title="${escapeXml(msgs.uiClosePreviewDetails)}" hidden>×</button>
         <div class="toolbar-panel-section" data-settings-section="beginner">
           <label class="toolbar-panel-field" for="select-preview-barre-policy"><span>${escapeXml(msgs.uiBarreChords)}</span><select id="select-preview-barre-policy" class="score-settings-select" title="${escapeXml(msgs.uiBarreTitle)}"${beginnerUi.active ? '' : ' disabled'}><option value="forbid"${beginnerUi.barrePolicy === 'forbid' ? ' selected' : ''}>${escapeXml(msgs.uiBarreForbid)}</option><option value="allow"${beginnerUi.barrePolicy === 'allow' ? ' selected' : ''}>${escapeXml(msgs.uiBarreAllow)}</option></select></label>
           <label class="toolbar-panel-field" for="select-preview-beginner-capo-mode"><span>${escapeXml(msgs.uiBeginnerCapoMode)}</span><select id="select-preview-beginner-capo-mode" class="score-settings-select"${beginnerUi.active ? '' : ' disabled'}><option value="auto"${beginnerUi.autoCapo ? ' selected' : ''}>${escapeXml(msgs.uiBeginnerAuto)}</option><option value="fixed"${beginnerUi.autoCapo ? '' : ' selected'}>${escapeXml(msgs.uiBeginnerFixed)}</option></select></label>
@@ -823,13 +860,25 @@ ${cspMeta}
       const playbackOptionsToggle = document.getElementById('playback-options-toggle');
       const viewExportToggle = document.getElementById('view-export-toggle');
       const temporarySettingsToggle = document.getElementById('temporary-score-settings-toggle');
+      const scoreSettingsDetailsToggle = document.getElementById('score-settings-details-toggle');
       const temporarySettingsPanel = document.getElementById('temporary-score-settings-panel');
+      const scoreSettingsDetailsClose = document.getElementById('close-score-settings-details');
       function syncScoreSettingsLayout() {
         if (!temporarySettingsToggle || !temporarySettingsPanel) return;
         const inline = window.innerWidth >= 840;
         const wasInline = temporarySettingsPanel.dataset.inline === 'true';
+        if (wasInline !== inline && temporarySettingsPanel.dataset.detailsOpen === 'true') {
+          temporarySettingsPanel.dataset.detailsOpen = 'false';
+          temporarySettingsPanel.setAttribute('role', 'group');
+          temporarySettingsPanel.setAttribute('aria-label', temporarySettingsPanel.dataset.groupLabel);
+          if (scoreSettingsDetailsClose) scoreSettingsDetailsClose.hidden = true;
+        }
         temporarySettingsPanel.dataset.inline = String(inline);
         temporarySettingsToggle.hidden = inline;
+        if (scoreSettingsDetailsToggle) {
+          scoreSettingsDetailsToggle.hidden = !inline || scoreSettingsDetailsToggle.dataset.hasDetails !== 'true';
+          scoreSettingsDetailsToggle.setAttribute('aria-expanded', String(inline && temporarySettingsPanel.dataset.detailsOpen === 'true'));
+        }
         if (inline) {
           temporarySettingsPanel.hidden = false;
           temporarySettingsToggle.setAttribute('aria-expanded', 'false');
@@ -839,10 +888,18 @@ ${cspMeta}
         }
       }
       syncScoreSettingsLayout();
+      const scoreSettingsDisclosure = {
+        button: temporarySettingsToggle,
+        buttons: [temporarySettingsToggle, scoreSettingsDetailsToggle].filter(Boolean),
+        panel: temporarySettingsPanel,
+        detailsButton: scoreSettingsDetailsToggle,
+        groupLabel: temporarySettingsPanel?.dataset.groupLabel,
+        detailsLabel: temporarySettingsPanel?.dataset.detailsLabel
+      };
       const disclosureItems = [
         { button: playbackOptionsToggle, buttons: [playbackOptionsToggle], panel: document.getElementById('playback-options-panel') },
         { button: viewExportToggle, buttons: [viewExportToggle], panel: document.getElementById('view-export-panel') },
-        { button: temporarySettingsToggle, buttons: [temporarySettingsToggle], panel: temporarySettingsPanel }
+        scoreSettingsDisclosure
       ].filter(item => item.button && item.panel);
       const capoSelect = document.getElementById('preview-capo-select');
       const beginnerToggle = document.getElementById('toggle-preview-beginner');
@@ -1919,7 +1976,8 @@ ${cspMeta}
       }
 
       function positionDisclosure(item) {
-        if (!item || !item.button || !item.panel || item.panel.hidden || item.panel.dataset.inline === 'true') return;
+        if (!item || !item.button || !item.panel || item.panel.hidden
+          || (item.panel.dataset.inline === 'true' && item.panel.dataset.detailsOpen !== 'true')) return;
         if (item.button.getClientRects().length === 0) {
           item.button = item.buttons.find(button => button && button.getClientRects().length > 0) || item.button;
           item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
@@ -1933,13 +1991,30 @@ ${cspMeta}
       }
 
       function closeDisclosure(item, returnFocus) {
-        if (!item || !item.panel || item.panel.hidden || item.panel.dataset.inline === 'true') return;
+        if (!item || !item.panel || item.panel.hidden) return;
+        const inlineDetails = item.panel.dataset.inline === 'true' && item.panel.dataset.detailsOpen === 'true';
+        if (item.panel.dataset.inline === 'true' && !inlineDetails) return;
+        const focusTarget = item.button;
+        if (inlineDetails) {
+          item.panel.dataset.detailsOpen = 'false';
+          item.panel.setAttribute('role', 'group');
+          item.panel.setAttribute('aria-label', item.groupLabel);
+          const closeButton = item.panel.querySelector('.score-settings-details-close');
+          if (closeButton) closeButton.hidden = true;
+          item.buttons.forEach(button => {
+            button.setAttribute('aria-expanded', 'false');
+            button.setAttribute('aria-controls', item.panel.id);
+          });
+          item.button = item.buttons.find(button => button !== item.detailsButton) || item.button;
+          if (returnFocus && focusTarget) focusTarget.focus();
+          return;
+        }
         item.panel.hidden = true;
         item.buttons.forEach(button => {
           button.setAttribute('aria-expanded', 'false');
           button.setAttribute('aria-controls', item.panel.id);
         });
-        if (returnFocus) item.button.focus();
+        if (returnFocus && focusTarget) focusTarget.focus();
       }
 
       disclosureItems.forEach(item => {
@@ -1958,13 +2033,23 @@ ${cspMeta}
         };
         item.buttons.forEach(button => {
           button.addEventListener('click', () => {
-            const alreadyActive = !item.panel.hidden && item.button === button;
+            const isDetails = item.detailsButton === button;
+            const alreadyActive = isDetails
+              ? item.panel.dataset.detailsOpen === 'true'
+              : !item.panel.hidden && item.button === button;
             disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
             if (alreadyActive) {
               closeDisclosure(item, false);
               return;
             }
             item.panel.hidden = false;
+            if (item.detailsButton) {
+              item.panel.dataset.detailsOpen = String(isDetails);
+              item.panel.setAttribute('role', isDetails ? 'region' : 'group');
+              item.panel.setAttribute('aria-label', isDetails ? item.detailsLabel : item.groupLabel);
+              const closeButton = item.panel.querySelector('.score-settings-details-close');
+              if (closeButton) closeButton.hidden = !isDetails;
+            }
             item.button = button;
             item.buttons.forEach(trigger => {
               trigger.setAttribute('aria-expanded', String(trigger === button));
@@ -1975,6 +2060,17 @@ ${cspMeta}
           button.addEventListener('keydown', event => handleDisclosureKeydown(event, button));
         });
         item.panel.addEventListener('keydown', event => handleDisclosureKeydown(event));
+      });
+      const scoreSettingsDisclosureItem = disclosureItems.find(item => item.panel === temporarySettingsPanel);
+      if (scoreSettingsDetailsClose && scoreSettingsDisclosureItem) {
+        scoreSettingsDetailsClose.addEventListener('click', () => closeDisclosure(scoreSettingsDisclosureItem, true));
+      }
+      [temporarySettingsToggle, scoreSettingsDetailsToggle].filter(Boolean).forEach(button => {
+        button.addEventListener('keydown', event => {
+          if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          button.click();
+        });
       });
       document.addEventListener('pointerdown', event => {
         disclosureItems.forEach(item => {

@@ -314,9 +314,10 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.match(html, /id="toggle-preview-beginner" type="checkbox"/);
     assert.match(html, /id="preview-playability" data-level="unavailable" role="status"[^>]*>.*?Not available/s);
     assert.match(html, /id="temporary-score-settings-toggle"[^>]*aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="More"/);
+    assert.match(html, /id="score-settings-details-toggle"[^>]*aria-expanded="false"[^>]*data-has-details="false" hidden>/);
     assert.match(html, /id="playback-options-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
-    assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]*data-inline="false" hidden>/);
+    assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]*data-inline="false" data-details-open="false" hidden>/);
     assert.ok(!html.includes('role="menu"'));
     assert.ok(html.includes('id="practice-toggle"'));
     assert.ok(html.includes('id="count-in-toggle"') && html.includes('id="metronome-toggle"'));
@@ -326,6 +327,16 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
     assert.ok(!html.includes('>0/100</span>'), 'an unavailable playability value is not rendered as zero');
     assert.ok(!html.includes('一時楽譜設定') && !html.includes('Temporary Score Settings'), 'the obsolete visible settings title is absent');
+
+    const detailedHtml = compileGuitarDslToHtml(sampleDsl, {
+      locale: 'en',
+      capo: { sourceCapo: 1, targetCapo: 1, candidates: [], overridden: false, canApply: false, warning: 'Capo warning' },
+      beginner: { active: true, barrePolicy: 'forbid', autoCapo: true, substitutions: [['F', 'Fmaj7']] }
+    });
+    assert.match(detailedHtml, /id="score-settings-details-toggle"[^>]*aria-label="Show substitutions and warnings"[^>]*data-has-details="true" hidden>⚠<\/button>/);
+    assert.ok(detailedHtml.includes('<li>F → Fmaj7</li>'), 'the host substitution mapping is rendered in the existing panel');
+    assert.ok(detailedHtml.includes('<p class="settings-warning" role="status">Capo warning</p>'), 'the capo warning remains an ARIA status message');
+    assert.match(detailedHtml, /id="temporary-score-settings-panel"[^>]*data-details-label="Show substitutions and warnings"/);
 
     const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
     assert.ok(css, 'Preview HTML contains its toolbar styles');
@@ -342,6 +353,8 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
     assert.match(css, /@media \(max-width: 839px\)[\s\S]*?\.score-settings-overflow-toggle\s*\{\s*display:\s*inline-flex;/);
+    assert.match(css, /\.score-settings-row \.temporary-score-settings-panel\[data-inline="true"\]\[data-details-open="true"\]\s*\{[^}]*position:\s*fixed;/s);
+    assert.match(css, /\.score-settings-details-toggle\[hidden\],\s*\.score-settings-details-close\[hidden\]\s*\{\s*display:\s*none !important;/);
     assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*92px;[^}]*height:\s*42px;/s);
     assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*152px !important;/);
     assert.match(css, /padding:\s*110px 16px 36px 16px;/);

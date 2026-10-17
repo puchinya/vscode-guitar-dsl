@@ -216,6 +216,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         disclosures: ['playback-options-toggle','view-export-toggle','temporary-score-settings-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
         panelsHidden: ['playback-options-panel','view-export-panel','temporary-score-settings-panel'].map(id => document.getElementById(id)?.hidden),
         moreVisible: document.getElementById('temporary-score-settings-toggle')?.getClientRects().length > 0,
+        detailsVisible: document.getElementById('score-settings-details-toggle')?.getClientRects().length > 0,
         noTemporaryTitle: !document.body.innerText.includes('一時楽譜設定') && !document.body.innerText.includes('Temporary Score Settings'),
         noDuplicateSettings: document.querySelectorAll('#score-settings-row').length === 1
           && !document.getElementById('capo-bar') && !document.getElementById('btn-apply-capo'),
@@ -234,6 +235,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.deepStrictEqual(initial.settingsVisible, [true, true, true], 'Capo, colored Playability, and Beginner are directly visible at 600 CSS px');
     assert.strictEqual(initial.settingsRowFits, true, 'the primary settings remain within the 44px row at 600px');
     assert.strictEqual(initial.moreVisible, true, 'supplemental controls are reachable through More below 840px');
+    assert.strictEqual(initial.detailsVisible, false, 'no details button or blank slot is shown when the host has no substitutions or warning');
     assert.strictEqual(initial.noTemporaryTitle, true, 'the obsolete temporary-settings title is absent from visible Preview text');
     assert.strictEqual(initial.noDuplicateSettings, true, 'one dedicated settings row exists without Apply controls');
     assert.ok(initial.controls.every(Boolean), 'display, paper, orientation, and PDF controls remain available');
@@ -394,6 +396,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             fits: row.scrollWidth <= row.clientWidth, contentsFitVertically: visibleSettingsFitVertically },
           mainVisible: mainIds.map(id => document.getElementById(id)?.getClientRects().length > 0),
           moreVisible: more.getClientRects().length > 0,
+          detailsVisible: document.getElementById('score-settings-details-toggle')?.getClientRects().length > 0,
           moreExpanded: more.getAttribute('aria-expanded'),
           inline: panel.dataset.inline,
           panelHidden: panel.hidden,
@@ -417,6 +420,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(state.mainVisible, [true, true, true], `${width}px keeps direct Capo, Playability, and Beginner controls visible`);
       assert.strictEqual(state.transportVisible, true, `${width}px keeps every playback control visible`);
       assert.strictEqual(state.moreVisible, width < 840, `${width}px shows More only below the full-settings breakpoint`);
+      assert.strictEqual(state.detailsVisible, false, `${width}px reserves no details button when there are no substitutions or warning`);
       assert.strictEqual(state.inline, String(width >= 840), `${width}px selects the correct supplemental settings layout`);
       assert.strictEqual(state.panelHidden, width < 840, `${width}px keeps overflow closed and inline settings visible`);
       if (width >= 840) assert.deepStrictEqual(state.supplementsVisible, [true, true, true, true], `${width}px exposes all supplemental controls`);
@@ -484,6 +488,96 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const beginnerFocusRestored = await evaluatePreviewWebview<boolean>(`document.activeElement.id === 'toggle-preview-beginner'
       && document.getElementById('temporary-score-settings-panel').hidden === true`);
     assert.strictEqual(beginnerFocusRestored, true, 'a direct Beginner action restores focus without opening overflow');
+
+    // Put the host's existing warning field in the active Beginner snapshot so the actual Preview
+    // render path exercises both substitution and capo-warning details in one Webview model.
+    const beginnerController = require('../../previewBeginner').getPreviewBeginnerController();
+    const beginnerSnapshot = beginnerController.captureSettingsSnapshot(sourceDoc.uri.toString());
+    assert.ok(beginnerSnapshot.state, 'the host Beginner controller has the active temporary settings');
+    const beforeWarningRender = preview.generation;
+    beginnerController.restoreSettingsSnapshot(sourceDoc, { ...beginnerSnapshot, notice: 'Preview detail E2E warning' }, true);
+    await waitForSettings(`document.getElementById('score-settings-details-toggle')?.dataset.hasDetails === 'true'
+      && document.querySelector('.settings-warning[role="status"]')?.textContent === 'Preview detail E2E warning'`,
+      'Preview warning details', beforeWarningRender);
+
+    const detailWidths = useWideMatrixViewport ? [421, 600, 840, 1100] : [421, 600];
+    for (const width of detailWidths) {
+      await resizeActiveEditorGroupToWidth(width);
+      await settle(150);
+      const triggerId = width >= 840 ? 'score-settings-details-toggle' : 'temporary-score-settings-toggle';
+      const beforeOpen = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        width: window.innerWidth,
+        moreVisible: document.getElementById('temporary-score-settings-toggle').getClientRects().length > 0,
+        detailsVisible: document.getElementById('score-settings-details-toggle').getClientRects().length > 0,
+        row: { top: document.getElementById('score-settings-row').getBoundingClientRect().top,
+          height: document.getElementById('score-settings-row').getBoundingClientRect().height }
+      })`));
+      assert.strictEqual(beforeOpen.width, width, `detail route is checked at ${width} CSS px`);
+      assert.strictEqual(beforeOpen.moreVisible, width < 840, `${width}px selects the existing More route only below the breakpoint`);
+      assert.strictEqual(beforeOpen.detailsVisible, width >= 840, `${width}px exposes a details button only when wide enough and details exist`);
+      assert.deepStrictEqual(beforeOpen.row, { top: 48, height: 44 }, `${width}px keeps the 44px row fixed before opening details`);
+      await evaluatePreviewWebview<void>(`document.getElementById('${triggerId}').focus()`);
+      await dispatchPreviewKeyboardKey('Enter');
+      const openedDetails = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const panel = document.getElementById('temporary-score-settings-panel');
+        const trigger = document.getElementById('${triggerId}');
+        const warning = panel.querySelector('.settings-warning[role="status"]');
+        const row = document.getElementById('score-settings-row').getBoundingClientRect();
+        return { open: !panel.hidden,
+          expanded: trigger.getAttribute('aria-expanded'),
+          controls: trigger.getAttribute('aria-controls'),
+          detailsMode: panel.dataset.detailsOpen,
+          role: panel.getAttribute('role'),
+          label: panel.getAttribute('aria-label'),
+          substitutions: panel.querySelector('.settings-substitutions')?.textContent?.includes('F → Fmaj7'),
+          substitutionsVisible: panel.querySelector('.settings-substitutions')?.getClientRects().length > 0,
+          warningText: warning?.textContent,
+          warningVisible: warning?.getClientRects().length > 0,
+          warningRole: warning?.getAttribute('role'),
+          editingControlsVisible: document.getElementById('select-preview-barre-policy').getClientRects().length > 0,
+          row: { top: row.top, height: row.height } };
+      })())`));
+      assert.strictEqual(openedDetails.open, true, `${width}px keyboard activation opens a visible route: ${JSON.stringify(openedDetails)}`);
+      assert.strictEqual(openedDetails.expanded, 'true', `${width}px details route reports expanded state`);
+      assert.strictEqual(openedDetails.controls, 'temporary-score-settings-panel', `${width}px trigger identifies its controlled panel`);
+      assert.strictEqual(openedDetails.substitutions, true, `${width}px displays the host's F → Fmaj7 substitution`);
+      assert.strictEqual(openedDetails.substitutionsVisible, true, `${width}px substitution text is visible`);
+      assert.strictEqual(openedDetails.warningText, 'Preview detail E2E warning', `${width}px displays the host capo warning`);
+      assert.strictEqual(openedDetails.warningVisible, true, `${width}px warning text is visible`);
+      assert.strictEqual(openedDetails.warningRole, 'status', `${width}px warning text is exposed as an ARIA status`);
+      assert.deepStrictEqual(openedDetails.row, { top: 48, height: 44 }, `${width}px details do not change the fixed row geometry`);
+      if (width >= 840) {
+        assert.strictEqual(openedDetails.detailsMode, 'true', `${width}px uses the information-only details panel`);
+        assert.strictEqual(openedDetails.role, 'region', `${width}px exposes details as a named region`);
+        assert.strictEqual(openedDetails.label, vscode.env.language.toLowerCase().startsWith('ja') ? '置き換えと警告を表示' : 'Show substitutions and warnings');
+        assert.strictEqual(openedDetails.editingControlsVisible, false, `${width}px details do not duplicate inline editing controls`);
+      } else {
+        assert.strictEqual(openedDetails.detailsMode, 'false', `${width}px More opens the full supplemental panel`);
+        assert.strictEqual(openedDetails.role, 'group', `${width}px keeps the existing settings group semantics`);
+        assert.strictEqual(openedDetails.editingControlsVisible, true, `${width}px More retains the existing supplemental controls`);
+      }
+      await dispatchPreviewKeyboardKey('Tab');
+      const tabbedDetails = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        active: document.activeElement?.id,
+        inside: document.getElementById('temporary-score-settings-panel').contains(document.activeElement),
+        focusVisible: document.activeElement?.matches(':focus-visible') === true
+          && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+          && getComputedStyle(document.activeElement).outlineWidth !== '0px'
+      })`));
+      assert.strictEqual(tabbedDetails.inside && tabbedDetails.focusVisible, true, `${width}px Tab enters the visible route with a focus outline: ${JSON.stringify(tabbedDetails)}`);
+      if (width >= 840) assert.strictEqual(tabbedDetails.active, 'close-score-settings-details', `${width}px first Tab reaches the details close control`);
+      if (captureScreenshots) await capturePreviewWebviewScreenshot(
+        `preview-${requestedLocale}-${theme}-${width}-score-settings-details${suffix}.png`, 145);
+      await dispatchPreviewKeyboardKey('Escape');
+      const closedDetails = await evaluatePreviewWebview<boolean>(`(() => {
+        const panel = document.getElementById('temporary-score-settings-panel');
+        return document.activeElement?.id === '${triggerId}'
+          && document.getElementById('${triggerId}').getAttribute('aria-expanded') === 'false'
+          && panel.dataset.detailsOpen === 'false'
+          && panel.hidden === ${width < 840};
+      })()`);
+      assert.strictEqual(closedDetails, true, `${width}px Escape closes the route and restores focus to its trigger`);
+    }
     if (captureScreenshots && workbenchWidth < 2200) {
       await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-temporary-score-settings${suffix}.png`, 145, workbenchWidth);
     }

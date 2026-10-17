@@ -201,6 +201,8 @@ export interface Messages {
   // Capo / playability (Preview score-settings row, score settings editor, host notifications)
   uiScoreSettings: string;
   uiMoreScoreSettings: string;
+  uiPreviewDetails: string;
+  uiClosePreviewDetails: string;
   uiOpenScoreSettings: string;
   uiOpenBeginnerSettings: string;
   uiBeginnerCapoMode: string;
@@ -460,6 +462,8 @@ export const MESSAGES_JA: Messages = {
 
   uiScoreSettings: '楽譜設定',
   uiMoreScoreSettings: 'その他',
+  uiPreviewDetails: '置き換えと警告を表示',
+  uiClosePreviewDetails: '詳細を閉じる',
   uiOpenScoreSettings: 'カポ / 弾きやすさの設定を開く',
   uiOpenBeginnerSettings: '初心者モードの設定を開く',
   uiBeginnerCapoMode: 'カポ位置の選び方',
@@ -753,6 +757,8 @@ export const MESSAGES_EN: Messages = {
 
   uiScoreSettings: 'Score settings',
   uiMoreScoreSettings: 'More',
+  uiPreviewDetails: 'Show substitutions and warnings',
+  uiClosePreviewDetails: 'Close details',
   uiOpenScoreSettings: 'Open Capo / Playability settings',
   uiOpenBeginnerSettings: 'Open Beginner Mode settings',
   uiBeginnerCapoMode: 'Capo selection',
