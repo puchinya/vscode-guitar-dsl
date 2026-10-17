@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-label="Actual VS Code split 600 pixel Preview design. Playback 48 pixel bar, score settings 44 pixel color-badged bar below it, practice 42 pixel bar below that.">
+<defs><filter id="paperShadow"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-opacity=".22"/></filter><clipPath id="scoreclip"><rect x="598" y="217" width="598" height="644"/></clipPath></defs>
+<rect x="0" y="0" width="1200" height="36" rx="0" fill="#181818"/>
+<line x1="0" y1="35" x2="1200" y2="35" stroke="#333" stroke-width="1" opacity="1"/>
+<circle cx="17" cy="18" r="6" fill="#f36b66"/>
+<circle cx="36" cy="18" r="6" fill="#e8b849"/>
+<circle cx="55" cy="18" r="6" fill="#32ae72"/>
+<text x="132" y="24" fill="#bcbcbc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >Visual Studio Code — Extension Development Host</text>
+<rect x="484" y="8" width="320" height="22" rx="4" fill="#242424" stroke="#343434" stroke-width="1"/>
+<text x="645" y="24" fill="#969696" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >GuitarDSL</text>
+<rect x="0" y="36" width="48" height="841" rx="0" fill="#181818"/>
+<line x1="47" y1="36" x2="47" y2="878" stroke="#353535" stroke-width="1" opacity="1"/>
+<rect x="15" y="54" width="18" height="23" rx="2" fill="none" stroke="#aaa" stroke-width="1.6"/>
+<circle cx="22" cy="116" r="8" fill="none" stroke="#aaa" stroke-width="1.4"/>
+<line x1="28" y1="122" x2="34" y2="130" stroke="#aaa" stroke-width="1.4" opacity="1"/>
+<text x="22" y="180" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="27" font-weight="400" text-anchor="middle" >·</text>
+<text x="22" y="232" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="27" font-weight="400" text-anchor="middle" >›</text>
+<text x="22" y="283" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="27" font-weight="400" text-anchor="middle" >·</text>
+<rect x="0" y="305" width="3" height="47" rx="0" fill="#007acc"/>
+<text x="22" y="333" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="27" font-weight="400" text-anchor="middle" >♪</text>
+<rect x="48" y="36" width="302" height="841" rx="0" fill="#181818"/>
+<line x1="349" y1="36" x2="349" y2="878" stroke="#333" stroke-width="1" opacity="1"/>
+<text x="65" y="63" fill="#ccc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="600" text-anchor="start" >エクスプローラー</text>
+<text x="68" y="101" fill="#d1d1d1" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="start" >▿  開いているエディター</text>
+<rect x="48" y="111" width="301" height="27" rx="0" fill="#262626"/>
+<text x="83" y="131" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >♫  sample.guitardsl</text>
+<text x="68" y="168" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="start" >▿  ワークスペース</text>
+<text x="85" y="202" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  samples</text>
+<text x="85" y="229" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  docs</text>
+<text x="85" y="256" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  src</text>
+<text x="85" y="283" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  sample.guitardsl</text>
+<text x="63" y="863" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >▿  アウトライン</text>
+<rect x="350" y="36" width="243" height="841" rx="0" fill="#1f1f1f"/>
+<rect x="350" y="36" width="243" height="44" rx="0" fill="#181818"/>
+<rect x="350" y="36" width="243" height="44" rx="0" fill="#212121"/>
+<rect x="350" y="79" width="243" height="2" rx="0" fill="#007acc"/>
+<text x="361" y="64" fill="#e2e2e2" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >♫ sample.guitardsl</text>
+<text x="579" y="63" fill="#aaa" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="16" font-weight="400" text-anchor="start" >×</text>
+<text x="378" y="117" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >title: やさしい朝</text>
+<text x="366" y="117" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >1</text>
+<text x="378" y="142" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >artist: サンプル</text>
+<text x="366" y="142" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >2</text>
+<text x="378" y="167" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >bpm: 120</text>
+<text x="366" y="167" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >3</text>
+<text x="378" y="192" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >capo: 0</text>
+<text x="366" y="192" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >4</text>
+<text x="366" y="217" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >5</text>
+<text x="378" y="242" fill="#6a9955" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >// コード進行</text>
+<text x="366" y="242" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >6</text>
+<text x="378" y="267" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >| C | G | Am | F |</text>
+<text x="366" y="267" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >7</text>
+<text x="378" y="292" fill="#569cd6" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >mel: | C | G | Am |</text>
+<text x="366" y="292" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >8</text>
+<text x="378" y="317" fill="#569cd6" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="start" >str: | C.d C.u |</text>
+<text x="366" y="317" fill="#797979" font-family="Noto Sans Mono CJK JP, monospace" font-size="12" font-weight="400" text-anchor="end" >9</text>
+<line x1="594" y1="36" x2="594" y2="879" stroke="#414141" stroke-width="2" opacity="1"/>
+<rect x="595" y="36" width="605" height="44" rx="0" fill="#181818"/>
+<rect x="595" y="36" width="247" height="44" rx="0" fill="#212121"/>
+<rect x="595" y="79" width="247" height="2" rx="0" fill="#007acc"/>
+<text x="611" y="64" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >♫ GuitarDSL スコアプレビュー</text>
+<text x="832" y="64" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="start" >×</text>
+<rect x="595" y="81" width="605" height="797" rx="0" fill="#1e1e1e"/>
+<rect x="595" y="81" width="605" height="48" rx="0" fill="#1e1e1e"/>
+<line x1="595" y1="128" x2="1200" y2="128" stroke="#414141" stroke-width="1" opacity="1"/>
+<rect x="603" y="89" width="55" height="31" rx="4" fill="#0e639c" stroke="#007acc" stroke-width="1"/>
+<text x="630.5" y="109.5" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="600" text-anchor="middle" >▶ 再生</text>
+<rect x="662" y="89" width="37" height="31" rx="4" fill="#2a2a2a" stroke="#404040" stroke-width="1"/>
+<text x="680.5" y="109.5" fill="#bdbdbd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="middle" >Ⅱ</text>
+<rect x="703" y="89" width="35" height="31" rx="4" fill="#2a2a2a" stroke="#404040" stroke-width="1"/>
+<text x="720.5" y="109.5" fill="#bdbdbd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="middle" >■</text>
+<line x1="751" y1="105" x2="843" y2="105" stroke="#555" stroke-width="5" opacity="1"/>
+<line x1="751" y1="105" x2="789" y2="105" stroke="#007acc" stroke-width="5" opacity="1"/>
+<circle cx="789" cy="105" r="7" fill="#eee"/>
+<text x="850" y="110" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="10" font-weight="400" text-anchor="start" >00:00/00:16</text>
+<rect x="934" y="89" width="32" height="31" rx="4" fill="#292929" stroke="#434343" stroke-width="1"/>
+<text x="950.0" y="109.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="middle" >◎</text>
+<rect x="970" y="89" width="32" height="31" rx="4" fill="#292929" stroke="#434343" stroke-width="1"/>
+<text x="986.0" y="109.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="middle" >⚙</text>
+<rect x="1006" y="89" width="32" height="31" rx="4" fill="#292929" stroke="#434343" stroke-width="1"/>
+<text x="1022.0" y="109.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="middle" >▤</text>
+<rect x="1042" y="89" width="32" height="31" rx="4" fill="#292929" stroke="#434343" stroke-width="1"/>
+<text x="1058.0" y="109.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="middle" >?</text>
+<text x="1090" y="111" fill="#9b9b9b" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="10" font-weight="400" text-anchor="start" >スコアPreview</text>
+<rect x="595" y="129" width="605" height="44" rx="0" fill="#252525"/>
+<line x1="595" y1="172" x2="1200" y2="172" stroke="#454545" stroke-width="1" opacity="1"/>
+<rect x="595" y="129" width="3" height="44" rx="0" fill="#007acc"/>
+<text x="608" y="156" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >カポ</text>
+<rect x="645" y="137" width="71" height="29" rx="4" fill="#303030" stroke="#575757" stroke-width="1"/>
+<text x="680.5" y="156.5" fill="#e9e9e9" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >0 ▼</text>
+<line x1="728" y1="136" x2="728" y2="165" stroke="#414141" stroke-width="1" opacity="1"/>
+<text x="738" y="156" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >弾きやすさ</text>
+<rect x="814" y="136" width="114" height="29" rx="14" fill="#2e7d32" stroke="#459e4b" stroke-width="1"/>
+<text x="871" y="156" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="middle" >71/100  簡単</text>
+<line x1="938" y1="136" x2="938" y2="165" stroke="#414141" stroke-width="1" opacity="1"/>
+<text x="949" y="156" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >初心者</text>
+<rect x="1002" y="139" width="44" height="23" rx="12" fill="#484c52"/>
+<circle cx="1014" cy="150.5" r="8" fill="#f0f0f0"/>
+<rect x="1059" y="137" width="128" height="29" rx="4" fill="#303030" stroke="#4b4b4b" stroke-width="1"/>
+<text x="1123.0" y="156.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >その他 ···</text>
+<rect x="595" y="173" width="605" height="42" rx="0" fill="#222"/>
+<line x1="595" y1="214" x2="1200" y2="214" stroke="#464646" stroke-width="1" opacity="1"/>
+<rect x="595" y="173" width="3" height="42" rx="0" fill="#0e639c"/>
+<text x="607" y="199" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >速度</text>
+<rect x="647" y="178" width="69" height="30" rx="4" fill="#323232" stroke="#484848" stroke-width="1"/>
+<text x="681.5" y="198.0" fill="#eee" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >100%</text>
+<text x="731" y="199" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >ループ</text>
+<rect x="778" y="178" width="63" height="30" rx="4" fill="#323232" stroke="#484848" stroke-width="1"/>
+<text x="809.5" y="198.0" fill="#eee" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >オフ</text>
+<rect x="853" y="178" width="39" height="30" rx="4" fill="#333" stroke="#484848" stroke-width="1"/>
+<text x="872.5" y="198.0" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >A</text>
+<rect x="896" y="178" width="39" height="30" rx="4" fill="#333" stroke="#484848" stroke-width="1"/>
+<text x="915.5" y="198.0" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >B</text>
+<rect x="940" y="178" width="63" height="30" rx="4" fill="#333" stroke="#484848" stroke-width="1"/>
+<text x="971.5" y="198.0" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >クリア</text>
+<text x="1036" y="198" fill="#adadad" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >小節 1 / 出現 1</text>
+<text x="610" y="235" fill="#aaa" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >Practice ON：再生・設定・練習の3行</text>
+<rect x="631" y="254" width="545" height="565" rx="1" fill="#fff"/>
+<text x="904" y="306" fill="#141414" font-family="Noto Serif CJK JP, serif" font-size="24" font-weight="600" text-anchor="middle" >やさしい朝</text>
+<text x="904" y="328" fill="#333" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="middle" >作詞・作曲：サンプル</text>
+<text x="1059" y="357" fill="#333" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >Key: C   /   BPM: 120</text>
+<rect x="1103" y="366" width="61" height="22" rx="3" fill="#222"/>
+<text x="1133" y="381" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="10" font-weight="600" text-anchor="middle" >Capo: 0</text>
+<line x1="669" y1="392" x2="1148" y2="392" stroke="#333" stroke-width="1" opacity="1"/>
+<line x1="676" y1="466" x2="1136" y2="466" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="477" x2="1136" y2="477" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="488" x2="1136" y2="488" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="499" x2="1136" y2="499" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="510" x2="1136" y2="510" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="545" x2="1136" y2="545" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="553" x2="1136" y2="553" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="561" x2="1136" y2="561" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="569" x2="1136" y2="569" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="577" x2="1136" y2="577" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="585" x2="1136" y2="585" stroke="#999" stroke-width="0.8" opacity="1"/>
+<text x="698" y="453" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >C</text>
+<path d="M694 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M715 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M736 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M757 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="791" y1="466" x2="791" y2="510" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="813" y="453" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >G</text>
+<path d="M809 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M830 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M851 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M872 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="906" y1="466" x2="906" y2="510" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="928" y="453" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >Am</text>
+<path d="M924 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M945 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M966 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M987 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="1021" y1="466" x2="1021" y2="510" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="1043" y="453" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >F</text>
+<path d="M1039 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1060 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1081 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1102 496 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="1136" y1="466" x2="1136" y2="510" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="676" y1="545" x2="676" y2="585" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="791" y1="545" x2="791" y2="585" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="906" y1="545" x2="906" y2="585" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="1021" y1="545" x2="1021" y2="585" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="1136" y1="545" x2="1136" y2="585" stroke="#777" stroke-width="0.8" opacity="1"/>
+<text x="650" y="558" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >T</text>
+<text x="650" y="571" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >A</text>
+<text x="650" y="584" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >B</text>
+<text x="693" y="564" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="728" y="572" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="763" y="580" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="798" y="564" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="833" y="572" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="868" y="580" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="903" y="564" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="938" y="572" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="973" y="580" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="1008" y="564" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="1043" y="572" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="1078" y="580" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<line x1="676" y1="651" x2="1136" y2="651" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="662" x2="1136" y2="662" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="673" x2="1136" y2="673" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="684" x2="1136" y2="684" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="695" x2="1136" y2="695" stroke="#222" stroke-width="1" opacity="1"/>
+<line x1="676" y1="730" x2="1136" y2="730" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="738" x2="1136" y2="738" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="746" x2="1136" y2="746" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="754" x2="1136" y2="754" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="762" x2="1136" y2="762" stroke="#999" stroke-width="0.8" opacity="1"/>
+<line x1="676" y1="770" x2="1136" y2="770" stroke="#999" stroke-width="0.8" opacity="1"/>
+<text x="698" y="638" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >C</text>
+<path d="M694 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M715 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M736 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M757 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="791" y1="651" x2="791" y2="695" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="813" y="638" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >G</text>
+<path d="M809 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M830 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M851 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M872 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="906" y1="651" x2="906" y2="695" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="928" y="638" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >Am</text>
+<path d="M924 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M945 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M966 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M987 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="1021" y1="651" x2="1021" y2="695" stroke="#222" stroke-width="1.2" opacity="1"/>
+<text x="1043" y="638" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="start" >F</text>
+<path d="M1039 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1060 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1081 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<path d="M1102 681 l8 -13" stroke="#222" stroke-width="1.8" fill="none" />
+<line x1="1136" y1="651" x2="1136" y2="695" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="676" y1="730" x2="676" y2="770" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="791" y1="730" x2="791" y2="770" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="906" y1="730" x2="906" y2="770" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="1021" y1="730" x2="1021" y2="770" stroke="#777" stroke-width="0.8" opacity="1"/>
+<line x1="1136" y1="730" x2="1136" y2="770" stroke="#777" stroke-width="0.8" opacity="1"/>
+<text x="650" y="743" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >T</text>
+<text x="650" y="756" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >A</text>
+<text x="650" y="769" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >B</text>
+<text x="693" y="749" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="728" y="757" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="763" y="765" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="798" y="749" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="833" y="757" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="868" y="765" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="903" y="749" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="938" y="757" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="973" y="765" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<text x="1008" y="749" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >2</text>
+<text x="1043" y="757" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >3</text>
+<text x="1078" y="765" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="10" font-weight="400" text-anchor="start" >0</text>
+<rect x="0" y="877" width="1200" height="23" rx="0" fill="#007acc"/>
+<text x="10" y="894" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >⊗ 0   △ 0    Git main</text>
+</svg>
