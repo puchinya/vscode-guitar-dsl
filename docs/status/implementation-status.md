@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-17
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 は PR #141 で phase:review。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 は PR #141 で phase:review。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -42,12 +42,19 @@
 
 ## Issue #142: ギター・リズム符のタイによるシンコペーション
 
-- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) はopen中。レビュー指摘 A1 / A2 / B1 / A3 / A4 を修正し、再レビュー待ち。
+- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) は2026-10-17に `main` へマージ済み。Issue #142 はclosed。
 - **実装**: `.t` / `.tie` による直後のリズム符へのタイをコンパイラで検証し、隣接小節、連結音価、`let` 境界、`%` 境界、コード押さえ方の一致を扱う。未使用 `let` 定義でもタイの構造と定義境界を検証する。Preview / PDF は段・ページ端でタイ弧を分割し、演奏順に隣接しない再生区間では通常の攻撃音に戻す。Inspector の単一コード試聴は最初の有効アタックを選び、小節・メロディ試聴は開始位置が継続符なら冒頭に一度だけ再アタックを含める。
 - **検証**: `npm run check:help`、`npm run check:ai`、sandbox外の `npm test`（1151 unit passing、90 E2E passing、6件 pending）、`npm run compile`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1599項目）、`git diff --check` がPASS。workflowの承認済み契約照合もPASS。
 - **表示証拠**: [Issue #142のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/142#issuecomment-6228612671) に、共通 `renderScoreSheets()` SVGから作成したライト/ダーク画像を添付し、タイ弧と連桁を目視確認した：[ライト](evidence/issue-142/preview-light.png)、[ダーク](evidence/issue-142/preview-dark.png)。実Extension Development Hostの画面キャプチャではなく、Preview/PDF共有SVGのラスタライズ結果。
 - **サンプル**: [`sample_rhythm_tie_syncopation.guitardsl`](../../samples/sample_rhythm_tie_syncopation.guitardsl)。
 - **文書オーナー**: docs/specs/guitardsl-syntax.md、docs/design/language-and-score-processing.md、docs/design/preview-rendering-and-export.md、本書、EN/JA Help とその digest、生成済み media/help、AI syntax reference。
+
+## Issue #144: VS Code E2E active-editor の競合と初回実行の不安定さ
+
+- **状態**: [PR #146](https://github.com/puchinya/vscode-guitar-dsl/pull/146) はレビュー中。Issue #144 はPRのマージ待ち。
+- **実装**: `showAndFocus` は対象URI・列・安定したactive tabをイベントと現在状態で確認し、上限内で一度だけ対象groupを再フォーカスする。失敗時のみ、URIをラベル化した最大128件のfocus traceを出す。Undo直前に対象文書/列とVS Codeウィンドウのfocusを検証する。P136はsidebar/auxiliary bar、theme、tabs、Preview、editor group/widthをsnapshotし、`finally`で復元する。macOSのE2E root hookは必要時に隔離Extension Development Hostを前面化する。安定性runnerは各回を別プロセス/プロファイルで実行し、retryしない。
+- **検証**: 修正後の `npm test` はHelp/AI同期、単体テストPASS、VS Code E2E **95件 PASS・6件 pending**。`npm run verify:e2e-stability -- --runs 5` はコミット `0bbc9fbd7ec12a9e9a2d00ce24a592344b6663eb` で **5/5 PASS**（各回95件PASS・6件pending、macOS 25.6 arm64 / VS Code 1.142.0 / Node 26.7.0、新規プロセス・プロファイル、retryなし）。`validate-docs --issue 144`、`verify-implementation-contract 144`、`git diff --check` もPASS。6件はcapture/audio条件が必要な既存pendingで、成功件数に含めていない。現行の `agent-required-check` はE2Eを実行しない。
+- **文書オーナー**: [`docs/agents/testing.md`](../agents/testing.md) と本書。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
