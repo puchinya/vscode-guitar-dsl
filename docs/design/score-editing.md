@@ -5,6 +5,7 @@
 
 - Status: Draft
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
+- Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
@@ -120,6 +121,8 @@ CapoSection, BeginnerSection, and TransposeSection remain the source of candidat
 ### Apply and Preview flow
 
 Candidate changes and section navigation do not write source text. Capo and Beginner selections project temporary overrides through the existing Preview controllers only when the target document is already displayed by Preview. A session snapshots only that URI's overrides. Cancel and section switching restore the snapshot unless an independent Preview action has superseded it; that external action invalidates the settings session and remains authoritative.
+
+Issue #145 places separate, directly operable Capo, colored Playability, and Beginner controls in a dedicated 44 px row immediately below the 48 px playback row at every supported Preview width. At 840 CSS px and above, barre policy, automatic/fixed capo selection, and Inspector detail links are also visible; narrower widths keep those supplemental controls in accessible overflow. Practice adds a 42 px row only while enabled. The score-settings row has no visible “Temporary Score Settings” text. Playability uses the host-computed score and level with green `#2e7d32` for veryEasy/easy, ochre `#8d6e00` for moderate, red `#b71c1c` for hard/veryHard, and neutral for unavailable; text accompanies color. It reuses host-owned models and controllers; a typed message must match the current Preview URI, document version, render generation, action schema, and supported candidate before it changes state. Unsupported or malformed messages are rejected before any Inspector invalidation, Preview controller call, or consumption of a pending focus-restoration hint. An accepted action calls the same `externalPreviewChanged(uri)` boundary so it supersedes an Inspector draft. Inspector remains the detailed comparison and the only DSL Apply/Cancel surface.
 
 Transpose displays its plan without applying a temporary Preview transform. Apply recomputes against the latest target text, confirms the host's current choice, revalidates URI/version/source/generation/revision, and submits one WorkspaceEdit. A stale confirmation, duplicate Apply, invalid plan, or rejected edit produces no source change. A successful edit is one undo step. After Apply, existing Preview overrides are recalculated from the new source text.
 

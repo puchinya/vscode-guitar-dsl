@@ -198,10 +198,20 @@ export interface Messages {
   msgTemplateOpenFailed: string;
   msgSampleOpenFailed: string;
 
-  // Capo / playability (preview toolbar, score settings editor, host notifications)
+  // Capo / playability (Preview score-settings row, score settings editor, host notifications)
+  uiScoreSettings: string;
+  uiMoreScoreSettings: string;
+  uiPreviewDetails: string;
+  uiClosePreviewDetails: string;
+  uiOpenScoreSettings: string;
+  uiOpenBeginnerSettings: string;
+  uiBeginnerCapoMode: string;
+  uiBeginnerFixed: string;
   uiCapo: string;
+  uiCapoUnavailable: string;
   uiCapoTitle: string;
   uiPlayability: string;
+  uiDifficulty: string;
   uiPlayabilityUnavailable: string;
   uiRecommended: string;
   uiCapoPreviewOnly: string;
@@ -218,8 +228,9 @@ export interface Messages {
   msgDocumentChanged: string;
   msgCapoUnusedDefinitions: (keys: string) => string;
 
-  // Beginner Mode (preview capo bar, score settings editor, host notifications)
+  // Beginner Mode (Preview score-settings row, score settings editor, host notifications)
   uiBeginnerMode: string;
+  uiBeginnerShort: string;
   uiBeginnerModeTitle: string;
   uiBeginnerOn: string;
   uiBeginnerOff: string;
@@ -449,9 +460,19 @@ export const MESSAGES_JA: Messages = {
   msgTemplateOpenFailed: 'テンプレートからドキュメントを作成できませんでした。',
   msgSampleOpenFailed: 'サンプルを開けませんでした。拡張機能を再インストールしてください。',
 
+  uiScoreSettings: '楽譜設定',
+  uiMoreScoreSettings: 'その他',
+  uiPreviewDetails: '置き換えと警告を表示',
+  uiClosePreviewDetails: '詳細を閉じる',
+  uiOpenScoreSettings: 'カポ / 弾きやすさの設定を開く',
+  uiOpenBeginnerSettings: '初心者モードの設定を開く',
+  uiBeginnerCapoMode: 'カポ位置の選び方',
+  uiBeginnerFixed: '固定',
   uiCapo: 'カポ',
+  uiCapoUnavailable: '取得できません',
   uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
   uiPlayability: '弾きやすさ',
+  uiDifficulty: '難易度',
   uiPlayabilityUnavailable: '評価できません',
   uiRecommended: '推奨',
   uiCapoPreviewOnly: 'プレビューのみ',
@@ -484,6 +505,7 @@ export const MESSAGES_JA: Messages = {
   msgCapoUnusedDefinitions: (keys: string) => `次のコード定義は使われなくなる可能性があります（削除はしません）: ${keys}`,
 
   uiBeginnerMode: '初心者モード',
+  uiBeginnerShort: '初心者',
   uiBeginnerModeTitle: '弾きやすいカポ位置と簡単なコードへの置き換えをプレビューとPDFに反映（DSLは変更しません）',
   uiBeginnerOn: 'ON',
   uiBeginnerOff: 'OFF',
@@ -733,9 +755,19 @@ export const MESSAGES_EN: Messages = {
   msgTemplateOpenFailed: 'Could not create a document from the template.',
   msgSampleOpenFailed: 'Could not open the sample. Try reinstalling the extension.',
 
+  uiScoreSettings: 'Score settings',
+  uiMoreScoreSettings: 'More',
+  uiPreviewDetails: 'Show substitutions and warnings',
+  uiClosePreviewDetails: 'Close details',
+  uiOpenScoreSettings: 'Open Capo / Playability settings',
+  uiOpenBeginnerSettings: 'Open Beginner Mode settings',
+  uiBeginnerCapoMode: 'Capo selection',
+  uiBeginnerFixed: 'Fixed',
   uiCapo: 'Capo',
+  uiCapoUnavailable: 'unavailable',
   uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',
   uiPlayability: 'Playability',
+  uiDifficulty: 'Difficulty',
   uiPlayabilityUnavailable: 'Not available',
   uiRecommended: 'Recommended',
   uiCapoPreviewOnly: 'Preview only',
@@ -768,6 +800,7 @@ export const MESSAGES_EN: Messages = {
   msgCapoUnusedDefinitions: (keys: string) => `These chord definitions may become unused (they are not deleted): ${keys}`,
 
   uiBeginnerMode: 'Beginner mode',
+  uiBeginnerShort: 'Beginner',
   uiBeginnerModeTitle: 'Show the preview and PDF with an easy capo position and simpler chords (the DSL is not changed)',
   uiBeginnerOn: 'ON',
   uiBeginnerOff: 'OFF',

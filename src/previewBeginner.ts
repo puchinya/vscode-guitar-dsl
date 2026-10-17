@@ -79,6 +79,12 @@ export class PreviewBeginnerController {
     return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy }, notify);
   }
 
+  /** Returns Beginner Mode to its recommended capo while retaining the barre policy. */
+  setAutoCapo(doc: vscode.TextDocument, notify = true): boolean {
+    if (!this.isActive(doc) || !this.state) return false;
+    return this.update(doc, { documentUri: doc.uri.toString(), barrePolicy: this.state.barrePolicy }, notify);
+  }
+
   /** Fixes the capo (manual); substitutions are recomputed for it. */
   setTargetCapo(doc: vscode.TextDocument, targetCapo: number, notify = true): boolean {
     if (!this.isActive(doc) || !this.state || !isValidCapo(targetCapo)) return false;

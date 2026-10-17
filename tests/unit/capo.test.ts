@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import { NOTE_NAMES } from '../../src/chordDetect';
 import { getDefaultVoicing } from '../../src/chordPresets';
 import { parseGuitarDsl } from '../../src/compiler';
+import { getMessages } from '../../src/i18n';
 import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
 import { parseTuningValue } from '../../src/instrumentModel';
 import {
@@ -375,8 +376,8 @@ describe('compiler - chord token source spans', () => {
   });
 });
 
-describe('capo - Preview effective state without duplicate toolbar', () => {
-  it('keeps host-computed capo state out of Preview controls while rendering effective DSL', () => {
+describe('capo - Preview effective state and temporary settings', () => {
+  it('renders host-computed capo candidates in the dedicated score-settings row', () => {
     const source = 'key: B\n| B | E | F# | B |\n';
     const model = buildCapoPreviewUiModel(source, 2);
     assert.strictEqual(model.sourceCapo, 0);
@@ -390,9 +391,17 @@ describe('capo - Preview effective state without duplicate toolbar', () => {
     assert.ok(effective.ok);
     assert.notStrictEqual(effective.text, source);
     const html = compileGuitarDslToHtml(effective.text, { locale: 'en', capo: model });
-    assert.strictEqual(html, compileGuitarDslToHtml(effective.text, { locale: 'en' }));
-    assert.ok(!html.includes('id="select-capo"'));
-    assert.ok(!html.includes('id="btn-apply-capo"'));
+    assert.notStrictEqual(html, compileGuitarDslToHtml(effective.text, { locale: 'en' }));
+    assert.ok(html.includes('id="temporary-score-settings-toggle"'));
+    assert.match(html, /id="preview-capo-select"[^>]*><option value="" disabled/);
+    const recommendedCandidate = model.candidates.find(candidate => candidate.recommended)!;
+    const recommendedOption = html.match(new RegExp(`<option value="${recommendedCandidate.capo}"([^>]*)>([^<]+)</option>`));
+    assert.strictEqual(recommendedOption?.[2], String(recommendedCandidate.capo),
+      'the closed select shows only the number');
+    assert.strictEqual(recommendedOption?.[1].match(/data-open-label="([^"]*)"/)?.[1],
+      `${recommendedCandidate.capo} · ${recommendedCandidate.score}/100 · ${getMessages('en').playabilityLevels[recommendedCandidate.level!]} · ★ ${getMessages('en').uiRecommended}`);
+    assert.ok(html.includes('id="preview-playability"') && html.includes(`${model.currentPlayability!.score}/100`));
+    assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
     assert.ok(!html.includes('id="capo-bar"'));
   });
 
@@ -400,7 +409,9 @@ describe('capo - Preview effective state without duplicate toolbar', () => {
     const model = buildCapoPreviewUiModel('capo: x\n| C |\n', undefined);
     assert.strictEqual(model.sourceCapo, null);
     assert.ok(!model.canApply);
-    const html = compileGuitarDslToHtml('capo: x\n| C |\n', { capo: model });
-    assert.ok(!html.includes('id="select-capo"'));
+    const html = compileGuitarDslToHtml('capo: x\n| C |\n', { locale: 'en', capo: model });
+    assert.match(html, /id="preview-capo-select"[^>]* disabled/);
+    assert.ok(html.includes('<option value="" disabled selected data-closed-label="Not available" data-open-label="Not available">Not available</option>'));
+    assert.match(html, /<option value="0" disabled data-closed-label="0" data-open-label="0 · Not available">0<\/option>/);
   });
 });

@@ -2,7 +2,12 @@ import * as assert from 'assert';
 import type * as vscode from 'vscode';
 import { PreviewBeginnerController } from '../../src/previewBeginner';
 import { PreviewCapoController } from '../../src/previewCapo';
-import { dispatchPreviewLegacyMessage } from '../../src/previewLegacyCommands';
+import {
+  dispatchPreviewLegacyMessage,
+  isCurrentPreviewMessageIdentity,
+  parsePreviewOpenSettingsIntent,
+  parsePreviewTemporarySettingsIntent
+} from '../../src/previewLegacyCommands';
 
 describe('Preview Extension Host compatibility messages', () => {
   const document = { uri: { toString: () => 'file:///compat.guitardsl' } } as vscode.TextDocument;
@@ -19,7 +24,8 @@ describe('Preview Extension Host compatibility messages', () => {
       clear: () => { calls.push('beginnerClear'); beginnerActive = false; },
       enable: () => { calls.push('beginnerEnable'); beginnerActive = true; },
       disable: () => { calls.push('beginnerDisable'); beginnerActive = false; },
-      setBarrePolicy: (_doc: vscode.TextDocument, policy: string) => calls.push(`barre:${policy}`)
+      setBarrePolicy: (_doc: vscode.TextDocument, policy: string) => calls.push(`barre:${policy}`),
+      setAutoCapo: () => calls.push('beginnerAutoCapo')
     } as unknown as PreviewBeginnerController,
     externalPreviewChanged: (uri: string) => calls.push(`external:${uri}`),
     applyCapo: async (_doc: vscode.TextDocument, capo: number) => { calls.push(`applyCapo:${capo}`); },
@@ -69,5 +75,35 @@ describe('Preview Extension Host compatibility messages', () => {
     assert.strictEqual(await dispatchPreviewLegacyMessage({ command: 'beginnerToggled', enabled: 'yes' }, document, dependencies()), true);
     assert.deepStrictEqual(calls, []);
     assert.strictEqual(await dispatchPreviewLegacyMessage({ command: 'other' }, document, dependencies()), false);
+  });
+
+  it('routes automatic Beginner capo selection through the existing controller', async () => {
+    beginnerActive = true;
+    assert.strictEqual(await dispatchPreviewLegacyMessage({ command: 'beginnerAutoCapo' }, document, dependencies()), true);
+    assert.deepStrictEqual(calls, ['external:file:///compat.guitardsl', 'beginnerAutoCapo']);
+  });
+
+  it('parses only typed settings messages with an allowlisted focus target and current identity shape', () => {
+    const identity = { documentUri: 'file:///song.guitardsl', documentVersion: 4, previewGeneration: 8 };
+    const valid = {
+      command: 'temporarySettingsChanged', action: 'capoChanged', value: { capo: 5, focusControl: 'preview-capo-select' }, ...identity
+    };
+    const parsed = parsePreviewTemporarySettingsIntent(valid);
+    assert.ok(parsed);
+    assert.strictEqual(parsed.action, 'capoChanged');
+    assert.ok(isCurrentPreviewMessageIdentity(parsed, identity));
+    assert.strictEqual(parsePreviewTemporarySettingsIntent({ ...valid, value: { capo: 13, focusControl: 'preview-capo-select' } }), undefined);
+    assert.strictEqual(parsePreviewTemporarySettingsIntent({ ...valid, value: { capo: 5, focusControl: 'orientation-landscape' } }), undefined);
+    assert.strictEqual(parsePreviewTemporarySettingsIntent({ ...valid, previewGeneration: Number.MAX_SAFE_INTEGER + 1 }), undefined);
+    assert.strictEqual(isCurrentPreviewMessageIdentity(parsed, { ...identity, previewGeneration: 9 }), false);
+  });
+
+  it('parses only an allowlisted Inspector section from current Preview identity data', () => {
+    const valid = {
+      command: 'openScoreSettingsFromPreview', section: 'beginner',
+      documentUri: 'file:///song.guitardsl', documentVersion: 4, previewGeneration: 8
+    };
+    assert.strictEqual(parsePreviewOpenSettingsIntent(valid)?.section, 'beginner');
+    assert.strictEqual(parsePreviewOpenSettingsIntent({ ...valid, section: 'arbitrary-command' }), undefined);
   });
 });

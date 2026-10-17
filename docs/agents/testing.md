@@ -66,6 +66,26 @@ env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS \
 
 The capture selects exactly one page target whose title identifies the Extension Development Host and saves under `docs/status/evidence/issue-134/`. It writes a candidate-list screenshot, then uses the active Inspector Webview frame to select one candidate with Tab and Space, select a second candidate with a following Tab and Space, and change the target from four to eight bars with the keyboard. After each host refresh it checks that DOM focus remains on the corresponding native button, the focused node is exposed as a button with the expected name in Chromium's accessibility tree, and the next keyboard action still works. A CDP mouse-wheel event over the Inspector pane reveals the playback controls before the final screenshot. This captures the selected VS Code renderer window and excludes native OS chrome. The accessibility-tree and keyboard checks are not a substitute for VoiceOver; report VoiceOver and speaker output separately as PASS or NOT RUN. Unit tests also assert native button semantics and the selected/first-enabled focus fallback when a choice becomes unavailable. Set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory for Japanese screenshots; the isolated portable profile copies the pack, registers it in its own `extensions.json`, and writes `user-data/languagepacks.json` from the pack's localization manifest so VS Code resolves the translated UI. It sets `VSCODE_PORTABLE` to that temporary profile so VS Code reads its isolated `argv.json`, passes the requested locale, and checks `vscode.env.language` before saving; a mismatch fails the run instead of producing a mislabeled screenshot. `GUITARDSL_E2E_THEME` accepts the installed theme name, such as `Default Light Modern`. `GUITARDSL_E2E_SCREENSHOT_TAG` is optional; alphanumeric and hyphen tags are appended to the filename so a fresh capture can preserve existing evidence. Without the capture flag, normal E2E runs do not open a DevTools endpoint or write screenshots.
 
+#### Native Preview `<select>` popup screenshots on macOS
+
+Chromium's Webview screenshot does not include the operating system's native `<select>` popup. For visual and keyboard evidence of the open Capo list, run the opt-in `Native Capo menu evidence capture` E2E suite on macOS. It resizes the Preview to exactly 421, 600, 840, and 1100 CSS pixels, focuses the native select through the existing DevTools helper, and opens it with a native Space key. Before capture, the suite queries CoreGraphics for the Extension Development Host's window ID; every image uses `screencapture -x -l <windowID> <file>`, so it contains that app window rather than the whole desktop. At 421px and 1100px it repeats the keyboard opening and sends ArrowDown and Return through `/usr/bin/osascript` and System Events while the Extension Development Host is frontmost. The test checks that full candidate details are present before each keyboard-opened menu appears, verifies Escape cancels and restores focus, commits the next supported capo, checks for exactly one Preview rebuild and unchanged source DSL, and captures the selected state. A second DSL with disabled capo candidates verifies native keyboard input cannot select an unsupported value and that the compact label returns after the list closes. The suite verifies the requested VS Code locale and writes PNGs to the requested temporary output directory. This procedure uses the E2E runner, CoreGraphics window enumeration, macOS System Events, and the `screencapture` command; it does not use Computer Use. macOS may require Automation/Accessibility permission for the test process to send native keys; if permission is denied, report keyboard selection as NOT RUN and retain the error instead of treating it as a pass. Inspect every saved PNG to confirm it is scoped to the Extension Development Host window and the native popup is visible with all candidate details readable before treating the capture as evidence.
+
+Run English dark-theme evidence with:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS \
+  GUITARDSL_E2E_CAPTURE_SCREENSHOTS=1 \
+  GUITARDSL_E2E_GREP='Native Capo menu evidence capture' \
+  GUITARDSL_E2E_NATIVE_CAPO_CAPTURE=1 \
+  GUITARDSL_E2E_NATIVE_CAPO_OUTPUT_DIR=/private/tmp/issue145-native \
+  GUITARDSL_E2E_LOCALE=en \
+  GUITARDSL_E2E_THEME='Default Dark Modern' \
+  GUITARDSL_E2E_VIEWPORT_WIDTH=2200 \
+  npm run test:e2e
+```
+
+Repeat with `GUITARDSL_E2E_THEME='Default Light Modern'` for light theme. For Japanese, set `GUITARDSL_E2E_LOCALE=ja` and `GUITARDSL_E2E_LANGUAGE_PACK_DIR` to an installed Japanese language-pack directory (for example, the VS Code language-pack extension directory). Change the output directory for each locale/theme combination so captures are kept separate. Run outside the command sandbox because this procedure launches VS Code, sends native keyboard events, and captures the selected macOS window.
+
 ### 3. Full Test Suite
 Run the Help and AI asset sync gates, then unit and E2E tests:
 ```bash

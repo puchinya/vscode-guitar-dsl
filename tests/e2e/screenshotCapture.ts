@@ -63,11 +63,12 @@ async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
   let lastTargets: DevToolsTarget[] = [];
   for (let attempt = 0; attempt < 50; attempt++) {
     lastTargets = await getTargets(port);
-    // Recent VS Code releases expose an opaque vscode-webview:// URL without
-    // the older purpose/extensionId query parameters. The Preview E2E opens
-    // only one webview panel, so the sole webview iframe is the target.
+    // Recent VS Code releases expose opaque vscode-webview:// URLs for the
+    // Preview, while Inspector views retain purpose=webviewView metadata.
     const previewTargets = lastTargets.filter(item => item.type === 'iframe'
-      && item.url.startsWith('vscode-webview://'));
+      && item.url.startsWith('vscode-webview://')
+      && !(item.url.includes('purpose=webviewView')
+        && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')));
     if (previewTargets.length === 1) return previewTargets[0];
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -93,6 +94,42 @@ export async function captureWorkbenchScreenshot(filename: string, issueNumber =
     const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
     const data = result.data;
     if (typeof data !== 'string') throw new Error('DevTools did not return screenshot data');
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+  });
+}
+
+/** Captures only the active Preview Webview at its real CSS viewport size. */
+export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145): Promise<void> {
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  await waitForPreviewTarget(port);
+  const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
+  await withWorkbenchDevTools(async send => {
+    const boundsResult = await send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
+        const rect = frame.getBoundingClientRect();
+        return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
+          x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
+      }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')))` ,
+      returnByValue: true
+    });
+    const boundsValue = (boundsResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof boundsValue !== 'string') throw new Error('Could not locate the visible Preview Webview in the workbench');
+    const visibleFrames = JSON.parse(boundsValue) as Array<{ x: number; y: number; width: number; height: number }>;
+    if (visibleFrames.length !== 1) {
+      throw new Error(`Expected one visible Preview iframe for capture, found ${visibleFrames.length}`);
+    }
+    const frame = visibleFrames[0];
+    await send('Page.enable');
+    const result = await send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip: { x: frame.x, y: frame.y, width: frame.width, height: frame.height, scale: 1 }
+    });
+    const data = result.data;
+    if (typeof data !== 'string') throw new Error('DevTools did not return a Preview screenshot');
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
   });
@@ -208,7 +245,8 @@ export async function waitForPreviewDocument(): Promise<void> {
   let lastState: unknown;
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
-      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: document.readyState !== 'loading' && !!document.querySelector('.toolbar-container'), url: location.href,
+      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: document.readyState !== 'loading'
+        && !!document.querySelector('.toolbar-container') && document.body?.dataset.previewInteractionsReady === 'true', url: location.href,
         name: window.name, body: document.body?.innerHTML.slice(0, 600), iframes: [...document.querySelectorAll('iframe')].map(frame => ({ name: frame.name, src: frame.src })) })`);
       if (JSON.parse(lastState as string).ready) return;
     } catch (error) {
@@ -220,13 +258,55 @@ export async function waitForPreviewDocument(): Promise<void> {
   throw new Error(`The GuitarDSL Preview webview did not render its toolbar: ${JSON.stringify(lastState)}`);
 }
 
-export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape'): Promise<void> {
+export async function waitForPreviewIdentity(identity: {
+  documentUri: string;
+  documentVersion: number;
+  previewGeneration: number;
+}): Promise<void> {
+  let lastState = 'unavailable';
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const state = await evaluatePreviewWebview<string>(`JSON.stringify({
+        documentUri: document.body?.dataset.previewDocumentUri,
+        documentVersion: Number(document.body?.dataset.previewDocumentVersion),
+        previewGeneration: Number(document.body?.dataset.previewGeneration)
+      })`);
+      lastState = state;
+      const actual = JSON.parse(state) as typeof identity;
+      if (actual.documentUri === identity.documentUri
+        && actual.documentVersion === identity.documentVersion
+        && actual.previewGeneration === identity.previewGeneration) return;
+    } catch (error) {
+      lastState = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  throw new Error(`Preview did not load the expected document identity ${JSON.stringify(identity)}; current=${lastState}`);
+}
+
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter' | 'ArrowDown'): Promise<void> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const target = await waitForPreviewTarget(port);
-  const code = key === 'Tab' ? 9 : 27;
+  const code = key === 'Tab' ? 9 : key === 'Escape' ? 27 : key === 'ArrowDown' ? 40 : 13;
   await withDevToolsTarget(target, async send => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+  });
+}
+
+/** Opens a native Preview control using a real DevTools mouse input event. */
+export async function clickPreviewElement(selector: string): Promise<void> {
+  const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) throw new Error('Preview element not found: ' + ${JSON.stringify(selector)});
+    const rect = element.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  })())`)) as { x: number; y: number };
+  const target = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  await withDevToolsTarget(target, async send => {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: geometry.x, y: geometry.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
   });
 }
 
@@ -343,6 +423,8 @@ export async function activateInspectorControlWithKeyboard(
 
 type SendDevToolsCommand = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
+let workbenchWindowSizeForRestore: { width: number; height: number } | undefined;
+
 async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -350,6 +432,38 @@ async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Prom
   }
   const target = await waitForWorkbenchTarget(port);
   return withDevToolsTarget(target, run);
+}
+
+/** Resizes the Extension Development Host viewport before editor sash tests. */
+export async function setWorkbenchViewportWidth(width: number): Promise<void> {
+  if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
+  await withWorkbenchDevTools(async send => {
+    const sizeResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      returnByValue: true
+    });
+    const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
+    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    workbenchWindowSizeForRestore ??= currentSize;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${Math.round(width)}, Math.max(900, window.outerHeight))`,
+      returnByValue: true
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+}
+
+/** Clears the optional emulated viewport after a width-matrix test. */
+export async function resetWorkbenchViewport(): Promise<void> {
+  await withWorkbenchDevTools(async send => {
+    if (!workbenchWindowSizeForRestore) return;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${workbenchWindowSizeForRestore.width}, ${workbenchWindowSizeForRestore.height})`,
+      returnByValue: true
+    });
+    workbenchWindowSizeForRestore = undefined;
+  });
 }
 
 export async function inspectWorkbenchLayout(): Promise<string> {
@@ -378,15 +492,16 @@ export async function resizeActiveEditorGroupToWidth(targetWidth: number): Promi
         if (!active) return { error: 'active editor group not found' };
         const activeRect = active.getBoundingClientRect();
         const activeLeft = activeRect.left;
+        const activeRight = activeRect.right;
         const sash = [...document.querySelectorAll('.monaco-sash.vertical:not(.primary-sidebar-sash)')]
           .map(node => ({ node, rect: node.getBoundingClientRect() }))
-          .filter(item => Math.abs(item.rect.left - activeLeft) < 10)
-          .sort((a, b) => Math.abs(a.rect.left - activeLeft) - Math.abs(b.rect.left - activeLeft))[0];
+          .map(item => ({ ...item, leftDistance: Math.abs(item.rect.left - activeLeft), rightDistance: Math.abs(item.rect.left - activeRight) }))
+          .filter(item => Math.min(item.leftDistance, item.rightDistance) < 10)
+          .sort((a, b) => Math.min(a.leftDistance, a.rightDistance) - Math.min(b.leftDistance, b.rightDistance))[0];
         if (!sash) return { error: 'active group sash not found', width: activeRect.width };
-        const editorRect = document.querySelector('.part.editor')?.getBoundingClientRect();
         return { width: activeRect.width, x: sash.rect.left + sash.rect.width / 2,
           y: Math.min(activeRect.bottom - 40, activeRect.top + 160),
-          direction: activeRect.left > (editorRect?.left ?? activeRect.left) + 5 ? -1 : 1 };
+          direction: sash.leftDistance < 10 ? -1 : 1 };
       })())`,
       returnByValue: true
     });

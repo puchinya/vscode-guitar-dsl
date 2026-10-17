@@ -34,7 +34,7 @@ export interface CompileHtmlOptions {
   /** Fresh production nonce for the executable script and main style element. */
   nonce?: string;
   /** One-shot target to focus after the host rebuilds Preview for a paper/orientation change. */
-  restoreFocusControl?: PreviewLayoutFocusControl;
+  restoreFocusControl?: PreviewFocusControl;
   /** Identity bound to the one-shot focus hint so stale messages cannot restore focus. */
   documentUri?: string;
   documentVersion?: number;
@@ -43,8 +43,22 @@ export interface CompileHtmlOptions {
 
 export type PreviewLayoutFocusControl = 'select-page-size' | 'orientation-portrait' | 'orientation-landscape';
 
+export type PreviewFocusControl = PreviewLayoutFocusControl
+  | 'preview-capo-select'
+  | 'toggle-preview-beginner'
+  | 'select-preview-barre-policy'
+  | 'select-preview-beginner-capo-mode';
+
 export function isPreviewLayoutFocusControl(value: unknown): value is PreviewLayoutFocusControl {
   return value === 'select-page-size' || value === 'orientation-portrait' || value === 'orientation-landscape';
+}
+
+export function isPreviewFocusControl(value: unknown): value is PreviewFocusControl {
+  return isPreviewLayoutFocusControl(value)
+    || value === 'preview-capo-select'
+    || value === 'toggle-preview-beginner'
+    || value === 'select-preview-barre-policy'
+    || value === 'select-preview-beginner-capo-mode';
 }
 
 type PlaybackHtmlEvent = PlaybackEvent & {
@@ -99,6 +113,33 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const msgs = getMessages(locale);
   const pageSize = options?.pageSize ?? 'A4';
   const orientation = options?.orientation ?? 'portrait';
+  const capoUi = options?.capo;
+  const beginnerUi = options?.beginner ?? { active: false, barrePolicy: 'forbid' as const, autoCapo: true, substitutions: [] };
+  const hasPreviewDetails = Boolean((beginnerUi.active && beginnerUi.substitutions.length > 0) || capoUi?.warning);
+  const previewDetailsIndicator = capoUi?.warning ? '⚠' : 'ⓘ';
+  const capoCandidates: CapoPreviewUiModel['candidates'] = capoUi?.candidates.length === 13
+    ? capoUi.candidates
+    : Array.from({ length: 13 }, (_, capo) => ({ capo, supported: false, recommended: false }));
+  const selectedCapo = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined ? '' : String(capoUi.targetCapo);
+  const capoOptionsHtml = [
+    `<option value="" disabled${selectedCapo === '' ? ' selected' : ''} data-closed-label="${escapeXml(msgs.uiPlayabilityUnavailable)}" data-open-label="${escapeXml(msgs.uiPlayabilityUnavailable)}">${escapeXml(msgs.uiPlayabilityUnavailable)}</option>`,
+    ...capoCandidates.map(candidate => {
+      const closedLabel = String(candidate.capo);
+      const openLabel = candidate.score !== undefined && candidate.level !== undefined
+        ? `${candidate.capo} · ${candidate.score}/100 · ${msgs.playabilityLevels[candidate.level]}${candidate.recommended ? ` · ★ ${msgs.uiRecommended}` : ''}`
+        : `${candidate.capo} · ${msgs.uiPlayabilityUnavailable}`;
+      return `<option value="${candidate.capo}"${candidate.capo === Number(selectedCapo) && selectedCapo !== '' ? ' selected' : ''}${candidate.supported ? '' : ' disabled'} data-closed-label="${escapeXml(closedLabel)}" data-open-label="${escapeXml(openLabel)}">${escapeXml(closedLabel)}</option>`;
+    })
+  ].join('');
+  const currentPlayabilityValueHtml = capoUi?.currentPlayability
+    ? `<span class="score-settings-playability-value"><span>${capoUi.currentPlayability.score}/100</span><span class="score-settings-playability-separator"> · </span><span>${escapeXml(msgs.playabilityLevels[capoUi.currentPlayability.level])}</span></span>`
+    : `<span class="score-settings-playability-value">${escapeXml(msgs.uiPlayabilityUnavailable)}</span>`;
+  const currentPlayabilityControlLabel = capoUi?.currentPlayability
+    ? `${msgs.uiPlayability} ${msgs.playabilityLevels[capoUi.currentPlayability.level]} ${capoUi.currentPlayability.score}/100`
+    : `${msgs.uiPlayability} ${msgs.uiPlayabilityUnavailable}`;
+  const playabilityLevel = capoUi?.currentPlayability?.level ?? 'unavailable';
+  const capoSelectDisabled = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined
+    || (beginnerUi.active && beginnerUi.autoCapo);
   const score = parseGuitarDsl(dslContent, {
     expandPageBreakRepeats: options?.expandPageBreakRepeats
   });
@@ -123,7 +164,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     documentVersion: Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : null,
     previewGeneration: Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : null
   }));
-  const restoreFocusControlJson = JSON.stringify(isPreviewLayoutFocusControl(options?.restoreFocusControl)
+  const restoreFocusControlJson = JSON.stringify(isPreviewFocusControl(options?.restoreFocusControl)
     ? options.restoreFocusControl
     : null);
   const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
@@ -158,7 +199,7 @@ ${cspMeta}
     font-family: ${FONT_FAMILY_SANS};
     color: #111;
     margin: 0;
-    padding: 66px 16px 36px 16px;
+    padding: 110px 16px 36px 16px;
     background: #e9ecef;
     min-height: 100vh;
   }
@@ -181,6 +222,143 @@ ${cspMeta}
     color: var(--vscode-foreground, #cccccc);
     user-select: none;
   }
+  .score-settings-row {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    background: var(--vscode-editorWidget-background, #252526);
+    border-bottom: 1px solid var(--vscode-editorWidget-border, #3c3c3c);
+    color: var(--vscode-foreground, #cccccc);
+    z-index: 999;
+    user-select: none;
+  }
+  .score-settings-primary,
+  .score-settings-capo,
+  .score-settings-beginner,
+  .score-settings-playability {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 5px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .score-settings-primary { flex: 0 0 auto; gap: 8px; }
+  .score-settings-label { color: var(--vscode-descriptionForeground, #cccccc); font-size: 11px; }
+  .score-settings-select {
+    min-width: 0;
+    max-width: 92px;
+    height: 28px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 4px;
+    padding: 2px 4px;
+    background: var(--vscode-input-background, #252526);
+    color: var(--vscode-input-foreground, #eeeeee);
+    font: inherit;
+    font-size: 11px;
+  }
+  .score-settings-playability {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .score-settings-playability-value {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    column-gap: 0;
+    min-height: 29px;
+    padding: 2px 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .score-settings-playability[data-level="veryEasy"] .score-settings-playability-value,
+  .score-settings-playability[data-level="easy"] .score-settings-playability-value { background-color: #2e7d32; border-color: #459e4b; }
+  .score-settings-playability[data-level="moderate"] .score-settings-playability-value { background-color: #8d6e00; border-color: #b09200; }
+  .score-settings-playability[data-level="hard"] .score-settings-playability-value,
+  .score-settings-playability[data-level="veryHard"] .score-settings-playability-value { background-color: #b71c1c; border-color: #d95c5c; }
+  .score-settings-playability[data-level="unavailable"] .score-settings-playability-value {
+    min-height: 0;
+    padding: 0;
+    color: var(--vscode-descriptionForeground, #cccccc);
+    font-weight: 400;
+  }
+  .score-settings-beginner { cursor: pointer; font-size: 11px; }
+  .score-settings-beginner input { margin: 0; }
+  .score-settings-overflow { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .score-settings-overflow-toggle { display: none; }
+  .score-settings-row .score-settings-details-toggle { width: 28px; min-width: 28px; justify-content: center; padding-left: 0; padding-right: 0; }
+  .score-settings-details-toggle[hidden],
+  .score-settings-details-close[hidden] { display: none !important; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-section,
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-section + .toolbar-panel-section {
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    flex-wrap: nowrap;
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-field { min-width: 82px; flex: 0 0 auto; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-action { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-field > span,
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"] .toolbar-panel-label { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"]:not([data-details-open="true"]) .toolbar-panel-section:has(.settings-substitutions),
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"]:not([data-details-open="true"]) .toolbar-panel-section:has(.settings-warning) { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] {
+    position: fixed;
+    z-index: 1200;
+    display: block;
+    align-items: stretch;
+    gap: 0;
+    width: min(360px, calc(100vw - 16px));
+    max-width: none;
+    max-height: calc(100vh - 64px);
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 6px;
+    background: var(--vscode-editorWidget-background, #252526);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:not(:has(.settings-substitutions, .settings-warning)) { display: none; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-substitutions),
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-warning) {
+    align-items: flex-start;
+    gap: 8px;
+    margin: 10px 0 0;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--vscode-widget-border, #555);
+    flex-wrap: wrap;
+  }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-section:has(.settings-substitutions) { margin-top: 0; padding-top: 0; border-top: 0; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .toolbar-panel-label { display: block; }
+  .score-settings-row .temporary-score-settings-panel[data-inline="true"][data-details-open="true"] .score-settings-details-close { display: inline-flex; }
   .toolbar-transport, .toolbar-actions {
     display: flex;
     align-items: center;
@@ -194,7 +372,7 @@ ${cspMeta}
   }
   .toolbar-actions {
     position: relative;
-    max-width: 52%;
+    max-width: 72%;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
@@ -253,6 +431,7 @@ ${cspMeta}
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }
   .toolbar-disclosure-panel[hidden] { display: none; }
+  #temporary-score-settings-panel[hidden] { display: none !important; }
   .toolbar-panel-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .toolbar-panel-section + .toolbar-panel-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--vscode-widget-border, #555); }
   .toolbar-panel-label { flex: 0 0 100%; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
@@ -260,6 +439,23 @@ ${cspMeta}
   .toolbar-disclosure-panel .tool-btn { color: var(--vscode-foreground, #aaa); }
   .toolbar-disclosure-panel .tool-btn.active { background: var(--vscode-button-background, #007acc); color: var(--vscode-button-foreground, #fff); }
   .toolbar-disclosure-panel .tool-select { background: var(--vscode-input-background, #1e1e1e); color: var(--vscode-input-foreground, #eee); }
+  .temporary-score-settings-panel .toolbar-panel-section { align-items: flex-start; }
+  .temporary-score-settings-panel .toolbar-panel-field { display: grid; gap: 4px; min-width: 132px; flex: 1 1 132px; }
+  .temporary-score-settings-panel .toolbar-panel-field > span,
+  .temporary-score-settings-panel .toolbar-panel-label { color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
+  .temporary-score-settings-panel .tool-select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .temporary-score-settings-panel .settings-playability {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--vscode-descriptionForeground, #aaa);
+    font-size: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .temporary-score-settings-panel .settings-warning { flex: 1 1 100%; color: var(--vscode-errorForeground, #f48771); font-size: 12px; }
+  .temporary-score-settings-panel .settings-substitutions { margin: 0; padding-left: 18px; font-size: 12px; }
+  .toolbar-score-indicator { margin-left: 4px; color: var(--vscode-descriptionForeground, #ccc); font-variant-numeric: tabular-nums; }
   .playback-toggle {
     display: inline-flex;
     align-items: center;
@@ -277,7 +473,7 @@ ${cspMeta}
   .playback-error:empty { display: none; }
   .practice-toolbar {
     position: fixed;
-    top: 48px;
+    top: 92px;
     left: 0;
     right: 0;
     height: 42px;
@@ -293,7 +489,7 @@ ${cspMeta}
     overflow-x: auto;
     user-select: none;
   }
-  body.has-practice-row { padding-top: 108px !important; }
+  body.has-practice-row { padding-top: 152px !important; }
   body.has-practice-row .practice-toolbar { display: flex; }
   .practice-control-label {
     display: inline-flex;
@@ -476,10 +672,28 @@ ${cspMeta}
     cursor: pointer;
   }
 
-  @media (max-width: 660px) {
+  @media (max-width: 899px) {
     .toolbar-action-label { display: none; }
     .toolbar-action, .playback-control-btn { padding-left: 6px; padding-right: 6px; }
-    .toolbar-actions { max-width: 48%; }
+    .toolbar-actions { max-width: 57%; gap: 4px; }
+  }
+  @media (max-width: 660px) {
+    .transport-label { display: none; }
+    .playback-time { min-width: 70px; }
+    .toolbar-actions { max-width: 60%; }
+  }
+  @media (max-width: 600px) {
+    .score-settings-playability-separator { display: none; }
+    .score-settings-playability-value { column-gap: 4px; }
+  }
+  @media (max-width: 839px) {
+    .score-settings-overflow { flex: 0 0 auto; }
+    .score-settings-overflow-toggle { display: inline-flex; }
+    .score-settings-details-toggle { display: none !important; }
+    .score-settings-row .temporary-score-settings-panel[data-inline="false"] {
+      position: fixed;
+      display: block;
+    }
   }
   @media (max-width: 440px) {
     .toolbar-container { padding-left: 4px; padding-right: 4px; gap: 3px; }
@@ -488,6 +702,12 @@ ${cspMeta}
     .playback-time { min-width: 70px; font-size: 10px; }
     .playback-control-btn { width: 30px; padding: 3px 2px; font-size: 11px; }
     .toolbar-actions { max-width: 36%; gap: 3px; }
+    .score-settings-row { gap: 3px; padding-left: 4px; padding-right: 4px; }
+    .score-settings-primary { gap: 4px; }
+    .score-settings-label, .score-settings-playability { font-size: 10px; }
+    .score-settings-select { max-width: 64px; height: 26px; padding: 2px; font-size: 10px; }
+    .score-settings-beginner { gap: 2px; font-size: 10px; }
+    .score-settings-overflow-toggle { min-height: 26px; padding: 2px 5px; font-size: 10px; }
   }
   @media (max-width: 360px) {
     .playback-time { min-width: 62px; font-size: 9px; }
@@ -501,7 +721,10 @@ ${cspMeta}
   }
 </style>
 </head>
-<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}">
+<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"
+  data-preview-document-uri="${escapeXml(options?.documentUri ?? '')}"
+  data-preview-document-version="${Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : ''}"
+  data-preview-generation="${Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : ''}">
   <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
     <div class="toolbar-transport">
     <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
@@ -547,6 +770,28 @@ ${cspMeta}
         </div>
       </div>
       <button class="toolbar-action btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span><span class="toolbar-action-label"> ${escapeXml(msgs.uiHelp)}</span></button>
+    </div>
+  </div>
+
+  <div class="score-settings-row" id="score-settings-row" role="group" aria-label="${escapeXml(msgs.uiScoreSettings)}">
+    <div class="score-settings-primary">
+      <label class="score-settings-capo" for="preview-capo-select"><span class="score-settings-label">${escapeXml(msgs.uiCapo)}</span><select id="preview-capo-select" class="score-settings-select" aria-label="${escapeXml(msgs.uiCapo)}" title="${escapeXml(msgs.uiCapoTitle)}"${capoSelectDisabled ? ' disabled' : ''}>${capoOptionsHtml}</select></label>
+      <div class="score-settings-playability" id="preview-playability" data-level="${playabilityLevel}" role="status" aria-live="polite" aria-label="${escapeXml(currentPlayabilityControlLabel)}"><span class="score-settings-label">${escapeXml(msgs.uiPlayability)}</span>${currentPlayabilityValueHtml}</div>
+      <label class="score-settings-beginner" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><input id="toggle-preview-beginner" type="checkbox"${beginnerUi.active ? ' checked' : ''}><span>${escapeXml(msgs.uiBeginnerShort)}</span><span>${beginnerUi.active ? escapeXml(msgs.uiBeginnerOn) : escapeXml(msgs.uiBeginnerOff)}</span></label>
+    </div>
+    <div class="score-settings-overflow">
+      <button class="toolbar-action score-settings-overflow-toggle" id="temporary-score-settings-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiMoreScoreSettings)}" title="${escapeXml(msgs.uiMoreScoreSettings)}">⋯ <span>${escapeXml(msgs.uiMoreScoreSettings)}</span></button>
+      <button class="toolbar-action score-settings-details-toggle" id="score-settings-details-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiPreviewDetails)}" title="${escapeXml(msgs.uiPreviewDetails)}" data-has-details="${hasPreviewDetails}" hidden>${previewDetailsIndicator}</button>
+      <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiMoreScoreSettings)}" data-group-label="${escapeXml(msgs.uiMoreScoreSettings)}" data-details-label="${escapeXml(msgs.uiPreviewDetails)}" data-inline="false" data-details-open="false" hidden>
+        <button class="toolbar-action score-settings-details-close" id="close-score-settings-details" type="button" aria-label="${escapeXml(msgs.uiClosePreviewDetails)}" title="${escapeXml(msgs.uiClosePreviewDetails)}" hidden>×</button>
+        <div class="toolbar-panel-section" data-settings-section="beginner">
+          <label class="toolbar-panel-field" for="select-preview-barre-policy"><span>${escapeXml(msgs.uiBarreChords)}</span><select id="select-preview-barre-policy" class="score-settings-select" title="${escapeXml(msgs.uiBarreTitle)}"${beginnerUi.active ? '' : ' disabled'}><option value="forbid"${beginnerUi.barrePolicy === 'forbid' ? ' selected' : ''}>${escapeXml(msgs.uiBarreForbid)}</option><option value="allow"${beginnerUi.barrePolicy === 'allow' ? ' selected' : ''}>${escapeXml(msgs.uiBarreAllow)}</option></select></label>
+          <label class="toolbar-panel-field" for="select-preview-beginner-capo-mode"><span>${escapeXml(msgs.uiBeginnerCapoMode)}</span><select id="select-preview-beginner-capo-mode" class="score-settings-select"${beginnerUi.active ? '' : ' disabled'}><option value="auto"${beginnerUi.autoCapo ? ' selected' : ''}>${escapeXml(msgs.uiBeginnerAuto)}</option><option value="fixed"${beginnerUi.autoCapo ? '' : ' selected'}>${escapeXml(msgs.uiBeginnerFixed)}</option></select></label>
+        </div>
+        ${beginnerUi.active && beginnerUi.substitutions.length ? `<div class="toolbar-panel-section"><span class="toolbar-panel-label">${escapeXml(msgs.uiBeginnerSubstitutions)}</span><ul class="settings-substitutions">${beginnerUi.substitutions.map(([source, target]) => `<li>${escapeXml(source)} → ${escapeXml(target)}</li>`).join('')}</ul></div>` : ''}
+        ${capoUi?.warning ? `<div class="toolbar-panel-section"><p class="settings-warning" role="status">${escapeXml(capoUi.warning)}</p></div>` : ''}
+        <div class="toolbar-panel-section"><button class="toolbar-action" id="open-score-settings-capo-from-preview" type="button" aria-label="${escapeXml(msgs.uiOpenScoreSettings)}" title="${escapeXml(msgs.uiOpenScoreSettings)}">↗ ${escapeXml(msgs.uiCapo)}</button><button class="toolbar-action" id="open-score-settings-beginner-from-preview" type="button" aria-label="${escapeXml(msgs.uiOpenBeginnerSettings)}" title="${escapeXml(msgs.uiOpenBeginnerSettings)}">↗ ${escapeXml(msgs.uiBeginnerShort)}</button></div>
+      </div>
     </div>
   </div>
 
@@ -617,10 +862,106 @@ ${cspMeta}
       const savePdfBtn = document.getElementById('btn-save-pdf');
       const playbackOptionsToggle = document.getElementById('playback-options-toggle');
       const viewExportToggle = document.getElementById('view-export-toggle');
+      const temporarySettingsToggle = document.getElementById('temporary-score-settings-toggle');
+      const scoreSettingsDetailsToggle = document.getElementById('score-settings-details-toggle');
+      const temporarySettingsPanel = document.getElementById('temporary-score-settings-panel');
+      const scoreSettingsDetailsClose = document.getElementById('close-score-settings-details');
+      function syncScoreSettingsLayout() {
+        if (!temporarySettingsToggle || !temporarySettingsPanel) return;
+        const inline = window.innerWidth >= 840;
+        const wasInline = temporarySettingsPanel.dataset.inline === 'true';
+        if (wasInline !== inline && temporarySettingsPanel.dataset.detailsOpen === 'true') {
+          temporarySettingsPanel.dataset.detailsOpen = 'false';
+          temporarySettingsPanel.setAttribute('role', 'group');
+          temporarySettingsPanel.setAttribute('aria-label', temporarySettingsPanel.dataset.groupLabel);
+          if (scoreSettingsDetailsClose) scoreSettingsDetailsClose.hidden = true;
+        }
+        temporarySettingsPanel.dataset.inline = String(inline);
+        temporarySettingsToggle.hidden = inline;
+        if (scoreSettingsDetailsToggle) {
+          scoreSettingsDetailsToggle.hidden = !inline || scoreSettingsDetailsToggle.dataset.hasDetails !== 'true';
+          scoreSettingsDetailsToggle.setAttribute('aria-expanded', String(inline && temporarySettingsPanel.dataset.detailsOpen === 'true'));
+        }
+        if (inline) {
+          temporarySettingsPanel.hidden = false;
+          temporarySettingsToggle.setAttribute('aria-expanded', 'false');
+        } else if (wasInline) {
+          temporarySettingsPanel.hidden = true;
+          temporarySettingsToggle.setAttribute('aria-expanded', 'false');
+        }
+      }
+      syncScoreSettingsLayout();
+      const scoreSettingsDisclosure = {
+        button: temporarySettingsToggle,
+        buttons: [temporarySettingsToggle, scoreSettingsDetailsToggle].filter(Boolean),
+        panel: temporarySettingsPanel,
+        detailsButton: scoreSettingsDetailsToggle,
+        groupLabel: temporarySettingsPanel?.dataset.groupLabel,
+        detailsLabel: temporarySettingsPanel?.dataset.detailsLabel
+      };
       const disclosureItems = [
-        { button: playbackOptionsToggle, panel: document.getElementById('playback-options-panel') },
-        { button: viewExportToggle, panel: document.getElementById('view-export-panel') }
+        { button: playbackOptionsToggle, buttons: [playbackOptionsToggle], panel: document.getElementById('playback-options-panel') },
+        { button: viewExportToggle, buttons: [viewExportToggle], panel: document.getElementById('view-export-panel') },
+        scoreSettingsDisclosure
       ].filter(item => item.button && item.panel);
+      const capoSelect = document.getElementById('preview-capo-select');
+      const beginnerToggle = document.getElementById('toggle-preview-beginner');
+      const barrePolicySelect = document.getElementById('select-preview-barre-policy');
+      const beginnerCapoModeSelect = document.getElementById('select-preview-beginner-capo-mode');
+      const openCapoSettingsButton = document.getElementById('open-score-settings-capo-from-preview');
+      const openBeginnerSettingsButton = document.getElementById('open-score-settings-beginner-from-preview');
+      let capoOptionDetailsVisible = false;
+      function setCapoOptionDetailsVisible(visible) {
+        if (!capoSelect || capoOptionDetailsVisible === visible) return;
+        capoOptionDetailsVisible = visible;
+        Array.from(capoSelect.options).forEach(option => {
+          option.textContent = visible ? option.dataset.openLabel : option.dataset.closedLabel;
+        });
+      }
+      function postTemporarySettings(action, value, focusControl) {
+        if (vscode) vscode.postMessage({
+          command: 'temporarySettingsChanged',
+          action,
+          value: { ...value, focusControl },
+          ...previewIdentity
+        });
+      }
+      if (capoSelect) {
+        capoSelect.addEventListener('mousedown', () => setCapoOptionDetailsVisible(true));
+        capoSelect.addEventListener('keydown', event => {
+          if (event.key === 'Escape' || event.key === 'Tab') {
+            setCapoOptionDetailsVisible(false);
+          } else if (event.key === ' ') {
+            setCapoOptionDetailsVisible(true);
+          } else if (event.key === 'Enter' && !event.repeat) {
+            setCapoOptionDetailsVisible(!capoOptionDetailsVisible);
+          } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            setCapoOptionDetailsVisible(true);
+          }
+        }, true);
+        capoSelect.addEventListener('blur', () => setCapoOptionDetailsVisible(false));
+        capoSelect.addEventListener('change', () => {
+          setCapoOptionDetailsVisible(false);
+          postTemporarySettings('capoChanged', { capo: Number(capoSelect.value) }, 'preview-capo-select');
+        });
+        document.addEventListener('pointerdown', event => {
+          if (event.target !== capoSelect) setCapoOptionDetailsVisible(false);
+        }, true);
+      }
+      if (beginnerToggle) beginnerToggle.addEventListener('change', () => postTemporarySettings('beginnerToggled', { enabled: beginnerToggle.checked }, 'toggle-preview-beginner'));
+      if (barrePolicySelect) barrePolicySelect.addEventListener('change', () => postTemporarySettings('barrePolicyChanged', { policy: barrePolicySelect.value }, 'select-preview-barre-policy'));
+      if (beginnerCapoModeSelect) beginnerCapoModeSelect.addEventListener('change', () => postTemporarySettings('beginnerCapoModeChanged', {
+        mode: beginnerCapoModeSelect.value,
+        capo: capoSelect ? Number(capoSelect.value) : undefined
+      }, 'select-preview-beginner-capo-mode'));
+      if (vscode) {
+        if (openCapoSettingsButton) openCapoSettingsButton.addEventListener('click', () => vscode.postMessage({
+          command: 'openScoreSettingsFromPreview', section: 'capo', ...previewIdentity
+        }));
+        if (openBeginnerSettingsButton) openBeginnerSettingsButton.addEventListener('click', () => vscode.postMessage({
+          command: 'openScoreSettingsFromPreview', section: 'beginner', ...previewIdentity
+        }));
+      }
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
       const practiceToggle = document.getElementById('practice-toggle');
@@ -1667,7 +2008,12 @@ ${cspMeta}
       }
 
       function positionDisclosure(item) {
-        if (!item || !item.button || !item.panel || item.panel.hidden) return;
+        if (!item || !item.button || !item.panel || item.panel.hidden
+          || (item.panel.dataset.inline === 'true' && item.panel.dataset.detailsOpen !== 'true')) return;
+        if (item.button.getClientRects().length === 0) {
+          item.button = item.buttons.find(button => button && button.getClientRects().length > 0) || item.button;
+          item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
+        }
         const trigger = item.button.getBoundingClientRect();
         const width = Math.min(360, Math.max(0, window.innerWidth - 16));
         const panelHeight = Math.min(item.panel.scrollHeight, Math.max(0, window.innerHeight - 64));
@@ -1678,39 +2024,96 @@ ${cspMeta}
 
       function closeDisclosure(item, returnFocus) {
         if (!item || !item.panel || item.panel.hidden) return;
+        const inlineDetails = item.panel.dataset.inline === 'true' && item.panel.dataset.detailsOpen === 'true';
+        if (item.panel.dataset.inline === 'true' && !inlineDetails) return;
+        const focusTarget = item.button;
+        if (inlineDetails) {
+          item.panel.dataset.detailsOpen = 'false';
+          item.panel.setAttribute('role', 'group');
+          item.panel.setAttribute('aria-label', item.groupLabel);
+          const closeButton = item.panel.querySelector('.score-settings-details-close');
+          if (closeButton) closeButton.hidden = true;
+          item.buttons.forEach(button => {
+            button.setAttribute('aria-expanded', 'false');
+            button.setAttribute('aria-controls', item.panel.id);
+          });
+          item.button = item.buttons.find(button => button !== item.detailsButton) || item.button;
+          if (returnFocus && focusTarget) focusTarget.focus();
+          return;
+        }
         item.panel.hidden = true;
-        item.button.setAttribute('aria-expanded', 'false');
-        item.button.setAttribute('aria-controls', item.panel.id);
-        if (returnFocus) item.button.focus();
+        item.buttons.forEach(button => {
+          button.setAttribute('aria-expanded', 'false');
+          button.setAttribute('aria-controls', item.panel.id);
+        });
+        if (returnFocus && focusTarget) focusTarget.focus();
       }
 
       disclosureItems.forEach(item => {
-        const handleDisclosureKeydown = event => {
+        const handleDisclosureKeydown = (event, button) => {
           if (event.key === 'Escape') {
             event.preventDefault();
+            if (button) item.button = button;
             closeDisclosure(item, true);
+          } else if (event.key === 'Tab' && !event.shiftKey && button?.hasAttribute('data-settings-focus-target') && !item.panel.hidden) {
+            const target = document.getElementById(button.getAttribute('data-settings-focus-target'));
+            if (target) {
+              event.preventDefault();
+              target.focus();
+            }
           }
         };
-        item.button.addEventListener('click', () => {
-          const open = item.panel.hidden;
-          disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
-          item.panel.hidden = !open;
-          item.button.setAttribute('aria-expanded', String(open));
-          if (open) positionDisclosure(item);
+        item.buttons.forEach(button => {
+          button.addEventListener('click', () => {
+            const isDetails = item.detailsButton === button;
+            const alreadyActive = isDetails
+              ? item.panel.dataset.detailsOpen === 'true'
+              : !item.panel.hidden && item.button === button;
+            disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
+            if (alreadyActive) {
+              closeDisclosure(item, false);
+              return;
+            }
+            item.panel.hidden = false;
+            if (item.detailsButton) {
+              item.panel.dataset.detailsOpen = String(isDetails);
+              item.panel.setAttribute('role', isDetails ? 'region' : 'group');
+              item.panel.setAttribute('aria-label', isDetails ? item.detailsLabel : item.groupLabel);
+              const closeButton = item.panel.querySelector('.score-settings-details-close');
+              if (closeButton) closeButton.hidden = !isDetails;
+            }
+            item.button = button;
+            item.buttons.forEach(trigger => {
+              trigger.setAttribute('aria-expanded', String(trigger === button));
+              trigger.setAttribute('aria-controls', item.panel.id);
+            });
+            positionDisclosure(item);
+          });
+          button.addEventListener('keydown', event => handleDisclosureKeydown(event, button));
         });
-        item.button.addEventListener('keydown', handleDisclosureKeydown);
-        item.panel.addEventListener('keydown', handleDisclosureKeydown);
+        item.panel.addEventListener('keydown', event => handleDisclosureKeydown(event));
+      });
+      const scoreSettingsDisclosureItem = disclosureItems.find(item => item.panel === temporarySettingsPanel);
+      if (scoreSettingsDetailsClose && scoreSettingsDisclosureItem) {
+        scoreSettingsDetailsClose.addEventListener('click', () => closeDisclosure(scoreSettingsDisclosureItem, true));
+      }
+      [temporarySettingsToggle, scoreSettingsDetailsToggle].filter(Boolean).forEach(button => {
+        button.addEventListener('keydown', event => {
+          if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          button.click();
+        });
       });
       document.addEventListener('pointerdown', event => {
         disclosureItems.forEach(item => {
-          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+          if (!item.panel.hidden && !item.buttons.some(button => button.contains(event.target)) && !item.panel.contains(event.target)) {
             closeDisclosure(item, false);
           }
         });
       });
       document.addEventListener('focusin', event => {
         disclosureItems.forEach(item => {
-          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+          if (!item.panel.hidden && !item.buttons.some(button => button.contains(event.target)) && !item.panel.contains(event.target)) {
             closeDisclosure(item, false);
           }
         });
@@ -1721,7 +2124,12 @@ ${cspMeta}
           event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
       });
-      window.addEventListener('resize', () => disclosureItems.forEach(positionDisclosure));
+      window.addEventListener('resize', () => {
+        syncScoreSettingsLayout();
+        disclosureItems.forEach(item => {
+          if (!item.panel.hidden) positionDisclosure(item);
+        });
+      });
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
@@ -1763,15 +2171,20 @@ ${cspMeta}
 
       function restoreLayoutFocus() {
         if (!restoreFocusControl) return;
-        const item = disclosureItems.find(entry => entry.button === viewExportToggle);
-        if (item) {
+        const target = document.getElementById(restoreFocusControl);
+        const scoreSettingsTarget = target?.closest('#score-settings-row');
+        const item = disclosureItems.find(entry => target && entry.panel.contains(target))
+          || (!scoreSettingsTarget && disclosureItems.find(entry => entry.button === viewExportToggle));
+        if (item && item.panel.dataset.inline !== 'true') {
           disclosureItems.forEach(other => closeDisclosure(other, false));
           item.panel.hidden = false;
-          item.button.setAttribute('aria-expanded', 'true');
+          if (item.button.getClientRects().length === 0) {
+            item.button = item.buttons.find(button => button && button.getClientRects().length > 0) || item.button;
+          }
+          item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
           positionDisclosure(item);
         }
-        const target = document.getElementById(restoreFocusControl);
-        (target || viewExportToggle).focus();
+        (target || item && item.button || viewExportToggle).focus();
         if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
 
@@ -1810,6 +2223,7 @@ ${cspMeta}
         stopPlayback();
         vscode.postMessage({ command: 'progressionAudioPreviewStopped', leaseId: progressionAudioLeaseId });
       }
+      document.body.dataset.previewInteractionsReady = 'true';
     })();
   </script>
 </body>

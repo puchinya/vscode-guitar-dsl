@@ -56,6 +56,33 @@
 - **検証**: 修正後の `npm test` はHelp/AI同期、単体テストPASS、VS Code E2E **95件 PASS・6件 pending**。`npm run verify:e2e-stability -- --runs 5` はコミット `0bbc9fbd7ec12a9e9a2d00ce24a592344b6663eb` で **5/5 PASS**（各回95件PASS・6件pending、macOS 25.6 arm64 / VS Code 1.142.0 / Node 26.7.0、新規プロセス・プロファイル、retryなし）。`validate-docs --issue 144`、`verify-implementation-contract 144`、`git diff --check` もPASS。6件はcapture/audio条件が必要な既存pendingで、成功件数に含めていない。現行の `agent-required-check` はE2Eを実行しない。
 - **文書オーナー**: [`docs/agents/testing.md`](../agents/testing.md) と本書。
 
+## Issue #145: Previewの一時楽譜設定（カポ・難易度・初心者モード）を復元
+
+- **状態**: 最新仕様追補とPR #149の指摘（レビューコメント `5557502582` を含む）を反映。ネイティブCapo一覧のOSキーボード選択も追加検証済み。PR #149 は再レビュー待ちで、未マージ。
+- **実装**: 48px再生行の直下に44pxの楽譜設定行を常時表示し、「一時楽譜設定」の見出しは表示しない。カポ・弾きやすさ・初心者モードを直接操作できる。カポの選択欄を閉じた時は数字だけを表示し、選択中のドロップダウン項目だけ数字・スコア・難易度・おすすめを表示する。選択欄にも一覧にも「Capo／カポ」を重ねて表示しない。弾きやすさはデザイン案に合わせ、ラベルの右に白字の緑 `#2e7d32`・黄土 `#8d6e00`・赤 `#b71c1c` の丸いスコアバッジを表示し、600 CSS px以下では点区切りを省略しつつスコアと難易度の間隔を保つ。評価不能は中立色で表示する。840 CSS px以上では補助設定とInspectorリンクを同じ行に表示し、置き換え結果またはカポ警告がある場合だけ小さな詳細ボタンを表示する。ボタンは既存パネルを情報専用の非モーダル領域として開き、置き換え・警告を表示する。それ未満では **More** から同じ情報を確認できる。どちらもキーボードで開閉でき、44px行を維持する。情報がないときは詳細ボタンの場所を空けない。練習モードON時だけtop=92px・高さ42pxの行を追加し、本文paddingをOFF=110px / ON=152pxとする。Preview intentはURI/version/generationと候補の対応を確認してから処理し、無効・stale messageはfocus復元hintを破棄しない。Preview設定は既存controllerを使い、DSL編集やUndoを行わず、Inspectorが詳細編集とApply/Cancelを所有する。
+- **検証**: macOS arm64 / VS Code 1.142.0。`.agent/project.json` の `npm test` はHelp/AI同期PASS、単体 **1,155件PASS**、VS Code E2E **98件PASS・6件pending**。`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,599項目**）、`npm run compile`、`git diff --check` もPASS。実WorkbenchのExtension Development Hostで421/600/840/1100 CSS px × JA/EN × Dark/Lightの16条件を個別に実行してPASSし、行の幾何、直接操作、色、練習行、詳細経路、キーボード/ARIA、旧見出しの非表示、カポ一覧を開いた時だけ詳細表示し閉じると数字表示に戻ることを検査。Preview rerender後はURI/version/generationが一致する画面を待ってから次の操作へ進む。ネイティブCapo受入れE2EもEN/JA × Dark/Lightの4条件で各1回実施してPASS。各回で実測421/600/840/1100 CSS pxのネイティブ一覧を開いて撮影し、Escapeによるキャンセルとフォーカス復元を検査。421pxと1100pxではOSキーボードのArrowDown + Returnで有効候補を選び、Previewが1回更新されること、DSLが変わらないことを確認。無効候補のみの文書では選択とPreview更新が起きないこと、Returnで閉じると選択表示が数字だけに戻ることも確認。合計40枚のスクリーンショットはCoreGraphicsで取得したExtension Development Hostのwindow IDを`screencapture -l`へ渡して撮り、ウィンドウ単位の画像で候補一覧と選択後表示を確認した。[Issue #145のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/145#issuecomment-6234734413) に、全幅の一覧16枚・ArrowDown状態8枚・選択後8枚の計32枚を添付（撮影40枚のうち重複する一覧8枚は省略）。unsupported候補の拒否・Inspector draft保持とaccepted intentのstale duplicate拒否・focus復元は対象E2E **2件PASS**。6件のpendingとVoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: 実Preview Webviewから撮影。各セルにEN・暗色 / EN・明色 / JA・暗色 / JA・明色の証拠を記録する。
+
+設計参照: [600px表示](evidence/issue-145/design/vscode-guitardsl-score-settings-600px.svg) / [2行設定表示](evidence/issue-145/design/vscode-guitardsl-score-settings-second-row.svg)。
+
+| Preview幅 | EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
+|---|---|---|---|---|
+| 421px | [画像](evidence/issue-145/preview-en-dark-421-score-settings.png) | [画像](evidence/issue-145/preview-en-light-421-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-421-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-421-score-settings.png) |
+| 600px | [画像](evidence/issue-145/preview-en-dark-600-score-settings.png) | [画像](evidence/issue-145/preview-en-light-600-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-600-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-600-score-settings.png) |
+| 840px | [画像](evidence/issue-145/preview-en-dark-840-score-settings.png) | [画像](evidence/issue-145/preview-en-light-840-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-840-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-840-score-settings.png) |
+| 1100px | [画像](evidence/issue-145/preview-en-dark-1100-score-settings.png) | [画像](evidence/issue-145/preview-en-light-1100-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-1100-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-1100-score-settings.png) |
+
+置き換え `F → Fmaj7` とカポ警告を開いた詳細経路。421/600px は既存の **More**、840/1100px は行内ボタンから開く。
+
+| Preview幅 | EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
+|---|---|---|---|---|
+| 421px | [画像](evidence/issue-145/preview-en-dark-421-score-settings-details.png) | [画像](evidence/issue-145/preview-en-light-421-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-dark-421-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-light-421-score-settings-details.png) |
+| 600px | [画像](evidence/issue-145/preview-en-dark-600-score-settings-details.png) | [画像](evidence/issue-145/preview-en-light-600-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-dark-600-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-light-600-score-settings-details.png) |
+| 840px | [画像](evidence/issue-145/preview-en-dark-840-score-settings-details.png) | [画像](evidence/issue-145/preview-en-light-840-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-dark-840-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-light-840-score-settings-details.png) |
+| 1100px | [画像](evidence/issue-145/preview-en-dark-1100-score-settings-details.png) | [画像](evidence/issue-145/preview-en-light-1100-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-dark-1100-score-settings-details.png) | [画像](evidence/issue-145/preview-ja-light-1100-score-settings-details.png) |
+
+- **文書オーナー**: `docs/specs/extension.md` §§4.2, 4.4–4.5, 4B, 4D、`docs/design/preview-rendering-and-export.md`、`score-editing.md`、`vscode-editor-experience.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
+
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
 ### 1.1 言語構文・コンパイラ / 描画機能 (`src/compiler.ts`, `src/render/`)

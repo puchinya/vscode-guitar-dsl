@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
+import { getMessages } from '../../src/i18n';
 import {
   PAGE_CONFIG,
   PT_PER_MM,
@@ -298,8 +299,8 @@ describe('render - i18n toolbar rendering', () => {
   });
 });
 
-describe('render - narrow Preview toolbar', () => {
-  it('keeps transport in one fixed row and places secondary controls in accessible disclosures', () => {
+describe('render - Preview playback and score-settings rows', () => {
+  it('keeps the 48px playback row and always-visible 44px settings row separate', () => {
     const html = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
     assert.ok(html.includes('<div class="toolbar-container" role="group"'));
     for (const control of ['id="btn-play"', 'id="btn-pause"', 'id="btn-stop"', 'id="playback-seek"', 'id="playback-time"']) {
@@ -307,23 +308,57 @@ describe('render - narrow Preview toolbar', () => {
     }
     assert.match(html, /id="playback-options-toggle"[^>]*aria-expanded="false" aria-controls="playback-options-panel"/);
     assert.match(html, /id="view-export-toggle"[^>]*aria-expanded="false" aria-controls="view-export-panel"/);
+    assert.ok(html.indexOf('class="toolbar-container"') < html.indexOf('id="score-settings-row"'));
+    assert.ok(html.indexOf('id="score-settings-row"') < html.indexOf('id="practice-toolbar"'));
+    assert.match(html, /id="score-settings-row"[^>]*role="group" aria-label="Score settings"/);
+    assert.match(html, /id="preview-capo-select"[^>]*class="score-settings-select"/);
+    assert.match(html, /id="toggle-preview-beginner" type="checkbox"/);
+    assert.match(html, /id="preview-playability" data-level="unavailable" role="status"[^>]*>.*?Not available/s);
+    assert.match(html, /id="temporary-score-settings-toggle"[^>]*aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="More"/);
+    assert.match(html, /id="score-settings-details-toggle"[^>]*aria-expanded="false"[^>]*data-has-details="false" hidden>/);
     assert.match(html, /id="playback-options-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
+    assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]*data-inline="false" data-details-open="false" hidden>/);
     assert.ok(!html.includes('role="menu"'));
     assert.ok(html.includes('id="practice-toggle"'));
     assert.ok(html.includes('id="count-in-toggle"') && html.includes('id="metronome-toggle"'));
-    assert.ok(!html.includes('id="capo-bar"') && !html.includes('id="btn-beginner"'));
+    assert.ok(html.includes('id="select-preview-barre-policy"'));
+    assert.ok(html.includes('id="open-score-settings-capo-from-preview"'));
+    assert.ok(html.includes('id="open-score-settings-beginner-from-preview"'));
+    assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
+    assert.ok(!html.includes('>0/100</span>'), 'an unavailable playability value is not rendered as zero');
+    assert.ok(!html.includes('一時楽譜設定') && !html.includes('Temporary Score Settings'), 'the obsolete visible settings title is absent');
+
+    const detailedHtml = compileGuitarDslToHtml(sampleDsl, {
+      locale: 'en',
+      capo: { sourceCapo: 1, targetCapo: 1, candidates: [], overridden: false, canApply: false, warning: 'Capo warning' },
+      beginner: { active: true, barrePolicy: 'forbid', autoCapo: true, substitutions: [['F', 'Fmaj7']] }
+    });
+    assert.match(detailedHtml, /id="score-settings-details-toggle"[^>]*aria-label="Show substitutions and warnings"[^>]*data-has-details="true" hidden>⚠<\/button>/);
+    assert.ok(detailedHtml.includes('<li>F → Fmaj7</li>'), 'the host substitution mapping is rendered in the existing panel');
+    assert.ok(detailedHtml.includes('<p class="settings-warning" role="status">Capo warning</p>'), 'the capo warning remains an ARIA status message');
+    assert.match(detailedHtml, /id="temporary-score-settings-panel"[^>]*data-details-label="Show substitutions and warnings"/);
 
     const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
     assert.ok(css, 'Preview HTML contains its toolbar styles');
     const toolbarRule = css.match(/\.toolbar-container\s*\{([^}]*)\}/)?.[1];
     assert.ok(toolbarRule, 'top toolbar has a dedicated CSS rule');
     assert.match(toolbarRule, /height:\s*48px;/);
+    assert.match(css, /\.score-settings-row\s*\{[^}]*top:\s*48px;[^}]*height:\s*44px;/s);
+    assert.match(css, /\.score-settings-playability-value\s*\{[^}]*border-radius:\s*999px;[^}]*color:\s*#fff;/s);
+    assert.match(css, /\.score-settings-playability\[data-level="veryEasy"\] \.score-settings-playability-value,\s*\.score-settings-playability\[data-level="easy"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#2e7d32/);
+    assert.match(css, /\.score-settings-playability\[data-level="moderate"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#8d6e00/);
+    assert.match(css, /\.score-settings-playability\[data-level="hard"\] \.score-settings-playability-value,\s*\.score-settings-playability\[data-level="veryHard"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#b71c1c/);
+    assert.match(css, /\.score-settings-playability\[data-level="unavailable"\] \.score-settings-playability-value\s*\{[^}]*var\(--vscode-descriptionForeground/);
+    assert.match(css, /@media \(max-width: 600px\)\s*\{\s*\.score-settings-playability-separator\s*\{\s*display:\s*none;\s*\}[^}]*\.score-settings-playability-value\s*\{\s*column-gap:\s*4px;/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
-    assert.match(css, /@media \(max-width: 660px\)\s*\{[^}]*\.toolbar-action-label\s*\{\s*display:\s*none/s);
-    assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*48px;[^}]*height:\s*42px;/s);
-    assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*108px !important;/);
+    assert.match(css, /@media \(max-width: 839px\)[\s\S]*?\.score-settings-overflow-toggle\s*\{\s*display:\s*inline-flex;/);
+    assert.match(css, /\.score-settings-row \.temporary-score-settings-panel\[data-inline="true"\]\[data-details-open="true"\]\s*\{[^}]*position:\s*fixed;/s);
+    assert.match(css, /\.score-settings-details-toggle\[hidden\],\s*\.score-settings-details-close\[hidden\]\s*\{\s*display:\s*none !important;/);
+    assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*92px;[^}]*height:\s*42px;/s);
+    assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*152px !important;/);
+    assert.match(css, /padding:\s*110px 16px 36px 16px;/);
   });
 
   it('preserves localized, accessible Help and PDF actions', () => {
@@ -407,5 +442,54 @@ describe('render - playback Preview HTML', () => {
     assert.doesNotThrow(() => JSON.parse(playbackJson![1]));
     assert.ok(!playbackJson![1].includes('<'));
     assert.ok(!html.includes('unsafe-eval'));
+  });
+});
+
+describe('render - Preview capo candidate options', () => {
+  it('shows all host-provided candidate details without inventing missing scores or enabling unsupported positions', () => {
+    const candidates = Array.from({ length: 13 }, (_, capo) => ({
+      capo,
+      supported: capo !== 4,
+      ...(capo !== 5 ? { score: capo === 2 ? 85 : 72 + capo } : {}),
+      ...(capo !== 6 ? { level: capo === 2 ? 'veryEasy' as const : 'easy' as const } : {}),
+      recommended: capo === 2
+    }));
+    const capo = { sourceCapo: 0, targetCapo: 0, candidates, overridden: false, canApply: true };
+
+    for (const locale of ['en', 'ja'] as const) {
+      const messages = getMessages(locale);
+      const html = compileGuitarDslToHtml('| C | G | Am | F |', { locale, capo });
+      const selectHtml = html.match(/<select id="preview-capo-select"[^>]*>([\s\S]*?)<\/select>/)?.[1];
+      assert.ok(selectHtml, `${locale} contains the native capo select`);
+      const options = [...selectHtml!.matchAll(/<option value="(\d+)"([^>]*)>([^<]*)<\/option>/g)];
+      assert.strictEqual(options.length, 13, `${locale} keeps every capo candidate in the native select`);
+      assert.deepStrictEqual(options.map(option => Number(option[1])), Array.from({ length: 13 }, (_, index) => index));
+
+      for (const candidate of candidates) {
+        const option = options[candidate.capo];
+        const closedLabel = String(candidate.capo);
+        const openLabel = candidate.score === undefined || candidate.level === undefined
+          ? `${candidate.capo} · ${messages.uiPlayabilityUnavailable}`
+          : `${candidate.capo} · ${candidate.score}/100 · ${messages.playabilityLevels[candidate.level]}${candidate.recommended ? ` · ★ ${messages.uiRecommended}` : ''}`;
+        assert.strictEqual(option[3], closedLabel, `${locale} closed capo ${candidate.capo} label stays compact`);
+        assert.strictEqual(option[2].match(/data-closed-label="([^"]*)"/)?.[1], closedLabel,
+          `${locale} capo ${candidate.capo} stores its compact label`);
+        assert.strictEqual(option[2].match(/data-open-label="([^"]*)"/)?.[1], openLabel,
+          `${locale} capo ${candidate.capo} stores its expanded candidate details`);
+        assert.strictEqual(option[2].includes(' disabled'), !candidate.supported,
+          `${locale} capo ${candidate.capo} preserves host support state`);
+        assert.strictEqual(option[2].includes(' selected'), candidate.capo === 0,
+          `${locale} capo ${candidate.capo} selection state`);
+      }
+
+      assert.strictEqual(options[4][2].match(/data-open-label="([^"]*)"/)?.[1], `4 · 76/100 · ${messages.playabilityLevels.easy}`,
+        'an unsupported candidate can still display host-provided evaluation');
+      assert.strictEqual(options[5][2].match(/data-open-label="([^"]*)"/)?.[1], `5 · ${messages.uiPlayabilityUnavailable}`,
+        'a missing score never becomes a fabricated zero');
+      assert.strictEqual(options[6][2].match(/data-open-label="([^"]*)"/)?.[1], `6 · ${messages.uiPlayabilityUnavailable}`,
+        'a missing level is shown as unavailable');
+      assert.strictEqual(options[2][2].match(/data-open-label="([^"]*)"/)?.[1], `2 · 85/100 · ${messages.playabilityLevels.veryEasy} · ★ ${messages.uiRecommended}`,
+        'the recommended candidate receives the localized recommendation suffix');
+    }
   });
 });

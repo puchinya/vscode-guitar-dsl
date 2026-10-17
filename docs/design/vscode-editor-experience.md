@@ -10,6 +10,7 @@
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
+- Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -25,6 +26,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 | コマンドと設定 | 拡張機能仕様 §3 |
 | サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
 | 共通 Inspector の登録、表示、文書・進行・設定コンテキスト | Issue #133–#135、拡張機能仕様 §3.9、§3.25、§4B、§4D |
+| Preview の一時楽譜設定と Inspector への導線 | Issue #145、拡張機能仕様 §4.2、§4.4、§4.5、§4D |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
 | Code Actions、editor Hint、Quick Fix の登録と文書編集境界 | Issue #87、拡張機能仕様 §5A–§5B、§6.3 |
 | コード進行補完と assistant コマンド | Issue #129、拡張機能仕様 §3.17、§4.8 |
@@ -37,6 +39,10 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 - サイドバーと初回利用導線は `src/sidebar.ts` / `src/onboarding.ts`、Help のローカル表示は `src/help.ts` と生成済み `media/help/` が担う。Help は仕様・package metadata 由来の生成物であり、仕様の正本ではない。
 - 共通 Inspector は `src/inspector/inspectorController.ts` が URI/version 付きの現在コンテキストと明示表示を管理し、`src/inspector/inspectorView.ts` が単一の `WebviewViewProvider` を登録する。HTML builder は `src/render/inspectorHtml.ts` にあり、空状態・文書・progression・settings を単一 View に描画する。progression / settings の状態と編集権限は各ホスト controller が所有し、Inspector controller は最新 snapshot を投影する。
 - ローカライズは `src/i18n.ts` と VS Code の `package.nls*.json` / Webview locale message を通じて拡張機能ホストと UI に提供する。
+
+### Preview score settings (Issue #145)
+
+`src/render/previewHtml.ts` renders a fixed 44 px score-settings row immediately below the 48 px playback row. Capo, colored Playability, and Beginner remain directly operable at 421 / 600 / 840 / 1100 CSS px; from 840 px the row also shows barre policy, automatic/fixed capo, and Inspector detail links. Narrower widths expose those supplemental actions through accessible overflow. Practice contributes a separate 42 px row only while enabled. The visible text “Temporary Score Settings” is never rendered. Host-computed capo and Beginner models remain the sole source of state, and Playability color is paired with the numeric score and localized level. Typed actions include the rendered URI/version/generation. `src/extension.ts` checks identity, value shape, and candidate support before using the existing Preview controllers; an unsupported or malformed action returns before invalidating an Inspector draft, mutating a Preview override, or discarding pending focus restoration. Accepted Preview changes invalidate any competing Inspector settings draft. The Inspector remains the detailed settings and source-Apply surface. JA/EN labels belong to `src/i18n.ts`; user-facing help remains derived from the extension specification and is synchronized through `docs/help/help-manifest.json`.
 
 ### Navigation と初回利用
 
@@ -112,11 +118,11 @@ The transition to progression must request lease stop and wait for its acknowled
 
 ## Issue #136 implementation design
 
-The singleton Preview uses one 48 px top row for ordinary playback transport, Practice toggle, two settings disclosures, and Help. View, paper, orientation, and PDF are grouped in View & Export; Count-in and Metronome are grouped in Playback settings. These remain native buttons and form controls with localized names and ARIA state. The disclosures are nonmodal hidden groups, permit one open panel at a time, close on Escape/outside pointer/focus, and preserve focus unless Escape returns it to the trigger. Closed controls are absent from the keyboard and accessibility order.
+The singleton Preview retains a 48 px playback row for ordinary transport, Practice toggle, two settings disclosures, and Help. View, paper, orientation, and PDF are grouped in View & Export; Count-in and Metronome are grouped in Playback settings. These remain native buttons and form controls with localized names and ARIA state. The disclosures are nonmodal hidden groups, permit one open panel at a time, close on Escape/outside pointer/focus, and preserve focus unless Escape returns it to the trigger. Closed controls are absent from the keyboard and accessibility order.
 
-Practice adds a 42 px row immediately below the main toolbar only while enabled. Its established speed, loop, A/B, Follow, and status behavior remains Preview-owned. An unavailable transport remains visible and disabled with a localized reason in a wrapping status line before the score. At 600 px, transport, Practice, both disclosure triggers, and Help remain visible; narrower widths switch action labels to named icons and allow supplemental actions to scroll without moving transport into overflow.
+Issue #145 adds a 44 px Score Settings row immediately below playback. Capo, colored Playability, and Beginner remain directly operable at 421 / 600 / 840 / 1100 CSS px; supplemental barre/capo-selection actions and Inspector detail links are visible from 840 px and use accessible overflow below that width. The row has no visible “Temporary Score Settings” text. Practice adds a 42 px row at `top: 92px` only while enabled. Its established speed, loop, A/B, Follow, and status behavior remains Preview-owned. An unavailable transport remains visible and disabled with a localized reason in a wrapping status line before the score. Narrow widths reduce labels and spacing or scroll supplemental actions without moving transport into overflow.
 
-Paper and orientation retain the existing host `layoutChanged` and render path. The Webview includes its current URI, document version, and Preview render generation in layout requests. The host allowlists the target focus ID and binds it to that identity, then consumes or discards the hint on the next HTML render. A current-document render opens View & Export and focuses the changed control once. Mode changes, disclosure state, and PDF save do not rebuild HTML or touch the playback source time. Capo, Beginner, and progression editing controls remain in the Inspector; Preview/PDF continue to use the same host-resolved effective DSL.
+Paper and orientation retain the existing host `layoutChanged` and render path. The Webview includes its current URI, document version, and Preview render generation in layout requests. The host allowlists the target focus ID and binds it to that identity; a pending restore is consumed only by an accepted valid settings update and corresponding HTML render. Invalid or stale messages leave it intact; source updates, document switches, newer user actions, and panel disposal make it stale. The rebuilt page focuses the changed control once. Mode changes, disclosure state, and PDF save do not rebuild HTML or touch the playback source time. Inspector retains detailed Capo/Beginner comparisons and the only source Apply surface; Preview/PDF continue to use the same host-resolved effective DSL.
 
 Issue #136 verification checks rendered DOM/CSS, keyboard and pointer disclosure behavior, 600 px layouts, layout rebuild focus, unchanged playback/Practice behavior, Inspector effective DSL and PDF equivalence, lease ownership, CSP/SVG isolation, and real Extension Development Host screenshots. Screen-reader testing is reported separately from automated accessibility-tree checks.
 

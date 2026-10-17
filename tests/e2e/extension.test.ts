@@ -4,11 +4,187 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, dispatchPreviewKeyboardKey, evaluateInspectorWebview, evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, scrollInspectorToControls, waitForPreviewDocument } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, evaluateInspectorWebview, evaluatePreviewWebview, inspectWorkbenchLayout, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+if (process.env.GUITARDSL_E2E_NATIVE_CAPO_CAPTURE === '1') {
+  suite('Native Capo menu evidence capture', () => {
+    test('captures the open native Capo menu and restores focus with Escape', async function () {
+      this.timeout(90000);
+      assert.strictEqual(process.platform, 'darwin', 'native menu screenshots require macOS');
+      const outputDir = process.env.GUITARDSL_E2E_NATIVE_CAPO_OUTPUT_DIR;
+      assert.ok(outputDir, 'native menu evidence output directory is required');
+      const { execFileSync } = require('child_process') as typeof import('child_process');
+      const { mkdirSync } = require('fs') as typeof import('fs');
+      const dispatchNativeKey = (keyCode: number): void => {
+        try {
+          execFileSync('/usr/bin/osascript', [
+            '-e',
+            `tell application "System Events"\n  tell (first process whose frontmost is true)\n    key code ${keyCode}\n  end tell\nend tell`
+          ], { stdio: 'pipe', timeout: 10000 });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.error(`Native Capo keyboard input is unavailable; report keyboard selection as NOT RUN. ${detail}`);
+          this.skip();
+        }
+      };
+      mkdirSync(outputDir, { recursive: true });
+      const captureHostWindow = (windowId: string, outputPath: string): void => {
+        execFileSync('screencapture', ['-x', '-l', windowId, outputPath]);
+      };
+
+      const source = 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n';
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'guitardsl',
+        content: source
+      });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const preview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'host locale matches the requested language');
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+      const initialParts = JSON.parse(await inspectWorkbenchLayout()).parts as {
+        sidebar: { visible: boolean };
+        auxiliarybar: { visible: boolean };
+      };
+      if (initialParts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+      if (initialParts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+      await settle(250);
+      const windowIdSource = `
+        import CoreGraphics
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        for window in windows {
+          let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+          let title = window[kCGWindowName as String] as? String ?? ""
+          if owner.contains("Code") && (title.localizedCaseInsensitiveContains("Extension Development Host") || title.contains("拡張機能開発ホスト")) {
+            if let windowId = window[kCGWindowNumber as String] { print(windowId); break }
+          }
+        }
+      `;
+      const windowId = execFileSync('/usr/bin/swift', ['-e', windowIdSource], {
+        encoding: 'utf8',
+        timeout: 20000,
+        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'issue145-swift-module-cache') }
+      }).trim();
+      assert.match(windowId, /^\d+$/, 'the Extension Development Host window ID is discoverable for window-only screenshots');
+
+      try {
+        for (const width of [421, 600, 840, 1100]) {
+          if (width === 1100) await setWorkbenchViewportWidth(2200);
+          await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+          await resizeActiveEditorGroupToWidth(width);
+          await settle(200);
+          const measuredWidth = await evaluatePreviewWebview<number>('window.innerWidth');
+          assert.strictEqual(measuredWidth, width, `native menu screenshot uses ${width} Preview CSS px`);
+
+          await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+          dispatchNativeKey(49); // Space opens the native menu from the focused select.
+          await settle(200);
+          const keyboardOpenLabelsMatch = await evaluatePreviewWebview<boolean>(`Array.from(
+            document.getElementById('preview-capo-select').options
+          ).filter(option => option.value !== '').every(option => option.textContent === option.dataset.openLabel)`);
+          assert.strictEqual(keyboardOpenLabelsMatch, true,
+            `${width}px Space exposes full candidate details before the native menu opens`);
+          const outputPath = path.join(outputDir, `issue145-native-capo-${locale}-${width}.png`);
+          captureHostWindow(windowId, outputPath);
+          assert.ok((await fs.stat(outputPath)).size > 10000, `OS screenshot was written for ${width}px`);
+          const originalValue = await evaluatePreviewWebview<string>(
+            `document.getElementById('preview-capo-select').value`
+          );
+          dispatchNativeKey(125); // ArrowDown highlights the next enabled option in the open AppKit menu.
+          dispatchNativeKey(53); // Escape cancels that pending selection.
+          await settle(100);
+          const cancelledValue = await evaluatePreviewWebview<string>(
+            `document.getElementById('preview-capo-select').value`
+          );
+          const nativeSelectHasFocus = await evaluatePreviewWebview<boolean>(
+            `document.activeElement?.id === 'preview-capo-select'`
+          );
+          assert.strictEqual(cancelledValue, originalValue, `${width}px native Escape cancels the highlighted Capo`);
+          assert.strictEqual(nativeSelectHasFocus, true, `${width}px native Escape returns focus to the Capo select`);
+
+          if (width === 421 || width === 1100) {
+            const next = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+              const select = document.getElementById('preview-capo-select');
+              const candidates = Array.from(select.options).filter(option => option.value !== '' && !option.disabled);
+              const index = candidates.findIndex(option => option.value === select.value);
+              return candidates.find((option, candidateIndex) => candidateIndex > index)?.value ?? candidates[0]?.value;
+            })())`)) as string;
+            assert.ok(next && next !== originalValue, `${width}px has a different supported capo to select`);
+            const beforeSelection = preview.generation;
+            await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+            dispatchNativeKey(49); // Space opens the native menu from the focused select.
+            await settle(200);
+            const keyboardOpenLabelsMatch = await evaluatePreviewWebview<boolean>(`Array.from(
+              document.getElementById('preview-capo-select').options
+            ).filter(option => option.value !== '').every(option => option.textContent === option.dataset.openLabel)`);
+            assert.strictEqual(keyboardOpenLabelsMatch, true,
+              `${width}px Space exposes full candidate details before the native menu opens`);
+            const keyboardMenuPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${width}-open.png`);
+            captureHostWindow(windowId, keyboardMenuPath);
+            dispatchNativeKey(125); // ArrowDown in the actual native menu.
+            const downPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${width}-down.png`);
+            captureHostWindow(windowId, downPath);
+            dispatchNativeKey(36); // Return commits the highlighted option.
+            for (let attempt = 0; attempt < 100 && preview.generation === beforeSelection; attempt++) await settle(20);
+            const selectedValue = await evaluatePreviewWebview<string>(
+              `document.getElementById('preview-capo-select').value`
+            );
+            assert.strictEqual(preview.generation, beforeSelection + 1,
+              `${width}px native keyboard selection rebuilds Preview exactly once (value=${selectedValue}, expected=${next})`);
+            await waitForPreviewDocument();
+            assert.strictEqual(selectedValue, next, `${width}px ArrowDown + Return selects the next supported Capo`);
+            assert.strictEqual(doc.getText(), source, `${width}px keyboard selection leaves source DSL unchanged`);
+            const themeTag = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+            const selectedPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${themeTag}-${width}-selected.png`);
+            captureHostWindow(windowId, selectedPath);
+            assert.ok((await fs.stat(selectedPath)).size > 10000, `${width}px selected state screenshot was written`);
+          }
+        }
+
+        const unsupportedSource = 'chord C@x = x35553\ncapo: 0\n| C@x | G | Am | F |\n';
+        const unsupportedDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: unsupportedSource });
+        await showAndFocus(unsupportedDoc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', unsupportedDoc.uri);
+        for (let attempt = 0; attempt < 100
+          && preview.currentDocumentUri !== unsupportedDoc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(preview.currentDocumentUri, unsupportedDoc.uri.toString(),
+          'Preview switches to the fixture with unsupported Capo candidates');
+        await waitForPreviewDocument();
+        const disabledGeneration = preview.generation;
+        await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+        dispatchNativeKey(49);
+        await settle(200);
+        dispatchNativeKey(125);
+        dispatchNativeKey(36);
+        await settle(150);
+        const disabledResult = await evaluatePreviewWebview<string>(`JSON.stringify({
+          value: document.getElementById('preview-capo-select').value,
+          disabled: document.getElementById('preview-capo-select').selectedOptions[0]?.disabled,
+          label: document.getElementById('preview-capo-select').selectedOptions[0]?.textContent
+        })`);
+        assert.deepStrictEqual(JSON.parse(disabledResult), { value: '0', disabled: false, label: '0' },
+          'native keyboard input cannot select disabled candidates and restores the compact label on close');
+        assert.strictEqual(preview.generation, disabledGeneration,
+          'native keyboard input on disabled candidates does not rebuild Preview');
+        assert.strictEqual(unsupportedDoc.getText(), unsupportedSource,
+          'native keyboard input on disabled candidates leaves source DSL unchanged');
+      } finally {
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+}
 
 /**
  * Shows `doc` and waits until it is the active editor and stays so briefly. An editor left open by an earlier
@@ -157,8 +333,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
-  test('P136 Preview keeps transport visible, disclosures operable, and restores layout focus', async () => withWorkbenchSnapshotRestored(async () => {
-    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
+  test('P145 Preview settings and P136 toolbar layout, focus, and transport remain usable', async function () {
+    this.timeout(30000);
+    const useWideMatrixViewport = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 1200) >= 2200;
+    try {
+      await withWorkbenchSnapshotRestored(async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n' });
     await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -169,12 +349,21 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
     const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
     const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+    const workbenchWidth = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 1200);
+    if (workbenchWidth >= 2200) await setWorkbenchViewportWidth(workbenchWidth);
+    const workbenchViewport = JSON.parse(await inspectWorkbenchLayout()).viewport.width as number;
+    if (workbenchWidth >= 2200) assert.ok(workbenchViewport >= 1400,
+      `the Extension Development Host CSS viewport is ${workbenchViewport}px; at least 1400px is needed to size a 1100px Preview group`);
     if (captureScreenshots) {
       assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
       await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
     }
-    await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
-    await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+    const partsBeforeSizing = JSON.parse(await inspectWorkbenchLayout()).parts as {
+      sidebar: { visible: boolean };
+      auxiliarybar: { visible: boolean };
+    };
+    if (partsBeforeSizing.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+    if (partsBeforeSizing.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
     await settle(250);
     await waitForPreviewDocument();
 
@@ -185,29 +374,47 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const workbenchLayout = await inspectWorkbenchLayout();
     assert.strictEqual(previewWidth, 600,
       `real Preview Webview acceptance runs at exactly 600 CSS px (measured ${previewWidth}px; workbench layout ${workbenchLayout})`);
-    const workbenchWidth = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 1200);
-
     const initial = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
       const toolbar = document.querySelector('.toolbar-container');
+      const settingsRow = document.getElementById('score-settings-row');
+      const settings = ['preview-capo-select','preview-playability','toggle-preview-beginner'];
       const ids = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time'];
       return { transport: ids.map(id => !!document.getElementById(id) && document.getElementById(id).closest('.toolbar-container') === toolbar),
         viewport: window.innerWidth,
+        toolbarHeight: Math.round(toolbar.getBoundingClientRect().height),
         toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth,
         actionsFit: document.getElementById('toolbar-actions').scrollWidth <= document.getElementById('toolbar-actions').clientWidth,
         practice: document.querySelector('.practice-toolbar') && getComputedStyle(document.querySelector('.practice-toolbar')).display,
-        disclosures: ['playback-options-toggle','view-export-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
-        panelsHidden: ['playback-options-panel','view-export-panel'].map(id => document.getElementById(id)?.hidden),
-        noDuplicateSettings: !document.getElementById('capo-bar') && !document.getElementById('btn-beginner'),
+        practicePadding: getComputedStyle(document.body).paddingTop,
+        settingsRect: { top: settingsRow.getBoundingClientRect().top, height: settingsRow.getBoundingClientRect().height },
+        settingsVisible: settings.map(id => document.getElementById(id)?.getClientRects().length > 0),
+        settingsRowFits: settingsRow.scrollWidth <= settingsRow.clientWidth,
+        settingsText: settingsRow.innerText,
+        disclosures: ['playback-options-toggle','view-export-toggle','temporary-score-settings-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
+        panelsHidden: ['playback-options-panel','view-export-panel','temporary-score-settings-panel'].map(id => document.getElementById(id)?.hidden),
+        moreVisible: document.getElementById('temporary-score-settings-toggle')?.getClientRects().length > 0,
+        detailsVisible: document.getElementById('score-settings-details-toggle')?.getClientRects().length > 0,
+        noTemporaryTitle: !document.body.innerText.includes('一時楽譜設定') && !document.body.innerText.includes('Temporary Score Settings'),
+        noDuplicateSettings: document.querySelectorAll('#score-settings-row').length === 1
+          && !document.getElementById('capo-bar') && !document.getElementById('btn-apply-capo'),
         controls: ['select-page-size','orientation-portrait','orientation-landscape','btn-save-pdf'].map(id => !!document.getElementById(id)) };
     })())`));
     assert.ok(initial.transport.every(Boolean), `ordinary playback transport stays in the fixed toolbar: ${JSON.stringify(initial)}`);
     assert.strictEqual(initial.viewport, 600, `toolbar acceptance runs at 600 CSS px: ${initial.viewport}`);
+    assert.strictEqual(initial.toolbarHeight, 48, 'playback row is exactly 48px high');
     assert.strictEqual(initial.toolbarFits, true, 'transport and toolbar actions fit on one row');
     assert.strictEqual(initial.actionsFit, true, 'all supplemental actions fit without horizontal scrolling');
     assert.strictEqual(initial.practice, 'none', 'Practice OFF leaves no extra row');
-    assert.deepStrictEqual(initial.disclosures, ['false', 'false']);
-    assert.deepStrictEqual(initial.panelsHidden, [true, true]);
-    assert.strictEqual(initial.noDuplicateSettings, true, 'Preview has no duplicate Capo or Beginner controls');
+    assert.strictEqual(initial.practicePadding, '110px', 'Practice OFF body content starts after the 110px reserved layout');
+    assert.deepStrictEqual(initial.settingsRect, { top: 48, height: 44 }, 'the dedicated settings row immediately follows playback at 44px');
+    assert.deepStrictEqual(initial.disclosures, ['false', 'false', 'false']);
+    assert.deepStrictEqual(initial.panelsHidden, [true, true, true]);
+    assert.deepStrictEqual(initial.settingsVisible, [true, true, true], 'Capo, colored Playability, and Beginner are directly visible at 600 CSS px');
+    assert.strictEqual(initial.settingsRowFits, true, 'the primary settings remain within the 44px row at 600px');
+    assert.strictEqual(initial.moreVisible, true, 'supplemental controls are reachable through More below 840px');
+    assert.strictEqual(initial.detailsVisible, false, 'no details button or blank slot is shown when the host has no substitutions or warning');
+    assert.strictEqual(initial.noTemporaryTitle, true, 'the obsolete temporary-settings title is absent from visible Preview text');
+    assert.strictEqual(initial.noDuplicateSettings, true, 'one dedicated settings row exists without Apply controls');
     assert.ok(initial.controls.every(Boolean), 'display, paper, orientation, and PDF controls remain available');
 
     const opened = await evaluatePreviewWebview<boolean>(`(() => {
@@ -239,6 +446,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     })()`);
     assert.strictEqual(triggerEscape, true, 'Escape also closes when focus remains on the trigger');
 
+    const settingsOpened = await evaluatePreviewWebview<boolean>(`(() => {
+      const trigger = document.getElementById('temporary-score-settings-toggle');
+      const panel = document.getElementById('temporary-score-settings-panel');
+      trigger.focus(); trigger.click();
+      return trigger.getAttribute('aria-expanded') === 'true' && !panel.hidden;
+    })()`);
+    assert.strictEqual(settingsOpened, true, 'More opens supplemental score settings');
+    await dispatchPreviewKeyboardKey('Tab');
+    const settingsTabEntered = await evaluatePreviewWebview<boolean>(`document.getElementById('temporary-score-settings-panel').contains(document.activeElement)
+      && document.getElementById('temporary-score-settings-toggle').getAttribute('aria-expanded') === 'true'
+      && document.activeElement.matches(':focus-visible') === true
+      && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+      && getComputedStyle(document.activeElement).outlineWidth !== '0px'`);
+    assert.strictEqual(settingsTabEntered, true, 'Tab enters supplemental settings with a visible keyboard focus');
+    await dispatchPreviewKeyboardKey('Escape');
+    const settingsEscaped = await evaluatePreviewWebview<boolean>(`document.getElementById('temporary-score-settings-toggle').getAttribute('aria-expanded') === 'false'
+      && document.getElementById('temporary-score-settings-panel').hidden
+      && document.activeElement.id === 'temporary-score-settings-toggle'`);
+    assert.strictEqual(settingsEscaped, true, 'Escape closes supplemental settings and returns focus to More');
+
     const interaction = await evaluatePreviewWebview<string>(`(() => {
       const playback = document.getElementById('playback-options-toggle');
       playback.focus(); playback.click();
@@ -263,13 +490,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (actual === enabled) return;
         await settle(20);
       }
-      assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}`);
+      const state = await evaluatePreviewWebview<string>(`JSON.stringify({
+        row: document.body.classList.contains('has-practice-row'),
+        pressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+        rowDisplay: getComputedStyle(document.getElementById('practice-toolbar')).display,
+        active: document.activeElement?.id
+      })`);
+      assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}: ${state}`);
     };
     await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
     await waitForPracticeState(true);
     for (const controlId of ['practice-speed', 'practice-loop', 'practice-set-a', 'practice-set-b']) {
       await evaluatePreviewWebview<void>(`document.getElementById('${controlId}').focus()`);
       const before = await evaluatePreviewWebview<string>('document.activeElement?.id');
+      if (before !== controlId) {
+        const focusState = await evaluatePreviewWebview<string>(`JSON.stringify({
+          active: document.activeElement?.id,
+          disabled: document.getElementById('${controlId}')?.disabled,
+          display: getComputedStyle(document.getElementById('${controlId}')).display,
+          visibility: getComputedStyle(document.getElementById('${controlId}')).visibility,
+          practiceRow: getComputedStyle(document.getElementById('practice-toolbar')).display,
+          settingsOpen: document.getElementById('temporary-score-settings-panel')?.hidden === false
+        })`);
+        assert.strictEqual(before, controlId, `${controlId} receives DOM focus before Practice is turned off: ${focusState}`);
+      }
       assert.strictEqual(before, controlId, `${controlId} receives DOM focus before Practice is turned off`);
       await vscode.commands.executeCommand('guitardsl.practice.toggle');
       await waitForPracticeState(false);
@@ -286,7 +530,331 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const renderedWidth = Math.round(initial.viewport);
     const tag = process.env.GUITARDSL_E2E_TAG;
     const suffix = tag && /^[a-z0-9-]+$/i.test(tag) ? `-${tag}` : '';
-    if (captureScreenshots) {
+    const runTemporarySettingsScenario = async (sourceDoc: vscode.TextDocument): Promise<void> => {
+    if (await evaluatePreviewWebview<boolean>(`document.body.classList.contains('has-practice-row')`)) {
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await waitForPracticeState(false);
+    }
+    const widths = workbenchWidth >= 2200 ? [421, 600, 840, 1100] : [421, 600];
+    const expectedCapoCandidates = require('../../capo').buildCapoPreviewUiModel(sourceDoc.getText(), undefined).candidates as Array<{
+      capo: number;
+      supported: boolean;
+      score?: number;
+      level?: 'veryEasy' | 'easy' | 'moderate' | 'hard' | 'veryHard';
+      recommended: boolean;
+    }>;
+    const candidateMessages = require('../../i18n').getMessages(requestedLocale === 'ja' ? 'ja' : 'en');
+    const expectedCapoLabels = expectedCapoCandidates.map(candidate => candidate.score === undefined || candidate.level === undefined
+      ? `${candidate.capo} · ${candidateMessages.uiPlayabilityUnavailable}`
+      : `${candidate.capo} · ${candidate.score}/100 · ${candidateMessages.playabilityLevels[candidate.level]}${candidate.recommended ? ` · ★ ${candidateMessages.uiRecommended}` : ''}`);
+    const expectedClosedCapoLabels = expectedCapoCandidates.map(candidate => String(candidate.capo));
+    for (const width of widths) {
+      if (width === 1100) {
+        await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+        await resizeActiveEditorGroupToWidth(340);
+        await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+      }
+      await resizeActiveEditorGroupToWidth(width);
+      await settle(150);
+      const state = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const playback = document.querySelector('.toolbar-container');
+        const row = document.getElementById('score-settings-row');
+        const practice = document.getElementById('practice-toolbar');
+        const panel = document.getElementById('temporary-score-settings-panel');
+        const more = document.getElementById('temporary-score-settings-toggle');
+        const mainIds = ['preview-capo-select','preview-playability','toggle-preview-beginner'];
+        const playability = document.getElementById('preview-playability');
+        const level = playability.dataset.level;
+        const value = playability.querySelector('.score-settings-playability-value');
+        const valueStyle = getComputedStyle(value);
+        const colors = { veryEasy: 'rgb(46, 125, 50)', easy: 'rgb(46, 125, 50)',
+          moderate: 'rgb(141, 110, 0)', hard: 'rgb(183, 28, 28)', veryHard: 'rgb(183, 28, 28)' };
+        const supplements = ['select-preview-barre-policy','select-preview-beginner-capo-mode',
+          'open-score-settings-capo-from-preview','open-score-settings-beginner-from-preview'];
+        const rowBounds = row.getBoundingClientRect();
+        const visibleSettingsFitVertically = [...mainIds, ...supplements].every(id => {
+          const element = document.getElementById(id);
+          if (!element || element.getClientRects().length === 0) return true;
+          const bounds = element.getBoundingClientRect();
+          return bounds.top >= rowBounds.top - 1 && bounds.bottom <= rowBounds.bottom + 1;
+        });
+        const practiceStyle = getComputedStyle(practice);
+        return { width: window.innerWidth,
+          capoSelectWidth: Math.round(document.getElementById('preview-capo-select').getBoundingClientRect().width),
+          playback: { top: playback.getBoundingClientRect().top, height: playback.getBoundingClientRect().height },
+          row: { top: row.getBoundingClientRect().top, height: row.getBoundingClientRect().height,
+            fits: row.scrollWidth <= row.clientWidth, contentsFitVertically: visibleSettingsFitVertically },
+          mainVisible: mainIds.map(id => document.getElementById(id)?.getClientRects().length > 0),
+          moreVisible: more.getClientRects().length > 0,
+          detailsVisible: document.getElementById('score-settings-details-toggle')?.getClientRects().length > 0,
+          moreExpanded: more.getAttribute('aria-expanded'),
+          inline: panel.dataset.inline,
+          panelHidden: panel.hidden,
+          supplementsVisible: supplements.map(id => document.getElementById(id)?.getClientRects().length > 0),
+          playability: { level, text: playability.innerText, backgroundColor: valueStyle.backgroundColor,
+            foregroundColor: valueStyle.color, borderRadius: valueStyle.borderRadius,
+            columnGap: valueStyle.columnGap,
+            separatorDisplay: getComputedStyle(playability.querySelector('.score-settings-playability-separator')).display,
+            colorMatches: level === 'unavailable' ? valueStyle.backgroundColor === 'rgba(0, 0, 0, 0)' : valueStyle.backgroundColor === colors[level],
+            foregroundMatches: level === 'unavailable' ? valueStyle.color !== 'rgb(255, 255, 255)' : valueStyle.color === 'rgb(255, 255, 255)' },
+          practice: { display: practiceStyle.display, bodyPadding: getComputedStyle(document.body).paddingTop },
+          noTemporaryTitle: !document.body.innerText.includes('一時楽譜設定')
+            && !document.body.innerText.includes('Temporary Score Settings'),
+          transportVisible: ['btn-play','btn-pause','btn-stop','playback-seek','playback-time']
+            .every(id => document.getElementById(id)?.getClientRects().length > 0) };
+      })())`));
+      assert.strictEqual(state.width, width, `Preview measures exactly ${width} CSS px`);
+      assert.deepStrictEqual(state.playback, { top: 0, height: 48 }, `${width}px playback row keeps its 48px geometry`);
+      assert.deepStrictEqual(state.row, { top: 48, height: 44, fits: true, contentsFitVertically: true },
+        `${width}px settings row is 44px directly below playback and all visible controls fit within it`);
+      assert.deepStrictEqual(state.mainVisible, [true, true, true], `${width}px keeps direct Capo, Playability, and Beginner controls visible`);
+      assert.strictEqual(state.transportVisible, true, `${width}px keeps every playback control visible`);
+      assert.ok(state.capoSelectWidth > 50 && state.capoSelectWidth <= 112,
+        `${width}px keeps the closed native capo select compact (${state.capoSelectWidth}px)`);
+      assert.strictEqual(state.moreVisible, width < 840, `${width}px shows More only below the full-settings breakpoint`);
+      assert.strictEqual(state.detailsVisible, false, `${width}px reserves no details button when there are no substitutions or warning`);
+      assert.strictEqual(state.inline, String(width >= 840), `${width}px selects the correct supplemental settings layout`);
+      assert.strictEqual(state.panelHidden, width < 840, `${width}px keeps overflow closed and inline settings visible`);
+      if (width >= 840) assert.deepStrictEqual(state.supplementsVisible, [true, true, true, true], `${width}px exposes all supplemental controls`);
+      assert.strictEqual(state.playability.colorMatches, true,
+        `${width}px uses the restored level palette as a filled badge: ${JSON.stringify(state.playability)}`);
+      assert.strictEqual(state.playability.foregroundMatches, true,
+        `${width}px keeps rated badge text white and unavailable values neutral: ${JSON.stringify(state.playability)}`);
+      assert.strictEqual(state.playability.borderRadius, '999px', `${width}px renders the score as a rounded badge`);
+      assert.strictEqual(state.playability.columnGap, width <= 600 ? '4px' : '0px',
+        `${width}px maintains score/level spacing when the compact design hides its separator`);
+      assert.strictEqual(state.playability.separatorDisplay, width <= 600 ? 'none' : 'block',
+        `${width}px follows the design's compact score and level spacing`);
+      assert.ok(state.playability.text.includes('/100') || /Not available|評価できません/.test(state.playability.text),
+        `${width}px presents a numeric score or an explicit unavailable label`);
+      assert.strictEqual(state.practice.display, 'none', `${width}px Practice OFF hides its row`);
+      assert.strictEqual(state.practice.bodyPadding, '110px', `${width}px Practice OFF content starts at 110px`);
+      assert.strictEqual(state.noTemporaryTitle, true, `${width}px does not display the retired title`);
+      const candidateOptions = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(Array.from(
+        document.getElementById('preview-capo-select').options
+      ).filter(option => option.value !== '').map(option => ({ value: option.value, label: option.textContent,
+        openLabel: option.dataset.openLabel, disabled: option.disabled })))`)) as Array<{ value: string; label: string; openLabel: string; disabled: boolean }>;
+      assert.deepStrictEqual(candidateOptions.map(option => Number(option.value)), expectedCapoCandidates.map(candidate => candidate.capo),
+        `${width}px keeps all 13 numeric host capo values in order`);
+      assert.deepStrictEqual(candidateOptions.map(option => option.label), expectedClosedCapoLabels,
+        `${width}px closed capo select labels remain compact to avoid overlap`);
+      assert.deepStrictEqual(candidateOptions.map(option => option.disabled), expectedCapoCandidates.map(candidate => !candidate.supported),
+        `${width}px preserves host-supported state in the native options`);
+      assert.deepStrictEqual(candidateOptions.map(option => option.openLabel), expectedCapoLabels,
+        `${width}px keeps the full host score, level, and recommendation for the expanded list`);
+      if (captureScreenshots) await capturePreviewWebviewScreenshot(
+        `preview-${requestedLocale}-${theme}-${width}-score-settings.png`, 145);
+      await clickPreviewElement('#preview-capo-select');
+      await settle(50);
+      const expandedCapoOptions = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(Array.from(
+        document.getElementById('preview-capo-select').options
+      ).filter(option => option.value !== '').map(option => option.textContent))`)) as string[];
+      assert.deepStrictEqual(expandedCapoOptions, expectedCapoLabels,
+        `${width}px native list interaction expands candidate details only while choosing`);
+      await dispatchPreviewKeyboardKey('Escape');
+      await settle(50);
+      const collapsedCapoOptions = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(Array.from(
+        document.getElementById('preview-capo-select').options
+      ).filter(option => option.value !== '').map(option => option.textContent))`)) as string[];
+      assert.deepStrictEqual(collapsedCapoOptions, expectedClosedCapoLabels,
+        `${width}px closing the capo list hides candidate scores and levels`);
+
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await waitForPracticeState(true);
+      const practiceOn = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        top: document.getElementById('practice-toolbar').getBoundingClientRect().top,
+        height: document.getElementById('practice-toolbar').getBoundingClientRect().height,
+        bodyPadding: getComputedStyle(document.body).paddingTop,
+        settingsBottom: document.getElementById('score-settings-row').getBoundingClientRect().bottom
+      })`));
+      assert.deepStrictEqual(practiceOn, { top: 92, height: 42, bodyPadding: '152px', settingsBottom: 92 },
+        `${width}px Practice ON adds only the 42px row after settings`);
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await waitForPracticeState(false);
+    }
+    await resizeActiveEditorGroupToWidth(600);
+    await settle(150);
+    const waitForSettings = async (predicate: string, name: string, previousGeneration?: number): Promise<void> => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<boolean>(predicate)
+          && (previousGeneration === undefined || preview.generation === previousGeneration + 1)) {
+          if (previousGeneration !== undefined) assert.strictEqual(preview.generation, previousGeneration + 1, `${name} renders once`);
+          if (previousGeneration !== undefined) await waitForPreviewIdentity({
+            documentUri: doc.uri.toString(), documentVersion: doc.version,
+            previewGeneration: preview.generation
+          });
+          await waitForPreviewDocument();
+          return;
+        }
+        await settle(20);
+      }
+      const state = await evaluatePreviewWebview<string>(`JSON.stringify({
+        beginner: document.getElementById('toggle-preview-beginner')?.checked,
+        policy: document.getElementById('select-preview-barre-policy')?.value,
+        mode: document.getElementById('select-preview-beginner-capo-mode')?.value,
+        capoValue: document.getElementById('preview-capo-select')?.value,
+        capoDisabled: document.getElementById('preview-capo-select')?.disabled,
+        active: document.activeElement?.id,
+        settingsExpanded: document.getElementById('temporary-score-settings-toggle')?.getAttribute('aria-expanded'),
+        renderGeneration: ${preview.generation}
+      })`);
+      assert.fail(`Preview settings did not reach ${name}: ${state}`);
+    };
+    const beforeBeginnerOn = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('toggle-preview-beginner');
+      control.checked = true; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('toggle-preview-beginner')?.checked === true
+      && document.getElementById('select-preview-beginner-capo-mode')?.value === 'auto'
+      && document.getElementById('preview-capo-select')?.disabled === true`, 'Beginner automatic capo', beforeBeginnerOn);
+    const beginnerFocusRestored = await evaluatePreviewWebview<boolean>(`document.activeElement.id === 'toggle-preview-beginner'
+      && document.getElementById('temporary-score-settings-panel').hidden === true`);
+    assert.strictEqual(beginnerFocusRestored, true, 'a direct Beginner action restores focus without opening overflow');
+
+    // Put the host's existing warning field in the active Beginner snapshot so the actual Preview
+    // render path exercises both substitution and capo-warning details in one Webview model.
+    const beginnerController = require('../../previewBeginner').getPreviewBeginnerController();
+    const beginnerSnapshot = beginnerController.captureSettingsSnapshot(sourceDoc.uri.toString());
+    assert.ok(beginnerSnapshot.state, 'the host Beginner controller has the active temporary settings');
+    const beforeWarningRender = preview.generation;
+    beginnerController.restoreSettingsSnapshot(sourceDoc, { ...beginnerSnapshot, notice: 'Preview detail E2E warning' }, true);
+    await waitForSettings(`document.getElementById('score-settings-details-toggle')?.dataset.hasDetails === 'true'
+      && document.querySelector('.settings-warning[role="status"]')?.textContent === 'Preview detail E2E warning'`,
+      'Preview warning details', beforeWarningRender);
+
+    const detailWidths = useWideMatrixViewport ? [421, 600, 840, 1100] : [421, 600];
+    for (const width of detailWidths) {
+      await resizeActiveEditorGroupToWidth(width);
+      await settle(150);
+      const triggerId = width >= 840 ? 'score-settings-details-toggle' : 'temporary-score-settings-toggle';
+      const beforeOpen = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        width: window.innerWidth,
+        moreVisible: document.getElementById('temporary-score-settings-toggle').getClientRects().length > 0,
+        detailsVisible: document.getElementById('score-settings-details-toggle').getClientRects().length > 0,
+        row: { top: document.getElementById('score-settings-row').getBoundingClientRect().top,
+          height: document.getElementById('score-settings-row').getBoundingClientRect().height }
+      })`));
+      assert.strictEqual(beforeOpen.width, width, `detail route is checked at ${width} CSS px`);
+      assert.strictEqual(beforeOpen.moreVisible, width < 840, `${width}px selects the existing More route only below the breakpoint`);
+      assert.strictEqual(beforeOpen.detailsVisible, width >= 840, `${width}px exposes a details button only when wide enough and details exist`);
+      assert.deepStrictEqual(beforeOpen.row, { top: 48, height: 44 }, `${width}px keeps the 44px row fixed before opening details`);
+      await evaluatePreviewWebview<void>(`document.getElementById('${triggerId}').focus()`);
+      await dispatchPreviewKeyboardKey('Enter');
+      const openedDetails = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const panel = document.getElementById('temporary-score-settings-panel');
+        const trigger = document.getElementById('${triggerId}');
+        const warning = panel.querySelector('.settings-warning[role="status"]');
+        const row = document.getElementById('score-settings-row').getBoundingClientRect();
+        return { open: !panel.hidden,
+          expanded: trigger.getAttribute('aria-expanded'),
+          controls: trigger.getAttribute('aria-controls'),
+          detailsMode: panel.dataset.detailsOpen,
+          role: panel.getAttribute('role'),
+          label: panel.getAttribute('aria-label'),
+          substitutions: panel.querySelector('.settings-substitutions')?.textContent?.includes('F → Fmaj7'),
+          substitutionsVisible: panel.querySelector('.settings-substitutions')?.getClientRects().length > 0,
+          warningText: warning?.textContent,
+          warningVisible: warning?.getClientRects().length > 0,
+          warningRole: warning?.getAttribute('role'),
+          editingControlsVisible: document.getElementById('select-preview-barre-policy').getClientRects().length > 0,
+          row: { top: row.top, height: row.height } };
+      })())`));
+      assert.strictEqual(openedDetails.open, true, `${width}px keyboard activation opens a visible route: ${JSON.stringify(openedDetails)}`);
+      assert.strictEqual(openedDetails.expanded, 'true', `${width}px details route reports expanded state`);
+      assert.strictEqual(openedDetails.controls, 'temporary-score-settings-panel', `${width}px trigger identifies its controlled panel`);
+      assert.strictEqual(openedDetails.substitutions, true, `${width}px displays the host's F → Fmaj7 substitution`);
+      assert.strictEqual(openedDetails.substitutionsVisible, true, `${width}px substitution text is visible`);
+      assert.strictEqual(openedDetails.warningText, 'Preview detail E2E warning', `${width}px displays the host capo warning`);
+      assert.strictEqual(openedDetails.warningVisible, true, `${width}px warning text is visible`);
+      assert.strictEqual(openedDetails.warningRole, 'status', `${width}px warning text is exposed as an ARIA status`);
+      assert.deepStrictEqual(openedDetails.row, { top: 48, height: 44 }, `${width}px details do not change the fixed row geometry`);
+      if (width >= 840) {
+        assert.strictEqual(openedDetails.detailsMode, 'true', `${width}px uses the information-only details panel`);
+        assert.strictEqual(openedDetails.role, 'region', `${width}px exposes details as a named region`);
+        assert.strictEqual(openedDetails.label, vscode.env.language.toLowerCase().startsWith('ja') ? '置き換えと警告を表示' : 'Show substitutions and warnings');
+        assert.strictEqual(openedDetails.editingControlsVisible, false, `${width}px details do not duplicate inline editing controls`);
+      } else {
+        assert.strictEqual(openedDetails.detailsMode, 'false', `${width}px More opens the full supplemental panel`);
+        assert.strictEqual(openedDetails.role, 'group', `${width}px keeps the existing settings group semantics`);
+        assert.strictEqual(openedDetails.editingControlsVisible, true, `${width}px More retains the existing supplemental controls`);
+      }
+      await dispatchPreviewKeyboardKey('Tab');
+      const tabbedDetails = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        active: document.activeElement?.id,
+        inside: document.getElementById('temporary-score-settings-panel').contains(document.activeElement),
+        focusVisible: document.activeElement?.matches(':focus-visible') === true
+          && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+          && getComputedStyle(document.activeElement).outlineWidth !== '0px'
+      })`));
+      assert.strictEqual(tabbedDetails.inside && tabbedDetails.focusVisible, true, `${width}px Tab enters the visible route with a focus outline: ${JSON.stringify(tabbedDetails)}`);
+      if (width >= 840) assert.strictEqual(tabbedDetails.active, 'close-score-settings-details', `${width}px first Tab reaches the details close control`);
+      if (captureScreenshots) await capturePreviewWebviewScreenshot(
+        `preview-${requestedLocale}-${theme}-${width}-score-settings-details${suffix}.png`, 145);
+      await dispatchPreviewKeyboardKey('Escape');
+      const closedDetails = await evaluatePreviewWebview<boolean>(`(() => {
+        const panel = document.getElementById('temporary-score-settings-panel');
+        return document.activeElement?.id === '${triggerId}'
+          && document.getElementById('${triggerId}').getAttribute('aria-expanded') === 'false'
+          && panel.dataset.detailsOpen === 'false'
+          && panel.hidden === ${width < 840};
+      })()`);
+      assert.strictEqual(closedDetails, true, `${width}px Escape closes the route and restores focus to its trigger`);
+    }
+    if (captureScreenshots && workbenchWidth < 2200) {
+      await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-temporary-score-settings${suffix}.png`, 145, workbenchWidth);
+    }
+
+    const beforeFixedMode = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const more = document.getElementById('temporary-score-settings-toggle');
+      if (more.getAttribute('aria-expanded') !== 'true') more.click();
+      const control = document.getElementById('select-preview-beginner-capo-mode');
+      control.value = 'fixed'; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('select-preview-beginner-capo-mode')?.value === 'fixed'
+      && document.getElementById('preview-capo-select')?.disabled === false`, 'Beginner fixed capo', beforeFixedMode);
+
+    const beforeCapoChange = preview.generation;
+    const capoKeyboardTarget = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+      const control = document.getElementById('preview-capo-select');
+      const options = Array.from(control.options).filter(option => !option.disabled && option.value !== '');
+      const currentIndex = options.findIndex(option => option.value === control.value);
+      const candidate = options.find((option, index) => index > currentIndex) || options[0];
+      control.focus();
+      return { current: control.value, next: candidate?.value ?? '' };
+    })())`)) as { current: string; next: string };
+    assert.ok(capoKeyboardTarget.next && capoKeyboardTarget.next !== capoKeyboardTarget.current,
+      'the current score has a second supported capo candidate');
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('preview-capo-select');
+      control.value = ${JSON.stringify(capoKeyboardTarget.next)};
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('preview-capo-select')?.value === ${JSON.stringify(capoKeyboardTarget.next)}
+      && document.activeElement?.id === 'preview-capo-select'`,
+      `the selected Beginner capo ${capoKeyboardTarget.next} from ${capoKeyboardTarget.current}`, beforeCapoChange);
+
+    const beforePolicyChange = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const more = document.getElementById('temporary-score-settings-toggle');
+      if (more.getAttribute('aria-expanded') !== 'true') more.click();
+      const control = document.getElementById('select-preview-barre-policy');
+      control.value = 'allow'; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('select-preview-barre-policy')?.value === 'allow'
+      && document.getElementById('select-preview-beginner-capo-mode')?.value === 'auto'
+      && document.getElementById('preview-capo-select')?.disabled === true`, 'automatic capo after barre policy changes', beforePolicyChange);
+    const beforeBeginnerOff = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('toggle-preview-beginner');
+      control.checked = false; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('toggle-preview-beginner')?.checked === false`, 'Beginner mode OFF', beforeBeginnerOff);
+    assert.strictEqual(sourceDoc.getText(), 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n', 'temporary Preview settings leave source DSL unchanged');
+    };
+
+    if (captureScreenshots && workbenchWidth < 2200) {
       await evaluatePreviewWebview<void>(`(() => { const button=document.getElementById('view-export-toggle'); button.focus(); button.click();
         if (document.body.classList.contains('has-practice-row')) document.getElementById('practice-toggle').click(); })()`);
       await waitForPracticeState(false);
@@ -375,15 +943,204 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(narrowEscape, true, 'Escape restores focus at a narrower split');
     await resizeActiveEditorGroupToWidth(600);
 
+    await runTemporarySettingsScenario(doc);
+
+    const unsupportedSource = 'chord C@x = x35553\ncapo: 0\n| C@x | G | Am | F |\n';
+    const unsupportedDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: unsupportedSource });
+    await showAndFocus(unsupportedDoc);
+    const beforeUnsupportedPreview = preview.generation;
+    await vscode.commands.executeCommand('guitardsl.showPreview', unsupportedDoc.uri);
+    for (let attempt = 0; attempt < 100
+      && preview.currentDocumentUri !== unsupportedDoc.uri.toString(); attempt++) await settle(20);
+    assert.strictEqual(preview.currentDocumentUri, unsupportedDoc.uri.toString(),
+      'the Preview finishes switching to the unsupported-candidate document');
+    assert.ok(preview.generation > beforeUnsupportedPreview,
+      'switching documents completes a new Preview generation before candidate assertions');
+    await waitForPreviewIdentity({
+      documentUri: unsupportedDoc.uri.toString(), documentVersion: unsupportedDoc.version,
+      previewGeneration: preview.generation
+    });
+    await waitForPreviewDocument();
+    const unsupportedState = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(Array.from(
+      document.getElementById('preview-capo-select').options
+    ).filter(option => option.value !== '').map(option => ({ value: option.value, disabled: option.disabled })))`)) as Array<{ value: string; disabled: boolean }>;
+    assert.strictEqual(unsupportedState.length, 13, 'unsupported host candidates remain in the native capo list');
+    assert.strictEqual(unsupportedState[0].value, '0');
+    assert.strictEqual(unsupportedState[0].disabled, false, 'the source capo remains selectable');
+    assert.ok(unsupportedState.slice(1).every(option => option.disabled),
+      `untransposable capo choices are disabled in the real Webview: ${JSON.stringify(unsupportedState)}`);
+    const unsupportedGeneration = preview.generation;
+    await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+    await dispatchPreviewKeyboardKey('ArrowDown');
+    await dispatchPreviewKeyboardKey('Enter');
+    await settle(100);
+    const unsupportedAfterKeyboard = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      value: document.getElementById('preview-capo-select').value,
+      label: document.getElementById('preview-capo-select').selectedOptions[0]?.textContent
+    })`)) as { value: string; label: string };
+    assert.deepStrictEqual(unsupportedAfterKeyboard, { value: '0', label: '0' },
+      'keyboard interaction cannot select disabled capo candidates');
+    assert.strictEqual(preview.generation, unsupportedGeneration, 'disabled keyboard choices do not dispatch a Preview rebuild');
+    assert.strictEqual(unsupportedDoc.getText(), unsupportedSource, 'disabled keyboard choices do not edit source DSL');
+
     const nextDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 96\n| D | A | Bm | G |\n' });
     await showAndFocus(nextDoc);
     await vscode.commands.executeCommand('guitardsl.showPreview', nextDoc.uri);
     for (let attempt = 0; attempt < 100 && preview.currentDocumentUri !== nextDoc.uri.toString(); attempt++) await settle(20);
     assert.strictEqual(preview.currentDocumentUri, nextDoc.uri.toString(), 'switching the source document rebuilds the Preview');
+    await waitForPreviewIdentity({
+      documentUri: nextDoc.uri.toString(), documentVersion: nextDoc.version,
+      previewGeneration: preview.generation
+    });
     await waitForPreviewDocument();
     const switchedFocus = await evaluatePreviewWebview<string>('document.activeElement?.id ?? ""');
     assert.notStrictEqual(switchedFocus, 'orientation-portrait', 'document switch does not restore stale focus from the previous document');
+      });
+    } finally {
+      if (useWideMatrixViewport) await resetWorkbenchViewport();
+    }
+  });
+
+  test('P145 Preview detail links open their matching Inspector sections', async () => withWorkbenchSnapshotRestored(async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitForPreviewDocument();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    const clickDetailLink = async (id: string, section: 'capo' | 'beginner'): Promise<void> => {
+      await evaluatePreviewWebview<void>(`(() => {
+        const more = document.getElementById('temporary-score-settings-toggle');
+        if (more.getClientRects().length > 0 && more.getAttribute('aria-expanded') !== 'true') more.click();
+        document.getElementById('${id}').click();
+      })()`);
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.section !== section; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.()?.kind, 'settings');
+      assert.strictEqual(inspector.getContext?.()?.section, section, `${id} routes to Inspector section ${section}`);
+      assert.strictEqual(settings.hasSession?.(), true);
+    };
+
+    try {
+      await clickDetailLink('open-score-settings-capo-from-preview', 'capo');
+      await clickDetailLink('open-score-settings-beginner-from-preview', 'beginner');
+    } finally {
+      if (settings.hasSession?.()) await settings.dispatchMessage?.('settingsCancel');
+    }
   }));
+
+  test('P145 rejects unsupported Preview capo messages without ending Inspector drafts or changing overrides', async function () {
+    this.timeout(30000);
+    await withWorkbenchSnapshotRestored(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const preview = require('../../previewCapo');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'chord A = x02220\n| B |\n' });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitForPreviewDocument();
+    const capoController = preview.getPreviewCapoController();
+    assert.strictEqual(capoController.setTarget(doc, 1), true, 'a supported Preview capo override is established');
+    for (let attempt = 0; attempt < 100 && capoController.getState()?.targetCapo !== 1; attempt++) await settle(20);
+    const source = doc.getText();
+    const overriddenPreview = preview.effectiveDslProbe.previewInput;
+    const overrideState = capoController.getState();
+
+    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+    for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.kind !== 'settings'; attempt++) await settle(20);
+    assert.strictEqual(settings.hasSession?.(), true, 'the Inspector Settings session is active');
+    const beforeSectionChange = preview.previewLifecycleProbe.generation;
+    await settings.dispatchMessage!('settingsSelectSection', { nextSection: 'transpose' });
+    for (let attempt = 0; attempt < 100 && preview.previewLifecycleProbe.generation === beforeSectionChange; attempt++) await settle(20);
+    assert.strictEqual(preview.previewLifecycleProbe.generation, beforeSectionChange + 1, 'changing Inspector section restores its Preview snapshot once');
+    await waitForPreviewIdentity({
+      documentUri: doc.uri.toString(), documentVersion: doc.version,
+      previewGeneration: beforeSectionChange + 1
+    });
+    const beforeDraft = inspector.getContext?.();
+    await settings.dispatchMessage!('settingsSetSemitones', { semitones: 1 });
+    const draft = inspector.getContext?.();
+    assert.strictEqual(draft.section, 'transpose');
+    assert.strictEqual(draft.revision, beforeDraft.revision + 1, 'the Inspector owns a changed, uncommitted Transpose draft');
+
+    const beforeGeneration = preview.previewLifecycleProbe.generation;
+    const unsupportedIntent = await evaluatePreviewWebview<string>(`(() => {
+      const select = document.getElementById('preview-capo-select');
+      const option = Array.from(select.options).find(item => item.value === '2');
+      if (!option) return 'missing';
+      select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      return String(option.disabled);
+    })()`);
+    assert.strictEqual(unsupportedIntent, 'true', 'the injected capo 2 candidate is host-marked unsupported');
+    await settle(150);
+    assert.strictEqual(preview.previewLifecycleProbe.generation, beforeGeneration, 'rejecting the unsupported candidate does not rebuild Preview');
+    assert.deepStrictEqual(capoController.getState(), overrideState, 'the existing Preview capo override remains unchanged');
+    assert.strictEqual(preview.effectiveDslProbe.previewInput, overriddenPreview, 'the effective Preview score remains unchanged');
+    assert.strictEqual(settings.hasSession?.(), true, 'the unsupported intent does not invalidate the Inspector draft');
+    assert.strictEqual(inspector.getContext?.()?.revision, draft.revision);
+    assert.strictEqual(doc.getText(), source, 'neither Preview nor Inspector touches the source DSL');
+    await settings.dispatchMessage!('settingsCancel');
+    });
+  });
+
+  test('P145 accepted Preview intent supersedes a draft and rejects its duplicate stale generation', async function () {
+    this.timeout(30000);
+    await withWorkbenchSnapshotRestored(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const preview = require('../../previewCapo');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitForPreviewDocument();
+    await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+    for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.kind !== 'settings'; attempt++) await settle(20);
+    assert.strictEqual(settings.hasSession?.(), true);
+    const beforeSectionChange = preview.previewLifecycleProbe.generation;
+    await settings.dispatchMessage!('settingsSelectSection', { nextSection: 'transpose' });
+    for (let attempt = 0; attempt < 100 && preview.previewLifecycleProbe.generation === beforeSectionChange; attempt++) await settle(20);
+    assert.strictEqual(preview.previewLifecycleProbe.generation, beforeSectionChange + 1);
+    await waitForPreviewIdentity({
+      documentUri: doc.uri.toString(), documentVersion: doc.version,
+      previewGeneration: beforeSectionChange + 1
+    });
+    await settings.dispatchMessage!('settingsSetSemitones', { semitones: 1 });
+    assert.strictEqual(inspector.getContext?.()?.section, 'transpose');
+    const beforeGeneration = preview.previewLifecycleProbe.generation;
+    const source = doc.getText();
+    const acceptedCapo = await evaluatePreviewWebview<string>(`(() => {
+      const select = document.getElementById('preview-capo-select');
+      const option = Array.from(select.options).find(item => !item.disabled && item.value !== select.value);
+      if (!option) return '';
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return option.value;
+    })()`);
+    assert.ok(acceptedCapo, 'a different supported capo candidate is available');
+    for (let attempt = 0; attempt < 100 && preview.previewLifecycleProbe.generation === beforeGeneration; attempt++) await settle(20);
+    assert.strictEqual(preview.previewLifecycleProbe.generation, beforeGeneration + 1,
+      `the accepted action renders once; its duplicate uses a stale identity (before=${beforeGeneration}, after=${preview.previewLifecycleProbe.generation}, candidate=${acceptedCapo}, state=${JSON.stringify(preview.getPreviewCapoController().getState())}, session=${settings.hasSession?.()})`);
+    await waitForPreviewIdentity({
+      documentUri: doc.uri.toString(), documentVersion: doc.version,
+      previewGeneration: beforeGeneration + 1
+    });
+    const acceptedControlFocusRestored = await evaluatePreviewWebview<boolean>(`document.activeElement?.id === 'preview-capo-select'`);
+    assert.strictEqual(acceptedControlFocusRestored, true,
+      'the stale duplicate is a no-op and does not discard the accepted action focus-restoration hint');
+    assert.strictEqual(settings.hasSession?.(), false, 'a valid independent Preview action supersedes the Inspector draft');
+    assert.strictEqual(preview.getPreviewCapoController().getState()?.targetCapo, Number(acceptedCapo));
+    assert.notStrictEqual(preview.effectiveDslProbe.previewInput, source, 'the accepted capo becomes the effective Preview score');
+    assert.strictEqual(doc.getText(), source, 'the accepted Preview action leaves source DSL unchanged');
+    });
+  });
 
   test('Extension should be active', () => {
     const ext =
