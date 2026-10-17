@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1008" viewBox="0 0 1660 1008" role="img" aria-label="Visual Studio Code dark theme GuitarDSL Preview with a separate score settings row underneath the 48 pixel transport, no temporary score settings heading, and colored playability badge.">
+<defs>
+ <linearGradient id="editor" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#1e1e1e"/><stop offset="1" stop-color="#171717"/></linearGradient>
+ <filter id="sheetShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000" flood-opacity=".35"/></filter>
+ <clipPath id="codeClip"><rect x="321" y="82" width="401" height="899"/></clipPath>
+ <clipPath id="previewClip"><rect x="724" y="82" width="935" height="900"/></clipPath>
+</defs>
+<rect x="0" y="0" width="1660" height="36" rx="0" fill="#181818"/>
+<line x1="0" y1="35" x2="1660" y2="35" stroke="#303030" stroke-width="1" opacity="1"/>
+<rect x="0" y="36" width="49" height="947" rx="0" fill="#181818"/>
+<line x1="48" y1="36" x2="48" y2="983" stroke="#323232" stroke-width="1" opacity="1"/>
+<circle cx="18" cy="19" r="6" fill="#f36b66"/>
+<circle cx="37" cy="19" r="6" fill="#e8b849"/>
+<circle cx="56" cy="19" r="6" fill="#32ae72"/>
+<text x="113" y="24" fill="#c4c4c4" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="start" >Visual Studio Code — Extension Development Host</text>
+<rect x="570" y="6" width="440" height="24" rx="5" fill="#242424" stroke="#3a3a3a" stroke-width="1"/>
+<text x="790" y="23" fill="#979797" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="middle" >GuitarDSL</text>
+<text x="1615" y="23" fill="#aaa" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="18" font-weight="400" text-anchor="start" >□</text>
+<text x="1640" y="23" fill="#aaa" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="19" font-weight="400" text-anchor="start" >×</text>
+<rect x="14" y="51" width="18" height="24" rx="2" fill="none" stroke="#949494" stroke-width="1.6"/>
+<line x1="20" y1="57" x2="27" y2="57" stroke="#949494" stroke-width="1.3" opacity="1"/>
+<circle cx="21" cy="111" r="8" fill="none" stroke="#949494" stroke-width="1.7"/>
+<line x1="27" y1="118" x2="34" y2="126" stroke="#949494" stroke-width="1.7" opacity="1"/>
+<circle cx="28" cy="158" r="3" fill="none" stroke="#949494" stroke-width="1.6"/>
+<circle cx="17" cy="168" r="3" fill="none" stroke="#949494" stroke-width="1.6"/>
+<circle cx="17" cy="179" r="3" fill="none" stroke="#949494" stroke-width="1.6"/>
+<path d="M17 168 V161 H28 M17 168 V175" stroke="#949494" stroke-width="1.5" fill="none" />
+<path d="M15 208 L33 220 L15 232 Z" stroke="#949494" stroke-width="1.7" fill="none" />
+<rect x="14" y="262" width="9" height="9" rx="1" fill="none" stroke="#949494" stroke-width="1.1"/>
+<rect x="14" y="273" width="9" height="9" rx="1" fill="none" stroke="#949494" stroke-width="1.1"/>
+<rect x="25" y="262" width="9" height="9" rx="1" fill="none" stroke="#949494" stroke-width="1.1"/>
+<rect x="25" y="273" width="9" height="9" rx="1" fill="none" stroke="#949494" stroke-width="1.1"/>
+<rect x="0" y="308" width="3" height="46" rx="0" fill="#007acc"/>
+<text x="23" y="337" fill="#d6d6d6" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="27" font-weight="400" text-anchor="middle" >♪</text>
+<circle cx="24" cy="917" r="10" fill="none" stroke="#aaa" stroke-width="1.8"/>
+<circle cx="24" cy="917" r="3" fill="none" stroke="#aaa" stroke-width="1.5"/>
+<circle cx="24" cy="963" r="10" fill="none" stroke="#aaa" stroke-width="1.8"/>
+<rect x="49" y="36" width="271" height="947" rx="0" fill="#181818"/>
+<line x1="319" y1="36" x2="319" y2="983" stroke="#313131" stroke-width="1" opacity="1"/>
+<text x="71" y="65" fill="#d3d3d3" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="600" text-anchor="start" >エクスプローラー</text>
+<text x="300" y="64" fill="#b2b2b2" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="400" text-anchor="end" >···</text>
+<text x="65" y="101" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="16" font-weight="400" text-anchor="start" >▿</text>
+<text x="86" y="102" fill="#ccc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="start" >開いているエディター</text>
+<rect x="50" y="111" width="268" height="29" rx="0" fill="#262626"/>
+<text x="80" y="132" fill="#d4d4d4" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >♫  sample.guitardsl</text>
+<text x="65" y="169" fill="#bbb" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="start" >▿</text>
+<text x="87" y="169" fill="#d4d4d4" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="start" >ワークスペース</text>
+<text x="85" y="199" fill="#ababab" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  samples</text>
+<text x="85" y="227" fill="#ababab" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  docs</text>
+<text x="85" y="255" fill="#ababab" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >›  src</text>
+<text x="83" y="286" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >♫  sample.guitardsl</text>
+<text x="70" y="955" fill="#a8a8a8" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >⌄  アウトライン</text>
+<rect x="320" y="36" width="403" height="946" rx="0" fill="url(#editor)"/>
+<rect x="320" y="36" width="404" height="45" rx="0" fill="#181818"/>
+<rect x="320" y="36" width="260" height="45" rx="0" fill="#1f1f1f"/>
+<line x1="320" y1="80" x2="723" y2="80" stroke="#3a3a3a" stroke-width="1" opacity="1"/>
+<rect x="320" y="79" width="260" height="2" rx="0" fill="#007acc"/>
+<text x="346" y="63" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="start" >♫  sample.guitardsl</text>
+<text x="562" y="63" fill="#999" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="16" font-weight="400" text-anchor="start" >×</text>
+<rect x="320" y="82" width="403" height="882" rx="0" fill="#1f1f1f"/>
+<text x="349" y="119" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >1</text>
+<text x="370" y="119" fill="#6a9955" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >// GuitarDSL — サンプル楽譜</text>
+<text x="349" y="146" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >2</text>
+<text x="370" y="146" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >title</text>
+<text x="412.5" y="146" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >: </text>
+<text x="429.5" y="146" fill="#ce9178" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >やさしい朝</text>
+<text x="349" y="173" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >3</text>
+<text x="370" y="173" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >artist</text>
+<text x="421.0" y="173" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >: </text>
+<text x="438.0" y="173" fill="#ce9178" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >サンプル</text>
+<text x="349" y="200" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >4</text>
+<text x="370" y="200" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >key</text>
+<text x="395.5" y="200" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >: </text>
+<text x="412.5" y="200" fill="#ce9178" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >C</text>
+<text x="349" y="227" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >5</text>
+<text x="370" y="227" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >bpm</text>
+<text x="395.5" y="227" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >: </text>
+<text x="412.5" y="227" fill="#b5cea8" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >120</text>
+<text x="349" y="254" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >6</text>
+<text x="370" y="254" fill="#9cdcfe" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >capo</text>
+<text x="404.0" y="254" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >: </text>
+<text x="421.0" y="254" fill="#b5cea8" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >0</text>
+<text x="349" y="281" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >7</text>
+<text x="349" y="308" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >8</text>
+<text x="370" y="308" fill="#6a9955" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >// コード進行</text>
+<text x="349" y="335" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >9</text>
+<text x="370" y="335" fill="#569cd6" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >mel:</text>
+<text x="404.0" y="335" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" > | C | G | Am | F |</text>
+<text x="349" y="362" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >10</text>
+<text x="370" y="362" fill="#569cd6" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >tab:</text>
+<text x="404.0" y="362" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" > | 0 2 3 0 | 0 2 0 3 |</text>
+<text x="349" y="389" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >11</text>
+<text x="370" y="389" fill="#569cd6" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >str:</text>
+<text x="404.0" y="389" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" > | C.d C.u G.d G.u |</text>
+<text x="349" y="416" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >12</text>
+<text x="349" y="443" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >13</text>
+<text x="370" y="443" fill="#6a9955" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >// 繰り返し</text>
+<text x="349" y="470" fill="#7b7b7b" font-family="Noto Sans Mono CJK JP, monospace" font-size="13" font-weight="400" text-anchor="end" >14</text>
+<text x="370" y="470" fill="#ddd" font-family="Noto Sans Mono CJK JP, monospace" font-size="14" font-weight="400" text-anchor="start" >| C | G | Am | F |</text>
+<rect x="718" y="82" width="4" height="882" rx="0" fill="#292929"/>
+<rect x="724" y="36" width="936" height="46" rx="0" fill="#181818"/>
+<rect x="724" y="36" width="259" height="46" rx="0" fill="#1f1f1f"/>
+<rect x="724" y="80" width="259" height="2" rx="0" fill="#007acc"/>
+<text x="749" y="65" fill="#e3e3e3" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="14" font-weight="400" text-anchor="start" >♫  GuitarDSL スコアプレビュー</text>
+<text x="954" y="65" fill="#a7a7a7" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="400" text-anchor="start" >×</text>
+<text x="1630" y="65" fill="#aaa" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="20" font-weight="400" text-anchor="end" >···</text>
+<rect x="724" y="82" width="936" height="902" rx="0" fill="#242424"/>
+<rect x="724" y="82" width="936" height="48" rx="0" fill="#1e1e1e"/>
+<line x1="724" y1="129" x2="1659" y2="129" stroke="#353535" stroke-width="1" opacity="1"/>
+<rect x="736" y="89" width="68" height="33" rx="4" fill="#0e639c" stroke="#007acc" stroke-width="1"/>
+<text x="770.0" y="110.5" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="600" text-anchor="middle" >▶ 再生</text>
+<rect x="811" y="89" width="69" height="33" rx="4" fill="#292929" stroke="#393939" stroke-width="1"/>
+<text x="845.5" y="110.5" fill="#bcbcbc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="middle" >Ⅱ 一時停止</text>
+<rect x="887" y="89" width="57" height="33" rx="4" fill="#292929" stroke="#393939" stroke-width="1"/>
+<text x="915.5" y="110.5" fill="#bcbcbc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="middle" >■ 停止</text>
+<line x1="960" y1="105" x2="1122" y2="105" stroke="#4b4b4b" stroke-width="5" opacity="1"/>
+<line x1="960" y1="105" x2="1025" y2="105" stroke="#007acc" stroke-width="5" opacity="1"/>
+<circle cx="1025" cy="105" r="8" fill="#f4f4f4"/>
+<text x="1137" y="110" fill="#ccc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >00:00 / 00:16</text>
+<rect x="1250" y="90" width="73" height="31" rx="4" fill="#2a2a2a" stroke="#3e3e3e" stroke-width="1"/>
+<text x="1286.5" y="110.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >◎ 練習</text>
+<rect x="1327" y="90" width="88" height="31" rx="4" fill="#2a2a2a" stroke="#3e3e3e" stroke-width="1"/>
+<text x="1371.0" y="110.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >再生設定</text>
+<rect x="1420" y="90" width="91" height="31" rx="4" fill="#2a2a2a" stroke="#3e3e3e" stroke-width="1"/>
+<text x="1465.5" y="110.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >表示・出力</text>
+<rect x="1518" y="90" width="63" height="31" rx="4" fill="#2a2a2a" stroke="#3e3e3e" stroke-width="1"/>
+<text x="1549.5" y="110.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >? ヘルプ</text>
+<rect x="724" y="130" width="936" height="44" rx="0" fill="#242424"/>
+<line x1="724" y1="173" x2="1659" y2="173" stroke="#414141" stroke-width="1" opacity="1"/>
+<rect x="724" y="130" width="3" height="44" rx="0" fill="#007acc"/>
+<text x="740" y="157" fill="#c9c9c9" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >カポ</text>
+<rect x="773" y="137" width="74" height="29" rx="4" fill="#2c2c2c" stroke="#555" stroke-width="1"/>
+<text x="810.0" y="156.5" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="middle" >0 ▼</text>
+<line x1="859" y1="138" x2="859" y2="166" stroke="#444" stroke-width="1" opacity="1"/>
+<text x="870" y="157" fill="#dedede" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >弾きやすさ</text>
+<rect x="954" y="137" width="160" height="29" rx="16" fill="#245d2b" stroke="#469b4b" stroke-width="1"/>
+<text x="1034" y="157" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="600" text-anchor="middle" >71/100  ·  簡単</text>
+<line x1="1128" y1="138" x2="1128" y2="166" stroke="#444" stroke-width="1" opacity="1"/>
+<text x="1143" y="157" fill="#dcdcdc" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >初心者モード</text>
+<rect x="1239" y="140" width="44" height="23" rx="12" fill="#484c52"/>
+<circle cx="1251" cy="151.5" r="8" fill="#f0f0f0"/>
+<line x1="1294" y1="138" x2="1294" y2="166" stroke="#444" stroke-width="1" opacity="1"/>
+<text x="1307" y="157" fill="#b8b8b8" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >バレー</text>
+<rect x="1348" y="137" width="109" height="29" rx="4" fill="#2c2c2c" stroke="#444" stroke-width="1"/>
+<text x="1402.5" y="156.5" fill="#b2b2b2" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >使用しない ▼</text>
+<text x="1474" y="157" fill="#b8b8b8" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >カポ位置</text>
+<rect x="1535" y="137" width="64" height="29" rx="4" fill="#2c2c2c" stroke="#444" stroke-width="1"/>
+<text x="1567.0" y="156.5" fill="#a0a0a0" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="middle" >自動 ▼</text>
+<rect x="1605" y="137" width="43" height="29" rx="4" fill="#2c2c2c" stroke="#6c6c6c" stroke-width="1"/>
+<text x="1626.5" y="156.5" fill="#ddd" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="400" text-anchor="middle" >···</text>
+<rect x="724" y="174" width="936" height="809" rx="0" fill="#1e1e1e"/>
+<text x="747" y="198" fill="#9b9b9b" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="start" >現在の楽譜（Preview表示のみ）</text>
+<rect x="770" y="219" width="811" height="723" rx="2" fill="#fff" opacity="1"/>
+<line x1="770" y1="219" x2="1582" y2="219" stroke="#d7d7d7" stroke-width="1" opacity="1"/>
+<text x="1175" y="283" fill="#161616" font-family="Noto Serif CJK JP, serif" font-size="28" font-weight="600" text-anchor="middle" >やさしい朝</text>
+<text x="1175" y="313" fill="#444" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="13" font-weight="400" text-anchor="middle" >作詞・作曲：サンプル</text>
+<text x="1437" y="349" fill="#333" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >Key: C   /   BPM: 120</text>
+<rect x="1490" y="356" width="71" height="24" rx="4" fill="#222"/>
+<text x="1525" y="373" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="600" text-anchor="middle" >Capo: 0</text>
+<line x1="815" y1="392" x2="1538" y2="392" stroke="#333" stroke-width="1.1" opacity="1"/>
+<text x="882" y="429" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="600" text-anchor="middle" >C</text>
+<line x1="846" y1="441" x2="908" y2="441" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846" y1="446" x2="908" y2="446" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846" y1="451" x2="908" y2="451" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846" y1="456" x2="908" y2="456" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846" y1="461" x2="908" y2="461" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846" y1="466" x2="908" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="846.0" y1="441" x2="846.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="858.4" y1="441" x2="858.4" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="870.8" y1="441" x2="870.8" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="883.2" y1="441" x2="883.2" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="895.6" y1="441" x2="895.6" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="908.0" y1="441" x2="908.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<circle cx="861" cy="454" r="2.8" fill="#222"/>
+<circle cx="874" cy="446" r="2.8" fill="#222"/>
+<circle cx="886" cy="459" r="2.8" fill="#222"/>
+<text x="1057" y="429" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="600" text-anchor="middle" >G</text>
+<line x1="1021" y1="441" x2="1083" y2="441" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021" y1="446" x2="1083" y2="446" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021" y1="451" x2="1083" y2="451" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021" y1="456" x2="1083" y2="456" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021" y1="461" x2="1083" y2="461" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021" y1="466" x2="1083" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1021.0" y1="441" x2="1021.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1033.4" y1="441" x2="1033.4" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1045.8" y1="441" x2="1045.8" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1058.2" y1="441" x2="1058.2" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1070.6" y1="441" x2="1070.6" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1083.0" y1="441" x2="1083.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<circle cx="1036" cy="454" r="2.8" fill="#222"/>
+<circle cx="1049" cy="446" r="2.8" fill="#222"/>
+<circle cx="1061" cy="459" r="2.8" fill="#222"/>
+<text x="1232" y="429" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="600" text-anchor="middle" >Am</text>
+<line x1="1196" y1="441" x2="1258" y2="441" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196" y1="446" x2="1258" y2="446" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196" y1="451" x2="1258" y2="451" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196" y1="456" x2="1258" y2="456" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196" y1="461" x2="1258" y2="461" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196" y1="466" x2="1258" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1196.0" y1="441" x2="1196.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1208.4" y1="441" x2="1208.4" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1220.8" y1="441" x2="1220.8" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1233.2" y1="441" x2="1233.2" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1245.6" y1="441" x2="1245.6" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1258.0" y1="441" x2="1258.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<circle cx="1211" cy="454" r="2.8" fill="#222"/>
+<circle cx="1224" cy="446" r="2.8" fill="#222"/>
+<circle cx="1236" cy="459" r="2.8" fill="#222"/>
+<text x="1407" y="429" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="600" text-anchor="middle" >F</text>
+<line x1="1371" y1="441" x2="1433" y2="441" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371" y1="446" x2="1433" y2="446" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371" y1="451" x2="1433" y2="451" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371" y1="456" x2="1433" y2="456" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371" y1="461" x2="1433" y2="461" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371" y1="466" x2="1433" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1371.0" y1="441" x2="1371.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1383.4" y1="441" x2="1383.4" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1395.8" y1="441" x2="1395.8" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1408.2" y1="441" x2="1408.2" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1420.6" y1="441" x2="1420.6" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<line x1="1433.0" y1="441" x2="1433.0" y2="466" stroke="#777" stroke-width="0.65" opacity="1"/>
+<circle cx="1386" cy="454" r="2.8" fill="#222"/>
+<circle cx="1399" cy="446" r="2.8" fill="#222"/>
+<circle cx="1411" cy="459" r="2.8" fill="#222"/>
+<line x1="826" y1="531" x2="1507" y2="531" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="542" x2="1507" y2="542" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="553" x2="1507" y2="553" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="564" x2="1507" y2="564" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="575" x2="1507" y2="575" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="623" x2="1507" y2="623" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="632" x2="1507" y2="632" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="641" x2="1507" y2="641" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="650" x2="1507" y2="650" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="659" x2="1507" y2="659" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="668" x2="1507" y2="668" stroke="#888" stroke-width="0.8" opacity="1"/>
+<text x="801" y="630" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >T</text>
+<text x="801" y="643" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >A</text>
+<text x="801" y="656" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >B</text>
+<line x1="826.0" y1="531" x2="826.0" y2="575" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="826.0" y1="623" x2="826.0" y2="668" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="996.25" y1="531" x2="996.25" y2="575" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="996.25" y1="623" x2="996.25" y2="668" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1166.5" y1="531" x2="1166.5" y2="575" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1166.5" y1="623" x2="1166.5" y2="668" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1336.75" y1="531" x2="1336.75" y2="575" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1336.75" y1="623" x2="1336.75" y2="668" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1507.0" y1="531" x2="1507.0" y2="575" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1507.0" y1="623" x2="1507.0" y2="668" stroke="#777" stroke-width="1" opacity="1"/>
+<text x="844.0" y="507" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >C</text>
+<path d="M851.0 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="851.0" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M885.0625 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="885.0625" y="650" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M919.125 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="919.125" y="659" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M953.1875 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="953.1875" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1014.25" y="507" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >G</text>
+<path d="M1021.25 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1021.25" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1055.3125 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1055.3125" y="650" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1089.375 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1089.375" y="659" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1123.4375 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1123.4375" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1184.5" y="507" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >Am</text>
+<path d="M1191.5 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1191.5" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1225.5625 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1225.5625" y="650" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1259.625 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1259.625" y="659" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1293.6875 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1293.6875" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1354.75" y="507" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >F</text>
+<path d="M1361.75 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1361.75" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1395.8125 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1395.8125" y="650" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1429.875 557 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1429.875" y="659" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1463.9375 562 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1463.9375" y="641" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M808 552 C809 540 840 525 834 505 C830 494 813 510 818 523 C823 539 843 548 827 563 C813 576 807 561 814 555 C826 546 833 557 822 565" stroke="#222" stroke-width="2.2" fill="none" />
+<text x="835" y="558" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="700" text-anchor="start" >4</text>
+<text x="835" y="574" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="700" text-anchor="start" >4</text>
+<line x1="826" y1="747" x2="1507" y2="747" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="758" x2="1507" y2="758" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="769" x2="1507" y2="769" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="780" x2="1507" y2="780" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="791" x2="1507" y2="791" stroke="#222" stroke-width="1.2" opacity="1"/>
+<line x1="826" y1="839" x2="1507" y2="839" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="848" x2="1507" y2="848" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="857" x2="1507" y2="857" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="866" x2="1507" y2="866" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="875" x2="1507" y2="875" stroke="#888" stroke-width="0.8" opacity="1"/>
+<line x1="826" y1="884" x2="1507" y2="884" stroke="#888" stroke-width="0.8" opacity="1"/>
+<text x="801" y="846" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >T</text>
+<text x="801" y="859" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >A</text>
+<text x="801" y="872" fill="#222" font-family="Noto Sans Mono CJK JP, monospace" font-size="15" font-weight="700" text-anchor="start" >B</text>
+<line x1="826.0" y1="747" x2="826.0" y2="791" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="826.0" y1="839" x2="826.0" y2="884" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="996.25" y1="747" x2="996.25" y2="791" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="996.25" y1="839" x2="996.25" y2="884" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1166.5" y1="747" x2="1166.5" y2="791" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1166.5" y1="839" x2="1166.5" y2="884" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1336.75" y1="747" x2="1336.75" y2="791" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1336.75" y1="839" x2="1336.75" y2="884" stroke="#777" stroke-width="1" opacity="1"/>
+<line x1="1507.0" y1="747" x2="1507.0" y2="791" stroke="#222" stroke-width="1.4" opacity="1"/>
+<line x1="1507.0" y1="839" x2="1507.0" y2="884" stroke="#777" stroke-width="1" opacity="1"/>
+<text x="844.0" y="723" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >C</text>
+<path d="M851.0 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="851.0" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M885.0625 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="885.0625" y="866" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M919.125 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="919.125" y="875" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M953.1875 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="953.1875" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1014.25" y="723" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >G</text>
+<path d="M1021.25 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1021.25" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1055.3125 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1055.3125" y="866" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1089.375 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1089.375" y="875" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1123.4375 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1123.4375" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1184.5" y="723" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >Am</text>
+<path d="M1191.5 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1191.5" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1225.5625 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1225.5625" y="866" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1259.625 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1259.625" y="875" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1293.6875 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1293.6875" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<text x="1354.75" y="723" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="17" font-weight="500" text-anchor="start" >F</text>
+<path d="M1361.75 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1361.75" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M1395.8125 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1395.8125" y="866" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >2</text>
+<path d="M1429.875 773 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1429.875" y="875" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >3</text>
+<path d="M1463.9375 778 l9 -14" stroke="#111" stroke-width="2.1" fill="none" />
+<text x="1463.9375" y="857" fill="#333" font-family="Noto Sans Mono CJK JP, monospace" font-size="11" font-weight="400" text-anchor="start" >0</text>
+<path d="M808 768 C809 756 840 741 834 721 C830 710 813 726 818 739 C823 755 843 764 827 779 C813 792 807 777 814 771 C826 762 833 773 822 781" stroke="#222" stroke-width="2.2" fill="none" />
+<text x="835" y="773" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="700" text-anchor="start" >4</text>
+<text x="835" y="789" fill="#222" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="15" font-weight="700" text-anchor="start" >4</text>
+<rect x="0" y="983" width="1660" height="25" rx="0" fill="#007acc"/>
+<text x="16" y="1001" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="12" font-weight="400" text-anchor="start" >⊗  0   △  0    Git  master</text>
+<text x="1500" y="1001" fill="#fff" font-family="Noto Sans CJK JP, Noto Sans JP, sans-serif" font-size="11" font-weight="400" text-anchor="middle" >UTF-8    TypeScript    GuitarDSL</text>
+</svg>
