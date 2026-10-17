@@ -1453,6 +1453,11 @@ ${cspMeta}
         }
         const wasPlaying = transport === 'playing' || transport === 'counting-in';
         const current = currentScorePosition();
+        const practiceRow = document.getElementById('practice-toolbar');
+        const activeElement = document.activeElement;
+        if (practiceEnabled && activeElement && practiceRow?.contains(activeElement)) {
+          practiceToggle?.focus();
+        }
         practiceEnabled = !practiceEnabled;
         if (!practiceEnabled) {
           loopMode = 'off';

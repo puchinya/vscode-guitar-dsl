@@ -14,7 +14,8 @@ import { registerGuitarDslSidebar } from './sidebar';
 import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
-import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND } from './scoreSettingsEditor';
+import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
+import { dispatchPreviewLegacyMessage } from './previewLegacyCommands';
 import { ScoreSettingsInspectorController } from './scoreSettingsInspectorController';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { registerGuitarDslAiTools } from './ai/tools';
@@ -270,6 +271,15 @@ export function activate(context: vscode.ExtensionContext) {
             return;
           }
           if (message.command !== 'layoutChanged') pendingLayoutFocusRestore = undefined;
+          const legacyMessage = dispatchPreviewLegacyMessage(message, lastActiveGuitarDslDoc, {
+            previewCapo,
+            previewBeginner,
+            externalPreviewChanged: uri => settingsController?.externalPreviewChanged(uri),
+            applyCapo: applyPreviewCapo,
+            applyBeginner: applyPreviewBeginner,
+            editCapo: async doc => { await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, doc.uri); }
+          });
+          if (legacyMessage instanceof Promise ? await legacyMessage : legacyMessage) return;
           const pageSize: PageSize = isPageSize(message.pageSize) ? message.pageSize : previewPageSize;
           const orientation: PageOrientation = isPageOrientation(message.orientation) ? message.orientation : previewOrientation;
           if (message.command === 'savePdf') {
@@ -498,6 +508,44 @@ export function activate(context: vscode.ExtensionContext) {
       previewBeginner.clear();
     }
   }, null, context.subscriptions);
+
+  /** Legacy Preview message compatibility; the duplicate visible controls remain retired. */
+  const applyPreviewCapo = async (doc: vscode.TextDocument, capo: number) => {
+    const result = await applyCapoTransform(doc.uri, capo);
+    if (result.ok) {
+      previewCapo.clear();
+      vscode.window.showInformationMessage(msgs.msgCapoApplied(capo));
+      if (result.unusedDefinitions.length > 0) {
+        vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
+      }
+    } else {
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected
+        : result.code === 'staleDocument' ? msgs.msgDocumentChanged : msgs.capoFailures[result.code];
+      vscode.window.showWarningMessage(msgs.msgCapoApplyFailed(reason));
+    }
+    const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
+    updateWebview(fresh);
+  };
+
+  /** Legacy Preview Beginner message compatibility; no duplicate Beginner UI is rendered. */
+  const applyPreviewBeginner = async (doc: vscode.TextDocument) => {
+    const state = previewBeginner.getState();
+    if (!state) return;
+    const result = await applyBeginnerTransform(doc.uri, { barrePolicy: state.barrePolicy, targetCapo: state.targetCapo });
+    if (result.ok) {
+      previewBeginner.clear();
+      vscode.window.showInformationMessage(msgs.msgBeginnerApplied(result.targetCapo, result.substitutions));
+      if (result.unusedDefinitions.length > 0) {
+        vscode.window.showWarningMessage(msgs.msgCapoUnusedDefinitions(result.unusedDefinitions.join(', ')));
+      }
+    } else {
+      const reason = result.code === 'editRejected' ? msgs.msgCapoEditRejected
+        : result.code === 'staleDocument' ? msgs.msgDocumentChanged : msgs.beginnerFailure(result.code, result.detail);
+      vscode.window.showWarningMessage(msgs.msgBeginnerApplyFailed(reason));
+    }
+    const fresh = vscode.workspace.textDocuments.find(d => d.uri.toString() === doc.uri.toString()) ?? doc;
+    updateWebview(fresh);
+  };
 
   vscode.window.onDidChangeActiveTextEditor((editor) => {
     if (editor && isGuitarDslDocument(editor.document)) {
