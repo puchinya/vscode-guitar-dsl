@@ -681,6 +681,8 @@ export function measureCellsOf(rawLine: string): string[] {
 
 export interface ParseGuitarDslOptions {
   expandPageBreakRepeats?: boolean;
+  /** Allows a chordless pair only when compiling a structural rhythm-only pattern. */
+  allowChordlessRhythmPatternTies?: boolean;
 }
 
 function explicitNoteDurationSpan(token: string, tokenStartCol: number): CodeActionSourceToken['duration'] | undefined {
@@ -2216,12 +2218,42 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     };
     const chordAt = (measure: MeasureData, beat: Fraction): { name: string; label?: string } | undefined => {
       const targetBeat = fnum(beat);
-      let selected: MeasureData['chords'][number] | undefined;
-      for (const chord of measure.chords) {
-        if (chord.beat <= targetBeat && (!selected || chord.beat >= selected.beat)) selected = chord;
+      let selectedIndex = -1;
+      let selectedBeat = -Infinity;
+      for (let index = 0; index < measure.chords.length; index++) {
+        const chord = measure.chords[index];
+        const chordBeat = measure.chordBeatOffsets[index] ? fnum(measure.chordBeatOffsets[index]) : chord.beat;
+        if (chordBeat <= targetBeat && chordBeat >= selectedBeat) {
+          selectedIndex = index;
+          selectedBeat = chordBeat;
+        }
       }
-      if (selected) return selected.label === undefined ? { name: selected.name } : { name: selected.name, label: selected.label };
-      return measure.chord ? { name: measure.chord } : undefined;
+      if (selectedIndex < 0) return undefined;
+      const selected = measure.chords[selectedIndex];
+      return selected.label === undefined ? { name: selected.name } : { name: selected.name, label: selected.label };
+    };
+    const sameChordIdentity = (
+      left: { name: string; label?: string } | undefined,
+      right: { name: string; label?: string } | undefined
+    ): boolean => left === undefined || right === undefined
+      ? left === right
+      : left.name === right.name && left.label === right.label;
+    const chordRemainsUnchanged = (
+      measure: MeasureData,
+      start: Fraction,
+      end: Fraction,
+      expected: { name: string; label?: string } | undefined
+    ): boolean => {
+      const startBeat = fnum(start);
+      const endBeat = fnum(end);
+      if (!sameChordIdentity(chordAt(measure, start), expected)) return false;
+      for (let index = 0; index < measure.chords.length; index++) {
+        const chord = measure.chords[index];
+        const changeBeat = measure.chordBeatOffsets[index] ? fnum(measure.chordBeatOffsets[index]) : chord.beat;
+        if (changeBeat <= startBeat || changeBeat >= endBeat) continue;
+        if (!sameChordIdentity(chordAt(measure, frac(changeBeat)), expected)) return false;
+      }
+      return true;
     };
     const sameFragmentScope = (left: readonly string[] | undefined, right: readonly string[] | undefined) => {
       const a = left ?? [];
@@ -2302,16 +2334,22 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
           continue;
         }
 
-        const sourceValue = parseRhythmDuration(source.duration);
-        const tiedPartOffset = sourceValue?.parts.slice(0, -1)
-          .reduce((sum, part) => fadd(sum, partBeats(part)), ZERO) ?? ZERO;
-        const fromChord = chordAt(measure, fadd(offsets[itemIndex], tiedPartOffset));
+        const sourceOnset = offsets[itemIndex];
+        const targetEnd = fadd(targetOnset, rhythmItemBeats(target));
+        const fromChord = chordAt(measure, sourceOnset);
         const toChord = chordAt(targetMeasure, targetOnset);
-        if (!fromChord || !toChord || fromChord.name !== toChord.name || fromChord.label !== toChord.label) {
+        const chordlessPair = fromChord === undefined && toChord === undefined;
+        const chordIdentityMatches = sameChordIdentity(fromChord, toChord)
+          && (!chordlessPair || options?.allowChordlessRhythmPatternTies === true);
+        const chordStaysTheSame = crossesMeasure
+          ? chordRemainsUnchanged(measure, sourceOnset, measure.expectedBeats, fromChord)
+            && chordRemainsUnchanged(targetMeasure, targetOnset, targetEnd, fromChord)
+          : chordRemainsUnchanged(measure, sourceOnset, targetEnd, fromChord);
+        if (!chordIdentityMatches || !chordStaysTheSame) {
           reportInvalid(source, 'chordMismatch');
           continue;
         }
-        if (target.down || target.up) {
+        if (target.down || target.up || target.accent || target.arpeggio) {
           reportInvalid(source, 'continuationAttackModifier');
           continue;
         }

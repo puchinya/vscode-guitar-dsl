@@ -59,6 +59,25 @@ describe('render - HTML and SVG', () => {
     assert.deepStrictEqual(sheets.map(sheet => (sheet.match(/<path d="M [^\"]+ Q [^\"]+ Z" fill="#000"\/>/g) ?? []).length), [1, 1]);
   });
 
+  it('renders attack marks only after the compiler rejects them as tie continuations', () => {
+    const plainSvg = renderContinuousSvg(parseGuitarDsl('| C | 8 8 4 4 4 |'));
+    const cases = [
+      { modifier: 'a', marker: 'stroke-width="1.4"' },
+      { modifier: 'arp', marker: 'stroke-width="1.3"' }
+    ];
+    for (const { modifier, marker } of cases) {
+      const score = parseGuitarDsl(`| C | 8.t 8.${modifier} 4 4 4 |`);
+      assert.strictEqual(score.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason,
+        'continuationAttackModifier', modifier);
+      assert.strictEqual(score.measures[0].rhythms[1].tiedFromPrev, undefined, modifier);
+      const svg = renderContinuousSvg(score);
+      const tieArcs = svg.match(/<path d="M [^\"]+ Q [^\"]+ Z" fill="#000"\/>/g) ?? [];
+      assert.strictEqual(tieArcs.length, 0, `${modifier} input is not rendered as a tie`);
+      assert.strictEqual(countOccurrences(svg, marker), countOccurrences(plainSvg, marker) + 1,
+        `${modifier} remains a visible attack mark on the detached event`);
+    }
+  });
+
   it('compileGuitarDslToHtml should return full valid HTML with sheet SVGs', () => {
     const html = compileGuitarDslToHtml(sampleDsl);
     assert.ok(html.includes('<!DOCTYPE html>'));

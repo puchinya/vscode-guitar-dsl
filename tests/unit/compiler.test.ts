@@ -343,10 +343,14 @@ describe('compiler - parseGuitarDsl', () => {
       assert.strictEqual(parsed.measures[0].rhythms[4].tie, true);
       assert.strictEqual(parsed.measures[1].rhythms[0].tiedFromPrev, true);
 
-      const compound = parseGuitarDsl('| C:1 D:3 | 4+8.t 4 4 8 |');
+      const compound = parseGuitarDsl('| C:1 C:3 | 4+8.t 4 4 8 |');
       assert.deepStrictEqual(compound.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
       assert.strictEqual(compound.measures[0].rhythms[0].tie, true);
       assert.strictEqual(compound.measures[0].rhythms[1].tiedFromPrev, true);
+
+      const changedChord = parseGuitarDsl('| C:1 D:3 | 4+8.t 4 4 8 |');
+      assert.strictEqual(changedChord.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch');
+      assert.strictEqual(changedChord.measures[0].rhythms[1].tiedFromPrev, undefined);
     });
 
     it('reports invalid targets and unsupported boundaries at the tie source', () => {
@@ -356,6 +360,9 @@ describe('compiler - parseGuitarDsl', () => {
         ['| G | 4 4 4 8.t c4/8 |', 'pitchMismatch'],
         ['| G | 4 4 4 8.t |\n| G | 4 4 4 4 |', 'nonAdjacent'],
         ['| G | 4 4 4 8 8.t |\n| D | 4 4 4 4 |', 'chordMismatch'],
+        ['| 8.t 8 4 4 4 |', 'chordMismatch'],
+        ['| 4 4 4 4.t |\n| G | 4 4 4 4 |', 'chordMismatch'],
+        ['| G | 4 4 4 4.t |\n| 4 4 4 4 |', 'chordMismatch'],
         ['| G | 4 4 4 8 8.t |\n| % |', 'unsupportedBoundary'],
         ['| G | 4 4 4 8 8.t |\n| G | 4.d 4 4 4 |', 'continuationAttackModifier'],
         ['| G | 4 4 4 8 8.t |', 'missingTarget']
@@ -376,6 +383,15 @@ describe('compiler - parseGuitarDsl', () => {
         '| G@bar | 4 4 4 4 |'
       ].join('\n'));
       assert.strictEqual(labels.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch');
+    });
+
+    it('rejects every attack-only modifier on a tie continuation', () => {
+      for (const modifier of ['d', 'u', 'a', 'arp']) {
+        const parsed = parseGuitarDsl(`| G | 8.t 8.${modifier} 4 4 4 |`);
+        assert.strictEqual(parsed.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason,
+          'continuationAttackModifier', modifier);
+        assert.strictEqual(parsed.measures[0].rhythms[1].tiedFromPrev, undefined, modifier);
+      }
     });
 
     it('allows ties completed inside a let fragment and rejects a fragment boundary', () => {

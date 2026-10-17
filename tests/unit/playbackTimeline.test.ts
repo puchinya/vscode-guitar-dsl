@@ -56,6 +56,32 @@ describe('playbackTimeline', () => {
     assert.strictEqual(slowerTarget.rhythmTieRestartEvents?.[0].durationSeconds, 1);
   });
 
+  it('keeps compound tie chord identity from the source attack through the held duration', () => {
+    const sameChord = validTimeline('| C:1 C:3 | 4+8.t 4 4 8 |');
+    const sameChordAttacks = eventsOf(sameChord, 'rhythmAttack');
+    assert.deepStrictEqual(sameChordAttacks.map(event => [event.chord?.name, fnum(event.beatInMeasure), fnum(event.durationBeats)]), [
+      ['C', 0, 2.5],
+      ['C', 2.5, 1],
+      ['C', 3.5, 0.5]
+    ]);
+
+    const changedAtCompoundHead = parseGuitarDsl('| C:1 D:3 | 4+8.t 4 4 8 |');
+    assert.strictEqual(changedAtCompoundHead.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch');
+    const changedTimeline = buildPlaybackTimeline(changedAtCompoundHead);
+    assert.ok(changedTimeline.ok);
+    const changedAttacks = eventsOf(changedTimeline.timeline, 'rhythmAttack');
+    assert.deepStrictEqual(changedAttacks.slice(0, 2).map(event => [event.chord?.name, fnum(event.beatInMeasure)]), [
+      ['C', 0],
+      ['D', 1.5]
+    ]);
+    assert.strictEqual(changedAttacks.filter(event => fnum(event.beatInMeasure) === 1.5).length, 1,
+      'a chord change leaves the destination as a distinct attack');
+
+    const changedDuringHeldTarget = parseGuitarDsl('| C:1 D:3 | 8.t 4 4 4 8 |');
+    assert.strictEqual(changedDuringHeldTarget.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch',
+      'a chord change inside the target duration breaks the sustained chord identity');
+  });
+
   it('treats a tied target as an attack after a nonadjacent play-order jump', () => {
     const score = parseGuitarDsl([
       'bpm: 120',

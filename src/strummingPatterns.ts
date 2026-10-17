@@ -907,7 +907,7 @@ export function parseRhythmPattern(pattern: string, meter = '4/4'): RhythmPatter
   if (tokens.some(t => t.includes('|') || t.includes('"') || t === '%' || t.startsWith('$') || t.startsWith('['))) {
     return { ok: false, detail: 'a pattern holds rhythm tokens only' };
   }
-  const score = parseGuitarDsl(`time: ${meter}\n| ${tokens.join(' ')} |`);
+  const score = parseGuitarDsl(`time: ${meter}\n| ${tokens.join(' ')} |`, { allowChordlessRhythmPatternTies: true });
   // A one-measure pattern cannot resolve its final .t target. Let buildDsl report the more
   // specific unsupportedCrossBarSyncopation result for that explicit cross-bar pattern.
   const lastTokenHasTie = /(?:^|\.)(?:t|tie)(?:\.|$)/.test(tokens[tokens.length - 1]);
