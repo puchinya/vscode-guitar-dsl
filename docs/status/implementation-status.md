@@ -42,10 +42,10 @@
 
 ## Issue #142: ギター・リズム符のタイによるシンコペーション
 
-- **状態**: 実装とローカル必須ゲート完了。PR作成後にcurrent-HEAD自己レビューとreview handoffを記録する。
+- **状態**: [PR #143](https://github.com/puchinya/vscode-guitar-dsl/pull/143) をopen済み。実装と必須ローカルゲート完了。
 - **実装**: `.t` / `.tie` による直後のリズム符へのタイをコンパイラで検証し、隣接小節、連結音価、`let` 境界、`%` 境界、コード押さえ方の一致を扱う。Preview / PDF は段・ページ端でタイ弧を分割し、演奏順に隣接しない再生区間では通常の攻撃音に戻す。Practice loop が継続小節から始まる場合も小節頭で一度だけ再アタックする。
 - **検証**: `npm run compile`、`npm run test:unit`（1145 passing）、`npm run check:help`、`npm run check:ai`、sandbox外の `npm test`（1145 unit passing、90 E2E passing、6件 pending）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`git diff --check` がPASS。workflowの契約復元/照合と `validate-docs --issue 142` もPASS。通常のvsce依存検出を省いた一覧も確認済み。
-- **表示証拠**: 共通 `renderScoreSheets()` SVGからライト/ダーク背景の画像を作成し、タイ弧と連桁を目視確認した：[ライト](evidence/issue-142/preview-light.png)、[ダーク](evidence/issue-142/preview-dark.png)。この画像は実Extension Development Hostの画面キャプチャではなく、Preview/PDF共有SVGのラスタライズ結果。
+- **表示証拠**: [Issue #142のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/142#issuecomment-6228612671) に、共通 `renderScoreSheets()` SVGから作成したライト/ダーク画像を添付し、タイ弧と連桁を目視確認した：[ライト](evidence/issue-142/preview-light.png)、[ダーク](evidence/issue-142/preview-dark.png)。実Extension Development Hostの画面キャプチャではなく、Preview/PDF共有SVGのラスタライズ結果。
 - **サンプル**: [`sample_rhythm_tie_syncopation.guitardsl`](../../samples/sample_rhythm_tie_syncopation.guitardsl)。
 - **文書オーナー**: docs/specs/guitardsl-syntax.md、docs/design/language-and-score-processing.md、docs/design/preview-rendering-and-export.md、本書、EN/JA Help とその digest、生成済み media/help、AI syntax reference。
 
