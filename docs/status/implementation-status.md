@@ -58,10 +58,21 @@
 
 ## Issue #145: Previewの一時楽譜設定（カポ・難易度・初心者モード）を復元
 
-- **状態**: UI修正とレビュー指摘への対応済み。PR #149 はレビュー中で、未マージ。
-- **実装**: 48px のPreview toolbarにCapo・Playability・Beginner modeの3つの独立した一時設定ボタンを置く。900 CSS px以上はラベルと値、600–899pxは値を含む短いラベルを表示し、599px以下は現在値を読み上げる単一トリガーへまとめる。全幅で単一popoverを共有し、設定の詳細リンクはCapo/PlayabilityをInspectorのCapo節、BeginnerをBeginner節へ送る。既存のカポ候補・プレイアビリティモデルとBeginner controllerを再利用する。Previewのtyped messageはURI/version/generationとホスト候補を確認し、unsupported候補はside effect前に拒否する。Inspectorが詳細編集とApply/Cancelを引き続き所有し、Preview操作はDSL編集やUndoを行わない。
-- **検証**: macOS arm64 / VS Code 1.142.0。`.agent/project.json` の最終ゲート `npm run compile`、`npm test`（Help/AI同期PASS、単体 **1,154件PASS**、VS Code E2E **98件PASS・6件pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,599項目**）はPASS。実Workbenchで1100/600/421 CSS pxのWebviewを検証し、JA/EN × Dark/Lightの各条件を別々のExtension Development Host実行で確認。Inspector同時表示中のPreview識別、unsupported候補によるdraft/既存override不変、accepted intentによるdraft supersedeとduplicate/stale拒否、正しいInspector節へのリンクもE2Eで確認。Tab/Escape/フォーカス復帰、Practice、輸送操作、Preview/PDFの既存検査、Issue #142のtie単体検査を含む。6件のpendingとVoiceOver/NVDA、Windows/Linuxは未実施。
-- **画面証拠**: 実Preview WebviewからEN/JA × Dark/Lightそれぞれ1100 CSS px・600 CSS pxを撮影し、JA・暗色では421 CSS pxも撮影した。1100pxの証拠：[EN・暗色](evidence/issue-145/preview-en-dark-1100-score-settings-review.png)、[EN・明色](evidence/issue-145/preview-en-light-1100-score-settings-review.png)、[JA・暗色](evidence/issue-145/preview-ja-dark-1100-score-settings-review.png)、[JA・明色](evidence/issue-145/preview-ja-light-1100-score-settings-review.png)。600pxの証拠：[EN・暗色](evidence/issue-145/preview-en-dark-600-score-settings-review.png)、[EN・明色](evidence/issue-145/preview-en-light-600-score-settings-review.png)、[JA・暗色](evidence/issue-145/preview-ja-dark-600-score-settings-review.png)、[JA・明色](evidence/issue-145/preview-ja-light-600-score-settings-review.png)。421pxの証拠：[JA・暗色](evidence/issue-145/preview-ja-dark-421-compact-settings-review.png)。画像はVS Code renderer内のWebviewで、ネイティブ枠を含まない。
+- **状態**: 最新仕様追補とPR #149のレビュー指摘を反映。PR #149 はレビュー中で、未マージ。
+- **実装**: 48px再生行の直下に44pxの楽譜設定行を常時表示し、「一時楽譜設定」の見出しは表示しない。カポ・色付き弾きやすさ・初心者モードを直接操作できる。840 CSS px以上では補助設定とInspectorリンクを同じ行に表示し、それ未満ではMoreから操作できる。練習モードON時だけtop=92px・高さ42pxの行を追加し、本文paddingをOFF=110px / ON=152pxとする。弾きやすさは緑 `#2e7d32`・黄土 `#8d6e00`・赤 `#b71c1c`、評価不能は中立色。Preview intentはURI/version/generationと候補の対応を確認してから処理し、無効・stale messageはfocus復元hintを破棄しない。Preview設定は既存controllerを使い、DSL編集やUndoを行わず、Inspectorが詳細編集とApply/Cancelを所有する。
+- **検証**: macOS arm64 / VS Code 1.142.0。`.agent/project.json` の `npm run compile`、最終 `npm test`（Help/AI同期PASS、単体 **1,154件PASS**、VS Code E2E **98件PASS・6件pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,599項目**）はPASS。`verify-implementation-contract 145`、`validate-docs --issue 145`、`git diff --check` もPASS。実WorkbenchのExtension Development Hostで421/600/840/1100 CSS px × JA/EN × Dark/Lightの16条件を個別に実行し、各条件で行の幾何、直接操作、色、練習行、旧見出しの非表示を検査。unsupported候補の拒否・Inspector draft保持とaccepted intentのstale duplicate拒否・focus復元は対象E2E **2件PASS**。初回全体実行で検出したWebview再描画完了前のfocus検査raceは、document identity/generationを待つようテストを修正し、再実行で全テストPASS。6件のpendingとVoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: 実Preview Webviewから撮影。各セルにEN・暗色 / EN・明色 / JA・暗色 / JA・明色の証拠を記録する。
+
+設計参照: [600px表示](evidence/issue-145/design/vscode-guitardsl-score-settings-600px.svg) / [2行設定表示](evidence/issue-145/design/vscode-guitardsl-score-settings-second-row.svg)。
+
+| Preview幅 | EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
+|---|---|---|---|---|
+| 421px | [画像](evidence/issue-145/preview-en-dark-421-score-settings.png) | [画像](evidence/issue-145/preview-en-light-421-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-421-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-421-score-settings.png) |
+| 600px | [画像](evidence/issue-145/preview-en-dark-600-score-settings.png) | [画像](evidence/issue-145/preview-en-light-600-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-600-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-600-score-settings.png) |
+| 840px | [画像](evidence/issue-145/preview-en-dark-840-score-settings.png) | [画像](evidence/issue-145/preview-en-light-840-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-840-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-840-score-settings.png) |
+| 1100px | [画像](evidence/issue-145/preview-en-dark-1100-score-settings.png) | [画像](evidence/issue-145/preview-en-light-1100-score-settings.png) | [画像](evidence/issue-145/preview-ja-dark-1100-score-settings.png) | [画像](evidence/issue-145/preview-ja-light-1100-score-settings.png) |
+
+- **文書オーナー**: `docs/specs/extension.md` §§4.2, 4.4–4.5, 4B, 4D、`docs/design/preview-rendering-and-export.md`、`score-editing.md`、`vscode-editor-experience.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
 - **文書オーナー**: `docs/specs/extension.md` §§4.2, 4.4–4.5, 4B, 4D、`docs/design/preview-rendering-and-export.md`、`score-editing.md`、`vscode-editor-experience.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)

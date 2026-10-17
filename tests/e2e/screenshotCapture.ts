@@ -406,6 +406,8 @@ export async function activateInspectorControlWithKeyboard(
 
 type SendDevToolsCommand = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
+let workbenchWindowSizeForRestore: { width: number; height: number } | undefined;
+
 async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -419,11 +421,31 @@ async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Prom
 export async function setWorkbenchViewportWidth(width: number): Promise<void> {
   if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
   await withWorkbenchDevTools(async send => {
+    const sizeResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      returnByValue: true
+    });
+    const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
+    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    workbenchWindowSizeForRestore ??= currentSize;
     await send('Runtime.evaluate', {
       expression: `window.resizeTo(${Math.round(width)}, Math.max(900, window.outerHeight))`,
       returnByValue: true
     });
     await new Promise(resolve => setTimeout(resolve, 200));
+  });
+}
+
+/** Clears the optional emulated viewport after a width-matrix test. */
+export async function resetWorkbenchViewport(): Promise<void> {
+  await withWorkbenchDevTools(async send => {
+    if (!workbenchWindowSizeForRestore) return;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${workbenchWindowSizeForRestore.width}, ${workbenchWindowSizeForRestore.height})`,
+      returnByValue: true
+    });
+    workbenchWindowSizeForRestore = undefined;
   });
 }
 
@@ -453,15 +475,16 @@ export async function resizeActiveEditorGroupToWidth(targetWidth: number): Promi
         if (!active) return { error: 'active editor group not found' };
         const activeRect = active.getBoundingClientRect();
         const activeLeft = activeRect.left;
+        const activeRight = activeRect.right;
         const sash = [...document.querySelectorAll('.monaco-sash.vertical:not(.primary-sidebar-sash)')]
           .map(node => ({ node, rect: node.getBoundingClientRect() }))
-          .filter(item => Math.abs(item.rect.left - activeLeft) < 10)
-          .sort((a, b) => Math.abs(a.rect.left - activeLeft) - Math.abs(b.rect.left - activeLeft))[0];
+          .map(item => ({ ...item, leftDistance: Math.abs(item.rect.left - activeLeft), rightDistance: Math.abs(item.rect.left - activeRight) }))
+          .filter(item => Math.min(item.leftDistance, item.rightDistance) < 10)
+          .sort((a, b) => Math.min(a.leftDistance, a.rightDistance) - Math.min(b.leftDistance, b.rightDistance))[0];
         if (!sash) return { error: 'active group sash not found', width: activeRect.width };
-        const editorRect = document.querySelector('.part.editor')?.getBoundingClientRect();
         return { width: activeRect.width, x: sash.rect.left + sash.rect.width / 2,
           y: Math.min(activeRect.bottom - 40, activeRect.top + 160),
-          direction: activeRect.left > (editorRect?.left ?? activeRect.left) + 5 ? -1 : 1 };
+          direction: sash.leftDistance < 10 ? -1 : 1 };
       })())`,
       returnByValue: true
     });

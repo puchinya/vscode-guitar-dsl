@@ -6,6 +6,7 @@
 - Status: Current
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
+- Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
@@ -435,17 +436,18 @@ GuitarDSL 共通 Inspector（§4D）を明示的に開く。対象は現在ア�
 ### 4.2 プレビューUIとツールバー
 プレビュー画面上部には以下の操作を提供するツールバー（HTML）が配置される。
 
-Preview 上部には高さ 48 px の固定ツールバーを 1 行だけ表示する。通常の Play/Pause/Stop、seek、現在時刻と総時間は常時表示し、演奏できない場合も無効化と理由を示す。右側に Practice 切替、「再生設定」、「表示・出力」、「一時楽譜設定」、ヘルプを置く。
+Preview 上部には高さ 48 px の再生バーを固定表示し、その直下に高さ 44 px の楽譜設定行を常時表示する。通常の Play/Pause/Stop、seek、現在時刻と総時間は再生バーに置き、演奏できない場合も無効化と理由を示す。楽譜設定行にはカポ、色付き弾きやすさ、初心者モードを直接操作できる形で表示する。「一時楽譜設定」という文字列は画面に表示しない。練習モードが ON の場合だけ、楽譜設定行の下へ高さ 42 px の練習行を表示する。
 
 - 「再生設定」は非モーダル disclosure とし、Count-in と Metronome をまとめる。
 - 「表示・出力」は非モーダル disclosure とし、表示モード、用紙サイズ、向き、PDF 保存をまとめる。表示モードは `1ページ`、`見開き`、`Web`、用紙サイズは `A4`、`A3`、`A5`、`B4`、`B5`、`Letter`、向きは `縦` と `横（見開き）` を提供する。PDF は選択中の用紙と向きで `guitardsl.exportPdf` と同じ処理（§3.2）を実行する。
-- 「一時楽譜設定」は非モーダル disclosure とし、§4.4 の一時カポ、現在の弾きやすさ、§4.5 の Beginner ON/OFF・バレー方針・自動／固定カポをまとめる。900 CSS px 以上では 48 px の1行に「カポ」「弾きやすさ（段階とスコア）」「初心者モード（ON/OFF）」を別々に表示する。600〜899 px では同じ3操作をそれぞれ短いラベルで表示する。600 px 未満では1つのコンパクトな起動ボタンにまとめ、アクセシブル名で現在のカポ、弾きやすさの段階とスコア、Beginner の ON/OFF を伝える。どの幅でも起動ボタンから開くパネルに3操作と詳細状態を表示する。現在のカポとスコア・段階はホストモデルから取得し、未評価を0点として扱わない。変更できない候補は無効にする。カポ／弾きやすさの詳細リンクは Inspector の Capo / Playability、Beginner の詳細リンクは Beginner Mode を開く。
-- 3 つの disclosure は `button[aria-expanded][aria-controls]` と `hidden` な `role="group"` で実装し、`role="menu"` は使わない。各 disclosure の操作はキーボードとポインターで行え、Escape で閉じて起動ボタンへフォーカスを戻す。閉じた内容は Tab 順序とアクセシビリティツリーから除外する。同時に開く disclosure は 1 つだけとする。
-- 600 px 幅でも Play/Pause/Stop、seek、時刻、Practice、3つの設定操作、ヘルプを表示する。通常再生操作を優先し、追加操作のラベルや余白を先に縮める。600 px 未満では3設定操作を1つの起動ボタンにまとめる。さらに狭い幅では補助操作をスクロール可能な領域に置き、通常再生操作を隠したり譜面に重ねたりしない。
-- 用紙サイズまたは向きの変更は既存の `layoutChanged` Host message で再レイアウトする。一時楽譜設定の変更は型付き Host message で候補を検証してから Preview を再描画する。未対応候補は Inspector 草稿、既存 Preview override、フォーカス、Preview 世代を含む状態を変えずに拒否する。HTML 再構築後は操作元の disclosure を開き、変更したコントロールへ一度だけフォーカスを戻す。別文書・version・Preview 世代への切替、遅延 message、追加のユーザー操作で古いフォーカス指定を再利用しない。表示モード変更、PDF 保存、disclosure の開閉では HTML を再構築しない。
+- 「再生設定」と「表示・出力」は非モーダル disclosure とし、それぞれ Count-in / Metronome と、表示モード・用紙サイズ・向き・PDF 保存をまとめる。
+- 840 CSS px 以上では楽譜設定行にカポ、弾きやすさ（数値・段階・色）、初心者モードに加え、バレー方針、カポ選択方法、Inspector 詳細への導線を表示する。600〜839 px と 600 px 未満では主要3項目を直接操作できる形で常時表示し、補助項目をアクセシブルな overflow に置く。どの幅でも未評価を0点として扱わず、変更できないカポ候補を無効にする。カポ／弾きやすさの詳細リンクは Inspector の Capo / Playability、Beginner の詳細リンクは Beginner Mode を開く。
+- 「再生設定」と「表示・出力」の disclosure は `button[aria-expanded][aria-controls]` と `hidden` な `role="group"` で実装し、`role="menu"` は使わない。キーボードとポインターで操作でき、Escape で閉じて起動ボタンへフォーカスを戻す。閉じた内容は Tab 順序とアクセシビリティツリーから除外する。同時に開く disclosure は 1 つだけとする。
+- 600 px 幅とそれ未満でも通常の再生操作を維持し、カポ、色付き弾きやすさ、初心者モードの3項目は楽譜設定行に常時表示する。幅が狭い場合は補助操作のラベル・余白を先に縮め、補助操作はスクロール可能な overflow に置く。再生操作を隠したり譜面に重ねたりしない。
+- 用紙サイズまたは向きの変更は既存の `layoutChanged` Host message で再レイアウトする。楽譜設定行の変更は型付き Host message で候補を検証してから Preview を再描画する。未対応候補または無効な message は Inspector 草稿、既存 Preview override、保留中のフォーカス復帰状態、Preview 世代を変更せず拒否する。有効な変更による HTML 再構築後は操作元コントロールへ一度だけフォーカスを戻す。別文書・version・Preview 世代への切替、遅延 message、追加のユーザー操作で古いフォーカス指定を再利用しない。表示モード変更、PDF 保存、disclosure の開閉では HTML を再構築しない。
 - 再生エラーは固定バー内で切り詰めず、譜面より前に内容幅で折り返す status 行へ表示する。空の場合は表示領域を確保しない。`role="status" aria-live="polite" aria-atomic="true"` とローカライズ済みの説明を使う。
-- Practice は初期値 OFF とする。ON のときだけ固定バーの下 `top: 48px` に高さ 42 px の Practice 行を表示し、速度、Loop、A、B、Clear、Follow、現在の小節／出現状態を操作できる。OFF では行、余白、Tab 停止点を残さない。Preview 本文の上余白は通常 66 px、Practice ON では 108 px とする。
-- Preview に Capo、Beginner、Progression の恒常的な編集バーは置かない。カポ／初心者モードの詳細な候補比較と DSL 適用は Common Inspector（§4D）を唯一の編集面とし、Preview には一時設定の簡易操作だけを置く。簡易操作は DSL・Undo・永続設定を変更せず、Preview と PDF の一時 effective DSL は従来どおり共有する。譜面上のコードダイアグラムクリックによる編集は §3.3 の導線を維持する。
+- Practice は初期値 OFF とする。ON のときだけ楽譜設定行の下 `top: 92px` に高さ 42 px の Practice 行を表示し、速度、Loop、A、B、Clear、Follow、現在の小節／出現状態を操作できる。OFF では行、余白、Tab 停止点を残さない。固定行以外に従来の 18 px 余白を保つ場合、Preview 本文の上余白は Practice OFF で 110 px、ON では 152 px とする。
+- Preview に表示する楽譜設定行は一時状態の操作面であり、ソースへの Apply は行わない。カポ／初心者モードの全候補比較と DSL 適用は Common Inspector（§4D）を唯一の保存編集面とする。楽譜設定行の操作は DSL・Undo・永続設定を変更せず、Preview と PDF の一時 effective DSL は従来どおり共有する。譜面上のコードダイアグラムクリックによる編集は §3.3 の導線を維持する。
 
 ツールバーと status は HTML のみで、譜面 SVG・PDF に可視描画しない。ヘルプは `?` ボタンから `guitardsl.openHelp`（§3.11）を実行する。表示モード・紙面設定・再生操作・Inspector の設定比較で通常再生と Practice の意味や所有者を変えない。
 
@@ -472,7 +474,7 @@ Preview 上部には高さ 48 px の固定ツールバーを 1 行だけ表示�
   - 自動: 段がページの残り高さに収まらない場合、次のページへ送る。ページ番号・総ページ数は自動改ページ後のページ数に基づく。
 
 ### 4.4 プレビューのカポ一時変更と有効 DSL
-- カポの詳細候補比較と DSL への適用は共通 Inspector の Capo / Playability セクションで行う。Preview の「一時楽譜設定」では 0〜12 の候補を選び、推奨と弾きやすさを確認できる。変更できない候補は無効とし、弾きやすさが不明な場合は未評価と表示する。選択されたカポは拡張機能ホストが対象ドキュメントに対してだけ保持し（設定やワークスペースには保存しない）、既に開いている Preview へ有効 DSL を投影する。
+- カポの詳細候補比較と DSL への適用は共通 Inspector の Capo / Playability セクションで行う。Preview の常設楽譜設定行では 0〜12 の候補を直接選び、推奨と弾きやすさを確認できる。変更できない候補は無効とし、弾きやすさが不明な場合は未評価と表示する。選択されたカポは拡張機能ホストが対象ドキュメントに対してだけ保持し（設定やワークスペースには保存しない）、既に開いている Preview へ有効 DSL を投影する。
 - **有効 DSL**: 一時変更がある場合は、ドキュメントの**現在の**テキストから鳴る響きを保ったままカポを変えた DSL（`docs/specs/guitardsl-syntax.md` §4.4）、ない場合（または選択がドキュメントのカポと同じ場合）はドキュメントのテキストそのもの。プレビューの描画、プレビューの PDF 保存、同じドキュメントに対する `guitardsl.exportPdf` は、すべてこの同一の文字列を使う。
 - カポを `0 → 2 → 5 → 1` と変えても、毎回ドキュメントのテキストから計算する（前の変換結果を再変換しない）。
 - 変換後の DSL ではカポ値とコード名だけが変わり、コードダイアグラム・弾きやすさも変換後のコードで表示される。`key`、メロディ、リズム、歌詞などは変わらない。
@@ -485,7 +487,7 @@ Preview 上部には高さ 48 px の固定ツールバーを 1 行だけ表示�
 - カポが 0〜12 の整数でない場合、Inspector の候補選択は無効になる。
 
 ### 4.5 初心者モード（プレビュー）
-初心者モードの詳細な候補比較と DSL への適用は共通 Inspector の Beginner Mode セクションで行う。Preview の「一時楽譜設定」では Beginner の ON/OFF、バレー方針、自動／固定カポを操作し、推奨カポ・弾きやすさ・置き換え・警告を確認できる。鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードへの置き換えを組み合わせて提案し、有効 DSL を Preview と PDF に表示する。DSL の構文は増やさず、状態は DSL・設定・ワークスペースに保存せず、対象文書に対する一時状態として拡張機能ホストが所有する。
+初心者モードの詳細な候補比較と DSL への適用は共通 Inspector の Beginner Mode セクションで行う。Preview の常設楽譜設定行では Beginner の ON/OFF を直接操作し、幅に応じた補助操作領域からバレー方針、自動／固定カポを操作できる。推奨カポ・弾きやすさ・置き換え・警告を確認できる。鳴る響きをカポで保ちながら、弾きやすいカポ位置と簡単なコードへの置き換えを組み合わせて提案し、有効 DSL を Preview と PDF に表示する。DSL の構文は増やさず、状態は DSL・設定・ワークスペースに保存せず、対象文書に対する一時状態として拡張機能ホストが所有する。
 
 - **バレーコード**: `許可する`（allow）/ `使用しない`（forbid）。`使用しない` は絶対条件で、変換後の楽譜に描画されるダイアグラム（`docs/specs/guitardsl-syntax.md` §7.3 の手順 1〜4 で決まる押さえ方: `chord` 定義、なければコード名全体の標準の押さえ方。コード名全体の標準の押さえ方がない分数コードに限り（例: `F/A`）、上のコードの標準の押さえ方。`G/B`・`D/F#` のような専用の押さえ方があればそれを使う）にセーハがあるコードは使わない。条件を満たせない場合に `許可する` へ自動で切り替えることはない。
 - **カポ候補**: カポ 0〜12 のそれぞれについて、§4.4 と同じ響きを保つカポ変更（`docs/specs/guitardsl-syntax.md` §4.4）を行い、変更できないカポは初心者モードでも選べない。変更後の各コードについて、そのまま・または次の置き換えから選ぶ。1 つでも使えるコードがないカポは選べない。
@@ -554,7 +556,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 楽曲全体の設定をまとめて編集する画面は、共通 Inspector の既存 Webview View（§4D）に表示する。設定画面は「カポ / 弾きやすさ」「初心者モード」「移調」の3セクションで構成し、各セクションは既存のホスト側モデルと変換処理を使う。独立した設定 Panel は作成しない。
 
 ### 4B.1 Inspector セッション
-- `guitardsl.editScoreSettings` と `guitardsl.editCapo` は §3.9 の対象解決後、単一の `guitardsl.inspector` View に設定セッションを表示する。既に表示済みならその View の内容を置き換える。ユーザーが View を移動している場合はその配置を維持する。Preview のカポ・初心者モード編集バーは設けない。
+- `guitardsl.editScoreSettings` と `guitardsl.editCapo` は §3.9 の対象解決後、単一の `guitardsl.inspector` View に設定セッションを表示する。既に表示済みならその View の内容を置き換える。ユーザーが View を移動している場合はその配置を維持する。Preview の常設楽譜設定行は一時選択と状態確認だけを行い、全候補比較・Apply は提供しない。
 - 拡張機能ホストは対象 URI、文書 version、元テキスト、session generation、revision、現在のセクションと3つのセクションモデルを所有する。表示モデルはホストが現在のテキストから計算する。Webview はセクション ID・候補値などの操作だけを送り、DSL、変換計画、対象文書を保持または生成しない。
 - 文書 version または元テキストが変化した場合、対象文書が閉じた場合、別の文書種別へ切り替わった場合、Inspector View が破棄された場合は設定セッションを失効し、古い Apply を拒否する。入力や通常の文書切替だけで Inspector を自動表示しない。
 - 候補選択、セクション切替、比較表示、Cancel はソース編集を行わない。Apply は明示確認の肯定後にだけ実行し、ホストが対象 URI / version / source / generation / revision と現在の選択を再確認する。古い確認、無効計画、または `applyEdit` の拒否は編集を残さない。成功した Apply は一つの `WorkspaceEdit` と一回の Undo にまとめる。結果が元テキストと同じ場合は Apply を無効にする。
@@ -570,6 +572,7 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 ### 4B.3 弾きやすさ
 - 弾きやすさは 0〜100 のスコア（大きいほど簡単）と 5 段階（とても簡単 85〜100 / 簡単 70〜84 / 普通 50〜69 / 難しい 30〜49 / とても難しい 0〜29）で表す。計算式は `docs/design/architecture.md` のカポ推論の節に定める。コードが 1 つもない場合は評価しない。
+- Preview と Inspector は数値・段階・色を併用する。旧 Preview 配色を復元し、とても簡単／簡単は緑 `#2e7d32`、普通は黄土 `#8d6e00`、難しい／とても難しいは赤 `#b71c1c`、未評価は中立色で表示する。色だけで状態を伝えない。
 - 現在のカポの評価には、ファイル内の `chord` 定義の押さえ方を使う。ほかのカポの候補は、同じ `tuning:` を使ってコード名に実音が一致するプリセットフォームで評価する。
 - 推奨カポは、変更可能な候補のうちスコアが最も高いもの（同点なら小さいカポ）。
 - 変更できない場合: ラベル付きコード（`C@label`）を使っていてカポが変わる場合、変換後のコード名がファイル内のラベルなし `chord` 定義と同じ名前になる場合、コード名を移調できない場合。
@@ -692,7 +695,7 @@ Inspector は編集補助機能を同じ場所へ段階的に集約するため�
 
 ### 4D.3 設定セッションと Preview
 - 設定コンテキストは対象 URI / version、session generation、revision、選択中セクション、およびホストが生成した3つのセクションモデルを持つ。Webview はセクション・候補選択と操作 ID だけを送り、DSL・変換計画・対象文書を所有しない。設定と進行セッションを同時に表示・実行しない。
-- Capo / Beginner の候補選択はホストの既存モデルと PreviewCapoController / PreviewBeginnerController を使い、一時比較として既に開いている同じ対象の Preview に反映する。Preview が開いていない場合は自動表示せず、設定セッション中にユーザーが明示的に開いたときは現在の草稿を投影する。Preview の一時楽譜設定も URI / version / Preview generation とホスト候補の可否を検証し、独立した Preview 操作として設定草稿を失効させる。Cancel では Preview を開く直前の一時状態へ戻す（ただし独立操作が草稿を置き換えた場合を除く）。Preview と PDF は既存の resolvePreviewEffectiveDsl で同じ有効 DSL を解決する。
+- Capo / Beginner の候補選択はホストの既存モデルと PreviewCapoController / PreviewBeginnerController を使い、一時比較として既に開いている同じ対象の Preview に反映する。Preview が開いていない場合は自動表示せず、設定セッション中にユーザーが明示的に開いたときは現在の草稿を投影する。Preview の楽譜設定行から届く message も URI / version / Preview generation とホスト候補の可否を検証し、独立した Preview 操作として設定草稿を失効させる。無効または stale な message は、保留中の有効操作のフォーカス復帰状態を消去しない。Cancel では Preview を開く直前の一時状態へ戻す（ただし独立操作が草稿を置き換えた場合を除く）。Preview と PDF は既存の resolvePreviewEffectiveDsl で同じ有効 DSL を解決する。
 - 設定開始時に対象 URI の Preview 一時状態を保存する。Cancel、別セクションへの切替、設定セッション破棄では保存時点の状態へ戻す。ただし開始後にユーザーが Preview を独立操作した場合は設定セッションを失効させ、新しい Preview 状態を残す。古い保存状態で外部操作を上書きしない。
 - Transpose は差分・キー・mapping・警告を表示するだけで、Preview に一時移調を適用しない。Transpose Apply 後に既存の Capo / Beginner override があれば、新しい文書テキストから有効 DSL を再計算する。
 - Apply は明示確認後にだけ実行する。ホストが URI / version / source / session generation / revision と現在の選択を再確認し、一つの WorkspaceEdit にまとめる。古い確認、無効計画、applyEdit の拒否は編集を残さず、成功した Apply は一回の Undo で戻る。

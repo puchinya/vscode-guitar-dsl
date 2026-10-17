@@ -376,7 +376,7 @@ describe('compiler - chord token source spans', () => {
 });
 
 describe('capo - Preview effective state and temporary settings', () => {
-  it('renders host-computed capo candidates in the temporary settings disclosure', () => {
+  it('renders host-computed capo candidates in the dedicated score-settings row', () => {
     const source = 'key: B\n| B | E | F# | B |\n';
     const model = buildCapoPreviewUiModel(source, 2);
     assert.strictEqual(model.sourceCapo, 0);
@@ -395,7 +395,7 @@ describe('capo - Preview effective state and temporary settings', () => {
     assert.match(html, /id="preview-capo-select"[^>]*><option value="" disabled/);
     const recommendedCandidate = model.candidates.find(candidate => candidate.recommended)!;
     const recommendedOption = html.match(new RegExp(`<option value="${recommendedCandidate.capo}"[^>]*>([^<]+)</option>`))?.[1];
-    assert.strictEqual(recommendedOption, `Capo ${recommendedCandidate.capo} · Recommended`);
+    assert.strictEqual(recommendedOption, `${recommendedCandidate.capo} ★`);
     assert.ok(html.includes('id="preview-playability"') && html.includes(`${model.currentPlayability!.score}/100`));
     assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
     assert.ok(!html.includes('id="capo-bar"'));
@@ -408,6 +408,6 @@ describe('capo - Preview effective state and temporary settings', () => {
     const html = compileGuitarDslToHtml('capo: x\n| C |\n', { locale: 'en', capo: model });
     assert.match(html, /id="preview-capo-select"[^>]* disabled/);
     assert.ok(html.includes('<option value="" disabled selected>Not available</option>'));
-    assert.match(html, /<option value="0" disabled>Capo 0/);
+    assert.match(html, /<option value="0" disabled>0<\/option>/);
   });
 });

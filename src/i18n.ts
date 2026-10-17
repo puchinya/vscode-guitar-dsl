@@ -198,9 +198,9 @@ export interface Messages {
   msgTemplateOpenFailed: string;
   msgSampleOpenFailed: string;
 
-  // Capo / playability (preview toolbar, score settings editor, host notifications)
-  uiTemporaryScoreSettings: string;
-  uiTemporaryScoreSettingsTitle: string;
+  // Capo / playability (Preview score-settings row, score settings editor, host notifications)
+  uiScoreSettings: string;
+  uiMoreScoreSettings: string;
   uiOpenScoreSettings: string;
   uiOpenBeginnerSettings: string;
   uiBeginnerCapoMode: string;
@@ -226,7 +226,7 @@ export interface Messages {
   msgDocumentChanged: string;
   msgCapoUnusedDefinitions: (keys: string) => string;
 
-  // Beginner Mode (preview capo bar, score settings editor, host notifications)
+  // Beginner Mode (Preview score-settings row, score settings editor, host notifications)
   uiBeginnerMode: string;
   uiBeginnerShort: string;
   uiBeginnerModeTitle: string;
@@ -458,8 +458,8 @@ export const MESSAGES_JA: Messages = {
   msgTemplateOpenFailed: 'テンプレートからドキュメントを作成できませんでした。',
   msgSampleOpenFailed: 'サンプルを開けませんでした。拡張機能を再インストールしてください。',
 
-  uiTemporaryScoreSettings: '一時楽譜設定',
-  uiTemporaryScoreSettingsTitle: 'プレビューとPDFに一時設定を反映します（DSLは変更しません）',
+  uiScoreSettings: '楽譜設定',
+  uiMoreScoreSettings: 'その他',
   uiOpenScoreSettings: 'カポ / 弾きやすさの設定を開く',
   uiOpenBeginnerSettings: '初心者モードの設定を開く',
   uiBeginnerCapoMode: 'カポ位置の選び方',
@@ -751,8 +751,8 @@ export const MESSAGES_EN: Messages = {
   msgTemplateOpenFailed: 'Could not create a document from the template.',
   msgSampleOpenFailed: 'Could not open the sample. Try reinstalling the extension.',
 
-  uiTemporaryScoreSettings: 'Temporary Score Settings',
-  uiTemporaryScoreSettingsTitle: 'Apply temporary settings to Preview and PDF without changing the DSL',
+  uiScoreSettings: 'Score settings',
+  uiMoreScoreSettings: 'More',
   uiOpenScoreSettings: 'Open Capo / Playability settings',
   uiOpenBeginnerSettings: 'Open Beginner Mode settings',
   uiBeginnerCapoMode: 'Capo selection',
