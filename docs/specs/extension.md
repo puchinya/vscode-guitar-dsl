@@ -439,10 +439,10 @@ Preview 上部には高さ 48 px の固定ツールバーを 1 行だけ表示�
 
 - 「再生設定」は非モーダル disclosure とし、Count-in と Metronome をまとめる。
 - 「表示・出力」は非モーダル disclosure とし、表示モード、用紙サイズ、向き、PDF 保存をまとめる。表示モードは `1ページ`、`見開き`、`Web`、用紙サイズは `A4`、`A3`、`A5`、`B4`、`B5`、`Letter`、向きは `縦` と `横（見開き）` を提供する。PDF は選択中の用紙と向きで `guitardsl.exportPdf` と同じ処理（§3.2）を実行する。
-- 「一時楽譜設定」は非モーダル disclosure とし、§4.4 の一時カポ、現在の弾きやすさ、§4.5 の Beginner ON/OFF・バレー方針・自動／固定カポをまとめる。通常幅の起動ボタンには現在の弾きやすさの短い値を表示し、詳細なスコアと段階、推奨カポ、変更不可候補、置き換え、警告は disclosure 内に表示する。評価できないときは未評価と表示し、0 点と扱わない。変更できない候補は無効にする。Inspector へのリンクは同じ文書の楽譜設定を開く。
+- 「一時楽譜設定」は非モーダル disclosure とし、§4.4 の一時カポ、現在の弾きやすさ、§4.5 の Beginner ON/OFF・バレー方針・自動／固定カポをまとめる。900 CSS px 以上では 48 px の1行に「カポ」「弾きやすさ（段階とスコア）」「初心者モード（ON/OFF）」を別々に表示する。600〜899 px では同じ3操作をそれぞれ短いラベルで表示する。600 px 未満では1つのコンパクトな起動ボタンにまとめ、アクセシブル名で現在のカポ、弾きやすさの段階とスコア、Beginner の ON/OFF を伝える。どの幅でも起動ボタンから開くパネルに3操作と詳細状態を表示する。現在のカポとスコア・段階はホストモデルから取得し、未評価を0点として扱わない。変更できない候補は無効にする。カポ／弾きやすさの詳細リンクは Inspector の Capo / Playability、Beginner の詳細リンクは Beginner Mode を開く。
 - 3 つの disclosure は `button[aria-expanded][aria-controls]` と `hidden` な `role="group"` で実装し、`role="menu"` は使わない。各 disclosure の操作はキーボードとポインターで行え、Escape で閉じて起動ボタンへフォーカスを戻す。閉じた内容は Tab 順序とアクセシビリティツリーから除外する。同時に開く disclosure は 1 つだけとする。
-- 600 px 幅でも Play/Pause/Stop、seek、時刻、Practice、3 つの disclosure、ヘルプを表示する。さらに狭い幅では補助操作をスクロール可能な領域に置き、通常再生操作を隠したり譜面に重ねたりしない。
-- 用紙サイズまたは向きの変更は既存の `layoutChanged` Host message で再レイアウトする。一時楽譜設定の変更は型付き Host message で候補を検証してから Preview を再描画する。HTML 再構築後は操作元の disclosure を開き、変更したコントロールへ一度だけフォーカスを戻す。別文書・version・Preview 世代への切替、遅延 message、追加のユーザー操作で古いフォーカス指定を再利用しない。表示モード変更、PDF 保存、disclosure の開閉では HTML を再構築しない。
+- 600 px 幅でも Play/Pause/Stop、seek、時刻、Practice、3つの設定操作、ヘルプを表示する。通常再生操作を優先し、追加操作のラベルや余白を先に縮める。600 px 未満では3設定操作を1つの起動ボタンにまとめる。さらに狭い幅では補助操作をスクロール可能な領域に置き、通常再生操作を隠したり譜面に重ねたりしない。
+- 用紙サイズまたは向きの変更は既存の `layoutChanged` Host message で再レイアウトする。一時楽譜設定の変更は型付き Host message で候補を検証してから Preview を再描画する。未対応候補は Inspector 草稿、既存 Preview override、フォーカス、Preview 世代を含む状態を変えずに拒否する。HTML 再構築後は操作元の disclosure を開き、変更したコントロールへ一度だけフォーカスを戻す。別文書・version・Preview 世代への切替、遅延 message、追加のユーザー操作で古いフォーカス指定を再利用しない。表示モード変更、PDF 保存、disclosure の開閉では HTML を再構築しない。
 - 再生エラーは固定バー内で切り詰めず、譜面より前に内容幅で折り返す status 行へ表示する。空の場合は表示領域を確保しない。`role="status" aria-live="polite" aria-atomic="true"` とローカライズ済みの説明を使う。
 - Practice は初期値 OFF とする。ON のときだけ固定バーの下 `top: 48px` に高さ 42 px の Practice 行を表示し、速度、Loop、A、B、Clear、Follow、現在の小節／出現状態を操作できる。OFF では行、余白、Tab 停止点を残さない。Preview 本文の上余白は通常 66 px、Practice ON では 108 px とする。
 - Preview に Capo、Beginner、Progression の恒常的な編集バーは置かない。カポ／初心者モードの詳細な候補比較と DSL 適用は Common Inspector（§4D）を唯一の編集面とし、Preview には一時設定の簡易操作だけを置く。簡易操作は DSL・Undo・永続設定を変更せず、Preview と PDF の一時 effective DSL は従来どおり共有する。譜面上のコードダイアグラムクリックによる編集は §3.3 の導線を維持する。

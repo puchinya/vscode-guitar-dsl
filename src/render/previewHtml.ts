@@ -129,7 +129,19 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const currentPlayabilityLabel = capoUi?.currentPlayability
     ? `${capoUi.currentPlayability.score}/100 · ${msgs.playabilityLevels[capoUi.currentPlayability.level]}`
     : msgs.uiPlayabilityUnavailable;
-  const compactPlayabilityLabel = capoUi?.currentPlayability ? String(capoUi.currentPlayability.score) : '—';
+  const currentCapoControlLabel = capoUi?.sourceCapo !== null && capoUi?.sourceCapo !== undefined
+    ? `${msgs.uiCapo} ${capoUi.targetCapo}`
+    : `${msgs.uiCapo} ${msgs.uiCapoUnavailable}`;
+  const currentPlayabilityControlLabel = capoUi?.currentPlayability
+    ? `${msgs.uiPlayability} ${msgs.playabilityLevels[capoUi.currentPlayability.level]} ${capoUi.currentPlayability.score}/100`
+    : `${msgs.uiPlayability} ${msgs.uiPlayabilityUnavailable}`;
+  const compactPlayabilityControlLabel = capoUi?.currentPlayability
+    ? `${msgs.uiDifficulty} ${capoUi.currentPlayability.score}`
+    : `${msgs.uiDifficulty} —`;
+  const beginnerStatusLabel = beginnerUi.active ? msgs.uiBeginnerOn : msgs.uiBeginnerOff;
+  const currentBeginnerControlLabel = `${msgs.uiBeginnerMode} ${beginnerStatusLabel}`;
+  const compactBeginnerControlLabel = `${msgs.uiBeginnerShort} ${beginnerStatusLabel}`;
+  const aggregateSettingsLabel = [currentCapoControlLabel, currentPlayabilityControlLabel, currentBeginnerControlLabel].join(' · ');
   const capoSelectDisabled = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined
     || (beginnerUi.active && beginnerUi.autoCapo);
   const score = parseGuitarDsl(dslContent, {
@@ -227,7 +239,7 @@ ${cspMeta}
   }
   .toolbar-actions {
     position: relative;
-    max-width: 52%;
+    max-width: 72%;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
@@ -267,6 +279,10 @@ ${cspMeta}
     white-space: nowrap;
   }
   .toolbar-action-label { white-space: nowrap; }
+  .settings-trigger-full { white-space: nowrap; }
+  .settings-trigger-compact, .settings-trigger-aggregate { display: none; }
+  .toolbar-score-settings { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+  .toolbar-score-settings .toolbar-action { padding-left: 6px; padding-right: 6px; }
   .practice-toggle[aria-pressed="true"] {
     background: var(--vscode-button-background, #0e639c);
     color: var(--vscode-button-foreground, #fff);
@@ -526,11 +542,22 @@ ${cspMeta}
     cursor: pointer;
   }
 
-  @media (max-width: 660px) {
+  @media (max-width: 899px) {
     .toolbar-action-label { display: none; }
-    .toolbar-score-indicator { display: none; }
+    .settings-trigger-full { display: none; }
+    .settings-trigger-compact { display: inline; white-space: nowrap; }
     .toolbar-action, .playback-control-btn { padding-left: 6px; padding-right: 6px; }
-    .toolbar-actions { max-width: 48%; }
+    .toolbar-actions { max-width: 57%; gap: 4px; }
+  }
+  @media (max-width: 660px) {
+    .transport-label { display: none; }
+    .playback-time { min-width: 70px; }
+    .toolbar-actions { max-width: 60%; }
+  }
+  @media (max-width: 599px) {
+    .toolbar-score-settings .settings-trigger-individual { display: none; }
+    .toolbar-score-settings .settings-trigger-aggregate { display: inline-flex; }
+    .toolbar-score-settings .settings-trigger-aggregate .settings-trigger-compact { display: none; }
   }
   @media (max-width: 440px) {
     .toolbar-container { padding-left: 4px; padding-right: 4px; gap: 3px; }
@@ -552,7 +579,10 @@ ${cspMeta}
   }
 </style>
 </head>
-<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}">
+<body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"
+  data-preview-document-uri="${escapeXml(options?.documentUri ?? '')}"
+  data-preview-document-version="${Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : ''}"
+  data-preview-generation="${Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : ''}">
   <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
     <div class="toolbar-transport">
     <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
@@ -562,6 +592,26 @@ ${cspMeta}
     <span class="playback-time" id="playback-time" aria-label="${escapeXml(msgs.uiPlaybackTime)}">00:00 / ${formatPlaybackTime(playback.durationSeconds)}</span>
     </div>
     <div id="toolbar-actions" class="toolbar-actions">
+      <div class="toolbar-score-settings" id="temporary-score-settings-controls" role="group" aria-label="${escapeXml(msgs.uiTemporaryScoreSettings)}">
+        <button class="toolbar-action settings-trigger settings-trigger-individual" id="preview-capo-toggle" data-preview-settings-trigger data-settings-focus-target="preview-capo-select" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(currentCapoControlLabel)}" title="${escapeXml(msgs.uiCapoTitle)}"><span class="settings-trigger-full">${escapeXml(currentCapoControlLabel)} <span aria-hidden="true">▼</span></span><span class="settings-trigger-compact">${escapeXml(currentCapoControlLabel)}</span></button>
+        <button class="toolbar-action settings-trigger settings-trigger-individual" id="preview-playability-toggle" data-preview-settings-trigger data-settings-focus-target="preview-playability" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(currentPlayabilityControlLabel)}" title="${escapeXml(msgs.uiPlayability)}"><span class="settings-trigger-full">${escapeXml(currentPlayabilityControlLabel)}</span><span class="settings-trigger-compact">${escapeXml(compactPlayabilityControlLabel)}</span></button>
+        <button class="toolbar-action settings-trigger settings-trigger-individual" id="preview-beginner-toggle" data-preview-settings-trigger data-settings-focus-target="toggle-preview-beginner" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(currentBeginnerControlLabel)}" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><span class="settings-trigger-full">${escapeXml(currentBeginnerControlLabel)}</span><span class="settings-trigger-compact">${escapeXml(compactBeginnerControlLabel)}</span></button>
+        <button class="toolbar-action settings-trigger settings-trigger-aggregate" id="temporary-score-settings-toggle" data-preview-settings-trigger data-settings-focus-target="preview-capo-select" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(aggregateSettingsLabel)}" title="${escapeXml(aggregateSettingsLabel)}"><span aria-hidden="true">♬</span><span class="settings-trigger-compact">${escapeXml(msgs.uiTemporaryScoreSettings)}</span></button>
+        <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiTemporaryScoreSettings)}" hidden>
+          <div class="toolbar-panel-section" data-settings-section="capo">
+            <label class="toolbar-panel-field" for="preview-capo-select"><span>${escapeXml(msgs.uiCapo)}</span><select id="preview-capo-select" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${capoSelectDisabled ? ' disabled' : ''}>${capoOptionsHtml}</select></label>
+            <div class="toolbar-panel-field"><span>${escapeXml(msgs.uiPlayability)}</span><span class="settings-playability" id="preview-playability" role="status" aria-live="polite" tabindex="-1">${escapeXml(currentPlayabilityLabel)}</span></div>
+          </div>
+          <div class="toolbar-panel-section" data-settings-section="beginner">
+            <label class="playback-toggle" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><input id="toggle-preview-beginner" type="checkbox"${beginnerUi.active ? ' checked' : ''}><span>${escapeXml(msgs.uiBeginnerMode)}</span></label>
+            <label class="toolbar-panel-field" for="select-preview-barre-policy"><span>${escapeXml(msgs.uiBarreChords)}</span><select id="select-preview-barre-policy" class="tool-select" title="${escapeXml(msgs.uiBarreTitle)}"${beginnerUi.active ? '' : ' disabled'}><option value="forbid"${beginnerUi.barrePolicy === 'forbid' ? ' selected' : ''}>${escapeXml(msgs.uiBarreForbid)}</option><option value="allow"${beginnerUi.barrePolicy === 'allow' ? ' selected' : ''}>${escapeXml(msgs.uiBarreAllow)}</option></select></label>
+            <label class="toolbar-panel-field" for="select-preview-beginner-capo-mode"><span>${escapeXml(msgs.uiBeginnerCapoMode)}</span><select id="select-preview-beginner-capo-mode" class="tool-select"${beginnerUi.active ? '' : ' disabled'}><option value="auto"${beginnerUi.autoCapo ? ' selected' : ''}>${escapeXml(msgs.uiBeginnerAuto)}</option><option value="fixed"${beginnerUi.autoCapo ? '' : ' selected'}>${escapeXml(msgs.uiBeginnerFixed)}</option></select></label>
+          </div>
+          ${beginnerUi.active && beginnerUi.substitutions.length ? `<div class="toolbar-panel-section"><span class="toolbar-panel-label">${escapeXml(msgs.uiBeginnerSubstitutions)}</span><ul class="settings-substitutions">${beginnerUi.substitutions.map(([source, target]) => `<li>${escapeXml(source)} → ${escapeXml(target)}</li>`).join('')}</ul></div>` : ''}
+          ${capoUi?.warning ? `<div class="toolbar-panel-section"><p class="settings-warning" role="status">${escapeXml(capoUi.warning)}</p></div>` : ''}
+          <div class="toolbar-panel-section"><button class="toolbar-action" id="open-score-settings-capo-from-preview" type="button">${escapeXml(msgs.uiOpenScoreSettings)}</button><button class="toolbar-action" id="open-score-settings-beginner-from-preview" type="button">${escapeXml(msgs.uiOpenBeginnerSettings)}</button></div>
+        </div>
+      </div>
       <button class="toolbar-action practice-toggle" id="practice-toggle" type="button" aria-pressed="false" title="${escapeXml(msgs.uiPracticeTitle)}" aria-label="${escapeXml(msgs.uiPracticeTitle)}"${playback.available ? '' : ' disabled'}><span aria-hidden="true">◎</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPractice)}</span></button>
       <div class="toolbar-disclosure">
         <button class="toolbar-action" id="playback-options-toggle" type="button" aria-expanded="false" aria-controls="playback-options-panel" aria-label="${escapeXml(msgs.uiPlaybackOptionsTitle)}" title="${escapeXml(msgs.uiPlaybackOptionsTitle)}"><span aria-hidden="true">⚙</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPlaybackOptions)}</span></button>
@@ -595,23 +645,6 @@ ${cspMeta}
             </div>
             <button class="toolbar-action btn-pdf" id="btn-save-pdf" type="button" title="${escapeXml(msgs.uiSavePdfTitle)}" aria-label="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
           </div>
-        </div>
-      </div>
-      <div class="toolbar-disclosure">
-        <button class="toolbar-action" id="temporary-score-settings-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiTemporaryScoreSettingsTitle)}" title="${escapeXml(msgs.uiTemporaryScoreSettingsTitle)}"><span aria-hidden="true">♬</span> <span class="toolbar-action-label">${escapeXml(msgs.uiTemporaryScoreSettings)}</span><span class="toolbar-score-indicator" aria-hidden="true">${escapeXml(compactPlayabilityLabel)}</span></button>
-        <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiTemporaryScoreSettings)}" hidden>
-          <div class="toolbar-panel-section">
-            <label class="toolbar-panel-field" for="preview-capo-select"><span>${escapeXml(msgs.uiCapo)}</span><select id="preview-capo-select" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${capoSelectDisabled ? ' disabled' : ''}>${capoOptionsHtml}</select></label>
-            <div class="toolbar-panel-field"><span>${escapeXml(msgs.uiPlayability)}</span><span class="settings-playability" id="preview-playability" role="status" aria-live="polite">${escapeXml(currentPlayabilityLabel)}</span></div>
-          </div>
-          <div class="toolbar-panel-section">
-            <label class="playback-toggle" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><input id="toggle-preview-beginner" type="checkbox"${beginnerUi.active ? ' checked' : ''}><span>${escapeXml(msgs.uiBeginnerMode)}</span></label>
-            <label class="toolbar-panel-field" for="select-preview-barre-policy"><span>${escapeXml(msgs.uiBarreChords)}</span><select id="select-preview-barre-policy" class="tool-select" title="${escapeXml(msgs.uiBarreTitle)}"${beginnerUi.active ? '' : ' disabled'}><option value="forbid"${beginnerUi.barrePolicy === 'forbid' ? ' selected' : ''}>${escapeXml(msgs.uiBarreForbid)}</option><option value="allow"${beginnerUi.barrePolicy === 'allow' ? ' selected' : ''}>${escapeXml(msgs.uiBarreAllow)}</option></select></label>
-            <label class="toolbar-panel-field" for="select-preview-beginner-capo-mode"><span>${escapeXml(msgs.uiBeginnerCapoMode)}</span><select id="select-preview-beginner-capo-mode" class="tool-select"${beginnerUi.active ? '' : ' disabled'}><option value="auto"${beginnerUi.autoCapo ? ' selected' : ''}>${escapeXml(msgs.uiBeginnerAuto)}</option><option value="fixed"${beginnerUi.autoCapo ? '' : ' selected'}>${escapeXml(msgs.uiBeginnerFixed)}</option></select></label>
-          </div>
-          ${beginnerUi.active && beginnerUi.substitutions.length ? `<div class="toolbar-panel-section"><span class="toolbar-panel-label">${escapeXml(msgs.uiBeginnerSubstitutions)}</span><ul class="settings-substitutions">${beginnerUi.substitutions.map(([source, target]) => `<li>${escapeXml(source)} → ${escapeXml(target)}</li>`).join('')}</ul></div>` : ''}
-          ${capoUi?.warning ? `<div class="toolbar-panel-section"><p class="settings-warning" role="status">${escapeXml(capoUi.warning)}</p></div>` : ''}
-          <div class="toolbar-panel-section"><button class="toolbar-action" id="open-score-settings-from-preview" type="button">${escapeXml(msgs.uiOpenScoreSettings)}</button></div>
         </div>
       </div>
       <button class="toolbar-action btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span><span class="toolbar-action-label"> ${escapeXml(msgs.uiHelp)}</span></button>
@@ -686,16 +719,18 @@ ${cspMeta}
       const playbackOptionsToggle = document.getElementById('playback-options-toggle');
       const viewExportToggle = document.getElementById('view-export-toggle');
       const temporarySettingsToggle = document.getElementById('temporary-score-settings-toggle');
+      const temporarySettingsTriggers = Array.from(document.querySelectorAll('[data-preview-settings-trigger]'));
       const disclosureItems = [
-        { button: playbackOptionsToggle, panel: document.getElementById('playback-options-panel') },
-        { button: viewExportToggle, panel: document.getElementById('view-export-panel') },
-        { button: temporarySettingsToggle, panel: document.getElementById('temporary-score-settings-panel') }
+        { button: playbackOptionsToggle, buttons: [playbackOptionsToggle], panel: document.getElementById('playback-options-panel') },
+        { button: viewExportToggle, buttons: [viewExportToggle], panel: document.getElementById('view-export-panel') },
+        { button: temporarySettingsToggle, buttons: temporarySettingsTriggers, panel: document.getElementById('temporary-score-settings-panel') }
       ].filter(item => item.button && item.panel);
       const capoSelect = document.getElementById('preview-capo-select');
       const beginnerToggle = document.getElementById('toggle-preview-beginner');
       const barrePolicySelect = document.getElementById('select-preview-barre-policy');
       const beginnerCapoModeSelect = document.getElementById('select-preview-beginner-capo-mode');
-      const openScoreSettingsButton = document.getElementById('open-score-settings-from-preview');
+      const openCapoSettingsButton = document.getElementById('open-score-settings-capo-from-preview');
+      const openBeginnerSettingsButton = document.getElementById('open-score-settings-beginner-from-preview');
       function postTemporarySettings(action, value, focusControl) {
         if (vscode) vscode.postMessage({
           command: 'temporarySettingsChanged',
@@ -711,9 +746,14 @@ ${cspMeta}
         mode: beginnerCapoModeSelect.value,
         capo: capoSelect ? Number(capoSelect.value) : undefined
       }, 'select-preview-beginner-capo-mode'));
-      if (openScoreSettingsButton && vscode) openScoreSettingsButton.addEventListener('click', () => vscode.postMessage({
-        command: 'openScoreSettingsFromPreview', section: 'beginner', ...previewIdentity
-      }));
+      if (vscode) {
+        if (openCapoSettingsButton) openCapoSettingsButton.addEventListener('click', () => vscode.postMessage({
+          command: 'openScoreSettingsFromPreview', section: 'capo', ...previewIdentity
+        }));
+        if (openBeginnerSettingsButton) openBeginnerSettingsButton.addEventListener('click', () => vscode.postMessage({
+          command: 'openScoreSettingsFromPreview', section: 'beginner', ...previewIdentity
+        }));
+      }
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
       const practiceToggle = document.getElementById('practice-toggle');
@@ -1761,6 +1801,10 @@ ${cspMeta}
 
       function positionDisclosure(item) {
         if (!item || !item.button || !item.panel || item.panel.hidden) return;
+        if (item.button.getClientRects().length === 0) {
+          item.button = item.buttons.find(button => button && button.getClientRects().length > 0) || item.button;
+          item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
+        }
         const trigger = item.button.getBoundingClientRect();
         const width = Math.min(360, Math.max(0, window.innerWidth - 16));
         const panelHeight = Math.min(item.panel.scrollHeight, Math.max(0, window.innerHeight - 64));
@@ -1772,38 +1816,57 @@ ${cspMeta}
       function closeDisclosure(item, returnFocus) {
         if (!item || !item.panel || item.panel.hidden) return;
         item.panel.hidden = true;
-        item.button.setAttribute('aria-expanded', 'false');
-        item.button.setAttribute('aria-controls', item.panel.id);
+        item.buttons.forEach(button => {
+          button.setAttribute('aria-expanded', 'false');
+          button.setAttribute('aria-controls', item.panel.id);
+        });
         if (returnFocus) item.button.focus();
       }
 
       disclosureItems.forEach(item => {
-        const handleDisclosureKeydown = event => {
+        const handleDisclosureKeydown = (event, button) => {
           if (event.key === 'Escape') {
             event.preventDefault();
+            if (button) item.button = button;
             closeDisclosure(item, true);
+          } else if (event.key === 'Tab' && !event.shiftKey && button?.hasAttribute('data-settings-focus-target') && !item.panel.hidden) {
+            const target = document.getElementById(button.getAttribute('data-settings-focus-target'));
+            if (target) {
+              event.preventDefault();
+              target.focus();
+            }
           }
         };
-        item.button.addEventListener('click', () => {
-          const open = item.panel.hidden;
-          disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
-          item.panel.hidden = !open;
-          item.button.setAttribute('aria-expanded', String(open));
-          if (open) positionDisclosure(item);
+        item.buttons.forEach(button => {
+          button.addEventListener('click', () => {
+            const alreadyActive = !item.panel.hidden && item.button === button;
+            disclosureItems.forEach(other => { if (other !== item) closeDisclosure(other, false); });
+            if (alreadyActive) {
+              closeDisclosure(item, false);
+              return;
+            }
+            item.panel.hidden = false;
+            item.button = button;
+            item.buttons.forEach(trigger => {
+              trigger.setAttribute('aria-expanded', String(trigger === button));
+              trigger.setAttribute('aria-controls', item.panel.id);
+            });
+            positionDisclosure(item);
+          });
+          button.addEventListener('keydown', event => handleDisclosureKeydown(event, button));
         });
-        item.button.addEventListener('keydown', handleDisclosureKeydown);
-        item.panel.addEventListener('keydown', handleDisclosureKeydown);
+        item.panel.addEventListener('keydown', event => handleDisclosureKeydown(event));
       });
       document.addEventListener('pointerdown', event => {
         disclosureItems.forEach(item => {
-          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+          if (!item.panel.hidden && !item.buttons.some(button => button.contains(event.target)) && !item.panel.contains(event.target)) {
             closeDisclosure(item, false);
           }
         });
       });
       document.addEventListener('focusin', event => {
         disclosureItems.forEach(item => {
-          if (!item.panel.hidden && !item.button.contains(event.target) && !item.panel.contains(event.target)) {
+          if (!item.panel.hidden && !item.buttons.some(button => button.contains(event.target)) && !item.panel.contains(event.target)) {
             closeDisclosure(item, false);
           }
         });
@@ -1814,7 +1877,9 @@ ${cspMeta}
           event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
       });
-      window.addEventListener('resize', () => disclosureItems.forEach(positionDisclosure));
+      window.addEventListener('resize', () => disclosureItems.forEach(item => {
+        if (!item.panel.hidden) positionDisclosure(item);
+      }));
 
       function updateView() {
         body.setAttribute('data-display-mode', currentMode);
@@ -1862,7 +1927,10 @@ ${cspMeta}
         if (item) {
           disclosureItems.forEach(other => closeDisclosure(other, false));
           item.panel.hidden = false;
-          item.button.setAttribute('aria-expanded', 'true');
+          if (item.button.getClientRects().length === 0) {
+            item.button = item.buttons.find(button => button && button.getClientRects().length > 0) || item.button;
+          }
+          item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
           positionDisclosure(item);
         }
         (target || item && item.button || viewExportToggle).focus();

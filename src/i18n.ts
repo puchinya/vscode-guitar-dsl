@@ -202,11 +202,14 @@ export interface Messages {
   uiTemporaryScoreSettings: string;
   uiTemporaryScoreSettingsTitle: string;
   uiOpenScoreSettings: string;
+  uiOpenBeginnerSettings: string;
   uiBeginnerCapoMode: string;
   uiBeginnerFixed: string;
   uiCapo: string;
+  uiCapoUnavailable: string;
   uiCapoTitle: string;
   uiPlayability: string;
+  uiDifficulty: string;
   uiPlayabilityUnavailable: string;
   uiRecommended: string;
   uiCapoPreviewOnly: string;
@@ -225,6 +228,7 @@ export interface Messages {
 
   // Beginner Mode (preview capo bar, score settings editor, host notifications)
   uiBeginnerMode: string;
+  uiBeginnerShort: string;
   uiBeginnerModeTitle: string;
   uiBeginnerOn: string;
   uiBeginnerOff: string;
@@ -456,12 +460,15 @@ export const MESSAGES_JA: Messages = {
 
   uiTemporaryScoreSettings: '一時楽譜設定',
   uiTemporaryScoreSettingsTitle: 'プレビューとPDFに一時設定を反映します（DSLは変更しません）',
-  uiOpenScoreSettings: '楽譜設定を開く',
+  uiOpenScoreSettings: 'カポ / 弾きやすさの設定を開く',
+  uiOpenBeginnerSettings: '初心者モードの設定を開く',
   uiBeginnerCapoMode: 'カポ位置の選び方',
   uiBeginnerFixed: '固定',
   uiCapo: 'カポ',
+  uiCapoUnavailable: '取得できません',
   uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
   uiPlayability: '弾きやすさ',
+  uiDifficulty: '難易度',
   uiPlayabilityUnavailable: '評価できません',
   uiRecommended: '推奨',
   uiCapoPreviewOnly: 'プレビューのみ',
@@ -494,6 +501,7 @@ export const MESSAGES_JA: Messages = {
   msgCapoUnusedDefinitions: (keys: string) => `次のコード定義は使われなくなる可能性があります（削除はしません）: ${keys}`,
 
   uiBeginnerMode: '初心者モード',
+  uiBeginnerShort: '初心者',
   uiBeginnerModeTitle: '弾きやすいカポ位置と簡単なコードへの置き換えをプレビューとPDFに反映（DSLは変更しません）',
   uiBeginnerOn: 'ON',
   uiBeginnerOff: 'OFF',
@@ -745,12 +753,15 @@ export const MESSAGES_EN: Messages = {
 
   uiTemporaryScoreSettings: 'Temporary Score Settings',
   uiTemporaryScoreSettingsTitle: 'Apply temporary settings to Preview and PDF without changing the DSL',
-  uiOpenScoreSettings: 'Open score settings',
+  uiOpenScoreSettings: 'Open Capo / Playability settings',
+  uiOpenBeginnerSettings: 'Open Beginner Mode settings',
   uiBeginnerCapoMode: 'Capo selection',
   uiBeginnerFixed: 'Fixed',
   uiCapo: 'Capo',
+  uiCapoUnavailable: 'unavailable',
   uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',
   uiPlayability: 'Playability',
+  uiDifficulty: 'Difficulty',
   uiPlayabilityUnavailable: 'Not available',
   uiRecommended: 'Recommended',
   uiCapoPreviewOnly: 'Preview only',
@@ -783,6 +794,7 @@ export const MESSAGES_EN: Messages = {
   msgCapoUnusedDefinitions: (keys: string) => `These chord definitions may become unused (they are not deleted): ${keys}`,
 
   uiBeginnerMode: 'Beginner mode',
+  uiBeginnerShort: 'Beginner',
   uiBeginnerModeTitle: 'Show the preview and PDF with an easy capo position and simpler chords (the DSL is not changed)',
   uiBeginnerOn: 'ON',
   uiBeginnerOff: 'OFF',

@@ -307,7 +307,10 @@ describe('render - narrow Preview toolbar', () => {
     }
     assert.match(html, /id="playback-options-toggle"[^>]*aria-expanded="false" aria-controls="playback-options-panel"/);
     assert.match(html, /id="view-export-toggle"[^>]*aria-expanded="false" aria-controls="view-export-panel"/);
-    assert.match(html, /id="temporary-score-settings-toggle"[^>]*aria-expanded="false" aria-controls="temporary-score-settings-panel"/);
+    for (const id of ['preview-capo-toggle', 'preview-playability-toggle', 'preview-beginner-toggle', 'temporary-score-settings-toggle']) {
+      assert.match(html, new RegExp(`id="${id}"[^>]*aria-expanded="false" aria-controls="temporary-score-settings-panel"`));
+    }
+    assert.match(html, /id="temporary-score-settings-toggle"[^>]*aria-label="Capo unavailable · Playability Not available · Beginner mode OFF"/);
     assert.match(html, /id="playback-options-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]* hidden>/);
@@ -317,7 +320,8 @@ describe('render - narrow Preview toolbar', () => {
     assert.ok(html.includes('id="preview-capo-select"'));
     assert.ok(html.includes('id="toggle-preview-beginner"'));
     assert.ok(html.includes('id="select-preview-barre-policy"'));
-    assert.ok(html.includes('id="open-score-settings-from-preview"'));
+    assert.ok(html.includes('id="open-score-settings-capo-from-preview"'));
+    assert.ok(html.includes('id="open-score-settings-beginner-from-preview"'));
     assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
     assert.ok(!html.includes('>0/100</span>'), 'an unavailable playability value is not rendered as zero');
 
@@ -330,7 +334,8 @@ describe('render - narrow Preview toolbar', () => {
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
     assert.match(css, /\.temporary-score-settings-panel \.tool-select\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0/);
     assert.match(css, /\.temporary-score-settings-panel \.settings-playability\s*\{[^}]*overflow-wrap:\s*anywhere/s);
-    assert.match(css, /@media \(max-width: 660px\)\s*\{[^}]*\.toolbar-action-label\s*\{\s*display:\s*none/s);
+    assert.match(css, /@media \(max-width: 899px\)\s*\{[^}]*\.toolbar-action-label\s*\{\s*display:\s*none/s);
+    assert.match(css, /@media \(max-width: 599px\)\s*\{[^}]*\.settings-trigger-individual\s*\{\s*display:\s*none/s);
     assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*48px;[^}]*height:\s*42px;/s);
     assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*108px !important;/);
   });

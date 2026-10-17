@@ -314,17 +314,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (requestedCapo !== undefined) {
               const candidate = effective.capo.candidates.find(item => item.capo === requestedCapo);
-              if (!candidate?.supported) {
-                dispatchPreviewLegacyMessage(legacyIntent, activeDoc, {
-                  previewCapo,
-                  previewBeginner,
-                  externalPreviewChanged: uri => settingsController?.externalPreviewChanged(uri),
-                  applyCapo: applyPreviewCapo,
-                  applyBeginner: applyPreviewBeginner,
-                  editCapo: async doc => { await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, doc.uri); }
-                });
-                return;
-              }
+              if (!candidate?.supported) return;
             }
 
             pendingLayoutFocusRestore = { uri: expectedIdentity.documentUri, version: expectedIdentity.documentVersion, control: intent.focusControl };
