@@ -927,15 +927,18 @@ ${cspMeta}
         });
       }
       if (capoSelect) {
-        capoSelect.addEventListener('mousedown', () => setCapoOptionDetailsVisible(!capoOptionDetailsVisible));
+        capoSelect.addEventListener('mousedown', () => setCapoOptionDetailsVisible(true));
         capoSelect.addEventListener('keydown', event => {
-          if (event.key === 'Escape' || event.key === 'Tab'
-            || (capoOptionDetailsVisible && (event.key === 'Enter' || event.key === ' '))) {
+          if (event.key === 'Escape' || event.key === 'Tab') {
             setCapoOptionDetailsVisible(false);
-          } else if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+          } else if (event.key === ' ') {
+            setCapoOptionDetailsVisible(true);
+          } else if (event.key === 'Enter' && !event.repeat) {
+            setCapoOptionDetailsVisible(!capoOptionDetailsVisible);
+          } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             setCapoOptionDetailsVisible(true);
           }
-        });
+        }, true);
         capoSelect.addEventListener('blur', () => setCapoOptionDetailsVisible(false));
         capoSelect.addEventListener('change', () => {
           setCapoOptionDetailsVisible(false);

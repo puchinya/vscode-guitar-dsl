@@ -19,15 +19,35 @@ if (process.env.GUITARDSL_E2E_NATIVE_CAPO_CAPTURE === '1') {
       assert.ok(outputDir, 'native menu evidence output directory is required');
       const { execFileSync } = require('child_process') as typeof import('child_process');
       const { mkdirSync } = require('fs') as typeof import('fs');
+      const dispatchNativeKey = (keyCode: number): void => {
+        try {
+          execFileSync('/usr/bin/osascript', [
+            '-e',
+            `tell application "System Events"\n  tell (first process whose frontmost is true)\n    key code ${keyCode}\n  end tell\nend tell`
+          ], { stdio: 'pipe', timeout: 10000 });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          console.error(`Native Capo keyboard input is unavailable; report keyboard selection as NOT RUN. ${detail}`);
+          this.skip();
+        }
+      };
       mkdirSync(outputDir, { recursive: true });
+      const captureHostWindow = (windowId: string, outputPath: string): void => {
+        execFileSync('screencapture', ['-x', '-l', windowId, outputPath]);
+      };
 
+      const source = 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n';
       const doc = await vscode.workspace.openTextDocument({
         language: 'guitardsl',
-        content: 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n'
+        content: source
       });
       await showAndFocus(doc);
       await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
       await waitForPreviewDocument();
+      const preview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
 
       const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
@@ -40,6 +60,23 @@ if (process.env.GUITARDSL_E2E_NATIVE_CAPO_CAPTURE === '1') {
       if (initialParts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
       if (initialParts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
       await settle(250);
+      const windowIdSource = `
+        import CoreGraphics
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        for window in windows {
+          let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+          let title = window[kCGWindowName as String] as? String ?? ""
+          if owner.contains("Code") && (title.localizedCaseInsensitiveContains("Extension Development Host") || title.contains("拡張機能開発ホスト")) {
+            if let windowId = window[kCGWindowNumber as String] { print(windowId); break }
+          }
+        }
+      `;
+      const windowId = execFileSync('/usr/bin/swift', ['-e', windowIdSource], {
+        encoding: 'utf8',
+        timeout: 20000,
+        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'issue145-swift-module-cache') }
+      }).trim();
+      assert.match(windowId, /^\d+$/, 'the Extension Development Host window ID is discoverable for window-only screenshots');
 
       try {
         for (const width of [421, 600, 840, 1100]) {
@@ -50,18 +87,98 @@ if (process.env.GUITARDSL_E2E_NATIVE_CAPO_CAPTURE === '1') {
           const measuredWidth = await evaluatePreviewWebview<number>('window.innerWidth');
           assert.strictEqual(measuredWidth, width, `native menu screenshot uses ${width} Preview CSS px`);
 
-          await clickPreviewElement('#preview-capo-select');
-          await settle(250);
+          await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+          dispatchNativeKey(49); // Space opens the native menu from the focused select.
+          await settle(200);
+          const keyboardOpenLabelsMatch = await evaluatePreviewWebview<boolean>(`Array.from(
+            document.getElementById('preview-capo-select').options
+          ).filter(option => option.value !== '').every(option => option.textContent === option.dataset.openLabel)`);
+          assert.strictEqual(keyboardOpenLabelsMatch, true,
+            `${width}px Space exposes full candidate details before the native menu opens`);
           const outputPath = path.join(outputDir, `issue145-native-capo-${locale}-${width}.png`);
-          execFileSync('screencapture', ['-x', outputPath]);
+          captureHostWindow(windowId, outputPath);
           assert.ok((await fs.stat(outputPath)).size > 10000, `OS screenshot was written for ${width}px`);
-          await dispatchPreviewKeyboardKey('Escape');
+          const originalValue = await evaluatePreviewWebview<string>(
+            `document.getElementById('preview-capo-select').value`
+          );
+          dispatchNativeKey(125); // ArrowDown highlights the next enabled option in the open AppKit menu.
+          dispatchNativeKey(53); // Escape cancels that pending selection.
           await settle(100);
+          const cancelledValue = await evaluatePreviewWebview<string>(
+            `document.getElementById('preview-capo-select').value`
+          );
           const nativeSelectHasFocus = await evaluatePreviewWebview<boolean>(
             `document.activeElement?.id === 'preview-capo-select'`
           );
-          assert.strictEqual(nativeSelectHasFocus, true, `${width}px Escape returns focus to the native Capo select`);
+          assert.strictEqual(cancelledValue, originalValue, `${width}px native Escape cancels the highlighted Capo`);
+          assert.strictEqual(nativeSelectHasFocus, true, `${width}px native Escape returns focus to the Capo select`);
+
+          if (width === 421 || width === 1100) {
+            const next = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+              const select = document.getElementById('preview-capo-select');
+              const candidates = Array.from(select.options).filter(option => option.value !== '' && !option.disabled);
+              const index = candidates.findIndex(option => option.value === select.value);
+              return candidates.find((option, candidateIndex) => candidateIndex > index)?.value ?? candidates[0]?.value;
+            })())`)) as string;
+            assert.ok(next && next !== originalValue, `${width}px has a different supported capo to select`);
+            const beforeSelection = preview.generation;
+            await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+            dispatchNativeKey(49); // Space opens the native menu from the focused select.
+            await settle(200);
+            const keyboardOpenLabelsMatch = await evaluatePreviewWebview<boolean>(`Array.from(
+              document.getElementById('preview-capo-select').options
+            ).filter(option => option.value !== '').every(option => option.textContent === option.dataset.openLabel)`);
+            assert.strictEqual(keyboardOpenLabelsMatch, true,
+              `${width}px Space exposes full candidate details before the native menu opens`);
+            const keyboardMenuPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${width}-open.png`);
+            captureHostWindow(windowId, keyboardMenuPath);
+            dispatchNativeKey(125); // ArrowDown in the actual native menu.
+            const downPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${width}-down.png`);
+            captureHostWindow(windowId, downPath);
+            dispatchNativeKey(36); // Return commits the highlighted option.
+            for (let attempt = 0; attempt < 100 && preview.generation === beforeSelection; attempt++) await settle(20);
+            const selectedValue = await evaluatePreviewWebview<string>(
+              `document.getElementById('preview-capo-select').value`
+            );
+            assert.strictEqual(preview.generation, beforeSelection + 1,
+              `${width}px native keyboard selection rebuilds Preview exactly once (value=${selectedValue}, expected=${next})`);
+            await waitForPreviewDocument();
+            assert.strictEqual(selectedValue, next, `${width}px ArrowDown + Return selects the next supported Capo`);
+            assert.strictEqual(doc.getText(), source, `${width}px keyboard selection leaves source DSL unchanged`);
+            const themeTag = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+            const selectedPath = path.join(outputDir, `issue145-native-capo-keyboard-${locale}-${themeTag}-${width}-selected.png`);
+            captureHostWindow(windowId, selectedPath);
+            assert.ok((await fs.stat(selectedPath)).size > 10000, `${width}px selected state screenshot was written`);
+          }
         }
+
+        const unsupportedSource = 'chord C@x = x35553\ncapo: 0\n| C@x | G | Am | F |\n';
+        const unsupportedDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: unsupportedSource });
+        await showAndFocus(unsupportedDoc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', unsupportedDoc.uri);
+        for (let attempt = 0; attempt < 100
+          && preview.currentDocumentUri !== unsupportedDoc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(preview.currentDocumentUri, unsupportedDoc.uri.toString(),
+          'Preview switches to the fixture with unsupported Capo candidates');
+        await waitForPreviewDocument();
+        const disabledGeneration = preview.generation;
+        await evaluatePreviewWebview<void>(`document.getElementById('preview-capo-select').focus()`);
+        dispatchNativeKey(49);
+        await settle(200);
+        dispatchNativeKey(125);
+        dispatchNativeKey(36);
+        await settle(150);
+        const disabledResult = await evaluatePreviewWebview<string>(`JSON.stringify({
+          value: document.getElementById('preview-capo-select').value,
+          disabled: document.getElementById('preview-capo-select').selectedOptions[0]?.disabled,
+          label: document.getElementById('preview-capo-select').selectedOptions[0]?.textContent
+        })`);
+        assert.deepStrictEqual(JSON.parse(disabledResult), { value: '0', disabled: false, label: '0' },
+          'native keyboard input cannot select disabled candidates and restores the compact label on close');
+        assert.strictEqual(preview.generation, disabledGeneration,
+          'native keyboard input on disabled candidates does not rebuild Preview');
+        assert.strictEqual(unsupportedDoc.getText(), unsupportedSource,
+          'native keyboard input on disabled candidates leaves source DSL unchanged');
       } finally {
         await resetWorkbenchViewport();
       }
