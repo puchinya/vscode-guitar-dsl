@@ -304,6 +304,8 @@
 - `sample_variables.guitardsl`: `let` フラグメント（リズムの再利用、`mel:` での音符のみのフラグメント、リズムと音符の混在、入れ子の参照）と同時複数音
 - `sample_advanced_notation.guitardsl`: スコアイベントと高度な記譜（弱起、テンポ変更・rit./accel./a tempo/tempo primo、転調、拍子の変更 6/8・7/8、swing/shuffle、リハーサルマーク、テキスト、強弱、8va、5連符、装飾音符、ハンマリング・プリング・スライド・チョーキング・ビブラート、スタッカート・テヌート・フェルマータ・ブレス、パームミュート・レットリング、アルペジアート、スラー）
 - `sample_rhythm_tie_syncopation.guitardsl`: 4/4・120 BPM の小節またぎシンコペーション、ストローク方向、1回の攻撃音と2小節目の再アタック位置
+- `sample_akaneiro_platform.guitardsl`: オリジナルJ-POP曲。分数コードのカスタムフォーム、再利用リズム、16分音符とシンコペーション、メロディ・歌詞を収録
+- `sample_gozen0jino_page.guitardsl`: 128小節のオリジナル曲。F・Fm・Bm7のバレーコード、タイ付きストローク、シンコペーションを収録
 
 ---
 
