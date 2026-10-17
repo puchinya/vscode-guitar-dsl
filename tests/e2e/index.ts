@@ -1,6 +1,7 @@
 import * as path from 'path';
 import Mocha from 'mocha';
 import { glob } from 'glob';
+import { beginWorkbenchFocusTrace, endWorkbenchFocusTrace } from './workbenchFocus';
 
 export async function run(): Promise<void> {
   // Create the mocha test
@@ -8,6 +9,15 @@ export async function run(): Promise<void> {
     ui: 'tdd',
     color: true,
     timeout: 10000
+  });
+
+  mocha.suite.beforeEach(function (this: Mocha.Context) {
+    beginWorkbenchFocusTrace(this.currentTest?.fullTitle() ?? 'unknown E2E test');
+  });
+  mocha.suite.afterEach(function (this: Mocha.Context) {
+    const test = this.currentTest;
+    const failed = test?.state === 'failed' || Boolean(test?.err);
+    endWorkbenchFocusTrace(failed && test ? test.fullTitle() : undefined);
   });
 
   if (process.env.GUITARDSL_E2E_GREP) {

@@ -208,7 +208,7 @@ export async function waitForPreviewDocument(): Promise<void> {
   let lastState: unknown;
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
-      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: !!document.querySelector('.toolbar-container'), url: location.href,
+      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: document.readyState !== 'loading' && !!document.querySelector('.toolbar-container'), url: location.href,
         name: window.name, body: document.body?.innerHTML.slice(0, 600), iframes: [...document.querySelectorAll('iframe')].map(frame => ({ name: frame.name, src: frame.src })) })`);
       if (JSON.parse(lastState as string).ready) return;
     } catch (error) {
@@ -357,6 +357,7 @@ export async function inspectWorkbenchLayout(): Promise<string> {
     const response = await send('Runtime.evaluate', {
       expression: `JSON.stringify({ viewport: { width: innerWidth, height: innerHeight },
         editor: [...document.querySelectorAll('.part.editor')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right) }; }),
+        parts: Object.fromEntries(['sidebar', 'auxiliarybar'].map(name => { const node=document.querySelector('.part.'+name); if(!node) return [name, { visible:false, width:0 }]; const r=node.getBoundingClientRect(); const style=getComputedStyle(node); return [name, { visible:style.display!=='none' && style.visibility!=='hidden' && r.width>0 && r.height>0, width:Math.round(r.width) }]; })),
         groups: [...document.querySelectorAll('.editor-group-container')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right), classes: node.className }; }),
         sashes: [...document.querySelectorAll('.monaco-sash')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), top: Math.round(r.top), classes: node.className }; }) })`,
       returnByValue: true

@@ -42,6 +42,15 @@ npm run test:e2e
 - Compiles the extension and test files (`npm run compile:all`).
 - Launches VS Code and runs the E2E test suite.
 
+For a stability series, run each E2E suite in a separate npm process and its own temporary VS Code profile:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run verify:e2e-stability -- --runs 5
+env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run verify:e2e-stability -- --runs 3 --grep 'P136 Preview|ED-05|ED-01/ED-02 CodeLens opens the Inspector'
+```
+
+`--runs` defaults to 5 and accepts 1–50; `--grep` passes a Mocha regular expression through `GUITARDSL_E2E_GREP`. The runner does not retry any test. It reports the exit code, failures, duration, OS, VS Code, Node, and commit for every planned run, and exits nonzero if any run fails. A failure writes a filtered log under the OS temporary directory; paths and common token formats are redacted, and document diff lines are omitted. Run this command outside the command sandbox as well.
+
 For an Inspector UI screenshot, the same test can capture the Extension Development Host renderer through its loopback-only DevTools endpoint:
 
 ```bash
@@ -93,8 +102,13 @@ npm run check:ai      # read-only gate; runs in npm test right after check:help
   - cancellation;
   - the accompaniment tools (analysis, multi-section apply as one edit and one undo, failures without edits, exact target) and the accompaniment QuickPick (stubbed `showQuickPick`).
 - Accompaniment unit tests: `tests/unit/strummingPatterns.test.ts` (catalog vs contract table, self-check, phase, syncopation), `tests/unit/accompaniment.test.ts` (selection, modes, source edits, arrangement, analysis) and `tests/unit/accompanimentArrangement.test.ts` (transitions and endings with `mel:` / `lyr:` timing).
-- E2E tests that depend on the active editor (commands such as `undo`, tools or commands that resolve the active document) must use the helpers in `tests/e2e/extension.test.ts`: `showAndFocus(doc)` (waits until the document is really the active editor) and `undoIn(doc)`. A suite that needs a clean window starts with `closeAllEditors()`. A bare `showTextDocument` followed by an active-editor command races with editors left open by earlier suites.
+- E2E tests that depend on the active editor (commands such as `undo`, tools or commands that resolve the active document) must use the helpers in `tests/e2e/extension.test.ts`: `showAndFocus(doc)` shows once and waits for the requested URI, editor group, and stable active tab; on a bounded timeout it activates that group once and then fails with the focus trace. `undoIn(doc)` checks the target URI immediately before Undo. The trace is bounded and printed only for failed tests; it records URI labels rather than paths or document text. A suite that needs a clean window starts with `closeAllEditors()`, whose postcondition is that no text editors remain visible or active. A bare `showTextDocument` followed by an active-editor command races with editors left open by earlier suites.
+- Tests that change workbench-wide state (sidebar or auxiliary bar visibility, editor groups and widths, theme, Preview document, or open tabs) must use `withWorkbenchSnapshotRestored()` from `tests/e2e/workbenchState.ts`. It restores state in `finally`, closes only tabs/groups created by the test, and reports restoration failures without masking the original test failure. Do not put `closeAllEditors()` in cleanup: it closes tabs owned by other tests. When using it as a scoped reset at test start, keep the snapshot wrapper and verify its postcondition.
+- Preview webview tests must wait until the document is no longer `loading` and the toolbar is present before dispatching synthetic UI events. Toolbar markup can exist before inline scripts register their message handlers; dispatching at that point can make a valid action appear lost. Capture the generation/rebuild count before dispatching the action, then assert the exact expected increase and resulting state. Reading the baseline after dispatch can absorb a fast response and create an intermittent false failure. If an assertion fails, inspect the failure-only workbench trace and the Preview message/generation identity separately: a Webview being the active group is expected while Preview is open and does not alone explain a missing action. Keep the assertion intact, diagnose with one filtered run, then rerun the required verification series; an ad-hoc rerun is not a passing stability result.
+- Diagnose focus failures from the full bounded trace: target URI label and column, active text-editor URI and column, active group and tabs, visible editors, and window focus. Do not infer the cause from `window.state.focused` alone. Keep traces failure-only and free of document bodies, absolute paths, and secrets.
 - The real-model Agent smoke (Issue #101 contract §21) cannot run in CI. Record it as manual evidence, or as not run, in the PR.
+
+The current `agent-required-check` workflow does not run E2E tests. The stability runner is a local verification tool and does not change required CI checks.
 
 #### macOS agent execution environment
 

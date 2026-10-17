@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, dispatchPreviewKeyboardKey, evaluateInspectorWebview, evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, scrollInspectorToControls, waitForPreviewDocument } from './screenshotCapture';
+import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
+import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -13,15 +15,7 @@ const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
  * active editor would target it.
  */
 async function showAndFocus(doc: vscode.TextDocument, column: vscode.ViewColumn = vscode.ViewColumn.One): Promise<vscode.TextEditor> {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const editor = await vscode.window.showTextDocument(doc, { viewColumn: column, preview: false, preserveFocus: false });
-    await settle(20);
-    if (vscode.window.activeTextEditor?.document === doc) {
-      await settle(20);
-      if (vscode.window.activeTextEditor?.document === doc) return editor;
-    }
-  }
-  assert.fail(`${doc.uri.toString()} did not become the active editor`);
+  return showAndFocusDocument(doc, column);
 }
 
 /** Runs `undo` in `doc` (focused first) and waits until its text has changed. */
@@ -30,6 +24,8 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
   await showAndFocus(doc);
   await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
   await showAndFocus(doc);
+  recordFocusTrace('undo-target-validated');
+  assert.ok(isDocumentActiveInColumn(doc, vscode.ViewColumn.One), 'Undo runs only while the requested document is active in the first editor group');
   await vscode.commands.executeCommand('undo');
   for (let i = 0; i < 100 && doc.getText() === before; i++) await settle(10);
 }
@@ -38,6 +34,13 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
 async function closeAllEditors(): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   for (let i = 0; i < 100 && (vscode.window.visibleTextEditors.length > 0 || vscode.window.activeTextEditor); i++) await settle(10);
+  if (vscode.window.visibleTextEditors.length > 0 || vscode.window.activeTextEditor) {
+    recordFocusTrace('close-all-editors-postcondition-failed');
+    assert.fail(`closeAllEditors left visible or active editors: ${JSON.stringify({
+      visible: vscode.window.visibleTextEditors.map(editor => ({ scheme: editor.document.uri.scheme, column: editor.viewColumn })),
+      activeColumn: vscode.window.activeTextEditor?.viewColumn
+    })}`);
+  }
 }
 
 type InspectorAudioMetrics = {
@@ -126,7 +129,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
-  test('P136 Preview keeps transport visible, disclosures operable, and restores layout focus', async () => {
+  test('P136 Preview keeps transport visible, disclosures operable, and restores layout focus', async () => withWorkbenchSnapshotRestored(async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
     await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
@@ -147,7 +150,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     await settle(250);
     await waitForPreviewDocument();
 
-    const originalPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
     await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
     await resizeActiveEditorGroupToWidth(600);
     await settle(200);
@@ -267,7 +269,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
 
     const waitForGeneration = async (before: number, action: string): Promise<void> => {
+      recordFocusTrace(`preview-rebuild-requested:${action}`);
       for (let attempt = 0; attempt < 100 && preview.generation === before; attempt++) await settle(20);
+      recordFocusTrace(preview.generation === before + 1 ? `preview-rebuild-observed:${action}` : `preview-rebuild-missing:${action}`);
       assert.strictEqual(preview.generation, before + 1, `${action} uses one Preview rebuild`);
       await waitForPreviewDocument();
     };
@@ -281,13 +285,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
     const initialLayout = await readLayoutFocus();
     const selectedPaper = initialLayout.paper === 'A5' ? 'A4' : 'A5';
+    const beforePaperSelection = preview.generation;
     await evaluatePreviewWebview<void>(`(() => {
       const view = document.getElementById('view-export-toggle');
       if (view.getAttribute('aria-expanded') !== 'true') view.click();
       const select = document.getElementById('select-page-size');
       select.focus(); select.value = '${selectedPaper}'; select.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
-    await waitForGeneration(preview.generation, 'paper selection');
+    recordFocusTrace('preview-paper-selection-dispatched');
+    await waitForGeneration(beforePaperSelection, 'paper selection');
     let focusState = await readLayoutFocus();
     for (let attempt = 0; attempt < 100 && focusState.active !== 'select-page-size'; attempt++) {
       await settle(20);
@@ -349,10 +355,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     await waitForPreviewDocument();
     const switchedFocus = await evaluatePreviewWebview<string>('document.activeElement?.id ?? ""');
     assert.notStrictEqual(switchedFocus, 'orientation-portrait', 'document switch does not restore stale focus from the previous document');
-    await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
-    await resizeActiveEditorGroupToWidth(originalPreviewWidth);
-    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-  });
+  }));
 
   test('Extension should be active', () => {
     const ext =
@@ -4430,5 +4433,71 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
       await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
       await closeAllEditors();
     }
+  });
+
+  test('E2E focus recovery waits through a competing Webview activation', async () => withWorkbenchSnapshotRestored(async () => {
+    const target = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: C\n| C | G | Am | F |' });
+    await showAndFocus(target, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('workbench.action.splitEditorRight');
+    assert.ok(vscode.window.tabGroups.all.some(group => group.viewColumn === vscode.ViewColumn.Two), 'the workbench has a second editor group before the race');
+    const panel = vscode.window.createWebviewPanel(
+      'issue144.focusRace',
+      'Issue 144 Focus Race',
+      vscode.ViewColumn.Two,
+      { enableScripts: false }
+    );
+    panel.webview.html = '<!doctype html><html><body>Focus race probe</body></html>';
+    const competingTabReady = () => vscode.window.tabGroups.all.some(group => group.viewColumn === vscode.ViewColumn.Two
+      && group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.includes('issue144.focusRace')));
+    for (let attempt = 0; attempt < 100 && !competingTabReady(); attempt++) await settle(20);
+    assert.strictEqual(competingTabReady(), true, 'the competing Webview is ready in the second editor group');
+    panel.reveal(vscode.ViewColumn.Two, false);
+    await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+    assert.ok(vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof vscode.TabInputWebview, 'the competing Webview is active before the requested editor is shown');
+    let competingActivationScheduled = false;
+    const stealFocusAfterTargetActivation = async () => {
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if (isDocumentActiveInColumn(target, vscode.ViewColumn.One)) {
+          competingActivationScheduled = true;
+          await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+          return;
+        }
+        await settle(5);
+      }
+    };
+    let competingActivation: Promise<void> | undefined;
+    try {
+      competingActivation = stealFocusAfterTargetActivation();
+      await showAndFocus(target, vscode.ViewColumn.One);
+      await competingActivation;
+      const trace = getWorkbenchFocusTrace();
+      assert.strictEqual(competingActivationScheduled, true, 'the Webview steals focus after the requested text editor becomes active');
+      assert.ok(trace.some(entry => {
+        const activeGroup = entry.activeTabGroup as { column?: string; tab?: string } | undefined;
+        return activeGroup?.column === 'two' && activeGroup.tab?.includes('issue144.focusRace') === true;
+      }), 'the bounded trace records the competing Webview and its editor group');
+      assert.ok(trace.some(entry => entry.trigger === 'focus-recovery-started'), 'the helper performs its single target-group recovery');
+      assert.ok(isDocumentActiveInColumn(target, vscode.ViewColumn.One), 'the requested document is the stable active tab after recovery');
+    } finally {
+      await competingActivation;
+      panel.dispose();
+    }
+  }));
+
+  test('E2E workbench restoration runs after an assertion failure', async () => {
+    const initial = await captureWorkbenchSnapshot();
+    let caught: unknown;
+    try {
+      await withWorkbenchSnapshotRestored(async () => {
+        await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: D\n| D | A | Bm | G |' });
+        await showAndFocus(document);
+        throw new Error('intentional E2E cleanup probe');
+      });
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught instanceof Error && caught.message.includes('intentional E2E cleanup probe'), 'the original assertion failure remains observable');
+    assert.strictEqual(await matchesWorkbenchSnapshot(initial), true, 'tabs, groups, width, visibility, theme, Preview, and focus return to their initial state');
   });
 });

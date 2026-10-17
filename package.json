@@ -973,6 +973,7 @@
     "watch": "tsc -watch -p ./",
     "test:unit": "mocha -r tsx -r ./tests/unit/setup.ts 'tests/unit/**/*.test.ts'",
     "test:e2e": "npm run compile:all && node out/tests/e2e/runTest.js",
+    "verify:e2e-stability": "node scripts/verify-e2e-stability.mjs",
     "test": "npm run check:help && npm run check:ai && npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {
