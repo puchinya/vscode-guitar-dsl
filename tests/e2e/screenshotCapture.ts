@@ -155,45 +155,53 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
 /** Evaluates an expression in the singleton Preview WebviewPanel renderer. */
 export async function evaluatePreviewWebview<T>(expression: string): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  const target = await waitForPreviewTarget(port);
-  return withDevToolsTarget(target, async send => {
-    await send('Runtime.enable');
-    let contextId: number | undefined;
-    let lastFrames: string[] = [];
-    for (let attempt = 0; attempt < 6 && contextId === undefined; attempt++) {
-      const tree = await send('Page.getFrameTree');
-      let activeFrameId: string | undefined;
-      lastFrames = [];
-      const visit = (node: Record<string, unknown>): void => {
-        const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
-        if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
-        if (frame?.name === 'active-frame') activeFrameId = frame.id;
-        if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-      };
-      if (tree.frameTree) {
-        const frameTree = tree.frameTree as Record<string, unknown>;
-        visit(frameTree);
-        if (!activeFrameId) {
-          const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
-          if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+  for (let evaluationAttempt = 0; evaluationAttempt < 3; evaluationAttempt++) {
+    const target = await waitForPreviewTarget(port);
+    try {
+      return await withDevToolsTarget(target, async send => {
+        await send('Runtime.enable');
+        let contextId: number | undefined;
+        let lastFrames: string[] = [];
+        for (let attempt = 0; attempt < 6 && contextId === undefined; attempt++) {
+          const tree = await send('Page.getFrameTree');
+          let activeFrameId: string | undefined;
+          lastFrames = [];
+          const visit = (node: Record<string, unknown>): void => {
+            const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+            if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+            if (frame?.name === 'active-frame') activeFrameId = frame.id;
+            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+          };
+          if (tree.frameTree) {
+            const frameTree = tree.frameTree as Record<string, unknown>;
+            visit(frameTree);
+            if (!activeFrameId) {
+              const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+              if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+            }
+          }
+          if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${lastFrames.join(' | ')}`);
+          try {
+            const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
+            if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a Preview evaluation context');
+            contextId = isolated.executionContextId;
+          } catch (error) {
+            if (!(error instanceof Error) || !/No frame for given id found/.test(error.message) || attempt === 5) throw error;
+            await new Promise(resolve => setTimeout(resolve, 40));
+          }
         }
-      }
-      if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${lastFrames.join(' | ')}`);
-      try {
-        const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
-        if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a Preview evaluation context');
-        contextId = isolated.executionContextId;
-      } catch (error) {
-        if (!(error instanceof Error) || !/No frame for given id found/.test(error.message) || attempt === 5) throw error;
-        await new Promise(resolve => setTimeout(resolve, 40));
-      }
+        if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
+        const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+        if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
+        const value = (response.result as { value?: unknown } | undefined)?.value;
+        return value as T;
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || !/Cannot find context with specified id/.test(error.message) || evaluationAttempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 40));
     }
-    if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
-    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-    if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
-    const value = (response.result as { value?: unknown } | undefined)?.value;
-    return value as T;
-  });
+  }
+  throw new Error('Preview Webview evaluation context remained unavailable');
 }
 
 export async function waitForPreviewDocument(): Promise<void> {

@@ -273,11 +273,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       orientation: document.body.getAttribute('data-orientation')
     })`));
 
+    const initialLayout = await readLayoutFocus();
+    const selectedPaper = initialLayout.paper === 'A5' ? 'A4' : 'A5';
     await evaluatePreviewWebview<void>(`(() => {
       const view = document.getElementById('view-export-toggle');
       if (view.getAttribute('aria-expanded') !== 'true') view.click();
       const select = document.getElementById('select-page-size');
-      select.focus(); select.value = 'A5'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.focus(); select.value = '${selectedPaper}'; select.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
     await waitForGeneration(preview.generation, 'paper selection');
     let focusState = await readLayoutFocus();
@@ -285,7 +287,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await settle(20);
       focusState = await readLayoutFocus();
     }
-    assert.deepStrictEqual(focusState, { active: 'select-page-size', viewExpanded: 'true', viewVisible: true, paper: 'A5', orientation: 'portrait' });
+    assert.deepStrictEqual(focusState, { active: 'select-page-size', viewExpanded: 'true', viewVisible: true, paper: selectedPaper, orientation: 'portrait' });
 
     const changeOrientation = async (controlId: 'orientation-landscape' | 'orientation-portrait', orientation: 'landscape' | 'portrait') => {
       const before = preview.generation;
@@ -299,11 +301,36 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         state = await readLayoutFocus();
       }
       assert.deepStrictEqual(state, {
-        active: controlId, viewExpanded: 'true', viewVisible: true, paper: 'A5', orientation
+        active: controlId, viewExpanded: 'true', viewVisible: true, paper: selectedPaper, orientation
       }, `${orientation} restores focus to its orientation button without reviving an earlier hint`);
     };
     await changeOrientation('orientation-landscape', 'landscape');
     await changeOrientation('orientation-portrait', 'portrait');
+
+    await resizeActiveEditorGroupToWidth(421);
+    await settle(150);
+    const narrow = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+      const toolbar = document.querySelector('.toolbar-container');
+      const transportIds = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time','practice-toggle'];
+      return { width: window.innerWidth,
+        transportVisible: transportIds.every(id => document.getElementById(id)?.getClientRects().length > 0),
+        toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth };
+    })())`));
+    assert.deepStrictEqual(narrow, { width: 421, transportVisible: true, toolbarFits: true }, 'transport remains visible and usable in a narrower split');
+    await evaluatePreviewWebview<void>(`(() => { const view=document.getElementById('view-export-toggle'); view.focus(); if (view.getAttribute('aria-expanded') !== 'true') view.click(); })()`);
+    await dispatchPreviewKeyboardKey('Tab');
+    const narrowTab = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      active: document.activeElement?.id,
+      activeInPanel: document.getElementById('view-export-panel').contains(document.activeElement),
+      panelOpen: !document.getElementById('view-export-panel').hidden
+    })`));
+    assert.strictEqual(narrowTab.panelOpen && narrowTab.activeInPanel, true,
+      `Tab reaches View & Export controls in a narrower split: ${JSON.stringify(narrowTab)}`);
+    await dispatchPreviewKeyboardKey('Escape');
+    const narrowEscape = await evaluatePreviewWebview<boolean>(`document.getElementById('view-export-panel').hidden
+      && document.activeElement?.id === 'view-export-toggle'`);
+    assert.strictEqual(narrowEscape, true, 'Escape restores focus at a narrower split');
+    await resizeActiveEditorGroupToWidth(600);
 
     const nextDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 96\n| D | A | Bm | G |\n' });
     await showAndFocus(nextDoc);
