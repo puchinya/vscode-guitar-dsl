@@ -188,9 +188,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     })()`);
     assert.strictEqual(opened, true, 'opening a disclosure leaves focus on its trigger');
     await dispatchPreviewKeyboardKey('Tab');
-    const tabEntered = await evaluatePreviewWebview<boolean>(`document.activeElement?.getAttribute('data-mode') === 'single'
-      && document.getElementById('view-export-toggle').getAttribute('aria-expanded') === 'true'`);
-    assert.strictEqual(tabEntered, true, 'Tab from the trigger enters the disclosure content');
+    const tabEntered = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      inDisclosure: document.activeElement?.getAttribute('data-mode') === 'single'
+        && document.getElementById('view-export-toggle').getAttribute('aria-expanded') === 'true',
+      focusVisible: document.activeElement?.matches(':focus-visible') === true
+        && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+        && getComputedStyle(document.activeElement).outlineWidth !== '0px'
+    })`));
+    assert.strictEqual(tabEntered.inDisclosure, true, 'Tab from the trigger enters the disclosure content');
+    assert.strictEqual(tabEntered.focusVisible, true, 'keyboard focus receives the visible focus outline');
     await dispatchPreviewKeyboardKey('Escape');
     const escaped = await evaluatePreviewWebview<boolean>(`document.getElementById('view-export-toggle').getAttribute('aria-expanded') === 'false'
       && document.getElementById('view-export-panel').hidden && document.activeElement.id === 'view-export-toggle'`);
@@ -322,9 +328,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const narrowTab = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
       active: document.activeElement?.id,
       activeInPanel: document.getElementById('view-export-panel').contains(document.activeElement),
+      focusVisible: document.activeElement?.matches(':focus-visible') === true
+        && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+        && getComputedStyle(document.activeElement).outlineWidth !== '0px',
       panelOpen: !document.getElementById('view-export-panel').hidden
     })`));
-    assert.strictEqual(narrowTab.panelOpen && narrowTab.activeInPanel, true,
+    assert.strictEqual(narrowTab.panelOpen && narrowTab.activeInPanel && narrowTab.focusVisible, true,
       `Tab reaches View & Export controls in a narrower split: ${JSON.stringify(narrowTab)}`);
     await dispatchPreviewKeyboardKey('Escape');
     const narrowEscape = await evaluatePreviewWebview<boolean>(`document.getElementById('view-export-panel').hidden
