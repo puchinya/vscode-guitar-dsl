@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, evaluateInspectorWebview, scrollInspectorToControls } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, captureWorkbenchScreenshot, dispatchPreviewKeyboardKey, evaluateInspectorWebview, evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, scrollInspectorToControls, waitForPreviewDocument } from './screenshotCapture';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -124,6 +124,234 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     if (!ext.isActive) {
       await ext.activate();
     }
+  });
+
+  test('P136 Preview keeps transport visible, disclosures operable, and restores layout focus', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const preview = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+    for (let attempt = 0; attempt < 100 && preview.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+    assert.strictEqual(preview.currentDocumentUri, doc.uri.toString(), 'the singleton Preview renders the target document');
+
+    const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+    const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+    const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+    if (captureScreenshots) {
+      assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+    await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+    await settle(250);
+    await waitForPreviewDocument();
+
+    const originalPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
+    await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+    await resizeActiveEditorGroupToWidth(600);
+    await settle(200);
+    const previewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
+    const workbenchLayout = await inspectWorkbenchLayout();
+    assert.strictEqual(previewWidth, 600,
+      `real Preview Webview acceptance runs at exactly 600 CSS px (measured ${previewWidth}px; workbench layout ${workbenchLayout})`);
+    const workbenchWidth = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 1200);
+
+    const initial = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+      const toolbar = document.querySelector('.toolbar-container');
+      const ids = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time'];
+      return { transport: ids.map(id => !!document.getElementById(id) && document.getElementById(id).closest('.toolbar-container') === toolbar),
+        viewport: window.innerWidth,
+        toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth,
+        actionsFit: document.getElementById('toolbar-actions').scrollWidth <= document.getElementById('toolbar-actions').clientWidth,
+        practice: document.querySelector('.practice-toolbar') && getComputedStyle(document.querySelector('.practice-toolbar')).display,
+        disclosures: ['playback-options-toggle','view-export-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
+        panelsHidden: ['playback-options-panel','view-export-panel'].map(id => document.getElementById(id)?.hidden),
+        noDuplicateSettings: !document.getElementById('capo-bar') && !document.getElementById('btn-beginner'),
+        controls: ['select-page-size','orientation-portrait','orientation-landscape','btn-save-pdf'].map(id => !!document.getElementById(id)) };
+    })())`));
+    assert.ok(initial.transport.every(Boolean), `ordinary playback transport stays in the fixed toolbar: ${JSON.stringify(initial)}`);
+    assert.strictEqual(initial.viewport, 600, `toolbar acceptance runs at 600 CSS px: ${initial.viewport}`);
+    assert.strictEqual(initial.toolbarFits, true, 'transport and toolbar actions fit on one row');
+    assert.strictEqual(initial.actionsFit, true, 'all supplemental actions fit without horizontal scrolling');
+    assert.strictEqual(initial.practice, 'none', 'Practice OFF leaves no extra row');
+    assert.deepStrictEqual(initial.disclosures, ['false', 'false']);
+    assert.deepStrictEqual(initial.panelsHidden, [true, true]);
+    assert.strictEqual(initial.noDuplicateSettings, true, 'Preview has no duplicate Capo or Beginner controls');
+    assert.ok(initial.controls.every(Boolean), 'display, paper, orientation, and PDF controls remain available');
+
+    const opened = await evaluatePreviewWebview<boolean>(`(() => {
+      const view = document.getElementById('view-export-toggle');
+      const viewPanel = document.getElementById('view-export-panel');
+      view.focus(); view.click();
+      return view.getAttribute('aria-expanded') === 'true' && !viewPanel.hidden && document.activeElement === view;
+    })()`);
+    assert.strictEqual(opened, true, 'opening a disclosure leaves focus on its trigger');
+    await dispatchPreviewKeyboardKey('Tab');
+    const tabEntered = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      inDisclosure: document.activeElement?.getAttribute('data-mode') === 'single'
+        && document.getElementById('view-export-toggle').getAttribute('aria-expanded') === 'true',
+      focusVisible: document.activeElement?.matches(':focus-visible') === true
+        && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+        && getComputedStyle(document.activeElement).outlineWidth !== '0px'
+    })`));
+    assert.strictEqual(tabEntered.inDisclosure, true, 'Tab from the trigger enters the disclosure content');
+    assert.strictEqual(tabEntered.focusVisible, true, 'keyboard focus receives the visible focus outline');
+    await dispatchPreviewKeyboardKey('Escape');
+    const escaped = await evaluatePreviewWebview<boolean>(`document.getElementById('view-export-toggle').getAttribute('aria-expanded') === 'false'
+      && document.getElementById('view-export-panel').hidden && document.activeElement.id === 'view-export-toggle'`);
+    assert.strictEqual(escaped, true, 'Escape in the disclosure returns focus to its trigger');
+
+    const triggerEscape = await evaluatePreviewWebview<boolean>(`(() => {
+      const view = document.getElementById('view-export-toggle'); view.focus(); view.click();
+      view.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return view.getAttribute('aria-expanded') === 'false' && document.activeElement === view;
+    })()`);
+    assert.strictEqual(triggerEscape, true, 'Escape also closes when focus remains on the trigger');
+
+    const interaction = await evaluatePreviewWebview<string>(`(() => {
+      const playback = document.getElementById('playback-options-toggle');
+      playback.focus(); playback.click();
+      document.getElementById('btn-help').focus();
+      const outsideFocusClosed = playback.getAttribute('aria-expanded') === 'false'
+        && document.getElementById('playback-options-panel').hidden && document.activeElement.id === 'btn-help';
+      const practice = document.getElementById('practice-toggle');
+      practice.click();
+      const practiceOn = document.body.classList.contains('has-practice-row')
+        && getComputedStyle(document.querySelector('.practice-toolbar')).display !== 'none';
+      practice.click();
+      const practiceOff = !document.body.classList.contains('has-practice-row')
+        && getComputedStyle(document.querySelector('.practice-toolbar')).display === 'none';
+      return JSON.stringify({ outsideFocusClosed, practiceOn, practiceOff });
+    })()`);
+    const behavior = JSON.parse(interaction) as Record<string, boolean>;
+    for (const [name, passed] of Object.entries(behavior)) assert.strictEqual(passed, true, `${name} behavior works`);
+
+    const waitForPracticeState = async (enabled: boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const actual = await evaluatePreviewWebview<boolean>(`document.body.classList.contains('has-practice-row')`);
+        if (actual === enabled) return;
+        await settle(20);
+      }
+      assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}`);
+    };
+    await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+    await waitForPracticeState(true);
+    for (const controlId of ['practice-speed', 'practice-loop', 'practice-set-a', 'practice-set-b']) {
+      await evaluatePreviewWebview<void>(`document.getElementById('${controlId}').focus()`);
+      const before = await evaluatePreviewWebview<string>('document.activeElement?.id');
+      assert.strictEqual(before, controlId, `${controlId} receives DOM focus before Practice is turned off`);
+      await vscode.commands.executeCommand('guitardsl.practice.toggle');
+      await waitForPracticeState(false);
+      const evacuated = await evaluatePreviewWebview<string>(`JSON.stringify({
+        active: document.activeElement?.id,
+        hidden: getComputedStyle(document.getElementById('practice-toolbar')).display === 'none'
+      })`);
+      assert.deepStrictEqual(JSON.parse(evacuated), { active: 'practice-toggle', hidden: true }, `${controlId} focus moves before the Practice row is hidden`);
+      await vscode.commands.executeCommand('guitardsl.practice.toggle');
+      await waitForPracticeState(true);
+    }
+
+    const theme = /light/i.test(requestedTheme) ? 'light' : 'dark';
+    const renderedWidth = Math.round(initial.viewport);
+    const tag = process.env.GUITARDSL_E2E_TAG;
+    const suffix = tag && /^[a-z0-9-]+$/i.test(tag) ? `-${tag}` : '';
+    if (captureScreenshots) {
+      await evaluatePreviewWebview<void>(`(() => { const button=document.getElementById('view-export-toggle'); button.focus(); button.click();
+        if (document.body.classList.contains('has-practice-row')) document.getElementById('practice-toggle').click(); })()`);
+      await waitForPracticeState(false);
+      await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-practice-off-view-open${suffix}.png`, 136, workbenchWidth);
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await waitForPracticeState(true);
+      await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-practice-on-view-open${suffix}.png`, 136, workbenchWidth);
+    }
+
+    const waitForGeneration = async (before: number, action: string): Promise<void> => {
+      for (let attempt = 0; attempt < 100 && preview.generation === before; attempt++) await settle(20);
+      assert.strictEqual(preview.generation, before + 1, `${action} uses one Preview rebuild`);
+      await waitForPreviewDocument();
+    };
+    const readLayoutFocus = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      active: document.activeElement?.id,
+      viewExpanded: document.getElementById('view-export-toggle')?.getAttribute('aria-expanded'),
+      viewVisible: !document.getElementById('view-export-panel')?.hidden,
+      paper: document.getElementById('select-page-size')?.value,
+      orientation: document.body.getAttribute('data-orientation')
+    })`));
+
+    const initialLayout = await readLayoutFocus();
+    const selectedPaper = initialLayout.paper === 'A5' ? 'A4' : 'A5';
+    await evaluatePreviewWebview<void>(`(() => {
+      const view = document.getElementById('view-export-toggle');
+      if (view.getAttribute('aria-expanded') !== 'true') view.click();
+      const select = document.getElementById('select-page-size');
+      select.focus(); select.value = '${selectedPaper}'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForGeneration(preview.generation, 'paper selection');
+    let focusState = await readLayoutFocus();
+    for (let attempt = 0; attempt < 100 && focusState.active !== 'select-page-size'; attempt++) {
+      await settle(20);
+      focusState = await readLayoutFocus();
+    }
+    assert.deepStrictEqual(focusState, { active: 'select-page-size', viewExpanded: 'true', viewVisible: true, paper: selectedPaper, orientation: 'portrait' });
+
+    const changeOrientation = async (controlId: 'orientation-landscape' | 'orientation-portrait', orientation: 'landscape' | 'portrait') => {
+      const before = preview.generation;
+      await evaluatePreviewWebview<void>(`(() => {
+        const button = document.getElementById('${controlId}'); button.focus(); button.click();
+      })()`);
+      await waitForGeneration(before, `${orientation} orientation`);
+      let state = await readLayoutFocus();
+      for (let attempt = 0; attempt < 100 && state.active !== controlId; attempt++) {
+        await settle(20);
+        state = await readLayoutFocus();
+      }
+      assert.deepStrictEqual(state, {
+        active: controlId, viewExpanded: 'true', viewVisible: true, paper: selectedPaper, orientation
+      }, `${orientation} restores focus to its orientation button without reviving an earlier hint`);
+    };
+    await changeOrientation('orientation-landscape', 'landscape');
+    await changeOrientation('orientation-portrait', 'portrait');
+
+    await resizeActiveEditorGroupToWidth(421);
+    await settle(150);
+    const narrow = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+      const toolbar = document.querySelector('.toolbar-container');
+      const transportIds = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time','practice-toggle'];
+      return { width: window.innerWidth,
+        transportVisible: transportIds.every(id => document.getElementById(id)?.getClientRects().length > 0),
+        toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth };
+    })())`));
+    assert.deepStrictEqual(narrow, { width: 421, transportVisible: true, toolbarFits: true }, 'transport remains visible and usable in a narrower split');
+    await evaluatePreviewWebview<void>(`(() => { const view=document.getElementById('view-export-toggle'); view.focus(); if (view.getAttribute('aria-expanded') !== 'true') view.click(); })()`);
+    await dispatchPreviewKeyboardKey('Tab');
+    const narrowTab = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+      active: document.activeElement?.id,
+      activeInPanel: document.getElementById('view-export-panel').contains(document.activeElement),
+      focusVisible: document.activeElement?.matches(':focus-visible') === true
+        && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+        && getComputedStyle(document.activeElement).outlineWidth !== '0px',
+      panelOpen: !document.getElementById('view-export-panel').hidden
+    })`));
+    assert.strictEqual(narrowTab.panelOpen && narrowTab.activeInPanel && narrowTab.focusVisible, true,
+      `Tab reaches View & Export controls in a narrower split: ${JSON.stringify(narrowTab)}`);
+    await dispatchPreviewKeyboardKey('Escape');
+    const narrowEscape = await evaluatePreviewWebview<boolean>(`document.getElementById('view-export-panel').hidden
+      && document.activeElement?.id === 'view-export-toggle'`);
+    assert.strictEqual(narrowEscape, true, 'Escape restores focus at a narrower split');
+    await resizeActiveEditorGroupToWidth(600);
+
+    const nextDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 96\n| D | A | Bm | G |\n' });
+    await showAndFocus(nextDoc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', nextDoc.uri);
+    for (let attempt = 0; attempt < 100 && preview.currentDocumentUri !== nextDoc.uri.toString(); attempt++) await settle(20);
+    assert.strictEqual(preview.currentDocumentUri, nextDoc.uri.toString(), 'switching the source document rebuilds the Preview');
+    await waitForPreviewDocument();
+    const switchedFocus = await evaluatePreviewWebview<string>('document.activeElement?.id ?? ""');
+    assert.notStrictEqual(switchedFocus, 'orientation-portrait', 'document switch does not restore stale focus from the previous document');
+    await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+    await resizeActiveEditorGroupToWidth(originalPreviewWidth);
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
   });
 
   test('Extension should be active', () => {

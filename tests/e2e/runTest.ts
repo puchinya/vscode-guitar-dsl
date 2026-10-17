@@ -22,22 +22,19 @@ async function main() {
     const extensionTestsPath = path.resolve(__dirname, './index');
 
     const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
-    let remoteDebuggingArgs: string[] = [];
-    if (captureScreenshots) {
-      const server = net.createServer();
-      await new Promise<void>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-      });
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Could not reserve a local DevTools port');
-      const remoteDebuggingPort = address.port;
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-      process.env.GUITARDSL_E2E_CDP_PORT = String(remoteDebuggingPort);
-      remoteDebuggingArgs = [
-        `--remote-debugging-port=${remoteDebuggingPort}`
-      ];
-    }
+    // P136 uses the same real-Webview CDP assertions during regular E2E runs;
+    // screenshots remain optional, but functional coverage must not be gated by them.
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Could not reserve a local DevTools port');
+    const remoteDebuggingPort = address.port;
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    process.env.GUITARDSL_E2E_CDP_PORT = String(remoteDebuggingPort);
+    const remoteDebuggingArgs = [`--remote-debugging-port=${remoteDebuggingPort}`];
 
     const locale = process.env.GUITARDSL_E2E_LOCALE;
     const languagePackDirectory = captureScreenshots ? process.env.GUITARDSL_E2E_LANGUAGE_PACK_DIR : undefined;

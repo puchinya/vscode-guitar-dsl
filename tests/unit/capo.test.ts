@@ -315,8 +315,9 @@ describe('capo - DSL-backed candidates', () => {
     }
     const ui = buildCapoPreviewUiModel(dsl, undefined);
     assert.strictEqual(ui.candidates[2].supported, false);
-    assert.ok(!compileGuitarDslToHtml(dsl, { capo: ui }).includes('<option value="2">'));
-    assert.ok(compileGuitarDslToHtml(dsl, { capo: ui }).includes('<option value="2" disabled>'));
+    const preview = compileGuitarDslToHtml(dsl, { capo: ui });
+    assert.ok(!preview.includes('<option value="2">'));
+    assert.ok(!preview.includes('id="select-capo"'));
   });
 
   it('reports labeled variants per candidate and keeps the source capo selectable', () => {
@@ -374,8 +375,8 @@ describe('compiler - chord token source spans', () => {
   });
 });
 
-describe('capo - preview UI model and capo bar', () => {
-  it('builds the model from the source and renders it only in the toolbar', () => {
+describe('capo - Preview effective state without duplicate toolbar', () => {
+  it('keeps host-computed capo state out of Preview controls while rendering effective DSL', () => {
     const source = 'key: B\n| B | E | F# | B |\n';
     const model = buildCapoPreviewUiModel(source, 2);
     assert.strictEqual(model.sourceCapo, 0);
@@ -387,23 +388,19 @@ describe('capo - preview UI model and capo bar', () => {
 
     const effective = resolveEffectiveDsl(source, 2);
     assert.ok(effective.ok);
+    assert.notStrictEqual(effective.text, source);
     const html = compileGuitarDslToHtml(effective.text, { locale: 'en', capo: model });
-    assert.ok(html.includes('id="select-capo"'));
-    assert.ok(html.includes('<option value="2" selected>'));
-    assert.ok(html.includes('id="btn-apply-capo"') && !/id="btn-apply-capo"[^>]*disabled/.test(html));
-    const badge = html.match(/<span class="capo-badge" id="capo-playability"[^>]*>([^<]*)</)!;
-    assert.ok(badge[1].endsWith(`${model.currentPlayability!.score}/100`));
-    // The badge is toolbar HTML, never part of the rendered score SVG (and so never in the PDF).
-    const svgPart = html.slice(html.indexOf('<div class="sheet-pages-wrapper">'));
-    assert.ok(!svgPart.includes('capo-badge'));
-    // No model -> no capo bar (existing callers unchanged).
-    assert.ok(!compileGuitarDslToHtml(source).includes('id="capo-bar"'));
+    assert.strictEqual(html, compileGuitarDslToHtml(effective.text, { locale: 'en' }));
+    assert.ok(!html.includes('id="select-capo"'));
+    assert.ok(!html.includes('id="btn-apply-capo"'));
+    assert.ok(!html.includes('id="capo-bar"'));
   });
 
   it('disables the control when the source capo is invalid', () => {
     const model = buildCapoPreviewUiModel('capo: x\n| C |\n', undefined);
     assert.strictEqual(model.sourceCapo, null);
     assert.ok(!model.canApply);
-    assert.ok(compileGuitarDslToHtml('capo: x\n| C |\n', { capo: model }).includes('id="select-capo" class="tool-select" title="Show the preview and PDF with another capo position (the DSL is not changed)" disabled'));
+    const html = compileGuitarDslToHtml('capo: x\n| C |\n', { capo: model });
+    assert.ok(!html.includes('id="select-capo"'));
   });
 });

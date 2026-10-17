@@ -8,6 +8,7 @@
 - Related Issue: [Issue #93](https://github.com/puchinya/vscode-guitar-dsl/issues/93)
 - Related Issue: [Issue #134](https://github.com/puchinya/vscode-guitar-dsl/issues/134)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
+- Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -21,11 +22,12 @@
 |---|---|
 | 表示・レイアウト規則、調号・表示設定 | 言語構文仕様 §11、§14 |
 | 六線 TAB、TAB 歌詞、明示リズムとの同居 | 言語構文仕様 §19 / [TAB notation](tab-notation.md) |
-| プレビュー更新、UI、レンダリング、一時カポ・初心者表示 | 拡張機能仕様 §3.1、§4、§4.4–§4.5 |
+| プレビュー更新、UI、レンダリング、一時カポ・初心者設定 | 拡張機能仕様 §3.1、§4、§4.4–§4.5 |
 | TAB Preview、PDF 同一性、変換制限 | 拡張機能仕様 §4.7、§4B.6 |
 | PDF、Preview playback、Practice Mode | 拡張機能仕様 §3.2、§3.14、§4.6 |
 | コード進行の melody-aware audition と A/B | Issue #129、拡張機能仕様 §3.17、§4.8 |
 | Inspector の設定比較、Preview state restore、進行との排他 | Issue #135、拡張機能仕様 §4B、§4D |
+| Preview toolbar の transport / disclosure、Practice 行、layout focus restore | Issue #136、拡張機能仕様 §4.2、§4.6 |
 
 ## Architecture
 
@@ -46,6 +48,16 @@
 
 文書変更時に Extension Core は対象文書を確認し、`resolvePreviewEffectiveDsl()` で有効 DSL と表示用モデルを解決する。これを `compileGuitarDslToHtml()` に渡し、Compiler → layout / SVG → Preview HTML の順で生成して Panel の HTML を置き換える。Webview の用紙サイズ・向き変更は `layoutChanged` メッセージでホストへ戻し、同じ pipeline を新しい設定で再実行する。
 
+### Preview toolbar composition (Issue #136)
+
+`previewHtml.ts` keeps one fixed 48 px toolbar row. Play, Pause, Stop, seek, and elapsed/total time stay in that row even when playback is unavailable; localized status text is in normal document flow before the score and has no reserved height while empty. Practice is a separate fixed 42 px row at `top: 48px`, rendered only while enabled. Body top padding is 66 px with Practice off and 108 px with it on.
+
+Count-in and Metronome live in the nonmodal Playback settings disclosure. Display mode, paper size, orientation, and PDF save live in View & Export. Each disclosure is a `button[aria-expanded][aria-controls]` controlling a hidden labelled group, never a menu. Only one can be open; Escape closes and returns focus to its trigger, while outside pointer/focus closes without moving focus. Closed controls are excluded from tab order and the accessibility tree. Display mode and disclosure state do not trigger an HTML rebuild or alter the playback timeline. PDF uses the existing exporter and effective DSL.
+
+Paper and orientation keep the existing `layoutChanged` host route and rebuild the HTML/SVG. A one-shot restore hint carries an allowlisted control ID plus the current document URI, version, and Preview generation. The host accepts the hint only from the current rendered document, consumes it on the next render, and drops it on another message, source update, document switch, or panel disposal. The rebuilt page opens View & Export and focuses the requested control, falling back to its trigger if the target is unavailable. This does not persist another Webview state value or change audio ownership.
+
+At 600 px the transport, Practice toggle, both disclosure triggers, and Help fit in the toolbar. At narrower widths action labels become accessible-name-backed icons, and supplemental actions scroll horizontally while transport controls remain visible. Capo, Beginner, and progression editing controls are not rendered in Preview; Inspector owns their editing surface while effective DSL resolution remains shared with Preview and PDF.
+
 PDF は Preview で選ばれた有効 DSL を受け取り、ページ SVG をベクターとして PDF に載せる。`writeScorePdf()` は一時ファイルへの書き込み後に rename し、不完全な最終ファイルを残さない。フォントは Noto Sans JP Regular / Bold を登録し、描画前に読み込んで PDF 内へ必要なグリフを埋め込む。
 
 ### Preview 再生
@@ -54,7 +66,7 @@ PDF は Preview で選ばれた有効 DSL を受け取り、ページ SVG をベ
 
 ### Practice Mode and runtime overlays (Issue #93)
 
-Practice は既存 Webview transport に追加する。Practice OFF では追加行や余白を作らず、実効速度は 100%。ON では速度・Loop・A/B・Follow と出現状態を示す 42 px の Practice row を `top: 90px` に置く。Playback row は `top: 48px` に高さ 42 px で残す。OFF の本文開始はカポなし `108px` / カポあり `144px`、ON はカポなし `150px` / Practice row `90..132px`、カポあり本文 `186px` / カポ row `132px` とする。狭い幅では Practice row 自身だけを横スクロールさせ、#77 のヘルプ／PDF固定領域と Playback row を維持する。
+Practice は既存 Webview transport に追加する。Practice OFF では追加行や余白を作らず、実効速度は 100%。ON では速度・Loop・A/B・Follow と出現状態を示す 42 px の Practice row を `top: 48px` に置く。高さ 48 px の transport toolbar は常に残る。本文開始は Practice OFF で `66px`、ON で `108px`。狭い幅では Practice row 自身を横スクロールさせる。
 
 Practice preference は 25–200% を 5% 刻みで選ぶ。値は Webview state に保存するが、Practice OFF の実効速度は 100% とする。音声時間差 `audioDelta` に対し `scoreDelta = audioDelta * speed` を使い、音源の開始・長さ、Count-in、Metronome の時間を速度で割る。ソース BPM、既存 `PlaybackTimeline`、`mm:ss` は変更しない。再生中に速度を変えるときは score position を取り、予約音源を cancel/fade して同じ score position から新しい速度で同期し直す。Count-in は再生せず、scheduler interval は増やさない。Practice を OFF にした状態で再生中なら、100% に同期し直して保存済み速度は残す。
 

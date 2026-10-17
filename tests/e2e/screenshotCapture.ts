@@ -59,12 +59,28 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
   throw new Error(`Could not find the Extension Development Host window. DevTools page titles: ${lastTitles.join(', ')}`);
 }
 
+async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
+  let lastTargets: DevToolsTarget[] = [];
+  for (let attempt = 0; attempt < 50; attempt++) {
+    lastTargets = await getTargets(port);
+    // Recent VS Code releases expose an opaque vscode-webview:// URL without
+    // the older purpose/extensionId query parameters. The Preview E2E opens
+    // only one webview panel, so the sole webview iframe is the target.
+    const previewTargets = lastTargets.filter(item => item.type === 'iframe'
+      && item.url.startsWith('vscode-webview://'));
+    if (previewTargets.length === 1) return previewTargets[0];
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
+  throw new Error(`Expected one GuitarDSL Preview webview target; available targets: ${available || '(none)'}`);
+}
+
 /** Captures the selected VS Code workbench page through its local DevTools target. */
-export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134): Promise<void> {
+export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134, viewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
   await withWorkbenchDevTools(async send => {
-    const width = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 800);
+    const width = viewportWidth ?? Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 800);
     if (Number.isFinite(width) && width >= 320) {
       await send('Emulation.setDeviceMetricsOverride', {
         width,
@@ -133,6 +149,84 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
     if (response.exceptionDetails) throw new Error('Inspector Webview evaluation raised an exception');
     const value = (response.result as { value?: unknown } | undefined)?.value;
     return value as T;
+  });
+}
+
+/** Evaluates an expression in the singleton Preview WebviewPanel renderer. */
+export async function evaluatePreviewWebview<T>(expression: string): Promise<T> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  for (let evaluationAttempt = 0; evaluationAttempt < 3; evaluationAttempt++) {
+    const target = await waitForPreviewTarget(port);
+    try {
+      return await withDevToolsTarget(target, async send => {
+        await send('Runtime.enable');
+        let contextId: number | undefined;
+        let lastFrames: string[] = [];
+        for (let attempt = 0; attempt < 6 && contextId === undefined; attempt++) {
+          const tree = await send('Page.getFrameTree');
+          let activeFrameId: string | undefined;
+          lastFrames = [];
+          const visit = (node: Record<string, unknown>): void => {
+            const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+            if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+            if (frame?.name === 'active-frame') activeFrameId = frame.id;
+            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+          };
+          if (tree.frameTree) {
+            const frameTree = tree.frameTree as Record<string, unknown>;
+            visit(frameTree);
+            if (!activeFrameId) {
+              const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+              if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+            }
+          }
+          if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${lastFrames.join(' | ')}`);
+          try {
+            const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
+            if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a Preview evaluation context');
+            contextId = isolated.executionContextId;
+          } catch (error) {
+            if (!(error instanceof Error) || !/No frame for given id found/.test(error.message) || attempt === 5) throw error;
+            await new Promise(resolve => setTimeout(resolve, 40));
+          }
+        }
+        if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
+        const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+        if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
+        const value = (response.result as { value?: unknown } | undefined)?.value;
+        return value as T;
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || !/Cannot find context with specified id/.test(error.message) || evaluationAttempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
+  throw new Error('Preview Webview evaluation context remained unavailable');
+}
+
+export async function waitForPreviewDocument(): Promise<void> {
+  let lastState: unknown;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try {
+      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: !!document.querySelector('.toolbar-container'), url: location.href,
+        name: window.name, body: document.body?.innerHTML.slice(0, 600), iframes: [...document.querySelectorAll('iframe')].map(frame => ({ name: frame.name, src: frame.src })) })`);
+      if (JSON.parse(lastState as string).ready) return;
+    } catch (error) {
+      // The webview target can exist before its document and active frame finish loading.
+      lastState = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`The GuitarDSL Preview webview did not render its toolbar: ${JSON.stringify(lastState)}`);
+}
+
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape'): Promise<void> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const target = await waitForPreviewTarget(port);
+  const code = key === 'Tab' ? 9 : 27;
+  await withDevToolsTarget(target, async send => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
   });
 }
 
@@ -256,6 +350,67 @@ async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Prom
   }
   const target = await waitForWorkbenchTarget(port);
   return withDevToolsTarget(target, run);
+}
+
+export async function inspectWorkbenchLayout(): Promise<string> {
+  return withWorkbenchDevTools(async send => {
+    const response = await send('Runtime.evaluate', {
+      expression: `JSON.stringify({ viewport: { width: innerWidth, height: innerHeight },
+        editor: [...document.querySelectorAll('.part.editor')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right) }; }),
+        groups: [...document.querySelectorAll('.editor-group-container')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right), classes: node.className }; }),
+        sashes: [...document.querySelectorAll('.monaco-sash')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), top: Math.round(r.top), classes: node.className }; }) })`,
+      returnByValue: true
+    });
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not inspect the Extension Development Host layout');
+    return value;
+  });
+}
+
+/** Resizes the active editor group through its real VS Code sash, in CSS pixels. */
+export async function resizeActiveEditorGroupToWidth(targetWidth: number): Promise<void> {
+  if (!Number.isFinite(targetWidth) || targetWidth < 320) throw new Error(`Invalid editor group width: ${targetWidth}`);
+  await withWorkbenchDevTools(async send => {
+    const response = await send('Runtime.evaluate', {
+      expression: `JSON.stringify((() => {
+        const active = document.querySelector('.editor-group-container.active');
+        if (!active) return { error: 'active editor group not found' };
+        const activeRect = active.getBoundingClientRect();
+        const activeLeft = activeRect.left;
+        const sash = [...document.querySelectorAll('.monaco-sash.vertical:not(.primary-sidebar-sash)')]
+          .map(node => ({ node, rect: node.getBoundingClientRect() }))
+          .filter(item => Math.abs(item.rect.left - activeLeft) < 10)
+          .sort((a, b) => Math.abs(a.rect.left - activeLeft) - Math.abs(b.rect.left - activeLeft))[0];
+        if (!sash) return { error: 'active group sash not found', width: activeRect.width };
+        const editorRect = document.querySelector('.part.editor')?.getBoundingClientRect();
+        return { width: activeRect.width, x: sash.rect.left + sash.rect.width / 2,
+          y: Math.min(activeRect.bottom - 40, activeRect.top + 160),
+          direction: activeRect.left > (editorRect?.left ?? activeRect.left) + 5 ? -1 : 1 };
+      })())`,
+      returnByValue: true
+    });
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not measure the active editor group');
+    const geometry = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; direction?: number };
+    if (geometry.error || geometry.width === undefined || geometry.x === undefined || geometry.y === undefined || geometry.direction === undefined) {
+      throw new Error(`Could not resize the active editor group: ${JSON.stringify(geometry)}`);
+    }
+    const delta = targetWidth - geometry.width;
+    if (Math.abs(delta) < 1) return;
+    const steps = Math.max(1, Math.ceil(Math.abs(delta) / 40));
+    const targetX = geometry.x + geometry.direction * delta;
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
+    for (let step = 1; step <= steps; step++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: geometry.x + (targetX - geometry.x) * step / steps,
+        y: geometry.y,
+        button: 'left',
+        buttons: 1
+      });
+    }
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetX, y: geometry.y, button: 'left', clickCount: 1 });
+  });
 }
 
 async function withDevToolsTarget<T>(target: DevToolsTarget, run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
