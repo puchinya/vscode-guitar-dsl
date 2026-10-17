@@ -53,7 +53,7 @@
 
 - **状態**: [PR #146](https://github.com/puchinya/vscode-guitar-dsl/pull/146) はレビュー中。Issue #144 はPRのマージ待ち。
 - **実装**: `showAndFocus` は対象URI・列・安定したactive tabをイベントと現在状態で確認し、上限内で一度だけ対象groupを再フォーカスする。失敗時のみ、URIをラベル化した最大128件のfocus traceを出す。Undo直前に対象文書/列とVS Codeウィンドウのfocusを検証する。P136はsidebar/auxiliary bar、theme、tabs、Preview、editor group/widthをsnapshotし、`finally`で復元する。macOSのE2E root hookは必要時に隔離Extension Development Hostを前面化する。安定性runnerは各回を別プロセス/プロファイルで実行し、retryしない。
-- **検証**: 修正後の `npm test` はHelp/AI同期、単体テストPASS、VS Code E2E **95件 PASS・6件 pending**。`npm run verify:e2e-stability -- --runs 5` はコミット `95fe1f284d58a2227b615392009a1f338265b1c4` で **5/5 PASS**（各回95件PASS・6件pending、macOS 25.6 arm64 / VS Code 1.142.0 / Node 26.7.0、新規プロセス・プロファイル、retryなし）。`validate-docs --issue 144`、`verify-implementation-contract 144`、`git diff --check` もPASS。6件はcapture/audio条件が必要な既存pendingで、成功件数に含めていない。現行の `agent-required-check` はE2Eを実行しない。
+- **検証**: 修正後の `npm test` はHelp/AI同期、単体テストPASS、VS Code E2E **95件 PASS・6件 pending**。`npm run verify:e2e-stability -- --runs 5` はコミット `0bbc9fbd7ec12a9e9a2d00ce24a592344b6663eb` で **5/5 PASS**（各回95件PASS・6件pending、macOS 25.6 arm64 / VS Code 1.142.0 / Node 26.7.0、新規プロセス・プロファイル、retryなし）。`validate-docs --issue 144`、`verify-implementation-contract 144`、`git diff --check` もPASS。6件はcapture/audio条件が必要な既存pendingで、成功件数に含めていない。現行の `agent-required-check` はE2Eを実行しない。
 - **文書オーナー**: [`docs/agents/testing.md`](../agents/testing.md) と本書。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
