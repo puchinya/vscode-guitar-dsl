@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -4510,12 +4511,14 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
       && tab.input.uri.toString() === inactiveDocument.uri.toString());
     assert.ok(group && inactiveTab, 'the pre-existing inactive tab is present before restoration');
     assert.notStrictEqual(group.activeTab, inactiveTab, 'the tab-loss probe targets an inactive tab');
+    const snapshotTab = snapshot.tabs.find(tab => tab.key.includes(inactiveDocument.uri.toString()));
+    assert.ok(snapshotTab, 'the snapshot contains the tab identity used by the diagnostic');
+    const tabIdentity = createHash('sha256').update(snapshotTab.key).digest('hex');
+    const tabPosition = group.tabs.indexOf(inactiveTab);
     assert.strictEqual(await vscode.window.tabGroups.close(inactiveTab, true), true, 'the probe closes the pre-existing inactive tab');
     await assert.rejects(
       restoreWorkbenchSnapshot(snapshot),
-      error => error instanceof Error
-        && error.message.includes('P136 closed pre-existing tab(s):')
-        && error.message.includes(inactiveDocument.uri.toString())
+      error => error instanceof Error && error.message === `P136 closed pre-existing tab(s): column ${group.viewColumn}, position ${tabPosition}, identity sha256:${tabIdentity}`
     );
   }));
 

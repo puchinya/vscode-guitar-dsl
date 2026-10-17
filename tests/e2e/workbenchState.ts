@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import * as vscode from 'vscode';
 import { evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, waitForPreviewDocument } from './screenshotCapture';
 import { focusEditorGroup, recordFocusTrace } from './workbenchFocus';
@@ -73,7 +74,12 @@ function tabInventory(tabs: TabState[]): string[] {
 }
 
 function describeTab(tab: TabState): string {
-  return `column ${tab.group}, position ${tab.position}, ${JSON.stringify(tab.label)} (${tab.key})`;
+  const identity = createHash('sha256').update(tab.key).digest('hex');
+  return `column ${tab.group}, position ${tab.position}, identity sha256:${identity}`;
+}
+
+function describeTabInventory(tabs: TabState[]): string {
+  return tabs.map(describeTab).join('; ');
 }
 
 function currentTabInventory(): TabState[] {
@@ -101,7 +107,7 @@ function assertTabInventoryRestored(snapshot: WorkbenchSnapshot, actualTabs: Tab
   const expected = tabInventory(snapshot.tabs);
   const actual = tabInventory(actualTabs);
   if (expected.length !== actual.length || expected.some((entry, index) => entry !== actual[index])) {
-    throw new Error(`P136 changed pre-existing tab order or position: expected [${expected.join('; ')}], actual [${actual.join('; ')}]`);
+    throw new Error(`P136 changed pre-existing tab order or position: expected [${describeTabInventory(snapshot.tabs)}], actual [${describeTabInventory(actualTabs)}]`);
   }
 }
 
