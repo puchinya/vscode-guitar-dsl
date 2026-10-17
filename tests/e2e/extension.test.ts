@@ -372,8 +372,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const panel = document.getElementById('temporary-score-settings-panel');
         const more = document.getElementById('temporary-score-settings-toggle');
         const mainIds = ['preview-capo-select','preview-playability','toggle-preview-beginner'];
-        const level = document.getElementById('preview-playability').dataset.level;
-        const color = getComputedStyle(document.getElementById('preview-playability')).color;
+        const playability = document.getElementById('preview-playability');
+        const level = playability.dataset.level;
+        const value = playability.querySelector('.score-settings-playability-value');
+        const valueStyle = getComputedStyle(value);
         const colors = { veryEasy: 'rgb(46, 125, 50)', easy: 'rgb(46, 125, 50)',
           moderate: 'rgb(141, 110, 0)', hard: 'rgb(183, 28, 28)', veryHard: 'rgb(183, 28, 28)' };
         const supplements = ['select-preview-barre-policy','select-preview-beginner-capo-mode',
@@ -396,8 +398,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           inline: panel.dataset.inline,
           panelHidden: panel.hidden,
           supplementsVisible: supplements.map(id => document.getElementById(id)?.getClientRects().length > 0),
-          playability: { level, text: document.getElementById('preview-playability').innerText,
-            color, colorMatches: level === 'unavailable' ? color !== 'rgb(0, 0, 0)' : color === colors[level] },
+          playability: { level, text: playability.innerText, backgroundColor: valueStyle.backgroundColor,
+            foregroundColor: valueStyle.color, borderRadius: valueStyle.borderRadius,
+            columnGap: valueStyle.columnGap,
+            separatorDisplay: getComputedStyle(playability.querySelector('.score-settings-playability-separator')).display,
+            colorMatches: level === 'unavailable' ? valueStyle.backgroundColor === 'rgba(0, 0, 0, 0)' : valueStyle.backgroundColor === colors[level],
+            foregroundMatches: level === 'unavailable' ? valueStyle.color !== 'rgb(255, 255, 255)' : valueStyle.color === 'rgb(255, 255, 255)' },
           practice: { display: practiceStyle.display, bodyPadding: getComputedStyle(document.body).paddingTop },
           noTemporaryTitle: !document.body.innerText.includes('一時楽譜設定')
             && !document.body.innerText.includes('Temporary Score Settings'),
@@ -415,7 +421,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.strictEqual(state.panelHidden, width < 840, `${width}px keeps overflow closed and inline settings visible`);
       if (width >= 840) assert.deepStrictEqual(state.supplementsVisible, [true, true, true, true], `${width}px exposes all supplemental controls`);
       assert.strictEqual(state.playability.colorMatches, true,
-        `${width}px uses the restored level palette and includes its score/level text: ${JSON.stringify(state.playability)}`);
+        `${width}px uses the restored level palette as a filled badge: ${JSON.stringify(state.playability)}`);
+      assert.strictEqual(state.playability.foregroundMatches, true,
+        `${width}px keeps rated badge text white and unavailable values neutral: ${JSON.stringify(state.playability)}`);
+      assert.strictEqual(state.playability.borderRadius, '999px', `${width}px renders the score as a rounded badge`);
+      assert.strictEqual(state.playability.columnGap, width <= 600 ? '4px' : '0px',
+        `${width}px maintains score/level spacing when the compact design hides its separator`);
+      assert.strictEqual(state.playability.separatorDisplay, width <= 600 ? 'none' : 'block',
+        `${width}px follows the design's compact score and level spacing`);
       assert.ok(state.playability.text.includes('/100') || /Not available|評価できません/.test(state.playability.text),
         `${width}px presents a numeric score or an explicit unavailable label`);
       assert.strictEqual(state.practice.display, 'none', `${width}px Practice OFF hides its row`);

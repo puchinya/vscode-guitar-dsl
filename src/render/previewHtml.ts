@@ -126,9 +126,9 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
       return `<option value="${candidate.capo}"${candidate.capo === Number(selectedCapo) && selectedCapo !== '' ? ' selected' : ''}${candidate.supported ? '' : ' disabled'}>${candidate.capo}${recommended}</option>`;
     })
   ].join('');
-  const currentPlayabilityLabel = capoUi?.currentPlayability
-    ? `${capoUi.currentPlayability.score}/100 · ${msgs.playabilityLevels[capoUi.currentPlayability.level]}`
-    : msgs.uiPlayabilityUnavailable;
+  const currentPlayabilityValueHtml = capoUi?.currentPlayability
+    ? `<span class="score-settings-playability-value"><span>${capoUi.currentPlayability.score}/100</span><span class="score-settings-playability-separator"> · </span><span>${escapeXml(msgs.playabilityLevels[capoUi.currentPlayability.level])}</span></span>`
+    : `<span class="score-settings-playability-value">${escapeXml(msgs.uiPlayabilityUnavailable)}</span>`;
   const currentPlayabilityControlLabel = capoUi?.currentPlayability
     ? `${msgs.uiPlayability} ${msgs.playabilityLevels[capoUi.currentPlayability.level]} ${capoUi.currentPlayability.score}/100`
     : `${msgs.uiPlayability} ${msgs.uiPlayabilityUnavailable}`;
@@ -262,12 +262,32 @@ ${cspMeta}
     font-size: 11px;
     font-variant-numeric: tabular-nums;
   }
-  .score-settings-playability[data-level="veryEasy"],
-  .score-settings-playability[data-level="easy"] { color: #2e7d32; font-weight: 600; }
-  .score-settings-playability[data-level="moderate"] { color: #8d6e00; font-weight: 600; }
-  .score-settings-playability[data-level="hard"],
-  .score-settings-playability[data-level="veryHard"] { color: #b71c1c; font-weight: 600; }
-  .score-settings-playability[data-level="unavailable"] { color: var(--vscode-descriptionForeground, #cccccc); }
+  .score-settings-playability-value {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    column-gap: 0;
+    min-height: 29px;
+    padding: 2px 10px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .score-settings-playability[data-level="veryEasy"] .score-settings-playability-value,
+  .score-settings-playability[data-level="easy"] .score-settings-playability-value { background-color: #2e7d32; border-color: #459e4b; }
+  .score-settings-playability[data-level="moderate"] .score-settings-playability-value { background-color: #8d6e00; border-color: #b09200; }
+  .score-settings-playability[data-level="hard"] .score-settings-playability-value,
+  .score-settings-playability[data-level="veryHard"] .score-settings-playability-value { background-color: #b71c1c; border-color: #d95c5c; }
+  .score-settings-playability[data-level="unavailable"] .score-settings-playability-value {
+    min-height: 0;
+    padding: 0;
+    color: var(--vscode-descriptionForeground, #cccccc);
+    font-weight: 400;
+  }
   .score-settings-beginner { cursor: pointer; font-size: 11px; }
   .score-settings-beginner input { margin: 0; }
   .score-settings-overflow { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -625,6 +645,10 @@ ${cspMeta}
     .playback-time { min-width: 70px; }
     .toolbar-actions { max-width: 60%; }
   }
+  @media (max-width: 600px) {
+    .score-settings-playability-separator { display: none; }
+    .score-settings-playability-value { column-gap: 4px; }
+  }
   @media (max-width: 839px) {
     .score-settings-overflow { flex: 0 0 auto; }
     .score-settings-overflow-toggle { display: inline-flex; }
@@ -714,7 +738,7 @@ ${cspMeta}
   <div class="score-settings-row" id="score-settings-row" role="group" aria-label="${escapeXml(msgs.uiScoreSettings)}">
     <div class="score-settings-primary">
       <label class="score-settings-capo" for="preview-capo-select"><span class="score-settings-label">${escapeXml(msgs.uiCapo)}</span><select id="preview-capo-select" class="score-settings-select" aria-label="${escapeXml(msgs.uiCapo)}" title="${escapeXml(msgs.uiCapoTitle)}"${capoSelectDisabled ? ' disabled' : ''}>${capoOptionsHtml}</select></label>
-      <div class="score-settings-playability" id="preview-playability" data-level="${playabilityLevel}" role="status" aria-live="polite" aria-label="${escapeXml(currentPlayabilityControlLabel)}"><span class="score-settings-label">${escapeXml(msgs.uiPlayability)}</span><span>${escapeXml(currentPlayabilityLabel)}</span></div>
+      <div class="score-settings-playability" id="preview-playability" data-level="${playabilityLevel}" role="status" aria-live="polite" aria-label="${escapeXml(currentPlayabilityControlLabel)}"><span class="score-settings-label">${escapeXml(msgs.uiPlayability)}</span>${currentPlayabilityValueHtml}</div>
       <label class="score-settings-beginner" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><input id="toggle-preview-beginner" type="checkbox"${beginnerUi.active ? ' checked' : ''}><span>${escapeXml(msgs.uiBeginnerShort)}</span><span>${beginnerUi.active ? escapeXml(msgs.uiBeginnerOn) : escapeXml(msgs.uiBeginnerOff)}</span></label>
     </div>
     <div class="score-settings-overflow">

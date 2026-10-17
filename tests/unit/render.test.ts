@@ -333,14 +333,12 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.ok(toolbarRule, 'top toolbar has a dedicated CSS rule');
     assert.match(toolbarRule, /height:\s*48px;/);
     assert.match(css, /\.score-settings-row\s*\{[^}]*top:\s*48px;[^}]*height:\s*44px;/s);
-    for (const level of ['veryEasy', 'easy']) {
-      assert.match(css, new RegExp(`\\.score-settings-playability\\[data-level="${level}"\\][^}]*#2e7d32`));
-    }
-    assert.match(css, /\.score-settings-playability\[data-level="moderate"\][^}]*#8d6e00/);
-    for (const level of ['hard', 'veryHard']) {
-      assert.match(css, new RegExp(`\\.score-settings-playability\\[data-level="${level}"\\][^}]*#b71c1c`));
-    }
-    assert.match(css, /\.score-settings-playability\[data-level="unavailable"\][^}]*var\(--vscode-descriptionForeground/);
+    assert.match(css, /\.score-settings-playability-value\s*\{[^}]*border-radius:\s*999px;[^}]*color:\s*#fff;/s);
+    assert.match(css, /\.score-settings-playability\[data-level="veryEasy"\] \.score-settings-playability-value,\s*\.score-settings-playability\[data-level="easy"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#2e7d32/);
+    assert.match(css, /\.score-settings-playability\[data-level="moderate"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#8d6e00/);
+    assert.match(css, /\.score-settings-playability\[data-level="hard"\] \.score-settings-playability-value,\s*\.score-settings-playability\[data-level="veryHard"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#b71c1c/);
+    assert.match(css, /\.score-settings-playability\[data-level="unavailable"\] \.score-settings-playability-value\s*\{[^}]*var\(--vscode-descriptionForeground/);
+    assert.match(css, /@media \(max-width: 600px\)\s*\{\s*\.score-settings-playability-separator\s*\{\s*display:\s*none;\s*\}[^}]*\.score-settings-playability-value\s*\{\s*column-gap:\s*4px;/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
     assert.match(css, /@media \(max-width: 839px\)[\s\S]*?\.score-settings-overflow-toggle\s*\{\s*display:\s*inline-flex;/);
