@@ -82,7 +82,7 @@ function failedTestNames(output) {
 }
 
 function diagnosticLines(output) {
-  const keep = /^\s*\d+\)\s+|\b(?:AssertionError|TypeError|ReferenceError|Error):|^\s+at\s|^\s*\d+\s+(?:passing|pending|failing)|E2E focus trace|Failed to run tests|Exit Code:|^npm error/i;
+  const keep = /^\s*\d+\)\s+|\b(?:AssertionError|TypeError|ReferenceError|Error):|^\s+at\s|^\s*\d+\s+(?:passing|pending|failing)|E2E focus trace|E2E host focus|Failed to run tests|Exit Code:|^npm error/i;
   return sanitize(output).split(/\r?\n/).filter(line => keep.test(line));
 }
 

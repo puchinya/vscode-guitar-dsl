@@ -25,6 +25,7 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
   await showAndFocus(doc);
   recordFocusTrace('undo-target-validated');
+  assert.strictEqual(vscode.window.state.focused, true, 'Undo runs while the VS Code test window is focused');
   assert.ok(isDocumentActiveInColumn(doc, vscode.ViewColumn.One), 'Undo runs only while the requested document is active in the first editor group');
   await vscode.commands.executeCommand('undo');
   for (let i = 0; i < 100 && doc.getText() === before; i++) await settle(10);
@@ -4436,6 +4437,9 @@ suite('GuitarDSL Inspector foundation (Issue #133)', () => {
   });
 
   test('E2E focus recovery waits through a competing Webview activation', async () => withWorkbenchSnapshotRestored(async () => {
+    if (process.platform === 'darwin') {
+      assert.strictEqual(vscode.window.state.focused, true, 'macOS E2E hooks foreground the isolated VS Code test app before each test');
+    }
     const target = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'key: C\n| C | G | Am | F |' });
     await showAndFocus(target, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('workbench.action.splitEditorRight');
