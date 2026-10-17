@@ -307,12 +307,19 @@ describe('render - narrow Preview toolbar', () => {
     }
     assert.match(html, /id="playback-options-toggle"[^>]*aria-expanded="false" aria-controls="playback-options-panel"/);
     assert.match(html, /id="view-export-toggle"[^>]*aria-expanded="false" aria-controls="view-export-panel"/);
+    assert.match(html, /id="temporary-score-settings-toggle"[^>]*aria-expanded="false" aria-controls="temporary-score-settings-panel"/);
     assert.match(html, /id="playback-options-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
+    assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]* hidden>/);
     assert.ok(!html.includes('role="menu"'));
     assert.ok(html.includes('id="practice-toggle"'));
     assert.ok(html.includes('id="count-in-toggle"') && html.includes('id="metronome-toggle"'));
-    assert.ok(!html.includes('id="capo-bar"') && !html.includes('id="btn-beginner"'));
+    assert.ok(html.includes('id="preview-capo-select"'));
+    assert.ok(html.includes('id="toggle-preview-beginner"'));
+    assert.ok(html.includes('id="select-preview-barre-policy"'));
+    assert.ok(html.includes('id="open-score-settings-from-preview"'));
+    assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
+    assert.ok(!html.includes('>0/100</span>'), 'an unavailable playability value is not rendered as zero');
 
     const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1];
     assert.ok(css, 'Preview HTML contains its toolbar styles');
@@ -321,6 +328,8 @@ describe('render - narrow Preview toolbar', () => {
     assert.match(toolbarRule, /height:\s*48px;/);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
+    assert.match(css, /\.temporary-score-settings-panel \.tool-select\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0/);
+    assert.match(css, /\.temporary-score-settings-panel \.settings-playability\s*\{[^}]*overflow-wrap:\s*anywhere/s);
     assert.match(css, /@media \(max-width: 660px\)\s*\{[^}]*\.toolbar-action-label\s*\{\s*display:\s*none/s);
     assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*48px;[^}]*height:\s*42px;/s);
     assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*108px !important;/);

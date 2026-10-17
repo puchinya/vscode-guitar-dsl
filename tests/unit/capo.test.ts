@@ -375,8 +375,8 @@ describe('compiler - chord token source spans', () => {
   });
 });
 
-describe('capo - Preview effective state without duplicate toolbar', () => {
-  it('keeps host-computed capo state out of Preview controls while rendering effective DSL', () => {
+describe('capo - Preview effective state and temporary settings', () => {
+  it('renders host-computed capo candidates in the temporary settings disclosure', () => {
     const source = 'key: B\n| B | E | F# | B |\n';
     const model = buildCapoPreviewUiModel(source, 2);
     assert.strictEqual(model.sourceCapo, 0);
@@ -390,9 +390,14 @@ describe('capo - Preview effective state without duplicate toolbar', () => {
     assert.ok(effective.ok);
     assert.notStrictEqual(effective.text, source);
     const html = compileGuitarDslToHtml(effective.text, { locale: 'en', capo: model });
-    assert.strictEqual(html, compileGuitarDslToHtml(effective.text, { locale: 'en' }));
-    assert.ok(!html.includes('id="select-capo"'));
-    assert.ok(!html.includes('id="btn-apply-capo"'));
+    assert.notStrictEqual(html, compileGuitarDslToHtml(effective.text, { locale: 'en' }));
+    assert.ok(html.includes('id="temporary-score-settings-toggle"'));
+    assert.match(html, /id="preview-capo-select"[^>]*><option value="" disabled/);
+    const recommendedCandidate = model.candidates.find(candidate => candidate.recommended)!;
+    const recommendedOption = html.match(new RegExp(`<option value="${recommendedCandidate.capo}"[^>]*>([^<]+)</option>`))?.[1];
+    assert.strictEqual(recommendedOption, `Capo ${recommendedCandidate.capo} · Recommended`);
+    assert.ok(html.includes('id="preview-playability"') && html.includes(`${model.currentPlayability!.score}/100`));
+    assert.ok(!html.includes('id="btn-apply-capo"') && !html.includes('id="btn-apply-beginner"'));
     assert.ok(!html.includes('id="capo-bar"'));
   });
 
@@ -400,7 +405,9 @@ describe('capo - Preview effective state without duplicate toolbar', () => {
     const model = buildCapoPreviewUiModel('capo: x\n| C |\n', undefined);
     assert.strictEqual(model.sourceCapo, null);
     assert.ok(!model.canApply);
-    const html = compileGuitarDslToHtml('capo: x\n| C |\n', { capo: model });
-    assert.ok(!html.includes('id="select-capo"'));
+    const html = compileGuitarDslToHtml('capo: x\n| C |\n', { locale: 'en', capo: model });
+    assert.match(html, /id="preview-capo-select"[^>]* disabled/);
+    assert.ok(html.includes('<option value="" disabled selected>Not available</option>'));
+    assert.match(html, /<option value="0" disabled>Capo 0/);
   });
 });

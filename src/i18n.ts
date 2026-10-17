@@ -199,6 +199,11 @@ export interface Messages {
   msgSampleOpenFailed: string;
 
   // Capo / playability (preview toolbar, score settings editor, host notifications)
+  uiTemporaryScoreSettings: string;
+  uiTemporaryScoreSettingsTitle: string;
+  uiOpenScoreSettings: string;
+  uiBeginnerCapoMode: string;
+  uiBeginnerFixed: string;
   uiCapo: string;
   uiCapoTitle: string;
   uiPlayability: string;
@@ -449,6 +454,11 @@ export const MESSAGES_JA: Messages = {
   msgTemplateOpenFailed: 'テンプレートからドキュメントを作成できませんでした。',
   msgSampleOpenFailed: 'サンプルを開けませんでした。拡張機能を再インストールしてください。',
 
+  uiTemporaryScoreSettings: '一時楽譜設定',
+  uiTemporaryScoreSettingsTitle: 'プレビューとPDFに一時設定を反映します（DSLは変更しません）',
+  uiOpenScoreSettings: '楽譜設定を開く',
+  uiBeginnerCapoMode: 'カポ位置の選び方',
+  uiBeginnerFixed: '固定',
   uiCapo: 'カポ',
   uiCapoTitle: 'プレビューとPDFだけカポ位置を変えて表示（DSLは変更しません）',
   uiPlayability: '弾きやすさ',
@@ -733,6 +743,11 @@ export const MESSAGES_EN: Messages = {
   msgTemplateOpenFailed: 'Could not create a document from the template.',
   msgSampleOpenFailed: 'Could not open the sample. Try reinstalling the extension.',
 
+  uiTemporaryScoreSettings: 'Temporary Score Settings',
+  uiTemporaryScoreSettingsTitle: 'Apply temporary settings to Preview and PDF without changing the DSL',
+  uiOpenScoreSettings: 'Open score settings',
+  uiBeginnerCapoMode: 'Capo selection',
+  uiBeginnerFixed: 'Fixed',
   uiCapo: 'Capo',
   uiCapoTitle: 'Show the preview and PDF with another capo position (the DSL is not changed)',
   uiPlayability: 'Playability',

@@ -56,6 +56,14 @@
 - **検証**: 修正後の `npm test` はHelp/AI同期、単体テストPASS、VS Code E2E **95件 PASS・6件 pending**。`npm run verify:e2e-stability -- --runs 5` はコミット `0bbc9fbd7ec12a9e9a2d00ce24a592344b6663eb` で **5/5 PASS**（各回95件PASS・6件pending、macOS 25.6 arm64 / VS Code 1.142.0 / Node 26.7.0、新規プロセス・プロファイル、retryなし）。`validate-docs --issue 144`、`verify-implementation-contract 144`、`git diff --check` もPASS。6件はcapture/audio条件が必要な既存pendingで、成功件数に含めていない。現行の `agent-required-check` はE2Eを実行しない。
 - **文書オーナー**: [`docs/agents/testing.md`](../agents/testing.md) と本書。
 
+## Issue #145: Previewの一時楽譜設定（カポ・難易度・初心者モード）を復元
+
+- **状態**: 実装・最終検証済み。PR 作成前。
+- **実装**: 48px のPreview toolbarに一時楽譜設定 disclosureを1つ追加し、既存のカポ候補・プレイアビリティモデルと Beginner controller を再利用する。Previewの typed message は URI/version/generation とホスト候補を検証してから既存 dispatcher に渡す。再描画後は開いていた disclosure とフォーカスを一度だけ復帰させ、DSL編集やUndoは行わない。詳細編集と Apply/Cancel は引き続き Inspector が所有する。
+- **検証**: macOS arm64 / VS Code 1.142.0。`.agent/project.json` の最終ゲート `npm run compile`、`npm test`（Help/AI同期、単体 **1,154件 PASS**、VS Code E2E **95件 PASS・6件 pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,599項目**）は全てPASS。P145 実Webview E2E は600pxと421pxを確認し、Playability欄の値がはみ出さないこと、Tab/Escape/フォーカス復帰、輸送操作の可視性を検証。JA/EN × Dark/Light の4条件は別々のExtension Development Host実行でPASS。契約検証、文書検証、`git diff --check` もPASS。VoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: 600 CSS px の実Extension Development HostをCDPで撮影し、EN/JA × Dark/Lightを確認：[EN・暗色](evidence/issue-145/preview-en-dark-600-temporary-score-settings-issue145-en-dark.png)、[EN・明色](evidence/issue-145/preview-en-light-600-temporary-score-settings-issue145-en-light.png)、[JA・暗色](evidence/issue-145/preview-ja-dark-600-temporary-score-settings-issue145-ja-dark.png)、[JA・明色](evidence/issue-145/preview-ja-light-600-temporary-score-settings-issue145-ja-light.png)。画像はVS Code rendererで、macOSのネイティブ枠は含まない。
+- **文書オーナー**: `docs/specs/extension.md` §§4.2, 4.4–4.5, 4B, 4D、`docs/design/preview-rendering-and-export.md`、`score-editing.md`、`vscode-editor-experience.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
+
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
 ### 1.1 言語構文・コンパイラ / 描画機能 (`src/compiler.ts`, `src/render/`)

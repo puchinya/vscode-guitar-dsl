@@ -157,7 +157,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
-  test('P136 Preview keeps transport visible, disclosures operable, and restores layout focus', async () => withWorkbenchSnapshotRestored(async () => {
+  test('P145 Preview settings and P136 toolbar layout, focus, and transport remain usable', async () => withWorkbenchSnapshotRestored(async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 120\n| C | G | Am | F |\n' });
     await showAndFocus(doc);
     await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
@@ -195,9 +195,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth,
         actionsFit: document.getElementById('toolbar-actions').scrollWidth <= document.getElementById('toolbar-actions').clientWidth,
         practice: document.querySelector('.practice-toolbar') && getComputedStyle(document.querySelector('.practice-toolbar')).display,
-        disclosures: ['playback-options-toggle','view-export-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
-        panelsHidden: ['playback-options-panel','view-export-panel'].map(id => document.getElementById(id)?.hidden),
-        noDuplicateSettings: !document.getElementById('capo-bar') && !document.getElementById('btn-beginner'),
+        disclosures: ['playback-options-toggle','view-export-toggle','temporary-score-settings-toggle'].map(id => document.getElementById(id)?.getAttribute('aria-expanded')),
+        panelsHidden: ['playback-options-panel','view-export-panel','temporary-score-settings-panel'].map(id => document.getElementById(id)?.hidden),
+        temporarySettings: !!document.getElementById('preview-capo-select') && !!document.getElementById('toggle-preview-beginner'),
+        noDuplicateSettings: document.querySelectorAll('#temporary-score-settings-toggle').length === 1
+          && !document.getElementById('capo-bar') && !document.getElementById('btn-apply-capo'),
         controls: ['select-page-size','orientation-portrait','orientation-landscape','btn-save-pdf'].map(id => !!document.getElementById(id)) };
     })())`));
     assert.ok(initial.transport.every(Boolean), `ordinary playback transport stays in the fixed toolbar: ${JSON.stringify(initial)}`);
@@ -205,9 +207,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(initial.toolbarFits, true, 'transport and toolbar actions fit on one row');
     assert.strictEqual(initial.actionsFit, true, 'all supplemental actions fit without horizontal scrolling');
     assert.strictEqual(initial.practice, 'none', 'Practice OFF leaves no extra row');
-    assert.deepStrictEqual(initial.disclosures, ['false', 'false']);
-    assert.deepStrictEqual(initial.panelsHidden, [true, true]);
-    assert.strictEqual(initial.noDuplicateSettings, true, 'Preview has no duplicate Capo or Beginner controls');
+    assert.deepStrictEqual(initial.disclosures, ['false', 'false', 'false']);
+    assert.deepStrictEqual(initial.panelsHidden, [true, true, true]);
+    assert.strictEqual(initial.temporarySettings, true, 'the single temporary settings disclosure is present');
+    assert.strictEqual(initial.noDuplicateSettings, true, 'settings are in one disclosure with no apply controls');
     assert.ok(initial.controls.every(Boolean), 'display, paper, orientation, and PDF controls remain available');
 
     const opened = await evaluatePreviewWebview<boolean>(`(() => {
@@ -239,6 +242,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     })()`);
     assert.strictEqual(triggerEscape, true, 'Escape also closes when focus remains on the trigger');
 
+    const settingsOpened = await evaluatePreviewWebview<boolean>(`(() => {
+      const trigger = document.getElementById('temporary-score-settings-toggle');
+      const panel = document.getElementById('temporary-score-settings-panel');
+      trigger.focus(); trigger.click();
+      return trigger.getAttribute('aria-expanded') === 'true' && !panel.hidden;
+    })()`);
+    assert.strictEqual(settingsOpened, true, 'the temporary score settings disclosure opens');
+    await dispatchPreviewKeyboardKey('Tab');
+    const settingsTabEntered = await evaluatePreviewWebview<boolean>(`document.getElementById('temporary-score-settings-panel').contains(document.activeElement)
+      && document.getElementById('temporary-score-settings-toggle').getAttribute('aria-expanded') === 'true'
+      && document.activeElement.matches(':focus-visible') === true
+      && getComputedStyle(document.activeElement).outlineStyle !== 'none'
+      && getComputedStyle(document.activeElement).outlineWidth !== '0px'`);
+    assert.strictEqual(settingsTabEntered, true, 'Tab enters the settings disclosure with a visible keyboard focus');
+    await dispatchPreviewKeyboardKey('Escape');
+    const settingsEscaped = await evaluatePreviewWebview<boolean>(`document.getElementById('temporary-score-settings-toggle').getAttribute('aria-expanded') === 'false'
+      && document.getElementById('temporary-score-settings-panel').hidden
+      && document.activeElement.id === 'temporary-score-settings-toggle'`);
+    assert.strictEqual(settingsEscaped, true, 'Escape closes settings and returns focus to the trigger');
+
     const interaction = await evaluatePreviewWebview<string>(`(() => {
       const playback = document.getElementById('playback-options-toggle');
       playback.focus(); playback.click();
@@ -263,13 +286,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (actual === enabled) return;
         await settle(20);
       }
-      assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}`);
+      const state = await evaluatePreviewWebview<string>(`JSON.stringify({
+        row: document.body.classList.contains('has-practice-row'),
+        pressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+        rowDisplay: getComputedStyle(document.getElementById('practice-toolbar')).display,
+        active: document.activeElement?.id
+      })`);
+      assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}: ${state}`);
     };
     await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
     await waitForPracticeState(true);
     for (const controlId of ['practice-speed', 'practice-loop', 'practice-set-a', 'practice-set-b']) {
       await evaluatePreviewWebview<void>(`document.getElementById('${controlId}').focus()`);
       const before = await evaluatePreviewWebview<string>('document.activeElement?.id');
+      if (before !== controlId) {
+        const focusState = await evaluatePreviewWebview<string>(`JSON.stringify({
+          active: document.activeElement?.id,
+          disabled: document.getElementById('${controlId}')?.disabled,
+          display: getComputedStyle(document.getElementById('${controlId}')).display,
+          visibility: getComputedStyle(document.getElementById('${controlId}')).visibility,
+          practiceRow: getComputedStyle(document.getElementById('practice-toolbar')).display,
+          settingsOpen: document.getElementById('temporary-score-settings-panel')?.hidden === false
+        })`);
+        assert.strictEqual(before, controlId, `${controlId} receives DOM focus before Practice is turned off: ${focusState}`);
+      }
       assert.strictEqual(before, controlId, `${controlId} receives DOM focus before Practice is turned off`);
       await vscode.commands.executeCommand('guitardsl.practice.toggle');
       await waitForPracticeState(false);
@@ -286,6 +326,104 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const renderedWidth = Math.round(initial.viewport);
     const tag = process.env.GUITARDSL_E2E_TAG;
     const suffix = tag && /^[a-z0-9-]+$/i.test(tag) ? `-${tag}` : '';
+    const runTemporarySettingsScenario = async (sourceDoc: vscode.TextDocument): Promise<void> => {
+    const settingsDisclosureOpen = await evaluatePreviewWebview<boolean>(`(() => {
+      const trigger = document.getElementById('temporary-score-settings-toggle');
+      if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+      return trigger.getAttribute('aria-expanded') === 'true';
+    })()`);
+    assert.strictEqual(settingsDisclosureOpen, true, 'open the settings disclosure before editing its controls');
+    await resizeActiveEditorGroupToWidth(421);
+    await settle(150);
+    const narrowSettings = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+      const panel = document.getElementById('temporary-score-settings-panel');
+      const bounds = panel.getBoundingClientRect();
+      const toolbar = document.querySelector('.toolbar-container');
+      const playability = document.getElementById('preview-playability');
+      const transportIds = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time'];
+      return { width: window.innerWidth, panelOpen: !panel.hidden,
+        panelFits: bounds.left >= 0 && bounds.right <= window.innerWidth,
+        playabilityFits: playability.scrollWidth <= playability.clientWidth,
+        transportVisible: transportIds.every(id => document.getElementById(id)?.getClientRects().length > 0),
+        toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth };
+    })())`));
+    assert.deepStrictEqual(narrowSettings, { width: 421, panelOpen: true, panelFits: true, playabilityFits: true, transportVisible: true, toolbarFits: true },
+      `the settings disclosure and transport fit a narrow Preview: ${JSON.stringify(narrowSettings)}`);
+    await resizeActiveEditorGroupToWidth(600);
+    const waitForSettings = async (predicate: string, name: string, previousGeneration?: number): Promise<void> => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<boolean>(predicate)
+          && (previousGeneration === undefined || preview.generation === previousGeneration + 1)) {
+          if (previousGeneration !== undefined) assert.strictEqual(preview.generation, previousGeneration + 1, `${name} renders once`);
+          await waitForPreviewDocument();
+          return;
+        }
+        await settle(20);
+      }
+      const state = await evaluatePreviewWebview<string>(`JSON.stringify({
+        beginner: document.getElementById('toggle-preview-beginner')?.checked,
+        policy: document.getElementById('select-preview-barre-policy')?.value,
+        mode: document.getElementById('select-preview-beginner-capo-mode')?.value,
+        capoDisabled: document.getElementById('preview-capo-select')?.disabled,
+        active: document.activeElement?.id,
+        settingsExpanded: document.getElementById('temporary-score-settings-toggle')?.getAttribute('aria-expanded'),
+        renderGeneration: ${preview.generation}
+      })`);
+      assert.fail(`Preview settings did not reach ${name}: ${state}`);
+    };
+    const beforeBeginnerOn = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('toggle-preview-beginner');
+      control.checked = true; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('toggle-preview-beginner')?.checked === true
+      && document.getElementById('select-preview-beginner-capo-mode')?.value === 'auto'
+      && document.getElementById('preview-capo-select')?.disabled === true`, 'Beginner automatic capo', beforeBeginnerOn);
+    const beginnerFocusRestored = await evaluatePreviewWebview<boolean>(`document.activeElement.id === 'toggle-preview-beginner'
+      && document.getElementById('temporary-score-settings-panel').hidden === false`);
+    assert.strictEqual(beginnerFocusRestored, true, 'a Preview update restores focus inside the settings disclosure');
+    if (captureScreenshots) {
+      await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-temporary-score-settings${suffix}.png`, 145, workbenchWidth);
+    }
+
+    const beforeFixedMode = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('select-preview-beginner-capo-mode');
+      control.value = 'fixed'; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('select-preview-beginner-capo-mode')?.value === 'fixed'
+      && document.getElementById('preview-capo-select')?.disabled === false`, 'Beginner fixed capo', beforeFixedMode);
+
+    const beforeCapoChange = preview.generation;
+    const changedCapo = await evaluatePreviewWebview<string>(`(() => {
+      const control = document.getElementById('preview-capo-select');
+      const candidate = Array.from(control.options).find(option => !option.disabled && option.value !== control.value);
+      if (!candidate) return '';
+      control.value = candidate.value; control.dispatchEvent(new Event('change', { bubbles: true }));
+      return candidate.value;
+    })()`);
+    assert.ok(changedCapo, 'the current score has a second supported capo candidate');
+    await waitForSettings(`document.getElementById('preview-capo-select')?.value === ${JSON.stringify(changedCapo)}
+      && document.activeElement?.id === 'preview-capo-select'`,
+      'the selected Beginner capo', beforeCapoChange);
+
+    const beforePolicyChange = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('select-preview-barre-policy');
+      control.value = 'allow'; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('select-preview-barre-policy')?.value === 'allow'
+      && document.getElementById('select-preview-beginner-capo-mode')?.value === 'auto'
+      && document.getElementById('preview-capo-select')?.disabled === true`, 'automatic capo after barre policy changes', beforePolicyChange);
+    const beforeBeginnerOff = preview.generation;
+    await evaluatePreviewWebview<void>(`(() => {
+      const control = document.getElementById('toggle-preview-beginner');
+      control.checked = false; control.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitForSettings(`document.getElementById('toggle-preview-beginner')?.checked === false`, 'Beginner mode OFF', beforeBeginnerOff);
+    assert.strictEqual(sourceDoc.getText(), 'bpm: 120\n| C | G | Am | F |\n', 'temporary Preview settings leave source DSL unchanged');
+    };
+
     if (captureScreenshots) {
       await evaluatePreviewWebview<void>(`(() => { const button=document.getElementById('view-export-toggle'); button.focus(); button.click();
         if (document.body.classList.contains('has-practice-row')) document.getElementById('practice-toggle').click(); })()`);
@@ -374,6 +512,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       && document.activeElement?.id === 'view-export-toggle'`);
     assert.strictEqual(narrowEscape, true, 'Escape restores focus at a narrower split');
     await resizeActiveEditorGroupToWidth(600);
+
+    await runTemporarySettingsScenario(doc);
 
     const nextDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'bpm: 96\n| D | A | Bm | G |\n' });
     await showAndFocus(nextDoc);

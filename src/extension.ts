@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml, isPreviewLayoutFocusControl } from './render/previewHtml';
+import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml, isPreviewLayoutFocusControl, type PreviewFocusControl } from './render/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
@@ -15,7 +15,7 @@ import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
 import { EDIT_CAPO_COMMAND, EDIT_SCORE_SETTINGS_COMMAND, applyBeginnerTransform, applyCapoTransform } from './scoreSettingsEditor';
-import { dispatchPreviewLegacyMessage } from './previewLegacyCommands';
+import { dispatchPreviewLegacyMessage, isCurrentPreviewMessageIdentity, parsePreviewOpenSettingsIntent, parsePreviewTemporarySettingsIntent } from './previewLegacyCommands';
 import { ScoreSettingsInspectorController } from './scoreSettingsInspectorController';
 import { isGuitarDslDocument, resolveGuitarDslDocument } from './documentResolver';
 import { registerGuitarDslAiTools } from './ai/tools';
@@ -169,7 +169,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Paper size / orientation of the preview; the webview requests changes via 'layoutChanged'.
   let previewPageSize: PageSize = 'A4';
   let previewOrientation: PageOrientation = 'portrait';
-  let pendingLayoutFocusRestore: { uri: string; version: number; control: 'select-page-size' | 'orientation-portrait' | 'orientation-landscape' } | undefined;
+  let pendingLayoutFocusRestore: { uri: string; version: number; control: PreviewFocusControl } | undefined;
   // Transient Preview capo override; its effective DSL feeds both the Preview and PDF export.
   const previewCapo = new PreviewCapoController(() => msgs);
   setPreviewCapoController(previewCapo);
@@ -268,6 +268,75 @@ export function activate(context: vscode.ExtensionContext) {
         async (message) => {
           if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
             audioLeaseCoordinator.acknowledgePreviewStopped(message.leaseId);
+            return;
+          }
+          if (message.command === 'temporarySettingsChanged' || message.command === 'openScoreSettingsFromPreview') {
+            pendingLayoutFocusRestore = undefined;
+            const activeDoc = lastActiveGuitarDslDoc;
+            if (!activeDoc) return;
+            const expectedIdentity = {
+              documentUri: activeDoc.uri.toString(),
+              documentVersion: activeDoc.version,
+              previewGeneration: previewLifecycleProbe.generation
+            };
+            if (previewLifecycleProbe.currentDocumentUri !== expectedIdentity.documentUri) return;
+
+            const openSettingsIntent = parsePreviewOpenSettingsIntent(message);
+            if (openSettingsIntent) {
+              if (isCurrentPreviewMessageIdentity(openSettingsIntent, expectedIdentity)) {
+                await vscode.commands.executeCommand(EDIT_SCORE_SETTINGS_COMMAND, activeDoc.uri, openSettingsIntent.section);
+              }
+              return;
+            }
+
+            const intent = parsePreviewTemporarySettingsIntent(message);
+            if (!intent || !isCurrentPreviewMessageIdentity(intent, expectedIdentity)) return;
+            const effective = resolvePreviewEffectiveDsl(activeDoc, previewBeginner, previewCapo);
+            let legacyIntent: Record<string, unknown>;
+            let requestedCapo: number | undefined;
+            if (intent.action === 'capoChanged') {
+              if (effective.beginner.active && effective.beginner.autoCapo) return;
+              requestedCapo = intent.capo;
+              legacyIntent = { command: 'capoChanged', capo: intent.capo };
+            } else if (intent.action === 'beginnerToggled') {
+              legacyIntent = { command: 'beginnerToggled', enabled: intent.enabled };
+            } else if (intent.action === 'barrePolicyChanged') {
+              if (!effective.beginner.active) return;
+              legacyIntent = { command: 'barrePolicyChanged', policy: intent.policy };
+            } else if (intent.mode === 'auto') {
+              if (!effective.beginner.active) return;
+              legacyIntent = { command: 'beginnerAutoCapo' };
+            } else {
+              if (!effective.beginner.active) return;
+              requestedCapo = intent.capo;
+              legacyIntent = { command: 'capoChanged', capo: intent.capo };
+            }
+
+            if (requestedCapo !== undefined) {
+              const candidate = effective.capo.candidates.find(item => item.capo === requestedCapo);
+              if (!candidate?.supported) {
+                dispatchPreviewLegacyMessage(legacyIntent, activeDoc, {
+                  previewCapo,
+                  previewBeginner,
+                  externalPreviewChanged: uri => settingsController?.externalPreviewChanged(uri),
+                  applyCapo: applyPreviewCapo,
+                  applyBeginner: applyPreviewBeginner,
+                  editCapo: async doc => { await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, doc.uri); }
+                });
+                return;
+              }
+            }
+
+            pendingLayoutFocusRestore = { uri: expectedIdentity.documentUri, version: expectedIdentity.documentVersion, control: intent.focusControl };
+            const accepted = dispatchPreviewLegacyMessage(legacyIntent, activeDoc, {
+              previewCapo,
+              previewBeginner,
+              externalPreviewChanged: uri => settingsController?.externalPreviewChanged(uri),
+              applyCapo: applyPreviewCapo,
+              applyBeginner: applyPreviewBeginner,
+              editCapo: async doc => { await vscode.commands.executeCommand(EDIT_CAPO_COMMAND, doc.uri); }
+            });
+            if (accepted instanceof Promise) await accepted;
             return;
           }
           if (message.command !== 'layoutChanged') pendingLayoutFocusRestore = undefined;
@@ -618,7 +687,7 @@ export function activate(context: vscode.ExtensionContext) {
     await settingsController?.open(doc, section === 'beginner' || section === 'transpose' ? section : 'capo');
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand(EDIT_SCORE_SETTINGS_COMMAND, (uri?: vscode.Uri) => openScoreSettings(uri, 'capo')),
+    vscode.commands.registerCommand(EDIT_SCORE_SETTINGS_COMMAND, (uri?: vscode.Uri, section?: string) => openScoreSettings(uri, section ?? 'capo')),
     vscode.commands.registerCommand(EDIT_CAPO_COMMAND, (uri?: vscode.Uri) => openScoreSettings(uri, 'capo'))
   );
 

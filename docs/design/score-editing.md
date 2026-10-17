@@ -121,6 +121,8 @@ CapoSection, BeginnerSection, and TransposeSection remain the source of candidat
 
 Candidate changes and section navigation do not write source text. Capo and Beginner selections project temporary overrides through the existing Preview controllers only when the target document is already displayed by Preview. A session snapshots only that URI's overrides. Cancel and section switching restore the snapshot unless an independent Preview action has superseded it; that external action invalidates the settings session and remains authoritative.
 
+Issue #145 adds one nonmodal Temporary Score Settings disclosure to the existing Preview toolbar. It offers transient capo selection and playability status plus Beginner ON/OFF, barre policy, and automatic/fixed capo. It reuses the host-owned models and controllers; a typed message must match the current Preview URI, document version, render generation, action schema, and supported candidate before it changes state. The action calls the same `externalPreviewChanged(uri)` boundary so it supersedes an Inspector draft. Inspector remains the detailed comparison and the only DSL Apply/Cancel surface.
+
 Transpose displays its plan without applying a temporary Preview transform. Apply recomputes against the latest target text, confirms the host's current choice, revalidates URI/version/source/generation/revision, and submits one WorkspaceEdit. A stale confirmation, duplicate Apply, invalid plan, or rejected edit produces no source change. A successful edit is one undo step. After Apply, existing Preview overrides are recalculated from the new source text.
 
 ### Session switching and failure handling

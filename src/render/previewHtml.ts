@@ -34,7 +34,7 @@ export interface CompileHtmlOptions {
   /** Fresh production nonce for the executable script and main style element. */
   nonce?: string;
   /** One-shot target to focus after the host rebuilds Preview for a paper/orientation change. */
-  restoreFocusControl?: PreviewLayoutFocusControl;
+  restoreFocusControl?: PreviewFocusControl;
   /** Identity bound to the one-shot focus hint so stale messages cannot restore focus. */
   documentUri?: string;
   documentVersion?: number;
@@ -43,8 +43,22 @@ export interface CompileHtmlOptions {
 
 export type PreviewLayoutFocusControl = 'select-page-size' | 'orientation-portrait' | 'orientation-landscape';
 
+export type PreviewFocusControl = PreviewLayoutFocusControl
+  | 'preview-capo-select'
+  | 'toggle-preview-beginner'
+  | 'select-preview-barre-policy'
+  | 'select-preview-beginner-capo-mode';
+
 export function isPreviewLayoutFocusControl(value: unknown): value is PreviewLayoutFocusControl {
   return value === 'select-page-size' || value === 'orientation-portrait' || value === 'orientation-landscape';
+}
+
+export function isPreviewFocusControl(value: unknown): value is PreviewFocusControl {
+  return isPreviewLayoutFocusControl(value)
+    || value === 'preview-capo-select'
+    || value === 'toggle-preview-beginner'
+    || value === 'select-preview-barre-policy'
+    || value === 'select-preview-beginner-capo-mode';
 }
 
 type PlaybackHtmlEvent = PlaybackEvent & {
@@ -99,6 +113,25 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const msgs = getMessages(locale);
   const pageSize = options?.pageSize ?? 'A4';
   const orientation = options?.orientation ?? 'portrait';
+  const capoUi = options?.capo;
+  const beginnerUi = options?.beginner ?? { active: false, barrePolicy: 'forbid' as const, autoCapo: true, substitutions: [] };
+  const capoCandidates: CapoPreviewUiModel['candidates'] = capoUi?.candidates.length === 13
+    ? capoUi.candidates
+    : Array.from({ length: 13 }, (_, capo) => ({ capo, supported: false, recommended: false }));
+  const selectedCapo = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined ? '' : String(capoUi.targetCapo);
+  const capoOptionsHtml = [
+    `<option value="" disabled${selectedCapo === '' ? ' selected' : ''}>${escapeXml(msgs.uiPlayabilityUnavailable)}</option>`,
+    ...capoCandidates.map(candidate => {
+      const recommended = candidate.recommended ? ` · ${msgs.uiRecommended}` : '';
+      return `<option value="${candidate.capo}"${candidate.capo === Number(selectedCapo) && selectedCapo !== '' ? ' selected' : ''}${candidate.supported ? '' : ' disabled'}>${escapeXml(msgs.uiCapo)} ${candidate.capo}${recommended}</option>`;
+    })
+  ].join('');
+  const currentPlayabilityLabel = capoUi?.currentPlayability
+    ? `${capoUi.currentPlayability.score}/100 · ${msgs.playabilityLevels[capoUi.currentPlayability.level]}`
+    : msgs.uiPlayabilityUnavailable;
+  const compactPlayabilityLabel = capoUi?.currentPlayability ? String(capoUi.currentPlayability.score) : '—';
+  const capoSelectDisabled = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined
+    || (beginnerUi.active && beginnerUi.autoCapo);
   const score = parseGuitarDsl(dslContent, {
     expandPageBreakRepeats: options?.expandPageBreakRepeats
   });
@@ -123,7 +156,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     documentVersion: Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : null,
     previewGeneration: Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : null
   }));
-  const restoreFocusControlJson = JSON.stringify(isPreviewLayoutFocusControl(options?.restoreFocusControl)
+  const restoreFocusControlJson = JSON.stringify(isPreviewFocusControl(options?.restoreFocusControl)
     ? options.restoreFocusControl
     : null);
   const practiceSpeedOptions = Array.from({ length: 36 }, (_, index) => 25 + index * 5)
@@ -260,6 +293,23 @@ ${cspMeta}
   .toolbar-disclosure-panel .tool-btn { color: var(--vscode-foreground, #aaa); }
   .toolbar-disclosure-panel .tool-btn.active { background: var(--vscode-button-background, #007acc); color: var(--vscode-button-foreground, #fff); }
   .toolbar-disclosure-panel .tool-select { background: var(--vscode-input-background, #1e1e1e); color: var(--vscode-input-foreground, #eee); }
+  .temporary-score-settings-panel .toolbar-panel-section { align-items: flex-start; }
+  .temporary-score-settings-panel .toolbar-panel-field { display: grid; gap: 4px; min-width: 132px; flex: 1 1 132px; }
+  .temporary-score-settings-panel .toolbar-panel-field > span,
+  .temporary-score-settings-panel .toolbar-panel-label { color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
+  .temporary-score-settings-panel .tool-select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .temporary-score-settings-panel .settings-playability {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--vscode-descriptionForeground, #aaa);
+    font-size: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .temporary-score-settings-panel .settings-warning { flex: 1 1 100%; color: var(--vscode-errorForeground, #f48771); font-size: 12px; }
+  .temporary-score-settings-panel .settings-substitutions { margin: 0; padding-left: 18px; font-size: 12px; }
+  .toolbar-score-indicator { margin-left: 4px; color: var(--vscode-descriptionForeground, #ccc); font-variant-numeric: tabular-nums; }
   .playback-toggle {
     display: inline-flex;
     align-items: center;
@@ -478,6 +528,7 @@ ${cspMeta}
 
   @media (max-width: 660px) {
     .toolbar-action-label { display: none; }
+    .toolbar-score-indicator { display: none; }
     .toolbar-action, .playback-control-btn { padding-left: 6px; padding-right: 6px; }
     .toolbar-actions { max-width: 48%; }
   }
@@ -544,6 +595,23 @@ ${cspMeta}
             </div>
             <button class="toolbar-action btn-pdf" id="btn-save-pdf" type="button" title="${escapeXml(msgs.uiSavePdfTitle)}" aria-label="${escapeXml(msgs.uiSavePdfTitle)}">${escapeXml(msgs.uiSavePdf)}</button>
           </div>
+        </div>
+      </div>
+      <div class="toolbar-disclosure">
+        <button class="toolbar-action" id="temporary-score-settings-toggle" type="button" aria-expanded="false" aria-controls="temporary-score-settings-panel" aria-label="${escapeXml(msgs.uiTemporaryScoreSettingsTitle)}" title="${escapeXml(msgs.uiTemporaryScoreSettingsTitle)}"><span aria-hidden="true">♬</span> <span class="toolbar-action-label">${escapeXml(msgs.uiTemporaryScoreSettings)}</span><span class="toolbar-score-indicator" aria-hidden="true">${escapeXml(compactPlayabilityLabel)}</span></button>
+        <div class="toolbar-disclosure-panel temporary-score-settings-panel" id="temporary-score-settings-panel" role="group" aria-label="${escapeXml(msgs.uiTemporaryScoreSettings)}" hidden>
+          <div class="toolbar-panel-section">
+            <label class="toolbar-panel-field" for="preview-capo-select"><span>${escapeXml(msgs.uiCapo)}</span><select id="preview-capo-select" class="tool-select" title="${escapeXml(msgs.uiCapoTitle)}"${capoSelectDisabled ? ' disabled' : ''}>${capoOptionsHtml}</select></label>
+            <div class="toolbar-panel-field"><span>${escapeXml(msgs.uiPlayability)}</span><span class="settings-playability" id="preview-playability" role="status" aria-live="polite">${escapeXml(currentPlayabilityLabel)}</span></div>
+          </div>
+          <div class="toolbar-panel-section">
+            <label class="playback-toggle" title="${escapeXml(msgs.uiBeginnerModeTitle)}"><input id="toggle-preview-beginner" type="checkbox"${beginnerUi.active ? ' checked' : ''}><span>${escapeXml(msgs.uiBeginnerMode)}</span></label>
+            <label class="toolbar-panel-field" for="select-preview-barre-policy"><span>${escapeXml(msgs.uiBarreChords)}</span><select id="select-preview-barre-policy" class="tool-select" title="${escapeXml(msgs.uiBarreTitle)}"${beginnerUi.active ? '' : ' disabled'}><option value="forbid"${beginnerUi.barrePolicy === 'forbid' ? ' selected' : ''}>${escapeXml(msgs.uiBarreForbid)}</option><option value="allow"${beginnerUi.barrePolicy === 'allow' ? ' selected' : ''}>${escapeXml(msgs.uiBarreAllow)}</option></select></label>
+            <label class="toolbar-panel-field" for="select-preview-beginner-capo-mode"><span>${escapeXml(msgs.uiBeginnerCapoMode)}</span><select id="select-preview-beginner-capo-mode" class="tool-select"${beginnerUi.active ? '' : ' disabled'}><option value="auto"${beginnerUi.autoCapo ? ' selected' : ''}>${escapeXml(msgs.uiBeginnerAuto)}</option><option value="fixed"${beginnerUi.autoCapo ? '' : ' selected'}>${escapeXml(msgs.uiBeginnerFixed)}</option></select></label>
+          </div>
+          ${beginnerUi.active && beginnerUi.substitutions.length ? `<div class="toolbar-panel-section"><span class="toolbar-panel-label">${escapeXml(msgs.uiBeginnerSubstitutions)}</span><ul class="settings-substitutions">${beginnerUi.substitutions.map(([source, target]) => `<li>${escapeXml(source)} → ${escapeXml(target)}</li>`).join('')}</ul></div>` : ''}
+          ${capoUi?.warning ? `<div class="toolbar-panel-section"><p class="settings-warning" role="status">${escapeXml(capoUi.warning)}</p></div>` : ''}
+          <div class="toolbar-panel-section"><button class="toolbar-action" id="open-score-settings-from-preview" type="button">${escapeXml(msgs.uiOpenScoreSettings)}</button></div>
         </div>
       </div>
       <button class="toolbar-action btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span><span class="toolbar-action-label"> ${escapeXml(msgs.uiHelp)}</span></button>
@@ -617,10 +685,35 @@ ${cspMeta}
       const savePdfBtn = document.getElementById('btn-save-pdf');
       const playbackOptionsToggle = document.getElementById('playback-options-toggle');
       const viewExportToggle = document.getElementById('view-export-toggle');
+      const temporarySettingsToggle = document.getElementById('temporary-score-settings-toggle');
       const disclosureItems = [
         { button: playbackOptionsToggle, panel: document.getElementById('playback-options-panel') },
-        { button: viewExportToggle, panel: document.getElementById('view-export-panel') }
+        { button: viewExportToggle, panel: document.getElementById('view-export-panel') },
+        { button: temporarySettingsToggle, panel: document.getElementById('temporary-score-settings-panel') }
       ].filter(item => item.button && item.panel);
+      const capoSelect = document.getElementById('preview-capo-select');
+      const beginnerToggle = document.getElementById('toggle-preview-beginner');
+      const barrePolicySelect = document.getElementById('select-preview-barre-policy');
+      const beginnerCapoModeSelect = document.getElementById('select-preview-beginner-capo-mode');
+      const openScoreSettingsButton = document.getElementById('open-score-settings-from-preview');
+      function postTemporarySettings(action, value, focusControl) {
+        if (vscode) vscode.postMessage({
+          command: 'temporarySettingsChanged',
+          action,
+          value: { ...value, focusControl },
+          ...previewIdentity
+        });
+      }
+      if (capoSelect) capoSelect.addEventListener('change', () => postTemporarySettings('capoChanged', { capo: Number(capoSelect.value) }, 'preview-capo-select'));
+      if (beginnerToggle) beginnerToggle.addEventListener('change', () => postTemporarySettings('beginnerToggled', { enabled: beginnerToggle.checked }, 'toggle-preview-beginner'));
+      if (barrePolicySelect) barrePolicySelect.addEventListener('change', () => postTemporarySettings('barrePolicyChanged', { policy: barrePolicySelect.value }, 'select-preview-barre-policy'));
+      if (beginnerCapoModeSelect) beginnerCapoModeSelect.addEventListener('change', () => postTemporarySettings('beginnerCapoModeChanged', {
+        mode: beginnerCapoModeSelect.value,
+        capo: capoSelect ? Number(capoSelect.value) : undefined
+      }, 'select-preview-beginner-capo-mode'));
+      if (openScoreSettingsButton && vscode) openScoreSettingsButton.addEventListener('click', () => vscode.postMessage({
+        command: 'openScoreSettingsFromPreview', section: 'beginner', ...previewIdentity
+      }));
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
       const practiceToggle = document.getElementById('practice-toggle');
@@ -1763,15 +1856,16 @@ ${cspMeta}
 
       function restoreLayoutFocus() {
         if (!restoreFocusControl) return;
-        const item = disclosureItems.find(entry => entry.button === viewExportToggle);
+        const target = document.getElementById(restoreFocusControl);
+        const item = disclosureItems.find(entry => target && entry.panel.contains(target))
+          || disclosureItems.find(entry => entry.button === viewExportToggle);
         if (item) {
           disclosureItems.forEach(other => closeDisclosure(other, false));
           item.panel.hidden = false;
           item.button.setAttribute('aria-expanded', 'true');
           positionDisclosure(item);
         }
-        const target = document.getElementById(restoreFocusControl);
-        (target || viewExportToggle).focus();
+        (target || item && item.button || viewExportToggle).focus();
         if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
 

@@ -404,14 +404,16 @@ describe('beginnerMode - effective Preview DSL and i18n', () => {
       const m = locale === 'ja' ? MESSAGES_JA : MESSAGES_EN;
       const html = compileGuitarDslToHtml(p.text, { locale, capo: models.capo, beginner: models.beginner });
       assert.ok(html.includes('Fmaj7'));
-      assert.ok(!html.includes('id="btn-beginner"'));
-      assert.ok(!html.includes('id="select-barre"'));
-      assert.ok(!html.includes('class="capo-bar"'));
-      assert.ok(!html.includes(`${m.uiBeginnerMode}: ${m.uiBeginnerOn}`));
+      assert.match(html, /id="toggle-preview-beginner" type="checkbox" checked/);
+      assert.match(html, /id="preview-capo-select"[^>]* disabled/);
+      assert.match(html, /id="select-preview-barre-policy"/);
+      assert.match(html, /id="select-preview-beginner-capo-mode"/);
+      assert.ok(html.includes(m.uiTemporaryScoreSettings));
+      assert.ok(!html.includes('id="btn-apply-beginner"'));
     }
     const off = compileGuitarDslToHtml(src, { locale: 'ja', capo: models.capo });
-    assert.ok(!off.includes('id="btn-beginner"'));
-    assert.ok(!off.includes('id="select-barre"'));
+    assert.match(off, /id="toggle-preview-beginner" type="checkbox"/);
+    assert.ok(!/id="toggle-preview-beginner" type="checkbox" checked/.test(off));
   });
 
   it('BEG-30 JA/EN messages cover the beginner labels and failures', () => {
