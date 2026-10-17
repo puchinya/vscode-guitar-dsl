@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { inspectWorkbenchLayout, resizeActiveEditorGroupToWidth } from './screenshotCapture';
+import { evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, waitForPreviewDocument } from './screenshotCapture';
 import { focusEditorGroup, recordFocusTrace } from './workbenchFocus';
 
 type TabState = {
   key: string;
   group: vscode.ViewColumn;
+  position: number;
   active: boolean;
   label: string;
   previewUri?: string;
@@ -23,6 +24,7 @@ export type WorkbenchSnapshot = {
   activeTextEditor?: { uri: string; column: vscode.ViewColumn };
   previewUri?: string;
   previewColumn?: vscode.ViewColumn;
+  previewPracticeEnabled?: boolean;
 };
 
 type PreviewProbe = { currentDocumentUri?: string };
@@ -37,6 +39,70 @@ type WorkbenchLayout = {
 function getPreviewProbe(): PreviewProbe {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require('../../previewCapo').previewLifecycleProbe as PreviewProbe;
+}
+
+async function readPreviewPracticeEnabled(): Promise<boolean> {
+  const json = await evaluatePreviewWebview<string>(`JSON.stringify({
+    pressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+    enabled: document.body.classList.contains('has-practice-row')
+  })`);
+  const state = JSON.parse(json) as { pressed?: string | null; enabled?: boolean };
+  if ((state.pressed !== 'true' && state.pressed !== 'false') || typeof state.enabled !== 'boolean') {
+    throw new Error('Could not read the Preview Practice toggle state');
+  }
+  const pressed = state.pressed === 'true';
+  if (state.enabled !== pressed) {
+    throw new Error(`Preview Practice state is inconsistent: aria-pressed=${state.pressed}, row=${state.enabled}`);
+  }
+  return pressed;
+}
+
+async function restorePreviewPracticeState(expected: boolean): Promise<void> {
+  await waitForPreviewDocument();
+  if (await readPreviewPracticeEnabled() === expected) return;
+  await vscode.commands.executeCommand('guitardsl.practice.toggle');
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await readPreviewPracticeEnabled() === expected) return;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  throw new Error(`Preview Practice state did not restore to ${expected ? 'ON' : 'OFF'}`);
+}
+
+function tabInventory(tabs: TabState[]): string[] {
+  return tabs.map(tab => `${tab.group}:${tab.position}:${tab.key}`);
+}
+
+function describeTab(tab: TabState): string {
+  return `column ${tab.group}, position ${tab.position}, ${JSON.stringify(tab.label)} (${tab.key})`;
+}
+
+function currentTabInventory(): TabState[] {
+  const groups = [...vscode.window.tabGroups.all].sort((a, b) => a.viewColumn - b.viewColumn);
+  return groups.flatMap(group => group.tabs.map((tab, position) => ({
+    key: tabKey(tab, group),
+    group: group.viewColumn,
+    position,
+    active: group.isActive && group.activeTab === tab,
+    label: tab.label
+  })));
+}
+
+function assertTabInventoryRestored(snapshot: WorkbenchSnapshot, actualTabs: TabState[]): void {
+  const currentKeys = new Set(actualTabs.map(tab => tab.key));
+  const missing = snapshot.tabs.filter(tab => !currentKeys.has(tab.key));
+  if (missing.length > 0) {
+    throw new Error(`P136 closed pre-existing tab(s): ${missing.map(describeTab).join('; ')}`);
+  }
+  const initialKeys = new Set(snapshot.tabs.map(tab => tab.key));
+  const unexpected = actualTabs.filter(tab => !initialKeys.has(tab.key));
+  if (unexpected.length > 0) {
+    throw new Error(`P136 left unexpected tab(s) open: ${unexpected.map(describeTab).join('; ')}`);
+  }
+  const expected = tabInventory(snapshot.tabs);
+  const actual = tabInventory(actualTabs);
+  if (expected.length !== actual.length || expected.some((entry, index) => entry !== actual[index])) {
+    throw new Error(`P136 changed pre-existing tab order or position: expected [${expected.join('; ')}], actual [${actual.join('; ')}]`);
+  }
 }
 
 function tabKey(tab: vscode.Tab, group: vscode.TabGroup): string {
@@ -91,7 +157,7 @@ export async function captureWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
   let initialPreviewColumn: vscode.ViewColumn | undefined;
   let initialPreviewUri: string | undefined;
   for (const group of groups) {
-    for (const tab of group.tabs) {
+    for (const [position, tab] of group.tabs.entries()) {
       const isActive = group.isActive && group.activeTab === tab;
       const isPreview = tab.input instanceof vscode.TabInputWebview && tab.label.includes('GuitarDSL');
       const previewUri = isPreview ? getPreviewProbe().currentDocumentUri : undefined;
@@ -103,11 +169,17 @@ export async function captureWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
       tabs.push({
         key: tabKey(tab, group),
         group: group.viewColumn,
+        position,
         active: isActive,
         label: tab.label,
         ...(isPreview ? { previewUri } : {})
       });
     }
+  }
+  let previewPracticeEnabled: boolean | undefined;
+  if (initialPreviewUri) {
+    await waitForPreviewDocument();
+    previewPracticeEnabled = await readPreviewPracticeEnabled();
   }
   const activeEditor = vscode.window.activeTextEditor;
   const activeGroup = vscode.window.tabGroups.activeTabGroup;
@@ -131,7 +203,8 @@ export async function captureWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
       column: activeEditor.viewColumn ?? activeGroup.viewColumn
     } : undefined,
     previewUri: initialPreviewUri,
-    previewColumn: initialPreviewColumn
+    previewColumn: initialPreviewColumn,
+    previewPracticeEnabled
   };
 }
 
@@ -233,6 +306,9 @@ export async function restoreWorkbenchSnapshot(snapshot: WorkbenchSnapshot): Pro
   await restoreVisibility(snapshot);
   await restoreColorTheme(snapshot);
   await restorePreview(snapshot);
+  if (snapshot.previewPracticeEnabled !== undefined) {
+    await restorePreviewPracticeState(snapshot.previewPracticeEnabled);
+  }
   await restoreSecondGroupWidth(snapshot);
   await restoreActiveEditor(snapshot);
 
@@ -258,6 +334,11 @@ export async function restoreWorkbenchSnapshot(snapshot: WorkbenchSnapshot): Pro
   if (snapshot.previewUri && getPreviewProbe().currentDocumentUri !== snapshot.previewUri) {
     throw new Error('GuitarDSL Preview source differs from its initial state after P136');
   }
+  if (snapshot.previewPracticeEnabled !== undefined
+    && await readPreviewPracticeEnabled() !== snapshot.previewPracticeEnabled) {
+    throw new Error(`Preview Practice state differs from its initial state after P136 (expected ${snapshot.previewPracticeEnabled ? 'ON' : 'OFF'})`);
+  }
+  assertTabInventoryRestored(snapshot, currentTabInventory());
   const visible = vscode.window.visibleTextEditors.map(editor => `${editor.viewColumn}:${editor.document.uri.toString()}`).sort();
   const expectedVisible = snapshot.visibleEditors.map(editor => `${editor.column}:${editor.uri}`).sort();
   if (visible.length !== expectedVisible.length || visible.some((item, index) => item !== expectedVisible[index])) {
@@ -290,7 +371,9 @@ export async function withWorkbenchSnapshotRestored<T>(operation: () => Promise<
     } catch (restoreError) {
       recordFocusTrace('workbench-state-restore-failed');
       if (operationFailed) {
-        const combined = new Error('P136 failed and workbench state restoration also failed');
+        const operationMessage = operationError instanceof Error ? operationError.message : String(operationError);
+        const restorationMessage = restoreError instanceof Error ? restoreError.message : String(restoreError);
+        const combined = new Error(`P136 operation failed: ${operationMessage}; state restoration failed: ${restorationMessage}`);
         Object.assign(combined, { cause: operationError, restorationError: restoreError });
         throw combined;
       }
@@ -314,5 +397,7 @@ export async function matchesWorkbenchSnapshot(snapshot: WorkbenchSnapshot): Pro
       || current.secondGroupWidth !== undefined && snapshot.secondGroupWidth !== undefined
         && Math.abs(current.secondGroupWidth - snapshot.secondGroupWidth) <= 1)
     && current.colorTheme === snapshot.colorTheme
-    && current.previewUri === snapshot.previewUri;
+    && current.previewUri === snapshot.previewUri
+    && current.previewPracticeEnabled === snapshot.previewPracticeEnabled
+    && tabInventory(current.tabs).join('\n') === tabInventory(snapshot.tabs).join('\n');
 }

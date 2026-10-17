@@ -185,7 +185,8 @@ export async function focusEditorGroup(column: vscode.ViewColumn): Promise<void>
 
 export async function showAndFocusDocument(
   doc: vscode.TextDocument,
-  requestedColumn: vscode.ViewColumn = vscode.ViewColumn.One
+  requestedColumn: vscode.ViewColumn = vscode.ViewColumn.One,
+  beforeStabilityDecision?: () => Promise<void>
 ): Promise<vscode.TextEditor> {
   const timeoutMs = 2000;
   const stableMs = 80;
@@ -202,12 +203,25 @@ export async function showAndFocusDocument(
   const startedAt = Date.now();
   const firstDeadline = startedAt + Math.floor(timeoutMs * 0.75);
   const finalDeadline = startedAt + timeoutMs;
-  const waitForStableTarget = async (deadline: number): Promise<boolean> => {
+  const waitForStableTarget = async (
+    deadline: number,
+    testBarrier?: () => Promise<void>
+  ): Promise<boolean> => {
     let stableSince: number | undefined;
+    let pendingTestBarrier = testBarrier;
     while (Date.now() < deadline) {
       const isTargetActive = matchesRequestedEditor(doc, column);
       recordFocusTrace(isTargetActive ? 'focus-condition-matched' : 'focus-condition-not-matched');
       if (isTargetActive) {
+        if (pendingTestBarrier) {
+          const barrier = pendingTestBarrier;
+          pendingTestBarrier = undefined;
+          recordFocusTrace('focus-stability-test-barrier-started');
+          await barrier();
+          recordFocusTrace('focus-stability-test-barrier-completed');
+          stableSince = undefined;
+          continue;
+        }
         stableSince ??= Date.now();
         if (Date.now() - stableSince >= stableMs) {
           recordFocusTrace('requested-editor-stable');
@@ -221,7 +235,7 @@ export async function showAndFocusDocument(
     return false;
   };
 
-  if (await waitForStableTarget(firstDeadline)) return vscode.window.activeTextEditor!;
+  if (await waitForStableTarget(firstDeadline, beforeStabilityDecision)) return vscode.window.activeTextEditor!;
   recordFocusTrace('focus-recovery-started');
   await focusEditorGroup(column);
   if (await waitForStableTarget(finalDeadline)) return vscode.window.activeTextEditor!;
