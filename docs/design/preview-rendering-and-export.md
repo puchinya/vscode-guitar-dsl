@@ -36,6 +36,7 @@
 - Extension Core は文書変更・プレビュー操作を処理し、Webview に HTML/SVG を渡す。Webview の操作メッセージは拡張機能ホストに戻り、ホスト側の制御器が文書・有効 DSL とプレビュー状態を管理する。
 - `src/pdf.ts` はページ SVG を `pdfkit` / `svg-to-pdfkit` でベクター PDF にする。Noto Sans JP の同梱フォントを登録し、書き出し時は一時ファイルを経て確定する設計が記録されている。
 - `src/playOrder.ts::resolvePlayOrder()` は唯一の演奏順 authority、`src/playbackTimeline.ts::buildPlaybackTimeline()` は唯一の score-time authority とする。再生タイムラインは元スコアを書き換えず、別の repeat resolver や timing engine を追加しない。
+- リズム符タイ（Issue #142）の接続関係は Compiler が検証する。`src/render/svg.ts` はその関係を既存の `rhythmHeads()` / `renderTieArc()` で描き、小節間の連桁は作らない。段・ページをまたぐ弧は各 system の端で分割し、Preview と PDF が同じ SVG を使う境界を保つ。
 - Extension Host はシングルトン Preview panel とコマンド転送だけを所有する。Playback / Practice の状態は Webview に置き、ホストは再生・seek・loop 状態を保持しない。
 
 ### レイアウトと出力の同一性
@@ -63,6 +64,12 @@ PDF は Preview で選ばれた有効 DSL を受け取り、ページ SVG をベ
 ### Preview 再生
 
 再生タイムラインは `ParsedScore.playOrder` の出現順と音価からイベント時刻とソース小節の対応を作る。Preview Webview は遅延初期化された `AudioContext` 1 つ、100 ms 先読み、25 ms interval 1 つを使う。Play / Pause / Resume / Stop / Seek は同じ score-time 上で動作し、Pause は位置を保持する。ソース編集、有効 DSL 変更、レイアウト再構築、文書切替、Panel 破棄時は予約済み音源を停止する。
+
+有効なリズム符タイは `buildPlaybackTimeline()` の一つの rhythm attack にまとめる。`durationBeats` は連鎖の Fraction 和、`durationSeconds` は連鎖した各小節の有効 BPM で個別に換算した秒数の和とする。演奏順の隣接 occurrence が書面小節でも隣接している場合だけ小節間を接続し、repeat / volta / navigation の飛び先では通常の攻撃音に戻す。Practice loop がタイの継続小節から始まるときは、同じ保持時間データからその小節頭の再アタックを使い、連鎖元を含む loop は既存どおり終端で音を切り詰める。
+
+### Rhythm-tie rendering (Issue #142)
+
+Rhythm ties use the already compiled event relationship and notation heads. A connection within one system joins the final head of the source event to the first head of its target; the existing compound-duration ties remain separate. Connections crossing a system or page edge are rendered as two clipped arcs at the respective row edges. Beam groups remain measure-local, and a valid continuation has no down/up attack marker.
 
 ### Practice Mode and runtime overlays (Issue #93)
 

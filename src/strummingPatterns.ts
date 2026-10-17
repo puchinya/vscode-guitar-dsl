@@ -908,7 +908,12 @@ export function parseRhythmPattern(pattern: string, meter = '4/4'): RhythmPatter
     return { ok: false, detail: 'a pattern holds rhythm tokens only' };
   }
   const score = parseGuitarDsl(`time: ${meter}\n| ${tokens.join(' ')} |`);
-  const errors = score.diagnostics.filter(d => d.severity === 'error');
+  // A one-measure pattern cannot resolve its final .t target. Let buildDsl report the more
+  // specific unsupportedCrossBarSyncopation result for that explicit cross-bar pattern.
+  const lastTokenHasTie = /(?:^|\.)(?:t|tie)(?:\.|$)/.test(tokens[tokens.length - 1]);
+  const errors = score.diagnostics.filter(d => d.severity === 'error' && !(
+    lastTokenHasTie && d.code === 'invalidRhythmTie' && d.args?.reason === 'missingTarget'
+  ));
   if (errors.length > 0) return { ok: false, detail: `invalid rhythm token (${errors[0].code})` };
   const measure = score.measures[0];
   if (!measure || score.measures.length !== 1 || measure.isMeasureRepeat || measure.chords.length > 0) {

@@ -904,6 +904,18 @@ const DIAGNOSTICS_JA: DiagnosticTemplates = {
   melodyRepeatWithoutPrevious: () => '% で繰り返す直前の小節にメロディがありません',
   lyricsWithoutMelody: () => 'lyr: の前に対応する mel: 行がありません',
   beatCountMismatch: a => `小節の長さが${a.expected ?? 4}拍ではありません（${a.beats}拍）`,
+  invalidRhythmTie: a => {
+    const reasons: Record<string, string> = {
+      missingTarget: '接続先のスラッシュ音符がありません',
+      nonAdjacent: '音価の終了位置と次の音符が接していません',
+      restOrGhost: '休符またはゴースト音符には接続できません',
+      pitchMismatch: '音高付き音符とは接続できません',
+      chordMismatch: '接続元と接続先のコード名または voicing ラベルが一致しません',
+      continuationAttackModifier: '継続音にダウン／アップストロークを指定できません',
+      unsupportedBoundary: 'let フラグメントまたは % 小節境界をまたげません'
+    };
+    return `リズム符のタイが無効です（${reasons[String(a.reason)] ?? a.reason}）`;
+  },
   syllableCountMismatch: a => `歌詞の音節数（${a.syllables}）と歌う音符の数（${a.notes}）が一致しません`,
   lyricBarMismatch: () => '歌詞の | の位置がメロディの小節区切りと一致しません',
   measureLyricWithMelody: () => 'メロディのある小節の l:"..." は表示されません（lyr: を使ってください）',
@@ -986,6 +998,18 @@ const DIAGNOSTICS_EN: DiagnosticTemplates = {
   melodyRepeatWithoutPrevious: () => 'The measure before % has no melody to repeat',
   lyricsWithoutMelody: () => 'lyr: line has no preceding mel: line',
   beatCountMismatch: a => `Measure length is not ${a.expected ?? 4} beats (${a.beats} beats)`,
+  invalidRhythmTie: a => {
+    const reasons: Record<string, string> = {
+      missingTarget: 'there is no target slash',
+      nonAdjacent: 'the source duration does not end at the next event',
+      restOrGhost: 'a tie cannot connect to a rest or ghost note',
+      pitchMismatch: 'a tie cannot connect a pitched event to a slash',
+      chordMismatch: 'the chord name or explicit voicing label does not match',
+      continuationAttackModifier: 'a continuation cannot have a down/up stroke modifier',
+      unsupportedBoundary: 'ties cannot cross a let fragment or % measure-repeat boundary'
+    };
+    return `Invalid rhythm tie: ${reasons[String(a.reason)] ?? a.reason}`;
+  },
   syllableCountMismatch: a => `Syllable count (${a.syllables}) does not match the sung notes (${a.notes})`,
   lyricBarMismatch: () => 'The | positions in the lyrics do not match the melody measures',
   measureLyricWithMelody: () => 'l:"..." is not shown in a measure with a melody (use lyr:)',

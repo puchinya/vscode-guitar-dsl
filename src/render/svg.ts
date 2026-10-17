@@ -365,6 +365,8 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
   let barsSvg = '';
   // First heads of inline pitched notes in this row, for connections / slurs drawn after all measures.
   const inlineAt = new Map<RhythmItem, { x: number; y: number }>();
+  // First and last slash heads in this row, used to split rhythm ties at system boundaries.
+  const rhythmTieAt = new Map<RhythmItem, { firstX: number; lastX: number }>();
   const spanEntries: { x: number; palmMute: boolean; letRing: boolean; item: RhythmItem }[] = [];
 
   measures.forEach((m, idx) => {
@@ -618,6 +620,13 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       });
     }
 
+    for (const rd of rhythmDetails) {
+      if (rd.item.isRest || eventPitches(rd.item).length > 0) continue;
+      const endpoints = rhythmTieAt.get(rd.item);
+      if (endpoints) endpoints.lastX = rd.rx;
+      else rhythmTieAt.set(rd.item, { firstX: rd.rx, lastX: rd.rx });
+    }
+
     // Beam grouping for eighth and sixteenth notes (by the beat groups of the measure's time signature)
     const beamedIndices = new Set<number>();
     const beatGroups: Map<string, number[]> = new Map();
@@ -794,7 +803,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
         }
 
         // Down / Up stroke mark (placed at y = 47 to 52, above stemTopY = 60, below chord baseline = 32)
-        if (rd.isFirstPart) {
+        if (rd.isFirstPart && !r.tiedFromPrev) {
           const py = 47;
           const markX = rd.isWhole ? rx : stemX;
           if (r.down) {
@@ -867,6 +876,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
 
   if (opts.drawRhythmContent !== false) {
     barsSvg += renderInlineConnections(inlineAt, ctx);
+    barsSvg += renderRhythmTies(rhythmTieAt, ctx, staveLines[2] + 9);
     collectRhythmSpans(spanEntries, measures, ctx, opts.spans);
   }
 
@@ -897,6 +907,31 @@ function renderInlineConnections(inlineAt: Map<RhythmItem, { x: number; y: numbe
     else if (link.kind === 'slur') out += renderSlur(x1, x2, arcY, true);
     else if (link.kind === 'slide') out += renderSlide(x1 + 1, y1, x2 - 1, y2);
     else out += renderGliss(x1 + 1, y1, x2 - 1, y2);
+  }
+  return out;
+}
+
+/** Rhythm ties use the compiler-validated slash chain and split cleanly at system/page edges. */
+function renderRhythmTies(
+  endpointsAt: Map<RhythmItem, { firstX: number; lastX: number }>,
+  ctx: RenderContext,
+  arcY: number
+): string {
+  if (endpointsAt.size === 0) return '';
+  const seq = rhythmSequence(ctx);
+  let out = '';
+  for (let toIndex = 1; toIndex < seq.length; toIndex++) {
+    const toItem = seq[toIndex];
+    if (!toItem.tiedFromPrev || toItem.isRest || eventPitches(toItem).length > 0) continue;
+    const fromItem = seq[toIndex - 1];
+    if (!fromItem.tie || fromItem.isRest || eventPitches(fromItem).length > 0) continue;
+    const from = endpointsAt.get(fromItem);
+    const to = endpointsAt.get(toItem);
+    if (!from && !to) continue;
+    const x1 = from ? from.lastX + 5 : ctx.startX - 4;
+    const x2 = to ? to.firstX - 5 : ctx.totalWidth - 8;
+    if (x2 <= x1) continue;
+    out += renderTieArc(x1, x2, arcY, true);
   }
   return out;
 }

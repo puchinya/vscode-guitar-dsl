@@ -43,6 +43,25 @@ describe('Inspector progression audition', () => {
     if (!result.ok) assert.strictEqual(result.code, 'fullSongOnly');
   });
 
+  it('re-attacks a tied rhythm when an Inspector audition starts at its continuation bar', () => {
+    const tied = [
+      'bpm: 120',
+      '| G | 4 4 4 8 8.t |',
+      '| G | 4 4 4 4 |'
+    ].join('\n');
+    const bars = buildProgressionAuditionPlaybackData(tied, {
+      startMeasure: 1, bars: 1, mode: 'bars', locale: 'en'
+    });
+    assert.strictEqual(bars.ok, true);
+    if (bars.ok) assert.deepStrictEqual([bars.data.events[0].kind, bars.data.events[0].timeSeconds, bars.data.events[0].durationSeconds], ['rhythmAttack', 0, 0.5]);
+
+    const chord = buildProgressionAuditionPlaybackData(tied, {
+      startMeasure: 1, bars: 1, mode: 'chord', locale: 'en'
+    });
+    assert.strictEqual(chord.ok, true);
+    if (chord.ok) assert.deepStrictEqual([chord.data.events[0].kind, chord.data.events[0].timeSeconds], ['rhythmAttack', 0]);
+  });
+
   it('resumes Web Audio in the Play click handler before sending the Host request', () => {
     const html = renderInspectorHtml('en', { kind: 'empty' }, 'vscode-webview://test', 'nonce', 1);
     const resume = html.indexOf('pendingResume = prepareAudioFromGesture()');

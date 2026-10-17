@@ -233,7 +233,9 @@ describe('transcription - pipeline (mocked Gemini)', () => {
     const groove = grooveJson();
     groove.sections[0].measures[0] = { measureIndex: 0, grid: 8, style: 'strum', attacks: [0, 2, 4, 6, 7], confidence: 1 };
     groove.sections[0].measures[1] = { measureIndex: 1, grid: 8, style: 'strum', attacks: [2, 4, 6], confidence: 1, sustainFromPrevious: true } as any;
-    const { client } = mockClient([() => baselineJson, () => harmonyJson(false), () => groove]);
+    const harmony = harmonyJson(false);
+    harmony.sections[0].measures[1].changes[0].candidates = [c('Eb', 0.9)];
+    const { client } = mockClient([() => baselineJson, () => harmony, () => groove]);
     const song = await run(client);
     const dsl = serializeSongToGuitarDsl(song);
     assert.ok(dsl.includes('8.u.t'));

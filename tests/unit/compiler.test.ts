@@ -331,6 +331,69 @@ describe('compiler - parseGuitarDsl', () => {
     });
   });
 
+  describe('rhythm ties (Issue #142)', () => {
+    it('connects adjacent slash tokens across a barline and keeps compound parts distinct', () => {
+      const parsed = parseGuitarDsl([
+        'bpm: 120',
+        '| G | 4 4 4 8 8.t |',
+        '| G | 4 4 4 4 |'
+      ].join('\n'));
+
+      assert.deepStrictEqual(parsed.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+      assert.strictEqual(parsed.measures[0].rhythms[4].tie, true);
+      assert.strictEqual(parsed.measures[1].rhythms[0].tiedFromPrev, true);
+
+      const compound = parseGuitarDsl('| C:1 D:3 | 4+8.t 4 4 8 |');
+      assert.deepStrictEqual(compound.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+      assert.strictEqual(compound.measures[0].rhythms[0].tie, true);
+      assert.strictEqual(compound.measures[0].rhythms[1].tiedFromPrev, true);
+    });
+
+    it('reports invalid targets and unsupported boundaries at the tie source', () => {
+      const cases: Array<[string, string]> = [
+        ['| G | 8.t r8 |', 'restOrGhost'],
+        ['| G | 4 4 4 8.g.t 8 |', 'restOrGhost'],
+        ['| G | 4 4 4 8.t c4/8 |', 'pitchMismatch'],
+        ['| G | 4 4 4 8.t |\n| G | 4 4 4 4 |', 'nonAdjacent'],
+        ['| G | 4 4 4 8 8.t |\n| D | 4 4 4 4 |', 'chordMismatch'],
+        ['| G | 4 4 4 8 8.t |\n| % |', 'unsupportedBoundary'],
+        ['| G | 4 4 4 8 8.t |\n| G | 4.d 4 4 4 |', 'continuationAttackModifier'],
+        ['| G | 4 4 4 8 8.t |', 'missingTarget']
+      ];
+
+      for (const [source, reason] of cases) {
+        const parsed = parseGuitarDsl(source);
+        const diagnostic = parsed.diagnostics.find(d => d.code === 'invalidRhythmTie');
+        assert.ok(diagnostic, `${reason}: expected invalidRhythmTie`);
+        assert.strictEqual(diagnostic.args?.reason, reason);
+        assert.ok(diagnostic.startCol >= 0 && diagnostic.endCol > diagnostic.startCol);
+      }
+
+      const labels = parseGuitarDsl([
+        'chord G@open = 320003',
+        'chord G@bar = 355433',
+        '| G@open | 4 4 4 8 8.t |',
+        '| G@bar | 4 4 4 4 |'
+      ].join('\n'));
+      assert.strictEqual(labels.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'chordMismatch');
+    });
+
+    it('allows ties completed inside a let fragment and rejects a fragment boundary', () => {
+      const internal = parseGuitarDsl([
+        'let pair = 8.t 8',
+        '| G | $pair 4 4 4 |'
+      ].join('\n'));
+      assert.deepStrictEqual(internal.diagnostics.filter(d => d.code === 'invalidRhythmTie'), []);
+      assert.strictEqual(internal.measures[0].rhythms[1].tiedFromPrev, true);
+
+      const boundary = parseGuitarDsl([
+        'let source = 8.t',
+        '| G | $source 8 4 4 4 |'
+      ].join('\n'));
+      assert.strictEqual(boundary.diagnostics.find(d => d.code === 'invalidRhythmTie')?.args?.reason, 'unsupportedBoundary');
+    });
+  });
+
   describe('Multi-page score and page breaks', () => {
     it('should split score into multiple pages with pagebreak', () => {
       const dsl = [

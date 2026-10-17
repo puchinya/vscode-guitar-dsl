@@ -41,6 +41,8 @@ export type PlaybackEvent =
 export interface PlaybackTimeline {
   occurrences: PlaybackOccurrence[];
   events: PlaybackEvent[];
+  /** Alternative attacks when playback jumps directly to a tie continuation, such as a loop start. */
+  rhythmTieRestartEvents?: PlaybackEvent[];
   durationBeats: Fraction;
   durationSeconds: number;
 }
@@ -99,10 +101,21 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
 
   const occurrences: PlaybackOccurrence[] = [];
   const events: PlaybackEvent[] = [];
+  const rhythmTieRestartEvents: PlaybackEvent[] = [];
   let durationBeats = ZERO;
   let durationSeconds = 0;
+  let previousRhythm: {
+    item: RhythmItem;
+    event?: PlaybackEvent;
+    restartEvents: PlaybackEvent[];
+    measureIndex: number;
+    occurrenceIndex: number;
+    occurrenceOrder: number;
+    itemIndex: number;
+    itemCount: number;
+  } | undefined;
 
-  for (const played of score.playOrder.occurrences) {
+  for (const [occurrenceOrder, played] of score.playOrder.occurrences.entries()) {
     const sourceMeasure = score.measures[played.measureIndex];
     if (!sourceMeasure || sourceMeasure.measureIndex !== played.measureIndex) return { ok: false, code: 'invalidPlayOrder' };
     const sectionName = sectionMembership.get(played.measureIndex);
@@ -168,26 +181,73 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
     }
 
     let rhythmBeat = ZERO;
-    for (const item of measure.rhythms) {
+    for (const [itemIndex, item] of measure.rhythms.entries()) {
       const itemDuration = rhythmItemDuration(item);
-      if (!itemDuration) continue;
-      const base = createBase(rhythmBeat, itemDuration);
+      let rhythmEvent: PlaybackEvent | undefined;
+      const base = itemDuration ? createBase(rhythmBeat, itemDuration) : null;
       if (base) {
         if (item.isRest) {
-          events.push({ ...base, kind: 'rest', source: 'rhythm' });
+          rhythmEvent = { ...base, kind: 'rest', source: 'rhythm' };
         } else {
           const pitches = eventPitches(item).map(pitch => ({ ...pitch }));
           if (pitches.length > 0) {
-            events.push({ ...base, kind: 'pitched', source: 'inline', pitches });
+            rhythmEvent = { ...base, kind: 'pitched', source: 'inline', pitches };
           } else {
             const chord = chordAtOrBefore(measure, rhythmBeat);
-            events.push(chord
+            rhythmEvent = chord
               ? { ...base, kind: 'rhythmAttack', chord }
-              : { ...base, kind: 'rhythmAttack' });
+              : { ...base, kind: 'rhythmAttack' };
           }
         }
       }
-      rhythmBeat = fadd(rhythmBeat, itemDuration);
+
+      const sameMeasureContinuation = previousRhythm !== undefined
+        && previousRhythm.measureIndex === played.measureIndex
+        && previousRhythm.occurrenceIndex === played.occurrenceIndex
+        && previousRhythm.itemIndex + 1 === itemIndex;
+      const nextWrittenMeasureContinuation = previousRhythm !== undefined
+        && previousRhythm.measureIndex + 1 === played.measureIndex
+        && previousRhythm.itemIndex === previousRhythm.itemCount - 1
+        && itemIndex === 0
+        && previousRhythm.occurrenceOrder + 1 === occurrenceOrder;
+      const previousAttack = previousRhythm?.event;
+      const canSustain = item.tiedFromPrev === true
+        && previousRhythm?.item.tie === true
+        && previousAttack?.kind === 'rhythmAttack'
+        && base !== null
+        && rhythmEvent?.kind === 'rhythmAttack'
+        && (sameMeasureContinuation
+          || (nextWrittenMeasureContinuation && !sourceMeasure.isMeasureRepeat && !measure.isMeasureRepeat));
+
+      let chainRestartEvents: PlaybackEvent[] = [];
+      if (canSustain && previousRhythm && previousAttack?.kind === 'rhythmAttack' && base && rhythmEvent?.kind === 'rhythmAttack') {
+        // The target's seconds use its own occurrence tempo, so a tie through a tempo change
+        // preserves elapsed time while retaining the original attack's coordinates.
+        const restartEvent: PlaybackEvent = { ...rhythmEvent };
+        for (const priorRestart of previousRhythm.restartEvents) {
+          priorRestart.durationBeats = fadd(priorRestart.durationBeats, base.durationBeats);
+          priorRestart.durationSeconds += base.durationSeconds;
+        }
+        rhythmTieRestartEvents.push(restartEvent);
+        chainRestartEvents = [...previousRhythm.restartEvents, restartEvent];
+        previousAttack.durationBeats = fadd(previousAttack.durationBeats, base.durationBeats);
+        previousAttack.durationSeconds += base.durationSeconds;
+        rhythmEvent = previousAttack;
+      } else if (rhythmEvent) {
+        events.push(rhythmEvent);
+      }
+
+      previousRhythm = {
+        item,
+        ...(rhythmEvent === undefined ? {} : { event: rhythmEvent }),
+        restartEvents: chainRestartEvents,
+        measureIndex: played.measureIndex,
+        occurrenceIndex: played.occurrenceIndex,
+        occurrenceOrder,
+        itemIndex,
+        itemCount: measure.rhythms.length
+      };
+      if (itemDuration) rhythmBeat = fadd(rhythmBeat, itemDuration);
     }
 
     for (const [groupIndex, beat] of beamGroupStarts(occurrence.timeSignature).entries()) {
@@ -200,7 +260,13 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
   }
 
   events.sort((a, b) => fcmp(a.absoluteBeat, b.absoluteBeat));
-  return { ok: true, timeline: { occurrences, events, durationBeats, durationSeconds } };
+  return { ok: true, timeline: {
+    occurrences,
+    events,
+    ...(rhythmTieRestartEvents.length > 0 ? { rhythmTieRestartEvents } : {}),
+    durationBeats,
+    durationSeconds
+  } };
 }
 
 function fractionFromApproximation(value: number): Fraction {

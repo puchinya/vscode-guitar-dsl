@@ -625,7 +625,8 @@ export function validateInterchangeScore(score: InterchangeScore): readonly Inte
     path: `/measures/${measureIndex}/rhythm/events/${eventIndex}`
   })));
   inlineEvents.forEach(({ event, path }, index) => {
-    if (!event.tie) return;
+    // A tie on an unpitched rhythm slash is a rhythm sustain, not an inline pitch connection.
+    if (!event.tie || (!event.pitch && !event.pitches)) return;
     const next = inlineEvents[index + 1]?.event;
     if (!hasSoundingPitch(event)) add(errors, 'invalidMelodyTieSource', path, 'Only a sounding pitched note or pitch group can start an inline tie.');
     if (!next || !hasSoundingPitch(next) || !compatibleTiePitchSet(event, next)) add(errors, 'invalidMelodyTieTarget', path, 'An inline tie must continue into the next compatible event or pitch group.');

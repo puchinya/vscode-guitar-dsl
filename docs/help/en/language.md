@@ -121,6 +121,8 @@ A rhythm token is a note value plus optional `.`-separated modifiers:
 
 Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` ghost, `t` tie, `arp` arpeggio, `pm` palm mute, `lr` let ring, `stacc`, `ten`, `fermata`, `vib`, `breath`. For example, `16.d.a` is an accented sixteenth down stroke.
 
+Use `.t` or `.tie` on a slash token to sustain into the immediately following slash token when their times touch and their chord name and voicing label match. A `4+8.t` tie starts from the compound token's last head. The continuation cannot be a rest, ghost, pitched note, down stroke, or up stroke. Ties may cross an adjacent barline; they cannot cross a `let` fragment boundary or `%` repeat. Playback holds one attack for the whole tie and uses each measure's tempo to calculate its duration. If a Practice loop starts on a continuation, playback attacks at the loop start.
+
 ```guitardsl
 | C | 8.d 16.d 16.u 8.d 8.u 4.d.a r4 |
 | G | 8t.d 8t.u 8t.d 4.d 4+8.d 8.u |
