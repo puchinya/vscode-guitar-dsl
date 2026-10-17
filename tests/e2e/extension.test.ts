@@ -10,6 +10,65 @@ import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSna
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+if (process.env.GUITARDSL_E2E_NATIVE_CAPO_CAPTURE === '1') {
+  suite('Native Capo menu evidence capture', () => {
+    test('captures the open native Capo menu and restores focus with Escape', async function () {
+      this.timeout(90000);
+      assert.strictEqual(process.platform, 'darwin', 'native menu screenshots require macOS');
+      const outputDir = process.env.GUITARDSL_E2E_NATIVE_CAPO_OUTPUT_DIR;
+      assert.ok(outputDir, 'native menu evidence output directory is required');
+      const { execFileSync } = require('child_process') as typeof import('child_process');
+      const { mkdirSync } = require('fs') as typeof import('fs');
+      mkdirSync(outputDir, { recursive: true });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'guitardsl',
+        content: 'bpm: 120\ncapo: 0\n| C | G | Am | F |\n'
+      });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'host locale matches the requested language');
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+      const initialParts = JSON.parse(await inspectWorkbenchLayout()).parts as {
+        sidebar: { visible: boolean };
+        auxiliarybar: { visible: boolean };
+      };
+      if (initialParts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+      if (initialParts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+      await settle(250);
+
+      try {
+        for (const width of [421, 600, 840, 1100]) {
+          if (width === 1100) await setWorkbenchViewportWidth(2200);
+          await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+          await resizeActiveEditorGroupToWidth(width);
+          await settle(200);
+          const measuredWidth = await evaluatePreviewWebview<number>('window.innerWidth');
+          assert.strictEqual(measuredWidth, width, `native menu screenshot uses ${width} Preview CSS px`);
+
+          await clickPreviewElement('#preview-capo-select');
+          await settle(250);
+          const outputPath = path.join(outputDir, `issue145-native-capo-${locale}-${width}.png`);
+          execFileSync('screencapture', ['-x', outputPath]);
+          assert.ok((await fs.stat(outputPath)).size > 10000, `OS screenshot was written for ${width}px`);
+          await dispatchPreviewKeyboardKey('Escape');
+          await settle(100);
+          const nativeSelectHasFocus = await evaluatePreviewWebview<boolean>(
+            `document.activeElement?.id === 'preview-capo-select'`
+          );
+          assert.strictEqual(nativeSelectHasFocus, true, `${width}px Escape returns focus to the native Capo select`);
+        }
+      } finally {
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+}
+
 /**
  * Shows `doc` and waits until it is the active editor and stays so briefly. An editor left open by an earlier
  * test can otherwise still be (or become again) active, and commands such as `undo` or tools that resolve the
