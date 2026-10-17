@@ -122,10 +122,13 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     : Array.from({ length: 13 }, (_, capo) => ({ capo, supported: false, recommended: false }));
   const selectedCapo = capoUi?.sourceCapo === null || capoUi?.sourceCapo === undefined ? '' : String(capoUi.targetCapo);
   const capoOptionsHtml = [
-    `<option value="" disabled${selectedCapo === '' ? ' selected' : ''}>${escapeXml(msgs.uiPlayabilityUnavailable)}</option>`,
+    `<option value="" disabled${selectedCapo === '' ? ' selected' : ''} data-closed-label="${escapeXml(msgs.uiPlayabilityUnavailable)}" data-open-label="${escapeXml(msgs.uiPlayabilityUnavailable)}">${escapeXml(msgs.uiPlayabilityUnavailable)}</option>`,
     ...capoCandidates.map(candidate => {
-      const recommended = candidate.recommended ? ' ★' : '';
-      return `<option value="${candidate.capo}"${candidate.capo === Number(selectedCapo) && selectedCapo !== '' ? ' selected' : ''}${candidate.supported ? '' : ' disabled'}>${candidate.capo}${recommended}</option>`;
+      const closedLabel = String(candidate.capo);
+      const openLabel = candidate.score !== undefined && candidate.level !== undefined
+        ? `${candidate.capo} · ${candidate.score}/100 · ${msgs.playabilityLevels[candidate.level]}${candidate.recommended ? ` · ★ ${msgs.uiRecommended}` : ''}`
+        : `${candidate.capo} · ${msgs.uiPlayabilityUnavailable}`;
+      return `<option value="${candidate.capo}"${candidate.capo === Number(selectedCapo) && selectedCapo !== '' ? ' selected' : ''}${candidate.supported ? '' : ' disabled'} data-closed-label="${escapeXml(closedLabel)}" data-open-label="${escapeXml(openLabel)}">${escapeXml(closedLabel)}</option>`;
     })
   ].join('');
   const currentPlayabilityValueHtml = capoUi?.currentPlayability
@@ -907,6 +910,14 @@ ${cspMeta}
       const beginnerCapoModeSelect = document.getElementById('select-preview-beginner-capo-mode');
       const openCapoSettingsButton = document.getElementById('open-score-settings-capo-from-preview');
       const openBeginnerSettingsButton = document.getElementById('open-score-settings-beginner-from-preview');
+      let capoOptionDetailsVisible = false;
+      function setCapoOptionDetailsVisible(visible) {
+        if (!capoSelect || capoOptionDetailsVisible === visible) return;
+        capoOptionDetailsVisible = visible;
+        Array.from(capoSelect.options).forEach(option => {
+          option.textContent = visible ? option.dataset.openLabel : option.dataset.closedLabel;
+        });
+      }
       function postTemporarySettings(action, value, focusControl) {
         if (vscode) vscode.postMessage({
           command: 'temporarySettingsChanged',
@@ -915,7 +926,25 @@ ${cspMeta}
           ...previewIdentity
         });
       }
-      if (capoSelect) capoSelect.addEventListener('change', () => postTemporarySettings('capoChanged', { capo: Number(capoSelect.value) }, 'preview-capo-select'));
+      if (capoSelect) {
+        capoSelect.addEventListener('mousedown', () => setCapoOptionDetailsVisible(!capoOptionDetailsVisible));
+        capoSelect.addEventListener('keydown', event => {
+          if (event.key === 'Escape' || event.key === 'Tab'
+            || (capoOptionDetailsVisible && (event.key === 'Enter' || event.key === ' '))) {
+            setCapoOptionDetailsVisible(false);
+          } else if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+            setCapoOptionDetailsVisible(true);
+          }
+        });
+        capoSelect.addEventListener('blur', () => setCapoOptionDetailsVisible(false));
+        capoSelect.addEventListener('change', () => {
+          setCapoOptionDetailsVisible(false);
+          postTemporarySettings('capoChanged', { capo: Number(capoSelect.value) }, 'preview-capo-select');
+        });
+        document.addEventListener('pointerdown', event => {
+          if (event.target !== capoSelect) setCapoOptionDetailsVisible(false);
+        }, true);
+      }
       if (beginnerToggle) beginnerToggle.addEventListener('change', () => postTemporarySettings('beginnerToggled', { enabled: beginnerToggle.checked }, 'toggle-preview-beginner'));
       if (barrePolicySelect) barrePolicySelect.addEventListener('change', () => postTemporarySettings('barrePolicyChanged', { policy: barrePolicySelect.value }, 'select-preview-barre-policy'));
       if (beginnerCapoModeSelect) beginnerCapoModeSelect.addEventListener('change', () => postTemporarySettings('beginnerCapoModeChanged', {
@@ -2191,6 +2220,7 @@ ${cspMeta}
         stopPlayback();
         vscode.postMessage({ command: 'progressionAudioPreviewStopped', leaseId: progressionAudioLeaseId });
       }
+      document.body.dataset.previewInteractionsReady = 'true';
     })();
   </script>
 </body>

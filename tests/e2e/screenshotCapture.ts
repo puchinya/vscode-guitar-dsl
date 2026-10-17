@@ -245,7 +245,8 @@ export async function waitForPreviewDocument(): Promise<void> {
   let lastState: unknown;
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
-      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: document.readyState !== 'loading' && !!document.querySelector('.toolbar-container'), url: location.href,
+      lastState = await evaluatePreviewWebview<unknown>(`JSON.stringify({ ready: document.readyState !== 'loading'
+        && !!document.querySelector('.toolbar-container') && document.body?.dataset.previewInteractionsReady === 'true', url: location.href,
         name: window.name, body: document.body?.innerHTML.slice(0, 600), iframes: [...document.querySelectorAll('iframe')].map(frame => ({ name: frame.name, src: frame.src })) })`);
       if (JSON.parse(lastState as string).ready) return;
     } catch (error) {
@@ -283,13 +284,29 @@ export async function waitForPreviewIdentity(identity: {
   throw new Error(`Preview did not load the expected document identity ${JSON.stringify(identity)}; current=${lastState}`);
 }
 
-export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter'): Promise<void> {
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter' | 'ArrowDown'): Promise<void> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const target = await waitForPreviewTarget(port);
-  const code = key === 'Tab' ? 9 : key === 'Escape' ? 27 : 13;
+  const code = key === 'Tab' ? 9 : key === 'Escape' ? 27 : key === 'ArrowDown' ? 40 : 13;
   await withDevToolsTarget(target, async send => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+  });
+}
+
+/** Opens a native Preview control using a real DevTools mouse input event. */
+export async function clickPreviewElement(selector: string): Promise<void> {
+  const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) throw new Error('Preview element not found: ' + ${JSON.stringify(selector)});
+    const rect = element.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  })())`)) as { x: number; y: number };
+  const target = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  await withDevToolsTarget(target, async send => {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: geometry.x, y: geometry.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
   });
 }
 

@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
+import { getMessages } from '../../src/i18n';
 import {
   PAGE_CONFIG,
   PT_PER_MM,
@@ -441,5 +442,54 @@ describe('render - playback Preview HTML', () => {
     assert.doesNotThrow(() => JSON.parse(playbackJson![1]));
     assert.ok(!playbackJson![1].includes('<'));
     assert.ok(!html.includes('unsafe-eval'));
+  });
+});
+
+describe('render - Preview capo candidate options', () => {
+  it('shows all host-provided candidate details without inventing missing scores or enabling unsupported positions', () => {
+    const candidates = Array.from({ length: 13 }, (_, capo) => ({
+      capo,
+      supported: capo !== 4,
+      ...(capo !== 5 ? { score: capo === 2 ? 85 : 72 + capo } : {}),
+      ...(capo !== 6 ? { level: capo === 2 ? 'veryEasy' as const : 'easy' as const } : {}),
+      recommended: capo === 2
+    }));
+    const capo = { sourceCapo: 0, targetCapo: 0, candidates, overridden: false, canApply: true };
+
+    for (const locale of ['en', 'ja'] as const) {
+      const messages = getMessages(locale);
+      const html = compileGuitarDslToHtml('| C | G | Am | F |', { locale, capo });
+      const selectHtml = html.match(/<select id="preview-capo-select"[^>]*>([\s\S]*?)<\/select>/)?.[1];
+      assert.ok(selectHtml, `${locale} contains the native capo select`);
+      const options = [...selectHtml!.matchAll(/<option value="(\d+)"([^>]*)>([^<]*)<\/option>/g)];
+      assert.strictEqual(options.length, 13, `${locale} keeps every capo candidate in the native select`);
+      assert.deepStrictEqual(options.map(option => Number(option[1])), Array.from({ length: 13 }, (_, index) => index));
+
+      for (const candidate of candidates) {
+        const option = options[candidate.capo];
+        const closedLabel = String(candidate.capo);
+        const openLabel = candidate.score === undefined || candidate.level === undefined
+          ? `${candidate.capo} · ${messages.uiPlayabilityUnavailable}`
+          : `${candidate.capo} · ${candidate.score}/100 · ${messages.playabilityLevels[candidate.level]}${candidate.recommended ? ` · ★ ${messages.uiRecommended}` : ''}`;
+        assert.strictEqual(option[3], closedLabel, `${locale} closed capo ${candidate.capo} label stays compact`);
+        assert.strictEqual(option[2].match(/data-closed-label="([^"]*)"/)?.[1], closedLabel,
+          `${locale} capo ${candidate.capo} stores its compact label`);
+        assert.strictEqual(option[2].match(/data-open-label="([^"]*)"/)?.[1], openLabel,
+          `${locale} capo ${candidate.capo} stores its expanded candidate details`);
+        assert.strictEqual(option[2].includes(' disabled'), !candidate.supported,
+          `${locale} capo ${candidate.capo} preserves host support state`);
+        assert.strictEqual(option[2].includes(' selected'), candidate.capo === 0,
+          `${locale} capo ${candidate.capo} selection state`);
+      }
+
+      assert.strictEqual(options[4][2].match(/data-open-label="([^"]*)"/)?.[1], `4 · 76/100 · ${messages.playabilityLevels.easy}`,
+        'an unsupported candidate can still display host-provided evaluation');
+      assert.strictEqual(options[5][2].match(/data-open-label="([^"]*)"/)?.[1], `5 · ${messages.uiPlayabilityUnavailable}`,
+        'a missing score never becomes a fabricated zero');
+      assert.strictEqual(options[6][2].match(/data-open-label="([^"]*)"/)?.[1], `6 · ${messages.uiPlayabilityUnavailable}`,
+        'a missing level is shown as unavailable');
+      assert.strictEqual(options[2][2].match(/data-open-label="([^"]*)"/)?.[1], `2 · 85/100 · ${messages.playabilityLevels.veryEasy} · ★ ${messages.uiRecommended}`,
+        'the recommended candidate receives the localized recommendation suffix');
+    }
   });
 });
