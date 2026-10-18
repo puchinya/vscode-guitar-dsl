@@ -42,7 +42,7 @@
 
 ## Issue #137: GuitarDSL Sidebar navigation
 
-- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はレビュー待ち（open / ready）。Issue #137 は `phase:review`。A-9〜A-11の契約を承認済みImplementation Contract comment 6251494436（SHA-256 `353e3d5ec70cb8ca5a049476fed51605b24c63625cab7e3a4c23ebcea32063e6`、25,314 bytes）で検証済み。A-10/A-11の実装と検証は完了し、PR body/self-review/delivery gateを更新中。
+- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はレビュー待ち（open / ready）。Issue #137 は `phase:review`。A-9〜A-11の契約を承認済みImplementation Contract comment 6251494436（SHA-256 `353e3d5ec70cb8ca5a049476fed51605b24c63625cab7e3a4c23ebcea32063e6`、25,314 bytes）で検証済み。A-10/A-11の実装と検証をコミット `fc5995c` で完了し、結果プレビューの画面証拠をIssue #137へ添付した。
 - **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時に捕捉したアクティブ文書 URI に固定し、URI の解決失敗時に他文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜は SecretStorage 保存成功後に Webview のキー状態を同期し、失敗は成功扱いせず再試行可能にする。処理中の所有権と二重Start防止はパネル破棄後も Host に残る。成功結果はパネル内の読み取り専用プレビューとCopy操作で渡し、文書を自動生成しない。パネルを閉じると結果を破棄する。Webview準備後にHostの最新ジョブ状態を取得し、job IDと単調増加revisionで古い通知を無視する。Import/Export Guitar Pro は VS Code 標準 `music` Codicon を使う。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,167件 PASS**、VS Code E2E **104件 PASS / 6件 pending**）、`npm run compile:all`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。E2EのGemini経路は全てfixtureで置き換え、実Gemini APIを呼び出さない規則を `docs/agents/testing.md` に追加した。A-10は成功したDSLのPanel内プレビュー、コピー、文書未生成を、A-11はready後の状態再取得、古いreleaseの無視、Start復旧をUnit/E2Eで確認した。A-9のSecretStorage読み取り失敗はlocalized unknown/error表示、Start復旧、Gemini実行なし、キー・例外本文・stack非露出をUnit/E2Eで確認した。SidebarのURI固定、Guitar Proアイコン、キー保存、進捗、再試行等の既存G137確認も維持する。E2Eは `docs/agents/testing.md` に従いサンドボックス外で実行。
 - **A-9追加検証（A-9時点）**: `npm run compile:all` と `npm run test:unit`（1,165 PASS）、サンドボックス外の `npm run test:e2e`（103 PASS / 6 pending）、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish` は PASS。初期 `SecretStorage.get` reject は localized unknown 状態とキー再入力導線を、Start reject は localized error、Start復旧、Gemini呼び出しなし、生成文書なし、APIキー・例外本文・stack非露出を unit / 実Webview E2E で確認。
@@ -50,7 +50,7 @@
   - [Issue #137 の証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/137#issuecomment-6244861539) に4条件×2画面のキャプチャを掲載。
   - EN・dark: [Sidebar](evidence/issue-137/sidebar-en-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-dark-collapsed.png)
   - [Import/Export Guitar Pro の `music` Codicon を表示した Workbench capture](evidence/issue-137/sidebar-guitarpro-icons-en-dark-300px.png)（EN・dark、300 CSS px）。
-  - [YouTube採譜結果のPanel内プレビュー（fixture使用）](evidence/issue-137/youtube-transcription-result.png)（EN・dark、548 CSS px、実Gemini API呼出しなし）。
+  - [YouTube採譜結果のPanel内プレビュー（fixture使用）](evidence/issue-137/youtube-transcription-result.png)（EN・dark、548 CSS px、実Gemini API呼出しなし）。[Issue #137 の証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/137#issuecomment-6251833476)。
   - EN・light: [Sidebar](evidence/issue-137/sidebar-en-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-light-collapsed.png)
   - JA・dark: [Sidebar](evidence/issue-137/sidebar-ja-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-dark-collapsed.png)
   - JA・light: [Sidebar](evidence/issue-137/sidebar-ja-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-light-collapsed.png)
