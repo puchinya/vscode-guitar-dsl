@@ -523,6 +523,102 @@ describe('transcription - serializer', () => {
     }
   });
 
+  it('G137 A-9 keeps the panel renderable with an unknown key state when initial SecretStorage read fails', async () => {
+    const vscodeApi = require('vscode') as any;
+    const originalWorkspace = vscodeApi.workspace;
+    vscodeApi.workspace = {
+      getConfiguration: () => ({ get: () => undefined })
+    };
+
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.secretStorage = {
+      get: async () => { throw new Error('secret-storage-read-marker stack-marker'); }
+    };
+    host.disposed = false;
+    host.locale = 'ja';
+    host.panel = { webview: { html: '' } };
+
+    try {
+      await host.initHtml();
+    } finally {
+      if (originalWorkspace === undefined) delete vscodeApi.workspace;
+      else vscodeApi.workspace = originalWorkspace;
+    }
+
+    const html = host.panel.webview.html as string;
+    const status = html.match(/id="apiKeyStatus"[^>]*>([^<]*)<\/span>/)?.[1];
+    assert.strictEqual(status, 'キー状態を確認できません');
+    assert.ok(html.includes('id="btnSaveKey"'), 'key re-entry and save remain available');
+    assert.match(html, /id="btnClearKey" disabled/, 'unknown state does not claim a key can be cleared');
+    assert.ok(!html.includes('secret-storage-read-marker') && !html.includes('stack-marker'), 'storage errors and stacks are not rendered');
+  });
+
+  it('G137 A-9 reports localized Start read failures, skips the pipeline, and releases the retry lock', async () => {
+    const enteredKey = 'user-entered-secret-marker';
+    const readError = 'secret-storage-read-marker stack-marker';
+    let readFails = true;
+    let storedKey: string | undefined;
+    let storeCalls = 0;
+    let pipelineCalls = 0;
+    const secretStorage = {
+      get: async () => {
+        if (readFails) throw new Error(readError);
+        return storedKey;
+      },
+      store: async (_name: string, value: string) => {
+        storeCalls++;
+        storedKey = value;
+      },
+      delete: async () => { storedKey = undefined; }
+    };
+
+    for (const [locale, expectedMessage] of [
+      ['ja', 'API キーを読み取れませんでした。キーを保存し直してから再試行してください。'],
+      ['en', 'The API key could not be read. Save it again, then retry.']
+    ] as const) {
+      const messages: any[] = [];
+      const host: any = Object.create(TranscribePanel.prototype);
+      host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+      host.secretStorage = secretStorage;
+      host.locale = locale;
+      host.executePipeline = async () => { pipelineCalls++; return {}; };
+      const options = {
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        apiKey: enteredKey,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      };
+
+      await host.handleMessage({ command: 'startTranscription', options });
+      assert.deepStrictEqual(messages, [{ type: 'error', message: expectedMessage }]);
+      assert.strictEqual(storeCalls, 0, 'a failed read stops before storing or using the submitted key');
+      assert.strictEqual(pipelineCalls, 0, 'a failed read stops before Gemini and document generation');
+      assert.strictEqual(host.transcriptionJobActive, false, 'Start is retryable after the read error');
+      assert.ok(!JSON.stringify(messages).includes(enteredKey), 'the entered API key is not echoed');
+      assert.ok(!JSON.stringify(messages).includes(readError), 'exception text and stack are not echoed');
+    }
+
+    readFails = false;
+    const retryMessages: any[] = [];
+    const retryHost: any = Object.create(TranscribePanel.prototype);
+    retryHost.panel = { webview: { postMessage: async (message: unknown) => { retryMessages.push(message); } } };
+    retryHost.secretStorage = secretStorage;
+    retryHost.locale = 'en';
+    retryHost.executePipeline = async () => { pipelineCalls++; return {}; };
+    await retryHost.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/not-youtube',
+        apiKey: enteredKey,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    assert.deepStrictEqual(retryMessages.map(message => message.type), ['apiKeySaved', 'error']);
+    assert.strictEqual(pipelineCalls, 0, 'a retry can save the key before URL validation without invoking Gemini');
+    assert.strictEqual(retryHost.transcriptionJobActive, false, 'the retry releases the Host lock as well');
+  });
+
   it('G137 synchronizes implicit key saves and reports SecretStorage failures without success acknowledgements', async () => {
     const key = 'unit-test-secret-value';
     const messages: any[] = [];

@@ -86,7 +86,14 @@ export class TranscribePanel {
   }
 
   private async initHtml(): Promise<void> {
-    const apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    let apiKey: string | undefined;
+    let apiKeyState: 'saved' | 'notConfigured' | 'unknown' = 'unknown';
+    try {
+      apiKey = await this.secretStorage.get('guitardsl.geminiApiKey');
+      apiKeyState = apiKey ? 'saved' : 'notConfigured';
+    } catch {
+      // Keep the panel usable without claiming that the key is saved or missing.
+    }
     if (this.disposed) return;
     const config = vscode.workspace.getConfiguration('guitardsl');
     const model = config.get<string>('gemini.model') || 'gemini-3.8-flash';
@@ -94,6 +101,7 @@ export class TranscribePanel {
 
     this.panel.webview.html = this.getHtmlContent({
       hasApiKey: !!apiKey,
+      apiKeyState,
       model,
       compressRepeats,
       isTranscribing: TranscribePanel.activeJob !== undefined,
@@ -158,7 +166,20 @@ export class TranscribePanel {
     model: string;
   }, job: ActiveTranscriptionJob): Promise<void> {
     const isJa = this.locale === 'ja';
-    let apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    let apiKey: string;
+    try {
+      apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    } catch {
+      if (this.isActiveJob(job)) {
+        this.postMessage({
+          type: 'error',
+          message: isJa
+            ? 'API キーを読み取れませんでした。キーを保存し直してから再試行してください。'
+            : 'The API key could not be read. Save it again, then retry.'
+        }, job);
+      }
+      return;
+    }
     if (!this.isActiveJob(job)) return;
     if (options.apiKey && options.apiKey.trim()) {
       apiKey = options.apiKey.trim();
@@ -303,12 +324,18 @@ export class TranscribePanel {
 
   private getHtmlContent(ctx: {
     hasApiKey: boolean;
+    apiKeyState?: 'saved' | 'notConfigured' | 'unknown';
     model: string;
     compressRepeats: boolean;
     isTranscribing?: boolean;
     locale: SupportedLocale;
   }): string {
     const isJa = ctx.locale === 'ja';
+    const apiKeyStatusText = ctx.apiKeyState === 'unknown'
+      ? (isJa ? 'キー状態を確認できません' : 'Key state unavailable')
+      : ctx.hasApiKey
+        ? (isJa ? '保存済み' : 'Saved')
+        : (isJa ? '未設定' : 'Not configured');
     const uiMsgs = getAccompanimentUiMessages(ctx.locale);
 
     return `<!DOCTYPE html>
@@ -511,7 +538,7 @@ export class TranscribePanel {
   <div class="field-group">
     <div class="key-state">
       <span class="key-state-label">Gemini API Key</span>
-      <span class="key-state-value" id="apiKeyStatus" role="status" aria-live="polite">${ctx.hasApiKey ? (isJa ? '保存済み' : 'Saved') : (isJa ? '未設定' : 'Not configured')}</span>
+      <span class="key-state-value" id="apiKeyStatus" role="status" aria-live="polite">${apiKeyStatusText}</span>
     </div>
     <details id="keyManagement">
       <summary>${isJa ? '設定・変更' : 'Set or change key'}</summary>

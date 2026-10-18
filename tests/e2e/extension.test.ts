@@ -3227,6 +3227,146 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('G137 A-9 renders an unknown key state and allows re-entry after initial SecretStorage read rejection', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: { currentPanel?: any } };
+      TranscribePanel.currentPanel?.dispose();
+      await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+      const owner = TranscribePanel.currentPanel;
+      assert.ok(owner, 'the singleton YouTube panel opens');
+
+      const originalSecretStorage = owner.secretStorage;
+      const originalKey = await originalSecretStorage.get('guitardsl.geminiApiKey');
+      const readFailure = 'simulated initial secret read failure and stack marker';
+      const enteredKey = 'g137-initial-read-test-key';
+      owner.secretStorage = {
+        get: async () => { throw new Error(readFailure); },
+        store: originalSecretStorage.store.bind(originalSecretStorage),
+        delete: originalSecretStorage.delete.bind(originalSecretStorage)
+      };
+
+      try {
+        await owner.initHtml();
+        let panelState: any;
+        const expectedUnknown = owner.locale === 'ja' ? 'キー状態を確認できません' : 'Key state unavailable';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          panelState = JSON.parse(await evaluateTranscriptionWebview<string>(`JSON.stringify({
+            ready: !!document.getElementById('apiKeyStatus'),
+            keyState: document.getElementById('apiKeyStatus')?.textContent,
+            saveDisabled: document.getElementById('btnSaveKey')?.disabled,
+            clearDisabled: document.getElementById('btnClearKey')?.disabled,
+            pageText: document.body?.innerText
+          })`));
+          if (panelState.keyState === expectedUnknown) break;
+          await settle(20);
+        }
+        assert.strictEqual(panelState.ready, true, 'the Webview renders after the initial SecretStorage rejection');
+        assert.strictEqual(panelState.keyState, expectedUnknown, 'the key state is unknown rather than saved or missing');
+        assert.strictEqual(panelState.saveDisabled, false, 'key re-entry remains available');
+        assert.strictEqual(panelState.clearDisabled, true, 'the panel does not offer to clear an unknown key');
+        assert.ok(!panelState.pageText.includes(readFailure), 'the exception text and stack are not rendered');
+
+        await evaluateTranscriptionWebview<void>(`(() => {
+          document.getElementById('keyManagement').open = true;
+          const key = document.getElementById('apiKey');
+          key.value = '${enteredKey}';
+          key.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnSaveKey').click();
+        })()`);
+        const expectedSaved = owner.locale === 'ja' ? '保存済み' : 'Saved';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          panelState = JSON.parse(await evaluateTranscriptionWebview<string>(`JSON.stringify({
+            keyState: document.getElementById('apiKeyStatus')?.textContent,
+            keyValue: document.getElementById('apiKey')?.value
+          })`));
+          if (panelState.keyState === expectedSaved && panelState.keyValue === '') break;
+          await settle(20);
+        }
+        assert.strictEqual(panelState.keyState, expectedSaved, 'saving a replacement key recovers the known state');
+        assert.strictEqual(panelState.keyValue, '', 'the entered key is cleared after the save acknowledgement');
+      } finally {
+        owner.secretStorage = originalSecretStorage;
+        if (originalKey === undefined) await originalSecretStorage.delete('guitardsl.geminiApiKey');
+        else await originalSecretStorage.store('guitardsl.geminiApiKey', originalKey);
+        owner.dispose();
+      }
+    });
+  });
+
+  test('G137 A-9 restores Start after SecretStorage read rejection without running Gemini or creating a document', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: { currentPanel?: any } };
+      TranscribePanel.currentPanel?.dispose();
+      await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+      const owner = TranscribePanel.currentPanel;
+      assert.ok(owner, 'the singleton YouTube panel opens');
+
+      const originalSecretStorage = owner.secretStorage;
+      const originalPostMessage = owner.panel.webview.postMessage;
+      const postedMessages: any[] = [];
+      let pipelineCalls = 0;
+      owner.secretStorage = {
+        get: async () => { throw new Error('simulated secret read failure and stack marker'); }
+      };
+      owner.executePipeline = async () => {
+        pipelineCalls++;
+        return {};
+      };
+      owner.panel.webview.postMessage = (message: unknown) => {
+        postedMessages.push(message);
+        return originalPostMessage.call(owner.panel.webview, message);
+      };
+
+      const untitledBefore = new Set(vscode.workspace.textDocuments
+        .filter(document => document.uri.scheme === 'untitled')
+        .map(document => document.uri.toString()));
+      const enteredKey = 'g137-read-failure-test-key';
+
+      try {
+        await evaluateTranscriptionWebview<void>(`(() => {
+          const url = document.getElementById('youtubeUrl');
+          url.value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+          url.dispatchEvent(new Event('input', { bubbles: true }));
+          const key = document.getElementById('apiKey');
+          key.value = '${enteredKey}';
+          key.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnStart').click();
+        })()`);
+
+        let panelState: any;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          panelState = JSON.parse(await evaluateTranscriptionWebview<string>(`JSON.stringify({
+            statusClass: document.getElementById('statusBox')?.className,
+            statusText: document.getElementById('statusText')?.textContent,
+            startDisabled: document.getElementById('btnStart')?.disabled,
+            keyValue: document.getElementById('apiKey')?.value
+          })`));
+          if (panelState.statusClass === 'status-box error' && owner.transcriptionJobActive === false) break;
+          await settle(20);
+        }
+
+        assert.strictEqual(pipelineCalls, 0, 'SecretStorage read failure stops before the Gemini pipeline');
+        assert.strictEqual(owner.transcriptionJobActive, false, 'the Host job lock is released after the error');
+        assert.strictEqual(panelState.startDisabled, false, 'Start is restored for retry');
+        assert.strictEqual(panelState.keyValue, enteredKey, 'the entered key remains available for re-entry or save');
+        const expectedReadFailure = owner.locale === 'ja' ? 'API キーを読み取れませんでした。' : 'The API key could not be read.';
+        assert.ok(panelState.statusText.includes(expectedReadFailure), 'the Start read failure is localized');
+        assert.ok(!panelState.statusText.includes(enteredKey) && !panelState.statusText.includes('simulated secret read failure'), 'the UI hides keys, exception text and stacks');
+        assert.ok(!JSON.stringify(postedMessages).includes(enteredKey), 'host messages never echo the API key');
+        assert.ok(!JSON.stringify(postedMessages).includes('simulated secret read failure'), 'host messages never expose exception text or stack');
+        const generatedUntitled = vscode.workspace.textDocuments.filter(document => document.uri.scheme === 'untitled'
+          && !untitledBefore.has(document.uri.toString()));
+        assert.deepStrictEqual(generatedUntitled, [], 'a failed key read does not create a GuitarDSL document');
+      } finally {
+        owner.secretStorage = originalSecretStorage;
+        owner.panel.webview.postMessage = originalPostMessage;
+        owner.dispose();
+      }
+    });
+  });
+
   test('G137 discards closed-panel transcription results across reopen and releases retry after resolve or failure', async () => {
     await withWorkbenchSnapshotRestored(async () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires

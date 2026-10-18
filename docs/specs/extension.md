@@ -199,6 +199,8 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   1. 保存済みキーは `ExtensionContext.secrets` の `guitardsl.geminiApiKey` から読み出す。キーの値を Webview HTML に埋め込まず、保存済みかどうかだけを Webview に渡す。
   2. Webview の保存操作、または採譜開始時に入力された空でない置換キーによって SecretStorage に保存する。削除操作は SecretStorage の値を削除する。
   3. 保存済みキーも入力キーもない場合は、パネルにエラーを送り、Gemini を呼び出さない。
+  4. 初期表示時の SecretStorage 読み取りが失敗した場合もパネルを表示し、キー状態をローカライズした「確認できない」として示す。保存済み / 未設定と断定せず、キーの再入力・保存を可能にする。
+  5. Start 時の SecretStorage 読み取りが失敗した場合はローカライズしたエラーを表示して開始を復旧し、Gemini を呼び出さず、文書を生成しない。読み取り失敗時は入力キーでも処理を続けない。
 - **URL**:
   1. URL は Webview に入力する。
   2. `isValidYouTubeUrl` はパイプライン開始前に HTTPS かつ `youtube.com`、`www.youtube.com`、`youtu.be` の URL であることを検証する。
@@ -214,7 +216,7 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   1. 対応する曲は 4/4 拍子のみとする。BPM（30..300）、各小節の合計 4 拍、コード名・音高、カポ、歌詞・音節等を既存の構造・セマンティック制約で検証し、決定論的に GuitarDSL へシリアライズする。推奨カポ（`capo:`）、同一パターンの繰り返し（`%`）、メロディ音符ごとの音節歌詞（`lyr:`）を使う。コードやリズムの内容を自動補修して成功扱いにはしない。
      - 明示された伴奏プリセットはカタログに存在し、4/4 かつストレートのフィールに対応する必要がある。未知 ID や拍子・フィール不一致はエラーとし、別パターンへ自動置換しない。
   2. `parseGuitarDsl` のエラー診断が 0 件であることを確認した後に限り、`workspace.openTextDocument({ language: 'guitardsl', content })` と `showTextDocument` で新しい未保存ドキュメントを開く。既存ファイルを上書き・変更しない。
-  3. キー、URL、Gemini 呼び出し、構造検証、シリアライズ、DSL 検証のいずれかが失敗した場合は、エラーを Webview に送り、生成ドキュメントを作成しない。エラー表示に API キー、モデルの生レスポンス、スタックトレースを含めない。
+  3. キー、URL、Gemini 呼び出し、構造検証、シリアライズ、DSL 検証のいずれかが失敗した場合は、エラーを Webview に送り、生成ドキュメントを作成しない。エラー表示やログに API キー、SecretStorage 例外の本文、モデルの生レスポンス、スタックトレースを含めない。
 
 ### 3.5 `guitardsl.setGeminiApiKey`
 Gemini API キーを設定・更新する。
