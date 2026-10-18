@@ -103,7 +103,7 @@
 4. PlaybackTimelineとWebAudioのブラッシング/単弦/消音、タイ/Loop/Seek/停止の順序を実装。
 5. 全小節を入力とする純粋なGuide projection → 固定Practice UI、任意メロディ・歌詞・コード図・次コードへ反映。最初にSVGプロトタイプとの視覚差分を確認。
 6. Converter安全性、Help（日英）・AI参照生成・status・unit/E2E・画像証拠を完成。
-7. 自己レビュー → verification → commit/push → **`Closes #<issue-number>`付きPR作成** → 必須Issue/PR review stateへ遷移。
+7. 自己レビュー → verification → commit/push → **`Closes #153`付きPR作成** → 必須Issue/PR review stateへ遷移。
 
 ## 5. Required Runtime Semantics
 
@@ -170,7 +170,7 @@
 
 ## 10. Completion Report
 
-必須報告: **変更ファイル、C01–C10の自己レビュー結果、各テストコマンドとPASS/FAIL/NOT RUN、実画面画像リンク、未検証プラットフォーム、契約逸脱/差分・ブロッカー、残課題、commit SHA、branch、`Closes #<issue-number>`を含むPR URL、Issue/PR review phase**。
+必須報告: **変更ファイル、C01–C10の自己レビュー結果、各テストコマンドとPASS/FAIL/NOT RUN、実画面画像リンク、未検証プラットフォーム、契約逸脱/差分・ブロッカー、残課題、commit SHA、branch、`Closes #153`を含むPR URL、Issue/PR review phase**。
 
 Issue作成やSVG原案の登録だけで実装完了としない。PR作成/Review遷移が認証・権限・branch制約で阻まれた場合は具体的なコマンド/エラーを記録して **BLOCKED** と報告する。
 
