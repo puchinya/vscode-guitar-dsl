@@ -2,14 +2,20 @@
 
 **State:** ユーザー承認済みの要求・設計。実装・検証は未実施。空振りは対象外。  
 **関連:** #83 (roadmap), #90 (playback), #93 (Practice), #101 (伴奏パターン), #142 (リズムタイ), #150 (現行GUI仕様)。  
+**画像修正（2026-10-19、ユーザー指摘を反映）**  
+- **全体表示:** 画像の高さをメロディON **1740 × 1120**、OFF **1740 × 1035** に拡張し、すべてのコード図と「次のコード」カードがSVGの`viewBox`内に収まるよう修正する。下端・右端で要素を切らない。
+- **コード図の向き:** 以前の承認画像と同じく**6本の弦＝横線、フレット区切り＝縦線、開放弦○／ミュート弦×＝左側、1弦は上・6弦は下**。F/G/Em7/Am と右の Dm7 の**全5図**に適用する。旧版の弦縦・フレット横の図は不採用。
+- **表示順:** メロディON時はメロディバー→歌詞→奏法→コード名→コード図、OFF時はメロディ行だけ除去。既存コンパクト再生/楽譜設定/Practice行と五線譜を残す。
+- **検収:** SVG XML構文、viewBox内の全要素、実描画の上下左右欠けなし、文字重なりなし、5図すべての向き、およびメロディON/OFFを画像で確認する。Issue専用ブランチのSVGは**画面設計原案**であり実アプリE2Eの代わりにはしない。
+
 **SVGデザイン原案（現行mainのGUI仕様を置き換えるものではない）**  
 - [メロディ表示 ON — SVG](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/issue-153-practice-guide-design-assets/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-on.svg)
 - [メロディ表示 OFF — SVG](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/issue-153-practice-guide-design-assets/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-off.svg)
 - どちらも既存Previewの再生・楽譜設定・Practice行を保持。下部固定ガイドの表示順と奏法を確定する構造参照。実装完了時に実アプリのライト/ダーク画面と比較すること。
 
-![Issue #153 弾き語り練習ガイド（メロディ表示ON）](https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/feature/issue-153-practice-guide-design-assets/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-on.svg)
+![Issue #153 弾き語り練習ガイド（メロディ表示ON）](https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/10a24e35e8a6a146774f2c54b04ed5ce41e6ea7c/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-on.svg)
 
-![Issue #153 弾き語り練習ガイド（メロディ表示OFF）](https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/feature/issue-153-practice-guide-design-assets/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-off.svg)
+![Issue #153 弾き語り練習ガイド（メロディ表示OFF）](https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/10a24e35e8a6a146774f2c54b04ed5ce41e6ea7c/docs/specs/gui_design/proposals/issue-153/practice-guide-melody-off.svg)
 
 **[契約Markdown（Issueに登録した実装指示書）](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/issue-153-practice-guide-design-assets/docs/specs/gui_design/proposals/issue-153/implementation-contract.md)**  
 
@@ -86,7 +92,7 @@
 | `src/render/notation.ts`, `src/render/svg.ts`とPractice UI描画 | 通常Preview/PDFは同じ記譜SVG。新奏法の意味が分かる注記。`〜`は**固定練習パネルのみ**。グリッドと各元イベントへのsource spanを保持 |
 | `src/gp78/`およびInterchange変換 | 新奏法のロスレス対応を確認。不可なら書出し前にunsupportedを返し既存出力を破壊しない |
 | `src/i18n.ts`, `syntaxes/`, completion/hover/code actions関連、`docs/help/`, `docs/help/help-manifest.json`, `docs/status/implementation-status.md` | 文法支援/ローカライズ/ヘルプ/生成AI参照/実装状態の同期。既存未変更文書を機械的に書換えない |
-| `tests/unit/`, `tests/e2e/` | §7の反例とGUI・時間境界テスト、ライト/ダークと日本語/英語画像証拠 |
+| `tests/unit/`, `tests/e2e/` | §7の反例とGUI・時間境界テスト、ライト/ダークと日本語/英語画像証拠、コード図5件の向き・図の全体表示 |
 
 ### 修飾子の正確な許容範囲
 
@@ -140,7 +146,7 @@
 | T12 | `let`/`%`/小節コード切替と反復・volta | 正しい有効コードとsource span、再生順/ガイド時刻一致 |
 | T13 | Seek、A/B Loop、速度変更、Pause/Stop、文書切替、Panel Drop | 旧generation声部が残らない。音声停止作用が別セッションへ漏れない |
 | T14 | 新奏法を含むGP出力と編集Undo | 表現できない場合はunsupportedで非破壊。GUI編集は元トークンに1回のUndo |
-| T15 | メロディON/OFF、日英、ライト/ダーク、幅421/600/840/1100px | メロディ→歌詞→奏法→コード名→コード図、右側次コード。既存固定操作と譜面を欠損させない |
+| T15 | メロディON/OFF、日英、ライト/ダーク、幅421/600/840/1100px | メロディ→歌詞→奏法→コード名→コード図、右側次コード。既存固定操作と譜面を欠損させず、コード図は弦水平・フレット垂直・端切れなし |
 
 ## 8. Verification
 
@@ -163,7 +169,7 @@
 - [ ] C04: タイ・連符・弱起・変拍子・BPM・repeatでスコア時刻が一致
 - [ ] C05: 伴奏停止、打音、指定1弦発音、フォーム/調弦/カポ一致
 - [ ] C06: Voice lifetime、Seek/Loop/speed/Stop/Disposeのcleanupと非漏洩
-- [ ] C07: Preview固定操作/楽譜と下部ガイドの視認性、メロディON/OFF、次コード
+- [ ] C07: Preview固定操作/楽譜と下部ガイドの視認性、メロディON/OFF、次コード、全5図の弦水平・フレット垂直、画像端での欠落なし
 - [ ] C08: 普通のPreview/PDF、`let/%`、TAB、プリセット58件、ソース保持編集の回帰
 - [ ] C09: GP不可逆輸出の拒否、Help/AI/grammar/diagnostics/statusの同期
 - [ ] C10: 全検証・実画像証拠・自己レビュー・**commit/push/PR（Closes #本Issue）**・review state
