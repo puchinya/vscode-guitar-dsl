@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="293px" height="850px" viewBox="907 72 293 850" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMin meet">
+<title id="title">初心者モード Inspector</title>
+<desc id="desc">初心者モード設定。要約、選択コントロール、全候補と画面下部の操作を含む。 SVG はベクター要素で構成し、画像を埋め込まない。</desc>
++<g transform="matrix(0.986532,0,0,1,907,36)">
+<rect width="293" height="886" fill="#1f1f1f" />
+<rect x="0" y="0" width="297" height="832" rx="0" fill="#1f1f1f" stroke="none" stroke-width="1" />
+<rect x="3" y="0" width="141" height="23" rx="4" fill="#37373a" stroke="none" stroke-width="0" />
+<text x="8" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#dedede" text-anchor="start">GuitarDSL Inspector</text>
+<text x="155" y="20" font-family="Arial, sans-serif" font-size="13" font-weight="500" fill="#bdbdbd" text-anchor="start">•••</text>
+<text x="245" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#bdbdbd" text-anchor="start">⛶</text>
+<text x="275" y="20" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#bdbdbd" text-anchor="start">×</text>
+<text x="32" y="62" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#e4e4e4" text-anchor="start">GuitarDSL Inspector</text>
+<text x="32" y="94" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#e5e5e5" text-anchor="start">初心者モード</text>
+<text x="32" y="129" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#dedede" text-anchor="start">カポ/弾きやすさ</text>
+<text x="151" y="129" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#dedede" text-anchor="start">初心者モード</text>
+<text x="32" y="162" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#dedede" text-anchor="start">移調</text>
+<path d="M151 140L227 140" fill="none" stroke="#1688ff" stroke-width="2" />
+<path d="M32 179L265 179" fill="none" stroke="#3d3d3d" stroke-width="1" />
+<text x="32" y="202" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#b7b7b7" text-anchor="start">鳴る響きをカポで保ちながら、弾きや</text>
+<text x="32" y="219" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#b7b7b7" text-anchor="start">すいカポ位置と簡単なコードを提案し</text>
+<text x="32" y="236" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#b7b7b7" text-anchor="start">ます。設定はDSLに保存されません。</text>
+<text x="32" y="265" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9e9e9e" text-anchor="start">バレーコード</text>
+<rect x="32" y="281" width="225" height="31" rx="4" fill="#171b27" stroke="#8b8e98" stroke-width="1" />
+<text x="42" y="300.5" font-family="Arial, sans-serif" font-size="14" font-weight="400" fill="#dedede" text-anchor="start">使用しない</text>
+<path d="M239 295.5l4 4l4 -4" fill="none" stroke="#dedede" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="32" y="338" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9e9e9e" text-anchor="start">カポ</text>
+<rect x="32" y="345" width="225" height="31" rx="4" fill="#171b27" stroke="#8b8e98" stroke-width="1" />
+<text x="42" y="364.5" font-family="Arial, sans-serif" font-size="14" font-weight="400" fill="#dedede" text-anchor="start">0</text>
+<path d="M239 359.5l4 4l4 -4" fill="none" stroke="#dedede" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="32" y="390" width="225" height="55" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="410" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">推奨カポ</text>
+<text x="41" y="429" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">3</text>
+<rect x="32" y="455" width="225" height="57" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="475" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">現在の弾きやすさ</text>
+<text x="41" y="494" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">普通 58/100</text>
+<rect x="32" y="521" width="225" height="57" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="541" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">変更後の弾きやすさ</text>
+<text x="41" y="560" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">とても簡単 85/100</text>
+<rect x="32" y="589" width="227" height="32" rx="3" fill="#053f65" stroke="#1688ff" stroke-width="1" />
+<text x="42" y="609.0" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#e7e7e7" text-anchor="start">0 · 現在 · 85 · とても簡単 · 変更可</text>
+<rect x="32" y="629" width="227" height="88" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="647" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#e7e7e7" text-anchor="start">1 · — · 変更不可 (条件を満たす押さえ</text>
+<text x="42" y="663" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#e7e7e7" text-anchor="start">方がないコードがあります (B))</text>
+<text x="42" y="690" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#b5b5b5" text-anchor="start">条件を満たす押さえ方がないコードが</text>
+<text x="42" y="706" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#b5b5b5" text-anchor="start">あります (B)</text>
+<rect x="32" y="721" width="227" height="111" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="739" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#e7e7e7" text-anchor="start">2 · — · 変更不可 (条件を満たす押さえ</text>
+<text x="42" y="755" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#e7e7e7" text-anchor="start">方がないコードがあります (Bb))</text>
+<text x="42" y="782" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#b5b5b5" text-anchor="start">条件を満たす押さえ方がないコードが</text>
+<text x="42" y="798" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#b5b5b5" text-anchor="start">あります (Bb)</text>
+<rect x="32" y="830" width="110" height="34" rx="3" fill="#373a3d" stroke="#45494f" stroke-width="1" opacity="0.58" /><text x="87.0" y="852" font-family="Arial, sans-serif" font-size="11" font-weight="500" fill="#a1a6ad" text-anchor="middle">適用</text><rect x="150" y="830" width="105" height="34" rx="3" fill="#30343a" stroke="#45494f" stroke-width="1" /><text x="202.5" y="852" font-family="Arial, sans-serif" font-size="11" font-weight="500" fill="#edf2f8" text-anchor="middle">閉じる</text></g>
+</svg>

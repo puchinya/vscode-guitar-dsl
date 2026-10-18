@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="293px" height="190px" viewBox="907 72 293 190" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMin meet">
+<title id="title">GuitarDSL Inspector - 空状態</title>
+<desc id="desc">GuitarDSL 文書を選択していないときの Inspector 本文。 SVG はベクター要素で構成し、画像を埋め込まない。</desc>
++<g transform="translate(907 36)">
+<rect width="293" height="226" fill="#06061f" />
+<rect x="0" y="0" width="293" height="32" rx="0" fill="#06061f" stroke="none" stroke-width="1" />
+<rect x="1" y="1" width="139" height="25" rx="3" fill="#172035" stroke="none" stroke-width="0" />
+<text x="6" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="500" fill="#e5e6ee" text-anchor="start">GuitarDSL Inspector</text>
+<text x="155" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="500" fill="#bfc3ce" text-anchor="start">•••</text>
+<text x="247" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#bfc3ce" text-anchor="start">⛶</text>
+<text x="278" y="20" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#bfc3ce" text-anchor="start">×</text>
+<text x="31" y="63" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#dfe1ea" text-anchor="start">GuitarDSL Inspector</text>
+<rect x="31" y="78" width="2" height="39" rx="0" fill="#6382bd" stroke="none" stroke-width="1" />
+<text x="43" y="92" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#d9dbe5" text-anchor="start">GuitarDSL 文書が選択されていませ</text>
+<text x="43" y="108" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#d9dbe5" text-anchor="start">ん</text>
+<text x="31" y="137" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#b9bdca" text-anchor="start">エディタで GuitarDSL 文書を開くと、</text>
+<text x="31" y="155" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#b9bdca" text-anchor="start">この場所に文書コンテキストが表示さ</text>
+<text x="31" y="173" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#b9bdca" text-anchor="start">れます。</text>
+</g>
+</svg>
