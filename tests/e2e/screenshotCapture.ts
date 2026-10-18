@@ -76,6 +76,59 @@ async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
   throw new Error(`Expected one GuitarDSL Preview webview target; available targets: ${available || '(none)'}`);
 }
 
+async function waitForTranscriptionTarget(port: number): Promise<DevToolsTarget> {
+  let lastTargets: DevToolsTarget[] = [];
+  for (let attempt = 0; attempt < 50; attempt++) {
+    lastTargets = await getTargets(port);
+    const candidates = lastTargets.filter(item => item.type === 'iframe'
+      && item.url.startsWith('vscode-webview://')
+      && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')
+      && !item.url.includes('purpose=webviewView'));
+    const transcriptionTargets: DevToolsTarget[] = [];
+    for (const candidate of candidates) {
+      try {
+        const containsTranscriptionDom = await withDevToolsTarget(candidate, async send => {
+          await send('Runtime.enable');
+          const tree = await send('Page.getFrameTree');
+          const frameTree = tree.frameTree as Record<string, unknown> | undefined;
+          let frameId: string | undefined;
+          const visit = (node: Record<string, unknown>): void => {
+            const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+            if (frame?.name === 'active-frame') frameId = frame.id;
+            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+          };
+          if (frameTree) {
+            visit(frameTree);
+            if (!frameId) {
+              const root = frameTree.frame as { id?: string; url?: string } | undefined;
+              if (root?.url?.startsWith('vscode-webview://')) frameId = root.id;
+            }
+          }
+          if (!frameId) return false;
+          const isolated = await send('Page.createIsolatedWorld', { frameId, worldName: 'guitardsl-transcription-target-check' });
+          if (typeof isolated.executionContextId !== 'number') return false;
+          const result = await send('Runtime.evaluate', {
+            contextId: isolated.executionContextId,
+            expression: `!!document.querySelector('#keyManagement summary')`,
+            returnByValue: true
+          });
+          return (result.result as { value?: unknown } | undefined)?.value === true;
+        });
+        if (containsTranscriptionDom) transcriptionTargets.push(candidate);
+      } catch {
+        // A stale or not-yet-loaded panel target can disappear during workspace restoration.
+      }
+    }
+    if (transcriptionTargets.length === 1) return transcriptionTargets[0];
+    if (transcriptionTargets.length > 1) {
+      throw new Error(`Expected one GuitarDSL transcription webview target, found ${transcriptionTargets.length}: ${transcriptionTargets.map(item => item.title).join(', ')}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
+  throw new Error(`Could not find the GuitarDSL transcription webview target: ${available || '(none)'}`);
+}
+
 /** Captures the selected VS Code workbench page through its local DevTools target. */
 export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134, viewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
@@ -130,6 +183,42 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
     });
     const data = result.data;
     if (typeof data !== 'string') throw new Error('DevTools did not return a Preview screenshot');
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+  });
+}
+
+/** Captures the active YouTube transcription Webview at its real CSS viewport size. */
+export async function captureTranscriptionWebviewScreenshot(filename: string, issueNumber = 137): Promise<void> {
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  await waitForTranscriptionTarget(port);
+  const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
+  await withWorkbenchDevTools(async send => {
+    const boundsResult = await send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
+        const rect = frame.getBoundingClientRect();
+        return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
+          x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
+      }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')))` ,
+      returnByValue: true
+    });
+    const boundsValue = (boundsResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof boundsValue !== 'string') throw new Error('Could not locate the visible transcription Webview in the workbench');
+    const visibleFrames = JSON.parse(boundsValue) as Array<{ x: number; y: number; width: number; height: number }>;
+    if (visibleFrames.length !== 1) {
+      throw new Error(`Expected one visible transcription Webview iframe for capture, found ${visibleFrames.length}`);
+    }
+    const frame = visibleFrames[0];
+    await send('Page.enable');
+    const result = await send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip: { x: frame.x, y: frame.y, width: frame.width, height: frame.height, scale: 1 }
+    });
+    const data = result.data;
+    if (typeof data !== 'string') throw new Error('DevTools did not return a transcription screenshot');
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
   });
@@ -239,6 +328,92 @@ export async function evaluatePreviewWebview<T>(expression: string): Promise<T> 
     }
   }
   throw new Error('Preview Webview evaluation context remained unavailable');
+}
+
+/** Evaluates an expression in the singleton YouTube transcription webview. */
+export async function evaluateTranscriptionWebview<T>(expression: string): Promise<T> {
+  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  return withDevToolsTarget(target, async send => {
+    await send('Runtime.enable');
+    const tree = await send('Page.getFrameTree');
+    let activeFrameId: string | undefined;
+    const frameSummaries: string[] = [];
+    const visit = (node: Record<string, unknown>): void => {
+      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+      if (frame) frameSummaries.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+    };
+    if (tree.frameTree) {
+      const frameTree = tree.frameTree as Record<string, unknown>;
+      visit(frameTree);
+      if (!activeFrameId) {
+        const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+        if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+      }
+    }
+    if (!activeFrameId) throw new Error('Could not find the active transcription webview frame');
+    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-transcription-evaluation' });
+    const contextId = isolated.executionContextId;
+    if (typeof contextId !== 'number') throw new Error('Could not create a transcription webview evaluation context');
+    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+    if (response.exceptionDetails) {
+      const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
+      throw new Error(`Transcription Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'}): ${target.url}; frames=${frameSummaries.join(' | ')}`);
+    }
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    return value as T;
+  });
+}
+
+/** Reads the browser accessibility role and name for a transcription control. */
+export async function inspectTranscriptionWebviewAccessibility(selector: string): Promise<{ role: string; name: string; focused: boolean }> {
+  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  return withDevToolsTarget(target, async send => {
+    await send('Runtime.enable');
+    const tree = await send('Page.getFrameTree');
+    let activeFrameId: string | undefined;
+    const visit = (node: Record<string, unknown>): void => {
+      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+    };
+    if (tree.frameTree) {
+      const frameTree = tree.frameTree as Record<string, unknown>;
+      visit(frameTree);
+      if (!activeFrameId) {
+        const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+        if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+      }
+    }
+    if (!activeFrameId) throw new Error('Could not find the active transcription webview frame');
+    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-transcription-accessibility' });
+    if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a transcription accessibility context');
+    const resolved = await send('Runtime.evaluate', {
+      contextId: isolated.executionContextId,
+      expression: `document.querySelector(${JSON.stringify(selector)})`,
+      returnByValue: false
+    });
+    const objectId = (resolved.result as { objectId?: unknown } | undefined)?.objectId;
+    if (typeof objectId !== 'string') throw new Error(`Could not find transcription control ${selector}`);
+    await send('DOM.enable');
+    await send('Accessibility.enable');
+    const described = await send('DOM.describeNode', { objectId });
+    const backendNodeId = (described.node as { backendNodeId?: unknown } | undefined)?.backendNodeId;
+    if (typeof backendNodeId !== 'number') throw new Error(`Could not describe transcription control ${selector}`);
+    const response = await send('Accessibility.getPartialAXTree', { backendNodeId, fetchRelatives: false });
+    const nodes = Array.isArray(response.nodes) ? response.nodes as Array<Record<string, unknown>> : [];
+    const node = nodes[0];
+    if (!node) throw new Error(`No accessibility node exists for transcription control ${selector}`);
+    const role = (node.role as { value?: unknown } | undefined)?.value;
+    const name = (node.name as { value?: unknown } | undefined)?.value;
+    const properties = Array.isArray(node.properties) ? node.properties as Array<Record<string, unknown>> : [];
+    const focused = properties.some(property => {
+      const value = property.value as { value?: unknown } | undefined;
+      return property.name === 'focused' && value?.value === true;
+    });
+    return { role: typeof role === 'string' ? role : '', name: typeof name === 'string' ? name : '', focused };
+  });
 }
 
 export async function waitForPreviewDocument(): Promise<void> {
@@ -479,6 +654,121 @@ export async function inspectWorkbenchLayout(): Promise<string> {
     const value = (response.result as { value?: unknown } | undefined)?.value;
     if (typeof value !== 'string') throw new Error('Could not inspect the Extension Development Host layout');
     return value;
+  });
+}
+
+/** Expands a real Extension Development Host Tree View section by its displayed label. */
+export async function expandWorkbenchSidebarSection(label: string): Promise<void> {
+  await withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify((() => {
+        const rows = [...document.querySelectorAll('.part.sidebar .monaco-list-row')];
+        const row = rows.find(node => (node.getAttribute('aria-label') || node.textContent || '').toLowerCase().includes(${JSON.stringify(label.toLowerCase())}));
+        if (!row) return { error: 'Sidebar section not found: ' + ${JSON.stringify(label)} };
+        const twistie = row.querySelector('.monaco-tl-twistie');
+        if (!twistie) return { error: 'Sidebar section has no tree expander: ' + ${JSON.stringify(label)} };
+        const ariaExpanded = row.getAttribute('aria-expanded');
+        const collapsed = ariaExpanded === 'false' || twistie.classList.contains('collapsed');
+        if (!collapsed) return { alreadyExpanded: true };
+        const rect = twistie.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      })())`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not locate the requested Sidebar section');
+    const target = JSON.parse(value) as { error?: string; alreadyExpanded?: boolean; x?: number; y?: number };
+    if (target.error) throw new Error(target.error);
+    if (target.alreadyExpanded) return;
+    if (typeof target.x !== 'number' || typeof target.y !== 'number') throw new Error('Sidebar section has no clickable expander');
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+  });
+}
+
+/** Reads the rendered Workbench Sidebar labels and Codicon classes for visual regression checks. */
+export async function inspectWorkbenchSidebarItems(): Promise<{ label: string; iconClass: string }[]> {
+  return withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('.part.sidebar .monaco-list-row')].map(row => ({
+        label: row.getAttribute('aria-label') || (row.textContent || '').trim(),
+        iconClass: row.querySelector('.codicon')?.className || ''
+      })))`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not inspect rendered Sidebar items');
+    return JSON.parse(value) as { label: string; iconClass: string }[];
+  });
+}
+
+type WorkbenchKey = 'Tab' | 'Enter' | 'Escape' | 'Space';
+
+async function dispatchKey(send: SendDevToolsCommand, key: WorkbenchKey, shift = false): Promise<void> {
+  const definitions: Record<WorkbenchKey, { key: string; code: string; virtualKeyCode: number }> = {
+    Tab: { key: 'Tab', code: 'Tab', virtualKeyCode: 9 },
+    Enter: { key: 'Enter', code: 'Enter', virtualKeyCode: 13 },
+    Escape: { key: 'Escape', code: 'Escape', virtualKeyCode: 27 },
+    Space: { key: ' ', code: 'Space', virtualKeyCode: 32 }
+  };
+  const definition = definitions[key];
+  const modifiers = shift ? 8 : 0;
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown', key: definition.key, code: definition.code,
+    windowsVirtualKeyCode: definition.virtualKeyCode, nativeVirtualKeyCode: definition.virtualKeyCode, modifiers
+  });
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: definition.key, code: definition.code,
+    windowsVirtualKeyCode: definition.virtualKeyCode, nativeVirtualKeyCode: definition.virtualKeyCode, modifiers
+  });
+}
+
+/** Sends a real DevTools keyboard event to the Extension Development Host. */
+export async function dispatchWorkbenchKey(key: WorkbenchKey, shift = false): Promise<void> {
+  await withWorkbenchDevTools(send => dispatchKey(send, key, shift));
+}
+
+/** Sends a real DevTools keyboard event to the transcription Webview renderer. */
+export async function dispatchTranscriptionWebviewKey(key: WorkbenchKey, shift = false): Promise<void> {
+  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  await withDevToolsTarget(target, send => dispatchKey(send, key, shift));
+}
+
+/** Resizes the native Primary Sidebar through its real sash. */
+export async function resizePrimarySidebarToWidth(targetWidth: number): Promise<number> {
+  if (!Number.isFinite(targetWidth) || targetWidth < 200) throw new Error(`Invalid Primary Sidebar width: ${targetWidth}`);
+  return withWorkbenchDevTools(async send => {
+    const readLayout = async (): Promise<{ width: number; x: number; y: number }> => {
+      const result = await send('Runtime.evaluate', {
+        expression: `JSON.stringify((() => {
+          const sidebar = document.querySelector('.part.sidebar');
+          const sash = document.querySelector('.monaco-sash.vertical.primary-sidebar-sash');
+          if (!sidebar || !sash) return { error: 'Primary Sidebar or its sash is missing' };
+          const sidebarRect = sidebar.getBoundingClientRect();
+          const sashRect = sash.getBoundingClientRect();
+          return { width: Math.round(sidebarRect.width), x: sashRect.left + sashRect.width / 2,
+            y: Math.min(sidebarRect.bottom - 40, sidebarRect.top + 160) };
+        })())`,
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      if (typeof value !== 'string') throw new Error('Could not inspect the Primary Sidebar sash');
+      const layout = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number };
+      if (layout.error || layout.width === undefined || layout.x === undefined || layout.y === undefined) {
+        throw new Error(layout.error ?? 'Primary Sidebar layout is incomplete');
+      }
+      return { width: layout.width, x: layout.x, y: layout.y };
+    };
+    const initial = await readLayout();
+    if (initial.width !== targetWidth) {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: initial.x, y: initial.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: initial.x, y: initial.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: targetWidth, y: initial.y, button: 'left', buttons: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetWidth, y: initial.y, button: 'left', clickCount: 1 });
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    return (await readLayout()).width;
   });
 }
 

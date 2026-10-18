@@ -19,14 +19,31 @@ function transcriptionPresets(family: AccompanimentFamily): StrummingPatternPres
 
 const TRANSCRIPTION_FAMILIES: AccompanimentFamily[] = FAMILY_ORDER.filter(f => transcriptionPresets(f).length > 0);
 
+type ActiveTranscriptionJob = {
+  id: number;
+  owner: TranscribePanel;
+  discarded: boolean;
+};
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
+  private static activeJob: ActiveTranscriptionJob | undefined;
+  private static nextJobId = 0;
+  private static latestJobId: number | undefined;
+  private static stateRevision = 0;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private disposed = false;
+  private transcriptionResult: string | undefined;
+  private transcriptionResultJobId: number | undefined;
+
+  public get transcriptionJobActive(): boolean {
+    return TranscribePanel.activeJob !== undefined;
+  }
 
   public static createOrShow(
     extensionUri: vscode.Uri,
@@ -75,36 +92,99 @@ export class TranscribePanel {
   }
 
   private async initHtml(): Promise<void> {
-    const apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    let apiKey: string | undefined;
+    let apiKeyState: 'saved' | 'notConfigured' | 'unknown' = 'unknown';
+    try {
+      apiKey = await this.secretStorage.get('guitardsl.geminiApiKey');
+      apiKeyState = apiKey ? 'saved' : 'notConfigured';
+    } catch {
+      // Keep the panel usable without claiming that the key is saved or missing.
+    }
+    if (this.disposed) return;
     const config = vscode.workspace.getConfiguration('guitardsl');
     const model = config.get<string>('gemini.model') || 'gemini-3.8-flash';
     const compressRepeats = config.get<boolean>('transcription.compressRepeats') ?? false;
 
     this.panel.webview.html = this.getHtmlContent({
       hasApiKey: !!apiKey,
+      apiKeyState,
       model,
       compressRepeats,
+      isTranscribing: TranscribePanel.activeJob !== undefined,
       locale: this.locale
     });
   }
 
   private async handleMessage(message: any): Promise<void> {
+    if (this.disposed) return;
     switch (message.command) {
+      case 'requestTranscriptionState': {
+        this.postTranscriptionJobState();
+        break;
+      }
+      case 'copyTranscriptionResult': {
+        const resultJobId = this.transcriptionResultJobId;
+        if (!this.transcriptionResult || resultJobId === undefined || message.jobId !== resultJobId) break;
+        try {
+          await this.writeClipboardText(this.transcriptionResult);
+          this.postMessage({ type: 'transcriptionResultCopied', jobId: resultJobId });
+        } catch {
+          this.postMessage({
+            type: 'transcriptionResultCopyFailed',
+            jobId: resultJobId,
+            message: this.locale === 'ja' ? '採譜結果をコピーできませんでした。' : 'The transcription result could not be copied.'
+          });
+        }
+        break;
+      }
       case 'saveApiKey': {
         const key = message.apiKey?.trim();
         if (key) {
-          await this.secretStorage.store('guitardsl.geminiApiKey', key);
-          this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+          try {
+            await this.secretStorage.store('guitardsl.geminiApiKey', key);
+            this.postMessage({ type: 'apiKeySaved', success: true });
+          } catch {
+            this.postMessage({
+              type: 'apiKeySaveFailed',
+              message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
+            });
+          }
         }
         break;
       }
       case 'clearApiKey': {
-        await this.secretStorage.delete('guitardsl.geminiApiKey');
-        this.panel.webview.postMessage({ type: 'apiKeyCleared', success: true });
+        try {
+          await this.secretStorage.delete('guitardsl.geminiApiKey');
+          this.postMessage({ type: 'apiKeyCleared', success: true });
+        } catch {
+          this.postMessage({
+            type: 'apiKeyClearFailed',
+            message: this.locale === 'ja' ? 'API キーを削除できませんでした。' : 'The API key could not be cleared.'
+          });
+        }
         break;
       }
       case 'startTranscription': {
-        await this.runTranscription(message.options);
+        if (TranscribePanel.activeJob) {
+          this.postTranscriptionJobState();
+          break;
+        }
+        this.transcriptionResult = undefined;
+        this.transcriptionResultJobId = undefined;
+        const job: ActiveTranscriptionJob = {
+          id: ++TranscribePanel.nextJobId,
+          owner: this,
+          discarded: false
+        };
+        TranscribePanel.activeJob = job;
+        TranscribePanel.latestJobId = job.id;
+        TranscribePanel.stateRevision++;
+        this.postTranscriptionJobState();
+        try {
+          await this.runTranscription(message.options, job);
+        } finally {
+          this.releaseTranscriptionJob(job);
+        }
         break;
       }
     }
@@ -121,32 +201,57 @@ export class TranscribePanel {
     strummingPresetId?: string;
     compressRepeats: boolean;
     model: string;
-  }): Promise<void> {
+  }, job: ActiveTranscriptionJob): Promise<void> {
     const isJa = this.locale === 'ja';
-    let apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    let apiKey: string;
+    try {
+      apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    } catch {
+      if (this.isActiveJob(job)) {
+        this.postMessage({
+          type: 'error',
+          message: isJa
+            ? 'API キーを読み取れませんでした。キーを保存し直してから再試行してください。'
+            : 'The API key could not be read. Save it again, then retry.'
+        }, job);
+      }
+      return;
+    }
+    if (!this.isActiveJob(job)) return;
     if (options.apiKey && options.apiKey.trim()) {
       apiKey = options.apiKey.trim();
-      await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
+      try {
+        await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
+        if (!this.isActiveJob(job)) return;
+        this.postMessage({ type: 'apiKeySaved', success: true }, job);
+      } catch {
+        this.postMessage({
+          type: 'apiKeySaveFailed',
+          duringStart: true,
+          message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
+        }, job);
+        return;
+      }
     }
 
     if (!apiKey) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: isJa
           ? 'Gemini API キーを設定してください。'
           : 'Please configure your Gemini API key.'
-      });
+      }, job);
       return;
     }
 
     const url = options.youtubeUrl?.trim() || '';
     if (!isValidYouTubeUrl(url)) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: isJa
           ? '有効なYouTube動画のURL（https://...）を入力してください。'
           : 'Please enter a valid YouTube URL (https://...).'
-      });
+      }, job);
       return;
     }
 
@@ -165,7 +270,7 @@ export class TranscribePanel {
           groove: 'Analyzing the strumming rhythm...',
           finalizing: 'Optimizing strumming and capo...'
         };
-    this.panel.webview.postMessage({ type: 'transcribing', text: stageText.baseline });
+    this.postMessage({ type: 'transcribing', text: stageText.baseline }, job);
 
     try {
       const bpm = options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300
@@ -175,7 +280,7 @@ export class TranscribePanel {
         ? options.capoValue
         : undefined;
 
-      const song = await runTranscriptionPipeline({
+      const song = await this.executePipeline({
         apiKey,
         youtubeUrl: url,
         model: options.model,
@@ -183,8 +288,10 @@ export class TranscribePanel {
         strummingPresetId: options.strummingPresetId,
         bpm,
         capo,
-        onStage: stage => this.panel.webview.postMessage({ type: 'transcribing', text: stageText[stage] })
+        onStage: stage => this.postMessage({ type: 'transcribing', text: stageText[stage] }, job)
       });
+
+      if (!this.isActiveJob(job)) return;
 
       const dslText = serializeSongToGuitarDsl(song, {
         compressRepeats: options.compressRepeats,
@@ -197,24 +304,75 @@ export class TranscribePanel {
         throw new Error(`Compiler validation failed: ${errors.map(e => e.code).join(', ')}`);
       }
 
-      this.panel.webview.postMessage({ type: 'success' });
-
-      // Open new document with generated GuitarDSL
-      const doc = await vscode.workspace.openTextDocument({
-        language: 'guitardsl',
-        content: dslText
-      });
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+      this.transcriptionResult = dslText;
+      this.transcriptionResultJobId = job.id;
+      this.postMessage({ type: 'success', dslText }, job);
     } catch (err: any) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: err?.message || 'Transcription failed'
-      });
+      }, job);
     }
   }
 
+  private isActiveJob(job: ActiveTranscriptionJob): boolean {
+    return TranscribePanel.activeJob === job && !job.discarded && !this.disposed;
+  }
+
+  private postMessage(message: Record<string, unknown>, job?: ActiveTranscriptionJob): void {
+    if (this.disposed || (job && !this.isActiveJob(job))) return;
+    const outbound = job
+      ? { ...message, jobId: job.id, revision: ++TranscribePanel.stateRevision }
+      : message;
+    this.panel.webview.postMessage(outbound);
+  }
+
+  private postTranscriptionJobState(): void {
+    if (this.disposed) return;
+    const job = TranscribePanel.activeJob;
+    const jobId = job?.id ?? TranscribePanel.latestJobId;
+    const result = this.transcriptionResult !== undefined
+      && this.transcriptionResultJobId !== undefined
+      && this.transcriptionResultJobId === jobId
+      ? { jobId: this.transcriptionResultJobId, dslText: this.transcriptionResult }
+      : undefined;
+    this.panel.webview.postMessage({
+      type: 'transcriptionJobState',
+      active: job !== undefined,
+      jobId,
+      revision: TranscribePanel.stateRevision,
+      ...(result ? { result } : {})
+    });
+  }
+
+  private releaseTranscriptionJob(job: ActiveTranscriptionJob): void {
+    if (TranscribePanel.activeJob !== job) return;
+    TranscribePanel.activeJob = undefined;
+    TranscribePanel.stateRevision++;
+
+    const currentPanel = TranscribePanel.currentPanel;
+    currentPanel?.postTranscriptionJobState();
+  }
+
+  private executePipeline(options: Parameters<typeof runTranscriptionPipeline>[0]) {
+    return runTranscriptionPipeline(options);
+  }
+
+  private writeClipboardText(text: string): Thenable<void> {
+    return vscode.env.clipboard.writeText(text);
+  }
+
   public dispose(): void {
-    TranscribePanel.currentPanel = undefined;
+    if (this.disposed) return;
+    this.disposed = true;
+    if (TranscribePanel.currentPanel === this) {
+      TranscribePanel.currentPanel = undefined;
+    }
+    if (TranscribePanel.activeJob?.owner === this) {
+      TranscribePanel.activeJob.discarded = true;
+    }
+    this.transcriptionResult = undefined;
+    this.transcriptionResultJobId = undefined;
     this.panel.dispose();
     while (this.disposables.length) {
       const x = this.disposables.pop();
@@ -224,11 +382,18 @@ export class TranscribePanel {
 
   private getHtmlContent(ctx: {
     hasApiKey: boolean;
+    apiKeyState?: 'saved' | 'notConfigured' | 'unknown';
     model: string;
     compressRepeats: boolean;
+    isTranscribing?: boolean;
     locale: SupportedLocale;
   }): string {
     const isJa = ctx.locale === 'ja';
+    const apiKeyStatusText = ctx.apiKeyState === 'unknown'
+      ? (isJa ? 'キー状態を確認できません' : 'Key state unavailable')
+      : ctx.hasApiKey
+        ? (isJa ? '保存済み' : 'Saved')
+        : (isJa ? '未設定' : 'Not configured');
     const uiMsgs = getAccompanimentUiMessages(ctx.locale);
 
     return `<!DOCTYPE html>
@@ -393,6 +558,73 @@ export class TranscribePanel {
       color: var(--vscode-badge-foreground, #fff);
       margin-left: 6px;
     }
+    details {
+      border: 1px solid var(--vscode-panel-border, #ccc);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin: 12px 0 18px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+    summary:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline-offset: 3px;
+    }
+    .key-state {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .key-state-label { font-weight: 600; }
+    .key-state-value { color: var(--vscode-descriptionForeground, #888); }
+    .result-panel {
+      margin-top: 24px;
+      border-top: 1px solid var(--vscode-panel-border, #ccc);
+      padding-top: 16px;
+    }
+    .result-panel h3 {
+      margin: 0 0 4px;
+      font-size: 1.1em;
+    }
+    .result-description {
+      color: var(--vscode-descriptionForeground, #888);
+      font-size: 0.9em;
+      margin: 0 0 10px;
+    }
+    .result-dsl {
+      display: block;
+      width: 100%;
+      min-height: 180px;
+      box-sizing: border-box;
+      resize: vertical;
+      padding: 10px 12px;
+      background: var(--vscode-editor-background, #111);
+      color: var(--vscode-editor-foreground, #eee);
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 4px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      white-space: pre;
+      overflow: auto;
+    }
+    .result-dsl:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+    }
+    .result-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .result-copy-status {
+      color: var(--vscode-descriptionForeground, #888);
+      font-size: 0.9em;
+    }
   </style>
 </head>
 <body>
@@ -406,15 +638,25 @@ export class TranscribePanel {
   </div>
 
   <div class="field-group">
-    <label for="apiKey">Gemini API Key <span style="color:#e74c3c">*</span></label>
-    <div style="display:flex; gap:8px;">
-      <input type="password" id="apiKey" placeholder="${ctx.hasApiKey ? (isJa ? '保存済み（変更する場合のみ入力）' : 'Saved (enter only to change)') : 'AIzaSy...'}" />
-      <button class="btn-secondary" id="btnSaveKey">${isJa ? 'キーを保存' : 'Save Key'}</button>
-      ${ctx.hasApiKey ? `<button class="btn-secondary" id="btnClearKey">${isJa ? '削除' : 'Clear'}</button>` : ''}
+    <div class="key-state">
+      <span class="key-state-label">Gemini API Key</span>
+      <span class="key-state-value" id="apiKeyStatus" role="status" aria-live="polite">${apiKeyStatusText}</span>
     </div>
+    <details id="keyManagement">
+      <summary>${isJa ? '設定・変更' : 'Set or change key'}</summary>
+      <div class="field-group" style="margin-top:12px;">
+        <label for="apiKey">Gemini API Key</label>
+        <div style="display:flex; gap:8px;">
+          <input type="password" id="apiKey" autocomplete="off" placeholder="${isJa ? 'キーを入力' : 'Enter API key'}" />
+          <button class="btn-secondary" id="btnSaveKey">${isJa ? 'キーを保存' : 'Save Key'}</button>
+          <button class="btn-secondary" id="btnClearKey" ${ctx.hasApiKey ? '' : 'disabled'}>${isJa ? '削除' : 'Clear'}</button>
+        </div>
+      </div>
+    </details>
   </div>
 
-  <div class="section-title">⚙️ ${isJa ? '採譜設定 (オプション)' : 'Transcription Options'}</div>
+  <details id="advancedOptions">
+    <summary>${isJa ? '採譜設定（詳細）' : 'Transcription Options (Advanced)'}</summary>
 
   <div class="field-group">
     <label>${isJa ? 'テンポ (BPM)' : 'Tempo (BPM)'}</label>
@@ -493,7 +735,9 @@ export class TranscribePanel {
     </select>
   </div>
 
-  <button class="btn-primary" id="btnStart">
+  </details>
+
+  <button class="btn-primary" id="btnStart" disabled>
     <span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>
   </button>
 
@@ -502,8 +746,33 @@ export class TranscribePanel {
     <div id="statusText">${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}</div>
   </div>
 
+  <section class="result-panel" id="resultPanel" aria-labelledby="resultTitle" style="display:none;">
+    <h3 id="resultTitle">${isJa ? '採譜結果' : 'Transcription Result'}</h3>
+    <p class="result-description">${isJa ? '読み取り専用の下書きです。コピーして通常のエディターに貼り付けてください。' : 'This is a read-only draft. Copy it and paste it into a regular editor.'}</p>
+    <textarea class="result-dsl" id="resultDsl" readonly spellcheck="false" aria-label="${isJa ? '生成された GuitarDSL' : 'Generated GuitarDSL'}"></textarea>
+    <div class="result-actions">
+      <button class="btn-secondary" id="btnCopyResult">${isJa ? 'コピー' : 'Copy'}</button>
+      <span class="result-copy-status" id="resultCopyStatus" role="status" aria-live="polite"></span>
+    </div>
+    <p class="result-description">${isJa ? 'パネルを閉じるとこの結果は破棄されます。' : 'Closing this panel discards the result.'}</p>
+  </section>
+
   <script>
     const vscode = acquireVsCodeApi();
+    const youtubeUrl = document.getElementById('youtubeUrl');
+    const apiKey = document.getElementById('apiKey');
+    const apiKeyStatus = document.getElementById('apiKeyStatus');
+    const btnStart = document.getElementById('btnStart');
+    const btnClearKey = document.getElementById('btnClearKey');
+    let hasSavedApiKey = ${ctx.hasApiKey ? 'true' : 'false'};
+    let isTranscribing = ${ctx.isTranscribing ? 'true' : 'false'};
+
+    const updateStartEligibility = () => {
+      const hasRequiredInputs = youtubeUrl.value.trim() !== '' && (hasSavedApiKey || apiKey.value.trim() !== '');
+      btnStart.disabled = isTranscribing || !hasRequiredInputs;
+    };
+    youtubeUrl.addEventListener('input', updateStartEligibility);
+    apiKey.addEventListener('input', updateStartEligibility);
 
     const bpmRadios = document.querySelectorAll('input[name="bpmMode"]');
     const bpmValue = document.getElementById('bpmValue');
@@ -520,20 +789,18 @@ export class TranscribePanel {
     }));
 
     document.getElementById('btnSaveKey').addEventListener('click', () => {
-      const key = document.getElementById('apiKey').value;
-      if (key) {
+      const key = apiKey.value;
+      if (key.trim()) {
         vscode.postMessage({ command: 'saveApiKey', apiKey: key });
       }
     });
 
-    const btnClear = document.getElementById('btnClearKey');
-    if (btnClear) {
-      btnClear.addEventListener('click', () => {
+    btnClearKey.addEventListener('click', () => {
+      if (hasSavedApiKey) {
         vscode.postMessage({ command: 'clearApiKey' });
-      });
-    }
+      }
+    });
 
-    const btnStart = document.getElementById('btnStart');
     const strummingFamily = document.getElementById('strummingFamily');
     strummingFamily.addEventListener('change', () => {
       document.querySelectorAll('.preset-select').forEach(el => {
@@ -542,10 +809,44 @@ export class TranscribePanel {
     });
     const statusBox = document.getElementById('statusBox');
     const statusText = document.getElementById('statusText');
+    const resultPanel = document.getElementById('resultPanel');
+    const resultDsl = document.getElementById('resultDsl');
+    const resultCopyStatus = document.getElementById('resultCopyStatus');
+    let currentJobId = null;
+    let resultJobId = null;
+    let lastJobRevision = -1;
+    let hasTerminalStatus = false;
+
+    const acceptJobMessage = msg => {
+      if (!Number.isSafeInteger(msg.revision) || msg.revision <= lastJobRevision || msg.jobId === undefined) return false;
+      const startsJob = msg.type === 'transcribing'
+        || (msg.type === 'transcriptionJobState' && msg.active === true);
+      if (currentJobId !== null && msg.jobId !== currentJobId && !startsJob) return false;
+      lastJobRevision = msg.revision;
+      if (msg.type === 'transcriptionJobState' && msg.active === false) currentJobId = null;
+      else currentJobId = msg.jobId;
+      return true;
+    };
+
+    const showTranscriptionResult = (dslText, jobId) => {
+      if (typeof dslText !== 'string' || !dslText || !Number.isSafeInteger(jobId)) return false;
+      resultDsl.value = dslText;
+      resultJobId = jobId;
+      resultPanel.style.display = 'block';
+      resultCopyStatus.textContent = '';
+      return true;
+    };
+
+    document.getElementById('btnCopyResult').addEventListener('click', () => {
+      if (resultDsl.value && resultJobId !== null) {
+        vscode.postMessage({ command: 'copyTranscriptionResult', jobId: resultJobId });
+      }
+    });
 
     btnStart.addEventListener('click', () => {
-      const url = document.getElementById('youtubeUrl').value;
-      const key = document.getElementById('apiKey').value;
+      if (isTranscribing || btnStart.disabled) return;
+      const url = youtubeUrl.value;
+      const key = apiKey.value;
       const bpmMode = document.querySelector('input[name="bpmMode"]:checked').value;
       const bpmVal = parseInt(bpmValue.value, 10);
       const capoMode = document.querySelector('input[name="capoMode"]:checked').value;
@@ -558,8 +859,15 @@ export class TranscribePanel {
       const compressRepeats = document.getElementById('compressRepeats').checked;
       const model = document.getElementById('modelSelect').value;
 
-      // Immediately disable button and show loading state
+      // Immediately disable button and show loading state to suppress double starts.
+      isTranscribing = true;
+      hasTerminalStatus = false;
+      resultDsl.value = '';
+      resultJobId = null;
+      resultPanel.style.display = 'none';
+      resultCopyStatus.textContent = '';
       btnStart.disabled = true;
+      statusBox.style.display = 'none';
       btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       statusBox.className = 'status-box loading';
       statusBox.style.display = 'flex';
@@ -584,29 +892,91 @@ export class TranscribePanel {
 
     window.addEventListener('message', event => {
       const msg = event.data;
+      if (msg.revision !== undefined && !acceptJobMessage(msg)) return;
       if (msg.type === 'transcribing') {
+        isTranscribing = true;
+        hasTerminalStatus = false;
         statusBox.className = 'status-box loading';
         statusBox.style.display = 'flex';
         statusText.textContent = msg.text || '${isJa ? 'GeminiでYouTube音源を解析中...' : 'Analyzing YouTube audio with Gemini...'}';
         btnStart.disabled = true;
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {
+        isTranscribing = false;
+        hasTerminalStatus = true;
         statusBox.className = 'status-box error';
         statusBox.style.display = 'flex';
         statusText.textContent = '❌ ' + msg.message;
-        btnStart.disabled = false;
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
+      } else if (msg.type === 'apiKeySaveFailed') {
+        if (msg.duringStart) {
+          isTranscribing = false;
+          hasTerminalStatus = true;
+          statusBox.className = 'status-box error';
+          statusBox.style.display = 'flex';
+          statusText.textContent = '❌ ' + msg.message;
+          btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        } else {
+          apiKeyStatus.textContent = msg.message;
+        }
+        updateStartEligibility();
+      } else if (msg.type === 'apiKeyClearFailed') {
+        apiKeyStatus.textContent = msg.message;
+        updateStartEligibility();
       } else if (msg.type === 'success') {
+        isTranscribing = false;
+        hasTerminalStatus = true;
         statusBox.className = 'status-box';
         statusBox.style.display = 'none';
-        btnStart.disabled = false;
+        showTranscriptionResult(msg.dslText, msg.jobId);
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
+      } else if (msg.type === 'transcriptionResultCopied' && msg.jobId === resultJobId) {
+        resultCopyStatus.textContent = '${isJa ? 'コピーしました。' : 'Copied.'}';
+      } else if (msg.type === 'transcriptionResultCopyFailed' && msg.jobId === resultJobId) {
+        resultCopyStatus.textContent = msg.message;
       } else if (msg.type === 'apiKeySaved') {
-        alert('${isJa ? 'Gemini API キーを保存しました。' : 'Gemini API key saved.'}');
+        apiKey.value = '';
+        hasSavedApiKey = true;
+        apiKeyStatus.textContent = '${isJa ? '保存済み' : 'Saved'}';
+        btnClearKey.disabled = false;
+        updateStartEligibility();
       } else if (msg.type === 'apiKeyCleared') {
-        alert('${isJa ? 'Gemini API キーを削除しました。' : 'Gemini API key cleared.'}');
+        apiKey.value = '';
+        hasSavedApiKey = false;
+        apiKeyStatus.textContent = '${isJa ? '未設定' : 'Not configured'}';
+        btnClearKey.disabled = true;
+        updateStartEligibility();
+      } else if (msg.type === 'transcriptionJobState') {
+        isTranscribing = msg.active === true;
+        if (isTranscribing) {
+          hasTerminalStatus = false;
+          statusBox.className = 'status-box loading';
+          statusBox.style.display = 'flex';
+          statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+          btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
+        } else {
+          if (!hasTerminalStatus) {
+            statusBox.className = 'status-box';
+            statusBox.style.display = 'none';
+          }
+          btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        }
+        if (msg.result?.jobId === msg.jobId && showTranscriptionResult(msg.result.dslText, msg.result.jobId)) {
+          hasTerminalStatus = true;
+        }
+        updateStartEligibility();
       }
     });
+    vscode.postMessage({ command: 'requestTranscriptionState' });
+    if (isTranscribing) {
+      statusBox.className = 'status-box loading';
+      statusBox.style.display = 'flex';
+      statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+      btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
+    }
+    updateStartEligibility();
   </script>
 </body>
 </html>`;

@@ -50,6 +50,25 @@ describe('documentResolver (moved from extension.ts)', () => {
     assert.strictEqual(await resolver.resolveGuitarDslDocument({ fsPath: '/missing.guitardsl' } as any), song);
   });
 
+  it('explicit URI only never switches to active, visible, last, or another open document', async () => {
+    opened[other.fileName] = other;
+    opened[text.fileName] = text;
+    mock.window.activeTextEditor = { document: other };
+    mock.window.visibleTextEditors = [{ document: other }];
+    mock.workspace.textDocuments = [other];
+
+    assert.strictEqual(await resolver.resolveGuitarDslDocument(
+      { fsPath: '/missing.guitardsl' } as any,
+      other as any,
+      { explicitUriOnly: true }
+    ), undefined, 'an unavailable explicit URI cannot resolve to any fallback document');
+    assert.strictEqual(await resolver.resolveGuitarDslDocument(
+      text.uri as any,
+      other as any,
+      { explicitUriOnly: true }
+    ), undefined, 'an explicit non-GuitarDSL URI cannot resolve to another document');
+  });
+
   it('active GuitarDSL editor', async () => {
     mock.window.activeTextEditor = { document: song };
     mock.window.visibleTextEditors = [{ document: other }];

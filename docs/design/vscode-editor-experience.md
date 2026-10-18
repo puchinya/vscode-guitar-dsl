@@ -10,6 +10,7 @@
 - Related Issue: [Issue #87](https://github.com/puchinya/vscode-guitar-dsl/issues/87)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
+- Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
@@ -24,7 +25,7 @@ VS Code 上で GuitarDSL を識別・編集・診断・プレビューするホ�
 |---|---|
 | 言語ID、拡張子、language configuration、TextMate grammar | 拡張機能仕様 §2 |
 | コマンドと設定 | 拡張機能仕様 §3 |
-| サイドバー、Outline、診断 | 拡張機能仕様 §4C、§5、§5A |
+| Issue #137 のナビゲーション導線、Sidebar、Outline、診断 | Issue #137、拡張機能仕様 §4C、§5、§5A |
 | 共通 Inspector の登録、表示、文書・進行・設定コンテキスト | Issue #133–#135、拡張機能仕様 §3.9、§3.25、§4B、§4D |
 | Preview の一時楽譜設定と Inspector への導線 | Issue #145、拡張機能仕様 §4.2、§4.4、§4.5、§4D |
 | ロケール、Help と仕様同期 | 拡張機能仕様 §6–§7 |
@@ -125,6 +126,28 @@ Issue #145 adds a 44 px Score Settings row immediately below playback. Capo, col
 Paper and orientation retain the existing host `layoutChanged` and render path. The Webview includes its current URI, document version, and Preview render generation in layout requests. The host allowlists the target focus ID and binds it to that identity; a pending restore is consumed only by an accepted valid settings update and corresponding HTML render. Invalid or stale messages leave it intact; source updates, document switches, newer user actions, and panel disposal make it stale. The rebuilt page focuses the changed control once. Mode changes, disclosure state, and PDF save do not rebuild HTML or touch the playback source time. Inspector retains detailed Capo/Beginner comparisons and the only source Apply surface; Preview/PDF continue to use the same host-resolved effective DSL.
 
 Issue #136 verification checks rendered DOM/CSS, keyboard and pointer disclosure behavior, 600 px layouts, layout rebuild focus, unchanged playback/Practice behavior, Inspector effective DSL and PDF equivalence, lease ownership, CSP/SVG isolation, and real Extension Development Host screenshots. Screen-reader testing is reported separately from automated accessibility-tree checks.
+
+## Issue #137 implementation design
+
+`src/sidebar.ts` remains the single TreeDataProvider for `guitardsl.sidebar`. Its fixed root contains a commandless active-target row and the five ordered groups Create, Open / Import, Edit Assist, Export, and Help. The target shows only the active document basename, a localized name for an untitled GuitarDSL document, or the localized no-target label. Create and Open / Import start expanded; the other groups start collapsed. The provider owns labels, stable TreeItem IDs, icons, and expansion defaults only. It does not mutate documents and does not retain a URI on Preview or export rows; those internal commands resolve the active editor again when invoked.
+
+`src/sidebarNavigation.ts` owns the small host boundary for opening a GuitarDSL file, selecting an existing transcription source, and routing active-document Preview / PDF / Guitar Pro actions. It validates `.guitardsl` / `.gdsl` after the file picker returns, opens the selected URI through the ordinary TextEditor, and dispatches only the selected existing command from the source Quick Pick. Preview and export wrappers verify `window.activeTextEditor?.document` with the shared document resolver, then pass that URI explicitly to the existing command. With no active GuitarDSL document they report the localized warning and stop. Inspector remains the existing empty-capable `guitardsl.openInspector` command.
+
+`src/extension.ts` registers these internal commands next to the existing command owners and disposes each registration with the extension context. Sidebar refresh remains event-driven from active-editor changes and text-document open / close events. No polling, duplicate command contribution, or eager import of the transcription panel or Audio MIR controller is introduced.
+
+The existing singleton YouTube `WebviewPanel`, SecretStorage, host messages, option object, and `runTranscriptionPipeline` remain the owners of transcription. `getHtmlContent` presents the existing inputs in the specified order and uses native disclosure controls for key management and advanced options. The host passes saved, not-configured, or unknown key state; a rejected initial `SecretStorage.get` renders a localized unknown state without claiming saved or not configured, and key entry/save remain available. A key value is never interpolated into HTML or status. The webview clears the key field after the existing save acknowledgement and enables Start only when the URL and either a saved or entered key are present. A rejected `SecretStorage.get` during Start sends a localized error and stops before the Gemini pipeline or result preview; the host releases the job so Start can be retried. Storage exception text and stack traces are not exposed or logged. The host retains final URL validation, key persistence, job suppression, progress, and error ownership. A single host-owned job lock with a job ID and monotonically increasing state revision survives WebviewPanel disposal; closing the owning panel marks its result for discard but does not cancel the pipeline or release the lock. Successful DSL is retained only by its live owning panel and rendered as read-only text with a copy action. Starting another job clears that panel's previous result before the new job begins. This flow does not call `workspace.openTextDocument` or `showTextDocument`, so it creates no document automatically. Closing the owner discards its result. The Webview registers its message listener before requesting an authoritative job-state snapshot; job-specific messages carry the job ID and revision, and the renderer ignores stale state. A state snapshot includes a successful result only when the same live panel still owns that result and its job ID matches the snapshot job. This lets a missed success notification recover from Host state without exposing an old result to a reopened panel or a newer job. Existing options and defaults keep their current message shape and order.
+
+New visible labels and file-open / no-active-document messages live in both dictionaries in `src/i18n.ts`. The authored Japanese and English feature pages explain the five groups, opening and importing files, the two transcription sources, and the collapsible YouTube settings without duplicating the specification. `help-manifest.json` is refreshed from the reviewed specs and package metadata, and `media/help/` is generated from those authored pages.
+
+### Failure handling and boundaries
+
+Canceling a file picker or source Quick Pick performs no command. A selected unsupported file or open failure reports a localized message and creates no Untitled document. A stale TreeItem cannot redirect Preview or export because internal wrappers resolve the active editor at invocation. With no suitable active document, those wrappers warn and do not reuse a previously active or last-open document; Inspector continues to open its existing empty state. Transcription start remains disabled until the local prerequisites are met, the host still validates the URL, and a processing or SecretStorage read error restores the existing retry path. YouTube work remains non-cancelable; closing its panel discards that panel's result, keeps Start disabled in a reopened panel until work settles, and creates no generated document from the discarded result.
+
+This change does not alter public `package.json` command or menu contributions, parser behavior, import/export semantics, Preview playback, Inspector context ownership, Audio MIR, or the transcription pipeline. The Tree View is retained instead of adding a Webview sidebar, and wrappers are used instead of attaching a document URI to a tree row so action targets cannot become stale.
+
+### Verification strategy
+
+Unit coverage exercises the five groups, their localized labels and stable IDs, a commandless target row, active-file identity, empty-state document-independent actions, and wrapper behavior for cancellation, unsupported files, active-document changes, and dispatch. Existing sidebar and command contribution tests protect the public command surface. Transcription coverage checks disclosure visibility and tab order, key field clearing and non-disclosure, unchanged option values/message shape, Start eligibility, duplicate-start suppression, and retry after errors. Fixture-backed Webview E2E also drops the success notification to verify result recovery from a newer state snapshot, then drives the actual Copy button through Host clipboard handling for success and failure. SVG XML validity, rendered dimensions, help synchronization, VSIX contents, and the configured final verification hooks are checked before delivery.
 
 ### Verification strategy
 

@@ -19,6 +19,8 @@ export type CuratedSampleId =
 export interface Messages {
   // Extension host messages
   msgOpenGuitarDslFile: string;
+  msgUnsupportedGuitarDslFile: string;
+  msgGuitarDslFileOpenFailed: string;
   msgDocNotFound: string;
   msgPdfSaved: (filename: string) => string;
   msgOpenFile: string;
@@ -170,6 +172,14 @@ export interface Messages {
   uiProgressionClose: string;
 
   // Onboarding sidebar (Activity Bar "Start Here" view) and onboarding commands
+  sidebarTargetPrefix: string;
+  sidebarNoActiveTarget: string;
+  sidebarUntitledTarget: string;
+  sidebarCreate: string;
+  sidebarOpenImport: string;
+  sidebarEditAssist: string;
+  sidebarExport: string;
+  sidebarHelp: string;
   sidebarGetStarted: string;
   sidebarCurrentFile: string;
   sidebarTools: string;
@@ -177,12 +187,22 @@ export interface Messages {
   sidebarNewFromTemplate: string;
   sidebarOpenSample: string;
   sidebarOpenPreview: string;
+  sidebarOpenInspector: string;
+  sidebarOpenGuitarDslFile: string;
+  sidebarImportGuitarPro: string;
+  sidebarChooseTranscriptionSource: string;
+  sidebarTranscriptionSourcePrompt: string;
+  sidebarTranscriptionSourceYouTube: string;
+  sidebarTranscriptionSourceAudio: string;
+  sidebarGuitarDslFileFilter: string;
   sidebarOpenHelp: string;
   sidebarEditChordDiagram: string;
   sidebarEditScoreSettings: string;
   sidebarEditCapo: string;
   sidebarChangeAccompaniment: string;
   sidebarExportPdf: string;
+  sidebarExportGuitarPro: string;
+  sidebarOpenGuitarDslHelp: string;
   sidebarTranscribeYouTube: string;
   sidebarTranscribeAudio: string;
   inspectorHeading: string;
@@ -273,6 +293,8 @@ export interface Messages {
 
 export const MESSAGES_JA: Messages = {
   msgOpenGuitarDslFile: 'GuitarDSL (.guitardsl) ファイルを開いてください。',
+  msgUnsupportedGuitarDslFile: 'GuitarDSL（.guitardsl / .gdsl）ファイルを選択してください。',
+  msgGuitarDslFileOpenFailed: 'GuitarDSL ファイルを開けませんでした。',
   msgDocNotFound: '対象のGuitarDSLドキュメントが見つかりません。',
   msgPdfSaved: (filename: string) => `PDFを保存しました: ${filename}`,
   msgOpenFile: 'ファイルを開く',
@@ -422,19 +444,37 @@ export const MESSAGES_JA: Messages = {
   uiProgressionRepeatNotice: '8小節・16小節候補は、4小節パターンを2回・4回繰り返します。',
   uiProgressionClose: '閉じる',
 
+  sidebarTargetPrefix: '対象:',
+  sidebarNoActiveTarget: '対象なし',
+  sidebarUntitledTarget: '無題の GuitarDSL',
+  sidebarCreate: '新規作成',
+  sidebarOpenImport: '開く・取り込む',
+  sidebarEditAssist: '編集支援',
+  sidebarExport: '書き出す',
+  sidebarHelp: 'ヘルプ',
   sidebarGetStarted: 'はじめる',
   sidebarCurrentFile: '現在のファイル',
   sidebarTools: 'ツール',
   sidebarNoActiveFile: '.guitardsl ファイルを開くと、ファイル操作が表示されます。',
   sidebarNewFromTemplate: 'テンプレートから新規作成',
   sidebarOpenSample: 'サンプルを開く',
-  sidebarOpenPreview: 'プレビューを横に開く',
+  sidebarOpenPreview: '楽譜 Preview を開く',
+  sidebarOpenInspector: 'Inspector を開く',
+  sidebarOpenGuitarDslFile: 'GuitarDSL ファイルを開く',
+  sidebarImportGuitarPro: 'Guitar Pro 7/8 を取り込む',
+  sidebarChooseTranscriptionSource: '音源から採譜（実験的）',
+  sidebarTranscriptionSourcePrompt: '採譜する音源を選択',
+  sidebarTranscriptionSourceYouTube: 'YouTube から採譜（実験的）',
+  sidebarTranscriptionSourceAudio: 'ローカル WAV から採譜（実験的）',
+  sidebarGuitarDslFileFilter: 'GuitarDSL ファイル',
   sidebarOpenHelp: 'ヘルプを開く',
   sidebarEditChordDiagram: 'コードダイアグラムを編集',
   sidebarEditScoreSettings: '楽譜設定を編集',
   sidebarEditCapo: 'カポ / 弾きやすさを編集',
   sidebarChangeAccompaniment: '伴奏パターンを変更',
-  sidebarExportPdf: 'PDF出力 / 印刷',
+  sidebarExportPdf: 'PDF に書き出す',
+  sidebarExportGuitarPro: 'Guitar Pro 7 に書き出す',
+  sidebarOpenGuitarDslHelp: 'GuitarDSL ヘルプを見る',
   sidebarTranscribeYouTube: 'YouTubeから採譜（実験的）',
   sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
   inspectorHeading: 'GuitarDSL Inspector',
@@ -568,6 +608,8 @@ export const MESSAGES_JA: Messages = {
 
 export const MESSAGES_EN: Messages = {
   msgOpenGuitarDslFile: 'Please open a GuitarDSL (.guitardsl) file.',
+  msgUnsupportedGuitarDslFile: 'Choose a GuitarDSL (.guitardsl or .gdsl) file.',
+  msgGuitarDslFileOpenFailed: 'The GuitarDSL file could not be opened.',
   msgDocNotFound: 'Target GuitarDSL document not found.',
   msgPdfSaved: (filename: string) => `PDF saved: ${filename}`,
   msgOpenFile: 'Open File',
@@ -717,19 +759,37 @@ export const MESSAGES_EN: Messages = {
   uiProgressionRepeatNotice: 'Eight- and sixteen-bar candidates repeat a selected four-bar pattern two or four times.',
   uiProgressionClose: 'Close',
 
+  sidebarTargetPrefix: 'Target:',
+  sidebarNoActiveTarget: 'No target',
+  sidebarUntitledTarget: 'Untitled GuitarDSL',
+  sidebarCreate: 'Create',
+  sidebarOpenImport: 'Open / Import',
+  sidebarEditAssist: 'Edit Assist',
+  sidebarExport: 'Export',
+  sidebarHelp: 'Help',
   sidebarGetStarted: 'Get Started',
   sidebarCurrentFile: 'Current File',
   sidebarTools: 'Tools',
   sidebarNoActiveFile: 'Open a .guitardsl file to show file actions.',
   sidebarNewFromTemplate: 'New from Template',
   sidebarOpenSample: 'Open Sample',
-  sidebarOpenPreview: 'Open Preview to the Side',
+  sidebarOpenPreview: 'Open Score Preview',
+  sidebarOpenInspector: 'Open Inspector',
+  sidebarOpenGuitarDslFile: 'Open GuitarDSL File',
+  sidebarImportGuitarPro: 'Import Guitar Pro 7/8',
+  sidebarChooseTranscriptionSource: 'Transcribe from Audio (Experimental)',
+  sidebarTranscriptionSourcePrompt: 'Choose an audio transcription source',
+  sidebarTranscriptionSourceYouTube: 'Transcribe from YouTube (Experimental)',
+  sidebarTranscriptionSourceAudio: 'Transcribe local WAV (Experimental)',
+  sidebarGuitarDslFileFilter: 'GuitarDSL Files',
   sidebarOpenHelp: 'Open Help',
   sidebarEditChordDiagram: 'Edit Chord Diagram',
   sidebarEditScoreSettings: 'Edit Score Settings',
   sidebarEditCapo: 'Edit Capo / Playability',
   sidebarChangeAccompaniment: 'Change Accompaniment Pattern',
-  sidebarExportPdf: 'Export PDF / Print',
+  sidebarExportPdf: 'Export PDF',
+  sidebarExportGuitarPro: 'Export Guitar Pro 7',
+  sidebarOpenGuitarDslHelp: 'Open GuitarDSL Help',
   sidebarTranscribeYouTube: 'Transcribe from YouTube (Experimental)',
   sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
   inspectorHeading: 'GuitarDSL Inspector',

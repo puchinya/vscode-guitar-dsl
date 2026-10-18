@@ -6,6 +6,7 @@
 - Status: Current
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
+- Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
@@ -185,7 +186,7 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
 - **プレビュー**: プレビューのダイアグラムをクリックすると、そのダイアグラムのキーでこのコマンドを実行する。
 
 ### 3.4 `guitardsl.transcribeYouTube`（実験的）
-Gemini API の動画理解機能を活用し、YouTube の公開動画 URL から GuitarDSL 楽譜（コード、リズム、メロディ）を自動採譜して新しいエディタタブ（未保存ドキュメント）に開く。
+Gemini API の動画理解機能を活用し、YouTube の公開動画 URL から GuitarDSL 楽譜（コード、リズム、メロディ）を自動採譜して YouTube パネル内の読み取り専用プレビューに表示する。生成結果はコピーして通常の GuitarDSL エディターへ貼り付けられる。
 
 この機能は実験的な機能として提供する。出力は必ず下書きとして扱い、利用前に人が確認・修正する。構造検証の成功は、採譜内容が音楽的に正しいことを意味しない。実音に対する精度保証や品質 SLA は設けない。実験的の分類を変更するには、受け入れ可能な実音評価の証拠と基準を定める別の承認済み要件が必要となる。
 
@@ -193,10 +194,13 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   1. コマンドは singleton の `TranscribePanel` Webview を開くか、既存パネルを再表示する。
   2. パネルを開いただけでは Gemini を呼び出さず、GuitarDSL ドキュメントも作成・変更しない。
   3. YouTube URL、マスキングされた API キー、BPM、カポ、ビート種別、伴奏パターン、リピート圧縮、Gemini モデルの各操作は Webview が提供する。伴奏は「自動」（既定）または正規プリセットカタログのうち 4/4 でストレートのフィールに対応（`feelCompatibility` が `any` または `straight` を含む）するプリセットを、ファミリー → パターンの 2 段階で選ぶ。採譜結果には `feel:` を出力しない。
+- **設定パネル**: タイトル、実験的な注意、URL、キー状態とキー管理、詳細設定、開始、進捗 / エラーの順に表示する。キー値は status / log / HTML に含めず、未設定か保存済みかだけを表示する。キーの入力欄はキー管理を開いた時だけ表示し、保存後に空へ戻す。詳細は BPM（自動または 30–300）、カポ（自動または 0–12）、ビート（自動 / 8 / 16）、伴奏ファミリー / プリセット、`compressRepeats`、モデルの順で表示する。既定値・選択肢・既存の message 名と option 形状は維持する。URL が空でなく、保存済みキーまたは入力キーがある場合に限り Webview の開始ボタンを有効にし、URL の最終検証はホストが行う。開始中の二重実行を抑止し、エラー後は再操作できる。ネイティブな `details` / `summary` のような開閉を使い、閉じた領域の入力は Tab 順に含めない。YouTube の実処理キャンセルは追加しない。
 - **API キー**:
   1. 保存済みキーは `ExtensionContext.secrets` の `guitardsl.geminiApiKey` から読み出す。キーの値を Webview HTML に埋め込まず、保存済みかどうかだけを Webview に渡す。
   2. Webview の保存操作、または採譜開始時に入力された空でない置換キーによって SecretStorage に保存する。削除操作は SecretStorage の値を削除する。
   3. 保存済みキーも入力キーもない場合は、パネルにエラーを送り、Gemini を呼び出さない。
+  4. 初期表示時の SecretStorage 読み取りが失敗した場合もパネルを表示し、キー状態をローカライズした「確認できない」として示す。保存済み / 未設定と断定せず、キーの再入力・保存を可能にする。
+  5. Start 時の SecretStorage 読み取りが失敗した場合はローカライズしたエラーを表示して開始を復旧し、Gemini を呼び出さず、文書を生成しない。読み取り失敗時は入力キーでも処理を続けない。
 - **URL**:
   1. URL は Webview に入力する。
   2. `isValidYouTubeUrl` はパイプライン開始前に HTTPS かつ `youtube.com`、`www.youtube.com`、`youtu.be` の URL であることを検証する。
@@ -205,13 +209,15 @@ Gemini API の動画理解機能を活用し、YouTube の公開動画 URL か�
   1. 開始操作は `runTranscriptionPipeline` を実行する。ベースラインの後にハーモニー精緻化を行い、曖昧な場合だけ検証を行う。伴奏が自動の場合はグルーヴ精緻化とローカル最適化を行い、明示プリセットの場合はグルーヴ呼び出しを省略する。最後にカポ等を確定して最終検証する。
   2. パイプラインの `onStage` は `baseline`、`harmony`、任意の `verification`、自動伴奏時の `groove`、`finalizing` を通知する。`TranscribePanel` はローカライズされた進捗を `postMessage` で Webview のステータス欄に表示する。
   3. 採譜中は開始ボタンを無効にし、完了またはエラー時に再度有効にする。
-  4. ベースラインの失敗、および認証・クォータ・ネットワーク・API の例外は自動再試行しない。ハーモニー／グルーヴの API 呼び出しが成功して返した IR が、ベースラインとの形状または構造検証に失敗した場合に限り、同じ Schema で 1 回だけ再要求する。再要求は不正応答の interaction ID を `previous_interaction_id` に指定して連結し、構造エラーとベースラインの骨格をプロンプトに含める。2 回目も不正なら採譜を失敗させる。
-  5. 曖昧コードの検証は再試行しない。検証呼び出しが失敗するか、有効な候補選択が得られない場合は、そのイベントの最上位ハーモニー候補を使う。
+  4. 採譜中にパネルを閉じても、実行中の処理はキャンセルしない。処理が終わるまではパネルを再表示しても開始ボタンを無効にし、進行中の状態を示す。閉じたパネルが所有していた処理の結果は破棄し、未保存ドキュメントを作成・表示しない。処理終了後は再表示中のパネルで再試行できる。
+  5. Webview は message listener を登録してから現在の採譜ジョブ状態を Host に要求する。Host は要求時点の状態、job ID、単調増加する state revision を返信する。採譜中の通知、結果、エラー、状態 snapshot は job ID と revision を持ち、Webview は古い revision または現在の job と一致しない完了通知を無視する。Close→Reopen後の開始可否は一度きりの release 通知に依存しない。
+  6. ベースラインの失敗、および認証・クォータ・ネットワーク・API の例外は自動再試行しない。ハーモニー／グルーヴの API 呼び出しが成功して返した IR が、ベースラインとの形状または構造検証に失敗した場合に限り、同じ Schema で 1 回だけ再要求する。再要求は不正応答の interaction ID を `previous_interaction_id` に指定して連結し、構造エラーとベースラインの骨格をプロンプトに含める。2 回目も不正なら採譜を失敗させる。
+  7. 曖昧コードの検証は再試行しない。検証呼び出しが失敗するか、有効な候補選択が得られない場合は、そのイベントの最上位ハーモニー候補を使う。
 - **検証と出力**:
   1. 対応する曲は 4/4 拍子のみとする。BPM（30..300）、各小節の合計 4 拍、コード名・音高、カポ、歌詞・音節等を既存の構造・セマンティック制約で検証し、決定論的に GuitarDSL へシリアライズする。推奨カポ（`capo:`）、同一パターンの繰り返し（`%`）、メロディ音符ごとの音節歌詞（`lyr:`）を使う。コードやリズムの内容を自動補修して成功扱いにはしない。
      - 明示された伴奏プリセットはカタログに存在し、4/4 かつストレートのフィールに対応する必要がある。未知 ID や拍子・フィール不一致はエラーとし、別パターンへ自動置換しない。
-  2. `parseGuitarDsl` のエラー診断が 0 件であることを確認した後に限り、`workspace.openTextDocument({ language: 'guitardsl', content })` と `showTextDocument` で新しい未保存ドキュメントを開く。既存ファイルを上書き・変更しない。
-  3. キー、URL、Gemini 呼び出し、構造検証、シリアライズ、DSL 検証のいずれかが失敗した場合は、エラーを Webview に送り、生成ドキュメントを作成しない。エラー表示に API キー、モデルの生レスポンス、スタックトレースを含めない。
+  2. `parseGuitarDsl` のエラー診断が 0 件であることを確認した後、シリアライズ済み DSL を所有 Panel の成功メッセージで送る。Panel はそれを読み取り専用プレビューに表示し、ローカライズされたコピー操作を提供する。成功時も `workspace.openTextDocument` / `showTextDocument` を呼び出さず、新しい文書を自動作成しない。Panel を閉じるとプレビュー内容は破棄する。
+  3. キー、URL、Gemini 呼び出し、構造検証、シリアライズ、DSL 検証のいずれかが失敗した場合は、エラーを Webview に送り、結果プレビューや文書を作成しない。エラー表示やログに API キー、SecretStorage 例外の本文、モデルの生レスポンス、スタックトレースを含めない。
 
 ### 3.5 `guitardsl.setGeminiApiKey`
 Gemini API キーを設定・更新する。
@@ -228,7 +234,7 @@ Gemini API キーを設定・更新する。
 ### 3.8 `guitardsl.transcribeAudio`（実験的）
 ローカルの PCM WAV ファイルをネットワーク・API キーなしで解析し（ローカル Audio MIR）、コード進行とストローク位置を推定して、GuitarDSL を新しい未保存エディタに開く。Gemini 採譜（§3.4）とは独立している。
 
-- **実行コンテキスト**: コマンドパレットのみ。デスクトップ版 VS Code のローカル拡張ホストのみ対応。Web 拡張（vscode.dev）とリモート環境には対応しない。
+- **実行コンテキスト**: コマンドパレット、または Sidebar の採譜元選択から実行できる。デスクトップ版 VS Code のローカル拡張ホストのみ対応。Web 拡張（vscode.dev）とリモート環境には対応しない。
 - **入力制限**: `showOpenDialog` で WAV を 1 つだけ選択する。選択した URI のスキームが `file` 以外の場合は、未対応環境のメッセージを表示して中止する。受け付ける形式は次のとおり。
   - RIFF/WAVE の非圧縮整数 PCM
   - 16 bit または 24 bit
@@ -658,24 +664,32 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 - **アクティベーション**: `activationEvents` に `onView:guitardsl.sidebar` を含める。GuitarDSL ファイルを開く前でもサイドバーを開くと拡張機能が起動し、使用できる。`onLanguage:guitardsl` も維持する。
 
 ### 4C.2 セクションと項目
-ルートは次の 3 セクションをこの順に表示する。各項目はアイコン付きで、ラベルはローカライズする（§6.8）。
+ツリーのルートには、アクティブな GuitarDSL ファイルの basename、無題文書のローカライズ名、または「対象なし」を示す非操作 target を置き、その下に次の 5 区分を固定順で表示する。別タブや最後にアクティブだった文書へはフォールバックしない。区分と項目には安定した ID と ThemeIcon を使い、ラベルはローカライズする（§6.8）。初回は `Create` と `Open / Import` を展開し、残る区分を折りたたむ。文書の切替でユーザーの展開状態を変更しない。
 
-1. **Get Started**（初期状態で展開）
+1. **Create**
    1. `New from Template` → `guitardsl.newDocumentFromTemplate`
    2. `Open Sample` → `guitardsl.openSample`
-   3. `Open Preview to the Side` → `guitardsl.showPreview`（引数なし。対象は §3.1 の規則で決まる）
-   4. `Open Help` → `guitardsl.openHelp`
-2. **Current File**（初期状態で展開。§4C.3）
-3. **Tools**（初期状態で折りたたみ）
-   1. `Transcribe from YouTube (Experimental)` → `guitardsl.transcribeYouTube`
-   2. `Transcribe Local Audio (Experimental)` → `guitardsl.transcribeAudio`
+2. **Open / Import**
+   1. `Open GuitarDSL File` → 内部コマンド `guitardsl.navigation.openGuitarDslFile`
+   2. `Import Guitar Pro 7/8` → `guitardsl.importGuitarPro`
+   3. `Transcribe from Audio (Experimental)` → 内部コマンド `guitardsl.navigation.chooseTranscriptionSource`
+3. **Edit Assist**
+   1. `Open Score Preview` → 内部コマンド `guitardsl.navigation.showPreviewActive`
+   2. `Open Inspector` → `guitardsl.openInspector`
+4. **Export**
+   1. `Export PDF` → 内部コマンド `guitardsl.navigation.exportPdfActive`
+   2. `Export Guitar Pro 7` → 内部コマンド `guitardsl.navigation.exportGuitarProActive`
+5. **Help**
+   1. `Open GuitarDSL Help` → `guitardsl.openHelp`
 
-ヘルプの内容はサイドバーに複製せず、`guitardsl.openHelp` で開く。
+内部ナビゲーションコマンドは拡張機能内で登録し、`package.json` の公開コマンドやメニューへ追加しない。対象行は command を持たず、折りたためない。Sidebar は GuitarDSL 文書がなくても利用できる。
 
 ### 4C.3 Current File
-- アクティブなエディタのドキュメントが GuitarDSL ドキュメント（§2.1）の場合、そのドキュメントの URI を引数として次の 6 項目をこの順に表示する: `Open Preview to the Side`（`guitardsl.showPreview`）、`Edit Chord Diagram`（`guitardsl.editChordDiagram`）、`Edit Score Settings`（`guitardsl.editScoreSettings`）、`Edit Capo / Playability`（`guitardsl.editCapo`）、`Change Accompaniment Pattern`（`guitardsl.applyStrummingPattern`）、`Export PDF / Print`（`guitardsl.exportPdf`）。
-- アクティブなエディタがない、または GuitarDSL ドキュメントでない場合は、コマンドを持たない案内項目（「.guitardsl ファイルを開くと、ファイル操作が表示されます。」）を 1 つだけ表示する。他に開いている GuitarDSL ドキュメントには切り替えない。
-- アクティブなエディタの変更、テキストドキュメントのオープン・クローズで表示を更新する。定期的なポーリングは行わない。
+- 対象行は `window.activeTextEditor?.document` のみを表示する。アクティブな無題 GuitarDSL 文書はローカライズ名で示し、GuitarDSL 文書がない場合は「対象なし」とする。アクティブな GuitarDSL 文書がない時も 5 区分と文書不要の操作を表示し、ほかの開いている文書へ切り替えない。
+- `guitardsl.navigation.openGuitarDslFile` は `.guitardsl` / `.gdsl` をフィルターにした `showOpenDialog` を開き、選択後に拡張子を再検査して `openTextDocument(uri)` と `showTextDocument` を呼ぶ。キャンセル、非対応拡張子、読み込み失敗では新しい Untitled 文書を作らず、失敗をローカライズして通知する。
+- `guitardsl.navigation.chooseTranscriptionSource` は YouTube とローカル WAV の `showQuickPick` を開く。選択した場合だけ既存の `guitardsl.transcribeYouTube` または `guitardsl.transcribeAudio` を一度呼び、キャンセルではどちらも実行しない。
+- Preview / PDF / Guitar Pro の内部コマンドは実行時の `window.activeTextEditor?.document` を §2.1 の GuitarDSL 文書として確認し、その URI を既存コマンドへ明示して渡す。対象なしでは警告だけを表示し、他文書や古い TreeItem の URI を使わない。Inspector は `guitardsl.openInspector` の既存空状態を維持する。
+- アクティブエディタとテキスト文書の open / close イベントで表示を更新し、定期的なポーリングを行わない。
 
 ## 4D. 共通 Inspector (GuitarDSL Inspector)
 

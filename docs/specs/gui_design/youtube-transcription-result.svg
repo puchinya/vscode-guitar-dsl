@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="548px" height="800px" viewBox="0 0 548 800" role="img" aria-labelledby="t d">
+  <title id="t">YouTube 採譜・結果プレビュー</title>
+  <desc id="d">採譜済みの GuitarDSL を YouTube パネルの読み取り専用欄に表示し、コピー操作を提供する状態。自動で文書は作成されない。</desc>
+  <rect width="548" height="800" fill="#090d20"/>
+  <text x="30" y="38" font-size="19" font-weight="700" fill="#f0f2f8" font-family="Arial,'Noto Sans JP',sans-serif">YouTube音源から自動採譜（実験的）</text>
+  <path d="M9 52 H539" stroke="#353b52"/>
+  <text x="30" y="76" font-size="12" fill="#acb8cf" font-family="Arial,'Noto Sans JP',sans-serif">Gemini AIでYouTubeの動画からGuitarDSLを生成します。</text>
+  <rect x="30" y="91" width="487" height="55" rx="5" fill="#353b2d" stroke="#7b7540"/>
+  <text x="43" y="115" font-size="12" font-weight="600" fill="#fff0a3" font-family="Arial,'Noto Sans JP',sans-serif">実験的: 結果は下書きです。使用前に確認・修正してください。</text>
+  <text x="43" y="134" font-size="11" fill="#fff0a3" font-family="Arial,'Noto Sans JP',sans-serif">コード・リズム・メロディなどが誤っている可能性があります。</text>
+
+  <text x="30" y="174" font-size="13" font-weight="600" fill="#eaf0f8" font-family="Arial,'Noto Sans JP',sans-serif">YouTube動画 URL *</text>
+  <rect x="30" y="185" width="487" height="36" rx="5" fill="#18243a" stroke="#586680"/>
+  <text x="42" y="208" font-size="12" fill="#e5edf9" font-family="Arial,'Noto Sans JP',sans-serif">https://www.youtube.com/watch?v=... </text>
+
+  <text x="30" y="250" font-size="13" font-weight="600" fill="#eaf0f8" font-family="Arial,'Noto Sans JP',sans-serif">Gemini APIキー</text>
+  <text x="150" y="250" font-size="11" fill="#a2b3c9" font-family="Arial,'Noto Sans JP',sans-serif">保存済み</text>
+  <rect x="30" y="261" width="487" height="37" rx="5" fill="#18243a" stroke="#586680"/>
+  <text x="44" y="285" font-size="12" fill="#e5edf9" font-family="Arial,'Noto Sans JP',sans-serif">キーの値は表示しません</text>
+  <text x="388" y="285" font-size="12" font-weight="600" fill="#76b9ff" font-family="Arial,'Noto Sans JP',sans-serif">設定・変更  ▾</text>
+
+  <rect x="30" y="316" width="487" height="43" rx="5" fill="#141f34" stroke="#697a94"/>
+  <text x="44" y="343" font-size="14" font-weight="600" fill="#e7eefa" font-family="Arial,'Noto Sans JP',sans-serif">▸  採譜設定（詳細）</text>
+  <rect x="30" y="375" width="184" height="40" rx="4" fill="#2b4168"/>
+  <text x="44" y="401" font-size="13" font-weight="600" fill="#ffffff" font-family="Arial,'Noto Sans JP',sans-serif">▶  採譜を開始する</text>
+
+  <text x="30" y="455" font-size="15" font-weight="700" fill="#f0f2f8" font-family="Arial,'Noto Sans JP',sans-serif">採譜結果</text>
+  <text x="30" y="477" font-size="11" fill="#acb8cf" font-family="Arial,'Noto Sans JP',sans-serif">読み取り専用の下書きです。コピーして通常のエディターに貼り付けてください。</text>
+  <rect x="30" y="490" width="487" height="238" rx="4" fill="#111a2b" stroke="#586680"/>
+  <text x="44" y="516" font-size="12" fill="#7fb9ff" font-family="Menlo,Consolas,monospace">title: GuitarDSL Draft</text>
+  <text x="44" y="540" font-size="12" fill="#e7eefa" font-family="Menlo,Consolas,monospace">bpm: 96</text>
+  <text x="44" y="564" font-size="12" fill="#e7eefa" font-family="Menlo,Consolas,monospace">key: C</text>
+  <text x="44" y="588" font-size="12" fill="#e7eefa" font-family="Menlo,Consolas,monospace">| C | G | Am | F |</text>
+  <text x="44" y="612" font-size="12" fill="#e7eefa" font-family="Menlo,Consolas,monospace">| C | G | Am | F |</text>
+  <text x="44" y="636" font-size="12" fill="#8f9db3" font-family="Menlo,Consolas,monospace">...</text>
+  <rect x="30" y="748" width="128" height="38" rx="4" fill="#0e639c" stroke="#1177bb"/>
+  <text x="70" y="772" font-size="13" font-weight="600" fill="#ffffff" font-family="Arial,'Noto Sans JP',sans-serif">コピー</text>
+  <text x="174" y="772" font-size="11" fill="#a2b3c9" font-family="Arial,'Noto Sans JP',sans-serif">閉じるとこの結果は破棄されます。</text>
+</svg>

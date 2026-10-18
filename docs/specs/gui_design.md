@@ -5,6 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #150](https://github.com/puchinya/vscode-guitar-dsl/issues/150)
+- Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related specification: [拡張機能仕様](extension.md)
 
 ## Purpose
@@ -23,8 +24,8 @@
 
 | 画面 | SVG | 出力寸法 | 図に含める表示内容の末尾 |
 |---|---|---:|---|
-| サイドバー・開始時 | [sidebar-start-here.svg](gui_design/sidebar-start-here.svg) | 300 × 225 px | 「ツール」見出し |
-| サイドバー・GuitarDSL ファイル選択時 | [sidebar-current-file.svg](gui_design/sidebar-current-file.svg) | 300 × 350 px | PDF 出力 / 印刷の項目と「ツール」見出し |
+| サイドバー・開始時 | [sidebar-start-here.svg](gui_design/sidebar-start-here.svg) | 300 × 390 px | 対象なしと「ヘルプ」区分 |
+| サイドバー・GuitarDSL ファイル選択時 | [sidebar-current-file.svg](gui_design/sidebar-current-file.svg) | 300 × 382 px | GuitarDSL ヘルプを見る項目 |
 | Preview・ページ表示 | [preview-paged.svg](gui_design/preview-paged.svg) | 640 × 930 px | 楽譜ページ下端とページ番号 1/1 |
 | Preview・連続表示 | [preview-continuous.svg](gui_design/preview-continuous.svg) | 640 × 560 px | サンプル譜面の2段目の五線譜 |
 | Preview・Practice 有効 | [preview-practice.svg](gui_design/preview-practice.svg) | 640 × 650 px | 練習行、2段目の五線譜を含む譜面 |
@@ -34,7 +35,9 @@
 | Inspector・移調 | [inspector-transpose.svg](gui_design/inspector-transpose.svg) | 293 × 1050 px | コード対応表と「適用」「閉じる」 |
 | Inspector・コード進行候補 | [inspector-progression.svg](gui_design/inspector-progression.svg) | 480 × 1360 px | 試聴設定、適用、閉じる |
 | コード図エディタ | [chord-editor.svg](gui_design/chord-editor.svg) | 548 × 1260 px | DSL 行と保存操作一式 |
-| YouTube 採譜パネル | [youtube-transcription.svg](gui_design/youtube-transcription.svg) | 548 × 980 px | AI モデルと採譜開始ボタン |
+| YouTube 採譜パネル・設定を閉じた状態 | [youtube-transcription.svg](gui_design/youtube-transcription.svg) | 548 × 528 px | 採譜を開始するボタンと未入力時の状態表示 |
+| YouTube 採譜パネル・詳細設定を展開 | [youtube-transcription-advanced.svg](gui_design/youtube-transcription-advanced.svg) | 548 × 1000 px | AI モデルと採譜開始ボタン |
+| YouTube 採譜パネル・結果プレビュー | [youtube-transcription-result.svg](gui_design/youtube-transcription-result.svg) | 548 × 800 px | 読み取り専用 GuitarDSL とコピー操作 |
 
 ## Normative requirements
 
@@ -48,29 +51,32 @@
 
 #### 1.1 開始時
 
-![開始時の GuitarDSL サイドバー](gui_design/sidebar-start-here.svg)
+サイドバーは1つの Tree View で、最上部に操作できない対象行を表示する。対象行はアクティブな GuitarDSL ファイル名、無題文書のローカライズ名、または「対象なし」を示す。対象行の下には「新規作成」「開く・取り込む」「編集支援」「書き出す」「ヘルプ」の5区分をこの順に表示する。初回は「新規作成」と「開く・取り込む」を展開し、残りを折りたたむ。ファイル選択時の図は手動で区分を展開した代表状態である。
 
-| 上からの順序 | 要素と表示仕様 |
-|---:|---|
-| 1 | 見出し「GuitarDSL: はじめに」。 |
-| 2 | 展開中の「はじめる」。配下に「テンプレートから新規作成」「サンプルを開く」「プレビューを横に開く」「ヘルプを開く」をこの順で置く。 |
-| 3 | 展開中の「現在のファイル」。GuitarDSL ファイルが選択されていない状態として、「.guitardsl ファイルを開くと、ファイル…」の案内を表示する。 |
-| 4 | 折りたたまれた「ツール」。 |
+![開始時の GuitarDSL サイドバー](gui_design/sidebar-start-here.svg)
 
 #### 1.2 GuitarDSL ファイル選択時
 
 ![GuitarDSL ファイルを選択したサイドバー](gui_design/sidebar-current-file.svg)
 
-「はじめる」は開始時と同じ4項目を表示する。「現在のファイル」を展開し、アクティブな GuitarDSL ファイルに対する次の6操作を並べる。
+対象行にアクティブな GuitarDSL ファイル名を表示する。図では「編集支援」「書き出す」「ヘルプ」を展開し、アクティブなファイルに対する Preview / Inspector / PDF / Guitar Pro 7 の導線を示す。
 
-1. プレビューを横に開く
-2. コードダイアグラムを編集
-3. 楽譜設定を編集
-4. カポ / 弾きやすさを編集
-5. 伴奏パターンを変更
-6. PDF 出力 / 印刷
+アクティブなエディタが別文書へ切り替わったときに、区分の展開状態を強制変更しない。対象を使う Preview / Export 操作は、項目を押した時点のアクティブエディタだけを使う。
 
-最後に「ツール」見出しを折りたたみ状態で表示する。他の開いている文書を自動的に選択する表示は含めない。
+#### 1.3 項目・コマンド・対象
+
+| 区分・項目 | コマンド | 対象と動作 |
+|---|---|---|
+| 新規作成・テンプレートから新規作成 | `guitardsl.newDocumentFromTemplate` | 選択したテンプレートから新しい未保存文書を作成する |
+| 新規作成・サンプルから作成 | `guitardsl.openSample` | 選択した同梱サンプルから新しい未保存文書を作成する |
+| 開く・取り込む・GuitarDSL ファイルを開く | `guitardsl.navigation.openGuitarDslFile`（内部コマンド） | `.guitardsl` / `.gdsl` だけを選び、通常の TextEditor で開く |
+| 開く・取り込む・Guitar Pro 7/8 を取り込む | `guitardsl.importGuitarPro` | 既存の Guitar Pro 取り込み処理を使う |
+| 開く・取り込む・音源から採譜 | `guitardsl.navigation.chooseTranscriptionSource`（内部コマンド） | YouTube またはローカル WAV を選ぶ。Esc ではどちらも実行しない |
+| 編集支援・楽譜 Preview を開く | `guitardsl.navigation.showPreviewActive`（内部コマンド） | 実行時にアクティブな GuitarDSL 文書を明示する。対象なしでは何も出力しない |
+| 編集支援・Inspector を開く | `guitardsl.openInspector` | 既存 Inspector の対象解決と空状態を使う |
+| 書き出す・PDF に書き出す | `guitardsl.navigation.exportPdfActive`（内部コマンド） | 実行時にアクティブな GuitarDSL 文書だけを `guitardsl.exportPdf` に渡す |
+| 書き出す・Guitar Pro 7 に書き出す | `guitardsl.navigation.exportGuitarProActive`（内部コマンド） | 実行時にアクティブな GuitarDSL 文書だけを `guitardsl.exportGuitarPro` に渡す |
+| ヘルプ・GuitarDSL ヘルプを見る | `guitardsl.openHelp` | 同梱ヘルプを開く |
 
 サイドバーの項目・更新条件は [拡張機能仕様 §4C](extension.md) を参照する。
 
@@ -194,23 +200,21 @@ Inspector の設定・候補操作の意味は [拡張機能仕様 §4B、§4D](
 
 ### 5. YouTube 採譜パネル
 
-![全設定項目を含む YouTube 採譜パネル](gui_design/youtube-transcription.svg)
+画面はタイトル、実験的な注意、YouTube URL、キー状態とキー管理の開閉、詳細設定の開閉、開始ボタン、進捗またはエラーの順に並べる。採譜処理の境界は [拡張機能仕様 §3.4](extension.md) に従う。
 
-この画面は現行拡張機能にある実験的な採譜パネルの UI を記録する。YouTube URL や API キーの設定作業を本書が要求するものではない。図の入力欄は空欄状態を表し、URL と API Key のプレースホルダー文字列は説明用である。実際のキーやユーザーの URL は含めない。
+![設定を閉じた YouTube 採譜パネル](gui_design/youtube-transcription.svg)
 
-| 上からの順序 | 要素と代表表示 |
-|---:|---|
-| 1 | 見出し「YouTube 音源から自動採譜（実験的）」と、YouTube 音源からコード・ストロークリズム・メロディ五線譜・歌詞を解析し GuitarDSL を生成する説明。 |
-| 2 | 誤ったコード、リズム、メロディ、歌詞、BPM が出る可能性があるため下書きとして確認・修正するよう案内する注意枠。 |
-| 3 | 必須の YouTube 動画 URL 欄。値は未入力で、プレースホルダーのみを示す。 |
-| 4 | 必須の Gemini API Key 欄とキー保存操作。値は未入力で、プレースホルダーのみを示す。 |
-| 5 | 「採譜設定 (オプション)」。テンポは AI 自動検出または指定値 185 BPM と補足説明、カポは自動判定または指定値0、ビート種別は自動判定 / 8ビート優先 / 16ビート優先から選ぶ。 |
-| 6 | 伴奏パターンの選択欄。サンプル表示は曲に合わせた自動判定。 |
-| 7 | 「繰り返し区間を圧縮して楽譜を短縮」チェックボックスと、同一進行・メロディをリピート記号と複数行歌詞にまとめる説明。図では未選択。 |
-| 8 | AI モデルの選択欄。サンプル表示は Gemini 3.8 Flash。 |
-| 9 | 採譜開始ボタン。図は URL / API Key 未入力のため無効状態を示す。 |
+![詳細設定を展開した YouTube 採譜パネル](gui_design/youtube-transcription-advanced.svg)
 
-この図は未入力時の初期画面であり、登録済みキー、採譜中の進捗、完了結果、失敗メッセージを表さない。採譜機能の処理と外部サービスの境界は [拡張機能仕様 §3.4](extension.md) を参照する。
+![採譜結果プレビューを表示した YouTube パネル](gui_design/youtube-transcription-result.svg)
+
+初期図はキー管理と詳細設定の両方を閉じ、URL とキーが未設定で開始ボタンを無効にした状態を示す。キー欄は管理を開いた場合だけ表示し、保存後は入力値を空に戻す。通常は未設定 / 保存済みの状態を示すが、SecretStorage の読み取りに失敗した場合はローカライズした「キー状態を確認できない」と表示し、どちらとも断定しない。キーの値は画面の状態表示、ログ、HTML に含めない。
+
+詳細設定は BPM（自動 / 30–300 の手動値）、カポ（自動 / 0–12 の手動値）、ビート（自動 / 8 / 16）、伴奏ファミリーとプリセット、繰り返し圧縮、AI モデルの順に表示する。選択肢、既定値、既存コマンドへ渡す値は変えない。閉じた開閉領域の操作部品はキーボードフォーカス順に含めない。
+
+開始ボタンは URL が空でなく、保存済みキーまたは入力キーがある場合だけ有効にする。URL の検証は拡張機能ホストが引き続き行う。開始後は二重実行を抑え、既存の段階進捗とエラーを同じパネルに表示する。Start 時の SecretStorage 読み取り失敗はローカライズしたエラーを表示して開始を復旧し、Gemini 呼び出しと文書生成を行わない。YouTube の実行中キャンセル操作は表示しない。
+
+構造検証に成功した GuitarDSL は、このパネル内の読み取り専用欄に表示する。**コピー** 操作で通常の GuitarDSL エディターへ貼り付けて編集できる。採譜成功時にエディター文書は自動作成しない。パネルを閉じるとプレビューは破棄する。プレビュー表示、コピー操作、処理状態の同期は、Extension host からの message と Webview の応答に従う。
 
 ## Observable behavior
 
@@ -228,4 +232,4 @@ Inspector の設定・候補操作の意味は [拡張機能仕様 §4B、§4D](
 
 ## Verification strategy
 
-画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した全寸法でベクターレンダラーを使って出力し、全12図を一覧表示して、対象画面の先頭から最下部の要素まで欠落がないことを確認する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 150` で検証する。
+画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した全寸法でベクターレンダラーを使って出力し、全13図を一覧表示して、対象画面の先頭から最下部の要素まで欠落がないことを確認する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 150` で検証する。

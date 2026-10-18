@@ -11,6 +11,7 @@ import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrum
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
 import { registerGuitarDslSidebar } from './sidebar';
+import { registerGuitarDslSidebarNavigation } from './sidebarNavigation';
 import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
@@ -229,7 +230,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
-  const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (uri?: vscode.Uri, progressionSessionIdentity?: ProgressionAssistantSessionIdentity) => {
+  const previewDisposable = vscode.commands.registerCommand('guitardsl.showPreview', async (
+    uri?: vscode.Uri,
+    progressionSessionIdentity?: ProgressionAssistantSessionIdentity,
+    resolutionOptions?: { explicitUriOnly?: boolean }
+  ) => {
     const sessionIdentityAtInvocation = progressionSessionIdentity ?? progressionAssistantController?.getActiveSessionIdentity();
     const sameSessionIdentity = (left: ProgressionAssistantSessionIdentity | undefined, right: ProgressionAssistantSessionIdentity | undefined) =>
       left === undefined && right === undefined || !!left && !!right && left.uri === right.uri
@@ -237,7 +242,7 @@ export function activate(context: vscode.ExtensionContext) {
     const isCurrentProgressionSession = () => progressionSessionIdentity
       ? progressionAssistantController?.isCurrentSessionIdentity(progressionSessionIdentity) === true
       : sameSessionIdentity(progressionAssistantController?.getActiveSessionIdentity(), sessionIdentityAtInvocation);
-    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc, resolutionOptions);
     if (!isCurrentProgressionSession()) return;
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
@@ -626,8 +631,12 @@ export function activate(context: vscode.ExtensionContext) {
   }, null, context.subscriptions);
 
   // `targetUri` (optional) exports without the save dialog, e.g. for automation.
-  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (uri?: vscode.Uri, targetUri?: vscode.Uri) => {
-    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc);
+  const printDisposable = vscode.commands.registerCommand('guitardsl.exportPdf', async (
+    uri?: vscode.Uri,
+    targetUri?: vscode.Uri,
+    resolutionOptions?: { explicitUriOnly?: boolean }
+  ) => {
+    const doc = await resolveGuitarDslDocument(uri, lastActiveGuitarDslDoc, resolutionOptions);
     if (!doc) {
       vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
       return;
@@ -782,6 +791,7 @@ export function activate(context: vscode.ExtensionContext) {
     return isGuitarDslDocument(doc) ? doc : undefined;
   });
   context.subscriptions.push(...sidebar.disposables);
+  registerGuitarDslSidebarNavigation(context, msgs);
   const refreshSidebar = () => sidebar.provider.refresh();
   vscode.window.onDidChangeActiveTextEditor(refreshSidebar, null, context.subscriptions);
   vscode.workspace.onDidOpenTextDocument(refreshSidebar, null, context.subscriptions);

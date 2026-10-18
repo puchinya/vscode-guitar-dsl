@@ -3,6 +3,16 @@
 
 import * as vscode from 'vscode';
 
+export interface GuitarDslDocumentResolutionOptions {
+  /** Do not switch documents if the supplied URI cannot be opened as GuitarDSL. */
+  explicitUriOnly?: boolean;
+}
+
+/** Used by internal Sidebar routes that must remain bound to their captured active URI. */
+export const EXPLICIT_URI_ONLY_RESOLUTION: GuitarDslDocumentResolutionOptions = Object.freeze({
+  explicitUriOnly: true
+});
+
 export function isGuitarDslDocument(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
   if (!doc) {
     return false;
@@ -16,7 +26,8 @@ export function isGuitarDslDocument(doc: vscode.TextDocument | undefined): doc i
 
 export async function resolveGuitarDslDocument(
   uri?: vscode.Uri,
-  lastDoc?: vscode.TextDocument
+  lastDoc?: vscode.TextDocument,
+  options: GuitarDslDocumentResolutionOptions = {}
 ): Promise<vscode.TextDocument | undefined> {
   // 1. Uri passed explicitly
   if (uri) {
@@ -26,9 +37,11 @@ export async function resolveGuitarDslDocument(
         return doc;
       }
     } catch {
-      // Continue fallback
+      if (options.explicitUriOnly) return undefined;
     }
   }
+
+  if (options.explicitUriOnly) return undefined;
 
   // 2. Active text editor document
   const activeDoc = vscode.window.activeTextEditor?.document;

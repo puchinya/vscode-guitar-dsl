@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-17
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 は PR #141 で phase:review。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **最終更新日**: 2026-10-19
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -34,11 +34,27 @@
 
 ## Issue #136: Simplify the Preview Toolbar
 
-- **状態**: phase:review（[PR #141](https://github.com/puchinya/vscode-guitar-dsl/pull/141)）。承認済み契約 comment 6198022256 の SHA-256 `e6437802f21f358016c95cab2d5b4a3a0c29e126f3787f487971f58b1e0f6ea1` と 33,918 bytes は取得したコメント本文で一致。Issue の Implementation Contract pointer は規定形式と一致し、`verify-implementation-contract 136` は PASS。
+- **状態**: Issue #136 と [PR #141](https://github.com/puchinya/vscode-guitar-dsl/pull/141) は 2026-10-17 に `main` へマージ済み。Issue #136 は closed。
 - **実装**: 通常再生 transport を 48 px の1行に集約し、Playback settings と View & Export を非モーダル disclosure にまとめる。Practice ON 時だけ 42 px 行を表示。Capo / Beginner / progression の Preview 編集 UI は除き、Inspector で選んだ有効 DSL は Preview と PDF で共有する。紙面・向き変更は既存の `layoutChanged` を保ち、URI・文書 version・Preview generation に結び付いた一度限りのフォーカス復帰を追加。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit 1,136 passing、VS Code E2E 90 passing / 6 pending）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,599項目）、`validate-docs --issue 136`、`verify-implementation-contract 136`、`git diff --check` は PASS。P136 の実Webview E2Eは通常の `npm test` でも実行し、Preview 幅を実測 600 CSS px に調整した。Practice speed / loop / A / B にフォーカスした状態からコマンドでOFFにし、非表示前に `practice-toggle` へフォーカスが移ること、用紙選択と縦横変更後に各コントロールへ復帰すること、連続する向き変更および文書切替後に古いフォーカス先が復活しないことを検証。600pxと421pxの両方でtransport全件とtoolbarのはみ出しなしを確認し、View & ExportでTab到達、`:focus-visible` outline、Escape後のトリガーへのフォーカス復帰を実Webviewで確認した。JA/EN × Dark/Light の4ケースの実画面 capture も各1 passing。Extension Host 互換メッセージ5種のルーティング回帰テストを追加。VoiceOver / NVDA、Windows / Linux は未実施。
 - **画面証拠**: 実Extension Development Host の 600 CSS px Previewを目視確認し、JA/EN × Dark/LightそれぞれPractice OFF/ONの計8枚を保存した：`preview-en-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-en-light-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-light-600-practice-{off,on}-view-open-pr141.png`。旧421px captureは履歴証拠として保持。
 - **文書オーナー**: docs/specs/extension.md、docs/design/preview-rendering-and-export.md、docs/design/vscode-editor-experience.md、本書、EN/JA Help とその digest、生成済み media/help。
+
+## Issue #137: GuitarDSL Sidebar navigation
+
+- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はレビュー待ち（open / ready）。Issue #137 は `phase:review`。A-9〜A-13の指摘対応は、承認済みImplementation Contract comment 6251494436（SHA-256 `353e3d5ec70cb8ca5a049476fed51605b24c63625cab7e3a4c23ebcea32063e6`、25,314 bytes）の範囲内で実装・検証している。結果プレビューの画面証拠をIssue #137へ添付済み。
+- **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時に捕捉したアクティブ文書 URI に固定し、URI の解決失敗時に他文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜は SecretStorage 保存成功後に Webview のキー状態を同期し、失敗は成功扱いせず再試行可能にする。処理中の所有権と二重Start防止はパネル破棄後も Host に残る。成功結果はパネル内の読み取り専用プレビューとCopy操作で渡し、文書を自動生成しない。パネルを閉じると結果を破棄する。Webview準備後にHostの最新ジョブ状態を取得し、job IDと単調増加revisionで古い通知を無視する。Import/Export Guitar Pro は VS Code 標準 `music` Codicon を使う。
+- **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,167件 PASS**、VS Code E2E **104件 PASS / 6件 pending**）、`npm run compile:all`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,600項目）、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。E2EのGemini経路は全てfixtureで置き換え、実Gemini APIを呼び出さない規則を `docs/agents/testing.md` に記録している。A-10は成功したDSLのPanel内プレビュー、コピー、文書未生成を、A-11はready後の状態再取得、古いreleaseの無視、Start復旧をUnit/E2Eで確認した。A-12は成功通知を落とした場合のHost result snapshot再取得、単調revisionによる結果表示と所有job一致をUnit/E2Eで確認した。A-13は実WebviewのCopyクリックからHost clipboard adapterまでの成功、localized失敗、結果保持、古いjob ID拒否を確認した。A-9のSecretStorage読み取り失敗はlocalized unknown/error表示、Start復旧、Gemini実行なし、キー・例外本文・stack非露出をUnit/E2Eで確認した。SidebarのURI固定、Guitar Proアイコン、キー保存、進捗、再試行等の既存G137確認も維持する。VS Code/Electron E2Eは `docs/agents/testing.md` に従いサンドボックス外で実行。
+- **A-9追加検証（A-9時点）**: `npm run compile:all` と `npm run test:unit`（1,165 PASS）、サンドボックス外の `npm run test:e2e`（103 PASS / 6 pending）、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish` は PASS。初期 `SecretStorage.get` reject は localized unknown 状態とキー再入力導線を、Start reject は localized error、Start復旧、Gemini呼び出しなし、生成文書なし、APIキー・例外本文・stack非露出を unit / 実Webview E2E で確認。
+- **画面証拠**: Extension Development Host で取得。Sidebar は 300 CSS px、YouTube Panel は 548 CSS px。
+  - [Issue #137 の証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/137#issuecomment-6244861539) に4条件×2画面のキャプチャを掲載。
+  - EN・dark: [Sidebar](evidence/issue-137/sidebar-en-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-dark-collapsed.png)
+  - [Import/Export Guitar Pro の `music` Codicon を表示した Workbench capture](evidence/issue-137/sidebar-guitarpro-icons-en-dark-300px.png)（EN・dark、300 CSS px）。
+  - [YouTube採譜結果のPanel内プレビュー（fixture使用）](evidence/issue-137/youtube-transcription-result.png)（EN・dark、548 CSS px、実Gemini API呼出しなし）。[Issue #137 の証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/137#issuecomment-6251833476)。
+  - EN・light: [Sidebar](evidence/issue-137/sidebar-en-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-light-collapsed.png)
+  - JA・dark: [Sidebar](evidence/issue-137/sidebar-ja-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-dark-collapsed.png)
+  - JA・light: [Sidebar](evidence/issue-137/sidebar-ja-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-light-collapsed.png)
+- **未実施**: VoiceOver / NVDA の実操作、Windows / Linux。
 
 ## Issue #142: ギター・リズム符のタイによるシンコペーション
 

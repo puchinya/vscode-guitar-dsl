@@ -493,6 +493,408 @@ describe('transcription - serializer', () => {
     }
   });
 
+  it('G137 keeps key management and advanced options collapsed, ordered, and key-safe', () => {
+    for (const locale of ['ja', 'en'] as const) {
+      const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: false, model: 'gemini-3.8-flash', compressRepeats: false, locale });
+      const positions = [
+        html.indexOf('<h2>'),
+        html.indexOf('class="experimental-warning"'),
+        html.indexOf('id="youtubeUrl"'),
+        html.indexOf('id="apiKeyStatus"'),
+        html.indexOf('<details id="keyManagement">'),
+        html.indexOf('<details id="advancedOptions">'),
+        html.indexOf('id="btnStart"'),
+        html.indexOf('id="statusBox"'),
+        html.indexOf('id="resultPanel"')
+      ];
+      assert.ok(positions.every(position => position >= 0));
+      assert.deepStrictEqual(positions, [...positions].sort((a, b) => a - b), 'panel controls retain their specified order');
+      assert.match(html, /<details id="keyManagement">\s*<summary>/);
+      assert.match(html, /<details id="advancedOptions">\s*<summary>/);
+      assert.ok(!/<details id="(?:keyManagement|advancedOptions)"[^>]*\sopen(?:\s|>)/.test(html), 'both disclosures start closed');
+      assert.match(html, /id="apiKeyStatus"[^>]*>[^<]*(?:未設定|Not configured)/);
+      assert.ok(!html.includes('AIzaSy...'), 'the page does not show an API key-shaped placeholder');
+      assert.ok(html.includes("apiKey.value = ''"), 'save and clear acknowledgements clear the key input');
+      assert.ok(html.includes('hasSavedApiKey || apiKey.value.trim() !=='), 'Start checks saved or entered key state');
+      assert.ok(html.includes('youtubeUrl.value.trim() !=='), 'Start requires a nonempty URL');
+      assert.ok(html.includes('if (isTranscribing || btnStart.disabled) return;'), 'Start suppresses repeated clicks');
+      assert.match(html, /<textarea class="result-dsl" id="resultDsl" readonly/);
+      assert.ok(html.includes('id="btnCopyResult"'), 'the result has a copy action');
+      assert.ok(html.indexOf("window.addEventListener('message', event => {") < html.indexOf("vscode.postMessage({ command: 'requestTranscriptionState' })"), 'the renderer registers its listener before requesting current Host state');
+      assert.ok(html.includes('Number.isSafeInteger(msg.revision)'), 'the renderer ignores stale revisioned job messages');
+      for (const property of ['youtubeUrl', 'apiKey', 'bpmMode', 'bpmValue', 'capoMode', 'capoValue', 'beatType', 'strummingPresetId', 'compressRepeats', 'model']) {
+        assert.ok(html.includes(property), `existing ${property} option remains in the message`);
+      }
+    }
+  });
+
+  it('G137 A-9 keeps the panel renderable with an unknown key state when initial SecretStorage read fails', async () => {
+    const vscodeApi = require('vscode') as any;
+    const originalWorkspace = vscodeApi.workspace;
+    vscodeApi.workspace = {
+      getConfiguration: () => ({ get: () => undefined })
+    };
+
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.secretStorage = {
+      get: async () => { throw new Error('secret-storage-read-marker stack-marker'); }
+    };
+    host.disposed = false;
+    host.locale = 'ja';
+    host.panel = { webview: { html: '' } };
+
+    try {
+      await host.initHtml();
+    } finally {
+      if (originalWorkspace === undefined) delete vscodeApi.workspace;
+      else vscodeApi.workspace = originalWorkspace;
+    }
+
+    const html = host.panel.webview.html as string;
+    const status = html.match(/id="apiKeyStatus"[^>]*>([^<]*)<\/span>/)?.[1];
+    assert.strictEqual(status, 'キー状態を確認できません');
+    assert.ok(html.includes('id="btnSaveKey"'), 'key re-entry and save remain available');
+    assert.match(html, /id="btnClearKey" disabled/, 'unknown state does not claim a key can be cleared');
+    assert.ok(!html.includes('secret-storage-read-marker') && !html.includes('stack-marker'), 'storage errors and stacks are not rendered');
+  });
+
+  it('G137 A-9 reports localized Start read failures, skips the pipeline, and releases the retry lock', async () => {
+    const enteredKey = 'user-entered-secret-marker';
+    const readError = 'secret-storage-read-marker stack-marker';
+    let readFails = true;
+    let storedKey: string | undefined;
+    let storeCalls = 0;
+    let pipelineCalls = 0;
+    const secretStorage = {
+      get: async () => {
+        if (readFails) throw new Error(readError);
+        return storedKey;
+      },
+      store: async (_name: string, value: string) => {
+        storeCalls++;
+        storedKey = value;
+      },
+      delete: async () => { storedKey = undefined; }
+    };
+
+    const previousPanel = TranscribePanel.currentPanel;
+    try {
+    for (const [locale, expectedMessage] of [
+      ['ja', 'API キーを読み取れませんでした。キーを保存し直してから再試行してください。'],
+      ['en', 'The API key could not be read. Save it again, then retry.']
+    ] as const) {
+      const messages: any[] = [];
+      const host: any = Object.create(TranscribePanel.prototype);
+      host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+      host.secretStorage = secretStorage;
+      host.locale = locale;
+      host.executePipeline = async () => { pipelineCalls++; return {}; };
+      TranscribePanel.currentPanel = host;
+      const options = {
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        apiKey: enteredKey,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      };
+
+      await host.handleMessage({ command: 'startTranscription', options });
+      const errors = messages.filter(message => message.type === 'error');
+      assert.deepStrictEqual(errors.map(({ type, message }: any) => ({ type, message })), [{ type: 'error', message: expectedMessage }]);
+      const jobStates = messages.filter(message => message.type === 'transcriptionJobState');
+      assert.strictEqual(jobStates.length, 2, 'the host publishes the active and released states');
+      assert.strictEqual(jobStates[0].active, true);
+      assert.strictEqual(jobStates[1].active, false);
+      assert.strictEqual(jobStates[0].jobId, jobStates[1].jobId);
+      assert.ok(jobStates[1].revision > jobStates[0].revision, 'the released snapshot has a newer revision');
+      assert.strictEqual(typeof errors[0].jobId, 'number', 'job errors carry their owner identity');
+      assert.strictEqual(typeof errors[0].revision, 'number', 'job errors carry a monotonic revision');
+      assert.strictEqual(storeCalls, 0, 'a failed read stops before storing or using the submitted key');
+      assert.strictEqual(pipelineCalls, 0, 'a failed read stops before Gemini and document generation');
+      assert.strictEqual(host.transcriptionJobActive, false, 'Start is retryable after the read error');
+      assert.ok(!JSON.stringify(messages).includes(enteredKey), 'the entered API key is not echoed');
+      assert.ok(!JSON.stringify(messages).includes(readError), 'exception text and stack are not echoed');
+    }
+
+    readFails = false;
+    const retryMessages: any[] = [];
+    const retryHost: any = Object.create(TranscribePanel.prototype);
+    retryHost.panel = { webview: { postMessage: async (message: unknown) => { retryMessages.push(message); } } };
+    retryHost.secretStorage = secretStorage;
+    retryHost.locale = 'en';
+    retryHost.executePipeline = async () => { pipelineCalls++; return {}; };
+    TranscribePanel.currentPanel = retryHost;
+    await retryHost.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/not-youtube',
+        apiKey: enteredKey,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    assert.deepStrictEqual(retryMessages.filter(message => ['apiKeySaved', 'error'].includes(message.type)).map(message => message.type), ['apiKeySaved', 'error']);
+    assert.strictEqual(pipelineCalls, 0, 'a retry can save the key before URL validation without invoking Gemini');
+    assert.strictEqual(retryHost.transcriptionJobActive, false, 'the retry releases the Host lock as well');
+    } finally {
+      TranscribePanel.currentPanel = previousPanel;
+    }
+  });
+
+  it('G137 keeps successful DSL in the panel and copies the Host-owned result without creating a document', async () => {
+    const vscodeApi = require('vscode') as any;
+    const originalClipboardWriteText = vscodeApi.env.clipboard.writeText;
+    const originalWorkspace = vscodeApi.workspace;
+    const originalWindow = vscodeApi.window;
+    const messages: any[] = [];
+    const copied: string[] = [];
+    let openDocumentCalls = 0;
+    let showDocumentCalls = 0;
+    vscodeApi.env.clipboard.writeText = async (text: string) => { copied.push(text); };
+    vscodeApi.workspace = {
+      textDocuments: [],
+      openTextDocument: async () => { openDocumentCalls++; return {}; }
+    };
+    vscodeApi.window = { showTextDocument: async () => { showDocumentCalls++; } };
+
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = { get: async () => 'stored-test-key' };
+    host.locale = 'en';
+    host.disposed = false;
+    host.executePipeline = async () => sampleSong;
+    const previousPanel = TranscribePanel.currentPanel;
+    TranscribePanel.currentPanel = host;
+
+    try {
+      await host.handleMessage({
+        command: 'startTranscription',
+        options: {
+          youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          bpmMode: 'auto',
+          capoMode: 'auto',
+          compressRepeats: false,
+          model: 'gemini-3.8-flash'
+        }
+      });
+
+      const success = messages.find(message => message.type === 'success');
+      assert.ok(success, 'a structurally valid result is sent to the owner panel');
+      assert.strictEqual(success.dslText, serializeSongToGuitarDsl(sampleSong));
+      assert.strictEqual(typeof success.jobId, 'number');
+      assert.strictEqual(typeof success.revision, 'number');
+      assert.strictEqual(openDocumentCalls, 0, 'the successful path never calls openTextDocument');
+      assert.strictEqual(showDocumentCalls, 0, 'the successful path never calls showTextDocument');
+      assert.deepStrictEqual(vscodeApi.workspace.textDocuments, [], 'no workspace document is created');
+
+      const release = messages.find(message => message.type === 'transcriptionJobState' && message.active === false);
+      assert.ok(release, 'the released job publishes a state snapshot');
+      messages.length = 0; // model the success notification being lost before the renderer receives it
+      await host.handleMessage({ command: 'requestTranscriptionState' });
+      assert.strictEqual(messages.length, 1);
+      assert.deepStrictEqual(messages[0].result, { jobId: success.jobId, dslText: success.dslText }, 'the snapshot replays only the result owned by this job');
+      assert.strictEqual(messages[0].revision, release.revision, 'the result travels in the newer released-state revision');
+
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      assert.deepStrictEqual(copied, [success.dslText], 'copy uses the result owned by the Host panel');
+      assert.ok(messages.some(message => message.type === 'transcriptionResultCopied' && message.jobId === success.jobId));
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId - 1 });
+      assert.strictEqual(copied.length, 1, 'a stale result identity cannot copy a different result');
+
+      vscodeApi.env.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); };
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      const copyFailure = messages.find(message => message.type === 'transcriptionResultCopyFailed');
+      assert.strictEqual(copyFailure.message, 'The transcription result could not be copied.');
+      assert.strictEqual(host.transcriptionResult, success.dslText, 'clipboard failure does not mutate the result');
+
+      messages.length = 0;
+      await host.handleMessage({
+        command: 'startTranscription',
+        options: {
+          youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          bpmMode: 'auto',
+          capoMode: 'auto',
+          compressRepeats: false,
+          model: 'gemini-3.8-flash'
+        }
+      });
+      const nextStartState = messages.find(message => message.type === 'transcriptionJobState' && message.active === true);
+      const nextSuccess = messages.find(message => message.type === 'success');
+      assert.ok(nextStartState && nextSuccess);
+      assert.strictEqual(nextStartState.result, undefined, 'a new job does not inherit the previous result snapshot');
+      assert.notStrictEqual(nextSuccess.jobId, success.jobId, 'each run receives its own result identity');
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      assert.strictEqual(copied.length, 1, 'a previous job ID cannot copy the new job result');
+    } finally {
+      vscodeApi.env.clipboard.writeText = originalClipboardWriteText;
+      if (originalWorkspace === undefined) delete vscodeApi.workspace;
+      else vscodeApi.workspace = originalWorkspace;
+      if (originalWindow === undefined) delete vscodeApi.window;
+      else vscodeApi.window = originalWindow;
+      TranscribePanel.currentPanel = previousPanel;
+    }
+  });
+
+  it('G137 returns an authoritative released-job snapshot after Webview readiness', async () => {
+    const ownerMessages: any[] = [];
+    const reopenedMessages: any[] = [];
+    const owner: any = Object.create(TranscribePanel.prototype);
+    owner.panel = { webview: { postMessage: async (message: unknown) => { ownerMessages.push(message); } } };
+    owner.secretStorage = { get: async () => 'stored-test-key' };
+    owner.locale = 'en';
+    owner.disposed = false;
+    owner.executePipeline = async () => sampleSong;
+
+    const reopened: any = Object.create(TranscribePanel.prototype);
+    reopened.panel = { webview: { postMessage: async (message: unknown) => { reopenedMessages.push(message); } } };
+    reopened.disposed = false;
+    TranscribePanel.currentPanel = reopened;
+
+    try {
+      await owner.handleMessage({
+        command: 'startTranscription',
+        options: { youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', bpmMode: 'auto', capoMode: 'auto' }
+      });
+      const releaseMessage = reopenedMessages.find(message => message.type === 'transcriptionJobState' && message.active === false);
+      assert.ok(releaseMessage, 'the current panel receives the release update when possible');
+
+      reopenedMessages.length = 0; // model the release update being lost before listener readiness
+      await reopened.handleMessage({ command: 'requestTranscriptionState' });
+      assert.deepStrictEqual(reopenedMessages, [releaseMessage], 'ready requests re-read the authoritative Host state');
+      assert.strictEqual(reopenedMessages[0].active, false);
+      assert.strictEqual(typeof reopenedMessages[0].jobId, 'number');
+      assert.strictEqual(reopenedMessages[0].revision, releaseMessage.revision);
+      assert.strictEqual(reopenedMessages[0].result, undefined, 'a different panel cannot receive the old owner result');
+      assert.ok(ownerMessages.some(message => message.type === 'success'));
+    } finally {
+      TranscribePanel.currentPanel = undefined;
+    }
+  });
+
+  it('G137 synchronizes implicit key saves and reports SecretStorage failures without success acknowledgements', async () => {
+    const key = 'unit-test-secret-value';
+    const messages: any[] = [];
+    let storedKey: string | undefined;
+    const secretStorage = {
+      get: async () => storedKey,
+      store: async (_name: string, value: string) => { storedKey = value; },
+      delete: async () => { storedKey = undefined; }
+    };
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = secretStorage;
+    host.locale = 'en';
+
+    await host.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/watch?v=not-youtube',
+        apiKey: `  ${key}  `,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    assert.strictEqual(storedKey, key, 'Start stores the trimmed key in SecretStorage before URL validation');
+    assert.deepStrictEqual(messages.filter(message => ['apiKeySaved', 'error'].includes(message.type)).map(message => message.type), ['apiKeySaved', 'error']);
+    assert.strictEqual(messages.find(message => message.type === 'apiKeySaved').success, true);
+    assert.ok(!JSON.stringify(messages).includes(key), 'host responses never echo the API key');
+
+    messages.length = 0;
+    secretStorage.store = async () => { throw new Error('simulated secure storage failure'); };
+    await host.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/watch?v=not-youtube',
+        apiKey: key,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    const startSaveFailure = messages.find(message => message.type === 'apiKeySaveFailed');
+    assert.ok(startSaveFailure);
+    assert.strictEqual(startSaveFailure.duringStart, true, 'implicit save failure identifies the rejected start request');
+    assert.ok(!JSON.stringify(messages).includes(key), 'save failures do not echo the API key');
+
+    messages.length = 0;
+    await host.handleMessage({ command: 'saveApiKey', apiKey: key });
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
+    assert.notStrictEqual(messages[0].duringStart, true, 'independent key-save failure is separate from transcription state');
+
+    messages.length = 0;
+    secretStorage.delete = async () => { throw new Error('simulated secure storage failure'); };
+    await host.handleMessage({ command: 'clearApiKey' });
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeyClearFailed']);
+  });
+
+  it('G137 keeps Host job ownership through key failures, rejects concurrent starts, and releases after failure', async () => {
+    const messages: any[] = [];
+    let pipelineCalls = 0;
+    let failStore = true;
+    let failDelete = true;
+    let rejectPipeline!: (error: Error) => void;
+    const pendingPipeline = new Promise<never>((_, reject) => {
+      rejectPipeline = reject;
+    });
+    let signalPipelineStarted!: () => void;
+    const pipelineStarted = new Promise<void>(resolve => { signalPipelineStarted = resolve; });
+    const secretStorage = {
+      get: async () => 'stored-test-key',
+      store: async () => { if (failStore) throw new Error('simulated store failure'); },
+      delete: async () => { if (failDelete) throw new Error('simulated delete failure'); }
+    };
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = secretStorage;
+    host.locale = 'en';
+    host.executePipeline = async () => {
+      pipelineCalls++;
+      signalPipelineStarted();
+      return pendingPipeline;
+    };
+    const startMessage = {
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        bpmMode: 'manual',
+        bpmValue: 120,
+        capoMode: 'manual',
+        capoValue: 3,
+        beatType: '16beat',
+        strummingPresetId: 'strum_4_4_quarter_basic',
+        compressRepeats: true,
+        model: 'gemini-2.5-pro'
+      }
+    };
+
+    const firstStart = host.handleMessage(startMessage);
+    await pipelineStarted;
+    assert.strictEqual(pipelineCalls, 1, 'the first Start owns the pending pipeline');
+    assert.strictEqual(host.transcriptionJobActive, true, 'Host marks the job active while the pipeline is pending');
+
+    await host.handleMessage(startMessage);
+    await host.handleMessage({ command: 'clearApiKey' });
+    await host.handleMessage({ command: 'saveApiKey', apiKey: 'unsaved-test-key' });
+    assert.strictEqual(pipelineCalls, 1, 'duplicate Start is rejected while the owner pipeline is pending');
+    assert.strictEqual(host.transcriptionJobActive, true, 'key-management failures do not release the Host job');
+    assert.ok(messages.some(message => message.type === 'apiKeyClearFailed'));
+    assert.ok(messages.some(message => message.type === 'apiKeySaveFailed' && message.duringStart !== true));
+    assert.ok(!messages.some(message => message.type === 'success'), 'key failures cannot complete the transcription');
+
+    rejectPipeline(new Error('simulated pending pipeline failure'));
+    await firstStart;
+    assert.strictEqual(host.transcriptionJobActive, false, 'the owning Start releases the Host job in finally after failure');
+    assert.strictEqual(messages.filter(message => message.type === 'error').length, 1, 'pipeline failure reaches the owning job');
+
+    failStore = false;
+    failDelete = false;
+    host.executePipeline = async () => {
+      pipelineCalls++;
+      throw new Error('simulated retry failure');
+    };
+    await host.handleMessage(startMessage);
+    assert.strictEqual(pipelineCalls, 2, 'a new Start reaches the pipeline after the failed owner job has ended');
+    assert.strictEqual(host.transcriptionJobActive, false, 'retry failure also releases the Host job');
+  });
+
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
     for (const locale of ['ja', 'en'] as const) {
       const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });
