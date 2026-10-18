@@ -42,7 +42,7 @@
 
 ## Issue #137: GuitarDSL Sidebar navigation
 
-- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はdraft。self-review完了後にreviewへ移行する。承認済み Implementation Contract comment 6244468492 の SHA-256 `d18af999c4ed587931e4f37312d170feffa5c72264019f938cf81a9b418223a2` と 19,833 bytes は取得したコメント本文で一致し、`verify-implementation-contract 137` は PASS。
+- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はレビュー待ち（open / ready）。Issue #137 は `phase:review`。承認済み Implementation Contract comment 6244468492 の SHA-256 `d18af999c4ed587931e4f37312d170feffa5c72264019f938cf81a9b418223a2` と 19,833 bytes は取得したコメント本文で一致し、`verify-implementation-contract 137` は PASS。
 - **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時にアクティブ文書を解決し、他文書や最後の GuitarDSL 文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜の設定とキー管理は native disclosure にまとめ、SecretStorage の状態だけを表示し、URL とキーが揃った時だけ開始できる。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,160件 PASS**、VS Code E2E **99件 PASS / 6件 pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,600項目**）、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。G137 UI E2E は 300 CSS px の Sidebar、548 CSS px の YouTube Panel、Tab / Shift+Tab / Space / Quick Pick の Enter・Escape、collapsed disclosure の Tab 除外、Chromium AX role/name/focus を確認した。E2E は `docs/agents/testing.md` に従いサンドボックス外で実行。
 - **画面証拠**: Extension Development Host で取得。Sidebar は 300 CSS px、YouTube Panel は 548 CSS px。
