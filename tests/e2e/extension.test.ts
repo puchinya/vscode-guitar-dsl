@@ -3599,13 +3599,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
       const originalOpenTextDocument = (vscode.workspace as any).openTextDocument;
       const originalShowTextDocument = (vscode.window as any).showTextDocument;
+      const originalWriteClipboardText = owner.writeClipboardText;
       const documentsBefore = new Set(vscode.workspace.textDocuments.map(document => document.uri.toString()));
       let openTextDocumentCalls = 0;
       let showTextDocumentCalls = 0;
       let pipelineCalls = 0;
       const ownerMessages: any[] = [];
+      const clipboardWrites: string[] = [];
       const ownerWebview = owner.panel.webview;
       const originalPostMessage = ownerWebview.postMessage;
+      owner.writeClipboardText = async (text: string) => { clipboardWrites.push(text); };
       const draft = {
         title: 'Panel Preview Draft',
         artist: 'Issue 137',
@@ -3646,6 +3649,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       };
       ownerWebview.postMessage = (message: unknown) => {
         ownerMessages.push(message);
+        if ((message as any).type === 'success') {
+          return Promise.resolve(false); // simulate the success notification being lost
+        }
         return originalPostMessage.call(ownerWebview, message);
       };
 
@@ -3683,6 +3689,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(panelState.resultText.includes('title: Panel Preview Draft'));
         assert.strictEqual(panelState.copyButton, true, 'the draft offers a copy operation');
         assert.strictEqual(panelState.readOnly, true, 'the preview is read-only');
+        const resultSnapshot = ownerMessages.find(message => message.type === 'transcriptionJobState'
+          && message.active === false && Number.isSafeInteger(message.jobId)
+          && message.result?.jobId === message.jobId);
+        assert.ok(resultSnapshot, 'the later released-state snapshot contains the panel-owned result');
+        assert.strictEqual(resultSnapshot.result.dslText, panelState.resultText, 'the snapshot replays the exact successful DSL');
         assert.strictEqual(openTextDocumentCalls, 0, 'success never calls openTextDocument');
         assert.strictEqual(showTextDocumentCalls, 0, 'success never calls showTextDocument');
         assert.deepStrictEqual(vscode.workspace.textDocuments.filter(document => !documentsBefore.has(document.uri.toString())), [], 'success creates no workspace document');
@@ -3690,6 +3701,37 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
         await evaluateTranscriptionWebview<void>(`document.getElementById('resultPanel').scrollIntoView({ block: 'end' })`);
         await captureTranscriptionWebviewScreenshot('youtube-transcription-result.png', 137);
+
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnCopyResult').click()`);
+        let copyStatus = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          copyStatus = await evaluateTranscriptionWebview<string>(`document.getElementById('resultCopyStatus')?.textContent || ''`);
+          if (copyStatus) break;
+          await settle(20);
+        }
+        assert.deepStrictEqual(clipboardWrites, [panelState.resultText], 'the real Copy click sends the exact displayed DSL to Host clipboard handling');
+        assert.ok(['Copied.', 'コピーしました。'].includes(copyStatus), 'the Webview reports copy success');
+
+        owner.writeClipboardText = async () => { throw new Error('simulated clipboard denial'); };
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnCopyResult').click()`);
+        let copyFailureStatus = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          copyFailureStatus = await evaluateTranscriptionWebview<string>(`document.getElementById('resultCopyStatus')?.textContent || ''`);
+          if (copyFailureStatus && copyFailureStatus !== copyStatus) break;
+          await settle(20);
+        }
+        const expectedCopyFailure = owner.locale === 'ja'
+          ? '採譜結果をコピーできませんでした。'
+          : 'The transcription result could not be copied.';
+        assert.strictEqual(copyFailureStatus, expectedCopyFailure, 'clipboard denial produces a localized Host error');
+        panelState = await evaluateTranscriptionWebview<any>(`JSON.parse(JSON.stringify({
+          resultText: document.getElementById('resultDsl')?.value,
+          resultVisible: document.getElementById('resultPanel')?.style.display !== 'none'
+        }))`);
+        assert.strictEqual(panelState.resultText, resultSnapshot.result.dslText, 'clipboard failure does not alter the result');
+        assert.strictEqual(panelState.resultVisible, true);
+        await owner.handleMessage({ command: 'copyTranscriptionResult', jobId: resultSnapshot.jobId + 1 });
+        assert.deepStrictEqual(clipboardWrites, [resultSnapshot.result.dslText], 'a stale job ID is rejected without another clipboard write');
 
         owner.dispose();
         await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
@@ -3707,6 +3749,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         ownerWebview.postMessage = originalPostMessage;
         (vscode.workspace as any).openTextDocument = originalOpenTextDocument;
         (vscode.window as any).showTextDocument = originalShowTextDocument;
+        owner.writeClipboardText = originalWriteClipboardText;
         TranscribePanel.currentPanel?.dispose();
         if (originalKey === undefined) await secretStorage.delete('guitardsl.geminiApiKey');
         else await secretStorage.store('guitardsl.geminiApiKey', originalKey);

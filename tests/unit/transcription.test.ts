@@ -662,6 +662,8 @@ describe('transcription - serializer', () => {
     host.locale = 'en';
     host.disposed = false;
     host.executePipeline = async () => sampleSong;
+    const previousPanel = TranscribePanel.currentPanel;
+    TranscribePanel.currentPanel = host;
 
     try {
       await host.handleMessage({
@@ -684,17 +686,51 @@ describe('transcription - serializer', () => {
       assert.strictEqual(showDocumentCalls, 0, 'the successful path never calls showTextDocument');
       assert.deepStrictEqual(vscodeApi.workspace.textDocuments, [], 'no workspace document is created');
 
+      const release = messages.find(message => message.type === 'transcriptionJobState' && message.active === false);
+      assert.ok(release, 'the released job publishes a state snapshot');
+      messages.length = 0; // model the success notification being lost before the renderer receives it
+      await host.handleMessage({ command: 'requestTranscriptionState' });
+      assert.strictEqual(messages.length, 1);
+      assert.deepStrictEqual(messages[0].result, { jobId: success.jobId, dslText: success.dslText }, 'the snapshot replays only the result owned by this job');
+      assert.strictEqual(messages[0].revision, release.revision, 'the result travels in the newer released-state revision');
+
       await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
       assert.deepStrictEqual(copied, [success.dslText], 'copy uses the result owned by the Host panel');
       assert.ok(messages.some(message => message.type === 'transcriptionResultCopied' && message.jobId === success.jobId));
       await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId - 1 });
       assert.strictEqual(copied.length, 1, 'a stale result identity cannot copy a different result');
+
+      vscodeApi.env.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); };
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      const copyFailure = messages.find(message => message.type === 'transcriptionResultCopyFailed');
+      assert.strictEqual(copyFailure.message, 'The transcription result could not be copied.');
+      assert.strictEqual(host.transcriptionResult, success.dslText, 'clipboard failure does not mutate the result');
+
+      messages.length = 0;
+      await host.handleMessage({
+        command: 'startTranscription',
+        options: {
+          youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          bpmMode: 'auto',
+          capoMode: 'auto',
+          compressRepeats: false,
+          model: 'gemini-3.8-flash'
+        }
+      });
+      const nextStartState = messages.find(message => message.type === 'transcriptionJobState' && message.active === true);
+      const nextSuccess = messages.find(message => message.type === 'success');
+      assert.ok(nextStartState && nextSuccess);
+      assert.strictEqual(nextStartState.result, undefined, 'a new job does not inherit the previous result snapshot');
+      assert.notStrictEqual(nextSuccess.jobId, success.jobId, 'each run receives its own result identity');
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      assert.strictEqual(copied.length, 1, 'a previous job ID cannot copy the new job result');
     } finally {
       vscodeApi.env.clipboard.writeText = originalClipboardWriteText;
       if (originalWorkspace === undefined) delete vscodeApi.workspace;
       else vscodeApi.workspace = originalWorkspace;
       if (originalWindow === undefined) delete vscodeApi.window;
       else vscodeApi.window = originalWindow;
+      TranscribePanel.currentPanel = previousPanel;
     }
   });
 
@@ -727,6 +763,7 @@ describe('transcription - serializer', () => {
       assert.strictEqual(reopenedMessages[0].active, false);
       assert.strictEqual(typeof reopenedMessages[0].jobId, 'number');
       assert.strictEqual(reopenedMessages[0].revision, releaseMessage.revision);
+      assert.strictEqual(reopenedMessages[0].result, undefined, 'a different panel cannot receive the old owner result');
       assert.ok(ownerMessages.some(message => message.type === 'success'));
     } finally {
       TranscribePanel.currentPanel = undefined;

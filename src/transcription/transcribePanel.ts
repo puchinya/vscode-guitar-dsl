@@ -126,7 +126,7 @@ export class TranscribePanel {
         const resultJobId = this.transcriptionResultJobId;
         if (!this.transcriptionResult || resultJobId === undefined || message.jobId !== resultJobId) break;
         try {
-          await vscode.env.clipboard.writeText(this.transcriptionResult);
+          await this.writeClipboardText(this.transcriptionResult);
           this.postMessage({ type: 'transcriptionResultCopied', jobId: resultJobId });
         } catch {
           this.postMessage({
@@ -330,11 +330,18 @@ export class TranscribePanel {
   private postTranscriptionJobState(): void {
     if (this.disposed) return;
     const job = TranscribePanel.activeJob;
+    const jobId = job?.id ?? TranscribePanel.latestJobId;
+    const result = this.transcriptionResult !== undefined
+      && this.transcriptionResultJobId !== undefined
+      && this.transcriptionResultJobId === jobId
+      ? { jobId: this.transcriptionResultJobId, dslText: this.transcriptionResult }
+      : undefined;
     this.panel.webview.postMessage({
       type: 'transcriptionJobState',
       active: job !== undefined,
-      jobId: job?.id ?? TranscribePanel.latestJobId,
-      revision: TranscribePanel.stateRevision
+      jobId,
+      revision: TranscribePanel.stateRevision,
+      ...(result ? { result } : {})
     });
   }
 
@@ -349,6 +356,10 @@ export class TranscribePanel {
 
   private executePipeline(options: Parameters<typeof runTranscriptionPipeline>[0]) {
     return runTranscriptionPipeline(options);
+  }
+
+  private writeClipboardText(text: string): Thenable<void> {
+    return vscode.env.clipboard.writeText(text);
   }
 
   public dispose(): void {
@@ -817,6 +828,15 @@ export class TranscribePanel {
       return true;
     };
 
+    const showTranscriptionResult = (dslText, jobId) => {
+      if (typeof dslText !== 'string' || !dslText || !Number.isSafeInteger(jobId)) return false;
+      resultDsl.value = dslText;
+      resultJobId = jobId;
+      resultPanel.style.display = 'block';
+      resultCopyStatus.textContent = '';
+      return true;
+    };
+
     document.getElementById('btnCopyResult').addEventListener('click', () => {
       if (resultDsl.value && resultJobId !== null) {
         vscode.postMessage({ command: 'copyTranscriptionResult', jobId: resultJobId });
@@ -909,10 +929,7 @@ export class TranscribePanel {
         hasTerminalStatus = true;
         statusBox.className = 'status-box';
         statusBox.style.display = 'none';
-        resultDsl.value = typeof msg.dslText === 'string' ? msg.dslText : '';
-        resultJobId = msg.jobId;
-        resultPanel.style.display = resultDsl.value ? 'block' : 'none';
-        resultCopyStatus.textContent = '';
+        showTranscriptionResult(msg.dslText, msg.jobId);
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
         updateStartEligibility();
       } else if (msg.type === 'transcriptionResultCopied' && msg.jobId === resultJobId) {
@@ -945,6 +962,9 @@ export class TranscribePanel {
             statusBox.style.display = 'none';
           }
           btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        }
+        if (msg.result?.jobId === msg.jobId && showTranscriptionResult(msg.result.dslText, msg.result.jobId)) {
+          hasTerminalStatus = true;
         }
         updateStartEligibility();
       }
