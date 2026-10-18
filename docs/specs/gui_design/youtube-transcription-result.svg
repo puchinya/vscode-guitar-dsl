@@ -21,8 +21,8 @@
 
   <rect x="30" y="316" width="487" height="43" rx="5" fill="#141f34" stroke="#697a94"/>
   <text x="44" y="343" font-size="14" font-weight="600" fill="#e7eefa" font-family="Arial,'Noto Sans JP',sans-serif">▸  採譜設定（詳細）</text>
-  <rect x="30" y="375" width="487" height="40" rx="5" fill="#176b44" stroke="#3ca370"/>
-  <text x="202" y="401" font-size="13" font-weight="700" fill="#f0fff5" font-family="Arial,'Noto Sans JP',sans-serif">✓  採譜が完了しました</text>
+  <rect x="30" y="375" width="184" height="40" rx="4" fill="#2b4168"/>
+  <text x="44" y="401" font-size="13" font-weight="600" fill="#ffffff" font-family="Arial,'Noto Sans JP',sans-serif">▶  採譜を開始する</text>
 
   <text x="30" y="455" font-size="15" font-weight="700" fill="#f0f2f8" font-family="Arial,'Noto Sans JP',sans-serif">採譜結果</text>
   <text x="30" y="477" font-size="11" fill="#acb8cf" font-family="Arial,'Noto Sans JP',sans-serif">読み取り専用の下書きです。コピーして通常のエディターに貼り付けてください。</text>
