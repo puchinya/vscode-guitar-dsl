@@ -2891,6 +2891,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const incomingMessages: any[] = [];
       const outgoingMessages: any[] = [];
       const originalPostMessage = webview.postMessage;
+      const originalSecretStorage = firstPanel.secretStorage;
+      const originalExecutePipeline = firstPanel.executePipeline;
+      let rejectPendingPipeline: ((error: Error) => void) | undefined;
       const messageSubscription = webview.onDidReceiveMessage((message: any) => incomingMessages.push(message));
       webview.postMessage = (message: any) => {
         outgoingMessages.push(message);
@@ -2974,6 +2977,209 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(retryStarts[1].options.apiKey, '', 'the saved key is not resent from the cleared input');
         assert.strictEqual(retryStarts[1].options.youtubeUrl, 'https://example.invalid/watch?v=retry');
 
+        const { STRUMMING_PATTERN_PRESETS } = require('../../strummingPatterns') as {
+          STRUMMING_PATTERN_PRESETS: Array<{ id: string; family: string; meter: string; feelCompatibility: string | string[] }>;
+        };
+        const selectedPreset = STRUMMING_PATTERN_PRESETS.find(preset => preset.meter === '4/4'
+          && preset.family !== 'auto'
+          && (preset.feelCompatibility === 'any' || preset.feelCompatibility.includes('straight')));
+        assert.ok(selectedPreset, 'a real non-auto 4/4 preset is available for the linked family selector');
+
+        const repeatedSong = {
+          title: 'G137 pending pipeline test',
+          artist: 'Extension E2E',
+          key: 'C',
+          bpm: 120,
+          timeSignature: { numerator: 4, denominator: 4 },
+          sections: [
+            {
+              name: 'Verse 1',
+              measures: [{
+                chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+                rhythm: [
+                  { duration: '4', direction: 'd' }, { duration: '4', direction: 'u' },
+                  { duration: '4', direction: 'd' }, { duration: '4', direction: 'u' }
+                ],
+                melody: [
+                  { pitch: 'c4', duration: '4', lyric: 'き' },
+                  { pitch: 'd4', duration: '4', lyric: 'ょ' },
+                  { pitch: 'e4', duration: '4', lyric: 'う' }
+                ]
+              }]
+            },
+            {
+              name: 'Verse 2',
+              measures: [{
+                chords: [{ name: 'C', duration: '2' }, { name: 'G', duration: '2' }],
+                rhythm: [
+                  { duration: '4', direction: 'd' }, { duration: '4', direction: 'u' },
+                  { duration: '4', direction: 'd' }, { duration: '4', direction: 'u' }
+                ],
+                melody: [
+                  { pitch: 'c4', duration: '4', lyric: 'あ' },
+                  { pitch: 'd4', duration: '4', lyric: 'す' },
+                  { pitch: 'e4', duration: '4', lyric: 'も' }
+                ]
+              }]
+            }
+          ]
+        };
+        const pipelineOptions: any[] = [];
+        const heldPipeline = new Promise<any>((_resolve, reject) => { rejectPendingPipeline = reject; });
+        let pipelineCalls = 0;
+        firstPanel.executePipeline = (options: any) => {
+          pipelineOptions.push(options);
+          pipelineCalls++;
+          return pipelineCalls === 1 ? heldPipeline : Promise.resolve(repeatedSong);
+        };
+
+        let failKeyStore = true;
+        let failKeyDelete = true;
+        firstPanel.secretStorage = {
+          get: originalSecretStorage.get.bind(originalSecretStorage),
+          store: async (name: string, value: string) => {
+            if (failKeyStore) throw new Error('simulated key save failure while transcription is active');
+            return originalSecretStorage.store(name, value);
+          },
+          delete: async (name: string) => {
+            if (failKeyDelete) throw new Error('simulated key deletion failure while transcription is active');
+            return originalSecretStorage.delete(name);
+          }
+        };
+
+        const startsBeforeAdvanced = incomingMessages.filter(message => message.command === 'startTranscription').length;
+        const selectionState = JSON.parse(await evaluateTranscriptionWebview<string>(`(() => {
+          document.getElementById('advancedOptions').open = true;
+          const selectRadio = (name, value) => {
+            const radio = document.querySelector('input[name="' + name + '"][value="' + value + '"]');
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+            return radio.checked;
+          };
+          selectRadio('bpmMode', 'manual');
+          document.getElementById('bpmValue').value = '120';
+          selectRadio('capoMode', 'manual');
+          document.getElementById('capoValue').value = '3';
+          const eightBeatSelectable = selectRadio('beatType', '8beat');
+          selectRadio('beatType', '16beat');
+          const family = document.getElementById('strummingFamily');
+          family.value = ${JSON.stringify(selectedPreset.family)};
+          family.dispatchEvent(new Event('change', { bubbles: true }));
+          const preset = document.getElementById('strummingPreset-' + family.value);
+          preset.value = ${JSON.stringify(selectedPreset.id)};
+          preset.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('compressRepeats').checked = true;
+          document.getElementById('modelSelect').value = 'gemini-2.5-pro';
+          const url = document.getElementById('youtubeUrl');
+          url.value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+          url.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnStart').click();
+          return JSON.stringify({
+            eightBeatSelectable,
+            beatType: document.querySelector('input[name="beatType"]:checked')?.value,
+            selectedFamily: family.value,
+            presetVisible: preset.style.display !== 'none',
+            presetId: preset.value
+          });
+        })()`));
+        assert.strictEqual(selectionState.eightBeatSelectable, true, '8beat can be selected before choosing 16beat');
+        assert.strictEqual(selectionState.beatType, '16beat');
+        assert.strictEqual(selectionState.selectedFamily, selectedPreset.family);
+        assert.strictEqual(selectionState.presetVisible, true, 'choosing a family exposes its linked preset selector');
+        assert.strictEqual(selectionState.presetId, selectedPreset.id);
+
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const state = await readTranscriptionState();
+          const advancedStarts = incomingMessages.filter(message => message.command === 'startTranscription').slice(startsBeforeAdvanced);
+          if (advancedStarts.length === 1 && pipelineCalls === 1 && state.startDisabled && state.statusClass.includes('loading')) break;
+          await settle(50);
+        }
+        let stateDuringPipeline = await readTranscriptionState();
+        const advancedStarts = incomingMessages.filter(message => message.command === 'startTranscription').slice(startsBeforeAdvanced);
+        assert.strictEqual(advancedStarts.length, 1, 'the actual advanced-settings Start reaches the Host once');
+        assert.strictEqual(stateDuringPipeline.startDisabled, true, 'Start remains disabled while the mocked pipeline is pending');
+        assert.strictEqual(stateDuringPipeline.statusClass, 'status-box loading');
+        const advancedPayload = advancedStarts[0].options;
+        assert.strictEqual(advancedPayload.bpmMode, 'manual');
+        assert.strictEqual(advancedPayload.bpmValue, 120);
+        assert.strictEqual(advancedPayload.capoMode, 'manual');
+        assert.strictEqual(advancedPayload.capoValue, 3);
+        assert.strictEqual(advancedPayload.beatType, '16beat');
+        assert.strictEqual(advancedPayload.strummingPresetId, selectedPreset.id);
+        assert.strictEqual(advancedPayload.compressRepeats, true);
+        assert.strictEqual(advancedPayload.model, 'gemini-2.5-pro');
+        assert.strictEqual(pipelineOptions.length, 1);
+        assert.strictEqual(pipelineOptions[0].bpm, 120, 'Host forwards the manual BPM to the pipeline');
+        assert.strictEqual(pipelineOptions[0].capo, 3, 'Host forwards the manual capo to the pipeline');
+        assert.strictEqual(pipelineOptions[0].beatType, '16beat');
+        assert.strictEqual(pipelineOptions[0].strummingPresetId, selectedPreset.id, 'Host forwards the preset linked to the selected family');
+        assert.strictEqual(pipelineOptions[0].model, 'gemini-2.5-pro');
+
+        await firstPanel.handleMessage({ command: 'startTranscription', options: advancedPayload });
+        assert.strictEqual(pipelineCalls, 1, 'Host rejects a direct duplicate Start while its owning pipeline is pending');
+        assert.strictEqual(firstPanel.transcriptionJobActive, true);
+
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnClearKey').click()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          stateDuringPipeline = await readTranscriptionState();
+          if (outgoingMessages.some(message => message.type === 'apiKeyClearFailed')) break;
+          await settle(50);
+        }
+        assert.ok(outgoingMessages.some(message => message.type === 'apiKeyClearFailed'));
+        assert.strictEqual(stateDuringPipeline.startDisabled, true, 'a clear failure does not enable Start during transcription');
+        assert.strictEqual(stateDuringPipeline.statusClass, 'status-box loading', 'a clear failure does not replace pipeline progress');
+
+        await evaluateTranscriptionWebview<void>(`(() => {
+          const key = document.getElementById('apiKey');
+          key.value = ${JSON.stringify(testApiKey)};
+          key.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnSaveKey').click();
+        })()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          stateDuringPipeline = await readTranscriptionState();
+          if (outgoingMessages.some(message => message.type === 'apiKeySaveFailed' && message.duringStart !== true)) break;
+          await settle(50);
+        }
+        assert.ok(outgoingMessages.some(message => message.type === 'apiKeySaveFailed' && message.duringStart !== true));
+        assert.strictEqual(stateDuringPipeline.startDisabled, true, 'an independent save failure does not enable Start during transcription');
+        assert.strictEqual(stateDuringPipeline.statusClass, 'status-box loading', 'a save failure does not replace pipeline progress');
+        assert.strictEqual(stateDuringPipeline.apiKey, testApiKey, 'a failed key save keeps the entered value available for retry');
+        assert.strictEqual(pipelineCalls, 1, 'key failures and a direct duplicate Start still leave exactly one pipeline running');
+
+        rejectPendingPipeline?.(new Error('simulated pending Gemini failure'));
+        rejectPendingPipeline = undefined;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          stateDuringPipeline = await readTranscriptionState();
+          if (stateDuringPipeline.statusClass.includes('error') && !stateDuringPipeline.startDisabled) break;
+          await settle(50);
+        }
+        assert.strictEqual(stateDuringPipeline.startDisabled, false, 'Start becomes available after the owning failed job ends');
+        assert.strictEqual(firstPanel.transcriptionJobActive, false, 'the Host releases the job after the pipeline failure');
+
+        failKeyStore = false;
+        failKeyDelete = false;
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnStart').click()`);
+        for (let attempt = 0; attempt < 150; attempt++) {
+          stateDuringPipeline = await readTranscriptionState();
+          const advancedRetries = incomingMessages.filter(message => message.command === 'startTranscription').slice(startsBeforeAdvanced);
+          if (advancedRetries.length === 2 && Number(pipelineCalls) === 2 && stateDuringPipeline.statusClass === 'status-box') break;
+          await settle(50);
+        }
+        const advancedRetries = incomingMessages.filter(message => message.command === 'startTranscription').slice(startsBeforeAdvanced);
+        assert.strictEqual(advancedRetries.length, 2, 'a second actual Start reaches Host after the error');
+        assert.strictEqual(pipelineCalls, 2, 'the retry starts one new pipeline only after the first one ended');
+        assert.strictEqual(stateDuringPipeline.statusClass, 'status-box', 'the retried pipeline completes through the normal success path');
+        assert.strictEqual(stateDuringPipeline.keyStatus, 'Saved', 'the retry saves and synchronizes its entered key');
+        assert.strictEqual(pipelineOptions[1].bpm, 120);
+        assert.strictEqual(pipelineOptions[1].capo, 3);
+        assert.strictEqual(pipelineOptions[1].beatType, '16beat');
+        assert.strictEqual(pipelineOptions[1].strummingPresetId, selectedPreset.id);
+        assert.strictEqual(pipelineOptions[1].model, 'gemini-2.5-pro');
+        assert.ok(vscode.window.activeTextEditor?.document.getText().includes('|:'),
+          'Host applies compressRepeats=true when serializing the successful mocked pipeline result');
+        assert.strictEqual(firstPanel.transcriptionJobActive, false, 'success releases the owning Host job');
+        firstPanel.secretStorage = originalSecretStorage;
+
         await evaluateTranscriptionWebview<void>(`document.getElementById('btnClearKey').click()`);
         for (let attempt = 0; attempt < 100; attempt++) {
           state = await readTranscriptionState();
@@ -2990,6 +3196,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         }
         assert.strictEqual(storedKeyAfterClear, undefined, 'the Host deleted the key');
       } finally {
+        rejectPendingPipeline?.(new Error('G137 E2E cleanup released the pending pipeline'));
+        for (let attempt = 0; attempt < 100 && firstPanel.transcriptionJobActive; attempt++) await settle(20);
+        firstPanel.secretStorage = originalSecretStorage;
+        firstPanel.executePipeline = originalExecutePipeline;
         messageSubscription.dispose();
         webview.postMessage = originalPostMessage;
         // Do not persist test credentials if an assertion fails midway through the interaction.

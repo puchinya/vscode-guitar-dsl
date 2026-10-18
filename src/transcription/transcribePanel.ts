@@ -27,6 +27,7 @@ export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private transcriptionJobActive = false;
 
   public static createOrShow(
     extensionUri: vscode.Uri,
@@ -118,7 +119,13 @@ export class TranscribePanel {
         break;
       }
       case 'startTranscription': {
-        await this.runTranscription(message.options);
+        if (this.transcriptionJobActive) break;
+        this.transcriptionJobActive = true;
+        try {
+          await this.runTranscription(message.options);
+        } finally {
+          this.transcriptionJobActive = false;
+        }
         break;
       }
     }
@@ -146,6 +153,7 @@ export class TranscribePanel {
       } catch {
         this.panel.webview.postMessage({
           type: 'apiKeySaveFailed',
+          duringStart: true,
           message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
         });
         return;
@@ -198,7 +206,7 @@ export class TranscribePanel {
         ? options.capoValue
         : undefined;
 
-      const song = await runTranscriptionPipeline({
+      const song = await this.executePipeline({
         apiKey,
         youtubeUrl: url,
         model: options.model,
@@ -220,20 +228,23 @@ export class TranscribePanel {
         throw new Error(`Compiler validation failed: ${errors.map(e => e.code).join(', ')}`);
       }
 
-      this.panel.webview.postMessage({ type: 'success' });
-
       // Open new document with generated GuitarDSL
       const doc = await vscode.workspace.openTextDocument({
         language: 'guitardsl',
         content: dslText
       });
       await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+      this.panel.webview.postMessage({ type: 'success' });
     } catch (err: any) {
       this.panel.webview.postMessage({
         type: 'error',
         message: err?.message || 'Transcription failed'
       });
     }
+  }
+
+  private executePipeline(options: Parameters<typeof runTranscriptionPipeline>[0]) {
+    return runTranscriptionPipeline(options);
   }
 
   public dispose(): void {
@@ -670,12 +681,19 @@ export class TranscribePanel {
         statusText.textContent = '❌ ' + msg.message;
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
         updateStartEligibility();
-      } else if (msg.type === 'apiKeySaveFailed' || msg.type === 'apiKeyClearFailed') {
-        isTranscribing = false;
-        statusBox.className = 'status-box error';
-        statusBox.style.display = 'flex';
-        statusText.textContent = '❌ ' + msg.message;
-        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+      } else if (msg.type === 'apiKeySaveFailed') {
+        if (msg.duringStart) {
+          isTranscribing = false;
+          statusBox.className = 'status-box error';
+          statusBox.style.display = 'flex';
+          statusText.textContent = '❌ ' + msg.message;
+          btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        } else {
+          apiKeyStatus.textContent = msg.message;
+        }
+        updateStartEligibility();
+      } else if (msg.type === 'apiKeyClearFailed') {
+        apiKeyStatus.textContent = msg.message;
         updateStartEligibility();
       } else if (msg.type === 'success') {
         isTranscribing = false;

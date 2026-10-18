@@ -563,16 +563,88 @@ describe('transcription - serializer', () => {
       }
     });
     assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
+    assert.strictEqual(messages[0].duringStart, true, 'implicit save failure identifies the rejected start request');
     assert.ok(!JSON.stringify(messages).includes(key), 'save failures do not echo the API key');
 
     messages.length = 0;
     await host.handleMessage({ command: 'saveApiKey', apiKey: key });
     assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
+    assert.notStrictEqual(messages[0].duringStart, true, 'independent key-save failure is separate from transcription state');
 
     messages.length = 0;
     secretStorage.delete = async () => { throw new Error('simulated secure storage failure'); };
     await host.handleMessage({ command: 'clearApiKey' });
     assert.deepStrictEqual(messages.map(message => message.type), ['apiKeyClearFailed']);
+  });
+
+  it('G137 keeps Host job ownership through key failures, rejects concurrent starts, and releases after failure', async () => {
+    const messages: any[] = [];
+    let pipelineCalls = 0;
+    let failStore = true;
+    let failDelete = true;
+    let rejectPipeline!: (error: Error) => void;
+    const pendingPipeline = new Promise<never>((_, reject) => {
+      rejectPipeline = reject;
+    });
+    let signalPipelineStarted!: () => void;
+    const pipelineStarted = new Promise<void>(resolve => { signalPipelineStarted = resolve; });
+    const secretStorage = {
+      get: async () => 'stored-test-key',
+      store: async () => { if (failStore) throw new Error('simulated store failure'); },
+      delete: async () => { if (failDelete) throw new Error('simulated delete failure'); }
+    };
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = secretStorage;
+    host.locale = 'en';
+    host.executePipeline = async () => {
+      pipelineCalls++;
+      signalPipelineStarted();
+      return pendingPipeline;
+    };
+    const startMessage = {
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        bpmMode: 'manual',
+        bpmValue: 120,
+        capoMode: 'manual',
+        capoValue: 3,
+        beatType: '16beat',
+        strummingPresetId: 'strum_4_4_quarter_basic',
+        compressRepeats: true,
+        model: 'gemini-2.5-pro'
+      }
+    };
+
+    const firstStart = host.handleMessage(startMessage);
+    await pipelineStarted;
+    assert.strictEqual(pipelineCalls, 1, 'the first Start owns the pending pipeline');
+    assert.strictEqual(host.transcriptionJobActive, true, 'Host marks the job active while the pipeline is pending');
+
+    await host.handleMessage(startMessage);
+    await host.handleMessage({ command: 'clearApiKey' });
+    await host.handleMessage({ command: 'saveApiKey', apiKey: 'unsaved-test-key' });
+    assert.strictEqual(pipelineCalls, 1, 'duplicate Start is rejected while the owner pipeline is pending');
+    assert.strictEqual(host.transcriptionJobActive, true, 'key-management failures do not release the Host job');
+    assert.ok(messages.some(message => message.type === 'apiKeyClearFailed'));
+    assert.ok(messages.some(message => message.type === 'apiKeySaveFailed' && message.duringStart !== true));
+    assert.ok(!messages.some(message => message.type === 'success'), 'key failures cannot complete the transcription');
+
+    rejectPipeline(new Error('simulated pending pipeline failure'));
+    await firstStart;
+    assert.strictEqual(host.transcriptionJobActive, false, 'the owning Start releases the Host job in finally after failure');
+    assert.strictEqual(messages[messages.length - 1].type, 'error');
+
+    failStore = false;
+    failDelete = false;
+    host.executePipeline = async () => {
+      pipelineCalls++;
+      throw new Error('simulated retry failure');
+    };
+    await host.handleMessage(startMessage);
+    assert.strictEqual(pipelineCalls, 2, 'a new Start reaches the pipeline after the failed owner job has ended');
+    assert.strictEqual(host.transcriptionJobActive, false, 'retry failure also releases the Host job');
   });
 
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
