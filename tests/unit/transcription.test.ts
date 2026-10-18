@@ -493,6 +493,36 @@ describe('transcription - serializer', () => {
     }
   });
 
+  it('G137 keeps key management and advanced options collapsed, ordered, and key-safe', () => {
+    for (const locale of ['ja', 'en'] as const) {
+      const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: false, model: 'gemini-3.8-flash', compressRepeats: false, locale });
+      const positions = [
+        html.indexOf('<h2>'),
+        html.indexOf('class="experimental-warning"'),
+        html.indexOf('id="youtubeUrl"'),
+        html.indexOf('id="apiKeyStatus"'),
+        html.indexOf('<details id="keyManagement">'),
+        html.indexOf('<details id="advancedOptions">'),
+        html.indexOf('id="btnStart"'),
+        html.indexOf('id="statusBox"')
+      ];
+      assert.ok(positions.every(position => position >= 0));
+      assert.deepStrictEqual(positions, [...positions].sort((a, b) => a - b), 'panel controls retain their specified order');
+      assert.match(html, /<details id="keyManagement">\s*<summary>/);
+      assert.match(html, /<details id="advancedOptions">\s*<summary>/);
+      assert.ok(!/<details id="(?:keyManagement|advancedOptions)"[^>]*\sopen(?:\s|>)/.test(html), 'both disclosures start closed');
+      assert.match(html, /id="apiKeyStatus"[^>]*>[^<]*(?:未設定|Not configured)/);
+      assert.ok(!html.includes('AIzaSy...'), 'the page does not show an API key-shaped placeholder');
+      assert.ok(html.includes("apiKey.value = ''"), 'save and clear acknowledgements clear the key input');
+      assert.ok(html.includes('hasSavedApiKey || apiKey.value.trim() !=='), 'Start checks saved or entered key state');
+      assert.ok(html.includes('youtubeUrl.value.trim() !=='), 'Start requires a nonempty URL');
+      assert.ok(html.includes('if (isTranscribing || btnStart.disabled) return;'), 'Start suppresses repeated clicks');
+      for (const property of ['youtubeUrl', 'apiKey', 'bpmMode', 'bpmValue', 'capoMode', 'capoValue', 'beatType', 'strummingPresetId', 'compressRepeats', 'model']) {
+        assert.ok(html.includes(property), `existing ${property} option remains in the message`);
+      }
+    }
+  });
+
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
     for (const locale of ['ja', 'en'] as const) {
       const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });

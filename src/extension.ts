@@ -11,6 +11,7 @@ import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrum
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
 import { registerGuitarDslSidebar } from './sidebar';
+import { registerGuitarDslSidebarNavigation } from './sidebarNavigation';
 import { registerGuitarDslInspector } from './inspector/inspectorController';
 import { PreviewCapoController, effectiveDslProbe, previewLifecycleProbe, setPreviewCapoController } from './previewCapo';
 import { PreviewBeginnerController, resolvePreviewEffectiveDsl, setPreviewBeginnerController } from './previewBeginner';
@@ -782,6 +783,7 @@ export function activate(context: vscode.ExtensionContext) {
     return isGuitarDslDocument(doc) ? doc : undefined;
   });
   context.subscriptions.push(...sidebar.disposables);
+  registerGuitarDslSidebarNavigation(context, msgs);
   const refreshSidebar = () => sidebar.provider.refresh();
   vscode.window.onDidChangeActiveTextEditor(refreshSidebar, null, context.subscriptions);
   vscode.workspace.onDidOpenTextDocument(refreshSidebar, null, context.subscriptions);

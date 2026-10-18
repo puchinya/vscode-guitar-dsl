@@ -393,6 +393,29 @@ export class TranscribePanel {
       color: var(--vscode-badge-foreground, #fff);
       margin-left: 6px;
     }
+    details {
+      border: 1px solid var(--vscode-panel-border, #ccc);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin: 12px 0 18px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+    summary:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+      outline-offset: 3px;
+    }
+    .key-state {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .key-state-label { font-weight: 600; }
+    .key-state-value { color: var(--vscode-descriptionForeground, #888); }
   </style>
 </head>
 <body>
@@ -406,15 +429,25 @@ export class TranscribePanel {
   </div>
 
   <div class="field-group">
-    <label for="apiKey">Gemini API Key <span style="color:#e74c3c">*</span></label>
-    <div style="display:flex; gap:8px;">
-      <input type="password" id="apiKey" placeholder="${ctx.hasApiKey ? (isJa ? '保存済み（変更する場合のみ入力）' : 'Saved (enter only to change)') : 'AIzaSy...'}" />
-      <button class="btn-secondary" id="btnSaveKey">${isJa ? 'キーを保存' : 'Save Key'}</button>
-      ${ctx.hasApiKey ? `<button class="btn-secondary" id="btnClearKey">${isJa ? '削除' : 'Clear'}</button>` : ''}
+    <div class="key-state">
+      <span class="key-state-label">Gemini API Key</span>
+      <span class="key-state-value" id="apiKeyStatus" role="status" aria-live="polite">${ctx.hasApiKey ? (isJa ? '保存済み' : 'Saved') : (isJa ? '未設定' : 'Not configured')}</span>
     </div>
+    <details id="keyManagement">
+      <summary>${isJa ? '設定・変更' : 'Set or change key'}</summary>
+      <div class="field-group" style="margin-top:12px;">
+        <label for="apiKey">Gemini API Key</label>
+        <div style="display:flex; gap:8px;">
+          <input type="password" id="apiKey" autocomplete="off" placeholder="${isJa ? 'キーを入力' : 'Enter API key'}" />
+          <button class="btn-secondary" id="btnSaveKey">${isJa ? 'キーを保存' : 'Save Key'}</button>
+          <button class="btn-secondary" id="btnClearKey" ${ctx.hasApiKey ? '' : 'disabled'}>${isJa ? '削除' : 'Clear'}</button>
+        </div>
+      </div>
+    </details>
   </div>
 
-  <div class="section-title">⚙️ ${isJa ? '採譜設定 (オプション)' : 'Transcription Options'}</div>
+  <details id="advancedOptions">
+    <summary>${isJa ? '採譜設定（詳細）' : 'Transcription Options (Advanced)'}</summary>
 
   <div class="field-group">
     <label>${isJa ? 'テンポ (BPM)' : 'Tempo (BPM)'}</label>
@@ -493,7 +526,9 @@ export class TranscribePanel {
     </select>
   </div>
 
-  <button class="btn-primary" id="btnStart">
+  </details>
+
+  <button class="btn-primary" id="btnStart" disabled>
     <span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>
   </button>
 
@@ -504,6 +539,20 @@ export class TranscribePanel {
 
   <script>
     const vscode = acquireVsCodeApi();
+    const youtubeUrl = document.getElementById('youtubeUrl');
+    const apiKey = document.getElementById('apiKey');
+    const apiKeyStatus = document.getElementById('apiKeyStatus');
+    const btnStart = document.getElementById('btnStart');
+    const btnClearKey = document.getElementById('btnClearKey');
+    let hasSavedApiKey = ${ctx.hasApiKey ? 'true' : 'false'};
+    let isTranscribing = false;
+
+    const updateStartEligibility = () => {
+      const hasRequiredInputs = youtubeUrl.value.trim() !== '' && (hasSavedApiKey || apiKey.value.trim() !== '');
+      btnStart.disabled = isTranscribing || !hasRequiredInputs;
+    };
+    youtubeUrl.addEventListener('input', updateStartEligibility);
+    apiKey.addEventListener('input', updateStartEligibility);
 
     const bpmRadios = document.querySelectorAll('input[name="bpmMode"]');
     const bpmValue = document.getElementById('bpmValue');
@@ -520,20 +569,18 @@ export class TranscribePanel {
     }));
 
     document.getElementById('btnSaveKey').addEventListener('click', () => {
-      const key = document.getElementById('apiKey').value;
-      if (key) {
+      const key = apiKey.value;
+      if (key.trim()) {
         vscode.postMessage({ command: 'saveApiKey', apiKey: key });
       }
     });
 
-    const btnClear = document.getElementById('btnClearKey');
-    if (btnClear) {
-      btnClear.addEventListener('click', () => {
+    btnClearKey.addEventListener('click', () => {
+      if (hasSavedApiKey) {
         vscode.postMessage({ command: 'clearApiKey' });
-      });
-    }
+      }
+    });
 
-    const btnStart = document.getElementById('btnStart');
     const strummingFamily = document.getElementById('strummingFamily');
     strummingFamily.addEventListener('change', () => {
       document.querySelectorAll('.preset-select').forEach(el => {
@@ -544,8 +591,9 @@ export class TranscribePanel {
     const statusText = document.getElementById('statusText');
 
     btnStart.addEventListener('click', () => {
-      const url = document.getElementById('youtubeUrl').value;
-      const key = document.getElementById('apiKey').value;
+      if (isTranscribing || btnStart.disabled) return;
+      const url = youtubeUrl.value;
+      const key = apiKey.value;
       const bpmMode = document.querySelector('input[name="bpmMode"]:checked').value;
       const bpmVal = parseInt(bpmValue.value, 10);
       const capoMode = document.querySelector('input[name="capoMode"]:checked').value;
@@ -558,7 +606,8 @@ export class TranscribePanel {
       const compressRepeats = document.getElementById('compressRepeats').checked;
       const model = document.getElementById('modelSelect').value;
 
-      // Immediately disable button and show loading state
+      // Immediately disable button and show loading state to suppress double starts.
+      isTranscribing = true;
       btnStart.disabled = true;
       btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       statusBox.className = 'status-box loading';
@@ -585,28 +634,40 @@ export class TranscribePanel {
     window.addEventListener('message', event => {
       const msg = event.data;
       if (msg.type === 'transcribing') {
+        isTranscribing = true;
         statusBox.className = 'status-box loading';
         statusBox.style.display = 'flex';
         statusText.textContent = msg.text || '${isJa ? 'GeminiでYouTube音源を解析中...' : 'Analyzing YouTube audio with Gemini...'}';
         btnStart.disabled = true;
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {
+        isTranscribing = false;
         statusBox.className = 'status-box error';
         statusBox.style.display = 'flex';
         statusText.textContent = '❌ ' + msg.message;
-        btnStart.disabled = false;
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
       } else if (msg.type === 'success') {
+        isTranscribing = false;
         statusBox.className = 'status-box';
         statusBox.style.display = 'none';
-        btnStart.disabled = false;
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
       } else if (msg.type === 'apiKeySaved') {
-        alert('${isJa ? 'Gemini API キーを保存しました。' : 'Gemini API key saved.'}');
+        apiKey.value = '';
+        hasSavedApiKey = true;
+        apiKeyStatus.textContent = '${isJa ? '保存済み' : 'Saved'}';
+        btnClearKey.disabled = false;
+        updateStartEligibility();
       } else if (msg.type === 'apiKeyCleared') {
-        alert('${isJa ? 'Gemini API キーを削除しました。' : 'Gemini API key cleared.'}');
+        apiKey.value = '';
+        hasSavedApiKey = false;
+        apiKeyStatus.textContent = '${isJa ? '未設定' : 'Not configured'}';
+        btnClearKey.disabled = true;
+        updateStartEligibility();
       }
     });
+    updateStartEligibility();
   </script>
 </body>
 </html>`;

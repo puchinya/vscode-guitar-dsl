@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, evaluateInspectorWebview, evaluatePreviewWebview, inspectWorkbenchLayout, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -2777,16 +2777,157 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual((await waitFor(items => items.length === 0)).length, 0, 'diagnostics should clear after correction');
   });
 
-  test('Transcribe YouTube command should lazily open transcribe panel', async () => {
-    await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
-    let transcribeTab: vscode.Tab | undefined;
-    for (let i = 0; i < 50 && !transcribeTab; i++) {
-      const tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
-      transcribeTab = tabs.find(t => t.input instanceof vscode.TabInputWebview && (t.label.includes('採譜') || t.label.includes('Transcribe')));
-      if (!transcribeTab) await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.ok(transcribeTab, 'Transcribe webview tab should be open');
-    assert.ok(transcribeTab.label.includes('Experimental') || transcribeTab.label.includes('実験的'), 'the opened webview tab identifies the feature as Experimental');
+  test('G137 YouTube panel stays singleton with collapsed key and advanced settings', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: Sidebar navigation\n| C | G |\n' });
+      await showAndFocus(doc);
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      const theme = /light/i.test(requestedTheme) ? 'light' : 'dark';
+      if (captureScreenshots) {
+        assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
+        await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+        await vscode.commands.executeCommand('notifications.clearAll');
+        const initialLayout = JSON.parse(await inspectWorkbenchLayout()).parts as { auxiliarybar: { visible: boolean } };
+        if (initialLayout.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        await vscode.commands.executeCommand('guitardsl.sidebar.focus');
+        await settle(200);
+        const sidebarWidth = await resizePrimarySidebarToWidth(300);
+        assert.strictEqual(sidebarWidth, 300, 'Issue #137 sidebar evidence uses a 300 CSS px Tree View');
+        await captureWorkbenchScreenshot(`sidebar-${requestedLocale}-${theme}-300px.png`, 137, 800);
+        await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+      }
+      const chooser = vscode.commands.executeCommand('guitardsl.navigation.chooseTranscriptionSource');
+      await settle(200);
+      await dispatchWorkbenchKey('Escape');
+      await chooser;
+      assert.strictEqual(vscode.window.tabGroups.all.flatMap(g => g.tabs).some(t => t.input instanceof vscode.TabInputWebview
+        && (t.label.includes('採譜') || t.label.includes('Transcribe'))), false, 'Escape cancels source selection without opening a transcription panel');
+      await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+      let transcribeTab: vscode.Tab | undefined;
+      for (let i = 0; i < 50 && !transcribeTab; i++) {
+        const tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+        transcribeTab = tabs.find(t => t.input instanceof vscode.TabInputWebview && (t.label.includes('採譜') || t.label.includes('Transcribe')));
+        if (!transcribeTab) await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.ok(transcribeTab, 'Transcribe webview tab should be open');
+      assert.ok(transcribeTab.label.includes('Experimental') || transcribeTab.label.includes('実験的'), 'the opened webview tab identifies the feature as Experimental');
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: { currentPanel?: any } };
+      const firstPanel = TranscribePanel.currentPanel;
+      assert.ok(firstPanel, 'the singleton host panel is available');
+      const html = firstPanel.panel.webview.html as string;
+      assert.ok(html.includes('<details id="keyManagement">'), 'key input is inside the key disclosure');
+      assert.ok(html.includes('<details id="advancedOptions">'), 'transcription settings are inside the advanced disclosure');
+      assert.ok(!html.includes('<details id="keyManagement" open>'), 'key management starts closed');
+      assert.ok(!html.includes('<details id="advancedOptions" open>'), 'advanced options start closed');
+
+      let closedDisclosures: { ready: boolean; keyOpen?: boolean; optionsOpen?: boolean } | undefined;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const state = await evaluateTranscriptionWebview<string>(`JSON.stringify({
+          ready: !!document.getElementById('keyManagement') && !!document.getElementById('advancedOptions'),
+          keyOpen: document.getElementById('keyManagement')?.open,
+          optionsOpen: document.getElementById('advancedOptions')?.open
+        })`);
+        closedDisclosures = JSON.parse(state) as typeof closedDisclosures;
+        if (closedDisclosures?.ready) break;
+        await settle(50);
+      }
+      assert.deepStrictEqual(closedDisclosures, { ready: true, keyOpen: false, optionsOpen: false });
+      await evaluateTranscriptionWebview<void>(`document.querySelector('#keyManagement summary').focus()`);
+      await dispatchTranscriptionWebviewKey('Tab');
+      assert.strictEqual(await evaluateTranscriptionWebview<string>('document.activeElement?.parentElement?.id'), 'advancedOptions',
+        'Tab skips the hidden API key controls inside a collapsed disclosure');
+      await dispatchTranscriptionWebviewKey('Tab', true);
+      assert.strictEqual(await evaluateTranscriptionWebview<string>('document.activeElement?.parentElement?.id'), 'keyManagement',
+        'Shift+Tab returns to the key disclosure summary');
+      const keySummaryAccessibility = await inspectTranscriptionWebviewAccessibility('#keyManagement summary');
+      assert.strictEqual(keySummaryAccessibility.role, 'DisclosureTriangle', 'the native disclosure summary exposes its browser accessibility role');
+      assert.ok(keySummaryAccessibility.name.length > 0, 'the key disclosure has an accessible name');
+      assert.strictEqual(keySummaryAccessibility.focused, true, 'the accessibility tree identifies the focused disclosure');
+      assert.strictEqual(await evaluateTranscriptionWebview<boolean>(`document.querySelector('#keyManagement summary').matches(':focus-visible')`), true,
+        'keyboard focus is visibly outlined on the disclosure summary');
+      await dispatchTranscriptionWebviewKey('Space');
+      assert.strictEqual(await evaluateTranscriptionWebview<boolean>(`document.getElementById('keyManagement').open`), true,
+        'Space opens the native key disclosure');
+      await dispatchTranscriptionWebviewKey('Tab');
+      assert.strictEqual(await evaluateTranscriptionWebview<string>('document.activeElement?.id'), 'apiKey',
+        'the API key field is reachable only after its disclosure opens');
+      await dispatchTranscriptionWebviewKey('Tab', true);
+      await dispatchTranscriptionWebviewKey('Space');
+      assert.strictEqual(await evaluateTranscriptionWebview<boolean>(`document.getElementById('keyManagement').open`), false,
+        'Space closes the native key disclosure');
+      await evaluateTranscriptionWebview<void>(`document.querySelector('#advancedOptions summary').focus()`);
+      await dispatchTranscriptionWebviewKey('Space');
+      assert.strictEqual(await evaluateTranscriptionWebview<boolean>(`document.getElementById('advancedOptions').open`), true,
+        'Space opens advanced options');
+      await dispatchTranscriptionWebviewKey('Space');
+      assert.strictEqual(await evaluateTranscriptionWebview<boolean>(`document.getElementById('advancedOptions').open`), false,
+        'Space closes advanced options');
+      await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+      assert.strictEqual(TranscribePanel.currentPanel, firstPanel, 'repeated activation reveals the existing panel');
+      assert.strictEqual(vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(t => t.input instanceof vscode.TabInputWebview && (t.label.includes('採譜') || t.label.includes('Transcribe'))).length, 1,
+        'repeated activation does not create another panel tab');
+      const chooseYouTube = vscode.commands.executeCommand('guitardsl.navigation.chooseTranscriptionSource');
+      await settle(200);
+      await dispatchWorkbenchKey('Enter');
+      await chooseYouTube;
+      assert.strictEqual(TranscribePanel.currentPanel, firstPanel, 'Enter selects YouTube from the source Quick Pick and reuses the same panel');
+
+      if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+        await vscode.commands.executeCommand('notifications.clearAll');
+        const layout = JSON.parse(await inspectWorkbenchLayout()).parts as { sidebar: { visible: boolean }; auxiliarybar: { visible: boolean } };
+        if (layout.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        if (layout.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        await settle(Number(process.env.GUITARDSL_E2E_CAPTURE_WAIT_MS ?? 500));
+        await captureWorkbenchScreenshot(`youtube-transcription-${requestedLocale}-${theme}-collapsed.png`, 137, 548);
+      }
+    });
+  });
+});
+
+suite('Sidebar navigation (Issue #137)', () => {
+  test('active-only Preview action ignores a stale target and plaintext never falls back', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      const docA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: A\n| C | G |\n' });
+      const docB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: B\n| Am | F |\n' });
+      await showAndFocus(docA);
+      await showAndFocus(docB);
+
+      const commands = await vscode.commands.getCommands(true);
+      for (const id of [
+        'guitardsl.navigation.openGuitarDslFile',
+        'guitardsl.navigation.chooseTranscriptionSource',
+        'guitardsl.navigation.showPreviewActive',
+        'guitardsl.navigation.exportPdfActive',
+        'guitardsl.navigation.exportGuitarProActive'
+      ]) assert.ok(commands.includes(id), `internal navigation command ${id} is registered`);
+
+      await vscode.commands.executeCommand('guitardsl.navigation.showPreviewActive', docA.uri);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const preview = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && preview.currentDocumentUri !== docB.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(preview.currentDocumentUri, docB.uri.toString(), 'the wrapper resolves active B instead of the stale A argument');
+
+      const generation = preview.generation;
+      const originalWarning = vscode.window.showWarningMessage;
+      const warnings: string[] = [];
+      try {
+        vscode.window.showWarningMessage = (async (message: string) => { warnings.push(message); return undefined; }) as typeof vscode.window.showWarningMessage;
+        const plainText = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'notes' });
+        await showAndFocus(plainText);
+        await vscode.commands.executeCommand('guitardsl.navigation.showPreviewActive', docA.uri);
+        await vscode.commands.executeCommand('guitardsl.navigation.exportPdfActive', docA.uri);
+        await vscode.commands.executeCommand('guitardsl.navigation.exportGuitarProActive', docA.uri);
+      } finally {
+        vscode.window.showWarningMessage = originalWarning;
+      }
+      assert.strictEqual(preview.generation, generation, 'no Preview or export action runs for plaintext');
+      assert.strictEqual(preview.currentDocumentUri, docB.uri.toString(), 'the last active GuitarDSL document is not reused');
+      assert.strictEqual(warnings.length, 3, 'each unsupported action reports its warning');
+    });
   });
 });
 

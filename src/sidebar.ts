@@ -1,25 +1,24 @@
-// GuitarDSL sidebar: the Activity Bar "Start Here" Tree View (onboarding and navigation only, not an editor).
-// Every leaf runs an extension command by ID; `Current File` follows the active editor only.
-// Command IDs are literals so the view does not load the command modules.
+// GuitarDSL sidebar: a Tree View for document-independent navigation and active-document actions.
+// The target row is informational; command wrappers resolve the active document when invoked.
 import * as vscode from 'vscode';
 import { Messages } from './i18n';
 
 export const SIDEBAR_VIEW_ID = 'guitardsl.sidebar';
 
-export type SidebarSectionId = 'getStarted' | 'currentFile' | 'tools';
+export type SidebarSectionId = 'create' | 'openImport' | 'editAssist' | 'export' | 'help';
 
 export type GuitarDslSidebarItem =
+  | { kind: 'target'; label: string }
   | { kind: 'section'; section: SidebarSectionId; label: string }
-  | { kind: 'command'; section: SidebarSectionId; label: string; command: string; args: unknown[]; icon: string }
-  | { kind: 'hint'; section: SidebarSectionId; label: string };
+  | { kind: 'command'; section: SidebarSectionId; label: string; command: string; icon: string };
 
-const SECTIONS: readonly SidebarSectionId[] = ['getStarted', 'currentFile', 'tools'];
+const SECTIONS: readonly SidebarSectionId[] = ['create', 'openImport', 'editAssist', 'export', 'help'];
 
 export class GuitarDslSidebarProvider implements vscode.TreeDataProvider<GuitarDslSidebarItem>, vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<GuitarDslSidebarItem | undefined | void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
-  /** `activeGuitarDslDocument` returns the active editor's document only when it is a GuitarDSL document. */
+  /** Returns the active editor's document only when it is a GuitarDSL document. */
   constructor(
     private readonly msgs: Messages,
     private readonly activeGuitarDslDocument: () => vscode.TextDocument | undefined
@@ -35,73 +34,83 @@ export class GuitarDslSidebarProvider implements vscode.TreeDataProvider<GuitarD
 
   getChildren(element?: GuitarDslSidebarItem): GuitarDslSidebarItem[] {
     if (!element) {
-      return SECTIONS.map(section => ({ kind: 'section', section, label: this.sectionLabel(section) }));
+      const doc = this.activeGuitarDslDocument();
+      const fileName = doc
+        ? doc.uri.scheme === 'untitled'
+          ? this.msgs.sidebarUntitledTarget
+          : (doc.uri.path || doc.fileName).split(/[\\/]/).pop()
+        : undefined;
+      const target = fileName
+        ? `${this.msgs.sidebarTargetPrefix} ${fileName}`
+        : `${this.msgs.sidebarTargetPrefix} ${this.msgs.sidebarNoActiveTarget}`;
+      return [
+        { kind: 'target', label: target },
+        ...SECTIONS.map(section => ({ kind: 'section' as const, section, label: this.sectionLabel(section) }))
+      ];
     }
     if (element.kind !== 'section') {
       return [];
     }
+
     const m = this.msgs;
-    const cmd = (label: string, command: string, icon: string, args: unknown[] = []): GuitarDslSidebarItem =>
-      ({ kind: 'command', section: element.section, label, command, args, icon });
+    const cmd = (label: string, command: string, icon: string): GuitarDslSidebarItem =>
+      ({ kind: 'command', section: element.section, label, command, icon });
     switch (element.section) {
-      case 'getStarted':
+      case 'create':
         return [
           cmd(m.sidebarNewFromTemplate, 'guitardsl.newDocumentFromTemplate', 'new-file'),
-          cmd(m.sidebarOpenSample, 'guitardsl.openSample', 'files'),
-          cmd(m.sidebarOpenPreview, 'guitardsl.showPreview', 'open-preview'),
-          cmd(m.sidebarOpenHelp, 'guitardsl.openHelp', 'question')
+          cmd(m.sidebarOpenSample, 'guitardsl.openSample', 'files')
         ];
-      case 'currentFile': {
-        const doc = this.activeGuitarDslDocument();
-        if (!doc) {
-          return [{ kind: 'hint', section: 'currentFile', label: m.sidebarNoActiveFile }];
-        }
-        const target = [doc.uri];
+      case 'openImport':
         return [
-          cmd(m.sidebarOpenPreview, 'guitardsl.showPreview', 'open-preview', target),
-          cmd(m.sidebarEditChordDiagram, 'guitardsl.editChordDiagram', 'edit', target),
-          cmd(m.sidebarEditScoreSettings, 'guitardsl.editScoreSettings', 'settings-gear', target),
-          cmd(m.sidebarEditCapo, 'guitardsl.editCapo', 'symbol-ruler', target),
-          cmd(m.sidebarChangeAccompaniment, 'guitardsl.applyStrummingPattern', 'pulse', target),
-          cmd(m.sidebarExportPdf, 'guitardsl.exportPdf', 'file-pdf', target)
+          cmd(m.sidebarOpenGuitarDslFile, 'guitardsl.navigation.openGuitarDslFile', 'folder-opened'),
+          cmd(m.sidebarImportGuitarPro, 'guitardsl.importGuitarPro', 'guitar'),
+          cmd(m.sidebarChooseTranscriptionSource, 'guitardsl.navigation.chooseTranscriptionSource', 'play-circle')
         ];
-      }
-      case 'tools':
+      case 'editAssist':
         return [
-          cmd(m.sidebarTranscribeYouTube, 'guitardsl.transcribeYouTube', 'play-circle'),
-          cmd(m.sidebarTranscribeAudio, 'guitardsl.transcribeAudio', 'unmute')
+          cmd(m.sidebarOpenPreview, 'guitardsl.navigation.showPreviewActive', 'open-preview'),
+          cmd(m.sidebarOpenInspector, 'guitardsl.openInspector', 'search')
         ];
+      case 'export':
+        return [
+          cmd(m.sidebarExportPdf, 'guitardsl.navigation.exportPdfActive', 'file-pdf'),
+          cmd(m.sidebarExportGuitarPro, 'guitardsl.navigation.exportGuitarProActive', 'guitar')
+        ];
+      case 'help':
+        return [cmd(m.sidebarOpenGuitarDslHelp, 'guitardsl.openHelp', 'question')];
     }
   }
 
   getTreeItem(element: GuitarDslSidebarItem): vscode.TreeItem {
     const { TreeItemCollapsibleState: State } = vscode;
     if (element.kind === 'section') {
-      const item = new vscode.TreeItem(
-        element.label,
-        element.section === 'tools' ? State.Collapsed : State.Expanded
-      );
+      const initiallyExpanded = element.section === 'create' || element.section === 'openImport';
+      const item = new vscode.TreeItem(element.label, initiallyExpanded ? State.Expanded : State.Collapsed);
       item.id = `section:${element.section}`;
       return item;
     }
+
     const item = new vscode.TreeItem(element.label, State.None);
     item.tooltip = element.label;
-    if (element.kind === 'hint') {
-      item.id = `${element.section}:hint`;
-      item.iconPath = new vscode.ThemeIcon('info');
+    if (element.kind === 'target') {
+      item.id = 'target';
       return item;
     }
+
     item.id = `${element.section}:${element.command}`;
     item.iconPath = new vscode.ThemeIcon(element.icon);
-    item.command = { command: element.command, title: element.label, arguments: element.args };
+    item.command = { command: element.command, title: element.label, arguments: [] };
     return item;
   }
 
   private sectionLabel(section: SidebarSectionId): string {
     switch (section) {
-      case 'getStarted': return this.msgs.sidebarGetStarted;
-      case 'currentFile': return this.msgs.sidebarCurrentFile;
-      case 'tools': return this.msgs.sidebarTools;
+      case 'create': return this.msgs.sidebarCreate;
+      case 'openImport': return this.msgs.sidebarOpenImport;
+      case 'editAssist': return this.msgs.sidebarEditAssist;
+      case 'export': return this.msgs.sidebarExport;
+      case 'help': return this.msgs.sidebarHelp;
     }
   }
 }
