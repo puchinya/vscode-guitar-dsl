@@ -19,15 +19,25 @@ function transcriptionPresets(family: AccompanimentFamily): StrummingPatternPres
 
 const TRANSCRIPTION_FAMILIES: AccompanimentFamily[] = FAMILY_ORDER.filter(f => transcriptionPresets(f).length > 0);
 
+type ActiveTranscriptionJob = {
+  owner: TranscribePanel;
+  discarded: boolean;
+};
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
+  private static activeJob: ActiveTranscriptionJob | undefined;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
-  private transcriptionJobActive = false;
+  private disposed = false;
+
+  public get transcriptionJobActive(): boolean {
+    return TranscribePanel.activeJob !== undefined;
+  }
 
   public static createOrShow(
     extensionUri: vscode.Uri,
@@ -77,6 +87,7 @@ export class TranscribePanel {
 
   private async initHtml(): Promise<void> {
     const apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    if (this.disposed) return;
     const config = vscode.workspace.getConfiguration('guitardsl');
     const model = config.get<string>('gemini.model') || 'gemini-3.8-flash';
     const compressRepeats = config.get<boolean>('transcription.compressRepeats') ?? false;
@@ -85,20 +96,22 @@ export class TranscribePanel {
       hasApiKey: !!apiKey,
       model,
       compressRepeats,
+      isTranscribing: TranscribePanel.activeJob !== undefined,
       locale: this.locale
     });
   }
 
   private async handleMessage(message: any): Promise<void> {
+    if (this.disposed) return;
     switch (message.command) {
       case 'saveApiKey': {
         const key = message.apiKey?.trim();
         if (key) {
           try {
             await this.secretStorage.store('guitardsl.geminiApiKey', key);
-            this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+            this.postMessage({ type: 'apiKeySaved', success: true });
           } catch {
-            this.panel.webview.postMessage({
+            this.postMessage({
               type: 'apiKeySaveFailed',
               message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
             });
@@ -109,9 +122,9 @@ export class TranscribePanel {
       case 'clearApiKey': {
         try {
           await this.secretStorage.delete('guitardsl.geminiApiKey');
-          this.panel.webview.postMessage({ type: 'apiKeyCleared', success: true });
+          this.postMessage({ type: 'apiKeyCleared', success: true });
         } catch {
-          this.panel.webview.postMessage({
+          this.postMessage({
             type: 'apiKeyClearFailed',
             message: this.locale === 'ja' ? 'API キーを削除できませんでした。' : 'The API key could not be cleared.'
           });
@@ -119,12 +132,13 @@ export class TranscribePanel {
         break;
       }
       case 'startTranscription': {
-        if (this.transcriptionJobActive) break;
-        this.transcriptionJobActive = true;
+        if (TranscribePanel.activeJob) break;
+        const job: ActiveTranscriptionJob = { owner: this, discarded: false };
+        TranscribePanel.activeJob = job;
         try {
-          await this.runTranscription(message.options);
+          await this.runTranscription(message.options, job);
         } finally {
-          this.transcriptionJobActive = false;
+          this.releaseTranscriptionJob(job);
         }
         break;
       }
@@ -142,16 +156,18 @@ export class TranscribePanel {
     strummingPresetId?: string;
     compressRepeats: boolean;
     model: string;
-  }): Promise<void> {
+  }, job: ActiveTranscriptionJob): Promise<void> {
     const isJa = this.locale === 'ja';
     let apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
+    if (!this.isActiveJob(job)) return;
     if (options.apiKey && options.apiKey.trim()) {
       apiKey = options.apiKey.trim();
       try {
         await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
-        this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+        if (!this.isActiveJob(job)) return;
+        this.postMessage({ type: 'apiKeySaved', success: true });
       } catch {
-        this.panel.webview.postMessage({
+        this.postMessage({
           type: 'apiKeySaveFailed',
           duringStart: true,
           message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
@@ -161,7 +177,7 @@ export class TranscribePanel {
     }
 
     if (!apiKey) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: isJa
           ? 'Gemini API キーを設定してください。'
@@ -172,7 +188,7 @@ export class TranscribePanel {
 
     const url = options.youtubeUrl?.trim() || '';
     if (!isValidYouTubeUrl(url)) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: isJa
           ? '有効なYouTube動画のURL（https://...）を入力してください。'
@@ -196,7 +212,7 @@ export class TranscribePanel {
           groove: 'Analyzing the strumming rhythm...',
           finalizing: 'Optimizing strumming and capo...'
         };
-    this.panel.webview.postMessage({ type: 'transcribing', text: stageText.baseline });
+    this.postMessage({ type: 'transcribing', text: stageText.baseline }, job);
 
     try {
       const bpm = options.bpmMode === 'manual' && options.bpmValue && options.bpmValue >= 30 && options.bpmValue <= 300
@@ -214,8 +230,10 @@ export class TranscribePanel {
         strummingPresetId: options.strummingPresetId,
         bpm,
         capo,
-        onStage: stage => this.panel.webview.postMessage({ type: 'transcribing', text: stageText[stage] })
+        onStage: stage => this.postMessage({ type: 'transcribing', text: stageText[stage] }, job)
       });
+
+      if (!this.isActiveJob(job)) return;
 
       const dslText = serializeSongToGuitarDsl(song, {
         compressRepeats: options.compressRepeats,
@@ -233,13 +251,33 @@ export class TranscribePanel {
         language: 'guitardsl',
         content: dslText
       });
+      if (!this.isActiveJob(job)) return;
       await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
-      this.panel.webview.postMessage({ type: 'success' });
+      this.postMessage({ type: 'success' }, job);
     } catch (err: any) {
-      this.panel.webview.postMessage({
+      this.postMessage({
         type: 'error',
         message: err?.message || 'Transcription failed'
-      });
+      }, job);
+    }
+  }
+
+  private isActiveJob(job: ActiveTranscriptionJob): boolean {
+    return TranscribePanel.activeJob === job && !job.discarded && !this.disposed;
+  }
+
+  private postMessage(message: unknown, job?: ActiveTranscriptionJob): void {
+    if (this.disposed || (job && !this.isActiveJob(job))) return;
+    this.panel.webview.postMessage(message);
+  }
+
+  private releaseTranscriptionJob(job: ActiveTranscriptionJob): void {
+    if (TranscribePanel.activeJob !== job) return;
+    TranscribePanel.activeJob = undefined;
+
+    const currentPanel = TranscribePanel.currentPanel;
+    if (currentPanel && currentPanel !== this && !currentPanel.disposed) {
+      currentPanel.postMessage({ type: 'transcriptionJobReleased' });
     }
   }
 
@@ -248,7 +286,14 @@ export class TranscribePanel {
   }
 
   public dispose(): void {
-    TranscribePanel.currentPanel = undefined;
+    if (this.disposed) return;
+    this.disposed = true;
+    if (TranscribePanel.currentPanel === this) {
+      TranscribePanel.currentPanel = undefined;
+    }
+    if (TranscribePanel.activeJob?.owner === this) {
+      TranscribePanel.activeJob.discarded = true;
+    }
     this.panel.dispose();
     while (this.disposables.length) {
       const x = this.disposables.pop();
@@ -260,6 +305,7 @@ export class TranscribePanel {
     hasApiKey: boolean;
     model: string;
     compressRepeats: boolean;
+    isTranscribing?: boolean;
     locale: SupportedLocale;
   }): string {
     const isJa = ctx.locale === 'ja';
@@ -579,7 +625,7 @@ export class TranscribePanel {
     const btnStart = document.getElementById('btnStart');
     const btnClearKey = document.getElementById('btnClearKey');
     let hasSavedApiKey = ${ctx.hasApiKey ? 'true' : 'false'};
-    let isTranscribing = false;
+    let isTranscribing = ${ctx.isTranscribing ? 'true' : 'false'};
 
     const updateStartEligibility = () => {
       const hasRequiredInputs = youtubeUrl.value.trim() !== '' && (hasSavedApiKey || apiKey.value.trim() !== '');
@@ -713,8 +759,20 @@ export class TranscribePanel {
         apiKeyStatus.textContent = '${isJa ? '未設定' : 'Not configured'}';
         btnClearKey.disabled = true;
         updateStartEligibility();
+      } else if (msg.type === 'transcriptionJobReleased') {
+        isTranscribing = false;
+        statusBox.className = 'status-box';
+        statusBox.style.display = 'none';
+        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
       }
     });
+    if (isTranscribing) {
+      statusBox.className = 'status-box loading';
+      statusBox.style.display = 'flex';
+      statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+      btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
+    }
     updateStartEligibility();
   </script>
 </body>
