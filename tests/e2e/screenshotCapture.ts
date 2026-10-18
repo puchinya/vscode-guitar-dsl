@@ -188,6 +188,42 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
   });
 }
 
+/** Captures the active YouTube transcription Webview at its real CSS viewport size. */
+export async function captureTranscriptionWebviewScreenshot(filename: string, issueNumber = 137): Promise<void> {
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  await waitForTranscriptionTarget(port);
+  const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
+  await withWorkbenchDevTools(async send => {
+    const boundsResult = await send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
+        const rect = frame.getBoundingClientRect();
+        return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
+          x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
+      }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')))` ,
+      returnByValue: true
+    });
+    const boundsValue = (boundsResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof boundsValue !== 'string') throw new Error('Could not locate the visible transcription Webview in the workbench');
+    const visibleFrames = JSON.parse(boundsValue) as Array<{ x: number; y: number; width: number; height: number }>;
+    if (visibleFrames.length !== 1) {
+      throw new Error(`Expected one visible transcription Webview iframe for capture, found ${visibleFrames.length}`);
+    }
+    const frame = visibleFrames[0];
+    await send('Page.enable');
+    const result = await send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip: { x: frame.x, y: frame.y, width: frame.width, height: frame.height, scale: 1 }
+    });
+    const data = result.data;
+    if (typeof data !== 'string') throw new Error('DevTools did not return a transcription screenshot');
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+  });
+}
+
 export async function scrollInspectorToControls(): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   await withWorkbenchDevTools(async send => {

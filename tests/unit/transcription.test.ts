@@ -504,7 +504,8 @@ describe('transcription - serializer', () => {
         html.indexOf('<details id="keyManagement">'),
         html.indexOf('<details id="advancedOptions">'),
         html.indexOf('id="btnStart"'),
-        html.indexOf('id="statusBox"')
+        html.indexOf('id="statusBox"'),
+        html.indexOf('id="resultPanel"')
       ];
       assert.ok(positions.every(position => position >= 0));
       assert.deepStrictEqual(positions, [...positions].sort((a, b) => a - b), 'panel controls retain their specified order');
@@ -517,6 +518,10 @@ describe('transcription - serializer', () => {
       assert.ok(html.includes('hasSavedApiKey || apiKey.value.trim() !=='), 'Start checks saved or entered key state');
       assert.ok(html.includes('youtubeUrl.value.trim() !=='), 'Start requires a nonempty URL');
       assert.ok(html.includes('if (isTranscribing || btnStart.disabled) return;'), 'Start suppresses repeated clicks');
+      assert.match(html, /<textarea class="result-dsl" id="resultDsl" readonly/);
+      assert.ok(html.includes('id="btnCopyResult"'), 'the result has a copy action');
+      assert.ok(html.indexOf("window.addEventListener('message', event => {") < html.indexOf("vscode.postMessage({ command: 'requestTranscriptionState' })"), 'the renderer registers its listener before requesting current Host state');
+      assert.ok(html.includes('Number.isSafeInteger(msg.revision)'), 'the renderer ignores stale revisioned job messages');
       for (const property of ['youtubeUrl', 'apiKey', 'bpmMode', 'bpmValue', 'capoMode', 'capoValue', 'beatType', 'strummingPresetId', 'compressRepeats', 'model']) {
         assert.ok(html.includes(property), `existing ${property} option remains in the message`);
       }
@@ -572,6 +577,8 @@ describe('transcription - serializer', () => {
       delete: async () => { storedKey = undefined; }
     };
 
+    const previousPanel = TranscribePanel.currentPanel;
+    try {
     for (const [locale, expectedMessage] of [
       ['ja', 'API キーを読み取れませんでした。キーを保存し直してから再試行してください。'],
       ['en', 'The API key could not be read. Save it again, then retry.']
@@ -582,6 +589,7 @@ describe('transcription - serializer', () => {
       host.secretStorage = secretStorage;
       host.locale = locale;
       host.executePipeline = async () => { pipelineCalls++; return {}; };
+      TranscribePanel.currentPanel = host;
       const options = {
         youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         apiKey: enteredKey,
@@ -590,7 +598,16 @@ describe('transcription - serializer', () => {
       };
 
       await host.handleMessage({ command: 'startTranscription', options });
-      assert.deepStrictEqual(messages, [{ type: 'error', message: expectedMessage }]);
+      const errors = messages.filter(message => message.type === 'error');
+      assert.deepStrictEqual(errors.map(({ type, message }: any) => ({ type, message })), [{ type: 'error', message: expectedMessage }]);
+      const jobStates = messages.filter(message => message.type === 'transcriptionJobState');
+      assert.strictEqual(jobStates.length, 2, 'the host publishes the active and released states');
+      assert.strictEqual(jobStates[0].active, true);
+      assert.strictEqual(jobStates[1].active, false);
+      assert.strictEqual(jobStates[0].jobId, jobStates[1].jobId);
+      assert.ok(jobStates[1].revision > jobStates[0].revision, 'the released snapshot has a newer revision');
+      assert.strictEqual(typeof errors[0].jobId, 'number', 'job errors carry their owner identity');
+      assert.strictEqual(typeof errors[0].revision, 'number', 'job errors carry a monotonic revision');
       assert.strictEqual(storeCalls, 0, 'a failed read stops before storing or using the submitted key');
       assert.strictEqual(pipelineCalls, 0, 'a failed read stops before Gemini and document generation');
       assert.strictEqual(host.transcriptionJobActive, false, 'Start is retryable after the read error');
@@ -605,6 +622,7 @@ describe('transcription - serializer', () => {
     retryHost.secretStorage = secretStorage;
     retryHost.locale = 'en';
     retryHost.executePipeline = async () => { pipelineCalls++; return {}; };
+    TranscribePanel.currentPanel = retryHost;
     await retryHost.handleMessage({
       command: 'startTranscription',
       options: {
@@ -614,9 +632,105 @@ describe('transcription - serializer', () => {
         capoMode: 'auto'
       }
     });
-    assert.deepStrictEqual(retryMessages.map(message => message.type), ['apiKeySaved', 'error']);
+    assert.deepStrictEqual(retryMessages.filter(message => ['apiKeySaved', 'error'].includes(message.type)).map(message => message.type), ['apiKeySaved', 'error']);
     assert.strictEqual(pipelineCalls, 0, 'a retry can save the key before URL validation without invoking Gemini');
     assert.strictEqual(retryHost.transcriptionJobActive, false, 'the retry releases the Host lock as well');
+    } finally {
+      TranscribePanel.currentPanel = previousPanel;
+    }
+  });
+
+  it('G137 keeps successful DSL in the panel and copies the Host-owned result without creating a document', async () => {
+    const vscodeApi = require('vscode') as any;
+    const originalClipboardWriteText = vscodeApi.env.clipboard.writeText;
+    const originalWorkspace = vscodeApi.workspace;
+    const originalWindow = vscodeApi.window;
+    const messages: any[] = [];
+    const copied: string[] = [];
+    let openDocumentCalls = 0;
+    let showDocumentCalls = 0;
+    vscodeApi.env.clipboard.writeText = async (text: string) => { copied.push(text); };
+    vscodeApi.workspace = {
+      textDocuments: [],
+      openTextDocument: async () => { openDocumentCalls++; return {}; }
+    };
+    vscodeApi.window = { showTextDocument: async () => { showDocumentCalls++; } };
+
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = { get: async () => 'stored-test-key' };
+    host.locale = 'en';
+    host.disposed = false;
+    host.executePipeline = async () => sampleSong;
+
+    try {
+      await host.handleMessage({
+        command: 'startTranscription',
+        options: {
+          youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          bpmMode: 'auto',
+          capoMode: 'auto',
+          compressRepeats: false,
+          model: 'gemini-3.8-flash'
+        }
+      });
+
+      const success = messages.find(message => message.type === 'success');
+      assert.ok(success, 'a structurally valid result is sent to the owner panel');
+      assert.strictEqual(success.dslText, serializeSongToGuitarDsl(sampleSong));
+      assert.strictEqual(typeof success.jobId, 'number');
+      assert.strictEqual(typeof success.revision, 'number');
+      assert.strictEqual(openDocumentCalls, 0, 'the successful path never calls openTextDocument');
+      assert.strictEqual(showDocumentCalls, 0, 'the successful path never calls showTextDocument');
+      assert.deepStrictEqual(vscodeApi.workspace.textDocuments, [], 'no workspace document is created');
+
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId });
+      assert.deepStrictEqual(copied, [success.dslText], 'copy uses the result owned by the Host panel');
+      assert.ok(messages.some(message => message.type === 'transcriptionResultCopied' && message.jobId === success.jobId));
+      await host.handleMessage({ command: 'copyTranscriptionResult', jobId: success.jobId - 1 });
+      assert.strictEqual(copied.length, 1, 'a stale result identity cannot copy a different result');
+    } finally {
+      vscodeApi.env.clipboard.writeText = originalClipboardWriteText;
+      if (originalWorkspace === undefined) delete vscodeApi.workspace;
+      else vscodeApi.workspace = originalWorkspace;
+      if (originalWindow === undefined) delete vscodeApi.window;
+      else vscodeApi.window = originalWindow;
+    }
+  });
+
+  it('G137 returns an authoritative released-job snapshot after Webview readiness', async () => {
+    const ownerMessages: any[] = [];
+    const reopenedMessages: any[] = [];
+    const owner: any = Object.create(TranscribePanel.prototype);
+    owner.panel = { webview: { postMessage: async (message: unknown) => { ownerMessages.push(message); } } };
+    owner.secretStorage = { get: async () => 'stored-test-key' };
+    owner.locale = 'en';
+    owner.disposed = false;
+    owner.executePipeline = async () => sampleSong;
+
+    const reopened: any = Object.create(TranscribePanel.prototype);
+    reopened.panel = { webview: { postMessage: async (message: unknown) => { reopenedMessages.push(message); } } };
+    reopened.disposed = false;
+    TranscribePanel.currentPanel = reopened;
+
+    try {
+      await owner.handleMessage({
+        command: 'startTranscription',
+        options: { youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', bpmMode: 'auto', capoMode: 'auto' }
+      });
+      const releaseMessage = reopenedMessages.find(message => message.type === 'transcriptionJobState' && message.active === false);
+      assert.ok(releaseMessage, 'the current panel receives the release update when possible');
+
+      reopenedMessages.length = 0; // model the release update being lost before listener readiness
+      await reopened.handleMessage({ command: 'requestTranscriptionState' });
+      assert.deepStrictEqual(reopenedMessages, [releaseMessage], 'ready requests re-read the authoritative Host state');
+      assert.strictEqual(reopenedMessages[0].active, false);
+      assert.strictEqual(typeof reopenedMessages[0].jobId, 'number');
+      assert.strictEqual(reopenedMessages[0].revision, releaseMessage.revision);
+      assert.ok(ownerMessages.some(message => message.type === 'success'));
+    } finally {
+      TranscribePanel.currentPanel = undefined;
+    }
   });
 
   it('G137 synchronizes implicit key saves and reports SecretStorage failures without success acknowledgements', async () => {
@@ -643,8 +757,8 @@ describe('transcription - serializer', () => {
       }
     });
     assert.strictEqual(storedKey, key, 'Start stores the trimmed key in SecretStorage before URL validation');
-    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaved', 'error']);
-    assert.strictEqual(messages[0].success, true);
+    assert.deepStrictEqual(messages.filter(message => ['apiKeySaved', 'error'].includes(message.type)).map(message => message.type), ['apiKeySaved', 'error']);
+    assert.strictEqual(messages.find(message => message.type === 'apiKeySaved').success, true);
     assert.ok(!JSON.stringify(messages).includes(key), 'host responses never echo the API key');
 
     messages.length = 0;
@@ -658,8 +772,9 @@ describe('transcription - serializer', () => {
         capoMode: 'auto'
       }
     });
-    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
-    assert.strictEqual(messages[0].duringStart, true, 'implicit save failure identifies the rejected start request');
+    const startSaveFailure = messages.find(message => message.type === 'apiKeySaveFailed');
+    assert.ok(startSaveFailure);
+    assert.strictEqual(startSaveFailure.duringStart, true, 'implicit save failure identifies the rejected start request');
     assert.ok(!JSON.stringify(messages).includes(key), 'save failures do not echo the API key');
 
     messages.length = 0;
@@ -730,7 +845,7 @@ describe('transcription - serializer', () => {
     rejectPipeline(new Error('simulated pending pipeline failure'));
     await firstStart;
     assert.strictEqual(host.transcriptionJobActive, false, 'the owning Start releases the Host job in finally after failure');
-    assert.strictEqual(messages[messages.length - 1].type, 'error');
+    assert.strictEqual(messages.filter(message => message.type === 'error').length, 1, 'pipeline failure reaches the owning job');
 
     failStore = false;
     failDelete = false;

@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -3175,8 +3175,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(pipelineOptions[1].beatType, '16beat');
         assert.strictEqual(pipelineOptions[1].strummingPresetId, selectedPreset.id);
         assert.strictEqual(pipelineOptions[1].model, 'gemini-2.5-pro');
-        assert.ok(vscode.window.activeTextEditor?.document.getText().includes('|:'),
-          'Host applies compressRepeats=true when serializing the successful mocked pipeline result');
+        const compressedResult = await evaluateTranscriptionWebview<string>(`document.getElementById('resultDsl').value`);
+        assert.ok(compressedResult.includes('|:'),
+          'Host applies compressRepeats=true in the successful panel-owned preview');
         assert.strictEqual(firstPanel.transcriptionJobActive, false, 'success releases the owning Host job');
         firstPanel.secretStorage = originalSecretStorage;
 
@@ -3367,10 +3368,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('G137 discards closed-panel transcription results across reopen and releases retry after resolve or failure', async () => {
+  test('G137 recovers missed release state after renderer readiness and rejects stale releases', async () => {
     await withWorkbenchSnapshotRestored(async () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: { currentPanel?: any } };
+      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: any };
       TranscribePanel.currentPanel?.dispose();
       await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
       const storagePanel = TranscribePanel.currentPanel;
@@ -3380,6 +3381,21 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const testKey = 'g137-close-reopen-dummy-key';
       await secretStorage.store('guitardsl.geminiApiKey', testKey);
       storagePanel.dispose();
+
+      const panelPrototype = TranscribePanel.prototype;
+      const originalGetHtmlContent = panelPrototype.getHtmlContent;
+      let delayNextRenderer = false;
+      panelPrototype.getHtmlContent = function (this: any, ...args: any[]) {
+        const html = originalGetHtmlContent.apply(this, args) as string;
+        if (!delayNextRenderer) return html;
+        delayNextRenderer = false;
+        return html
+          .replace("    window.addEventListener('message', event => {", "    setTimeout(() => {\n    window.addEventListener('message', event => {")
+          .replace(
+            "    vscode.postMessage({ command: 'requestTranscriptionState' });",
+            "    window.__transcriptionListenerReady = true;\n    vscode.postMessage({ command: 'requestTranscriptionState' });\n    }, 1500);"
+          );
+      };
 
       const untitledBefore = new Set(vscode.workspace.textDocuments
         .filter(document => document.uri.scheme === 'untitled')
@@ -3392,10 +3408,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         model: 'gemini-3.8-flash'
       };
       const pendingStarts: Promise<void>[] = [];
+      const reopenedStarts: Promise<void>[] = [];
       const releasePendingJobs: Array<() => void> = [];
+      let rejectRetryPipeline: ((error: Error) => void) | undefined;
 
       const readPanelState = async () => JSON.parse(await evaluateTranscriptionWebview<string>(`JSON.stringify({
         ready: !!document.getElementById('btnStart'),
+        listenerReady: window.__transcriptionListenerReady === true,
         startDisabled: document.getElementById('btnStart')?.disabled,
         statusClass: document.getElementById('statusBox')?.className,
         statusText: document.getElementById('statusText')?.textContent
@@ -3444,9 +3463,33 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const messageCountAtClose = ownerMessages.length;
 
           owner.dispose();
+          delayNextRenderer = true;
           await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
           const reopened = TranscribePanel.currentPanel;
           assert.ok(reopened && reopened !== owner, 'reopening creates a new panel instance');
+
+          let rendererReady = false;
+          const droppedStateSnapshots: any[] = [];
+          const receivedStateSnapshots: any[] = [];
+          const reopenedWebview = reopened.panel.webview;
+          const originalReopenedPostMessage = reopenedWebview.postMessage;
+          reopenedWebview.postMessage = (message: any) => {
+            if (message.type === 'transcriptionJobState') {
+              receivedStateSnapshots.push(message);
+              if (!rendererReady) {
+                droppedStateSnapshots.push(message);
+                return Promise.resolve(false);
+              }
+            }
+            return originalReopenedPostMessage.call(reopenedWebview, message);
+          };
+          const originalReopenedHandleMessage = reopened.handleMessage.bind(reopened);
+          reopened.handleMessage = (message: any) => {
+            if (message.command === 'requestTranscriptionState') rendererReady = true;
+            const pending = originalReopenedHandleMessage(message);
+            if (message.command === 'startTranscription') reopenedStarts.push(pending);
+            return pending;
+          };
 
           let reopenedState = await readPanelState();
           for (let attempt = 0; attempt < 100 && !reopenedState.ready; attempt++) {
@@ -3454,6 +3497,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             reopenedState = await readPanelState();
           }
           assert.strictEqual(reopenedState.ready, true, 'the reopened panel has rendered');
+          assert.strictEqual(reopenedState.listenerReady, false, 'the test holds the renderer listener after HTML setup');
           await evaluateTranscriptionWebview<void>(`(() => {
             const url = document.getElementById('youtubeUrl');
             url.value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
@@ -3465,6 +3509,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
           await reopened.handleMessage({ command: 'startTranscription', options });
           assert.strictEqual(pipelineCalls, 1, 'direct Start B is rejected while A remains active');
+          assert.strictEqual(rendererReady, false, 'the old job settles before the reopened renderer is ready');
 
           if (completion === 'resolve') {
             pendingSettled = true;
@@ -3474,42 +3519,197 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             rejectPipeline(new Error('simulated closed-panel pipeline failure'));
           }
           await firstStart;
+          assert.ok(droppedStateSnapshots.some(message => message.active === false), 'the release snapshot is lost before listener setup');
 
           for (let attempt = 0; attempt < 100; attempt++) {
             reopenedState = await readPanelState();
-            if (reopenedState.statusClass === 'status-box' && !reopenedState.startDisabled) break;
+            if (reopenedState.listenerReady && reopenedState.statusClass === 'status-box' && !reopenedState.startDisabled) break;
             await settle(20);
           }
           assert.strictEqual(ownerMessages.length, messageCountAtClose, 'the closed panel receives no completion or error messages');
           assert.strictEqual(reopenedState.startDisabled, false, 'the reopened panel becomes retryable after A settles');
           assert.strictEqual(reopenedState.statusClass, 'status-box', 'the discarded result does not appear as a success or failure');
+          const oldRelease = droppedStateSnapshots.find(message => message.active === false);
+          assert.strictEqual(oldRelease.jobId, receivedStateSnapshots.find(message => message.active === false)?.jobId);
           assertNoGeneratedUntitledDocument();
 
           let retryCalls = 0;
-          reopened.executePipeline = async () => {
+          const retryPipeline = new Promise<unknown>((_resolve, reject) => { rejectRetryPipeline = reject; });
+          reopened.executePipeline = () => {
             retryCalls++;
-            throw new Error('simulated retry failure');
+            return retryPipeline;
           };
           await evaluateTranscriptionWebview<void>(`document.getElementById('btnStart').click()`);
           for (let attempt = 0; attempt < 100; attempt++) {
             reopenedState = await readPanelState();
-            if (retryCalls === 1 && reopenedState.statusClass.includes('error')) break;
+            if (retryCalls === 1 && reopenedState.startDisabled) break;
             await settle(20);
           }
           assert.strictEqual(retryCalls, 1, 'a new Start reaches the pipeline after A releases the shared job lock');
+          assert.strictEqual(reopenedState.startDisabled, true, 'the new job owns the reopened panel');
+          await reopenedWebview.postMessage({
+            type: 'transcriptionJobState',
+            active: false,
+            jobId: oldRelease.jobId,
+            revision: oldRelease.revision
+          });
+          await settle(60);
+          reopenedState = await readPanelState();
+          assert.strictEqual(reopenedState.startDisabled, true, 'an older release cannot unlock a newer job');
+          rejectRetryPipeline?.(new Error('simulated retry failure'));
+          rejectRetryPipeline = undefined;
+          await Promise.allSettled(reopenedStarts);
+          for (let attempt = 0; attempt < 100; attempt++) {
+            reopenedState = await readPanelState();
+            if (reopenedState.statusClass.includes('error') && !reopenedState.startDisabled) break;
+            await settle(20);
+          }
           assert.strictEqual(reopenedState.startDisabled, false, 'the retry failure restores Start');
           assertNoGeneratedUntitledDocument();
           reopened.dispose();
         }
       } finally {
+        rejectRetryPipeline?.(new Error('test cleanup'));
         releasePendingJobs.forEach(release => release());
         await Promise.allSettled(pendingStarts);
+        await Promise.allSettled(reopenedStarts);
         TranscribePanel.currentPanel?.dispose();
+        panelPrototype.getHtmlContent = originalGetHtmlContent;
         if (originalKey === undefined) {
           await secretStorage.delete('guitardsl.geminiApiKey');
         } else {
           await secretStorage.store('guitardsl.geminiApiKey', originalKey);
         }
+      }
+    });
+  });
+
+  test('G137 renders successful DSL in the Panel preview without creating or opening a document', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { TranscribePanel } = require('../../transcription/transcribePanel') as { TranscribePanel: any };
+      TranscribePanel.currentPanel?.dispose();
+      await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+      const owner = TranscribePanel.currentPanel;
+      assert.ok(owner, 'the YouTube result owner panel is open');
+      const secretStorage = owner.secretStorage;
+      const originalKey = await secretStorage.get('guitardsl.geminiApiKey');
+      const testKey = 'g137-result-preview-dummy-key';
+      await secretStorage.store('guitardsl.geminiApiKey', testKey);
+
+      const originalOpenTextDocument = (vscode.workspace as any).openTextDocument;
+      const originalShowTextDocument = (vscode.window as any).showTextDocument;
+      const documentsBefore = new Set(vscode.workspace.textDocuments.map(document => document.uri.toString()));
+      let openTextDocumentCalls = 0;
+      let showTextDocumentCalls = 0;
+      let pipelineCalls = 0;
+      const ownerMessages: any[] = [];
+      const ownerWebview = owner.panel.webview;
+      const originalPostMessage = ownerWebview.postMessage;
+      const draft = {
+        title: 'Panel Preview Draft',
+        artist: 'Issue 137',
+        key: 'G',
+        bpm: 96,
+        timeSignature: { numerator: 4, denominator: 4 },
+        sections: [{
+          name: 'Verse',
+          measures: [{
+            chords: [{ name: 'G', duration: '2' }, { name: 'D', duration: '2' }],
+            rhythm: [
+              { duration: '4', direction: 'd' },
+              { duration: '8', direction: 'd' },
+              { duration: '8', direction: 'u', accent: true },
+              { duration: '4', direction: 'd' },
+              { duration: '4', direction: 'u', ghost: true }
+            ],
+            melody: [
+              { pitch: 'g4', duration: '2', tieToNext: true },
+              { pitch: 'g4', duration: '4' },
+              { pitch: 'f#4', duration: '4' }
+            ]
+          }]
+        }]
+      };
+
+      (vscode.workspace as any).openTextDocument = (...args: any[]) => {
+        openTextDocumentCalls++;
+        return originalOpenTextDocument.apply(vscode.workspace, args);
+      };
+      (vscode.window as any).showTextDocument = (...args: any[]) => {
+        showTextDocumentCalls++;
+        return originalShowTextDocument.apply(vscode.window, args);
+      };
+      owner.executePipeline = async () => {
+        pipelineCalls++;
+        return draft;
+      };
+      ownerWebview.postMessage = (message: unknown) => {
+        ownerMessages.push(message);
+        return originalPostMessage.call(ownerWebview, message);
+      };
+
+      try {
+        let ready = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          ready = await evaluateTranscriptionWebview<boolean>(`!!document.getElementById('btnStart')`);
+          if (ready) break;
+          await settle(20);
+        }
+        assert.strictEqual(ready, true, 'the transcription panel renderer initialized');
+        await evaluateTranscriptionWebview<void>(`(() => {
+          const url = document.getElementById('youtubeUrl');
+          url.value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+          url.dispatchEvent(new Event('input', { bubbles: true }));
+          const apiKey = document.getElementById('apiKey');
+          apiKey.value = 'g137-result-preview-dummy-key';
+          apiKey.dispatchEvent(new Event('input', { bubbles: true }));
+        })()`);
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnStart').click()`);
+
+        let panelState: any;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          panelState = await evaluateTranscriptionWebview<any>(`JSON.parse(JSON.stringify({
+            resultVisible: document.getElementById('resultPanel')?.style.display !== 'none',
+            resultText: document.getElementById('resultDsl')?.value,
+            copyButton: !!document.getElementById('btnCopyResult'),
+            readOnly: document.getElementById('resultDsl')?.readOnly
+          }))`);
+          if (panelState.resultVisible && panelState.resultText) break;
+          await settle(20);
+        }
+        assert.strictEqual(pipelineCalls, 1, 'the E2E uses one mocked pipeline result');
+        assert.strictEqual(panelState.resultVisible, true, 'successful DSL appears in the owner panel');
+        assert.ok(panelState.resultText.includes('title: Panel Preview Draft'));
+        assert.strictEqual(panelState.copyButton, true, 'the draft offers a copy operation');
+        assert.strictEqual(panelState.readOnly, true, 'the preview is read-only');
+        assert.strictEqual(openTextDocumentCalls, 0, 'success never calls openTextDocument');
+        assert.strictEqual(showTextDocumentCalls, 0, 'success never calls showTextDocument');
+        assert.deepStrictEqual(vscode.workspace.textDocuments.filter(document => !documentsBefore.has(document.uri.toString())), [], 'success creates no workspace document');
+        assert.ok(ownerMessages.some(message => message.type === 'success' && message.dslText === panelState.resultText && typeof message.jobId === 'number' && typeof message.revision === 'number'));
+
+        await evaluateTranscriptionWebview<void>(`document.getElementById('resultPanel').scrollIntoView({ block: 'end' })`);
+        await captureTranscriptionWebviewScreenshot('youtube-transcription-result.png', 137);
+
+        owner.dispose();
+        await vscode.commands.executeCommand('guitardsl.transcribeYouTube');
+        const reopened = TranscribePanel.currentPanel;
+        assert.ok(reopened && reopened !== owner, 'closing the owner creates a fresh result panel');
+        const reopenedState = await evaluateTranscriptionWebview<any>(`JSON.parse(JSON.stringify({
+          resultVisible: document.getElementById('resultPanel')?.style.display !== 'none',
+          resultText: document.getElementById('resultDsl')?.value || ''
+        }))`);
+        assert.strictEqual(reopenedState.resultVisible, false, 'closing the owner discards the result preview');
+        assert.strictEqual(reopenedState.resultText, '');
+        assert.deepStrictEqual(vscode.workspace.textDocuments.filter(document => !documentsBefore.has(document.uri.toString())), [], 'reopening still creates no result document');
+        reopened.dispose();
+      } finally {
+        ownerWebview.postMessage = originalPostMessage;
+        (vscode.workspace as any).openTextDocument = originalOpenTextDocument;
+        (vscode.window as any).showTextDocument = originalShowTextDocument;
+        TranscribePanel.currentPanel?.dispose();
+        if (originalKey === undefined) await secretStorage.delete('guitardsl.geminiApiKey');
+        else await secretStorage.store('guitardsl.geminiApiKey', originalKey);
       }
     });
   });

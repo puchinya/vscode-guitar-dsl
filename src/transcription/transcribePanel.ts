@@ -20,6 +20,7 @@ function transcriptionPresets(family: AccompanimentFamily): StrummingPatternPres
 const TRANSCRIPTION_FAMILIES: AccompanimentFamily[] = FAMILY_ORDER.filter(f => transcriptionPresets(f).length > 0);
 
 type ActiveTranscriptionJob = {
+  id: number;
   owner: TranscribePanel;
   discarded: boolean;
 };
@@ -31,9 +32,14 @@ function escapeHtml(text: string): string {
 export class TranscribePanel {
   public static currentPanel: TranscribePanel | undefined;
   private static activeJob: ActiveTranscriptionJob | undefined;
+  private static nextJobId = 0;
+  private static latestJobId: number | undefined;
+  private static stateRevision = 0;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
   private disposed = false;
+  private transcriptionResult: string | undefined;
+  private transcriptionResultJobId: number | undefined;
 
   public get transcriptionJobActive(): boolean {
     return TranscribePanel.activeJob !== undefined;
@@ -112,6 +118,25 @@ export class TranscribePanel {
   private async handleMessage(message: any): Promise<void> {
     if (this.disposed) return;
     switch (message.command) {
+      case 'requestTranscriptionState': {
+        this.postTranscriptionJobState();
+        break;
+      }
+      case 'copyTranscriptionResult': {
+        const resultJobId = this.transcriptionResultJobId;
+        if (!this.transcriptionResult || resultJobId === undefined || message.jobId !== resultJobId) break;
+        try {
+          await vscode.env.clipboard.writeText(this.transcriptionResult);
+          this.postMessage({ type: 'transcriptionResultCopied', jobId: resultJobId });
+        } catch {
+          this.postMessage({
+            type: 'transcriptionResultCopyFailed',
+            jobId: resultJobId,
+            message: this.locale === 'ja' ? '採譜結果をコピーできませんでした。' : 'The transcription result could not be copied.'
+          });
+        }
+        break;
+      }
       case 'saveApiKey': {
         const key = message.apiKey?.trim();
         if (key) {
@@ -140,9 +165,21 @@ export class TranscribePanel {
         break;
       }
       case 'startTranscription': {
-        if (TranscribePanel.activeJob) break;
-        const job: ActiveTranscriptionJob = { owner: this, discarded: false };
+        if (TranscribePanel.activeJob) {
+          this.postTranscriptionJobState();
+          break;
+        }
+        this.transcriptionResult = undefined;
+        this.transcriptionResultJobId = undefined;
+        const job: ActiveTranscriptionJob = {
+          id: ++TranscribePanel.nextJobId,
+          owner: this,
+          discarded: false
+        };
         TranscribePanel.activeJob = job;
+        TranscribePanel.latestJobId = job.id;
+        TranscribePanel.stateRevision++;
+        this.postTranscriptionJobState();
         try {
           await this.runTranscription(message.options, job);
         } finally {
@@ -186,13 +223,13 @@ export class TranscribePanel {
       try {
         await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
         if (!this.isActiveJob(job)) return;
-        this.postMessage({ type: 'apiKeySaved', success: true });
+        this.postMessage({ type: 'apiKeySaved', success: true }, job);
       } catch {
         this.postMessage({
           type: 'apiKeySaveFailed',
           duringStart: true,
           message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
-        });
+        }, job);
         return;
       }
     }
@@ -203,7 +240,7 @@ export class TranscribePanel {
         message: isJa
           ? 'Gemini API キーを設定してください。'
           : 'Please configure your Gemini API key.'
-      });
+      }, job);
       return;
     }
 
@@ -214,7 +251,7 @@ export class TranscribePanel {
         message: isJa
           ? '有効なYouTube動画のURL（https://...）を入力してください。'
           : 'Please enter a valid YouTube URL (https://...).'
-      });
+      }, job);
       return;
     }
 
@@ -267,14 +304,9 @@ export class TranscribePanel {
         throw new Error(`Compiler validation failed: ${errors.map(e => e.code).join(', ')}`);
       }
 
-      // Open new document with generated GuitarDSL
-      const doc = await vscode.workspace.openTextDocument({
-        language: 'guitardsl',
-        content: dslText
-      });
-      if (!this.isActiveJob(job)) return;
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
-      this.postMessage({ type: 'success' }, job);
+      this.transcriptionResult = dslText;
+      this.transcriptionResultJobId = job.id;
+      this.postMessage({ type: 'success', dslText }, job);
     } catch (err: any) {
       this.postMessage({
         type: 'error',
@@ -287,19 +319,32 @@ export class TranscribePanel {
     return TranscribePanel.activeJob === job && !job.discarded && !this.disposed;
   }
 
-  private postMessage(message: unknown, job?: ActiveTranscriptionJob): void {
+  private postMessage(message: Record<string, unknown>, job?: ActiveTranscriptionJob): void {
     if (this.disposed || (job && !this.isActiveJob(job))) return;
-    this.panel.webview.postMessage(message);
+    const outbound = job
+      ? { ...message, jobId: job.id, revision: ++TranscribePanel.stateRevision }
+      : message;
+    this.panel.webview.postMessage(outbound);
+  }
+
+  private postTranscriptionJobState(): void {
+    if (this.disposed) return;
+    const job = TranscribePanel.activeJob;
+    this.panel.webview.postMessage({
+      type: 'transcriptionJobState',
+      active: job !== undefined,
+      jobId: job?.id ?? TranscribePanel.latestJobId,
+      revision: TranscribePanel.stateRevision
+    });
   }
 
   private releaseTranscriptionJob(job: ActiveTranscriptionJob): void {
     if (TranscribePanel.activeJob !== job) return;
     TranscribePanel.activeJob = undefined;
+    TranscribePanel.stateRevision++;
 
     const currentPanel = TranscribePanel.currentPanel;
-    if (currentPanel && currentPanel !== this && !currentPanel.disposed) {
-      currentPanel.postMessage({ type: 'transcriptionJobReleased' });
-    }
+    currentPanel?.postTranscriptionJobState();
   }
 
   private executePipeline(options: Parameters<typeof runTranscriptionPipeline>[0]) {
@@ -315,6 +360,8 @@ export class TranscribePanel {
     if (TranscribePanel.activeJob?.owner === this) {
       TranscribePanel.activeJob.discarded = true;
     }
+    this.transcriptionResult = undefined;
+    this.transcriptionResultJobId = undefined;
     this.panel.dispose();
     while (this.disposables.length) {
       const x = this.disposables.pop();
@@ -523,6 +570,50 @@ export class TranscribePanel {
     }
     .key-state-label { font-weight: 600; }
     .key-state-value { color: var(--vscode-descriptionForeground, #888); }
+    .result-panel {
+      margin-top: 24px;
+      border-top: 1px solid var(--vscode-panel-border, #ccc);
+      padding-top: 16px;
+    }
+    .result-panel h3 {
+      margin: 0 0 4px;
+      font-size: 1.1em;
+    }
+    .result-description {
+      color: var(--vscode-descriptionForeground, #888);
+      font-size: 0.9em;
+      margin: 0 0 10px;
+    }
+    .result-dsl {
+      display: block;
+      width: 100%;
+      min-height: 180px;
+      box-sizing: border-box;
+      resize: vertical;
+      padding: 10px 12px;
+      background: var(--vscode-editor-background, #111);
+      color: var(--vscode-editor-foreground, #eee);
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 4px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      white-space: pre;
+      overflow: auto;
+    }
+    .result-dsl:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007acc);
+    }
+    .result-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .result-copy-status {
+      color: var(--vscode-descriptionForeground, #888);
+      font-size: 0.9em;
+    }
   </style>
 </head>
 <body>
@@ -644,6 +735,17 @@ export class TranscribePanel {
     <div id="statusText">${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}</div>
   </div>
 
+  <section class="result-panel" id="resultPanel" aria-labelledby="resultTitle" style="display:none;">
+    <h3 id="resultTitle">${isJa ? '採譜結果' : 'Transcription Result'}</h3>
+    <p class="result-description">${isJa ? '読み取り専用の下書きです。コピーして通常のエディターに貼り付けてください。' : 'This is a read-only draft. Copy it and paste it into a regular editor.'}</p>
+    <textarea class="result-dsl" id="resultDsl" readonly spellcheck="false" aria-label="${isJa ? '生成された GuitarDSL' : 'Generated GuitarDSL'}"></textarea>
+    <div class="result-actions">
+      <button class="btn-secondary" id="btnCopyResult">${isJa ? 'コピー' : 'Copy'}</button>
+      <span class="result-copy-status" id="resultCopyStatus" role="status" aria-live="polite"></span>
+    </div>
+    <p class="result-description">${isJa ? 'パネルを閉じるとこの結果は破棄されます。' : 'Closing this panel discards the result.'}</p>
+  </section>
+
   <script>
     const vscode = acquireVsCodeApi();
     const youtubeUrl = document.getElementById('youtubeUrl');
@@ -696,6 +798,30 @@ export class TranscribePanel {
     });
     const statusBox = document.getElementById('statusBox');
     const statusText = document.getElementById('statusText');
+    const resultPanel = document.getElementById('resultPanel');
+    const resultDsl = document.getElementById('resultDsl');
+    const resultCopyStatus = document.getElementById('resultCopyStatus');
+    let currentJobId = null;
+    let resultJobId = null;
+    let lastJobRevision = -1;
+    let hasTerminalStatus = false;
+
+    const acceptJobMessage = msg => {
+      if (!Number.isSafeInteger(msg.revision) || msg.revision <= lastJobRevision || msg.jobId === undefined) return false;
+      const startsJob = msg.type === 'transcribing'
+        || (msg.type === 'transcriptionJobState' && msg.active === true);
+      if (currentJobId !== null && msg.jobId !== currentJobId && !startsJob) return false;
+      lastJobRevision = msg.revision;
+      if (msg.type === 'transcriptionJobState' && msg.active === false) currentJobId = null;
+      else currentJobId = msg.jobId;
+      return true;
+    };
+
+    document.getElementById('btnCopyResult').addEventListener('click', () => {
+      if (resultDsl.value && resultJobId !== null) {
+        vscode.postMessage({ command: 'copyTranscriptionResult', jobId: resultJobId });
+      }
+    });
 
     btnStart.addEventListener('click', () => {
       if (isTranscribing || btnStart.disabled) return;
@@ -715,7 +841,13 @@ export class TranscribePanel {
 
       // Immediately disable button and show loading state to suppress double starts.
       isTranscribing = true;
+      hasTerminalStatus = false;
+      resultDsl.value = '';
+      resultJobId = null;
+      resultPanel.style.display = 'none';
+      resultCopyStatus.textContent = '';
       btnStart.disabled = true;
+      statusBox.style.display = 'none';
       btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       statusBox.className = 'status-box loading';
       statusBox.style.display = 'flex';
@@ -740,8 +872,10 @@ export class TranscribePanel {
 
     window.addEventListener('message', event => {
       const msg = event.data;
+      if (msg.revision !== undefined && !acceptJobMessage(msg)) return;
       if (msg.type === 'transcribing') {
         isTranscribing = true;
+        hasTerminalStatus = false;
         statusBox.className = 'status-box loading';
         statusBox.style.display = 'flex';
         statusText.textContent = msg.text || '${isJa ? 'GeminiでYouTube音源を解析中...' : 'Analyzing YouTube audio with Gemini...'}';
@@ -749,6 +883,7 @@ export class TranscribePanel {
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {
         isTranscribing = false;
+        hasTerminalStatus = true;
         statusBox.className = 'status-box error';
         statusBox.style.display = 'flex';
         statusText.textContent = '❌ ' + msg.message;
@@ -757,6 +892,7 @@ export class TranscribePanel {
       } else if (msg.type === 'apiKeySaveFailed') {
         if (msg.duringStart) {
           isTranscribing = false;
+          hasTerminalStatus = true;
           statusBox.className = 'status-box error';
           statusBox.style.display = 'flex';
           statusText.textContent = '❌ ' + msg.message;
@@ -770,10 +906,19 @@ export class TranscribePanel {
         updateStartEligibility();
       } else if (msg.type === 'success') {
         isTranscribing = false;
+        hasTerminalStatus = true;
         statusBox.className = 'status-box';
         statusBox.style.display = 'none';
+        resultDsl.value = typeof msg.dslText === 'string' ? msg.dslText : '';
+        resultJobId = msg.jobId;
+        resultPanel.style.display = resultDsl.value ? 'block' : 'none';
+        resultCopyStatus.textContent = '';
         btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
         updateStartEligibility();
+      } else if (msg.type === 'transcriptionResultCopied' && msg.jobId === resultJobId) {
+        resultCopyStatus.textContent = '${isJa ? 'コピーしました。' : 'Copied.'}';
+      } else if (msg.type === 'transcriptionResultCopyFailed' && msg.jobId === resultJobId) {
+        resultCopyStatus.textContent = msg.message;
       } else if (msg.type === 'apiKeySaved') {
         apiKey.value = '';
         hasSavedApiKey = true;
@@ -786,14 +931,25 @@ export class TranscribePanel {
         apiKeyStatus.textContent = '${isJa ? '未設定' : 'Not configured'}';
         btnClearKey.disabled = true;
         updateStartEligibility();
-      } else if (msg.type === 'transcriptionJobReleased') {
-        isTranscribing = false;
-        statusBox.className = 'status-box';
-        statusBox.style.display = 'none';
-        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+      } else if (msg.type === 'transcriptionJobState') {
+        isTranscribing = msg.active === true;
+        if (isTranscribing) {
+          hasTerminalStatus = false;
+          statusBox.className = 'status-box loading';
+          statusBox.style.display = 'flex';
+          statusText.textContent = '${isJa ? 'GeminiでYouTube音源を解析中... (30〜60秒ほどかかります)' : 'Analyzing YouTube audio with Gemini...'}';
+          btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
+        } else {
+          if (!hasTerminalStatus) {
+            statusBox.className = 'status-box';
+            statusBox.style.display = 'none';
+          }
+          btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        }
         updateStartEligibility();
       }
     });
+    vscode.postMessage({ command: 'requestTranscriptionState' });
     if (isTranscribing) {
       statusBox.className = 'status-box loading';
       statusBox.style.display = 'flex';

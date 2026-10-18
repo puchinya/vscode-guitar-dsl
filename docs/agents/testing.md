@@ -15,6 +15,7 @@ All automated tests must be placed in designated directories based on their scop
 - Test file naming: `*.test.ts`.
 - Unit tests must be completely runnable standalone without launching VS Code or requiring external network access.
 - E2E tests run inside an isolated VS Code test instance launched by `@vscode/test-electron`.
+- Automated tests must never call the live Gemini API or another metered external service. Test transcription flows with a stubbed pipeline or mocked API adapter and dummy credentials; never depend on a real API key or YouTube analysis request.
 - Any test command that launches VS Code/Electron must always run outside the command sandbox. This applies to both `npm run test:e2e` and `npm test` (which includes E2E tests). An isolated VS Code test profile does not remove this requirement.
 - If VS Code exits during startup when an E2E command is run inside a sandbox (for example, with `SIGABRT`), treat that as an invalid test run and rerun the command outside the sandbox.
 

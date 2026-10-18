@@ -37,6 +37,7 @@
 | コード図エディタ | [chord-editor.svg](gui_design/chord-editor.svg) | 548 × 1260 px | DSL 行と保存操作一式 |
 | YouTube 採譜パネル・設定を閉じた状態 | [youtube-transcription.svg](gui_design/youtube-transcription.svg) | 548 × 528 px | 採譜を開始するボタンと未入力時の状態表示 |
 | YouTube 採譜パネル・詳細設定を展開 | [youtube-transcription-advanced.svg](gui_design/youtube-transcription-advanced.svg) | 548 × 1000 px | AI モデルと採譜開始ボタン |
+| YouTube 採譜パネル・結果プレビュー | [youtube-transcription-result.svg](gui_design/youtube-transcription-result.svg) | 548 × 800 px | 読み取り専用 GuitarDSL とコピー操作 |
 
 ## Normative requirements
 
@@ -205,11 +206,15 @@ Inspector の設定・候補操作の意味は [拡張機能仕様 §4B、§4D](
 
 ![詳細設定を展開した YouTube 採譜パネル](gui_design/youtube-transcription-advanced.svg)
 
+![採譜結果プレビューを表示した YouTube パネル](gui_design/youtube-transcription-result.svg)
+
 初期図はキー管理と詳細設定の両方を閉じ、URL とキーが未設定で開始ボタンを無効にした状態を示す。キー欄は管理を開いた場合だけ表示し、保存後は入力値を空に戻す。通常は未設定 / 保存済みの状態を示すが、SecretStorage の読み取りに失敗した場合はローカライズした「キー状態を確認できない」と表示し、どちらとも断定しない。キーの値は画面の状態表示、ログ、HTML に含めない。
 
 詳細設定は BPM（自動 / 30–300 の手動値）、カポ（自動 / 0–12 の手動値）、ビート（自動 / 8 / 16）、伴奏ファミリーとプリセット、繰り返し圧縮、AI モデルの順に表示する。選択肢、既定値、既存コマンドへ渡す値は変えない。閉じた開閉領域の操作部品はキーボードフォーカス順に含めない。
 
 開始ボタンは URL が空でなく、保存済みキーまたは入力キーがある場合だけ有効にする。URL の検証は拡張機能ホストが引き続き行う。開始後は二重実行を抑え、既存の段階進捗とエラーを同じパネルに表示する。Start 時の SecretStorage 読み取り失敗はローカライズしたエラーを表示して開始を復旧し、Gemini 呼び出しと文書生成を行わない。YouTube の実行中キャンセル操作は表示しない。
+
+構造検証に成功した GuitarDSL は、このパネル内の読み取り専用欄に表示する。**コピー** 操作で通常の GuitarDSL エディターへ貼り付けて編集できる。採譜成功時にエディター文書は自動作成しない。パネルを閉じるとプレビューは破棄する。プレビュー表示、コピー操作、処理状態の同期は、Extension host からの message と Webview の応答に従う。
 
 ## Observable behavior
 

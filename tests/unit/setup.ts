@@ -1,6 +1,11 @@
 import Module from 'module';
 
 const mockVscode = {
+  env: {
+    clipboard: {
+      writeText: async (_text: string) => undefined
+    }
+  },
   SymbolKind: {
     File: 0,
     Module: 1,
