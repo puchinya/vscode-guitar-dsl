@@ -64,7 +64,7 @@ export class GuitarDslSidebarProvider implements vscode.TreeDataProvider<GuitarD
       case 'openImport':
         return [
           cmd(m.sidebarOpenGuitarDslFile, 'guitardsl.navigation.openGuitarDslFile', 'folder-opened'),
-          cmd(m.sidebarImportGuitarPro, 'guitardsl.importGuitarPro', 'guitar'),
+          cmd(m.sidebarImportGuitarPro, 'guitardsl.importGuitarPro', 'music'),
           cmd(m.sidebarChooseTranscriptionSource, 'guitardsl.navigation.chooseTranscriptionSource', 'play-circle')
         ];
       case 'editAssist':
@@ -75,7 +75,7 @@ export class GuitarDslSidebarProvider implements vscode.TreeDataProvider<GuitarD
       case 'export':
         return [
           cmd(m.sidebarExportPdf, 'guitardsl.navigation.exportPdfActive', 'file-pdf'),
-          cmd(m.sidebarExportGuitarPro, 'guitardsl.navigation.exportGuitarProActive', 'guitar')
+          cmd(m.sidebarExportGuitarPro, 'guitardsl.navigation.exportGuitarProActive', 'music')
         ];
       case 'help':
         return [cmd(m.sidebarOpenGuitarDslHelp, 'guitardsl.openHelp', 'question')];

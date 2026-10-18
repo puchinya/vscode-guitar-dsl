@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { isGuitarDslDocument } from './documentResolver';
+import { EXPLICIT_URI_ONLY_RESOLUTION, isGuitarDslDocument } from './documentResolver';
 import { Messages } from './i18n';
 
 export const SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND = 'guitardsl.navigation.openGuitarDslFile';
@@ -23,7 +23,12 @@ async function runForActiveGuitarDslDocument(
     api.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
     return;
   }
-  await api.commands.executeCommand(command, doc.uri);
+  // Keep the action bound to this captured URI even if opening it later fails.
+  if (command === 'guitardsl.exportGuitarPro') {
+    await api.commands.executeCommand(command, doc.uri, EXPLICIT_URI_ONLY_RESOLUTION);
+  } else {
+    await api.commands.executeCommand(command, doc.uri, undefined, EXPLICIT_URI_ONLY_RESOLUTION);
+  }
 }
 
 /** Builds the internal command registrations; the API parameter keeps command behavior testable. */

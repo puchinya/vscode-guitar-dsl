@@ -523,6 +523,58 @@ describe('transcription - serializer', () => {
     }
   });
 
+  it('G137 synchronizes implicit key saves and reports SecretStorage failures without success acknowledgements', async () => {
+    const key = 'unit-test-secret-value';
+    const messages: any[] = [];
+    let storedKey: string | undefined;
+    const secretStorage = {
+      get: async () => storedKey,
+      store: async (_name: string, value: string) => { storedKey = value; },
+      delete: async () => { storedKey = undefined; }
+    };
+    const host: any = Object.create(TranscribePanel.prototype);
+    host.panel = { webview: { postMessage: async (message: unknown) => { messages.push(message); } } };
+    host.secretStorage = secretStorage;
+    host.locale = 'en';
+
+    await host.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/watch?v=not-youtube',
+        apiKey: `  ${key}  `,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    assert.strictEqual(storedKey, key, 'Start stores the trimmed key in SecretStorage before URL validation');
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaved', 'error']);
+    assert.strictEqual(messages[0].success, true);
+    assert.ok(!JSON.stringify(messages).includes(key), 'host responses never echo the API key');
+
+    messages.length = 0;
+    secretStorage.store = async () => { throw new Error('simulated secure storage failure'); };
+    await host.handleMessage({
+      command: 'startTranscription',
+      options: {
+        youtubeUrl: 'https://example.invalid/watch?v=not-youtube',
+        apiKey: key,
+        bpmMode: 'auto',
+        capoMode: 'auto'
+      }
+    });
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
+    assert.ok(!JSON.stringify(messages).includes(key), 'save failures do not echo the API key');
+
+    messages.length = 0;
+    await host.handleMessage({ command: 'saveApiKey', apiKey: key });
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeySaveFailed']);
+
+    messages.length = 0;
+    secretStorage.delete = async () => { throw new Error('simulated secure storage failure'); };
+    await host.handleMessage({ command: 'clearApiKey' });
+    assert.deepStrictEqual(messages.map(message => message.type), ['apiKeyClearFailed']);
+  });
+
   it('S001 the transcription panel offers Auto plus 4/4 presets by family, never a flat or non-4/4 list', () => {
     for (const locale of ['ja', 'en'] as const) {
       const html: string = (TranscribePanel.prototype as any).getHtmlContent.call({}, { hasApiKey: true, model: 'm', compressRepeats: false, locale });

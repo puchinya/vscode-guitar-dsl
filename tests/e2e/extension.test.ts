@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -2796,6 +2796,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const sidebarWidth = await resizePrimarySidebarToWidth(300);
         assert.strictEqual(sidebarWidth, 300, 'Issue #137 sidebar evidence uses a 300 CSS px Tree View');
         await captureWorkbenchScreenshot(`sidebar-${requestedLocale}-${theme}-300px.png`, 137, 800);
+        await expandWorkbenchSidebarSection(requestedLocale === 'ja' ? 'エクスポート' : 'Export');
+        await settle(200);
+        const sidebarMessages = require('../../i18n').getMessages(requestedLocale === 'ja' ? 'ja' : 'en');
+        const sidebarItems = await inspectWorkbenchSidebarItems();
+        for (const label of [sidebarMessages.sidebarImportGuitarPro, sidebarMessages.sidebarExportGuitarPro]) {
+          const renderedItem = sidebarItems.find(item => item.label.includes(label));
+          assert.ok(renderedItem, `${label} is visible in the Workbench Sidebar`);
+          assert.ok(renderedItem.iconClass.includes('codicon-music'), `${label} renders the supported music Codicon`);
+        }
+        await captureWorkbenchScreenshot(`sidebar-guitarpro-icons-${requestedLocale}-${theme}-300px.png`, 137, 800);
         await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
       }
       const chooser = vscode.commands.executeCommand('guitardsl.navigation.chooseTranscriptionSource');
@@ -2876,6 +2886,126 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await chooseYouTube;
       assert.strictEqual(TranscribePanel.currentPanel, firstPanel, 'Enter selects YouTube from the source Quick Pick and reuses the same panel');
 
+      const webview = firstPanel.panel.webview;
+      const testApiKey = 'e2e-dummy-key-not-valid';
+      const incomingMessages: any[] = [];
+      const outgoingMessages: any[] = [];
+      const originalPostMessage = webview.postMessage;
+      const messageSubscription = webview.onDidReceiveMessage((message: any) => incomingMessages.push(message));
+      webview.postMessage = (message: any) => {
+        outgoingMessages.push(message);
+        return originalPostMessage.call(webview, message);
+      };
+      const readTranscriptionState = async () => JSON.parse(await evaluateTranscriptionWebview<string>(`JSON.stringify({
+        apiKey: document.getElementById('apiKey').value,
+        youtubeUrl: document.getElementById('youtubeUrl').value,
+        keyStatus: document.getElementById('apiKeyStatus').textContent,
+        startDisabled: document.getElementById('btnStart').disabled,
+        clearDisabled: document.getElementById('btnClearKey').disabled,
+        statusClass: document.getElementById('statusBox').className,
+        statusText: document.getElementById('statusText').textContent
+      })`));
+      try {
+        // Start from a known Host state through the actual webview control.
+        await evaluateTranscriptionWebview<void>(`(() => {
+          const clear = document.getElementById('btnClearKey');
+          if (!clear.disabled) clear.click();
+        })()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const state = await readTranscriptionState();
+          const storedKey = await firstPanel.secretStorage.get('guitardsl.geminiApiKey');
+          if (state.keyStatus === 'Not configured' && storedKey === undefined) break;
+          await settle(50);
+        }
+        assert.strictEqual((await readTranscriptionState()).keyStatus, 'Not configured', 'the starting key state is cleared through the UI');
+        assert.strictEqual(await firstPanel.secretStorage.get('guitardsl.geminiApiKey'), undefined,
+          'the starting SecretStorage deletion finishes before a new key is submitted');
+
+        await evaluateTranscriptionWebview<void>(`(() => {
+          document.getElementById('keyManagement').open = true;
+          const key = document.getElementById('apiKey');
+          key.value = ${JSON.stringify(testApiKey)};
+          key.dispatchEvent(new Event('input', { bubbles: true }));
+          const url = document.getElementById('youtubeUrl');
+          url.value = 'https://example.invalid/watch?v=not-youtube';
+          url.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnStart').click();
+          document.getElementById('btnStart').click();
+        })()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const state = await readTranscriptionState();
+          if (state.keyStatus === 'Saved' && state.apiKey === '' && /error/.test(state.statusClass)) break;
+          await settle(50);
+        }
+        let state = await readTranscriptionState();
+        const initialStarts = incomingMessages.filter(message => message.command === 'startTranscription');
+        assert.strictEqual(initialStarts.length, 1, 'the real Start button sends one Host request despite a double click');
+        const sentOptions = initialStarts[0].options;
+        assert.ok(sentOptions.apiKey === testApiKey, 'the entered key is sent to the Host for SecretStorage only');
+        assert.strictEqual(sentOptions.youtubeUrl, 'https://example.invalid/watch?v=not-youtube');
+        assert.strictEqual(sentOptions.bpmMode, 'auto');
+        assert.strictEqual(sentOptions.bpmValue, undefined);
+        assert.strictEqual(sentOptions.capoMode, 'auto');
+        assert.strictEqual(sentOptions.capoValue, undefined);
+        assert.strictEqual(sentOptions.beatType, 'auto');
+        assert.strictEqual(sentOptions.strummingPresetId, 'auto');
+        assert.strictEqual(sentOptions.compressRepeats, false);
+        assert.ok(typeof sentOptions.model === 'string' && sentOptions.model.length > 0, 'the selected Gemini model reaches the Host');
+        assert.strictEqual(state.apiKey, '', 'the input clears only after the Host confirms the implicit save');
+        assert.strictEqual(state.keyStatus, 'Saved', 'the saved-key state is synchronized from the Host response');
+        assert.strictEqual(state.youtubeUrl, 'https://example.invalid/watch?v=not-youtube', 'the URL remains available after saving');
+        assert.strictEqual(state.startDisabled, false, 'Start becomes available again after the invalid URL error');
+        assert.strictEqual(await firstPanel.secretStorage.get('guitardsl.geminiApiKey'), testApiKey, 'the Host persisted the key');
+        assert.strictEqual(JSON.stringify(outgoingMessages).includes(testApiKey), false, 'Host responses never expose the API key');
+
+        await evaluateTranscriptionWebview<void>(`(() => {
+          const url = document.getElementById('youtubeUrl');
+          url.value = 'https://example.invalid/watch?v=retry';
+          url.dispatchEvent(new Event('input', { bubbles: true }));
+          document.getElementById('btnStart').click();
+        })()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          if (incomingMessages.filter(message => message.command === 'startTranscription').length === 2
+            && (await readTranscriptionState()).statusClass.includes('error')) break;
+          await settle(50);
+        }
+        const retryStarts = incomingMessages.filter(message => message.command === 'startTranscription');
+        assert.strictEqual(retryStarts.length, 2, 'Start can be retried after the Host reports a URL error');
+        assert.strictEqual(retryStarts[1].options.apiKey, '', 'the saved key is not resent from the cleared input');
+        assert.strictEqual(retryStarts[1].options.youtubeUrl, 'https://example.invalid/watch?v=retry');
+
+        await evaluateTranscriptionWebview<void>(`document.getElementById('btnClearKey').click()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          state = await readTranscriptionState();
+          if (state.keyStatus === 'Not configured') break;
+          await settle(50);
+        }
+        assert.strictEqual(state.keyStatus, 'Not configured', 'the actual Clear button synchronizes the deleted key state');
+        assert.strictEqual(state.clearDisabled, true, 'Clear disables after Host deletion succeeds');
+        assert.strictEqual(state.startDisabled, true, 'Start disables after the saved key is deleted');
+        let storedKeyAfterClear = await firstPanel.secretStorage.get('guitardsl.geminiApiKey');
+        for (let attempt = 0; attempt < 100 && storedKeyAfterClear !== undefined; attempt++) {
+          await settle(50);
+          storedKeyAfterClear = await firstPanel.secretStorage.get('guitardsl.geminiApiKey');
+        }
+        assert.strictEqual(storedKeyAfterClear, undefined, 'the Host deleted the key');
+      } finally {
+        messageSubscription.dispose();
+        webview.postMessage = originalPostMessage;
+        // Do not persist test credentials if an assertion fails midway through the interaction.
+        if (await firstPanel.secretStorage.get('guitardsl.geminiApiKey')) {
+          await firstPanel.secretStorage.delete('guitardsl.geminiApiKey');
+        }
+      }
+      await evaluateTranscriptionWebview<void>(`(() => {
+        const url = document.getElementById('youtubeUrl');
+        url.value = '';
+        url.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('keyManagement').open = false;
+        document.getElementById('advancedOptions').open = false;
+        document.getElementById('statusBox').style.display = 'none';
+      })()`);
+
       if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
         await vscode.commands.executeCommand('notifications.clearAll');
         const layout = JSON.parse(await inspectWorkbenchLayout()).parts as { sidebar: { visible: boolean }; auxiliarybar: { visible: boolean } };
@@ -2927,6 +3057,62 @@ suite('Sidebar navigation (Issue #137)', () => {
       assert.strictEqual(preview.generation, generation, 'no Preview or export action runs for plaintext');
       assert.strictEqual(preview.currentDocumentUri, docB.uri.toString(), 'the last active GuitarDSL document is not reused');
       assert.strictEqual(warnings.length, 3, 'each unsupported action reports its warning');
+    });
+  });
+
+  test('captured Sidebar URI failure never previews or exports the newly active document', async () => {
+    await withWorkbenchSnapshotRestored(async () => {
+      const docA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: Unavailable A\n| C | G |\n' });
+      const docB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: Fallback B\n| Am | F |\n' });
+      await showAndFocus(docB);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const preview = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      const existingPreview = vscode.window.tabGroups.all.flatMap(group => group.tabs).find(tab =>
+        tab.input instanceof vscode.TabInputWebview && /preview/i.test(tab.label));
+      if (existingPreview) await vscode.window.tabGroups.close(existingPreview);
+
+      const originalOpenTextDocument: any = vscode.workspace.openTextDocument;
+      const originalExecuteCommand = vscode.commands.executeCommand;
+      const originalWarning = vscode.window.showWarningMessage;
+      const originalSaveDialog = vscode.window.showSaveDialog;
+      const warnings: string[] = [];
+      let saveDialogCalls = 0;
+      try {
+        vscode.workspace.openTextDocument = (async (uri: any, ...args: any[]) => {
+          if (uri.toString() === docA.uri.toString()) throw new Error('simulated captured document becoming unavailable');
+          return originalOpenTextDocument.call(vscode.workspace, uri, ...args);
+        }) as any;
+        vscode.window.showWarningMessage = (async (message: string) => { warnings.push(message); return undefined; }) as typeof vscode.window.showWarningMessage;
+        vscode.window.showSaveDialog = (async () => { saveDialogCalls++; return undefined; }) as typeof vscode.window.showSaveDialog;
+        vscode.commands.executeCommand = (async (id: string, ...args: any[]) => {
+          if (['guitardsl.showPreview', 'guitardsl.exportPdf', 'guitardsl.exportGuitarPro'].includes(id)) {
+            await showAndFocus(docB);
+          }
+          return originalExecuteCommand.call(vscode.commands, id, ...args);
+        }) as typeof vscode.commands.executeCommand;
+
+        const before = preview.generation;
+        for (const command of [
+          'guitardsl.navigation.showPreviewActive',
+          'guitardsl.navigation.exportPdfActive',
+          'guitardsl.navigation.exportGuitarProActive'
+        ]) {
+          await showAndFocus(docA);
+          await vscode.commands.executeCommand(command);
+        }
+        await settle(100);
+        assert.strictEqual(preview.generation, before, 'failed resolution does not rebuild or switch Preview to B');
+        assert.strictEqual(vscode.window.tabGroups.all.flatMap(group => group.tabs).some(tab =>
+          tab.input instanceof vscode.TabInputWebview && /preview/i.test(tab.label)), false, 'Preview is not opened for B');
+        assert.strictEqual(saveDialogCalls, 0, 'PDF and Guitar Pro exports never start for B');
+        assert.strictEqual(warnings.length, 3, 'each Sidebar action reports that its captured URI is unavailable');
+      } finally {
+        vscode.commands.executeCommand = originalExecuteCommand;
+        vscode.workspace.openTextDocument = originalOpenTextDocument;
+        vscode.window.showWarningMessage = originalWarning;
+        vscode.window.showSaveDialog = originalSaveDialog;
+        await showAndFocus(docB);
+      }
     });
   });
 });

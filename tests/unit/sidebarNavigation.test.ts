@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { getMessages } from '../../src/i18n';
+import { EXPLICIT_URI_ONLY_RESOLUTION } from '../../src/documentResolver';
 import {
   createSidebarNavigationCommands,
   SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND,
@@ -157,7 +158,9 @@ describe('Sidebar navigation command handlers', () => {
     await handler(SIDEBAR_EXPORT_PDF_ACTIVE_COMMAND)(uriA);
     await handler(SIDEBAR_EXPORT_GUITAR_PRO_ACTIVE_COMMAND)(uriA);
     assert.deepStrictEqual(harness.executed, [
-      ['guitardsl.showPreview', uriB], ['guitardsl.exportPdf', uriB], ['guitardsl.exportGuitarPro', uriB]
+      ['guitardsl.showPreview', uriB, undefined, EXPLICIT_URI_ONLY_RESOLUTION],
+      ['guitardsl.exportPdf', uriB, undefined, EXPLICIT_URI_ONLY_RESOLUTION],
+      ['guitardsl.exportGuitarPro', uriB, EXPLICIT_URI_ONLY_RESOLUTION]
     ]);
 
     harness.api.window.activeTextEditor = {

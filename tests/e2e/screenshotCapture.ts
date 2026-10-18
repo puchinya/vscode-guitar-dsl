@@ -621,6 +621,52 @@ export async function inspectWorkbenchLayout(): Promise<string> {
   });
 }
 
+/** Expands a real Extension Development Host Tree View section by its displayed label. */
+export async function expandWorkbenchSidebarSection(label: string): Promise<void> {
+  await withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify((() => {
+        const rows = [...document.querySelectorAll('.part.sidebar .monaco-list-row')];
+        const row = rows.find(node => (node.getAttribute('aria-label') || node.textContent || '').toLowerCase().includes(${JSON.stringify(label.toLowerCase())}));
+        if (!row) return { error: 'Sidebar section not found: ' + ${JSON.stringify(label)} };
+        const twistie = row.querySelector('.monaco-tl-twistie');
+        if (!twistie) return { error: 'Sidebar section has no tree expander: ' + ${JSON.stringify(label)} };
+        const ariaExpanded = row.getAttribute('aria-expanded');
+        const collapsed = ariaExpanded === 'false' || twistie.classList.contains('collapsed');
+        if (!collapsed) return { alreadyExpanded: true };
+        const rect = twistie.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      })())`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not locate the requested Sidebar section');
+    const target = JSON.parse(value) as { error?: string; alreadyExpanded?: boolean; x?: number; y?: number };
+    if (target.error) throw new Error(target.error);
+    if (target.alreadyExpanded) return;
+    if (typeof target.x !== 'number' || typeof target.y !== 'number') throw new Error('Sidebar section has no clickable expander');
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', clickCount: 1 });
+  });
+}
+
+/** Reads the rendered Workbench Sidebar labels and Codicon classes for visual regression checks. */
+export async function inspectWorkbenchSidebarItems(): Promise<{ label: string; iconClass: string }[]> {
+  return withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('.part.sidebar .monaco-list-row')].map(row => ({
+        label: row.getAttribute('aria-label') || (row.textContent || '').trim(),
+        iconClass: row.querySelector('.codicon')?.className || ''
+      })))`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not inspect rendered Sidebar items');
+    return JSON.parse(value) as { label: string; iconClass: string }[];
+  });
+}
+
 type WorkbenchKey = 'Tab' | 'Enter' | 'Escape' | 'Space';
 
 async function dispatchKey(send: SendDevToolsCommand, key: WorkbenchKey, shift = false): Promise<void> {

@@ -219,14 +219,17 @@ export function registerGp78Commands(context: vscode.ExtensionContext, options: 
     try { await importCommand(locale, uri instanceof vscode.Uri ? uri : undefined); }
     finally { busy = false; }
   });
-  const exportDisposable = vscode.commands.registerCommand(EXPORT_COMMAND, async (uri?: vscode.Uri) => {
+  const exportDisposable = vscode.commands.registerCommand(EXPORT_COMMAND, async (
+    uri?: vscode.Uri,
+    resolutionOptions?: { explicitUriOnly?: boolean }
+  ) => {
     if (busy) {
       void vscode.window.showWarningMessage(msgs.gp78Busy);
       return;
     }
     busy = true;
     try {
-      const document = await resolveGuitarDslDocument(uri, options.getLastActiveDocument());
+      const document = await resolveGuitarDslDocument(uri, options.getLastActiveDocument(), resolutionOptions);
       if (!document || !isExportableDocument(document)) {
         void vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
         return;

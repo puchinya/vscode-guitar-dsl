@@ -51,12 +51,14 @@ describe('GuitarDslSidebarProvider', () => {
       navigation.SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND, 'guitardsl.importGuitarPro',
       navigation.SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND
     ]);
+    assert.strictEqual((p.getTreeItem(section(p, 'openImport')[1]) as any).iconPath.id, 'music', 'Import Guitar Pro uses a supported Codicon');
     assert.deepStrictEqual(commandsOf(section(p, 'editAssist')), [
       navigation.SIDEBAR_SHOW_PREVIEW_ACTIVE_COMMAND, 'guitardsl.openInspector'
     ]);
     assert.deepStrictEqual(commandsOf(section(p, 'export')), [
       navigation.SIDEBAR_EXPORT_PDF_ACTIVE_COMMAND, navigation.SIDEBAR_EXPORT_GUITAR_PRO_ACTIVE_COMMAND
     ]);
+    assert.strictEqual((p.getTreeItem(section(p, 'export')[1]) as any).iconPath.id, 'music', 'Export Guitar Pro uses a supported Codicon');
     assert.deepStrictEqual(commandsOf(section(p, 'help')), ['guitardsl.openHelp']);
   });
 

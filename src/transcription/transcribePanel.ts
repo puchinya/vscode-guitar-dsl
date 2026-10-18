@@ -93,14 +93,28 @@ export class TranscribePanel {
       case 'saveApiKey': {
         const key = message.apiKey?.trim();
         if (key) {
-          await this.secretStorage.store('guitardsl.geminiApiKey', key);
-          this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+          try {
+            await this.secretStorage.store('guitardsl.geminiApiKey', key);
+            this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+          } catch {
+            this.panel.webview.postMessage({
+              type: 'apiKeySaveFailed',
+              message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
+            });
+          }
         }
         break;
       }
       case 'clearApiKey': {
-        await this.secretStorage.delete('guitardsl.geminiApiKey');
-        this.panel.webview.postMessage({ type: 'apiKeyCleared', success: true });
+        try {
+          await this.secretStorage.delete('guitardsl.geminiApiKey');
+          this.panel.webview.postMessage({ type: 'apiKeyCleared', success: true });
+        } catch {
+          this.panel.webview.postMessage({
+            type: 'apiKeyClearFailed',
+            message: this.locale === 'ja' ? 'API キーを削除できませんでした。' : 'The API key could not be cleared.'
+          });
+        }
         break;
       }
       case 'startTranscription': {
@@ -126,7 +140,16 @@ export class TranscribePanel {
     let apiKey = (await this.secretStorage.get('guitardsl.geminiApiKey')) || '';
     if (options.apiKey && options.apiKey.trim()) {
       apiKey = options.apiKey.trim();
-      await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
+      try {
+        await this.secretStorage.store('guitardsl.geminiApiKey', apiKey);
+        this.panel.webview.postMessage({ type: 'apiKeySaved', success: true });
+      } catch {
+        this.panel.webview.postMessage({
+          type: 'apiKeySaveFailed',
+          message: this.locale === 'ja' ? 'API キーを安全に保存できませんでした。' : 'The API key could not be saved securely.'
+        });
+        return;
+      }
     }
 
     if (!apiKey) {
@@ -641,6 +664,13 @@ export class TranscribePanel {
         btnStart.disabled = true;
         btnStart.innerHTML = '<span>⏳ ${isJa ? '採譜処理中...' : 'Transcribing...'}</span>';
       } else if (msg.type === 'error') {
+        isTranscribing = false;
+        statusBox.className = 'status-box error';
+        statusBox.style.display = 'flex';
+        statusText.textContent = '❌ ' + msg.message;
+        btnStart.innerHTML = '<span>▶ ${isJa ? '採譜を開始する' : 'Start Transcription'}</span>';
+        updateStartEligibility();
+      } else if (msg.type === 'apiKeySaveFailed' || msg.type === 'apiKeyClearFailed') {
         isTranscribing = false;
         statusBox.className = 'status-box error';
         statusBox.style.display = 'flex';

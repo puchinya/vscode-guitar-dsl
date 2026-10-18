@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-18
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 は PR #141 で phase:review。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -34,7 +34,7 @@
 
 ## Issue #136: Simplify the Preview Toolbar
 
-- **状態**: phase:review（[PR #141](https://github.com/puchinya/vscode-guitar-dsl/pull/141)）。承認済み契約 comment 6198022256 の SHA-256 `e6437802f21f358016c95cab2d5b4a3a0c29e126f3787f487971f58b1e0f6ea1` と 33,918 bytes は取得したコメント本文で一致。Issue の Implementation Contract pointer は規定形式と一致し、`verify-implementation-contract 136` は PASS。
+- **状態**: Issue #136 と [PR #141](https://github.com/puchinya/vscode-guitar-dsl/pull/141) は 2026-10-17 に `main` へマージ済み。Issue #136 は closed。
 - **実装**: 通常再生 transport を 48 px の1行に集約し、Playback settings と View & Export を非モーダル disclosure にまとめる。Practice ON 時だけ 42 px 行を表示。Capo / Beginner / progression の Preview 編集 UI は除き、Inspector で選んだ有効 DSL は Preview と PDF で共有する。紙面・向き変更は既存の `layoutChanged` を保ち、URI・文書 version・Preview generation に結び付いた一度限りのフォーカス復帰を追加。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit 1,136 passing、VS Code E2E 90 passing / 6 pending）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,599項目）、`validate-docs --issue 136`、`verify-implementation-contract 136`、`git diff --check` は PASS。P136 の実Webview E2Eは通常の `npm test` でも実行し、Preview 幅を実測 600 CSS px に調整した。Practice speed / loop / A / B にフォーカスした状態からコマンドでOFFにし、非表示前に `practice-toggle` へフォーカスが移ること、用紙選択と縦横変更後に各コントロールへ復帰すること、連続する向き変更および文書切替後に古いフォーカス先が復活しないことを検証。600pxと421pxの両方でtransport全件とtoolbarのはみ出しなしを確認し、View & ExportでTab到達、`:focus-visible` outline、Escape後のトリガーへのフォーカス復帰を実Webviewで確認した。JA/EN × Dark/Light の4ケースの実画面 capture も各1 passing。Extension Host 互換メッセージ5種のルーティング回帰テストを追加。VoiceOver / NVDA、Windows / Linux は未実施。
 - **画面証拠**: 実Extension Development Host の 600 CSS px Previewを目視確認し、JA/EN × Dark/LightそれぞれPractice OFF/ONの計8枚を保存した：`preview-en-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-en-light-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-dark-600-practice-{off,on}-view-open-pr141.png`、`preview-ja-light-600-practice-{off,on}-view-open-pr141.png`。旧421px captureは履歴証拠として保持。
@@ -43,11 +43,12 @@
 ## Issue #137: GuitarDSL Sidebar navigation
 
 - **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) はレビュー待ち（open / ready）。Issue #137 は `phase:review`。承認済み Implementation Contract comment 6244468492 の SHA-256 `d18af999c4ed587931e4f37312d170feffa5c72264019f938cf81a9b418223a2` と 19,833 bytes は取得したコメント本文で一致し、`verify-implementation-contract 137` は PASS。
-- **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時にアクティブ文書を解決し、他文書や最後の GuitarDSL 文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜の設定とキー管理は native disclosure にまとめ、SecretStorage の状態だけを表示し、URL とキーが揃った時だけ開始できる。
-- **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,160件 PASS**、VS Code E2E **99件 PASS / 6件 pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,600項目**）、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。G137 UI E2E は 300 CSS px の Sidebar、548 CSS px の YouTube Panel、Tab / Shift+Tab / Space / Quick Pick の Enter・Escape、collapsed disclosure の Tab 除外、Chromium AX role/name/focus を確認した。E2E は `docs/agents/testing.md` に従いサンドボックス外で実行。
+- **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時に捕捉したアクティブ文書 URI に固定し、URI の解決失敗時に他文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜は SecretStorage 保存成功後に Webview のキー状態を同期し、失敗は成功扱いせず再試行可能にする。Import/Export Guitar Pro は VS Code 標準 `music` Codicon を使う。
+- **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,162件 PASS**、VS Code E2E **100件 PASS / 6件 pending**）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,600項目**）、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。G137 の追加回帰テストは、Sidebar が捕捉した A URI の解決失敗時に B が active / visible / open でも Preview・PDF・GP が B を使わないこと、YouTube Webview の実 Start 操作で Host が API キーを保存し UI 状態・URL・再試行可否を同期すること、保存後の Clear を確認した。SecretStorage save/delete 失敗は成功応答を返さない。実 Workbench Sidebar の E2E で Import/Export 両方の `.codicon-music` を確認した。G137 UI E2E は 300 CSS px の Sidebar、548 CSS px の YouTube Panel、Tab / Shift+Tab / Space / Quick Pick の Enter・Escape、collapsed disclosure の Tab 除外、Chromium AX role/name/focus を確認した。E2E は `docs/agents/testing.md` に従いサンドボックス外で実行。
 - **画面証拠**: Extension Development Host で取得。Sidebar は 300 CSS px、YouTube Panel は 548 CSS px。
   - [Issue #137 の証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/137#issuecomment-6244861539) に4条件×2画面のキャプチャを掲載。
   - EN・dark: [Sidebar](evidence/issue-137/sidebar-en-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-dark-collapsed.png)
+  - [Import/Export Guitar Pro の `music` Codicon を表示した Workbench capture](evidence/issue-137/sidebar-guitarpro-icons-en-dark-300px.png)（EN・dark、300 CSS px）。
   - EN・light: [Sidebar](evidence/issue-137/sidebar-en-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-en-light-collapsed.png)
   - JA・dark: [Sidebar](evidence/issue-137/sidebar-ja-dark-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-dark-collapsed.png)
   - JA・light: [Sidebar](evidence/issue-137/sidebar-ja-light-300px.png) / [YouTube Panel](evidence/issue-137/youtube-transcription-ja-light-collapsed.png)
