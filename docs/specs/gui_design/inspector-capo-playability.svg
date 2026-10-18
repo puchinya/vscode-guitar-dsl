@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="293px" height="900px" viewBox="907 72 293 900" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMin meet">
+<title id="title">カポ/弾きやすさ Inspector</title>
+<desc id="desc">カポ / 弾きやすさ設定。0〜12の全候補と画面下部の操作を含む。 SVG はベクター要素で構成し、画像を埋め込まない。</desc>
++<g transform="matrix(0.986532,0,0,1,907,36)">
+<rect width="293" height="936" fill="#1f1f1f" />
+<rect x="0" y="0" width="297" height="832" rx="0" fill="#1f1f1f" stroke="none" stroke-width="1" />
+<rect x="3" y="0" width="141" height="23" rx="4" fill="#37373a" stroke="none" stroke-width="0" />
+<text x="8" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#dedede" text-anchor="start">GuitarDSL Inspector</text>
+<text x="155" y="20" font-family="Arial, sans-serif" font-size="13" font-weight="500" fill="#bdbdbd" text-anchor="start">•••</text>
+<text x="245" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#bdbdbd" text-anchor="start">⛶</text>
+<text x="275" y="20" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#bdbdbd" text-anchor="start">×</text>
+<text x="32" y="62" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#e4e4e4" text-anchor="start">GuitarDSL Inspector</text>
+<text x="32" y="94" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#e5e5e5" text-anchor="start">カポ/弾きやすさ</text>
+<text x="32" y="129" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#dedede" text-anchor="start">カポ/弾きやすさ</text>
+<text x="151" y="129" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#dedede" text-anchor="start">初心者モード</text>
+<text x="32" y="162" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#dedede" text-anchor="start">移調</text>
+<path d="M32 140L141 140" fill="none" stroke="#1688ff" stroke-width="2" />
+<path d="M32 179L265 179" fill="none" stroke="#3d3d3d" stroke-width="1" />
+<rect x="32" y="190" width="225" height="56" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="210" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">現在のカポ</text>
+<text x="41" y="229" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">0</text>
+<rect x="32" y="255" width="225" height="56" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="275" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">選択中のカポ</text>
+<text x="41" y="294" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">1</text>
+<rect x="32" y="320" width="225" height="56" rx="0" fill="#1f1f1f" stroke="#343434" stroke-width="1" />
+<text x="41" y="340" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#9d9d9d" text-anchor="start">推奨カポ</text>
+<text x="41" y="359" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#dedede" text-anchor="start">3</text>
+<rect x="32" y="395" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="413.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">0 · 現在 · 58 · 普通 · 変更可</text>
+<rect x="32" y="429" width="227" height="29" rx="3" fill="#053f65" stroke="#1688ff" stroke-width="1" />
+<text x="42" y="447.5" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#e7e7e7" text-anchor="start">1 · 59 · 普通 · 変更可</text>
+<rect x="32" y="463" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="481.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">2 · 43 · 難しい · 変更可</text>
+<rect x="32" y="497" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="515.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">3 · ★ 推奨 · 81 · 簡単 · 変更可</text>
+<rect x="32" y="531" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="549.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">4 · 24 · とても難しい · 変更可</text>
+<rect x="32" y="565" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="583.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">5 · 78 · 簡単 · 変更可</text>
+<rect x="32" y="599" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="617.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">6 · 24 · とても難しい · 変更可</text>
+<rect x="32" y="633" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="651.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">7 · 22 · とても難しい · 変更可</text>
+<rect x="32" y="667" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="685.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">8 · 73 · 簡単 · 変更可</text>
+<rect x="32" y="701" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="719.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">9 · 29 · とても難しい · 変更可</text>
+<rect x="32" y="735" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="753.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">10 · 70 · 簡単 · 変更可</text>
+<rect x="32" y="769" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="787.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">11 · 15 · とても難しい · 変更可</text>
+<rect x="32" y="803" width="227" height="29" rx="3" fill="#1f1f1f" stroke="#383838" stroke-width="1" />
+<text x="42" y="821.5" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#e7e7e7" text-anchor="start">12 · 62 · 普通 · 変更可</text>
+<rect x="32" y="865" width="110" height="34" rx="3" fill="#007acc" stroke="#007acc" stroke-width="1" /><text x="87.0" y="887" font-family="Arial, sans-serif" font-size="11" font-weight="500" fill="#edf2f8" text-anchor="middle">適用</text><rect x="150" y="865" width="105" height="34" rx="3" fill="#30343a" stroke="#45494f" stroke-width="1" /><text x="202.5" y="887" font-family="Arial, sans-serif" font-size="11" font-weight="500" fill="#edf2f8" text-anchor="middle">閉じる</text></g>
+</svg>

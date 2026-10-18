@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300px" height="225px" viewBox="48 36 300 225" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMin meet">
+<title id="title">GuitarDSL サイドバー - 開始時</title>
+<desc id="desc">開始時の GuitarDSL サイドバー。ビューの全項目を表示する。 SVG はベクター要素で構成し、画像を埋め込まない。</desc>
++<g transform="translate(48 36)">
+<rect width="300" height="225" fill="#06061f" />
+<rect x="0" y="0" width="300" height="32" rx="0" fill="#06061f" stroke="none" stroke-width="1" />
+<text x="12" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#e6e7ef" text-anchor="start">GuitarDSL: はじめに</text>
+<path d="M0 31L300 31" fill="none" stroke="#22253a" stroke-width="1" />
+<path d="M20 39l4 4l4 -4" fill="none" stroke="#c8c8c8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="35" y="43" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#e2e3eb" text-anchor="start">はじめる</text>
+<text x="21" y="66" font-family="Arial, sans-serif" font-size="13" font-weight="400" fill="#c4c7d3" text-anchor="start">＋</text>
+<text x="42" y="66" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#d9dbe5" text-anchor="start">テンプレートから新規作成</text>
+<text x="21" y="88" font-family="Arial, sans-serif" font-size="13" font-weight="400" fill="#c4c7d3" text-anchor="start">▧</text>
+<text x="42" y="88" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#d9dbe5" text-anchor="start">サンプルを開く</text>
+<text x="21" y="110" font-family="Arial, sans-serif" font-size="13" font-weight="400" fill="#c4c7d3" text-anchor="start">▱</text>
+<text x="42" y="110" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#d9dbe5" text-anchor="start">プレビューを横に開く</text>
+<text x="21" y="132" font-family="Arial, sans-serif" font-size="13" font-weight="400" fill="#c4c7d3" text-anchor="start">ⓘ</text>
+<text x="42" y="132" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#d9dbe5" text-anchor="start">ヘルプを開く</text>
+<path d="M20 148l4 4l4 -4" fill="none" stroke="#c8c8c8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="35" y="152" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#e2e3eb" text-anchor="start">現在のファイル</text>
+<text x="22" y="175" font-family="Arial, sans-serif" font-size="13" font-weight="400" fill="#b8bfce" text-anchor="start">ⓘ</text>
+<text x="42" y="175" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#c7c9d5" text-anchor="start">.guitardsl ファイルを開くと、ファイル...</text>
+<path d="M21 193l4 4l-4 4" fill="none" stroke="#c8c8c8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="35" y="201" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#e2e3eb" text-anchor="start">ツール</text>
+</g>
+</svg>

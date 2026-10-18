@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640px" height="650px" viewBox="352 66 640 650" role="img" aria-labelledby="title desc" preserveAspectRatio="xMinYMin meet">
+<title id="title">楽譜 Preview - Practice 有効</title>
+<desc id="desc">Practice 有効時の Preview。追加操作列と譜面ページ全体を含む。 SVG はベクター要素で構成し、画像を埋め込まない。</desc>
+<g transform="translate(352 66)">
+<rect width="640" height="650" fill="#eaecef" />
+<rect x="0" y="0" width="640" height="94" rx="0" fill="#26263f" stroke="none" stroke-width="1" />
+<rect x="8" y="17" width="54" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="35" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="500" fill="#e5e9f2" text-anchor="middle">▶</text>
+<rect x="68" y="17" width="54" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="95" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="500" fill="#e5e9f2" text-anchor="middle">Ⅱ</text>
+<rect x="128" y="17" width="54" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="155" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="500" fill="#e5e9f2" text-anchor="middle">■</text>
+<rect x="191" y="39" width="57" height="18" rx="9" fill="#c7cbd2" stroke="none" stroke-width="0" />
+<rect x="192" y="42" width="54" height="12" rx="6" fill="#e4e7eb" stroke="none" stroke-width="0" />
+<circle cx="207" cy="48" r="15" fill="#5775a8" />
+<text x="256" y="55" font-family="Arial, sans-serif" font-size="18" font-weight="400" fill="#d0d2dd" text-anchor="start">00:00 / 00:16</text>
+<rect x="368" y="17" width="51" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="393.5" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="400" fill="#e5e9f2" text-anchor="middle">◎</text>
+<rect x="427" y="17" width="51" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="452.5" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="400" fill="#e5e9f2" text-anchor="middle">⚙</text>
+<rect x="475" y="17" width="51" height="60" rx="11" fill="#0d2045" stroke="#596079" stroke-width="2" />
+<text x="500.5" y="54" font-family="Arial, sans-serif" font-size="22" font-weight="400" fill="#e5e9f2" text-anchor="middle">▤</text>
+<rect x="0" y="95" width="640" height="89" rx="0" fill="#26263f" stroke="none" stroke-width="1" />
+<path d="M0 94L546 94" fill="none" stroke="#44445b" stroke-width="1" />
+<text x="8" y="142" font-family="Arial, sans-serif" font-size="18" font-weight="400" fill="#e1e2e8" text-anchor="start">カポ</text>
+<rect x="58" y="114" width="127" height="52" rx="4" fill="#171b27" stroke="#8b8e98" stroke-width="1" />
+<text x="68" y="144.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" fill="#e6e7ee" text-anchor="start">0</text>
+<path d="M167 139.0l4 4l4 -4" fill="none" stroke="#e6e7ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="194" y="142" font-family="Arial, sans-serif" font-size="18" font-weight="400" fill="#e1e2e8" text-anchor="start">弾きやすさ</text>
+<rect x="301" y="111" width="171" height="58" rx="29" fill="#2e8d37" stroke="#41a448" stroke-width="2" />
+<text x="386.5" y="149" font-family="Arial, sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">71/100 簡単</text>
+<rect x="481" y="129" width="14" height="14" rx="2" fill="none" stroke="#d7d8de" stroke-width="1" />
+<text x="502" y="147" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#e5e6ec" text-anchor="start">初心者</text>
+<rect x="0" y="184" width="640" height="84" rx="0" fill="#26263f" stroke="none" stroke-width="1" />
+<path d="M0 183L546 183" fill="none" stroke="#44445b" stroke-width="1" />
+<text x="32" y="235" font-family="Arial, sans-serif" font-size="20" font-weight="600" fill="#dedfe7" text-anchor="start">速度</text>
+<rect x="88" y="198" width="136" height="53" rx="4" fill="#171b27" stroke="#8b8e98" stroke-width="1" />
+<text x="98" y="228.5" font-family="Arial, sans-serif" font-size="14" font-weight="400" fill="#e6e7ee" text-anchor="start">100%</text>
+<path d="M206 223.5l4 4l4 -4" fill="none" stroke="#e6e7ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<text x="241" y="235" font-family="Arial, sans-serif" font-size="20" font-weight="600" fill="#dedfe7" text-anchor="start">ループ</text>
+<rect x="320" y="198" width="187" height="53" rx="4" fill="#171b27" stroke="#8b8e98" stroke-width="1" />
+<text x="330" y="228.5" font-family="Arial, sans-serif" font-size="14" font-weight="400" fill="#e6e7ee" text-anchor="start">オフ</text>
+<path d="M489 223.5l4 4l4 -4" fill="none" stroke="#e6e7ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+<rect x="524" y="198" width="86" height="53" rx="4" fill="#0e2046" stroke="#5c6176" stroke-width="1" />
+<text x="567.0" y="229.94" font-family="Arial, sans-serif" font-size="16" font-weight="500" fill="#e3e5ed" text-anchor="middle">A / B</text>
+<rect x="32" y="304" width="482" height="300" rx="0" fill="#ffffff" stroke="#dedede" stroke-width="1" />
+<text x="60" y="344" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#111" text-anchor="start">Guitar Rhythm Score</text>
+<text x="60" y="356" font-family="Arial, sans-serif" font-size="6.5" font-weight="400" fill="#333" text-anchor="start">Words &amp; Music: GuitarDSL Example</text>
+<text x="486" y="339" font-family="Arial, sans-serif" font-size="6.5" font-weight="500" fill="#111" text-anchor="end">Key: C  /  BPM: 120</text>
+<rect x="450" y="343" width="36" height="11" rx="2" fill="#111" stroke="none" stroke-width="0" />
+<text x="468" y="351" font-family="Arial, sans-serif" font-size="6.5" font-weight="700" fill="#fff" text-anchor="middle">Capo: 0</text>
+<path d="M60 359L486 359" fill="none" stroke="#111" stroke-width="1" />
+<text x="75" y="376" font-family="Arial, sans-serif" font-size="10" font-weight="700" fill="#111111" text-anchor="middle">C</text>
+<text x="63" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="middle">×</text>
+<text x="72" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="middle">○</text>
+<text x="81" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="middle">○</text>
+<path d="M63.0 388L63.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M67.4 388L67.4 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M71.8 388L71.8 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M76.2 388L76.2 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M80.6 388L80.6 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M85.0 388L85.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M63 388.0L85 388.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M63 392.5L85 392.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M63 397.0L85 397.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M63 401.5L85 401.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M63 406.0L85 406.0" fill="none" stroke="#333" stroke-width="0.7" />
+<circle cx="67.4" cy="397.0" r="1.6" fill="#111" />
+<circle cx="76.2" cy="392.5" r="1.6" fill="#111" />
+<circle cx="80.6" cy="397.0" r="1.6" fill="#111" />
+<text x="109" y="376" font-family="Arial, sans-serif" font-size="10" font-weight="700" fill="#111111" text-anchor="middle">G</text>
+<text x="97" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="middle">×</text>
+<text x="102" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="middle">×</text>
+<path d="M97.0 388L97.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M101.4 388L101.4 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M105.8 388L105.8 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M110.2 388L110.2 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M114.6 388L114.6 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M119.0 388L119.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M97 388.0L119 388.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M97 392.5L119 392.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M97 397.0L119 397.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M97 401.5L119 401.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M97 406.0L119 406.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M101 392.5L117 392.5" fill="none" stroke="#111" stroke-width="2.2" />
+<circle cx="97.0" cy="397.0" r="1.6" fill="#111" />
+<circle cx="101.4" cy="392.5" r="1.6" fill="#111" />
+<circle cx="105.8" cy="388.0" r="1.6" fill="#111" />
+<circle cx="110.2" cy="388.0" r="1.6" fill="#111" />
+<circle cx="114.6" cy="388.0" r="1.6" fill="#111" />
+<circle cx="119.0" cy="397.0" r="1.6" fill="#111" />
+<text x="143" y="376" font-family="Arial, sans-serif" font-size="10" font-weight="700" fill="#111111" text-anchor="middle">Am</text>
+<text x="131" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="start">6</text>
+<path d="M131.0 388L131.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M135.4 388L135.4 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M139.8 388L139.8 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M144.2 388L144.2 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M148.6 388L148.6 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M153.0 388L153.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M131 388.0L153 388.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M131 392.5L153 392.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M131 397.0L153 397.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M131 401.5L153 401.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M131 406.0L153 406.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M135 388.0L151 388.0" fill="none" stroke="#111" stroke-width="2.2" />
+<circle cx="135.4" cy="392.5" r="1.6" fill="#111" />
+<circle cx="139.8" cy="397.0" r="1.6" fill="#111" />
+<circle cx="144.2" cy="397.0" r="1.6" fill="#111" />
+<text x="177" y="376" font-family="Arial, sans-serif" font-size="10" font-weight="700" fill="#111111" text-anchor="middle">F</text>
+<text x="165" y="385" font-family="Arial, sans-serif" font-size="6" font-weight="500" fill="#111" text-anchor="start">10</text>
+<path d="M165.0 388L165.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M169.4 388L169.4 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M173.8 388L173.8 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M178.2 388L178.2 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M182.6 388L182.6 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M187.0 388L187.0 406" fill="none" stroke="#222" stroke-width="0.7" />
+<path d="M165 388.0L187 388.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M165 392.5L187 392.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M165 397.0L187 397.0" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M165 401.5L187 401.5" fill="none" stroke="#333" stroke-width="0.7" />
+<path d="M165 406.0L187 406.0" fill="none" stroke="#333" stroke-width="0.7" />
+<circle cx="165.0" cy="392.5" r="1.6" fill="#111" />
+<circle cx="169.4" cy="392.5" r="1.6" fill="#111" />
+<circle cx="173.8" cy="397.0" r="1.6" fill="#111" />
+<circle cx="178.2" cy="401.5" r="1.6" fill="#111" />
+<circle cx="182.6" cy="401.5" r="1.6" fill="#111" />
+<circle cx="187.0" cy="392.5" r="1.6" fill="#111" />
+<path d="M60 410L486 410" fill="none" stroke="#bbb" stroke-width="0.8" />
+<rect x="104" y="432" width="42" height="13" rx="0" fill="#fff" stroke="#777" stroke-width="0.7" />
+<text x="125" y="442" font-family="Arial, sans-serif" font-size="7" font-weight="500" fill="#222" text-anchor="middle">Verse</text>
+<path d="M72 459.0L484 459.0" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 463.5L484 463.5" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 468.0L484 468.0" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 472.5L484 472.5" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 477.0L484 477.0" fill="none" stroke="#222" stroke-width="0.8" />
+<text x="84" y="482" font-family="serif" font-size="26" font-weight="400" fill="#111" text-anchor="middle">𝄞</text>
+<text x="95" y="468" font-family="Arial, sans-serif" font-size="9" font-weight="600" fill="#111" text-anchor="middle">4</text>
+<text x="95" y="479" font-family="Arial, sans-serif" font-size="9" font-weight="600" fill="#111" text-anchor="middle">4</text>
+<text x="155.0" y="449" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">C</text>
+<path d="M146.0 472L150.0 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M150.0 466L150.0 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M156.0 472L160.0 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M160.0 466L160.0 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M166.0 472L170.0 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M170.0 466L170.0 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M176.0 472L180.0 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M180.0 466L180.0 455" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="241.75" y="449" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">G</text>
+<path d="M220.75 459L220.75 486" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M232.75 472L236.75 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M236.75 466L236.75 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M242.75 472L246.75 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M246.75 466L246.75 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M252.75 472L256.75 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M256.75 466L256.75 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M262.75 472L266.75 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M266.75 466L266.75 455" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="328.5" y="449" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">Am</text>
+<path d="M307.5 459L307.5 486" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M319.5 472L323.5 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M323.5 466L323.5 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M329.5 472L333.5 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M333.5 466L333.5 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M339.5 472L343.5 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M343.5 466L343.5 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M349.5 472L353.5 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M353.5 466L353.5 455" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="415.25" y="449" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">F</text>
+<path d="M394.25 459L394.25 486" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M406.25 472L410.25 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M410.25 466L410.25 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M416.25 472L420.25 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M420.25 466L420.25 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M426.25 472L430.25 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M430.25 466L430.25 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M436.25 472L440.25 466" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M440.25 466L440.25 455" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M484 459L484 486" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 535.0L484 535.0" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 539.5L484 539.5" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 544.0L484 544.0" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 548.5L484 548.5" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M72 553.0L484 553.0" fill="none" stroke="#222" stroke-width="0.8" />
+<text x="84" y="558" font-family="serif" font-size="26" font-weight="400" fill="#111" text-anchor="middle">𝄞</text>
+<text x="95" y="544" font-family="Arial, sans-serif" font-size="9" font-weight="600" fill="#111" text-anchor="middle">4</text>
+<text x="95" y="555" font-family="Arial, sans-serif" font-size="9" font-weight="600" fill="#111" text-anchor="middle">4</text>
+<text x="155.0" y="525" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">C</text>
+<path d="M146.0 548L150.0 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M150.0 542L150.0 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M156.0 548L160.0 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M160.0 542L160.0 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M166.0 548L170.0 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M170.0 542L170.0 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M176.0 548L180.0 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M180.0 542L180.0 531" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="241.75" y="525" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">G</text>
+<path d="M220.75 535L220.75 562" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M232.75 548L236.75 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M236.75 542L236.75 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M242.75 548L246.75 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M246.75 542L246.75 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M252.75 548L256.75 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M256.75 542L256.75 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M262.75 548L266.75 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M266.75 542L266.75 531" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="328.5" y="525" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">Am</text>
+<path d="M307.5 535L307.5 562" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M319.5 548L323.5 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M323.5 542L323.5 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M329.5 548L333.5 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M333.5 542L333.5 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M339.5 548L343.5 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M343.5 542L343.5 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M349.5 548L353.5 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M353.5 542L353.5 531" fill="none" stroke="#111" stroke-width="0.9" />
+<text x="415.25" y="525" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#111" text-anchor="middle">F</text>
+<path d="M394.25 535L394.25 562" fill="none" stroke="#222" stroke-width="0.8" />
+<path d="M406.25 548L410.25 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M410.25 542L410.25 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M416.25 548L420.25 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M420.25 542L420.25 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M426.25 548L430.25 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M430.25 542L430.25 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M436.25 548L440.25 542" fill="none" stroke="#111" stroke-width="1.2" />
+<path d="M440.25 542L440.25 531" fill="none" stroke="#111" stroke-width="0.9" />
+<path d="M484 535L484 562" fill="none" stroke="#222" stroke-width="0.8" />
+</g>
+</svg>
