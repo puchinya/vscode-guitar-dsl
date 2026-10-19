@@ -85,3 +85,11 @@ Effect structure is parsed generically, then semantic validation enforces the #8
 ### Rhythm ties (Issue #142)
 
 Rhythm-token ties are compiler-validated connections between adjacent slash events. The compiler owns source spans, exact event onsets, code identity and supported boundaries; renderers and playback consume only valid `tiedFromPrev` links. Melodic and TAB ties retain their separate owners and semantics.
+
+### Rhythm techniques and practice guide (Issue #153)
+
+`RhythmItem` remains the compiler-owned event model. `.m` is a zero-attack mute event, `.b` normalizes to the existing ghost/brush property, and `.s1`–`.s6` carry one validated physical string selection. Unknown modifiers and forbidden combinations produce source-positioned compiler diagnostics before playback event construction.
+
+`buildPlaybackTimeline()` maps valid techniques to typed occurrence-time events: `rhythmMute`, `rhythmBrush`, and `rhythmStringAttack`. Brush events are percussive and have no chord-pitch set. String events resolve their single pitch from the current chord voicing, tuning, and capo; a missing or muted position is a diagnostic rather than a full-chord or alternate-string fallback. Existing `rhythmAttack`, `rest`, melody, metronome, and rhythm-tie behavior remains distinct.
+
+The Practice guide is a pure projection of the parsed score and its source spans. It scans all written measures once to choose a shared 4/8/16-note base grid from explicit rhythms, resolved repeat measures, and used `let` expansions. Unused definitions, implicit rhythm fills, melody, and BPM do not increase density. TAB contributes density only for TAB-only measures; explicit rhythm takes precedence when both formats occur in one measure. Tuplets and meter changes retain local exact Fraction positions rather than introducing a song-wide least-common-multiple grid. The projection owns no score, playback, or editor state.

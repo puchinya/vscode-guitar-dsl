@@ -260,6 +260,21 @@ describe('accompaniment engine (Issue #101)', () => {
   });
 
   describe('source-preserving transform (§5.2 – §5.4)', () => {
+    it('retains an authored .b alias in a source-preserving hold while generated ghosts stay canonical', () => {
+      const text = '| C | 4.d.b 4.d 4.d 4.d |';
+      const held = run(text, {
+        plans: [],
+        ending: { candidates: [{ kind: 'hold', measures: [{ relativeMeasure: -1, pattern: { source: 'hold' } }] }] }
+      });
+      assert.ok(held.ok, JSON.stringify(held));
+      assert.match(held.text, /\.b\b/);
+
+      const generated = ok('| C | 4.d 4.d 4.d 4.d |', [
+        { sectionIndex: 0, mode: 'grid', style: 'strum', gridUnit: 'quarter', attacks: [0, 2], ghosts: [2] }
+      ], { phraseVariation: false });
+      assert.match(generated.text, /\.g\b/);
+    });
+
     it('T021 different intents per section; everything outside the target is byte-identical', () => {
       const r = ok(SONG, [intent(0, { energy: 'low', density: 'sparse', style: 'sustain' }), intent(1, { energy: 'high', density: 'dense' })], { phraseVariation: false });
       const before = SONG.split('\n');

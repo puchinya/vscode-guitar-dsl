@@ -46,4 +46,22 @@ describe('playbackSynth', () => {
     };
     assert.deepStrictEqual(playbackEventMidiNotes(unsupported, 0), []);
   });
+
+  it('resolves a single physical string from the active chord voicing and tuning', () => {
+    const stringAttack: PlaybackEvent = {
+      kind: 'rhythmAttack',
+      chord: { name: 'C' },
+      stringAttack: 5,
+      occurrenceIndex: 0,
+      measureIndex: 0,
+      beatInMeasure: frac(0),
+      absoluteBeat: frac(0),
+      timeSeconds: 0,
+      durationBeats: frac(1),
+      durationSeconds: 0.5
+    };
+    const definitions = [{ name: 'C', frets: ['x', 3, 2, 0, 1, 0], barres: [], line: 0 } as const];
+    assert.deepStrictEqual(playbackEventMidiNotes(stringAttack, 0, definitions), [48]);
+    assert.deepStrictEqual(playbackEventMidiNotes({ ...stringAttack, chord: { name: 'Cunknown' } }, 0, []), [], 'no resolved form must not fall back to a full chord');
+  });
 });

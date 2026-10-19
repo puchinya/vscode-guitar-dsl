@@ -333,6 +333,179 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
+  test('Issue #153 Practice guide shows the full score and responds to its controls', async function () {
+    this.timeout(30000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Practice guide evidence',
+        'time: 4/4',
+        '| F | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| G | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| Em7 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| Am | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| Dm7 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        'mel: | e4/1 | g4/1 | b4/1 | a4/1 | d4/1 |',
+        'lyr: 夜 明 か り 花'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>(`(() => {
+        const diagrams = document.getElementById('practice-guide-diagrams-toggle');
+        const melody = document.getElementById('practice-guide-melody-toggle');
+        const collapse = document.getElementById('practice-guide-collapse');
+        const grid = document.getElementById('practice-guide-grid');
+        if (diagrams.getAttribute('aria-pressed') !== 'true') diagrams.click();
+        if (melody.getAttribute('aria-pressed') !== 'true') melody.click();
+        if (collapse.getAttribute('aria-expanded') !== 'true') collapse.click();
+        grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(150);
+
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const captureGuideEvidence = async (filename: string): Promise<void> => {
+        const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-153', filename);
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await settle(500);
+          await capturePreviewWebviewScreenshot(filename, 153);
+          if ((await fs.stat(outputPath)).size >= 50000) return;
+        }
+        const size = (await fs.stat(outputPath)).size;
+        assert.ok(size >= 50000, `${filename} is a fully rendered Preview screenshot (${size} bytes)`);
+      };
+      assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'the workbench locale matches the requested evidence locale');
+      await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+      try {
+      await setWorkbenchViewportWidth(2200);
+      const parts = JSON.parse(await inspectWorkbenchLayout()).parts as {
+        sidebar: { visible: boolean };
+        auxiliarybar: { visible: boolean };
+      };
+      if (parts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+      if (parts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+      await settle(250);
+      await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+
+      for (const width of [421, 600, 840, 1100]) {
+        await resizeActiveEditorGroupToWidth(width);
+        await settle(180);
+        assert.strictEqual(await evaluatePreviewWebview<number>('window.innerWidth'), width,
+          `practice guide acceptance uses exactly ${width} CSS px`);
+
+        const guide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const panel = document.getElementById('practice-guide-panel');
+          const header = document.querySelector('.practice-guide-header');
+          const scroll = document.getElementById('practice-guide-scroll');
+          const firstMeasure = document.querySelector('.practice-guide-measure');
+          const rows = [...firstMeasure.children].filter(item => item.matches('.practice-guide-melody, .practice-guide-row, .practice-guide-diagrams'))
+            .map(item => {
+              if (item.classList.contains('practice-guide-melody')) return 'melody';
+              if (item.classList.contains('practice-guide-diagrams')) return 'diagrams';
+              if (item.classList.contains('practice-guide-chord-row')) return 'chord';
+              const label = item.querySelector('.practice-guide-row-label')?.textContent.trim();
+              return label === 'Lyrics' || label === '歌詞' ? 'lyrics' : label === 'Technique' || label === '奏法' ? 'technique' : label;
+            });
+          return {
+            panelVisible: panel.getBoundingClientRect().height > 0,
+            headerFits: header.scrollWidth <= header.clientWidth + 1,
+            panelWithinViewport: panel.getBoundingClientRect().bottom <= window.innerHeight + 1,
+            automaticGrid: panel.dataset.automaticGrid,
+            measureCount: document.querySelectorAll('.practice-guide-measure').length,
+            chordNames: [...document.querySelectorAll('.practice-guide-chord-name')].map(item => item.textContent.trim()),
+            melodyNotes: [...document.querySelectorAll('.practice-guide-melody .practice-guide-item b')].map(item => item.textContent.trim()),
+            lyrics: [...document.querySelectorAll('.practice-guide-lyrics')].map(item => item.textContent.trim()),
+            rowOrder: rows,
+            diagramCount: document.querySelectorAll('.practice-guide-measure .practice-guide-chord-card svg').length,
+            nextLabel: document.querySelector('.practice-guide-next-chord-label')?.textContent.trim(),
+            nextDiagramCount: document.querySelector('#practice-guide-next-chord-diagram svg') ? 1 : 0,
+            guideScrollsHorizontally: scroll.scrollWidth > scroll.clientWidth + 1
+          };
+        })())`));
+        assert.strictEqual(guide.panelVisible, true, 'Practice opens the fixed guide panel');
+        assert.strictEqual(guide.headerFits, true, `${width}px guide controls fit without clipping`);
+        assert.strictEqual(guide.panelWithinViewport, true, `${width}px guide stays inside the Preview bottom edge`);
+        assert.strictEqual(guide.automaticGrid, '8', 'the guide selects the eighth-note grid from the written score');
+        assert.strictEqual(guide.measureCount, 5, 'the guide spans the complete five-measure song');
+        assert.deepStrictEqual(guide.chordNames, ['F', 'G', 'Em7', 'Am', 'Dm7']);
+        assert.strictEqual(guide.melodyNotes.length, 5, 'melody appears as a separate row for every measure');
+        assert.deepStrictEqual(guide.lyrics, ['夜', '明', 'か', 'り', '花']);
+        assert.deepStrictEqual(guide.rowOrder, ['melody', 'lyrics', 'technique', 'chord', 'diagrams']);
+        assert.strictEqual(guide.diagramCount, 5, 'all five score chord diagrams are rendered');
+        assert.strictEqual(guide.nextLabel, locale === 'ja' ? '次のコード' : 'Next chord');
+        assert.strictEqual(guide.nextDiagramCount, 1, 'the next chord card includes its diagram');
+
+        if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-on.png`);
+      }
+
+      await evaluatePreviewWebview<void>(`(() => {
+        const input = document.getElementById('playback-seek');
+        input.value = String(Number(input.max) * 0.78);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(120);
+      assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-guide-next-chord-name').textContent.trim()`), 'Dm7',
+        'seeking through the last measure updates the next chord card');
+      assert.strictEqual(await evaluatePreviewWebview<number>(`document.querySelectorAll('#practice-guide-next-chord-diagram svg').length`), 1,
+        'the updated next chord card keeps its diagram');
+      await resizeActiveEditorGroupToWidth(1100);
+      await settle(150);
+      const finalScroll = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const scroll = document.getElementById('practice-guide-scroll');
+        return { client: scroll.clientWidth, total: scroll.scrollWidth };
+      })())`));
+      assert.ok(finalScroll.total <= finalScroll.client + 1, 'all five diagrams and the next chord fit at 1100px');
+      if (captureScreenshots) {
+        await settle(350);
+        await captureGuideEvidence(`practice-guide-${locale}-${themeName}-1100-melody-on.png`);
+        await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-melody-toggle').click()`);
+        await settle(350);
+        const melodyOff = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+          melodyHidden: document.body.classList.contains('guide-melody-hidden'),
+          lyricsVisible: getComputedStyle(document.querySelector('.practice-guide-lyrics')).display !== 'none',
+          techniquesVisible: (() => {
+            const row = [...document.querySelectorAll('.practice-guide-measure > .practice-guide-row')]
+              .find(item => ['Technique', '奏法'].includes(item.querySelector('.practice-guide-row-label')?.textContent.trim()));
+            return !!row && getComputedStyle(row).display !== 'none';
+          })(),
+          chordDiagramsVisible: getComputedStyle(document.querySelector('.practice-guide-diagrams')).display !== 'none',
+          nextChordVisible: getComputedStyle(document.getElementById('practice-guide-next-chord')).display !== 'none'
+        })`));
+        assert.deepStrictEqual(melodyOff, { melodyHidden: true, lyricsVisible: true, techniquesVisible: true, chordDiagramsVisible: true, nextChordVisible: true },
+          'melody OFF hides only the melody row');
+        await captureGuideEvidence(`practice-guide-${locale}-${themeName}-1100-melody-off.png`);
+        await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-melody-toggle').click()`);
+        await settle(150);
+      }
+
+      await evaluatePreviewWebview<void>(`(() => {
+        const melody = document.getElementById('practice-guide-melody-toggle');
+        const diagrams = document.getElementById('practice-guide-diagrams-toggle');
+        const collapse = document.getElementById('practice-guide-collapse');
+        const grid = document.getElementById('practice-guide-grid');
+        melody.click(); diagrams.click(); collapse.click();
+        grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      const controls = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        melodyHidden: document.body.classList.contains('guide-melody-hidden'),
+        diagramsHidden: document.body.classList.contains('guide-diagrams-hidden'),
+        collapsed: document.body.classList.contains('guide-collapsed'),
+        grid: document.getElementById('practice-guide-grid').value,
+        divisions: document.querySelector('.practice-guide-measure').style.getPropertyValue('--guide-divisions')
+      })`));
+      assert.deepStrictEqual(controls, { melodyHidden: true, diagramsHidden: true, collapsed: true, grid: '16', divisions: '16' });
+      assert.strictEqual(doc.getText(), source, 'guide controls do not change the score source');
+      } finally {
+      await resetWorkbenchViewport();
+      }
+    });
+  });
+
   test('P145 Preview settings and P136 toolbar layout, focus, and transport remain usable', async function () {
     this.timeout(30000);
     const useWideMatrixViewport = Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 1200) >= 2200;

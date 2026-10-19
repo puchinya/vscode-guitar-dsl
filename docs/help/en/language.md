@@ -119,7 +119,15 @@ A rhythm token is a note value plus optional `.`-separated modifiers:
 | `4+8` | Added lengths, drawn tied (use this for dotted values) |
 | `r4`, `r8`, … | Rests |
 
-Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` ghost, `t` tie, `arp` arpeggio, `pm` palm mute, `lr` let ring, `stacc`, `ten`, `fermata`, `vib`, `breath`. For example, `16.d.a` is an accented sixteenth down stroke.
+Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` / `ghost` ghost brush, `b` brush alias, `t` tie, `arp` arpeggio, `m` mute, `s1`–`s6` pick one physical string, `pm` palm mute, `lr` let ring, `stacc`, `ten`, `fermata`, `vib`, `breath`. For example, `16.d.a` is an accented sixteenth down stroke.
+
+`.b` plays a short non-harmonic brush sound. `.m` stops active accompaniment voices and cannot be combined with another modifier; a rest does not mute. Use only one `.sN`, optionally with `.a`. A muted string or unresolved chord form is an error and never falls back to another string or a full chord. Unknown modifiers are errors too.
+
+```guitardsl
+| C | 8.d.b 8.u.b 8.m r8 8.s5 8.s3.a r4 |
+```
+
+The practice guide chooses one subdivision for the whole song: sixteenth notes anywhere make every measure use sixteenths; otherwise songs that need eighth notes use eighths throughout. TAB note values count only in measures without explicit rhythm.
 
 Use `.t` or `.tie` on a slash token to sustain into the immediately following slash token when their times touch. A score tie must keep the same chord name and voicing label from the source attack through the continuation duration; a chord change anywhere in that held span invalidates the tie. A `4+8.t` tie is drawn from the compound token's last head, while chord validation starts at the token's first attack. Rhythm-only templates may tie two chordless slash tokens structurally; a score tie with chord information missing on only one side is invalid. The continuation cannot be a rest, ghost, pitched note, down stroke, up stroke, accent, or arpeggio. Ties may cross an adjacent barline; they cannot cross a `let` fragment boundary or `%` repeat. Playback holds one attack for the whole tie and uses each measure's tempo to calculate its duration. If a Practice loop starts on a continuation, playback attacks at the loop start.
 
@@ -183,6 +191,8 @@ lyr: | low down open up | chord hit | rise then bend now | hold |
 
 When a row contains TAB, it uses a modern six-line profile with equal string lines, a stacked `T` / `A` / `B` clef, and a time signature inside the staff prefix. Ten-point semibold fret marks sit centered on their lines, which are masked behind each number. Rhythm stems and beams sit above TAB; whole notes have no stem, half notes have a short stem, quarters have a normal stem, and shorter values use flags or beams. Standard rests, barlines and repeat signs are shown. Adjacent beat-scope P.M. and let-ring effects use a continuous dashed span. TAB is rendered below melody and its lyrics when present. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
 
+TAB-only measures without explicit rhythm use their TAB note values for the whole-song practice grid. When explicit rhythm and TAB share a measure, rhythm takes priority so the TAB values are not counted twice.
+
 ### Key Signature and Display Options
 <!-- help-sources: syntax:14 -->
 
@@ -208,6 +218,8 @@ bpm: 120
 
 Events: `@key:`, `@tempo:` (a number, `rit.`, `accel.`, `a tempo`, `tempo primo`), `@time:`, `@feel:`, `@dynamic:`, `@mark:`, `@text:` and `@ottava:` (`8va`, `8vb`, `off`). Numeric `@tempo:` values change Preview playback from that measure; `tempo primo` restores the header `bpm:`. `rit.`, `accel.`, `a tempo` and `feel` remain display-only and do not change playback timing. Dynamics and ottava affect notation only.
 
+The practice guide scans every written measure. Explicit rhythm, resolved `%` repeats and used `let` rhythms count; melody, BPM and unused `let` definitions do not make the grid denser. Any sixteenth note selects sixteenths for the whole song; otherwise a song that needs eighths uses eighths throughout, and other songs use quarters.
+
 ### Reusable Fragments (`let`)
 <!-- help-sources: syntax:17 -->
 
@@ -225,6 +237,8 @@ mel: | $riff $riff | c5/2 r/2 |
 - The first note of a definition must spell out its octave and length (`let riff = e4/8 g`).
 - A reference neither takes nor passes on octave or length from the notes around it.
 - `%` cannot be used inside a definition, and definitions cannot refer to themselves in a loop.
+
+Used rhythm fragments contribute their expanded note values to the whole-song practice grid. Unused definitions do not change it.
 
 ### Note Groups (Simultaneous Notes)
 <!-- help-sources: syntax:18 -->

@@ -136,6 +136,44 @@ async function assertPlayheadAlignsWithOnsets(runtime: FakePlaybackWebview): Pro
 }
 
 describe('Preview production Webview runtime', () => {
+  it('Issue #153 keeps the full-song guide and mute scope in the Preview runtime', async () => {
+    const score = [
+      'bpm: 120',
+      'chord C = x32010',
+      '| C | 4 8.m 8.b 8.s5 8 8 8 |',
+      'mel: | c4/1 |'
+    ].join('\n');
+    const html = compileGuitarDslToHtml(score);
+    const runtime = createFakePlaybackWebview(html);
+    assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 8);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures.length, 1);
+    assert.ok(html.includes('id="practice-guide-panel"'));
+    assert.ok(html.includes('body.guide-melody-hidden .practice-guide-melody { display: none; }'));
+    assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
+    const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
+    assert.strictEqual((diagram.match(/x1="28" y1="\d+" x2="138" y2="\d+"/g) ?? []).length, 6,
+      'the diagram has six horizontal string lines');
+    assert.strictEqual((diagram.match(/x1="\d+" y1="10" x2="\d+" y2="55"/g) ?? []).length, 6,
+      'the diagram has vertical fret marks and keeps the first string above the sixth');
+    assert.ok(html.includes('.practice-guide-diagram-list { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; overflow-x: auto;'));
+
+    const mute = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmMute');
+    const brush = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmBrush');
+    const stringAttack = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack' && event.stringAttack === 5);
+    assert.ok(mute);
+    assert.ok(brush && brush.midiNotes.length === 0);
+    assert.deepStrictEqual(stringAttack?.midiNotes, [48]);
+
+    await runtime.click('btn-play');
+    const melody = runtime.scheduledOscillators().find(node => Math.abs(node.frequency.value - 261.625565) < 0.1);
+    const rhythm = runtime.scheduledOscillators().find(node => node.frequency.value < 200);
+    assert.ok(melody && rhythm, 'melody and accompaniment voices are both scheduled');
+    runtime.advanceAudioTime(0.45);
+    runtime.runSchedulerTicks();
+    assert.strictEqual(melody!.stopCalls.length, 1, 'mute does not cancel the melody voice');
+    closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.025, 0.001);
+  });
+
   it('T01 creates one lazy AudioContext and bounds scheduling to the 100 ms horizon', async () => {
     const runtime = createRuntime();
     assert.strictEqual(runtime.playbackData.available, true);

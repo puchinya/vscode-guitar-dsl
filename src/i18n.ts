@@ -122,6 +122,22 @@ export interface Messages {
   uiPracticeASet: string;
   uiPracticeLoopSet: string;
   uiPracticeLoopCleared: string;
+  uiPracticeGuideTitle: string;
+  uiPracticeGuideDiagrams: string;
+  uiPracticeGuideMelody: string;
+  uiPracticeGuideGrid: string;
+  uiPracticeGuideAuto: string;
+  uiPracticeGuideGrid4: string;
+  uiPracticeGuideGrid8: string;
+  uiPracticeGuideGrid16: string;
+  uiPracticeGuideChord: string;
+  uiPracticeGuideLyrics: string;
+  uiPracticeGuideTechnique: string;
+  uiPracticeGuideNextChord: string;
+  uiPracticeGuideMelodyRow: string;
+  uiPracticeGuideAutoFill: string;
+  uiPracticeGuideCollapse: string;
+  uiPracticeGuideExpand: string;
   msgPlaybackNoPreview: string;
   progressionCompletionDetail: (score: number) => string;
   progressionScoreBreakdown: (follow: number, identical: number, tonic: number, melody: string) => string;
@@ -395,6 +411,22 @@ export const MESSAGES_JA: Messages = {
   uiPracticeASet: 'A を設定しました。B を設定してください。',
   uiPracticeLoopSet: 'ループを設定しました。',
   uiPracticeLoopCleared: 'ループを解除しました。',
+  uiPracticeGuideTitle: '弾き語り練習パネル',
+  uiPracticeGuideDiagrams: 'コード図',
+  uiPracticeGuideMelody: 'メロディ',
+  uiPracticeGuideGrid: '分割',
+  uiPracticeGuideAuto: '自動',
+  uiPracticeGuideGrid4: '4分',
+  uiPracticeGuideGrid8: '8分',
+  uiPracticeGuideGrid16: '16分',
+  uiPracticeGuideChord: 'コード',
+  uiPracticeGuideLyrics: '歌詞',
+  uiPracticeGuideTechnique: '奏法',
+  uiPracticeGuideNextChord: '次のコード',
+  uiPracticeGuideMelodyRow: 'メロディバー',
+  uiPracticeGuideAutoFill: '自動補完',
+  uiPracticeGuideCollapse: '練習パネルを折りたたむ',
+  uiPracticeGuideExpand: '練習パネルを展開',
   msgPlaybackNoPreview: '再生操作には開いている GuitarDSL Preview が必要です。',
   progressionCompletionDetail: score => `進行ヒューリスティック ${score >= 0 ? '+' : ''}${score}`,
   progressionScoreBreakdown: (follow, identical, tonic, melody) => `直前ルート ${follow >= 0 ? '+' : ''}${follow}、同一開始 ${identical}、主音終止 +${tonic}、メロディ ${melody}`,
@@ -710,6 +742,22 @@ export const MESSAGES_EN: Messages = {
   uiPracticeASet: 'A is set. Set B to complete the loop.',
   uiPracticeLoopSet: 'Loop set.',
   uiPracticeLoopCleared: 'Loop cleared.',
+  uiPracticeGuideTitle: 'Practice guide',
+  uiPracticeGuideDiagrams: 'Chord diagrams',
+  uiPracticeGuideMelody: 'Melody',
+  uiPracticeGuideGrid: 'Grid',
+  uiPracticeGuideAuto: 'Auto',
+  uiPracticeGuideGrid4: 'Quarter',
+  uiPracticeGuideGrid8: 'Eighth',
+  uiPracticeGuideGrid16: 'Sixteenth',
+  uiPracticeGuideChord: 'Chords',
+  uiPracticeGuideLyrics: 'Lyrics',
+  uiPracticeGuideTechnique: 'Technique',
+  uiPracticeGuideNextChord: 'Next chord',
+  uiPracticeGuideMelodyRow: 'Melody bar',
+  uiPracticeGuideAutoFill: 'Auto fill',
+  uiPracticeGuideCollapse: 'Collapse practice guide',
+  uiPracticeGuideExpand: 'Expand practice guide',
   msgPlaybackNoPreview: 'Open a GuitarDSL Preview to use playback commands.',
   progressionCompletionDetail: score => `Progression heuristic ${score >= 0 ? '+' : ''}${score}`,
   progressionScoreBreakdown: (follow, identical, tonic, melody) => `Previous root ${follow >= 0 ? '+' : ''}${follow}, identical opening ${identical}, tonic ending +${tonic}, melody ${melody}`,

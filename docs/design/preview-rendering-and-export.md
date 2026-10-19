@@ -102,6 +102,14 @@ Follow は Practice 専用で既定 ON。playhead / active measure が Preview �
 
 Extension Host が登録する Preview actions は `guitardsl.playback.togglePlayPause`、`guitardsl.playback.stop`、`guitardsl.practice.toggle`、`guitardsl.practice.setLoopStart`、`guitardsl.practice.setLoopEnd`、`guitardsl.practice.clearLoop`、`guitardsl.practice.slower`、`guitardsl.practice.faster`。Host は `{ command: 'playbackAction', action }` を live singleton panel に forwarding し、Webview UI と同じ handler を呼ぶ。Preview がない場合は localized warning を出し、暗黙に open/reveal しない。新しい default keybinding/settings は作らず、UI は native keyboard-operable controls を使う。
 
+### Practice guide and accompaniment voice events (Issue #153)
+
+`src/practiceGuide.ts` は `ParsedScore` から固定ガイド用データを純粋に作る。Compiler が保持する Fraction onset、元イベント、source span、コードコンテキストを使い、ガイドは playback order の `occurrenceIndex` に同期する。表示密度は全曲で一括決定し、手動分割と自動判定は Preview 文書別 Webview state に保存する。これらの表示設定は DSL、譜面 SVG/PDF、`PlaybackTimeline` を変更しない。
+
+Practice ON では既存の48 px playback row、44 px score-settings row、42 px Practice rowを維持し、歌詞・奏法・コード名・図と次コードを下端固定ガイドに表示する。メロディ表示設定はメロディ行だけを出し入れする。通常の譜面と PDF に追加されるのは既存ページ SVG の通常記譜であり、音価継続の `〜` は固定ガイドだけに描画する。コード図は共有 chord voicing を使い、6弦を水平線、フレット区切りを垂直線で表す。
+
+Web Audio は既存 Preview の所有者と generation cleanup を維持する。`.m` は同じギター伴奏バスの active voice と最大120 ms程度の release tail だけを停止し、クリック防止の fade は最大8 msとする。メロディ、メトロノーム、他の Preview/Inspector セッションは対象外である。`.b` は短い非調和の打音、`.sN` はフォーム・調弦・カポに解決した単一弦音を予約する。Seek、Loop、速度変更、停止、再構築、破棄では旧 generation の予約を cancel/fade し、複数 dispose に安全に声部を解放する。
+
 ### TAB geometry and SVG (Issue #89)
 
 `layoutScore()` remains the sole owner of row and vertical placement. `SystemGeometry` explicitly reports TAB presence, block offset and staff height; TAB lyric baseline, line height and verse count; whether an explicit rhythm staff is rendered and its final offset; and total `unitHeight`. A TAB row orders its blocks as header/section/chord labels, optional melody plus melody lyrics, TAB plus TAB lyrics, optional explicit rhythm, then dynamics/lower lanes. The six evenly spaced lines use a prominent clef-like `TAB` label and enough vertical room to keep fret digits on adjacent strings legible. The rhythm staff appears only when `show_rhythm` is true and the row contains explicitly authored rhythm. TAB's own/default duration does not create a redundant slash staff. Systems without TAB retain current geometry and rendering behavior.

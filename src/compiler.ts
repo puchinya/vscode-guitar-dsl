@@ -36,6 +36,7 @@ import {
 } from './melody';
 import type { Syllable } from './melody';
 import { CHORD_LABEL_PATTERN, CHORD_NAME_PATTERN, ChordDefinition, chordKey, isChordDefinitionLine, parseChordDefinition } from './chordDefinition';
+import { resolveChordVoicing } from './chordVoicingResolver';
 import {
   DEFAULT_FEEL,
   DEFAULT_TIME_SIGNATURE,
@@ -58,7 +59,7 @@ import { resolvePlayOrder } from './playOrder';
 import type { PlayOrderDiagnosticCode, PlayOrderMeasure, PlayOrderResult } from './playOrder';
 import { lowerArrangement, scanArrangementBlockLines } from './arrangement';
 import type { ArrangementDiagnosticCode, ArrangementSection, SourceSpan } from './arrangement';
-import { createInstrumentModel, MAX_CAPO, parseTuningValue, STANDARD_TUNING, Tuning } from './instrumentModel';
+import { createInstrumentModel, GuitarString, MAX_CAPO, parseTuningValue, STANDARD_TUNING, Tuning } from './instrumentModel';
 import {
   parseTabCell,
   parseTabLinePrefix,
@@ -86,7 +87,15 @@ export interface RhythmItem {
   down: boolean;
   up: boolean;
   ghost: boolean;
+  /** Authored spelling of the ghost modifier, retained for source-preserving edits. */
+  ghostModifier?: 'b' | 'g' | 'ghost';
   accent: boolean;
+  /** `.m`: stop active accompaniment voices at this onset. */
+  mute?: boolean;
+  /** `.sN`: attack the chord's Nth physical guitar string. */
+  stringAttack?: GuitarString;
+  /** Invalid modifier combinations stay in the score for timing but never emit an attack. */
+  invalidTechnique?: boolean;
   /** Compiler-validated incoming rhythm slash tie. Melody and TAB ties use their own fields. */
   tiedFromPrev?: boolean;
   tie: boolean;
@@ -1870,7 +1879,9 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       report(lineIdx, tokCol, tokCol + tok.length, 'invalidTuplet', { token: tok });
       return null;
     }
-    let down = false, up = false, ghost = false, accent = false, tie = false, arpeggio = false;
+    let down = false, up = false, ghost = false, accent = false, tie = false, arpeggio = false, mute = false;
+    let ghostModifier: RhythmItem['ghostModifier'];
+    let stringAttack: GuitarString | undefined;
     let inlineL: string | undefined = undefined;
     const techniques: NoteTechniques = {};
     let techniqueError: 'invalidTechnique' | 'techniqueRequiresPitch' | undefined;
@@ -1879,17 +1890,29 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       const mod = parts[i];
       if (mod === 'd') down = true;
       else if (mod === 'u') up = true;
-      else if (mod === 'g' || mod === 'ghost') ghost = true;
+      else if (mod === 'g' || mod === 'ghost' || mod === 'b') { ghost = true; ghostModifier = mod; }
       else if (mod === 'a' || mod === 'accent') accent = true;
       else if (mod === 't' || mod === 'tie') tie = true;
       else if (mod === 'arp' || mod === 'arpeggio') arpeggio = true;
+      else if (mod === 'm') mute = true;
+      else if (/^s[0-9]+$/.test(mod)) {
+        const string = Number(mod.slice(1));
+        if (string < 1 || string > 6 || stringAttack !== undefined) techniqueError = 'invalidTechnique';
+        else stringAttack = string as GuitarString;
+      }
       else if (RHYTHM_TECHNIQUE_MODIFIERS[mod]) {
         const key = RHYTHM_TECHNIQUE_MODIFIERS[mod];
         if (isRest && key !== 'fermata' && key !== 'breath') techniqueError = 'techniqueRequiresPitch';
         else (techniques as Record<string, unknown>)[key] = true;
       } else if (PITCHED_ONLY_TECHNIQUES.includes(mod.replace(/:.*$/, ''))) {
         techniqueError = 'techniqueRequiresPitch';
-      }
+      } else techniqueError = 'invalidTechnique';
+    }
+    const modifiers = parts.slice(1);
+    if (mute && (isRest || modifiers.some(mod => mod !== 'm'))) techniqueError = 'invalidTechnique';
+    if (modifiers.filter(mod => mod === 'b' || mod === 'g' || mod === 'ghost').length > 1) techniqueError = 'invalidTechnique';
+    if (stringAttack !== undefined && (isRest || modifiers.some(mod => !/^s[1-6]$/.test(mod) && mod !== 'a' && mod !== 'accent'))) {
+      techniqueError = 'invalidTechnique';
     }
     if (techniqueError) report(lineIdx, tokCol, tokCol + tok.length, techniqueError, { token: tok });
 
@@ -1899,7 +1922,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       down,
       up,
       ghost,
+      ...(ghostModifier ? { ghostModifier } : {}),
       accent,
+      ...(mute ? { mute: true } : {}),
+      ...(stringAttack === undefined ? {} : { stringAttack }),
+      ...(techniqueError ? { invalidTechnique: true } : {}),
       tie,
       arpeggio: arpeggio || undefined,
       inlineLyric: inlineL
@@ -2150,6 +2177,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   }
 
   resolveMeasures();
+  resolveRhythmStringTechniques();
   resolveRhythmTies();
   compileTabGroups();
   validateConnections();
@@ -2223,6 +2251,49 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     });
   }
 
+  function resolveRhythmStringTechniques() {
+    const instrument = createInstrumentModel(tuning, definitionCapo);
+    for (const measure of measures) {
+      for (const item of measure.rhythms) {
+        if (item.stringAttack === undefined || item.invalidTechnique) continue;
+        let selected: ChordPlacement | undefined;
+        let selectedBeat = -Infinity;
+        for (const [index, chord] of measure.chords.entries()) {
+          const chordBeat = measure.chordBeatOffsets[index] ? fnum(measure.chordBeatOffsets[index]) : chord.beat;
+          if (chordBeat < selectedBeat || chordBeat > rhythmBeatOffset(measure, item)) continue;
+          selected = chord;
+          selectedBeat = chordBeat;
+        }
+        const resolved = selected
+          ? resolveChordVoicing(chordKey(selected.name, selected.label), chordDefinitions, instrument)
+          : undefined;
+        const fret = resolved?.voicing.frets[6 - item.stringAttack];
+        let playable = typeof fret === 'number' && Number.isInteger(fret);
+        if (playable) {
+          try {
+            instrument.pitchAt(item.stringAttack, fret as number);
+          } catch (_) {
+            playable = false;
+          }
+        }
+        if (!playable) {
+          const source = rhythmSourceLocations.get(item);
+          if (source) report(source.line, source.startCol, source.endCol, 'invalidTechnique', { token: `${item.duration}.s${item.stringAttack}` });
+          item.invalidTechnique = true;
+        }
+      }
+    }
+  }
+
+  function rhythmBeatOffset(measure: MeasureData, target: RhythmItem): number {
+    let beat = ZERO;
+    for (const item of measure.rhythms) {
+      if (item === target) return fnum(beat);
+      beat = fadd(beat, rhythmItemBeats(item));
+    }
+    return Infinity;
+  }
+
   function resolveRhythmTies() {
     const reported = new Set<string>();
     const reportInvalid = (item: RhythmItem, reason: string) => {
@@ -2292,7 +2363,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
 
       for (let itemIndex = 0; itemIndex < measure.rhythms.length; itemIndex++) {
         const source = measure.rhythms[itemIndex];
-        if (!rhythmTokenItems.has(source) || !source.tie) continue;
+        if (!rhythmTokenItems.has(source) || !source.tie || source.invalidTechnique) continue;
         if (source.isRest || source.ghost) {
           reportInvalid(source, 'restOrGhost');
           continue;

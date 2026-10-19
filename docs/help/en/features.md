@@ -55,6 +55,8 @@ The Inspector is a shared place for document-aware assistance as features move i
 
 Turn on **Practice** in the Preview toolbar to show the Practice row below it. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo. Turn it off to remove the row and its keyboard stops.
 
+Practice also opens a fixed guide at the bottom of the Preview for the whole song. It arranges chord names, horizontal-string diagrams, melody, lyrics and techniques by measure. Turning **Melody** off hides only the melody row; lyrics and the other rows remain. **Chord diagrams** can be toggled separately. **Auto** scans written note values across the song and uses one quarter-, eighth- or sixteenth-note grid for every measure. A manual grid is a temporary display setting for this Preview and does not change the DSL or playback position.
+
 - **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
 - During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.
 - **Loop** can repeat the current measure, the contiguous performed measures belonging to the current section, or an A/B range. A section label applies to its written measure and following written measures up to the next section label. Choose **Section** on any measure in a named section. Repetitions that are contiguous in playback order share one range; a same-name section after another section remains separate. **A** records the current playback position and clears B; **B** must be later than A. **Clear** removes the loop and both points. Loop ranges include A and stop before B.

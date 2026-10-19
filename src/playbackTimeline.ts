@@ -4,6 +4,7 @@ import { Fraction, ZERO, fadd, fcmp, fnum, frac, fsub, parseRhythmDuration } fro
 import { Pitch } from './melody';
 import { beamGroupStarts } from './scoreEvents';
 import type { TimeSignature } from './scoreEvents';
+import type { GuitarString } from './instrumentModel';
 
 export type PlaybackTimelineErrorCode = 'invalidPlayOrder' | 'unresolvedTempo';
 
@@ -34,7 +35,9 @@ interface PlaybackEventBase {
 
 export type PlaybackEvent =
   | (PlaybackEventBase & { kind: 'pitched'; source: 'melody' | 'inline'; pitches: Pitch[] })
-  | (PlaybackEventBase & { kind: 'rhythmAttack'; chord?: { name: string; label?: string } })
+  | (PlaybackEventBase & { kind: 'rhythmAttack'; chord?: { name: string; label?: string }; stringAttack?: GuitarString })
+  | (PlaybackEventBase & { kind: 'rhythmBrush' })
+  | (PlaybackEventBase & { kind: 'rhythmMute' })
   | (PlaybackEventBase & { kind: 'rest'; source: 'melody' | 'rhythm' })
   | (PlaybackEventBase & { kind: 'metronome'; accent: boolean });
 
@@ -185,9 +188,13 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
       const itemDuration = rhythmItemDuration(item);
       let rhythmEvent: PlaybackEvent | undefined;
       const base = itemDuration ? createBase(rhythmBeat, itemDuration) : null;
-      if (base) {
-        if (item.isRest) {
+      if (base && !item.invalidTechnique) {
+        if (item.mute) {
+          rhythmEvent = { ...base, kind: 'rhythmMute' };
+        } else if (item.isRest) {
           rhythmEvent = { ...base, kind: 'rest', source: 'rhythm' };
+        } else if (item.ghost) {
+          rhythmEvent = { ...base, kind: 'rhythmBrush' };
         } else {
           const pitches = eventPitches(item).map(pitch => ({ ...pitch }));
           if (pitches.length > 0) {
@@ -195,8 +202,8 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
           } else {
             const chord = chordAtOrBefore(measure, rhythmBeat);
             rhythmEvent = chord
-              ? { ...base, kind: 'rhythmAttack', chord }
-              : { ...base, kind: 'rhythmAttack' };
+              ? { ...base, kind: 'rhythmAttack', chord, ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) }
+              : { ...base, kind: 'rhythmAttack', ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) };
           }
         }
       }
@@ -259,7 +266,8 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
     durationSeconds += occurrenceSeconds;
   }
 
-  events.sort((a, b) => fcmp(a.absoluteBeat, b.absoluteBeat));
+  const eventOrder = (event: PlaybackEvent) => event.kind === 'rhythmMute' ? 0 : 1;
+  events.sort((a, b) => fcmp(a.absoluteBeat, b.absoluteBeat) || eventOrder(a) - eventOrder(b));
   return { ok: true, timeline: {
     occurrences,
     events,

@@ -99,6 +99,28 @@
 
 - **文書オーナー**: `docs/specs/extension.md` §§4.2, 4.4–4.5, 4B, 4D、`docs/design/preview-rendering-and-export.md`、`score-editing.md`、`vscode-editor-experience.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
 
+## Issue #153: 弾き語り練習ガイドとギター伴奏リズム
+
+- **状態**: 実装・検証済み。PR作成前。
+- **実装**: Practice ON時に下端固定の全曲ガイドを表示し、再生位置に応じて小節を追従表示する。各小節はメロディバー、歌詞、奏法、コード名、コード図の順に並び、右側に次のコードと図を表示する。メロディだけを隠せる。自動分割は全曲の明示リズムから4分・8分・16分を選び、手動選択はこの3種類に限る。小節反復 `%` を展開して判定し、暗黙リズム、メロディ、未使用 `let` は分割判定へ混ぜない。コード図は共有コード・フォーム解決を使い、1弦を上にした横弦・縦フレットの向きで描画する。`.b` を従来の ghost として受け付け、入力中の別名を保持し、`.m` の伴奏消音と `.s1`〜`.s6` の実弦音を追加する。表示設定はPreview文書ごとの一時状態で、DSL、譜面SVG/PDF、再生timelineを変更しない。
+- **検証**: macOS arm64 / VS Code 1.142.0。`npm test` はHelp/AI同期PASS、単体 **1,175件PASS**、VS Code E2E **105件PASS・6件pending**。`npm run vscode:prepublish` と `npx @vscode/vsce ls`（**1,601項目**、必要なHelp/AI資産あり、`docs/`・`src/`・`tests/`等を含まない）もPASS。Issue #153の実Workbench E2EはEN/JA × Dark/Lightの4条件をそれぞれ実行し、各条件で421/600/840/1100 CSS pxを検査。5小節・5コード図・次コード欄、メロディON/OFF、表示順、分割、ソース不変を確認し、1100pxでは5図と次コードが同時に収まることを確認した。6件の既存pending、VoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: 実Preview Webviewから撮影。421/600/840/1100pxのメロディONと、1100pxのメロディOFFを記録する。
+
+| Preview幅 | EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
+|---|---|---|---|---|
+| 421px | [画像](evidence/issue-153/practice-guide-en-dark-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-421-melody-on.png) |
+| 600px | [画像](evidence/issue-153/practice-guide-en-dark-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-600-melody-on.png) |
+| 840px | [画像](evidence/issue-153/practice-guide-en-dark-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-840-melody-on.png) |
+| 1100px | [画像](evidence/issue-153/practice-guide-en-dark-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-1100-melody-on.png) |
+
+1100px・メロディOFF:
+
+| EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
+|---|---|---|---|
+| [画像](evidence/issue-153/practice-guide-en-dark-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-en-light-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-ja-dark-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-ja-light-1100-melody-off.png) |
+
+- **文書オーナー**: `docs/specs/guitardsl-syntax.md`、`extension.md`、`gui_design.md`、`docs/design/language-and-score-processing.md`、`preview-rendering-and-export.md`、`score-editing.md`、EN/JA Helpとmanifest、生成済み `media/help/`、AI syntax reference、本書。
+
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
 ### 1.1 言語構文・コンパイラ / 描画機能 (`src/compiler.ts`, `src/render/`)
