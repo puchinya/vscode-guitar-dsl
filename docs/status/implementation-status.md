@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-19
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。Issue #153 は PR #154 がopen（ready）で、実装・検証済み。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
 
@@ -101,7 +101,7 @@
 
 ## Issue #153: 弾き語り練習ガイドとギター伴奏リズム
 
-- **状態**: 実装・検証済み。PR作成前。
+- **状態**: [PR #154](https://github.com/puchinya/vscode-guitar-dsl/pull/154) はopen（ready）。実装・検証済み。
 - **実装**: Practice ON時に下端固定の全曲ガイドを表示し、再生位置に応じて小節を追従表示する。各小節はメロディバー、歌詞、奏法、コード名、コード図の順に並び、右側に次のコードと図を表示する。メロディだけを隠せる。自動分割は全曲の明示リズムから4分・8分・16分を選び、手動選択はこの3種類に限る。小節反復 `%` を展開して判定し、暗黙リズム、メロディ、未使用 `let` は分割判定へ混ぜない。コード図は共有コード・フォーム解決を使い、1弦を上にした横弦・縦フレットの向きで描画する。`.b` を従来の ghost として受け付け、入力中の別名を保持し、`.m` の伴奏消音と `.s1`〜`.s6` の実弦音を追加する。表示設定はPreview文書ごとの一時状態で、DSL、譜面SVG/PDF、再生timelineを変更しない。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test` はHelp/AI同期PASS、単体 **1,175件PASS**、VS Code E2E **105件PASS・6件pending**。`npm run vscode:prepublish` と `npx @vscode/vsce ls`（**1,601項目**、必要なHelp/AI資産あり、`docs/`・`src/`・`tests/`等を含まない）もPASS。Issue #153の実Workbench E2EはEN/JA × Dark/Lightの4条件をそれぞれ実行し、各条件で421/600/840/1100 CSS pxを検査。5小節・5コード図・次コード欄、メロディON/OFF、表示順、分割、ソース不変を確認し、1100pxでは5図と次コードが同時に収まることを確認した。6件の既存pending、VoiceOver/NVDA、Windows/Linuxは未実施。
 - **画面証拠**: 実Preview Webviewから撮影。421/600/840/1100pxのメロディONと、1100pxのメロディOFFを記録する。
