@@ -149,13 +149,22 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.playbackData.practiceGuide.measures.length, 1);
     assert.ok(html.includes('id="practice-guide-panel"'));
     assert.ok(html.includes('body.guide-melody-hidden .practice-guide-melody { display: none; }'));
+    assert.ok(html.includes('id="practice-guide-timeline"'));
+    assert.ok(html.includes('class="practice-guide-lane practice-guide-melody"'));
+    assert.ok(html.includes('class="practice-guide-lane practice-guide-technique"'));
+    assert.ok(html.includes('class="practice-guide-next-chord" id="practice-guide-next-chord"'));
+    assert.ok(!html.includes('class="practice-guide-measure"'), 'the time axis is continuous instead of repeating measure cards');
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].durationBeats.n, 4);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].pitches[0].midi, 60);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
     assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
     const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
     assert.strictEqual((diagram.match(/x1="28" y1="\d+" x2="138" y2="\d+"/g) ?? []).length, 6,
       'the diagram has six horizontal string lines');
     assert.strictEqual((diagram.match(/x1="\d+" y1="10" x2="\d+" y2="55"/g) ?? []).length, 6,
       'the diagram has vertical fret marks and keeps the first string above the sixth');
-    assert.ok(html.includes('.practice-guide-diagram-list { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; overflow-x: auto;'));
+    assert.ok(html.includes('.practice-guide-diagram-event { position: absolute;'));
+    assert.ok(html.includes('width: 36px; height: 18px;'));
 
     const mute = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmMute');
     const brush = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmBrush');
@@ -172,6 +181,14 @@ describe('Preview production Webview runtime', () => {
     runtime.runSchedulerTicks();
     assert.strictEqual(melody!.stopCalls.length, 1, 'mute does not cancel the melody voice');
     closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.025, 0.001);
+  });
+
+  it('Issue #153 draws rest symbols with SVG shapes instead of platform-dependent music fonts', () => {
+    const html = compileGuitarDslToHtml('| C | r4 r8 r16 r2 r16 |');
+    const symbols = [...html.matchAll(/<svg class="practice-guide-rest-symbol"[^>]*data-guide-rest-base="(\d+)"[^>]*>[\s\S]*?<\/svg>/g)];
+    assert.deepStrictEqual(symbols.map(match => match[1]), ['4', '8', '16', '2', '16']);
+    assert.ok(symbols.every(match => /<(?:path|rect|circle)\b/.test(match[0])), 'every rest contains a vector path or shape');
+    assert.ok(symbols.every(match => !/<text\b/.test(match[0])), 'rest rendering does not depend on installed music fonts');
   });
 
   it('T01 creates one lazy AudioContext and bounds scheduling to the 100 ms horizon', async () => {

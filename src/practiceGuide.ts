@@ -5,6 +5,20 @@ import type { TabBeat, TabVoiceMeasure } from './tab';
 
 export type PracticeGuideGrid = 4 | 8 | 16;
 
+const REST_GLYPHS: Readonly<Record<number, string>> = Object.freeze({
+  1: '\u{1D13B}',
+  2: '\u{1D13C}',
+  4: '\u{1D13D}',
+  8: '\u{1D13E}',
+  16: '\u{1D13F}'
+});
+
+export function practiceGuideRestGlyph(duration: NoteValue | string): string {
+  const value = typeof duration === 'string' ? parseRhythmDuration(duration.replace(/^r/, '')) : duration;
+  const base = value?.parts[0]?.base;
+  return base ? REST_GLYPHS[base] ?? REST_GLYPHS[4] : REST_GLYPHS[4];
+}
+
 export interface PracticeGuideTabEvent {
   at: Fraction;
   duration: NoteValue;
@@ -57,13 +71,13 @@ export function practiceGuideTabEvents(voices: readonly TabVoiceMeasure[]): Prac
     for (const [eventIndex, beat] of voice.beats.entries()) {
       const durationLabel = beat.duration.parts.map(formatNoteValuePart).join('+');
       if (beat.isRest) {
-        events.push({ at, duration: beat.duration, durationLabel, label: `r${durationLabel}`, kind: 'rest', percussive: false, voice: voice.voice, eventIndex });
+        events.push({ at, duration: beat.duration, durationLabel, label: practiceGuideRestGlyph(beat.duration), kind: 'rest', percussive: false, voice: voice.voice, eventIndex });
       } else if (beat.notes.length > 0) {
         const labels = beat.notes.map(note => {
           const tiedFromPrevious = previousBeat?.notes.some(previous =>
             previous.tieToNext && previous.string === note.string && previous.fret === note.fret
           ) ?? false;
-          return tiedFromPrevious ? '〜' : note.dead ? `×s${note.string}` : `s${note.string}`;
+          return tiedFromPrevious ? '〜' : note.dead ? `×${note.string}` : String(note.string);
         });
         const allTied = labels.every(label => label === '〜');
         const allPercussive = beat.notes.every(note => note.dead || note.effects.some(effect => effect.name === 'stacc' || effect.name === 'staccato'));
@@ -88,14 +102,16 @@ export function practiceGuideTabEvents(voices: readonly TabVoiceMeasure[]): Prac
 /** Labels one onset without conflating a mute, rest, tie continuation, or directionless attack. */
 export function practiceGuideRhythmLabel(item: RhythmItem): string {
   if (item.mute) return '・';
-  if (item.isRest) return item.duration.startsWith('r') ? item.duration : `r${item.duration}`;
+  if (item.isRest) return practiceGuideRestGlyph(item.duration);
   if (item.tiedFromPrev) return '〜';
   const labels: string[] = [];
+  const direction = item.down && item.up ? '↓↑' : item.down ? '↓' : item.up ? '↑' : '';
   if (item.ghost) labels.push(item.down ? '×↓' : item.up ? '×↑' : '×');
-  else if (item.stringAttack !== undefined) labels.push(`s${item.stringAttack}`);
-  else if (item.down || item.up) labels.push(item.down && item.up ? '↓↑' : item.down ? '↓' : '↑');
+  else if (item.stringAttack !== undefined) labels.push(String(item.stringAttack));
+  else if (item.techniques?.palmMute) labels.push(`PM${direction || '●'}`);
+  else if (direction) labels.push(direction);
   if (item.accent) labels.push('a');
-  if (item.techniques?.palmMute) labels.push('PM');
+  if (item.techniques?.palmMute && (item.ghost || item.stringAttack !== undefined)) labels.push('PM');
   if (item.techniques?.letRing) labels.push('LR');
   return labels.join(' ') || '●';
 }

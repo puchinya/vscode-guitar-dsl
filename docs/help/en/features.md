@@ -56,7 +56,7 @@ The Inspector is a shared place for document-aware assistance as features move i
 
 Turn on **Practice** in the Preview toolbar to show the Practice row below it. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo. Turn it off to remove the row and its keyboard stops.
 
-Practice also opens a fixed guide at the bottom of the Preview for the whole song. It arranges chord names, horizontal-string diagrams, melody, lyrics and techniques by measure. Turning **Melody** off hides only the melody row; lyrics and the other rows remain. **Chord diagrams** can be toggled separately. **Auto** scans written note values across the song and uses one quarter-, eighth- or sixteenth-note grid for every measure. A manual grid is a temporary display setting for this Preview and does not change the DSL or playback position.
+Practice also opens a fixed guide at the bottom of the Preview for the whole song. Melody, lyrics, techniques, chord names and diagrams share one continuous time axis across measures. The left labels and the next-chord name stay fixed while the timeline scrolls horizontally. Melody notes appear as pitch bars sized by duration; lyric syllables follow their notes. Turning **Melody** off hides only that lane. **Chord diagrams** can be toggled separately. **Auto** scans written note values across the song and uses one quarter-, eighth- or sixteenth-note grid for every measure. A manual grid is a temporary display setting for this Preview and does not change the DSL or playback position.
 
 - **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
 - During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.

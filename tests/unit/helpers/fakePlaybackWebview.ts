@@ -27,7 +27,7 @@ class FakeClassList {
 
 class FakeElement {
   readonly classList = new FakeClassList();
-  readonly style: Record<string, string> = {};
+  readonly style: Record<string, any> = {};
   readonly dataset: Record<string, string> = {};
   readonly attributes = new Map<string, string>();
   private readonly listeners = new Map<string, Listener[]>();
@@ -45,6 +45,9 @@ class FakeElement {
 
   constructor(tagName = 'div') {
     this.tagName = tagName;
+    this.style.setProperty = (name: string, value: string): void => {
+      this.style[name] = value;
+    };
   }
 
   addEventListener(type: string, listener: Listener): void {

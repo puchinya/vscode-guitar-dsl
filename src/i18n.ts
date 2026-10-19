@@ -133,6 +133,7 @@ export interface Messages {
   uiPracticeGuideChord: string;
   uiPracticeGuideLyrics: string;
   uiPracticeGuideTechnique: string;
+  uiPracticeGuideRest: string;
   uiPracticeGuideNextChord: string;
   uiPracticeGuideMelodyRow: string;
   uiPracticeGuideAutoFill: string;
@@ -422,6 +423,7 @@ export const MESSAGES_JA: Messages = {
   uiPracticeGuideChord: 'コード',
   uiPracticeGuideLyrics: '歌詞',
   uiPracticeGuideTechnique: '奏法',
+  uiPracticeGuideRest: '休符',
   uiPracticeGuideNextChord: '次のコード',
   uiPracticeGuideMelodyRow: 'メロディバー',
   uiPracticeGuideAutoFill: '自動補完',
@@ -753,6 +755,7 @@ export const MESSAGES_EN: Messages = {
   uiPracticeGuideChord: 'Chords',
   uiPracticeGuideLyrics: 'Lyrics',
   uiPracticeGuideTechnique: 'Technique',
+  uiPracticeGuideRest: 'Rest',
   uiPracticeGuideNextChord: 'Next chord',
   uiPracticeGuideMelodyRow: 'Melody bar',
   uiPracticeGuideAutoFill: 'Auto fill',

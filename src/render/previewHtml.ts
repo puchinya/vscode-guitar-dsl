@@ -6,11 +6,11 @@ import { fadd, fcmp, fnum, formatNoteValuePart, frac, parseRhythmDuration } from
 import { chordKey, resolveBaseFret } from '../chordDefinition';
 import { resolveChordVoicing } from '../chordVoicingResolver';
 import { createInstrumentModel, MAX_CAPO } from '../instrumentModel';
-import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideHasWrittenRhythm, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../practiceGuide';
+import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideHasWrittenRhythm, practiceGuideRestGlyph, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../practiceGuide';
 import type { PracticeGuideGrid } from '../practiceGuide';
 import { resolveLocale, getMessages } from '../i18n';
 import type { Messages } from '../i18n';
-import { playbackEventMidiNotes } from '../playbackSynth';
+import { pitchToMidi, playbackEventMidiNotes } from '../playbackSynth';
 import { buildPlaybackTimeline } from '../playbackTimeline';
 import type { PlaybackEvent } from '../playbackTimeline';
 import { beamGroupStarts, measureBeats } from '../scoreEvents';
@@ -74,8 +74,12 @@ interface PlaybackHtmlOccurrence {
   occurrenceIndex: number;
   measureIndex: number;
   sectionName?: string;
+  lyricVerse?: number;
+  startBeat: ReturnType<typeof frac>;
+  durationBeats: ReturnType<typeof frac>;
   startSeconds: number;
   durationSeconds: number;
+  tempoBpm: number;
   countInDurationSeconds: number;
   countInClicks: { timeSeconds: number; accent: boolean }[];
 }
@@ -102,27 +106,55 @@ interface PracticeGuideDiagram {
 }
 
 interface PracticeGuideItem {
-  atPercent: number;
+  at: ReturnType<typeof frac>;
+  durationBeats: ReturnType<typeof frac>;
+  eventStart: ReturnType<typeof frac>;
+  eventEnd: ReturnType<typeof frac>;
   label: string;
   duration: string;
   kind?: 'attack' | 'continuation' | 'mute' | 'rest';
   grid?: PracticeGuideGrid;
   eventIndex?: number;
+  restBase?: number;
+}
+
+interface PracticeGuideMelodyNote {
+  at: ReturnType<typeof frac>;
+  durationBeats: ReturnType<typeof frac>;
+  duration: string;
+  label: string;
+  pitches: { label: string; midi: number }[];
+  isRest: boolean;
+  eventIndex: number;
+  restBase?: number;
+}
+
+interface PracticeGuideLyric {
+  at: ReturnType<typeof frac>;
+  durationBeats: ReturnType<typeof frac>;
+  text: string;
+  verse: number;
+  eventIndex: number;
+  hyphenToNext: boolean;
 }
 
 interface PracticeGuideMeasure {
   number: number;
-  beats: number;
-  divisions: number;
+  startBeat: ReturnType<typeof frac>;
+  beats: ReturnType<typeof frac>;
   chords: PracticeGuideDiagram[];
-  melody: PracticeGuideItem[];
-  lyrics: string;
+  melody: PracticeGuideMelodyNote[];
+  lyrics: PracticeGuideLyric[];
   techniques: PracticeGuideItem[];
 }
 
 interface PracticeGuideData {
   automaticGrid: 4 | 8 | 16;
   automaticFill: boolean;
+  totalBeats: ReturnType<typeof frac>;
+  lyricsHeight: number;
+  pitchMinMidi: number;
+  pitchMaxMidi: number;
   measures: PracticeGuideMeasure[];
   initialNextChord?: PracticeGuideDiagram;
 }
@@ -549,10 +581,12 @@ ${cspMeta}
   body.has-practice-guide .practice-guide-panel { display: flex; }
   body.guide-collapsed .practice-guide-panel { height: 42px; min-height: 42px; }
   body.has-practice-guide.guide-collapsed { padding-bottom: 42px !important; }
-  body.guide-collapsed .practice-guide-scroll { display: none; }
+  body.guide-collapsed .practice-guide-layout { display: none; }
   body.guide-melody-hidden .practice-guide-melody { display: none; }
+  body.guide-melody-hidden .practice-guide-label[data-guide-lane="melody"] { display: none; }
   body.guide-diagrams-hidden .practice-guide-diagrams { display: none; }
-  body.guide-diagrams-hidden .practice-guide-next-chord { display: none; }
+  body.guide-diagrams-hidden .practice-guide-label[data-guide-lane="diagrams"] { display: none; }
+  body.guide-diagrams-hidden .practice-guide-next-chord-diagram { display: none; }
   .practice-guide-header {
     display: flex;
     align-items: center;
@@ -589,43 +623,64 @@ ${cspMeta}
   @media (max-width: 900px) {
     .practice-guide-controls { flex: 1 1 100%; justify-content: flex-start; margin-left: 28px; }
   }
-  .practice-guide-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .practice-guide-rail { display: flex; align-items: stretch; gap: 8px; width: max-content; min-width: 100%; padding: 9px 14px 16px; }
-  .practice-guide-measure {
-    flex: 0 0 auto;
-    box-sizing: border-box;
-    padding: 7px;
-    border: 1px solid var(--vscode-widget-border, #444);
-    border-radius: 6px;
-    background: var(--vscode-editor-background, #1e1e1e);
-  }
-  .practice-guide-measure.is-current { border-color: var(--vscode-focusBorder, #3794ff); box-shadow: 0 0 0 1px var(--vscode-focusBorder, #3794ff); }
-  .practice-guide-measure h3 { margin: 0 0 5px; color: var(--vscode-descriptionForeground, #bbb); font-size: 11px; font-weight: 600; }
-  .practice-guide-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; min-height: 38px; border-top: 1px solid var(--vscode-widget-border, #333); }
-  .practice-guide-row-label { color: var(--vscode-descriptionForeground, #aaa); font-size: 10px; }
-  .practice-guide-chords { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
-  .practice-guide-chord-name { flex: 0 0 auto; padding: 2px 5px; border-radius: 3px; background: var(--vscode-badge-background, #333); color: var(--vscode-badge-foreground, #eee); font-size: 12px; font-weight: 600; }
-  .practice-guide-track { position: relative; min-width: 0; height: 38px; border-radius: 3px; border-bottom: 1px solid var(--vscode-widget-border, #444); }
-  .practice-guide-item { position: absolute; top: 2px; display: flex; flex-direction: column; align-items: center; max-width: 54px; transform: translateX(-50%); overflow: hidden; color: var(--vscode-foreground, #eee); font-size: 11px; line-height: 15px; }
-  .practice-guide-item[data-guide-align="start"] { transform: translateX(0); }
-  .practice-guide-item[data-guide-align="end"] { transform: translateX(-100%); }
-  .practice-guide-item b { padding: 0 2px; border-radius: 3px; background: var(--vscode-editor-background, #1e1e1e); font-weight: 600; white-space: nowrap; }
-  .practice-guide-item small { color: var(--vscode-descriptionForeground, #aaa); font-size: 9px; white-space: nowrap; }
-  .practice-guide-grid-continuation { display: none; font-size: 6px; line-height: 8px; }
-  #practice-guide-panel[data-guide-grid="16"] .practice-guide-measure [data-guide-kind="attack"] { font-size: 8px; line-height: 10px; }
-  #practice-guide-panel[data-guide-grid="16"] .practice-guide-measure [data-guide-kind="attack"] b { padding: 0; }
+  .practice-guide-layout { display: grid; grid-template-columns: 112px minmax(0, 1fr) clamp(104px, 15vw, 160px); flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .practice-guide-label-rail, .practice-guide-timeline { display: flex; flex-direction: column; padding-top: 8px; padding-bottom: 12px; }
+  .practice-guide-label-rail { min-width: 0; padding-left: 12px; }
+  .practice-guide-label { display: flex; flex: 0 0 auto; align-items: center; min-width: 0; padding-right: 6px; border-top: 1px solid var(--vscode-widget-border, #333); color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; overflow-wrap: anywhere; }
+  .practice-guide-label[data-guide-lane="ruler"] { height: 24px; border-top: 0; }
+  .practice-guide-label[data-guide-lane="melody"] { height: 58px; }
+  .practice-guide-label[data-guide-lane="lyrics"] { flex-basis: auto; }
+  .practice-guide-label[data-guide-lane="technique"] { height: 48px; }
+  .practice-guide-label[data-guide-lane="chord"] { height: 36px; }
+  .practice-guide-label[data-guide-lane="diagrams"] { height: 62px; }
+  .practice-guide-scroll { grid-column: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+  .practice-guide-timeline { position: relative; width: var(--guide-total-width); min-width: 100%; }
+  .practice-guide-ruler, .practice-guide-lane { position: relative; box-sizing: border-box; flex: 0 0 auto; width: var(--guide-total-width); background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--guide-grid-step) - 1px), var(--vscode-widget-border, #333) calc(var(--guide-grid-step) - 1px) var(--guide-grid-step)); }
+  .practice-guide-ruler { height: 24px; }
+  .practice-guide-lane { border-top: 1px solid var(--vscode-widget-border, #333); }
+  .practice-guide-lane.practice-guide-melody { height: 58px; }
+  .practice-guide-lane.practice-guide-lyrics { height: var(--guide-lyrics-height, 38px); }
+  .practice-guide-lane.practice-guide-technique { height: 48px; }
+  .practice-guide-lane.practice-guide-chords { height: 36px; }
+  .practice-guide-lane.practice-guide-diagrams { height: 62px; }
+  .practice-guide-measure-boundary { position: absolute; z-index: 2; top: 0; bottom: 0; width: 1px; background: var(--vscode-widget-border, #555); pointer-events: none; }
+  .practice-guide-measure-boundary.is-current { width: 2px; background: var(--vscode-focusBorder, #3794ff); }
+  .practice-guide-measure-number { position: absolute; top: 3px; z-index: 3; transform: translateX(4px); color: var(--vscode-descriptionForeground, #bbb); font-size: 11px; font-weight: 600; }
+  .practice-guide-playhead { position: absolute; z-index: 8; top: 0; bottom: 0; width: 2px; background: var(--vscode-focusBorder, #3794ff); box-shadow: 0 0 3px var(--vscode-focusBorder, #3794ff); pointer-events: none; }
+  .practice-guide-playhead[hidden] { display: none; }
+  .practice-guide-pitch-bar { position: absolute; z-index: 4; box-sizing: border-box; height: 7px; min-width: 3px; border: 1px solid var(--vscode-focusBorder, #3794ff); border-radius: 3px; background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 68%, transparent); }
+  .practice-guide-pitch-bar.is-current { background: var(--vscode-focusBorder, #3794ff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 35%, transparent); }
+  .practice-guide-melody-rest { position: absolute; z-index: 4; color: var(--vscode-descriptionForeground, #ccc); font-size: 18px; line-height: 24px; }
+  .practice-guide-lyric { position: absolute; z-index: 4; display: inline-flex; align-items: center; min-width: 18px; height: 17px; overflow: hidden; padding: 0 2px; border-radius: 3px; color: var(--vscode-foreground, #eee); font-size: 14px; line-height: 17px; white-space: nowrap; text-overflow: ellipsis; }
+  .practice-guide-lyric.is-current { background: var(--vscode-focusBorder, #3794ff); color: var(--vscode-editor-background, #1e1e1e); font-weight: 700; }
+  .practice-guide-technique-marker { position: absolute; z-index: 4; top: 12px; display: inline-flex; min-width: 20px; height: 22px; align-items: center; justify-content: center; transform: translateX(-50%); color: var(--vscode-foreground, #eee); font-size: 14px; line-height: 18px; white-space: nowrap; }
+  .practice-guide-technique-marker[data-guide-align="start"] { transform: translateX(0); }
+  .practice-guide-technique-marker[data-guide-align="end"] { transform: translateX(-100%); }
+  .practice-guide-technique-marker.is-current { border-radius: 3px; background: var(--vscode-focusBorder, #3794ff); color: var(--vscode-editor-background, #1e1e1e); font-weight: 700; }
+  .practice-guide-grid-continuation { display: none; }
   #practice-guide-panel[data-guide-grid="4"] .practice-guide-grid-continuation[data-guide-grid="4"],
   #practice-guide-panel[data-guide-grid="8"] .practice-guide-grid-continuation[data-guide-grid="8"],
-  #practice-guide-panel[data-guide-grid="16"] .practice-guide-grid-continuation[data-guide-grid="16"] { display: flex; }
-  .practice-guide-lyrics { min-height: 28px; overflow-wrap: anywhere; color: var(--vscode-foreground, #eee); font-size: 12px; }
-  .practice-guide-diagrams { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--vscode-widget-border, #333); }
-  .practice-guide-diagram-list { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; overflow-x: auto; padding: 5px 3px 7px; }
-  .practice-guide-chord-card { flex: 0 0 120px; min-width: 120px; text-align: center; color: var(--vscode-foreground, #eee); font-size: 11px; }
-  .practice-guide-chord-card strong { display: block; overflow-wrap: anywhere; }
-  .practice-guide-diagram { display: block; width: 118px; height: 58px; margin: 0 auto; overflow: visible; color: var(--vscode-foreground, #eee); }
-  .practice-guide-next-chord { box-sizing: border-box; flex: 0 0 200px; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 10px; border: 1px solid var(--vscode-widget-border, #444); border-radius: 6px; background: var(--vscode-editor-background, #1e1e1e); color: var(--vscode-foreground, #eee); text-align: center; }
+  #practice-guide-panel[data-guide-grid="16"] .practice-guide-grid-continuation[data-guide-grid="16"] { display: inline-flex; }
+  .practice-guide-rest-symbol { display: block; width: 24px; height: 26px; overflow: visible; color: currentColor; font-family: "Apple Symbols", "Noto Music", "Bravura", "Segoe UI Symbol", serif; font-size: 23px; text-anchor: middle; }
+  .practice-guide-chord-name { position: absolute; z-index: 4; top: 8px; display: inline-block; max-width: 90px; transform: translateX(-50%); overflow: hidden; padding: 2px 5px; border-radius: 3px; background: var(--vscode-badge-background, #333); color: var(--vscode-badge-foreground, #eee); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .practice-guide-chord-name.is-current { outline: 2px solid var(--vscode-focusBorder, #3794ff); }
+  .practice-guide-chord-name[data-guide-align="start"] { transform: translateX(0); }
+  .practice-guide-chord-name[data-guide-align="end"] { transform: translateX(-100%); }
+  .practice-guide-diagram-event { position: absolute; z-index: 4; top: 8px; display: block; width: 36px; height: 42px; transform: translateX(-50%); color: var(--vscode-foreground, #eee); }
+  .practice-guide-diagram-event[data-guide-align="start"] { transform: translateX(0); }
+  .practice-guide-diagram-event[data-guide-align="end"] { transform: translateX(-100%); }
+  .practice-guide-diagram-event.is-current { outline: 1px solid var(--vscode-focusBorder, #3794ff); }
+  .practice-guide-diagram { display: block; width: 36px; height: 18px; margin: 0; overflow: visible; color: var(--vscode-foreground, #eee); }
+  .practice-guide-next-chord { grid-column: 3; box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 5px; border-left: 1px solid var(--vscode-widget-border, #444); background: var(--vscode-editor-background, #1e1e1e); color: var(--vscode-foreground, #eee); text-align: center; }
   .practice-guide-next-chord-label { align-self: flex-start; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
-  .practice-guide-next-chord-name { font-size: 18px; font-weight: 700; }
+  .practice-guide-next-chord-name { max-width: 100%; overflow-wrap: anywhere; font-size: 18px; font-weight: 700; }
+  .practice-guide-next-chord-diagram .practice-guide-diagram { width: 96px; height: 46px; margin: 0 auto; }
+  @media (max-width: 600px) {
+    .practice-guide-layout { grid-template-columns: 112px minmax(0, 1fr) 104px; }
+    .practice-guide-next-chord { padding: 8px 3px; }
+    .practice-guide-next-chord-name { font-size: 15px; }
+    .practice-guide-next-chord-diagram .practice-guide-diagram { width: 88px; height: 42px; }
+  }
   .practice-guide-empty { color: var(--vscode-descriptionForeground, #888); font-size: 11px; }
   .practice-control-label {
     display: inline-flex;
@@ -1120,6 +1175,8 @@ ${cspMeta}
       const practiceStatus = document.getElementById('practice-status');
       const practiceGuidePanel = document.getElementById('practice-guide-panel');
       const practiceGuideScroll = document.getElementById('practice-guide-scroll');
+      const practiceGuideTimeline = document.getElementById('practice-guide-timeline');
+      const practiceGuidePlayhead = document.getElementById('practice-guide-playhead');
       const practiceGuideGridSelect = document.getElementById('practice-guide-grid');
       const practiceGuideDiagramsToggle = document.getElementById('practice-guide-diagrams-toggle');
       const practiceGuideMelodyToggle = document.getElementById('practice-guide-melody-toggle');
@@ -1410,27 +1467,23 @@ ${cspMeta}
         if (Number.isFinite(selectedGrid)) practiceGuidePanel?.setAttribute('data-guide-grid', String(selectedGrid));
         if (Number.isFinite(selectedGrid) && selectedGrid !== appliedGuideGrid) {
           appliedGuideGrid = selectedGrid;
-          for (const card of practiceGuideScroll?.querySelectorAll?.('.practice-guide-measure') ?? []) {
-            const beats = Math.max(0, Number(card.dataset.guideBeats) || 0);
-            const divisions = Math.max(1, Math.ceil(beats * selectedGrid / 4));
-            const step = 100 / divisions;
-            card.style.setProperty('--guide-divisions', String(divisions));
-            const line = 'var(--vscode-widget-border, #444)';
-            for (const track of card.querySelectorAll?.('.practice-guide-track') ?? []) {
-              track.style.backgroundImage = 'repeating-linear-gradient(to right, transparent 0 calc(' + step + '% - 1px), ' + line + ' calc(' + step + '% - 1px) ' + step + '%)';
-            }
-          }
+          practiceGuideTimeline?.style.setProperty('--guide-grid-step', String(576 / selectedGrid) + 'px');
         }
 
         const shownTime = transport === 'playing' || transport === 'counting-in' ? scoreTimeFromAudioClock() : positionSeconds;
         const occurrence = playbackOccurrences.find(item => shownTime >= item.startSeconds && shownTime < item.startSeconds + item.durationSeconds)
           ?? playbackOccurrences[playbackOccurrences.length - 1];
         const measureIndex = occurrence ? occurrence.measureIndex : null;
+        const guideMeasure = measureIndex === null ? null : playbackData.practiceGuide?.measures?.[measureIndex] ?? null;
+        const measureBeats = Math.max(0, Number(guideMeasure?.beats?.n ?? guideMeasure?.beats ?? 0) / Number(guideMeasure?.beats?.d ?? 1));
+        const secondsIntoMeasure = occurrence ? Math.max(0, shownTime - occurrence.startSeconds) : 0;
+        const currentBeat = occurrence
+          ? Math.max(0, Math.min(measureBeats, secondsIntoMeasure * (Number(occurrence.tempoBpm) || 0) / 60))
+          : 0;
+        const measureStartBeat = Number(guideMeasure?.startBeat?.n ?? guideMeasure?.startBeat ?? 0) / Number(guideMeasure?.startBeat?.d ?? 1);
+        const currentX = (measureStartBeat + currentBeat) * 144;
         let nextChord = playbackData.practiceGuide?.initialNextChord ?? null;
-        if (occurrence) {
-          const guideMeasure = playbackData.practiceGuide?.measures?.[measureIndex];
-          const elapsed = Math.max(0, Math.min(1, (shownTime - occurrence.startSeconds) / Math.max(occurrence.durationSeconds, 0.000001)));
-          const currentBeat = elapsed * (guideMeasure?.beats ?? 0);
+        if (occurrence && guideMeasure) {
           nextChord = guideMeasure?.chords?.find(chord => chord.beat > currentBeat + 0.000001) ?? null;
           if (!nextChord) {
             const occurrenceIndex = playbackOccurrences.indexOf(occurrence);
@@ -1442,11 +1495,46 @@ ${cspMeta}
         }
         if (practiceGuideNextChordName) practiceGuideNextChordName.textContent = nextChord?.name ?? '—';
         if (practiceGuideNextChordDiagram) practiceGuideNextChordDiagram.innerHTML = nextChord?.svg ?? '';
-        for (const card of practiceGuideScroll?.querySelectorAll?.('.practice-guide-measure') ?? []) {
-          const current = measureIndex !== null && Number(card.dataset.guideMeasure) === measureIndex;
-          card.classList.toggle('is-current', current);
-          if (current && currentGuideMeasureIndex !== measureIndex && followEnabled && practiceEnabled) {
-            card.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        if (practiceGuidePlayhead) {
+          practiceGuidePlayhead.style.left = currentX.toFixed(3) + 'px';
+          practiceGuidePlayhead.hidden = !practiceEnabled || !occurrence || !overlayVisible;
+        }
+        const isCurrentBeat = (item, includeEnd = false) => {
+          const start = Number(item.dataset.guideStartBeat);
+          const end = Number(item.dataset.guideEndBeat);
+          return measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex && currentBeat >= start - 0.000001 && (includeEnd ? currentBeat <= end + 0.000001 : currentBeat < end - 0.000001);
+        };
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-pitch-bar, .practice-guide-melody-rest') ?? []) {
+          item.classList.toggle('is-current', isCurrentBeat(item, true));
+        }
+        const selectedVerse = Number(occurrence?.lyricVerse) || 1;
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-lyric') ?? []) {
+          const verseMatches = Number(item.dataset.guideVerse) === selectedVerse;
+          item.classList.toggle('is-current', verseMatches && isCurrentBeat(item, true));
+        }
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-technique-marker') ?? []) {
+          const start = Number(item.dataset.guideEventStart);
+          const end = Number(item.dataset.guideEventEnd);
+          const current = measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
+          item.classList.toggle('is-current', current);
+        }
+        const currentChord = guideMeasure?.chords?.filter(chord => chord.beat <= currentBeat + 0.000001).slice(-1)[0] ?? null;
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-chord-name, .practice-guide-diagram-event') ?? []) {
+          const current = measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex && item.dataset.guideChord === currentChord?.name;
+          item.classList.toggle('is-current', current);
+        }
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-measure-boundary') ?? []) {
+          item.classList.toggle('is-current', Number(item.dataset.guideMeasureBoundary) === measureIndex);
+        }
+        for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-measure-number') ?? []) {
+          item.classList.toggle('is-current', Number(item.dataset.guideMeasureNumber) === measureIndex);
+        }
+        if (practiceEnabled && followEnabled && practiceGuideScroll && practiceGuidePlayhead && !practiceGuidePlayhead.hidden) {
+          const left = practiceGuideScroll.scrollLeft;
+          const right = left + practiceGuideScroll.clientWidth;
+          const margin = Math.min(28, Math.max(12, practiceGuideScroll.clientWidth * 0.12));
+          if (currentX < left + margin || currentX > right - margin) {
+            practiceGuideScroll.scrollLeft = Math.max(0, currentX - practiceGuideScroll.clientWidth * 0.35);
           }
         }
         currentGuideMeasureIndex = measureIndex;
@@ -2578,15 +2666,35 @@ function renderPracticeStringDiagram(voicing: Parameters<typeof resolveBaseFret>
   return `<svg class="practice-guide-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 72" role="img" aria-label="${base} fret chord diagram">${content}${label}</svg>`;
 }
 
+const PRACTICE_GUIDE_PX_PER_BEAT = 144;
+
+function renderPracticeGuideRestSvg(base: number | undefined, label: string): string {
+  const safeBase = base && base >= 1 && base <= 16 ? base : 4;
+  const shape = safeBase === 1
+    ? '<rect x="4" y="14" width="14" height="3" rx="0.5" fill="currentColor"/>'
+    : safeBase === 2
+      ? '<rect x="4" y="10" width="14" height="3" rx="0.5" fill="currentColor"/>'
+      : safeBase === 4
+        ? '<path d="M15 1 9 8 15 13 9 20 13 23 9 27" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'
+        : safeBase === 8
+          ? '<circle cx="16.5" cy="4" r="2" fill="currentColor"/><path d="M12 5 C17 6 17 10 13 13 C9 16 10 19 13 21 C16 23 15 25 11 27" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
+          : '<circle cx="16.5" cy="3.5" r="2" fill="currentColor"/><circle cx="16.5" cy="9.5" r="2" fill="currentColor"/><path d="M12 5 C17 6 17 10 13 13 C9 16 10 19 13 21 C16 23 15 25 11 27 M12 11 C17 12 17 16 14 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
+  return `<svg class="practice-guide-rest-symbol" data-guide-rest-base="${safeBase}" viewBox="0 0 24 28" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title>${shape}</svg>`;
+}
+
 function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
   const automaticGrid = automaticPracticeGuideGrid(score);
   const automaticFill = !practiceGuideHasWrittenRhythm(score);
   const parsedCapo = Number(score.capo);
   const capo = Number.isInteger(parsedCapo) && parsedCapo >= 0 && parsedCapo <= MAX_CAPO ? parsedCapo : 0;
   const instrument = createInstrumentModel(score.tuning, capo);
+  let totalBeats = frac(0);
+  let maxLyricVerses = 1;
+  const pitchMidiValues: number[] = [];
   const measures = score.measures.map((sourceMeasure, index): PracticeGuideMeasure => {
     const measure = sourceMeasure.isMeasureRepeat ? expandMeasureRepeat(sourceMeasure, score.measures) : sourceMeasure;
-    const beats = Math.max(0, fnum(measure.expectedBeats));
+    const beats = measure.expectedBeats;
+    const startBeat = totalBeats;
     const seenChords = new Set<string>();
     const chords: PracticeGuideDiagram[] = [];
     for (const chord of measure.chords) {
@@ -2602,35 +2710,24 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
       });
     }
 
-    let beat = frac(0);
     const techniques: PracticeGuideItem[] = [];
     const appendTechnique = (
       itemStart: ReturnType<typeof frac>,
+      eventDuration: ReturnType<typeof frac>,
       durationLabel: string,
       label: string,
       kind: PracticeGuideItem['kind'],
       eventIndex: number,
+      restBase: number | undefined,
       getContinuationOffsets: (grid: PracticeGuideGrid) => ReturnType<typeof practiceGuideContinuationOffsets>
     ) => {
-      techniques.push({
-        atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(itemStart) / beats * 100)) : 0,
-        label,
-        duration: durationLabel,
-        kind,
-        eventIndex
-      });
+      const eventEnd = fadd(itemStart, eventDuration);
+      techniques.push({ at: itemStart, durationBeats: eventDuration, eventStart: itemStart, eventEnd, label, duration: durationLabel, kind, eventIndex, ...(restBase === undefined ? {} : { restBase }) });
       for (const grid of [4, 8, 16] as const) {
         for (const offset of getContinuationOffsets(grid)) {
           const continuationBeat = fadd(itemStart, offset);
-          if (beats > 0 && fcmp(continuationBeat, measure.expectedBeats) >= 0) continue;
-          techniques.push({
-            atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(continuationBeat) / beats * 100)) : 0,
-            label: '〜',
-            duration: '',
-            kind: 'continuation',
-            grid,
-            eventIndex
-          });
+          if (beats.n > 0 && fcmp(continuationBeat, beats) >= 0) continue;
+          techniques.push({ at: continuationBeat, durationBeats: frac(0), eventStart: itemStart, eventEnd, label: '〜', duration: '', kind: 'continuation', grid, eventIndex });
         }
       }
     };
@@ -2647,80 +2744,160 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
       for (const [eventIndex, event] of practiceGuideTabEvents(tabVoices ?? []).entries()) {
         appendTechnique(
           event.at,
+          event.duration.beats,
           event.durationLabel,
           event.label,
           event.kind,
           eventIndex,
+          event.kind === 'rest' ? event.duration.parts[0]?.base : undefined,
           grid => practiceGuideValueContinuationOffsets(event.duration, grid, { isRest: event.kind === 'rest', percussive: event.percussive })
         );
       }
     } else {
-      beat = frac(0);
+      let beat = frac(0);
       for (const [eventIndex, item] of measure.rhythms.entries()) {
         const duration = parseRhythmDuration(item.duration);
         const itemBeats = duration?.beats ?? frac(0);
         const kind = item.mute ? 'mute' : item.isRest ? 'rest' : item.tiedFromPrev ? 'continuation' : 'attack';
         appendTechnique(
           beat,
+          itemBeats,
           item.duration,
           practiceGuideRhythmLabel(item),
           kind,
           eventIndex,
+          item.isRest ? duration?.parts[0]?.base : undefined,
           grid => practiceGuideContinuationOffsets(item, grid)
         );
         beat = fadd(beat, itemBeats);
       }
     }
 
-    beat = frac(0);
-    const melody: PracticeGuideItem[] = [];
-    for (const note of measure.melody ?? []) {
-      const pitch = note.isRest
-        ? 'r'
+    let beat = frac(0);
+    const melody: PracticeGuideMelodyNote[] = [];
+    const lyrics: PracticeGuideLyric[] = [];
+    const lastLyricByVerse = new Map<number, number>();
+    for (const [eventIndex, note] of (measure.melody ?? []).entries()) {
+      const pitches = note.isRest
+        ? []
         : note.pitch
-          ? guidePitchText(note.pitch)
-          : (note.pitches ?? []).map(guidePitchText).join(' ');
+          ? [{ label: guidePitchText(note.pitch), midi: pitchToMidi(note.pitch) }]
+          : (note.pitches ?? []).map(pitch => ({ label: guidePitchText(pitch), midi: pitchToMidi(pitch) }));
+      for (const pitch of pitches) pitchMidiValues.push(pitch.midi);
       const duration = note.parts.map(formatNoteValuePart).join('+');
-      melody.push({
-        atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(beat) / beats * 100)) : 0,
-        label: pitch || '—',
-        duration
-      });
+      melody.push({ at: beat, durationBeats: note.beats, duration, label: note.isRest ? 'rest' : pitches.map(pitch => pitch.label).join(' '), pitches, isRest: note.isRest, eventIndex, ...(note.isRest ? { restBase: note.parts[0]?.base } : {}) });
+      for (const [verse, syllable] of note.syllables.entries()) {
+        maxLyricVerses = Math.max(maxLyricVerses, verse + 1);
+        const previousIndex = lastLyricByVerse.get(verse);
+        if ((syllable?.extend || (!syllable && note.tiedFromPrev)) && previousIndex !== undefined) {
+          const previous = lyrics[previousIndex];
+          previous.durationBeats = fadd(previous.durationBeats, note.beats);
+          continue;
+        }
+        if (!syllable?.text) continue;
+        lyrics.push({ at: beat, durationBeats: note.beats, text: syllable.text, verse, eventIndex, hyphenToNext: syllable.hyphenToNext });
+        lastLyricByVerse.set(verse, lyrics.length - 1);
+      }
       beat = fadd(beat, note.beats);
     }
-    const lyrics = measure.lyric || (measure.melody ?? []).flatMap(note => note.syllables.map(syllable => syllable?.text ?? '')).join('');
-    const divisions = Math.max(1, Math.ceil(beats * automaticGrid / 4));
-    return { number: index + 1, beats, divisions, chords, melody, lyrics, techniques };
+    if (!lyrics.length && measure.lyric.trim()) {
+      lyrics.push({ at: frac(0), durationBeats: beats, text: measure.lyric.trim(), verse: 0, eventIndex: -1, hyphenToNext: false });
+    }
+    totalBeats = fadd(totalBeats, beats);
+    return { number: index + 1, startBeat, beats, chords, melody, lyrics, techniques };
   });
+  const lyricRows = Math.max(1, maxLyricVerses);
+  const lyricsHeight = Math.max(38, lyricRows * 18 + 8);
+  const pitchMinMidi = pitchMidiValues.length ? Math.min(...pitchMidiValues) : 60;
+  const pitchMaxMidi = pitchMidiValues.length ? Math.max(...pitchMidiValues) : 72;
   const initialNextChord = measures[0]?.chords[1] ?? measures.slice(1).find(measure => measure.chords.length > 0)?.chords[0];
-  return { automaticGrid, automaticFill, measures, ...(initialNextChord ? { initialNextChord } : {}) };
+  return { automaticGrid, automaticFill, totalBeats, lyricsHeight, pitchMinMidi, pitchMaxMidi, measures, ...(initialNextChord ? { initialNextChord } : {}) };
 }
 
 function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): string {
-  const measureCards = data.measures.map(measure => {
-    const width = Math.max(160, 24 + measure.chords.length * 112);
-    const chordNames = measure.chords.map(chord => `<span class="practice-guide-chord-name">${escapeXml(chord.label ? `${chord.name}@${chord.label}` : chord.name)}</span>`).join('');
-    const chordCards = measure.chords.map(chord => `<div class="practice-guide-chord-card"><strong>${escapeXml(chord.label ? `${chord.name}@${chord.label}` : chord.name)}</strong>${chord.svg ?? ''}</div>`).join('');
-    const melodyItems = measure.melody.map(item => `<span class="practice-guide-item" style="left:${item.atPercent.toFixed(3)}%" title="${escapeXml(item.duration)}"><b>${escapeXml(item.label)}</b><small>${escapeXml(item.duration)}</small></span>`).join('');
-    const techniqueItems = measure.techniques.map(item => {
-      const classes = `practice-guide-item${item.grid === undefined ? '' : ' practice-guide-grid-continuation'}`;
-      const align = item.atPercent < 5 ? 'start' : item.atPercent > 95 ? 'end' : 'center';
+  const totalWidth = Math.max(PRACTICE_GUIDE_PX_PER_BEAT, fnum(data.totalBeats) * PRACTICE_GUIDE_PX_PER_BEAT);
+  const guideX = (measure: PracticeGuideMeasure, localBeat: ReturnType<typeof frac>): number =>
+    (fnum(measure.startBeat) + fnum(localBeat)) * PRACTICE_GUIDE_PX_PER_BEAT;
+  const align = (x: number): 'start' | 'center' | 'end' => x < 18 ? 'start' : x > totalWidth - 18 ? 'end' : 'center';
+  const boundaryMarks = (): string => data.measures.map(measure => {
+    const left = fnum(measure.startBeat) * PRACTICE_GUIDE_PX_PER_BEAT;
+    return `<span class="practice-guide-measure-boundary" data-guide-measure-boundary="${measure.number - 1}" style="left:${left.toFixed(3)}px"></span>`;
+  }).join('') + `<span class="practice-guide-measure-boundary" data-guide-measure-boundary="end" style="left:${totalWidth.toFixed(3)}px"></span>`;
+  const numbers = data.measures.map(measure => {
+    const left = fnum(measure.startBeat) * PRACTICE_GUIDE_PX_PER_BEAT;
+    return `<span class="practice-guide-measure-number" data-guide-measure-number="${measure.number - 1}" style="left:${left.toFixed(3)}px">${measure.number}</span>`;
+  }).join('');
+  const labelRail = `<div class="practice-guide-label-rail">
+    <div class="practice-guide-label" data-guide-lane="ruler">${escapeXml(msgs.uiPracticeMeasure)}</div>
+    <div class="practice-guide-label" data-guide-lane="melody">${escapeXml(msgs.uiPracticeGuideMelodyRow)}</div>
+    <div class="practice-guide-label" data-guide-lane="lyrics" style="height:${data.lyricsHeight}px">${escapeXml(msgs.uiPracticeGuideLyrics)}</div>
+    <div class="practice-guide-label" data-guide-lane="technique">${escapeXml(msgs.uiPracticeGuideTechnique)}</div>
+    <div class="practice-guide-label" data-guide-lane="chord">${escapeXml(msgs.uiPracticeGuideChord)}</div>
+    <div class="practice-guide-label" data-guide-lane="diagrams">${escapeXml(msgs.uiPracticeGuideDiagrams)}</div>
+  </div>`;
+  const melodyItems = data.measures.flatMap(measure => measure.melody.map(item => {
+      const left = guideX(measure, item.at);
+      const width = Math.max(item.durationBeats.n === 0 ? 6 : 3, fnum(item.durationBeats) * PRACTICE_GUIDE_PX_PER_BEAT);
+      const start = fnum(item.at);
+      const end = start + fnum(item.durationBeats);
+      if (item.isRest) {
+        const label = `${msgs.uiPracticeGuideRest} ${item.duration}`;
+        return `<span class="practice-guide-melody-rest" data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-align="${align(left)}" title="${escapeXml(label)}" style="left:${left.toFixed(3)}px">${renderPracticeGuideRestSvg(item.restBase, label)}</span>`;
+      }
+      const range = Math.max(1, data.pitchMaxMidi - data.pitchMinMidi);
+      return item.pitches.map(pitch => {
+        const top = 5 + (data.pitchMaxMidi - pitch.midi) / range * 42;
+        const label = `${pitch.label} ${item.duration}`;
+        return `<span class="practice-guide-pitch-bar" data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-pitch-midi="${pitch.midi}" data-guide-pitch-label="${escapeXml(pitch.label)}" title="${escapeXml(label)}" aria-label="${escapeXml(label)}" style="left:${left.toFixed(3)}px;top:${top.toFixed(3)}px;width:${width.toFixed(3)}px"></span>`;
+      }).join('');
+    }));
+  const lyricItems = data.measures.flatMap(measure => measure.lyrics.map(item => {
+      const left = guideX(measure, item.at);
+      const width = Math.max(18, fnum(item.durationBeats) * PRACTICE_GUIDE_PX_PER_BEAT);
+      const text = item.text + (item.hyphenToNext ? '-' : '');
+      const top = 4 + item.verse * 18;
+      const start = fnum(item.at);
+      const end = start + fnum(item.durationBeats);
+      return `<span class="practice-guide-lyric" data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-verse="${item.verse + 1}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" title="${escapeXml(text)}" style="left:${left.toFixed(3)}px;top:${top}px;width:${width.toFixed(3)}px">${escapeXml(text)}</span>`;
+    }));
+  const techniqueItems = data.measures.flatMap(measure => measure.techniques.map(item => {
+      const left = guideX(measure, item.at);
+      const isContinuation = item.grid !== undefined;
+      const classes = `practice-guide-technique-marker${isContinuation ? ' practice-guide-grid-continuation' : ''}`;
       const grid = item.grid === undefined ? '' : ` data-guide-grid="${item.grid}"`;
       const kind = item.kind === undefined ? '' : ` data-guide-kind="${item.kind}"`;
       const eventIndex = item.eventIndex === undefined ? '' : ` data-guide-event="${item.eventIndex}"`;
-      return `<span class="${classes}" data-guide-align="${align}"${grid}${kind}${eventIndex} style="left:${item.atPercent.toFixed(3)}%" title="${escapeXml(item.duration)}"><b>${escapeXml(item.label)}</b></span>`;
-    }).join('');
-    return `<section class="practice-guide-measure" data-guide-measure="${measure.number - 1}" data-guide-beats="${measure.beats}" style="--guide-divisions:${measure.divisions};width:${width}px">
-      <h3>${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}</h3>
-      <div class="practice-guide-row practice-guide-melody"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideMelodyRow)}</span><div class="practice-guide-track">${melodyItems || '<span class="practice-guide-empty">—</span>'}</div></div>
-      <div class="practice-guide-row"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideLyrics)}</span><div class="practice-guide-lyrics">${escapeXml(measure.lyrics || '—')}</div></div>
-      <div class="practice-guide-row"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideTechnique)}</span><div class="practice-guide-track">${techniqueItems || '<span class="practice-guide-empty">—</span>'}</div></div>
-      <div class="practice-guide-row practice-guide-chord-row"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideChord)}</span><div class="practice-guide-chords">${chordNames || '<span class="practice-guide-empty">—</span>'}</div></div>
-      <div class="practice-guide-diagrams"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideDiagrams)}</span><div class="practice-guide-diagram-list">${chordCards || '<span class="practice-guide-empty">—</span>'}</div></div>
-    </section>`;
-  }).join('');
-  const nextChord = `<aside class="practice-guide-next-chord" id="practice-guide-next-chord"><span class="practice-guide-next-chord-label">${escapeXml(msgs.uiPracticeGuideNextChord)}</span><strong class="practice-guide-next-chord-name" id="practice-guide-next-chord-name">${escapeXml(data.initialNextChord?.name ?? '—')}</strong><div class="practice-guide-chord-card" id="practice-guide-next-chord-diagram">${data.initialNextChord?.svg ?? ''}</div></aside>`;
+      const eventStart = fnum(item.eventStart);
+      const eventEnd = fnum(item.eventEnd);
+      const ariaLabel = item.kind === 'rest' ? `${msgs.uiPracticeGuideRest} ${item.duration}` : item.label;
+      const label = item.kind === 'rest'
+        ? renderPracticeGuideRestSvg(item.restBase, ariaLabel)
+        : escapeXml(item.label);
+      return `<span class="${classes}" data-guide-measure="${measure.number - 1}" data-guide-align="${align(left)}"${grid}${kind}${eventIndex} data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-at-beat="${fnum(item.at)}" style="left:${left.toFixed(3)}px" title="${escapeXml(item.duration || ariaLabel)}" aria-label="${escapeXml(ariaLabel)}">${label}</span>`;
+    }));
+  const chordNames = data.measures.flatMap(measure => measure.chords.map(chord => {
+      const left = fnum(measure.startBeat) * PRACTICE_GUIDE_PX_PER_BEAT + chord.beat * PRACTICE_GUIDE_PX_PER_BEAT;
+      const label = chord.label ? `${chord.name}@${chord.label}` : chord.name;
+      return `<span class="practice-guide-chord-name" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-at-beat="${chord.beat}" data-guide-align="${align(left)}" style="left:${left.toFixed(3)}px" title="${escapeXml(label)}">${escapeXml(label)}</span>`;
+    }));
+  const diagrams = data.measures.flatMap(measure => measure.chords.map(chord => {
+      const left = fnum(measure.startBeat) * PRACTICE_GUIDE_PX_PER_BEAT + chord.beat * PRACTICE_GUIDE_PX_PER_BEAT;
+      const label = chord.label ? `${chord.name}@${chord.label}` : chord.name;
+      const icon = chord.svg ?? `<span aria-label="${escapeXml(label)}">—</span>`;
+      return `<span class="practice-guide-diagram-event" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-diagram-chord="${escapeXml(chord.name)}" data-guide-at-beat="${chord.beat}" data-guide-align="${align(left)}" style="left:${left.toFixed(3)}px" title="${escapeXml(label)}">${icon}</span>`;
+    }));
+  const boundaries = boundaryMarks();
+  const lanes = `<div class="practice-guide-lane practice-guide-melody" data-guide-lane="melody">${boundaries}${melodyItems.join('')}</div>
+    <div class="practice-guide-lane practice-guide-lyrics" data-guide-lane="lyrics" style="--guide-lyrics-height:${data.lyricsHeight}px;height:${data.lyricsHeight}px">${boundaries}${lyricItems.join('')}</div>
+    <div class="practice-guide-lane practice-guide-technique" data-guide-lane="technique">${boundaries}${techniqueItems.join('')}</div>
+    <div class="practice-guide-lane practice-guide-chords" data-guide-lane="chord">${boundaries}${chordNames.join('')}</div>
+    <div class="practice-guide-lane practice-guide-diagrams" data-guide-lane="diagrams">${boundaries}${diagrams.join('')}</div>`;
+  const ruler = `<div class="practice-guide-ruler">${boundaryMarks()}${numbers}</div>`;
+  const initialNextChord = data.initialNextChord;
+  const nextChord = `<aside class="practice-guide-next-chord" id="practice-guide-next-chord"><span class="practice-guide-next-chord-label">${escapeXml(msgs.uiPracticeGuideNextChord)}</span><strong class="practice-guide-next-chord-name" id="practice-guide-next-chord-name">${escapeXml(initialNextChord?.name ?? '—')}</strong><div class="practice-guide-next-chord-diagram" id="practice-guide-next-chord-diagram">${initialNextChord?.svg ?? ''}</div></aside>`;
   const autoLabel = data.automaticFill ? `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill">${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>` : `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill" hidden>${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>`;
+  const initialGridStep = 576 / data.automaticGrid;
+  const timeline = `<div class="practice-guide-timeline" id="practice-guide-timeline" data-guide-total-beats="${fnum(data.totalBeats)}" data-guide-measure-count="${data.measures.length}" style="--guide-total-width:${totalWidth.toFixed(3)}px;--guide-grid-step:${initialGridStep}px;--guide-lyrics-height:${data.lyricsHeight}px;width:${totalWidth.toFixed(3)}px">${ruler}${lanes}<span class="practice-guide-playhead" id="practice-guide-playhead" hidden></span>${data.measures.length ? '' : `<p class="practice-guide-empty">${escapeXml(msgs.uiPlaybackEmpty)}</p>`}</div>`;
   return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}" data-guide-grid="${data.automaticGrid}">
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
@@ -2732,7 +2909,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
         <button class="practice-button" id="practice-guide-melody-toggle" type="button" aria-pressed="true">${escapeXml(msgs.uiPracticeGuideMelody)} ON</button>
       </div>
     </header>
-    <div class="practice-guide-scroll" id="practice-guide-scroll"><div class="practice-guide-rail">${measureCards || `<p class="practice-guide-empty">${escapeXml(msgs.uiPlaybackEmpty)}</p>`}${nextChord}</div></div>
+    <div class="practice-guide-layout">${labelRail}<div class="practice-guide-scroll" id="practice-guide-scroll" tabindex="0" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}">${timeline}</div>${nextChord}</div>
   </aside>`;
 }
 
@@ -2753,6 +2930,7 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
     practiceLoopSet: msgs.uiPracticeLoopSet,
     practiceLoopCleared: msgs.uiPracticeLoopCleared,
     guideTitle: msgs.uiPracticeGuideTitle,
+    guideRest: msgs.uiPracticeGuideRest,
     guideDiagrams: msgs.uiPracticeGuideDiagrams,
     guideMelody: msgs.uiPracticeGuideMelody,
     guideGrid: msgs.uiPracticeGuideGrid,
@@ -2803,8 +2981,12 @@ function buildPlaybackHtmlData(score: ParsedScore, msgs: Messages): PlaybackHtml
     occurrenceIndex: occurrence.occurrenceIndex,
     measureIndex: occurrence.measureIndex,
     ...(occurrence.sectionName === undefined ? {} : { sectionName: occurrence.sectionName }),
+    ...(occurrence.lyricVerse === undefined ? {} : { lyricVerse: occurrence.lyricVerse }),
+    startBeat: occurrence.startBeat,
+    durationBeats: occurrence.durationBeats,
     startSeconds: occurrence.startSeconds,
     durationSeconds: occurrence.durationSeconds,
+    tempoBpm: occurrence.tempoBpm,
     countInDurationSeconds: fnum(measureBeats(occurrence.timeSignature)) * 60 / occurrence.tempoBpm,
     countInClicks: beamGroupStarts(occurrence.timeSignature).map((beat, groupIndex) => ({
       timeSeconds: fnum(beat) * 60 / occurrence.tempoBpm,

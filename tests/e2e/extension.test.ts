@@ -341,11 +341,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'time: 4/4',
         '| F | 4.d 4.u 4.d 8.m r8 |',
         '| G | 8.d.t 8 4 4 4 |',
-        '| Em7 | 4.d.b 4.u 16.d 16.u 8.d 8.u 8.d |',
+        '| Em7 | 4.d.b 4.u.pm 16.d 16.u 8.d 8.u 8.d |',
         '| Am | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
         '| Dm7 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
-        'mel: | e4/1 | g4/1 | b4/1 | a4/1 | d4/1 |',
-        'lyr: 夜 明 か り 花'
+        'mel: | e4/2 g4/2 | g4/2 a4/2 | b4/2 a4/2 | a4/2 g4/2 | d4/2 e4/2 |',
+        'lyr: 夜 明 か り 花 手 音 ひ と つ'
       ].join('\n');
       const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
       await showAndFocus(doc);
@@ -391,78 +391,154 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await settle(250);
       await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
 
+      const setGuideVisibility = async (melodyVisible: boolean): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const button = document.getElementById('practice-guide-melody-toggle');
+          if ((button.getAttribute('aria-pressed') === 'true') !== ${melodyVisible}) button.click();
+        })()`);
+      };
+      const expectedOn = ['melody', 'lyrics', 'technique', 'chord', 'diagrams'];
+      const expectedOff = ['lyrics', 'technique', 'chord', 'diagrams'];
       for (const width of [421, 600, 840, 1100]) {
         await resizeActiveEditorGroupToWidth(width);
-        await settle(180);
+        await settle(160);
         assert.strictEqual(await evaluatePreviewWebview<number>('window.innerWidth'), width,
           `practice guide acceptance uses exactly ${width} CSS px`);
-
-        const guide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-          const panel = document.getElementById('practice-guide-panel');
-          const header = document.querySelector('.practice-guide-header');
-          const scroll = document.getElementById('practice-guide-scroll');
-          const firstMeasure = document.querySelector('.practice-guide-measure');
-          const visibleContinuations = measure => [...measure.querySelectorAll('[data-guide-kind="continuation"]')]
-            .filter(item => !item.classList.contains('practice-guide-grid-continuation') || getComputedStyle(item).display !== 'none').length;
-          const techniqueRow = [...firstMeasure.querySelectorAll('.practice-guide-row')]
-            .find(item => ['Technique', '奏法'].includes(item.querySelector('.practice-guide-row-label')?.textContent.trim()));
-          const firstTechniqueItems = [...techniqueRow.querySelectorAll('.practice-guide-item')];
-          const tieMeasure = document.querySelectorAll('.practice-guide-measure')[1];
-          const brushMeasure = document.querySelectorAll('.practice-guide-measure')[2];
-          const rows = [...firstMeasure.children].filter(item => item.matches('.practice-guide-melody, .practice-guide-row, .practice-guide-diagrams'))
-            .map(item => {
-              if (item.classList.contains('practice-guide-melody')) return 'melody';
-              if (item.classList.contains('practice-guide-diagrams')) return 'diagrams';
-              if (item.classList.contains('practice-guide-chord-row')) return 'chord';
-              const label = item.querySelector('.practice-guide-row-label')?.textContent.trim();
-              return label === 'Lyrics' || label === '歌詞' ? 'lyrics' : label === 'Technique' || label === '奏法' ? 'technique' : label;
-            });
-          return {
-            panelVisible: panel.getBoundingClientRect().height > 0,
-            headerFits: header.scrollWidth <= header.clientWidth + 1,
-            panelWithinViewport: panel.getBoundingClientRect().bottom <= window.innerHeight + 1,
-            automaticGrid: panel.dataset.automaticGrid,
-            selectedGrid: panel.dataset.guideGrid,
-            measureCount: document.querySelectorAll('.practice-guide-measure').length,
-            chordNames: [...document.querySelectorAll('.practice-guide-chord-name')].map(item => item.textContent.trim()),
-            melodyNotes: [...document.querySelectorAll('.practice-guide-melody .practice-guide-item b')].map(item => item.textContent.trim()),
-            lyrics: [...document.querySelectorAll('.practice-guide-lyrics')].map(item => item.textContent.trim()),
-            rowOrder: rows,
-            diagramCount: document.querySelectorAll('.practice-guide-measure .practice-guide-chord-card svg').length,
-            nextLabel: document.querySelector('.practice-guide-next-chord-label')?.textContent.trim(),
-            nextDiagramCount: document.querySelector('#practice-guide-next-chord-diagram svg') ? 1 : 0,
-            guideScrollsHorizontally: scroll.scrollWidth > scroll.clientWidth + 1,
-            firstMeasureMuteLabels: firstTechniqueItems.filter(item => item.dataset.guideKind === 'mute').map(item => item.querySelector('b').textContent.trim()),
-            firstMeasureRestLabels: firstTechniqueItems.filter(item => item.dataset.guideKind === 'rest').map(item => item.querySelector('b').textContent.trim()),
-            firstMeasureVisibleContinuationCount: visibleContinuations(firstMeasure),
-            tieContinuationLabel: tieMeasure.querySelector('.practice-guide-item[data-guide-event="1"][data-guide-kind="continuation"] b')?.textContent.trim(),
-            tieVisibleContinuationCount: [...tieMeasure.querySelectorAll('[data-guide-kind="continuation"]')]
-              .filter(item => ['0', '1'].includes(item.dataset.guideEvent)
-                && (!item.classList.contains('practice-guide-grid-continuation') || getComputedStyle(item).display !== 'none')).length,
-            brushEventContinuationCount: brushMeasure.querySelectorAll('.practice-guide-grid-continuation[data-guide-event="0"]').length
-          };
-        })())`));
-        assert.strictEqual(guide.panelVisible, true, 'Practice opens the fixed guide panel');
-        assert.strictEqual(guide.headerFits, true, `${width}px guide controls fit without clipping`);
-        assert.strictEqual(guide.panelWithinViewport, true, `${width}px guide stays inside the Preview bottom edge`);
-        assert.strictEqual(guide.automaticGrid, '16', 'the guide selects the sixteenth-note grid from the densest written score');
-        assert.strictEqual(guide.selectedGrid, '16', 'automatic mode enables the matching continuation slots');
-        assert.strictEqual(guide.measureCount, 5, 'the guide spans the complete five-measure song');
-        assert.deepStrictEqual(guide.chordNames, ['F', 'G', 'Em7', 'Am', 'Dm7']);
-        assert.strictEqual(guide.melodyNotes.length, 5, 'melody appears as a separate row for every measure');
-        assert.deepStrictEqual(guide.lyrics, ['夜', '明', 'か', 'り', '花']);
-        assert.deepStrictEqual(guide.rowOrder, ['melody', 'lyrics', 'technique', 'chord', 'diagrams']);
-        assert.strictEqual(guide.diagramCount, 5, 'all five score chord diagrams are rendered');
-        assert.strictEqual(guide.nextLabel, locale === 'ja' ? '次のコード' : 'Next chord');
-        assert.strictEqual(guide.nextDiagramCount, 1, 'the next chord card includes its diagram');
-        assert.deepStrictEqual(guide.firstMeasureMuteLabels, ['・'], 'mute has its own marker and no continuation');
-        assert.deepStrictEqual(guide.firstMeasureRestLabels, ['r8'], 'rest is shown as a rest rather than a continuation');
-        assert.strictEqual(guide.firstMeasureVisibleContinuationCount, 9, 'each quarter-note attack fills only the remaining sixteenth slots');
-        assert.strictEqual(guide.tieContinuationLabel, '〜', 'a valid tied token is a continuation, not a reattack');
-        assert.strictEqual(guide.tieVisibleContinuationCount, 3, 'the tied eighth-note span has three remaining sixteenth slots');
-        assert.strictEqual(guide.brushEventContinuationCount, 0, 'a percussive brush does not acquire sustained continuation marks');
-
-        if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-on.png`);
+        for (const melodyVisible of [true, false]) {
+          await setGuideVisibility(melodyVisible);
+          await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-scroll').scrollLeft = 0`);
+          await settle(120);
+          const guide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const panel = document.getElementById('practice-guide-panel');
+            const header = document.querySelector('.practice-guide-header');
+            const rail = document.querySelector('.practice-guide-label-rail');
+            const scroll = document.getElementById('practice-guide-scroll');
+            const timeline = document.getElementById('practice-guide-timeline');
+            const next = document.getElementById('practice-guide-next-chord');
+            const nextName = document.getElementById('practice-guide-next-chord-name');
+            const laneNames = [...timeline.querySelectorAll('.practice-guide-lane')]
+              .filter(item => getComputedStyle(item).display !== 'none').map(item => item.dataset.guideLane);
+            const visibleContinuations = [...timeline.querySelectorAll('.practice-guide-grid-continuation')]
+              .filter(item => getComputedStyle(item).display !== 'none');
+            const techniqueLane = timeline.querySelector('[data-guide-lane="technique"]');
+            const markers = [...techniqueLane.querySelectorAll('.practice-guide-technique-marker')]
+              .filter(item => getComputedStyle(item).display !== 'none')
+              .map(item => ({ left: item.getBoundingClientRect().left, right: item.getBoundingClientRect().right, size: getComputedStyle(item).fontSize, marker: item }));
+            const orderedMarkers = [...markers].sort((a, b) => a.left - b.left);
+            let overlapCount = 0;
+            for (let i = 1; i < orderedMarkers.length; i++) if (orderedMarkers[i - 1].right > orderedMarkers[i].left + 1) overlapCount++;
+            const boundaries = [...timeline.querySelectorAll('.practice-guide-lane .practice-guide-measure-boundary[data-guide-measure-boundary="1"]')]
+              .map(item => Number(item.style.left.replace('px', '')));
+            const first = selector => timeline.querySelector(selector);
+            const alignedStartX = [
+              first('.practice-guide-pitch-bar[data-guide-measure="0"]'),
+              first('.practice-guide-lyric[data-guide-measure="0"]'),
+              first('.practice-guide-technique-marker[data-guide-measure="0"][data-guide-at-beat="0"]'),
+              first('.practice-guide-chord-name[data-guide-measure="0"]'),
+              first('.practice-guide-diagram-event[data-guide-measure="0"]')
+            ].map(item => item ? Number(item.style.left.replace('px', '')) : null);
+            const bars = [...timeline.querySelectorAll('.practice-guide-pitch-bar')];
+            const lyricEvents = [...timeline.querySelectorAll('.practice-guide-lyric')];
+            const nextRect = nextName.getBoundingClientRect();
+            const railLeft = rail.getBoundingClientRect().left;
+            const nextLeft = next.getBoundingClientRect().left;
+            const before = { railLeft, nextLeft };
+            scroll.scrollLeft = scroll.scrollWidth;
+            const after = { railLeft: rail.getBoundingClientRect().left, nextLeft: next.getBoundingClientRect().left };
+            const nextVisibleAtEnd = nextRect.left >= 0 && nextRect.right <= window.innerWidth + 1 && getComputedStyle(nextName).display !== 'none';
+            scroll.scrollLeft = 0;
+            return {
+              panelVisible: panel.getBoundingClientRect().height > 0,
+              panelWithinViewport: panel.getBoundingClientRect().bottom <= window.innerHeight + 1,
+              headerFits: header.scrollWidth <= header.clientWidth + 1,
+              automaticGrid: panel.dataset.automaticGrid,
+              selectedGrid: panel.dataset.guideGrid,
+              laneNames,
+              labelCount: [...rail.querySelectorAll('.practice-guide-label')]
+                .filter(item => getComputedStyle(item).display !== 'none').length,
+              totalBeats: Number(timeline.dataset.guideTotalBeats),
+              timelineWidth: timeline.getBoundingClientRect().width,
+              scrollsHorizontally: scroll.scrollWidth > scroll.clientWidth + 1,
+              nextLabel: document.querySelector('.practice-guide-next-chord-label')?.textContent.trim(),
+              nextName: nextName.textContent.trim(),
+              nextVisibleAtEnd,
+              nextOutsideScroll: !scroll.contains(next),
+              fixedColumns: Math.abs(before.railLeft - after.railLeft) < 1 && Math.abs(before.nextLeft - after.nextLeft) < 1,
+              boundaries,
+              alignedStartX,
+              melodyBarCount: bars.length,
+              firstBarWidth: bars[0]?.getBoundingClientRect().width,
+              firstBarInlineWidth: bars[0]?.style.width,
+              firstBarPitchY: bars[0]?.getBoundingClientRect().top,
+              secondBarPitchY: bars[1]?.getBoundingClientRect().top,
+              firstBarInlineTop: bars[0]?.style.top,
+              secondBarInlineTop: bars[1]?.style.top,
+              lyricCount: lyricEvents.length,
+              lyricText: lyricEvents.map(item => item.textContent.trim()),
+              pitchBarClipped: bars.some(item => item.offsetLeft + item.offsetWidth > item.parentElement.clientWidth + 1),
+              markerFontMin: Math.min(...markers.map(item => parseFloat(item.size))),
+              markerOverlapCount: overlapCount,
+              firstMeasureMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="mute"]')].map(item => item.textContent.trim()),
+              firstMeasureRestBases: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="rest"] svg[data-guide-rest-base]')].map(item => item.dataset.guideRestBase),
+              firstMeasureRestVector: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="rest"] svg')]
+                .every(item => !!item.querySelector('path, rect, circle') && !item.querySelector('text')),
+              firstMeasureVisibleContinuationCount: visibleContinuations.filter(item => item.dataset.guideMeasure === '0').length,
+              tieContinuationLabel: techniqueLane.querySelector('[data-guide-measure="1"][data-guide-event="1"][data-guide-kind="continuation"]')?.textContent.trim(),
+              tieVisibleContinuationCount: visibleContinuations.filter(item => item.dataset.guideMeasure === '1' && ['0', '1'].includes(item.dataset.guideEvent)).length,
+              brushEventContinuationCount: techniqueLane.querySelectorAll('.practice-guide-grid-continuation[data-guide-measure="2"][data-guide-event="0"]').length,
+              palmMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="2"][data-guide-kind="attack"]')].map(item => item.textContent.trim()),
+              diagramCount: timeline.querySelectorAll('[data-guide-lane="diagrams"] .practice-guide-diagram-event svg').length,
+              melodyHidden: getComputedStyle(timeline.querySelector('[data-guide-lane="melody"]')).display === 'none',
+              melodyLabelHidden: getComputedStyle(rail.querySelector('[data-guide-lane="melody"]')).display === 'none',
+              lyricsVisible: getComputedStyle(timeline.querySelector('[data-guide-lane="lyrics"]')).display !== 'none',
+              techniqueVisible: getComputedStyle(techniqueLane).display !== 'none',
+              chordDiagramsVisible: getComputedStyle(timeline.querySelector('[data-guide-lane="diagrams"]')).display !== 'none',
+              nextDiagramVisible: getComputedStyle(document.getElementById('practice-guide-next-chord-diagram')).display !== 'none'
+            };
+          })())`));
+          assert.strictEqual(guide.panelVisible, true, 'Practice opens the fixed guide panel');
+          assert.strictEqual(guide.panelWithinViewport, true, `${width}px guide stays inside the Preview bottom edge`);
+          assert.strictEqual(guide.headerFits, true, `${width}px guide controls fit without clipping`);
+          assert.strictEqual(guide.automaticGrid, '16', 'the guide selects the sixteenth-note grid from the densest written score');
+          assert.strictEqual(guide.selectedGrid, '16', 'automatic mode enables the matching continuation slots');
+          assert.deepStrictEqual(guide.laneNames, melodyVisible ? expectedOn : expectedOff, `${width}px ${melodyVisible ? 'melody ON' : 'melody OFF'} keeps one aligned lane set`);
+          assert.strictEqual(guide.labelCount, melodyVisible ? 6 : 5, 'one fixed label set is shown for the ruler and visible lanes');
+          assert.strictEqual(guide.totalBeats, 20, 'the single timeline spans all five written measures');
+          assert.strictEqual(guide.timelineWidth, 2880, '20 written beats map through the shared 144px-per-beat axis');
+          assert.strictEqual(guide.scrollsHorizontally, true, 'only the time axis scrolls horizontally');
+          assert.strictEqual(guide.nextLabel, locale === 'ja' ? '次のコード' : 'Next chord');
+          assert.strictEqual(guide.nextVisibleAtEnd, true, `${width}px next chord name stays visible after timeline scroll`);
+          assert.strictEqual(guide.nextOutsideScroll, true, 'the next-chord panel is outside the axis scroller');
+          assert.strictEqual(guide.fixedColumns, true, 'the labels and next-chord panel stay fixed while the timeline scrolls');
+          assert.ok(guide.boundaries.every((x: number) => Math.abs(x - guide.boundaries[0]) < 0.01), 'each lane shares the same measure-boundary x coordinates');
+          assert.ok(guide.alignedStartX.every((x: number | null) => x !== null && Math.abs(x - guide.alignedStartX[0]) < 0.01), 'melody, lyric, technique, chord, and diagram events share onset x coordinates');
+          assert.strictEqual(guide.melodyBarCount, 10, 'each written melody note becomes a pitch bar');
+          assert.strictEqual(guide.firstBarInlineWidth, '288px', 'a half-note pitch bar has a duration-proportional width');
+          if (melodyVisible) assert.ok(Math.abs(guide.firstBarWidth - 288) < 1, 'a visible half-note pitch bar has the expected rendered width');
+          assert.notStrictEqual(guide.firstBarInlineTop, guide.secondBarInlineTop, 'different pitches have different vertical positions');
+          if (melodyVisible) assert.notStrictEqual(guide.firstBarPitchY, guide.secondBarPitchY, 'visible pitches occupy different vertical positions');
+          assert.strictEqual(guide.lyricCount, 10, 'lyrics remain mapped to their written note syllables');
+          assert.deepStrictEqual(guide.lyricText.slice(0, 5), ['夜', '明', 'か', 'り', '花']);
+          assert.strictEqual(guide.pitchBarClipped, false, 'pitch bars fit inside the full-score lane');
+          assert.ok(guide.markerFontMin >= 14, 'attack and continuation marks use at least 14 CSS px');
+          assert.strictEqual(guide.markerOverlapCount, 0, 'the dense technique lane has no overlapping markers');
+          assert.deepStrictEqual(guide.firstMeasureMuteLabels, ['・'], 'mute has its own marker and no continuation');
+          assert.deepStrictEqual(guide.firstMeasureRestBases, ['8'], 'the eighth rest is a duration-specific music symbol');
+          assert.strictEqual(guide.firstMeasureRestVector, true, 'rest notation uses visible font-independent vector shapes');
+          assert.strictEqual(guide.firstMeasureVisibleContinuationCount, 9, 'each quarter-note attack fills only the remaining sixteenth slots');
+          assert.strictEqual(guide.tieContinuationLabel, '〜', 'a valid tied token is a continuation, not a reattack');
+          assert.strictEqual(guide.tieVisibleContinuationCount, 2, 'the tied eighth-note span has two remaining sixteenth slots');
+          assert.strictEqual(guide.brushEventContinuationCount, 0, 'a percussive brush does not acquire sustained continuation marks');
+          assert.ok(guide.palmMuteLabels.includes('PM↑'), 'palm mute and stroke direction render as one mark');
+          assert.strictEqual(guide.diagramCount, 5, 'all five chord diagrams share the timeline');
+          assert.strictEqual(guide.melodyHidden, !melodyVisible, 'melody visibility matches its control');
+          assert.strictEqual(guide.melodyLabelHidden, !melodyVisible, 'melody OFF removes only its fixed label');
+          assert.strictEqual(guide.lyricsVisible, true, 'lyrics stay visible with melody OFF');
+          assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
+          assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
+          assert.strictEqual(guide.nextDiagramVisible, true, 'the next-chord name and detail stay available');
+          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154.png`);
+        }
       }
 
       await evaluatePreviewWebview<void>(`(() => {
@@ -470,14 +546,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         grid.value = '8'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await settle(100);
-      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelector('.practice-guide-measure').querySelectorAll('.practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none').length`), 3,
-        'the eighth-note override recalculates the visible continuation slots');
+      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 3,
+        'the eighth-note override recalculates continuation slots on the shared axis');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = '4'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await settle(100);
-      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelector('.practice-guide-measure').querySelectorAll('.practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none').length`), 0,
+      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 0,
         'the quarter-note override does not fill smaller slots');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
@@ -487,50 +563,113 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
+        input.value = String(Number(input.max) * 0.5);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(120);
+      const synchronized = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const timeline = document.getElementById('practice-guide-timeline');
+        const playhead = document.getElementById('practice-guide-playhead');
+        return {
+          playheadVisible: !playhead.hidden,
+          playheadX: Number(playhead.style.left.replace('px', '')),
+          melody: timeline.querySelector('.practice-guide-pitch-bar.is-current')?.dataset.guideMeasure,
+          lyric: timeline.querySelector('.practice-guide-lyric.is-current')?.dataset.guideMeasure,
+          technique: timeline.querySelector('.practice-guide-technique-marker.is-current')?.dataset.guideMeasure,
+          chord: timeline.querySelector('.practice-guide-chord-name.is-current')?.dataset.guideMeasure,
+          nextChord: document.getElementById('practice-guide-next-chord-name').textContent.trim()
+        };
+      })())`));
+      assert.strictEqual(synchronized.playheadVisible, true, 'seek immediately shows the common guide playhead');
+      assert.ok(Math.abs(synchronized.playheadX - 1440) < 1, 'the score-time position projects to the midpoint of the third written measure');
+      assert.strictEqual(synchronized.melody, '2');
+      assert.strictEqual(synchronized.lyric, '2');
+      assert.strictEqual(synchronized.technique, '2');
+      assert.strictEqual(synchronized.chord, '2');
+      assert.strictEqual(synchronized.nextChord, 'Am');
+      const playheadBeforeSpeed = synchronized.playheadX;
+      await evaluatePreviewWebview<void>(`(() => {
+        const speed = document.getElementById('practice-speed');
+        speed.value = '150'; speed.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      assert.strictEqual(await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-playhead').style.left.replace('px', ''))`), playheadBeforeSpeed,
+        'speed changes preserve the current score-time coordinate');
+      await clickPreviewElement('#btn-play');
+      await settle(180);
+      const playingGuide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        playheadVisible: !document.getElementById('practice-guide-playhead').hidden,
+        playheadX: Number(document.getElementById('practice-guide-playhead').style.left.replace('px', '')),
+        pauseEnabled: !document.getElementById('btn-pause').disabled
+      })`));
+      assert.strictEqual(playingGuide.playheadVisible, true, 'play keeps the common playhead visible');
+      assert.strictEqual(playingGuide.pauseEnabled, true, 'the transport enters the playing state');
+      assert.ok(playingGuide.playheadX >= playheadBeforeSpeed - 1, 'play preserves the selected score-time coordinate while the transport is active');
+      await clickPreviewElement('#btn-pause');
+      await settle(100);
+      const pausedPlayheadX = await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-playhead').style.left.replace('px', ''))`);
+      assert.strictEqual(await evaluatePreviewWebview<boolean>(`!document.getElementById('practice-guide-playhead').hidden`), true,
+        'pause keeps the common playhead visible');
+      await settle(120);
+      assert.strictEqual(await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-playhead').style.left.replace('px', ''))`), pausedPlayheadX,
+        'pause freezes the score-time coordinate');
+      await evaluatePreviewWebview<void>(`(() => {
+        const input = document.getElementById('playback-seek');
         input.value = String(Number(input.max) * 0.78);
         input.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await settle(120);
       assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-guide-next-chord-name').textContent.trim()`), 'Dm7',
-        'seeking through the last measure updates the next chord card');
+        'seeking through the fourth measure updates the fixed next-chord panel');
       assert.strictEqual(await evaluatePreviewWebview<number>(`document.querySelectorAll('#practice-guide-next-chord-diagram svg').length`), 1,
-        'the updated next chord card keeps its diagram');
-      await resizeActiveEditorGroupToWidth(1100);
-      await settle(150);
-      const finalScroll = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-        const scroll = document.getElementById('practice-guide-scroll');
-        return { client: scroll.clientWidth, total: scroll.scrollWidth };
-      })())`));
-      assert.ok(finalScroll.total <= finalScroll.client + 1, 'all five diagrams and the next chord fit at 1100px');
-      if (captureScreenshots) {
-        await settle(350);
-        await captureGuideEvidence(`practice-guide-${locale}-${themeName}-1100-melody-on.png`);
-        await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-melody-toggle').click()`);
-        await settle(350);
-        const melodyOff = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
-          melodyHidden: document.body.classList.contains('guide-melody-hidden'),
-          lyricsVisible: getComputedStyle(document.querySelector('.practice-guide-lyrics')).display !== 'none',
-          techniquesVisible: (() => {
-            const row = [...document.querySelectorAll('.practice-guide-measure > .practice-guide-row')]
-              .find(item => ['Technique', '奏法'].includes(item.querySelector('.practice-guide-row-label')?.textContent.trim()));
-            return !!row && getComputedStyle(row).display !== 'none';
-          })(),
-          chordDiagramsVisible: getComputedStyle(document.querySelector('.practice-guide-diagrams')).display !== 'none',
-          nextChordVisible: getComputedStyle(document.getElementById('practice-guide-next-chord')).display !== 'none'
-        })`));
-        assert.deepStrictEqual(melodyOff, { melodyHidden: true, lyricsVisible: true, techniquesVisible: true, chordDiagramsVisible: true, nextChordVisible: true },
-          'melody OFF hides only the melody row');
-        await captureGuideEvidence(`practice-guide-${locale}-${themeName}-1100-melody-off.png`);
-        await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-melody-toggle').click()`);
-        await settle(150);
-      }
-
+        'the updated next-chord panel keeps its diagram');
+      await evaluatePreviewWebview<void>(`(() => {
+        const input = document.getElementById('playback-seek');
+        input.value = String(Number(input.max) * 0.5);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-set-a').click()`);
+      await evaluatePreviewWebview<void>(`(() => {
+        const input = document.getElementById('playback-seek');
+        input.value = String(Number(input.max) * 0.51);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-set-b').click()`);
+      assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-loop').value`), 'ab',
+        'setting both loop points enables the A/B loop');
+      assert.ok(Math.abs(await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-playhead').style.left.replace('px', ''))`) - 1440) < 1,
+        'setting the loop end returns the playhead to its score-time start');
+      await clickPreviewElement('#btn-play');
+      await settle(240);
+      const loopPlayhead = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        visible: !document.getElementById('practice-guide-playhead').hidden,
+        x: Number(document.getElementById('practice-guide-playhead').style.left.replace('px', '')),
+        pauseEnabled: !document.getElementById('btn-pause').disabled
+      })`));
+      assert.strictEqual(loopPlayhead.visible, true, 'the playhead remains visible while the A/B loop plays');
+      assert.strictEqual(loopPlayhead.pauseEnabled, true, 'the A/B loop is actively playing');
+      assert.ok(loopPlayhead.x >= 1440 && loopPlayhead.x <= 1470, 'the playhead stays inside the score-time loop interval');
+      await clickPreviewElement('#btn-pause');
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-clear-loop').click()`);
+      await evaluatePreviewWebview<void>(`(() => {
+        document.getElementById('practice-guide-diagrams-toggle').click();
+      })()`);
+      await settle(100);
+      const compactNextChord = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        name: getComputedStyle(document.getElementById('practice-guide-next-chord-name')).display !== 'none',
+        diagram: getComputedStyle(document.getElementById('practice-guide-next-chord-diagram')).display !== 'none'
+      })`));
+      assert.deepStrictEqual(compactNextChord, { name: true, diagram: false }, 'diagram visibility can collapse without hiding the next-chord name');
+      await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
       await evaluatePreviewWebview<void>(`(() => {
         const melody = document.getElementById('practice-guide-melody-toggle');
         const diagrams = document.getElementById('practice-guide-diagrams-toggle');
         const collapse = document.getElementById('practice-guide-collapse');
         const grid = document.getElementById('practice-guide-grid');
-        melody.click(); diagrams.click(); collapse.click();
+        if (melody.getAttribute('aria-pressed') === 'true') melody.click();
+        diagrams.click(); collapse.click();
         grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await settle(100);
@@ -539,9 +678,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         diagramsHidden: document.body.classList.contains('guide-diagrams-hidden'),
         collapsed: document.body.classList.contains('guide-collapsed'),
         grid: document.getElementById('practice-guide-grid').value,
-        divisions: document.querySelector('.practice-guide-measure').style.getPropertyValue('--guide-divisions')
+        totalWidth: document.getElementById('practice-guide-timeline').style.width
       })`));
-      assert.deepStrictEqual(controls, { melodyHidden: true, diagramsHidden: true, collapsed: true, grid: '16', divisions: '16' });
+      assert.deepStrictEqual(controls, { melodyHidden: true, diagramsHidden: true, collapsed: true, grid: '16', totalWidth: '2880px' });
       assert.strictEqual(doc.getText(), source, 'guide controls do not change the score source');
 
       const tabOnlySource = [
@@ -555,23 +694,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await waitForPreviewDocument();
       await setPreviewPracticeEnabled(true);
       const tabGuide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-        const measures = [...document.querySelectorAll('.practice-guide-measure')];
-        const techniqueItems = measure => [...measure.querySelectorAll('.practice-guide-row')]
-          .find(row => ['Technique', '奏法'].includes(row.querySelector('.practice-guide-row-label')?.textContent.trim()))
-          .querySelectorAll('.practice-guide-item:not(.practice-guide-grid-continuation)');
+        const timeline = document.getElementById('practice-guide-timeline');
+        const techniqueItems = measure => [...timeline.querySelectorAll('[data-guide-lane="technique"] .practice-guide-technique-marker')]
+          .filter(item => item.dataset.guideMeasure === String(measure) && !item.classList.contains('practice-guide-grid-continuation'));
         return {
           grid: document.getElementById('practice-guide-panel').dataset.automaticGrid,
-          measureCount: measures.length,
-          explicitLabels: [...techniqueItems(measures[0])].map(item => item.querySelector('b').textContent.trim()),
-          tabLabels: [...techniqueItems(measures[1])].map(item => item.querySelector('b').textContent.trim())
+          measureCount: Number(timeline.dataset.guideMeasureCount),
+          explicitLabels: techniqueItems(0).map(item => item.textContent.trim()),
+          tabLabels: techniqueItems(1).map(item => item.textContent.trim())
         };
       })())`));
       assert.strictEqual(tabGuide.grid, '8', 'sixteenth-note TAB beside explicit rhythm does not change the song grid');
       assert.strictEqual(tabGuide.measureCount, 2);
       assert.deepStrictEqual(tabGuide.explicitLabels, ['↓', '↑', '↓', '↑', '↓', '↑', '↓', '↑'],
         'explicit rhythm takes precedence over same-measure TAB');
-      assert.deepStrictEqual(tabGuide.tabLabels, Array(8).fill('s6'),
-        'TAB-only measures show written strings instead of the implicit slash pattern');
+      assert.deepStrictEqual(tabGuide.tabLabels, Array(8).fill('6'),
+        'TAB-only measures show string numbers instead of the implicit slash pattern');
       } finally {
       await resetWorkbenchViewport();
       }

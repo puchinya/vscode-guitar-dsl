@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-19
+- **最終更新日**: 2026-10-20
 - **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。Issue #153 は PR #154 がopen（ready）で、実装・検証済み。#134 では Inspector 内の Web Audio と Preview 排他 lease を追加し、Preview の停止確認後だけ Inspector 再生を許可した。#134 の最終検証は `npm test`（1,126 unit / 80 VS Code E2E PASS・3 pending、Help/AI同期）、CDP 有効 E2E（83 PASS）。VoiceOver はユーザー報告で動作。環境は macOS 26.6.2、VS Code 1.141.0、VoiceOver.app 10 (build 993)、locale `ja_JP`。Inspector のコード候補画面で再生できたこともユーザー報告で確認済み。
 
 ---
@@ -101,23 +101,17 @@
 
 ## Issue #153: 弾き語り練習ガイドとギター伴奏リズム
 
-- **状態**: [PR #154](https://github.com/puchinya/vscode-guitar-dsl/pull/154) はopen（ready）。実装・検証済み。
-- **実装**: Practice ON時に下端固定の全曲ガイドを表示し、再生位置に応じて小節を追従表示する。各小節はメロディバー、歌詞、奏法、コード名、コード図の順に並び、右側に次のコードと図を表示する。メロディだけを隠せる。音価継続 `〜` は正確なスコア時刻と選択グリッドから算出し、有効なタイ継続は再攻撃せず `〜` で示す。`.m` は `・`、休符は `rN`、方向のない有音攻撃は `●` と区別し、ブラッシングとスタッカートには持続記号を付けない。自動分割は小節反復 `%` を展開した全曲の明示リズムと、明示リズムがないTAB-only小節の記譜音価から4分・8分・16分を選ぶ。明示リズムと同じ小節にあるTABは二重計上せず、明示リズムをガイドに使う。暗黙リズム、メロディ、未使用 `let` は分割判定へ混ぜない。手動選択は4分・8分・16分に限る。コード図は共有コード・フォーム解決を使い、1弦を上にした横弦・縦フレットの向きで描画する。`.b` を従来の ghost として受け付け、入力中の別名を保持し、`.m` の伴奏消音と `.s1`〜`.s6` の実弦音を追加する。表示設定はPreview文書ごとの一時状態で、DSL、譜面SVG/PDF、再生timelineを変更しない。
-- **検証**: macOS arm64 / VS Code 1.142.0。最終 `npm test` はHelp/AI同期PASS、単体 **1,179件PASS**、VS Code E2E **105件PASS・6件pending**。`npm run vscode:prepublish` と `npx @vscode/vsce ls`（**1,601項目**、必要なHelp/AI資産あり、ルートの `docs/`・`src/`・`tests/`等を含まない）もPASS。Issue #153の実Workbench E2EはEN/JA × Dark/Lightの4条件をそれぞれ実行し、各条件で421/600/840/1100 CSS pxを検査。5小節・5コード図・次コード欄、メロディON/OFF、表示順、4/8/16分割別の継続記号、タイ継続、消音・休符・打音の区別、TAB-only小節のTAB音価表示、明示リズム優先、ソース不変を確認し、1100pxでは5図と次コードが同時に収まることを確認した。6件の既存pending、VoiceOver/NVDA、Windows/Linuxは未実施。
-- **画面証拠**: 実Preview Webviewから撮影。421/600/840/1100pxのメロディONと、1100pxのメロディOFFを記録する。
+- **状態**: [PR #154](https://github.com/puchinya/vscode-guitar-dsl/pull/154) はopen（ready）で、修正後レビュー待ち。
+- **実装**: Practice ON時に下端固定の全曲時間軸を表示する。固定左レールに小節番号と各レーン名を置き、右側に現在時刻から更新する次コード区画を固定する。横スクロールするのは時間軸だけ。メロディは音高と音価を上下位置・幅で示し、歌詞は音節を音符の時刻へ結び、1本のスコア時間playheadでメロディ、歌詞、奏法、コードを同期強調する。メロディだけを隠せる。奏法イベントは16分基準で20 CSS px以上、文字は14px以上とし、継続記号の重なりを避ける。休符はOS音楽フォントに依存しないSVG図形、`.m` は `・`、方向のない有音攻撃は `●` で区別し、ブラッシングとスタッカートには持続記号を付けない。音価継続 `〜` は正確なスコア時刻と選択グリッドから算出し、有効なタイ継続は再攻撃せず `〜` で示す。自動分割は小節反復 `%` を展開した全曲の明示リズムと、明示リズムがないTAB-only小節の記譜音価から4分・8分・16分を選ぶ。明示リズムと同じ小節にあるTABは二重計上せず、暗黙リズム、メロディ、未使用 `let` は分割判定へ混ぜない。コード図は共有コード・フォーム解決を使い、1弦を上にした横弦・縦フレットの向きで描画する。`.b` を従来の ghost として受け付け、`.m` の伴奏消音と `.s1`〜`.s6` の実弦音を追加する。表示設定はPreview文書ごとの一時状態で、DSL、譜面SVG/PDF、再生timelineを変更しない。
+- **検証**: macOS arm64 / VS Code 1.142.0。最終 `npm test` はHelp/AI同期PASS、単体 **1,180件PASS**、VS Code E2E **105件PASS・6件pending**。`npm run vscode:prepublish` と `npx @vscode/vsce ls`（**1,601項目**、Help/AI資産を含み、ルートの `docs/`・`src/`・`tests/`等を含まない）もPASS。Issue #153の実Workbench E2EはEN/JA × Dark/Lightの4条件をそれぞれ実行し、各条件で421/600/840/1100 CSS px × メロディON/OFFを検査・撮影。レーン順と共通x座標、固定列、音価比例バー、音節同期、休符SVG、奏法文字サイズと非重複、シーク・速度・再生・一時停止・A/Bループの同期、ソース不変を確認した。全画面を目視し、休符が音楽フォント不足で豆腐表示になる問題をベクター図形で解消した。6件の既存pending、VoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: 実Preview Webviewからの新規画像32枚を保存。旧画像は保持し、今回の画像には `-pr154` を付けた。421/600/840/1100px、メロディON/OFF、EN/JA、Dark/Lightの全組み合わせは各リンクから確認できる。
 
 | Preview幅 | EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
 |---|---|---|---|---|
-| 421px | [画像](evidence/issue-153/practice-guide-en-dark-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-421-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-421-melody-on.png) |
-| 600px | [画像](evidence/issue-153/practice-guide-en-dark-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-600-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-600-melody-on.png) |
-| 840px | [画像](evidence/issue-153/practice-guide-en-dark-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-840-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-840-melody-on.png) |
-| 1100px | [画像](evidence/issue-153/practice-guide-en-dark-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-en-light-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-dark-1100-melody-on.png) | [画像](evidence/issue-153/practice-guide-ja-light-1100-melody-on.png) |
-
-1100px・メロディOFF:
-
-| EN・暗色 | EN・明色 | JA・暗色 | JA・明色 |
-|---|---|---|---|
-| [画像](evidence/issue-153/practice-guide-en-dark-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-en-light-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-ja-dark-1100-melody-off.png) | [画像](evidence/issue-153/practice-guide-ja-light-1100-melody-off.png) |
+| 421px | [ON](evidence/issue-153/practice-guide-en-dark-421-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-dark-421-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-en-light-421-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-light-421-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-dark-421-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-dark-421-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-light-421-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-light-421-melody-off-pr154.png) |
+| 600px | [ON](evidence/issue-153/practice-guide-en-dark-600-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-dark-600-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-en-light-600-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-light-600-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-dark-600-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-dark-600-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-light-600-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-light-600-melody-off-pr154.png) |
+| 840px | [ON](evidence/issue-153/practice-guide-en-dark-840-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-dark-840-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-en-light-840-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-light-840-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-dark-840-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-dark-840-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-light-840-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-light-840-melody-off-pr154.png) |
+| 1100px | [ON](evidence/issue-153/practice-guide-en-dark-1100-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-dark-1100-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-en-light-1100-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-en-light-1100-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-dark-1100-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-dark-1100-melody-off-pr154.png) | [ON](evidence/issue-153/practice-guide-ja-light-1100-melody-on-pr154.png) / [OFF](evidence/issue-153/practice-guide-ja-light-1100-melody-off-pr154.png) |
 
 - **文書オーナー**: `docs/specs/guitardsl-syntax.md`、`extension.md`、`gui_design.md`、`docs/design/language-and-score-processing.md`、`preview-rendering-and-export.md`、`score-editing.md`、EN/JA Helpとmanifest、生成済み `media/help/`、AI syntax reference、本書。
 

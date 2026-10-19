@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
 import { frac } from '../../src/duration';
-import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../../src/practiceGuide';
+import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideRestGlyph, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../../src/practiceGuide';
 
 describe('practice guide grid', () => {
   it('uses the densest explicit rhythm subdivision across the written song', () => {
@@ -43,7 +43,9 @@ describe('practice guide grid', () => {
     assert.strictEqual(practiceGuideRhythmLabel(quarterAttack), '↓');
     assert.strictEqual(practiceGuideRhythmLabel(brush), '×↓');
     assert.strictEqual(practiceGuideRhythmLabel(mute), '・');
-    assert.strictEqual(practiceGuideRhythmLabel(rest), 'r4');
+    assert.strictEqual(practiceGuideRhythmLabel(rest), '𝄽');
+    assert.strictEqual(practiceGuideRestGlyph('r8'), '𝄾');
+    assert.strictEqual(practiceGuideRhythmLabel(parseGuitarDsl('| C | 8.d.pm 8.u.pm 8.d 8.u |').measures[0].rhythms[0]), 'PM↓');
 
     const [tieStart, tieContinuation] = score.measures[1].rhythms;
     assert.strictEqual(tieStart.tie, true);
@@ -71,7 +73,7 @@ describe('practice guide grid', () => {
     const score = parseGuitarDsl('| C |\ntab: | 6f0/8 6f1/8 6f2/8 6f3/8 6f4/8 6f5/8 6f6/8 6f7/8 |');
     const events = practiceGuideTabEvents(score.measures[0].tabVoices ?? []);
     assert.strictEqual(events.length, 8);
-    assert.deepStrictEqual(events.map(event => event.label), Array(8).fill('s6'));
+    assert.deepStrictEqual(events.map(event => event.label), Array(8).fill('6'));
     assert.deepStrictEqual(events.map(event => event.at), Array.from({ length: 8 }, (_, index) => frac(index, 2)));
     assert.deepStrictEqual(practiceGuideValueContinuationOffsets(events[0].duration, 16), [{ n: 1, d: 4 }]);
   });
