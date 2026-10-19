@@ -129,6 +129,8 @@ Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` / `ghost` ghost brush
 
 The practice guide chooses one subdivision for the whole song: sixteenth notes anywhere make every measure use sixteenths; otherwise songs that need eighth notes use eighths throughout. TAB note values count only in measures without explicit rhythm.
 
+In the technique row, `〜` marks later slots held by a note value or a valid rhythm tie; a tie continuation does not attack again. `.m` is shown as `・`, and rests remain value-specific rests such as `r8`. Mutes and rests do not create continuation marks, and brushes or staccato do not imply sustain. A directionless attack uses a neutral mark. These are guide symbols, not new tokens or automatic empty strokes.
+
 Use `.t` or `.tie` on a slash token to sustain into the immediately following slash token when their times touch. A score tie must keep the same chord name and voicing label from the source attack through the continuation duration; a chord change anywhere in that held span invalidates the tie. A `4+8.t` tie is drawn from the compound token's last head, while chord validation starts at the token's first attack. Rhythm-only templates may tie two chordless slash tokens structurally; a score tie with chord information missing on only one side is invalid. The continuation cannot be a rest, ghost, pitched note, down stroke, up stroke, accent, or arpeggio. Ties may cross an adjacent barline; they cannot cross a `let` fragment boundary or `%` repeat. Playback holds one attack for the whole tie and uses each measure's tempo to calculate its duration. If a Practice loop starts on a continuation, playback attacks at the loop start.
 
 ```guitardsl

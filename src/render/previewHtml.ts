@@ -2,11 +2,12 @@ import type { BeginnerPreviewUiModel } from '../beginnerMode';
 import type { CapoPreviewUiModel } from '../capo';
 import { expandMeasureRepeat, parseGuitarDsl } from '../compiler';
 import type { MeasureData, ParsedScore } from '../compiler';
-import { fadd, fnum, formatNoteValuePart, frac, parseRhythmDuration } from '../duration';
+import { fadd, fcmp, fnum, formatNoteValuePart, frac, parseRhythmDuration } from '../duration';
 import { chordKey, resolveBaseFret } from '../chordDefinition';
 import { resolveChordVoicing } from '../chordVoicingResolver';
 import { createInstrumentModel, MAX_CAPO } from '../instrumentModel';
-import { automaticPracticeGuideGrid, practiceGuideHasWrittenRhythm } from '../practiceGuide';
+import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideHasWrittenRhythm, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../practiceGuide';
+import type { PracticeGuideGrid } from '../practiceGuide';
 import { resolveLocale, getMessages } from '../i18n';
 import type { Messages } from '../i18n';
 import { playbackEventMidiNotes } from '../playbackSynth';
@@ -104,6 +105,9 @@ interface PracticeGuideItem {
   atPercent: number;
   label: string;
   duration: string;
+  kind?: 'attack' | 'continuation' | 'mute' | 'rest';
+  grid?: PracticeGuideGrid;
+  eventIndex?: number;
 }
 
 interface PracticeGuideMeasure {
@@ -603,8 +607,16 @@ ${cspMeta}
   .practice-guide-chord-name { flex: 0 0 auto; padding: 2px 5px; border-radius: 3px; background: var(--vscode-badge-background, #333); color: var(--vscode-badge-foreground, #eee); font-size: 12px; font-weight: 600; }
   .practice-guide-track { position: relative; min-width: 0; height: 38px; border-radius: 3px; border-bottom: 1px solid var(--vscode-widget-border, #444); }
   .practice-guide-item { position: absolute; top: 2px; display: flex; flex-direction: column; align-items: center; max-width: 54px; transform: translateX(-50%); overflow: hidden; color: var(--vscode-foreground, #eee); font-size: 11px; line-height: 15px; }
+  .practice-guide-item[data-guide-align="start"] { transform: translateX(0); }
+  .practice-guide-item[data-guide-align="end"] { transform: translateX(-100%); }
   .practice-guide-item b { padding: 0 2px; border-radius: 3px; background: var(--vscode-editor-background, #1e1e1e); font-weight: 600; white-space: nowrap; }
   .practice-guide-item small { color: var(--vscode-descriptionForeground, #aaa); font-size: 9px; white-space: nowrap; }
+  .practice-guide-grid-continuation { display: none; font-size: 6px; line-height: 8px; }
+  #practice-guide-panel[data-guide-grid="16"] .practice-guide-measure [data-guide-kind="attack"] { font-size: 8px; line-height: 10px; }
+  #practice-guide-panel[data-guide-grid="16"] .practice-guide-measure [data-guide-kind="attack"] b { padding: 0; }
+  #practice-guide-panel[data-guide-grid="4"] .practice-guide-grid-continuation[data-guide-grid="4"],
+  #practice-guide-panel[data-guide-grid="8"] .practice-guide-grid-continuation[data-guide-grid="8"],
+  #practice-guide-panel[data-guide-grid="16"] .practice-guide-grid-continuation[data-guide-grid="16"] { display: flex; }
   .practice-guide-lyrics { min-height: 28px; overflow-wrap: anywhere; color: var(--vscode-foreground, #eee); font-size: 12px; }
   .practice-guide-diagrams { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--vscode-widget-border, #333); }
   .practice-guide-diagram-list { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; overflow-x: auto; padding: 5px 3px 7px; }
@@ -1395,6 +1407,7 @@ ${cspMeta}
         const selectedGrid = guideGrid === 'auto'
           ? Number(playbackData.practiceGuide?.automaticGrid) || 4
           : Number(guideGrid);
+        if (Number.isFinite(selectedGrid)) practiceGuidePanel?.setAttribute('data-guide-grid', String(selectedGrid));
         if (Number.isFinite(selectedGrid) && selectedGrid !== appliedGuideGrid) {
           appliedGuideGrid = selectedGrid;
           for (const card of practiceGuideScroll?.querySelectorAll?.('.practice-guide-measure') ?? []) {
@@ -2565,20 +2578,6 @@ function renderPracticeStringDiagram(voicing: Parameters<typeof resolveBaseFret>
   return `<svg class="practice-guide-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 72" role="img" aria-label="${base} fret chord diagram">${content}${label}</svg>`;
 }
 
-function practiceRhythmLabel(item: MeasureData['rhythms'][number]): string {
-  if (item.mute) return '・';
-  if (item.isRest) return item.duration;
-  const labels: string[] = [];
-  if (item.ghost) labels.push(item.down ? '×↓' : item.up ? '×↑' : '×');
-  else if (item.stringAttack !== undefined) labels.push(`s${item.stringAttack}`);
-  else if (item.down || item.up) labels.push(item.down && item.up ? '↓↑' : item.down ? '↓' : '↑');
-  if (item.accent) labels.push('a');
-  if (item.techniques?.palmMute) labels.push('PM');
-  if (item.techniques?.letRing) labels.push('LR');
-  if (item.tie || item.tiedFromPrev) labels.push('~');
-  return labels.join(' ') || '—';
-}
-
 function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
   const automaticGrid = automaticPracticeGuideGrid(score);
   const automaticFill = !practiceGuideHasWrittenRhythm(score);
@@ -2605,15 +2604,72 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
 
     let beat = frac(0);
     const techniques: PracticeGuideItem[] = [];
-    for (const item of measure.rhythms) {
-      const duration = parseRhythmDuration(item.duration);
-      const itemBeats = duration?.beats ?? frac(0);
+    const appendTechnique = (
+      itemStart: ReturnType<typeof frac>,
+      durationLabel: string,
+      label: string,
+      kind: PracticeGuideItem['kind'],
+      eventIndex: number,
+      getContinuationOffsets: (grid: PracticeGuideGrid) => ReturnType<typeof practiceGuideContinuationOffsets>
+    ) => {
       techniques.push({
-        atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(beat) / beats * 100)) : 0,
-        label: practiceRhythmLabel(item),
-        duration: item.duration
+        atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(itemStart) / beats * 100)) : 0,
+        label,
+        duration: durationLabel,
+        kind,
+        eventIndex
       });
-      beat = fadd(beat, itemBeats);
+      for (const grid of [4, 8, 16] as const) {
+        for (const offset of getContinuationOffsets(grid)) {
+          const continuationBeat = fadd(itemStart, offset);
+          if (beats > 0 && fcmp(continuationBeat, measure.expectedBeats) >= 0) continue;
+          techniques.push({
+            atPercent: beats > 0 ? Math.max(0, Math.min(100, fnum(continuationBeat) / beats * 100)) : 0,
+            label: '〜',
+            duration: '',
+            kind: 'continuation',
+            grid,
+            eventIndex
+          });
+        }
+      }
+    };
+
+    let sourceRhythmOrigin = sourceMeasure.rhythmOrigin;
+    if (sourceMeasure.rhythmOrigin === 'repeat') {
+      let sourceIndex = index - 1;
+      while (sourceIndex >= 0 && score.measures[sourceIndex].isMeasureRepeat) sourceIndex--;
+      if (sourceIndex >= 0) sourceRhythmOrigin = score.measures[sourceIndex].rhythmOrigin;
+    }
+    const tabVoices = measure.tabVoices ?? sourceMeasure.tabVoices;
+    const useTabEvents = sourceRhythmOrigin !== 'explicit' && Boolean(tabVoices?.length);
+    if (useTabEvents) {
+      for (const [eventIndex, event] of practiceGuideTabEvents(tabVoices ?? []).entries()) {
+        appendTechnique(
+          event.at,
+          event.durationLabel,
+          event.label,
+          event.kind,
+          eventIndex,
+          grid => practiceGuideValueContinuationOffsets(event.duration, grid, { isRest: event.kind === 'rest', percussive: event.percussive })
+        );
+      }
+    } else {
+      beat = frac(0);
+      for (const [eventIndex, item] of measure.rhythms.entries()) {
+        const duration = parseRhythmDuration(item.duration);
+        const itemBeats = duration?.beats ?? frac(0);
+        const kind = item.mute ? 'mute' : item.isRest ? 'rest' : item.tiedFromPrev ? 'continuation' : 'attack';
+        appendTechnique(
+          beat,
+          item.duration,
+          practiceGuideRhythmLabel(item),
+          kind,
+          eventIndex,
+          grid => practiceGuideContinuationOffsets(item, grid)
+        );
+        beat = fadd(beat, itemBeats);
+      }
     }
 
     beat = frac(0);
@@ -2646,7 +2702,14 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
     const chordNames = measure.chords.map(chord => `<span class="practice-guide-chord-name">${escapeXml(chord.label ? `${chord.name}@${chord.label}` : chord.name)}</span>`).join('');
     const chordCards = measure.chords.map(chord => `<div class="practice-guide-chord-card"><strong>${escapeXml(chord.label ? `${chord.name}@${chord.label}` : chord.name)}</strong>${chord.svg ?? ''}</div>`).join('');
     const melodyItems = measure.melody.map(item => `<span class="practice-guide-item" style="left:${item.atPercent.toFixed(3)}%" title="${escapeXml(item.duration)}"><b>${escapeXml(item.label)}</b><small>${escapeXml(item.duration)}</small></span>`).join('');
-    const techniqueItems = measure.techniques.map(item => `<span class="practice-guide-item" style="left:${item.atPercent.toFixed(3)}%" title="${escapeXml(item.duration)}"><b>${escapeXml(item.label)}</b><small>${escapeXml(item.duration)}</small></span>`).join('');
+    const techniqueItems = measure.techniques.map(item => {
+      const classes = `practice-guide-item${item.grid === undefined ? '' : ' practice-guide-grid-continuation'}`;
+      const align = item.atPercent < 5 ? 'start' : item.atPercent > 95 ? 'end' : 'center';
+      const grid = item.grid === undefined ? '' : ` data-guide-grid="${item.grid}"`;
+      const kind = item.kind === undefined ? '' : ` data-guide-kind="${item.kind}"`;
+      const eventIndex = item.eventIndex === undefined ? '' : ` data-guide-event="${item.eventIndex}"`;
+      return `<span class="${classes}" data-guide-align="${align}"${grid}${kind}${eventIndex} style="left:${item.atPercent.toFixed(3)}%" title="${escapeXml(item.duration)}"><b>${escapeXml(item.label)}</b></span>`;
+    }).join('');
     return `<section class="practice-guide-measure" data-guide-measure="${measure.number - 1}" data-guide-beats="${measure.beats}" style="--guide-divisions:${measure.divisions};width:${width}px">
       <h3>${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}</h3>
       <div class="practice-guide-row practice-guide-melody"><span class="practice-guide-row-label">${escapeXml(msgs.uiPracticeGuideMelodyRow)}</span><div class="practice-guide-track">${melodyItems || '<span class="practice-guide-empty">—</span>'}</div></div>
@@ -2658,7 +2721,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
   }).join('');
   const nextChord = `<aside class="practice-guide-next-chord" id="practice-guide-next-chord"><span class="practice-guide-next-chord-label">${escapeXml(msgs.uiPracticeGuideNextChord)}</span><strong class="practice-guide-next-chord-name" id="practice-guide-next-chord-name">${escapeXml(data.initialNextChord?.name ?? '—')}</strong><div class="practice-guide-chord-card" id="practice-guide-next-chord-diagram">${data.initialNextChord?.svg ?? ''}</div></aside>`;
   const autoLabel = data.automaticFill ? `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill">${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>` : `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill" hidden>${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>`;
-  return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}">
+  return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}" data-guide-grid="${data.automaticGrid}">
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
       <strong>${escapeXml(msgs.uiPracticeGuideTitle)}</strong>

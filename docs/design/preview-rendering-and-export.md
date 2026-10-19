@@ -108,6 +108,8 @@ Extension Host が登録する Preview actions は `guitardsl.playback.togglePla
 
 Practice ON では既存の48 px playback row、44 px score-settings row、42 px Practice rowを維持し、歌詞・奏法・コード名・図と次コードを下端固定ガイドに表示する。メロディ表示設定はメロディ行だけを出し入れする。通常の譜面と PDF に追加されるのは既存ページ SVG の通常記譜であり、音価継続の `〜` は固定ガイドだけに描画する。コード図は共有 chord voicing を使い、6弦を水平線、フレット区切りを垂直線で表す。
 
+奏法行の有音イベントはスコア時刻に一度だけ攻撃記号を置き、後続の選択グリッドスロットに音価継続 `〜` を配置する。タイ継続イベントは開始位置も `〜` として再攻撃を表さない。グリッドごとの継続位置は Fraction から計算し、連符の局所比を維持する。消音 `.m` と休符 `rN` は独立した記号で、持続マーカーを作らない。ブラッシングとスタッカートも継続マーカーを作らない。手動グリッド選択は表示する継続スロットだけを変える。
+
 Web Audio は既存 Preview の所有者と generation cleanup を維持する。`.m` は同じギター伴奏バスの active voice と最大120 ms程度の release tail だけを停止し、クリック防止の fade は最大8 msとする。メロディ、メトロノーム、他の Preview/Inspector セッションは対象外である。`.b` は短い非調和の打音、`.sN` はフォーム・調弦・カポに解決した単一弦音を予約する。Seek、Loop、速度変更、停止、再構築、破棄では旧 generation の予約を cancel/fade し、複数 dispose に安全に声部を解放する。
 
 ### TAB geometry and SVG (Issue #89)

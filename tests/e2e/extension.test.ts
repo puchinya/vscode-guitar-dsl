@@ -339,9 +339,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const source = [
         'title: Practice guide evidence',
         'time: 4/4',
-        '| F | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
-        '| G | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
-        '| Em7 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| F | 4.d 4.u 4.d 8.m r8 |',
+        '| G | 8.d.t 8 4 4 4 |',
+        '| Em7 | 4.d.b 4.u 16.d 16.u 8.d 8.u 8.d |',
         '| Am | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
         '| Dm7 | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
         'mel: | e4/1 | g4/1 | b4/1 | a4/1 | d4/1 |',
@@ -402,6 +402,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const header = document.querySelector('.practice-guide-header');
           const scroll = document.getElementById('practice-guide-scroll');
           const firstMeasure = document.querySelector('.practice-guide-measure');
+          const visibleContinuations = measure => [...measure.querySelectorAll('[data-guide-kind="continuation"]')]
+            .filter(item => !item.classList.contains('practice-guide-grid-continuation') || getComputedStyle(item).display !== 'none').length;
+          const techniqueRow = [...firstMeasure.querySelectorAll('.practice-guide-row')]
+            .find(item => ['Technique', '奏法'].includes(item.querySelector('.practice-guide-row-label')?.textContent.trim()));
+          const firstTechniqueItems = [...techniqueRow.querySelectorAll('.practice-guide-item')];
+          const tieMeasure = document.querySelectorAll('.practice-guide-measure')[1];
+          const brushMeasure = document.querySelectorAll('.practice-guide-measure')[2];
           const rows = [...firstMeasure.children].filter(item => item.matches('.practice-guide-melody, .practice-guide-row, .practice-guide-diagrams'))
             .map(item => {
               if (item.classList.contains('practice-guide-melody')) return 'melody';
@@ -415,6 +422,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             headerFits: header.scrollWidth <= header.clientWidth + 1,
             panelWithinViewport: panel.getBoundingClientRect().bottom <= window.innerHeight + 1,
             automaticGrid: panel.dataset.automaticGrid,
+            selectedGrid: panel.dataset.guideGrid,
             measureCount: document.querySelectorAll('.practice-guide-measure').length,
             chordNames: [...document.querySelectorAll('.practice-guide-chord-name')].map(item => item.textContent.trim()),
             melodyNotes: [...document.querySelectorAll('.practice-guide-melody .practice-guide-item b')].map(item => item.textContent.trim()),
@@ -423,13 +431,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             diagramCount: document.querySelectorAll('.practice-guide-measure .practice-guide-chord-card svg').length,
             nextLabel: document.querySelector('.practice-guide-next-chord-label')?.textContent.trim(),
             nextDiagramCount: document.querySelector('#practice-guide-next-chord-diagram svg') ? 1 : 0,
-            guideScrollsHorizontally: scroll.scrollWidth > scroll.clientWidth + 1
+            guideScrollsHorizontally: scroll.scrollWidth > scroll.clientWidth + 1,
+            firstMeasureMuteLabels: firstTechniqueItems.filter(item => item.dataset.guideKind === 'mute').map(item => item.querySelector('b').textContent.trim()),
+            firstMeasureRestLabels: firstTechniqueItems.filter(item => item.dataset.guideKind === 'rest').map(item => item.querySelector('b').textContent.trim()),
+            firstMeasureVisibleContinuationCount: visibleContinuations(firstMeasure),
+            tieContinuationLabel: tieMeasure.querySelector('.practice-guide-item[data-guide-event="1"][data-guide-kind="continuation"] b')?.textContent.trim(),
+            tieVisibleContinuationCount: [...tieMeasure.querySelectorAll('[data-guide-kind="continuation"]')]
+              .filter(item => ['0', '1'].includes(item.dataset.guideEvent)
+                && (!item.classList.contains('practice-guide-grid-continuation') || getComputedStyle(item).display !== 'none')).length,
+            brushEventContinuationCount: brushMeasure.querySelectorAll('.practice-guide-grid-continuation[data-guide-event="0"]').length
           };
         })())`));
         assert.strictEqual(guide.panelVisible, true, 'Practice opens the fixed guide panel');
         assert.strictEqual(guide.headerFits, true, `${width}px guide controls fit without clipping`);
         assert.strictEqual(guide.panelWithinViewport, true, `${width}px guide stays inside the Preview bottom edge`);
-        assert.strictEqual(guide.automaticGrid, '8', 'the guide selects the eighth-note grid from the written score');
+        assert.strictEqual(guide.automaticGrid, '16', 'the guide selects the sixteenth-note grid from the densest written score');
+        assert.strictEqual(guide.selectedGrid, '16', 'automatic mode enables the matching continuation slots');
         assert.strictEqual(guide.measureCount, 5, 'the guide spans the complete five-measure song');
         assert.deepStrictEqual(guide.chordNames, ['F', 'G', 'Em7', 'Am', 'Dm7']);
         assert.strictEqual(guide.melodyNotes.length, 5, 'melody appears as a separate row for every measure');
@@ -438,9 +455,35 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(guide.diagramCount, 5, 'all five score chord diagrams are rendered');
         assert.strictEqual(guide.nextLabel, locale === 'ja' ? '次のコード' : 'Next chord');
         assert.strictEqual(guide.nextDiagramCount, 1, 'the next chord card includes its diagram');
+        assert.deepStrictEqual(guide.firstMeasureMuteLabels, ['・'], 'mute has its own marker and no continuation');
+        assert.deepStrictEqual(guide.firstMeasureRestLabels, ['r8'], 'rest is shown as a rest rather than a continuation');
+        assert.strictEqual(guide.firstMeasureVisibleContinuationCount, 9, 'each quarter-note attack fills only the remaining sixteenth slots');
+        assert.strictEqual(guide.tieContinuationLabel, '〜', 'a valid tied token is a continuation, not a reattack');
+        assert.strictEqual(guide.tieVisibleContinuationCount, 3, 'the tied eighth-note span has three remaining sixteenth slots');
+        assert.strictEqual(guide.brushEventContinuationCount, 0, 'a percussive brush does not acquire sustained continuation marks');
 
         if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-on.png`);
       }
+
+      await evaluatePreviewWebview<void>(`(() => {
+        const grid = document.getElementById('practice-guide-grid');
+        grid.value = '8'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelector('.practice-guide-measure').querySelectorAll('.practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none').length`), 3,
+        'the eighth-note override recalculates the visible continuation slots');
+      await evaluatePreviewWebview<void>(`(() => {
+        const grid = document.getElementById('practice-guide-grid');
+        grid.value = '4'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
+      assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelector('.practice-guide-measure').querySelectorAll('.practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none').length`), 0,
+        'the quarter-note override does not fill smaller slots');
+      await evaluatePreviewWebview<void>(`(() => {
+        const grid = document.getElementById('practice-guide-grid');
+        grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(100);
 
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
@@ -500,6 +543,35 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       })`));
       assert.deepStrictEqual(controls, { melodyHidden: true, diagramsHidden: true, collapsed: true, grid: '16', divisions: '16' });
       assert.strictEqual(doc.getText(), source, 'guide controls do not change the score source');
+
+      const tabOnlySource = [
+        '| C | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+        '| G |',
+        `tab: | ${Array.from({ length: 16 }, () => '6f0/16').join(' ')} | ${Array.from({ length: 8 }, () => '6f0/8').join(' ')} |`
+      ].join('\n');
+      const tabOnlyDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: tabOnlySource });
+      await showAndFocus(tabOnlyDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', tabOnlyDoc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      const tabGuide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const measures = [...document.querySelectorAll('.practice-guide-measure')];
+        const techniqueItems = measure => [...measure.querySelectorAll('.practice-guide-row')]
+          .find(row => ['Technique', '奏法'].includes(row.querySelector('.practice-guide-row-label')?.textContent.trim()))
+          .querySelectorAll('.practice-guide-item:not(.practice-guide-grid-continuation)');
+        return {
+          grid: document.getElementById('practice-guide-panel').dataset.automaticGrid,
+          measureCount: measures.length,
+          explicitLabels: [...techniqueItems(measures[0])].map(item => item.querySelector('b').textContent.trim()),
+          tabLabels: [...techniqueItems(measures[1])].map(item => item.querySelector('b').textContent.trim())
+        };
+      })())`));
+      assert.strictEqual(tabGuide.grid, '8', 'sixteenth-note TAB beside explicit rhythm does not change the song grid');
+      assert.strictEqual(tabGuide.measureCount, 2);
+      assert.deepStrictEqual(tabGuide.explicitLabels, ['↓', '↑', '↓', '↑', '↓', '↑', '↓', '↑'],
+        'explicit rhythm takes precedence over same-measure TAB');
+      assert.deepStrictEqual(tabGuide.tabLabels, Array(8).fill('s6'),
+        'TAB-only measures show written strings instead of the implicit slash pattern');
       } finally {
       await resetWorkbenchViewport();
       }
