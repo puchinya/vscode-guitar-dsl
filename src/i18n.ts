@@ -136,6 +136,8 @@ export interface Messages {
   uiPracticeGuideRest: string;
   uiPracticeGuideNextChord: string;
   uiPracticeGuideMelodyRow: string;
+  uiPracticeGuidePitchHigh: string;
+  uiPracticeGuidePitchLow: string;
   uiPracticeGuideAutoFill: string;
   uiPracticeGuideCollapse: string;
   uiPracticeGuideExpand: string;
@@ -426,6 +428,8 @@ export const MESSAGES_JA: Messages = {
   uiPracticeGuideRest: '休符',
   uiPracticeGuideNextChord: '次のコード',
   uiPracticeGuideMelodyRow: 'メロディバー',
+  uiPracticeGuidePitchHigh: '高音',
+  uiPracticeGuidePitchLow: '低音',
   uiPracticeGuideAutoFill: '自動補完',
   uiPracticeGuideCollapse: '練習パネルを折りたたむ',
   uiPracticeGuideExpand: '練習パネルを展開',
@@ -758,6 +762,8 @@ export const MESSAGES_EN: Messages = {
   uiPracticeGuideRest: 'Rest',
   uiPracticeGuideNextChord: 'Next chord',
   uiPracticeGuideMelodyRow: 'Melody bar',
+  uiPracticeGuidePitchHigh: 'High',
+  uiPracticeGuidePitchLow: 'Low',
   uiPracticeGuideAutoFill: 'Auto fill',
   uiPracticeGuideCollapse: 'Collapse practice guide',
   uiPracticeGuideExpand: 'Expand practice guide',

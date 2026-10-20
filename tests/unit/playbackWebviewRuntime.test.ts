@@ -159,12 +159,12 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
     assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
     const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
-    assert.strictEqual((diagram.match(/x1="28" y1="\d+" x2="138" y2="\d+"/g) ?? []).length, 6,
+    assert.strictEqual((diagram.match(/x1="32" y1="\d+" x2="152" y2="\d+"/g) ?? []).length, 6,
       'the diagram has six horizontal string lines');
-    assert.strictEqual((diagram.match(/x1="\d+" y1="10" x2="\d+" y2="55"/g) ?? []).length, 6,
+    assert.strictEqual((diagram.match(/x1="\d+" y1="8" x2="\d+" y2="73"/g) ?? []).length, 6,
       'the diagram has vertical fret marks and keeps the first string above the sixth');
     assert.ok(html.includes('.practice-guide-diagram-event { position: absolute;'));
-    assert.ok(html.includes('width: 36px; height: 18px;'));
+    assert.ok(html.includes('width: 160px; height: 90px;'));
 
     const mute = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmMute');
     const brush = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmBrush');
