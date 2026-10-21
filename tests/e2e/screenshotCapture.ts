@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 
 interface DevToolsTarget {
+  readonly id?: string;
   readonly type: string;
   readonly title: string;
   readonly url: string;
@@ -611,7 +612,7 @@ async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Prom
 
 /** Resizes the Extension Development Host viewport before editor sash tests. */
 export async function setWorkbenchViewportWidth(width: number): Promise<void> {
-  if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
+  if (!Number.isFinite(width) || width < 320) throw new Error(`Invalid workbench viewport width: ${width}`);
   await withWorkbenchDevTools(async send => {
     const sizeResult = await send('Runtime.evaluate', {
       expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
@@ -623,6 +624,27 @@ export async function setWorkbenchViewportWidth(width: number): Promise<void> {
     workbenchWindowSizeForRestore ??= currentSize;
     await send('Runtime.evaluate', {
       expression: `window.resizeTo(${Math.round(width)}, Math.max(900, window.outerHeight))`,
+      returnByValue: true
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+}
+
+/** Resizes the Extension Development Host viewport in both dimensions for score-reservation checks. */
+export async function setWorkbenchViewportSize(width: number, height: number): Promise<void> {
+  if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
+  if (!Number.isFinite(height) || height < 500) throw new Error(`Invalid workbench viewport height: ${height}`);
+  await withWorkbenchDevTools(async send => {
+    const sizeResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      returnByValue: true
+    });
+    const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
+    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    workbenchWindowSizeForRestore ??= currentSize;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${Math.round(width)}, ${Math.round(height)})`,
       returnByValue: true
     });
     await new Promise(resolve => setTimeout(resolve, 200));

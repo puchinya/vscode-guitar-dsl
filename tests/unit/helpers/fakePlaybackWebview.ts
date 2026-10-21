@@ -389,6 +389,10 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       const values = windowListeners.get(name) ?? [];
       values.push(listener);
       windowListeners.set(name, values);
+    },
+    removeEventListener(name: string, listener: (event?: unknown) => unknown): void {
+      const values = windowListeners.get(name) ?? [];
+      windowListeners.set(name, values.filter(value => value !== listener));
     }
   };
   const postedMessages: Record<string, unknown>[] = [];

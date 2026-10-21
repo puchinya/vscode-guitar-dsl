@@ -159,7 +159,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
     assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
     const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
-    assert.strictEqual((diagram.match(/x1="32" y1="\d+" x2="152" y2="\d+"/g) ?? []).length, 6,
+    assert.strictEqual((diagram.match(/x1="20" y1="\d+" x2="140" y2="\d+"/g) ?? []).length, 6,
       'the diagram has six horizontal string lines');
     assert.strictEqual((diagram.match(/x1="\d+" y1="8" x2="\d+" y2="73"/g) ?? []).length, 6,
       'the diagram has vertical fret marks and keeps the first string above the sixth');

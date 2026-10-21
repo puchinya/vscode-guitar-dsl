@@ -563,31 +563,56 @@ ${cspMeta}
   body.has-practice-row { padding-top: 152px !important; }
   body.has-practice-row .practice-toolbar { display: flex; }
   .practice-guide-panel {
+    --guide-panel-background: #ffffff;
+    --guide-light-surface: #ffffff;
+    --guide-melody-surface: #173149;
+    --guide-lyrics-surface: #1b344d;
+    --guide-ink: #21354b;
+    --guide-muted: #66829c;
+    --guide-border: #d2dde9;
+    --guide-accent: #087fac;
+    --guide-playhead: #00a1d7;
     position: fixed;
+    box-sizing: border-box;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 997;
     display: none;
     flex-direction: column;
-    height: min(64vh, 560px);
-    min-height: 320px;
-    background: var(--vscode-editorWidget-background, #252526);
-    color: var(--vscode-foreground, #eeeeee);
-    border-top: 1px solid var(--vscode-editorWidget-border, #555);
-    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.22);
+    height: auto;
+    min-height: 0;
+    max-height: calc(100vh - 312px);
+    background: var(--guide-panel-background);
+    color: var(--guide-ink);
+    border-top: 1px solid var(--guide-border);
+    box-shadow: 0 -4px 18px rgba(33, 53, 75, 0.14);
   }
-  body.has-practice-guide { padding-bottom: min(64vh, 560px) !important; }
+  @media (max-height: 699px) {
+    .practice-guide-panel { max-height: max(42px, calc(100vh - 152px - max(80px, 20vh))); }
+  }
+  body.has-practice-guide { padding-bottom: var(--practice-guide-panel-height, 0px) !important; }
   body.has-practice-guide .practice-guide-panel { display: flex; }
-  body.guide-collapsed .practice-guide-panel { height: 42px; min-height: 42px; }
-  body.has-practice-guide.guide-collapsed { padding-bottom: 42px !important; }
+  body.guide-collapsed .practice-guide-panel { height: 42px; min-height: 42px; max-height: 42px; }
   body.guide-collapsed .practice-guide-layout { display: none; }
+  body.guide-collapsed .practice-guide-header {
+    box-sizing: border-box;
+    height: 42px;
+    min-height: 42px;
+    max-height: 42px;
+    flex-wrap: nowrap;
+    padding: 0 8px;
+    border-bottom: 0;
+  }
+  body.guide-collapsed .practice-guide-auto-fill,
+  body.guide-collapsed .practice-guide-controls { display: none; }
   body.guide-melody-hidden .practice-guide-melody { display: none; }
   body.guide-melody-hidden .practice-guide-label[data-guide-lane="melody"] { display: none; }
   body.guide-diagrams-hidden .practice-guide-diagrams { display: none; }
   body.guide-diagrams-hidden .practice-guide-label[data-guide-lane="diagrams"] { display: none; }
   body.guide-diagrams-hidden .practice-guide-next-chord-diagram { display: none; }
   .practice-guide-header {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -596,7 +621,9 @@ ${cspMeta}
     min-height: 42px;
     min-width: 0;
     padding: 6px 12px;
-    border-bottom: 1px solid var(--vscode-widget-border, #444);
+    border-bottom: 1px solid #3a516b;
+    background: #243953;
+    color: #ffffff;
     white-space: normal;
   }
   .practice-guide-header > strong { flex: 0 0 auto; font-size: 14px; }
@@ -614,79 +641,87 @@ ${cspMeta}
   }
   .practice-guide-auto-fill {
     flex: 0 0 auto;
-    color: var(--vscode-descriptionForeground, #bbb);
+    color: #bccde0;
     font-size: 11px;
   }
-  .practice-guide-controls { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .practice-guide-controls { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; color: #e6edf9; }
   .practice-guide-controls label { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
   .practice-guide-controls .practice-button { padding: 3px 7px; }
+  .practice-guide-controls .practice-select { border-color: #cbd7e3; background: #ffffff; color: #21354b; }
+  .practice-guide-controls .practice-button { border-color: #657f98; background: #344d68; color: #ffffff; }
+  .practice-guide-controls .practice-button:hover:not(:disabled) { background: #3b5c78; }
+  .practice-guide-controls .practice-button[aria-pressed="true"] { border-color: #087fac; background: #087fac; color: #ffffff; }
+  .practice-guide-controls .practice-button:focus-visible, .practice-guide-controls .practice-select:focus-visible { outline-color: #50c8ff; }
   @media (max-width: 900px) {
     .practice-guide-controls { flex: 1 1 100%; justify-content: flex-start; margin-left: 28px; }
   }
-  .practice-guide-layout { display: grid; grid-template-columns: 112px minmax(0, 1fr) clamp(104px, 20vw, 220px); flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .practice-guide-layout { display: grid; grid-template-columns: 112px minmax(0, 1fr) clamp(104px, 9.5vw, 132px); flex: 0 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; align-content: start; background: var(--guide-panel-background); }
   .practice-guide-label-rail, .practice-guide-timeline { display: flex; flex-direction: column; padding-top: 8px; padding-bottom: 12px; }
-  .practice-guide-label-rail { min-width: 0; padding-left: 12px; }
-  .practice-guide-label { display: flex; flex: 0 0 auto; align-items: center; min-width: 0; padding-right: 6px; border-top: 1px solid var(--vscode-widget-border, #333); color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; overflow-wrap: anywhere; }
+  .practice-guide-label-rail { min-width: 0; padding-left: 12px; background: var(--guide-light-surface); }
+  .practice-guide-label { display: flex; flex: 0 0 auto; align-items: center; min-width: 0; padding-right: 6px; border-top: 1px solid var(--guide-border); background: var(--guide-light-surface); color: #263c56; font-size: 11px; overflow-wrap: anywhere; }
   .practice-guide-label[data-guide-lane="ruler"] { height: 24px; border-top: 0; }
   .practice-guide-label[data-guide-lane="melody"] { height: 64px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
-  .practice-guide-pitch-range { display: flex; flex-direction: column; color: var(--vscode-descriptionForeground, #aaa); font-size: 10px; line-height: 12px; }
+  .practice-guide-label[data-guide-lane="melody"] { border-color: #244158; background: var(--guide-melody-surface); color: #ffffff; }
+  .practice-guide-label[data-guide-lane="lyrics"] { border-color: #244158; background: var(--guide-lyrics-surface); color: #ffffff; }
+  .practice-guide-pitch-range { display: flex; flex-direction: column; color: #a0b4c8; font-size: 10px; line-height: 12px; }
   .practice-guide-label[data-guide-lane="lyrics"] { flex-basis: auto; }
   .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-technique-height, 48px); }
   .practice-guide-label[data-guide-lane="chord"] { height: 36px; }
   .practice-guide-label[data-guide-lane="diagrams"] { height: 112px; }
   .practice-guide-scroll { grid-column: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
-  .practice-guide-timeline { position: relative; width: var(--guide-total-width); min-width: 100%; }
-  .practice-guide-ruler, .practice-guide-lane { position: relative; box-sizing: border-box; flex: 0 0 auto; width: var(--guide-total-width); background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--guide-grid-step) - 1px), var(--vscode-widget-border, #333) calc(var(--guide-grid-step) - 1px) var(--guide-grid-step)); }
-  .practice-guide-ruler { height: 24px; }
-  .practice-guide-lane { border-top: 1px solid var(--vscode-widget-border, #333); }
-  .practice-guide-lane.practice-guide-melody { height: 64px; background-image: repeating-linear-gradient(to bottom, transparent 0 19px, color-mix(in srgb, var(--vscode-widget-border, #333) 65%, transparent) 19px 20px), repeating-linear-gradient(to right, transparent 0 calc(var(--guide-grid-step) - 1px), var(--vscode-widget-border, #333) calc(var(--guide-grid-step) - 1px) var(--guide-grid-step)); }
-  .practice-guide-lane.practice-guide-lyrics { height: var(--guide-lyrics-height, 38px); }
+  .practice-guide-timeline { position: relative; width: var(--guide-total-width); min-width: 100%; background: var(--guide-light-surface); }
+  .practice-guide-ruler, .practice-guide-lane { position: relative; box-sizing: border-box; flex: 0 0 auto; width: var(--guide-total-width); background-image: none; }
+  .practice-guide-ruler { height: 24px; background-color: var(--guide-light-surface); }
+  .practice-guide-lane { border-top: 1px solid var(--guide-border); background-color: var(--guide-light-surface); }
+  .practice-guide-lane.practice-guide-melody { height: 64px; border-color: #244158; background-color: var(--guide-melody-surface); }
+  .practice-guide-lane.practice-guide-lyrics { height: var(--guide-lyrics-height, 38px); border-color: #244158; background-color: var(--guide-lyrics-surface); }
   .practice-guide-lane.practice-guide-technique { height: var(--guide-technique-height, 48px); }
   .practice-guide-lane.practice-guide-chords { height: 36px; }
   .practice-guide-lane.practice-guide-diagrams { height: 112px; }
-  .practice-guide-measure-boundary { position: absolute; z-index: 2; top: 0; bottom: 0; width: 1px; background: var(--vscode-widget-border, #555); pointer-events: none; }
-  .practice-guide-measure-boundary.is-current { width: 2px; background: var(--vscode-focusBorder, #3794ff); }
-  .practice-guide-measure-number { position: absolute; top: 3px; z-index: 3; transform: translateX(4px); color: var(--vscode-descriptionForeground, #bbb); font-size: 11px; font-weight: 600; }
-  .practice-guide-playhead { position: absolute; z-index: 8; top: 0; bottom: 0; width: 2px; background: var(--vscode-focusBorder, #3794ff); box-shadow: 0 0 3px var(--vscode-focusBorder, #3794ff); pointer-events: none; }
+  .practice-guide-measure-boundary { position: absolute; z-index: 2; top: 0; bottom: 0; width: 1px; background: var(--guide-border); pointer-events: none; }
+  .practice-guide-measure-boundary.is-current { width: 2px; background: var(--guide-playhead); }
+  .practice-guide-measure-number { position: absolute; top: 3px; z-index: 3; transform: translateX(4px); color: var(--guide-muted); font-size: 11px; font-weight: 600; }
+  .practice-guide-playhead { position: absolute; z-index: 8; top: 0; bottom: 0; width: 2px; background: var(--guide-playhead); box-shadow: 0 0 3px var(--guide-playhead); pointer-events: none; }
   .practice-guide-playhead[hidden] { display: none; }
-  .practice-guide-pitch-bar { position: absolute; z-index: 4; box-sizing: border-box; height: 12px; min-width: 3px; border: 1px solid var(--vscode-focusBorder, #3794ff); border-radius: 3px; background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 42%, transparent); }
-  .practice-guide-pitch-bar.is-past { opacity: 1; background: color-mix(in srgb, var(--vscode-textLink-foreground, #75beff) 75%, transparent); }
-  .practice-guide-pitch-bar.is-next { background: color-mix(in srgb, var(--vscode-descriptionForeground, #999) 62%, transparent); }
-  .practice-guide-pitch-bar.is-current { opacity: 1; background: var(--vscode-focusBorder, #3794ff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 35%, transparent); }
-  .practice-guide-melody-rest { position: absolute; z-index: 4; color: var(--vscode-descriptionForeground, #ccc); font-size: 18px; line-height: 24px; }
-  .practice-guide-lyric { position: absolute; z-index: 4; display: inline-flex; align-items: center; min-width: 18px; height: 30px; overflow: visible; padding: 0 2px; border-radius: 3px; color: var(--vscode-foreground, #eee); font-size: 18px; line-height: 22px; white-space: nowrap; }
-  .practice-guide-lyric.is-past { color: var(--vscode-textLink-foreground, #75beff); }
-  .practice-guide-lyric.is-next { color: var(--vscode-foreground, #eee); }
-  .practice-guide-lyric.is-current { z-index: 6; color: var(--vscode-editorWarning-foreground, #ffd166); font-size: 24px; font-weight: 700; line-height: 28px; border-bottom: 2px solid currentColor; }
-  .practice-guide-technique-marker { position: absolute; z-index: 4; display: inline-flex; min-width: 14px; height: 22px; align-items: center; justify-content: center; transform: translateX(-50%); color: var(--vscode-foreground, #eee); font-size: 14px; line-height: 18px; white-space: nowrap; }
-  .practice-guide-technique-marker.is-past { color: var(--vscode-textLink-foreground, #75beff); }
-  .practice-guide-technique-marker.is-next { color: var(--vscode-descriptionForeground, #aaa); }
+  .practice-guide-pitch-bar { position: absolute; z-index: 4; box-sizing: border-box; height: 12px; min-width: 3px; border: 1px solid #50c8ff; border-radius: 3px; background: #55d4ef; }
+  .practice-guide-pitch-bar.is-past { opacity: 1; border-color: #7f95aa; background: #7f95aa; }
+  .practice-guide-pitch-bar.is-next { border-color: #94a5b7; background: #94a5b7; }
+  .practice-guide-pitch-bar.is-current { opacity: 1; border-color: var(--guide-playhead); background: var(--guide-playhead); box-shadow: 0 0 0 2px rgba(0, 161, 215, 0.35); }
+  .practice-guide-melody-rest { position: absolute; z-index: 4; color: #a0b4c8; font-size: 18px; line-height: 24px; }
+  .practice-guide-lyric { position: absolute; z-index: 4; display: inline-flex; align-items: center; min-width: 18px; height: 30px; overflow: visible; padding: 0; border-radius: 3px; color: #f4f5fe; font-size: 18px; line-height: 22px; white-space: nowrap; }
+  .practice-guide-lyric.is-past { color: #57d8fb; }
+  .practice-guide-lyric.is-next { color: #b8cee1; }
+  .practice-guide-lyric.is-current { z-index: 6; color: #ffe788; font-size: 24px; font-weight: 700; line-height: 28px; border-bottom: 2px solid currentColor; }
+  .practice-guide-technique-marker { position: absolute; z-index: 4; display: inline-flex; min-width: 14px; height: 22px; align-items: center; justify-content: center; transform: translateX(-50%); color: #244158; font-size: 14px; line-height: 18px; white-space: nowrap; }
+  .practice-guide-technique-marker.is-past { color: #7f95aa; }
+  .practice-guide-technique-marker.is-next { color: #94a5b7; }
   .practice-guide-technique-marker[data-guide-align="start"] { transform: translateX(0); }
   .practice-guide-technique-marker[data-guide-align="end"] { transform: translateX(-100%); }
-  .practice-guide-technique-marker.is-current { border-radius: 3px; background: var(--vscode-focusBorder, #3794ff); color: var(--vscode-editor-background, #1e1e1e); font-weight: 700; }
+  .practice-guide-technique-marker.is-current { border-radius: 3px; background: var(--guide-accent); color: #ffffff; font-weight: 700; }
   .practice-guide-grid-continuation { display: none; }
   #practice-guide-panel[data-guide-grid="4"] .practice-guide-grid-continuation[data-guide-grid="4"],
   #practice-guide-panel[data-guide-grid="8"] .practice-guide-grid-continuation[data-guide-grid="8"],
   #practice-guide-panel[data-guide-grid="16"] .practice-guide-grid-continuation[data-guide-grid="16"] { display: inline-flex; }
   .practice-guide-rest-symbol { display: block; width: 24px; height: 26px; overflow: visible; color: currentColor; font-family: "Apple Symbols", "Noto Music", "Bravura", "Segoe UI Symbol", serif; font-size: 23px; text-anchor: middle; }
-  .practice-guide-chord-name { position: absolute; z-index: 4; top: 3px; display: inline-block; transform: translateX(-50%); color: var(--vscode-foreground, #eee); font-size: 20px; font-weight: 700; white-space: nowrap; }
-  .practice-guide-chord-name.is-current { color: var(--vscode-focusBorder, #3794ff); }
+  .practice-guide-chord-name { position: absolute; z-index: 4; top: 3px; display: flex; box-sizing: border-box; width: 160px; justify-content: center; transform: translateX(-50%); color: #21354b; font-size: 20px; font-weight: 700; text-align: center; white-space: nowrap; }
+  .practice-guide-chord-name.is-current { color: var(--guide-accent); }
   .practice-guide-chord-name[data-guide-align="start"] { transform: translateX(0); }
   .practice-guide-chord-name[data-guide-align="end"] { transform: translateX(-100%); }
-  .practice-guide-diagram-event { position: absolute; z-index: 4; top: 10px; display: block; width: 160px; height: 90px; transform: translateX(-50%); color: var(--vscode-foreground, #eee); }
+  .practice-guide-diagram-event { position: absolute; z-index: 4; top: 10px; display: block; width: 160px; height: 90px; transform: translateX(-50%); border-radius: 6px; background: #ffffff; box-shadow: inset 0 0 0 1px #d2dde9; color: #405268; }
   .practice-guide-diagram-event[data-guide-align="start"] { transform: translateX(0); }
   .practice-guide-diagram-event[data-guide-align="end"] { transform: translateX(-100%); }
-  .practice-guide-diagram-event.is-current { outline: 1px solid var(--vscode-focusBorder, #3794ff); }
-  .practice-guide-diagram { display: block; width: 160px; height: 90px; margin: 0; overflow: visible; color: var(--vscode-foreground, #eee); }
-  .practice-guide-next-chord { grid-column: 3; box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 5px; border-left: 1px solid var(--vscode-widget-border, #444); background: var(--vscode-editor-background, #1e1e1e); color: var(--vscode-foreground, #eee); text-align: center; }
-  .practice-guide-next-chord-label { align-self: flex-start; color: var(--vscode-descriptionForeground, #aaa); font-size: 11px; }
+  .practice-guide-diagram-event.is-current { outline: 2px solid var(--guide-playhead); outline-offset: -2px; }
+  .practice-guide-diagram { display: block; width: 160px; height: 90px; margin: 0; overflow: visible; color: #405268; }
+  .practice-guide-next-chord { grid-column: 3; box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 5px; border-left: 1px solid var(--guide-border); background: var(--guide-light-surface); color: var(--guide-ink); text-align: center; }
+  .practice-guide-next-chord-label { align-self: flex-start; color: var(--guide-muted); font-size: 11px; }
   .practice-guide-next-chord-name { max-width: 100%; overflow-wrap: anywhere; font-size: 24px; font-weight: 700; }
+  .practice-guide-next-chord-diagram { box-sizing: border-box; width: 100%; padding: 4px; border: 1px solid #d2dde9; border-radius: 8px; background: #ffffff; }
   .practice-guide-next-chord-diagram .practice-guide-diagram { width: min(160px, 100%); height: auto; aspect-ratio: 16 / 9; margin: 0 auto; }
   @media (max-width: 600px) {
     .practice-guide-layout { grid-template-columns: 112px minmax(0, 1fr) 104px; }
     .practice-guide-next-chord { padding: 8px 3px; }
     .practice-guide-next-chord-name { font-size: 15px; }
-    .practice-guide-next-chord-diagram .practice-guide-diagram { width: 88px; height: auto; }
+    .practice-guide-next-chord-diagram .practice-guide-diagram { width: min(88px, 100%); height: auto; }
   }
   .practice-guide-empty { color: var(--vscode-descriptionForeground, #888); font-size: 11px; }
   .practice-control-label {
@@ -1192,6 +1227,72 @@ ${cspMeta}
       const practiceGuideNextChordName = document.getElementById('practice-guide-next-chord-name');
       const practiceGuideNextChordDiagram = document.getElementById('practice-guide-next-chord-diagram');
       let currentGuideMeasureIndex = null;
+      let practiceGuideResizeObserver = null;
+      let practiceGuideLayoutFrame = 0;
+      function syncPracticeGuidePanelGeometry() {
+        if (!practiceGuidePanel) return;
+        const viewportHeight = Math.max(0, window.innerHeight || 0);
+        const reservedScoreHeight = viewportHeight >= 700 ? 160 : Math.max(80, viewportHeight * 0.2);
+        practiceGuidePanel.style.maxHeight = Math.max(42, viewportHeight - 152 - reservedScoreHeight) + 'px';
+        if (practiceGuideLayoutFrame) window.cancelAnimationFrame(practiceGuideLayoutFrame);
+        practiceGuideLayoutFrame = window.requestAnimationFrame(() => {
+          practiceGuideLayoutFrame = 0;
+          if (body.classList.contains('guide-collapsed')) {
+            practiceGuidePanel.style.height = '42px';
+          } else if (!body.classList.contains('has-practice-guide')) {
+            practiceGuidePanel.style.height = 'auto';
+          } else {
+            const layout = practiceGuidePanel.querySelector?.('.practice-guide-layout');
+            const header = practiceGuidePanel.querySelector?.('.practice-guide-header');
+            const labelRail = practiceGuidePanel.querySelector?.('.practice-guide-label-rail');
+            const timeline = practiceGuidePanel.querySelector?.('.practice-guide-timeline');
+            const nextChord = practiceGuidePanel.querySelector?.('.practice-guide-next-chord');
+            const panelTop = practiceGuidePanel.getBoundingClientRect().top;
+            const layoutScrollTop = Number(layout?.scrollTop) || 0;
+            const contentBottoms = [];
+            const measureColumnBottom = element => {
+              if (!element || typeof element.getBoundingClientRect !== 'function') return;
+              const rect = element.getBoundingClientRect();
+              contentBottoms.push(Math.max(rect.bottom, rect.top + (Number(element.scrollHeight) || 0)) + layoutScrollTop);
+            };
+            measureColumnBottom(labelRail);
+            measureColumnBottom(nextChord);
+            measureColumnBottom(timeline);
+            const timelineLanes = [...(timeline?.querySelectorAll?.('.practice-guide-lane') ?? [])]
+              .filter(item => typeof getComputedStyle !== 'function' || getComputedStyle(item).display !== 'none');
+            const laneBottom = timelineLanes.reduce((bottom, lane) =>
+              Math.max(bottom, lane.getBoundingClientRect().bottom), -Infinity);
+            if (Number.isFinite(laneBottom)) {
+              const timelinePaddingBottom = typeof getComputedStyle === 'function'
+                ? parseFloat(getComputedStyle(timeline).paddingBottom) || 0
+                : 0;
+              contentBottoms.push(laneBottom + layoutScrollTop + timelinePaddingBottom);
+            }
+            const headerHeight = typeof header?.getBoundingClientRect === 'function'
+              ? header.getBoundingClientRect().height
+              : 42;
+            const borderTop = typeof getComputedStyle === 'function'
+              ? parseFloat(getComputedStyle(practiceGuidePanel).borderTopWidth) || 0
+              : 0;
+            const headerBottom = typeof header?.getBoundingClientRect === 'function'
+              ? header.getBoundingClientRect().bottom
+              : panelTop + headerHeight;
+            const contentBottom = Math.max(headerBottom, ...contentBottoms);
+            practiceGuidePanel.style.height = Math.max(42, contentBottom - panelTop + borderTop) + 'px';
+          }
+          const panelHeight = body.classList.contains('has-practice-guide')
+            ? practiceGuidePanel.getBoundingClientRect().height
+            : 0;
+          if (body.style && typeof body.style.setProperty === 'function') {
+            body.style.setProperty('--practice-guide-panel-height', panelHeight + 'px');
+          }
+        });
+      }
+      window.addEventListener('resize', syncPracticeGuidePanelGeometry, { passive: true });
+      if (practiceGuidePanel && typeof ResizeObserver === 'function') {
+        practiceGuideResizeObserver = new ResizeObserver(syncPracticeGuidePanelGeometry);
+        practiceGuideResizeObserver.observe(practiceGuidePanel);
+      }
       if (countInToggle) countInToggle.checked = countInEnabled;
       if (metronomeToggle) metronomeToggle.checked = metronomeEnabled;
       if (practiceSpeedSelect) practiceSpeedSelect.value = String(practiceSpeed);
@@ -1446,7 +1547,6 @@ ${cspMeta}
         followAnchor(anchor);
       }
 
-      let appliedGuideGrid = null;
       function updatePracticeGuideUi() {
         body.classList.toggle('has-practice-guide', practiceEnabled);
         body.classList.toggle('guide-melody-hidden', !guideMelodyVisible);
@@ -1467,17 +1567,12 @@ ${cspMeta}
           practiceGuideCollapseToggle.textContent = guideCollapsed ? '›' : '⌄';
         }
         if (practiceGuideAutoFill) practiceGuideAutoFill.hidden = !(guideGrid === 'auto' && playbackData.practiceGuide?.automaticFill);
+        syncPracticeGuidePanelGeometry();
 
         const selectedGrid = guideGrid === 'auto'
           ? Number(playbackData.practiceGuide?.automaticGrid) || 4
           : Number(guideGrid);
         if (Number.isFinite(selectedGrid)) practiceGuidePanel?.setAttribute('data-guide-grid', String(selectedGrid));
-        if (Number.isFinite(selectedGrid) && selectedGrid !== appliedGuideGrid) {
-          appliedGuideGrid = selectedGrid;
-          const pixelsPerBeat = Number(practiceGuideTimeline?.dataset.guidePxPerBeat) || 80;
-          practiceGuideTimeline?.style.setProperty('--guide-grid-step', String(4 * pixelsPerBeat / selectedGrid) + 'px');
-        }
-
         const shownTime = transport === 'playing' || transport === 'counting-in' ? scoreTimeFromAudioClock() : positionSeconds;
         const occurrence = playbackOccurrences.find(item => shownTime >= item.startSeconds && shownTime < item.startSeconds + item.durationSeconds)
           ?? playbackOccurrences[playbackOccurrences.length - 1];
@@ -2303,6 +2398,11 @@ ${cspMeta}
       function disposePlayback() {
         if (disposed) return;
         disposed = true;
+        if (practiceGuideResizeObserver) practiceGuideResizeObserver.disconnect();
+        practiceGuideResizeObserver = null;
+        window.removeEventListener('resize', syncPracticeGuidePanelGeometry);
+        if (practiceGuideLayoutFrame) window.cancelAnimationFrame(practiceGuideLayoutFrame);
+        practiceGuideLayoutFrame = 0;
         clearScheduler();
         stopVisualLoop();
         cancelScheduledNodes();
@@ -2313,6 +2413,9 @@ ${cspMeta}
         transport = 'stopped';
         if (contextToClose && contextToClose.state !== 'closed') {
           contextToClose.close().catch(() => {});
+        }
+        if (body.style && typeof body.style.removeProperty === 'function') {
+          body.style.removeProperty('--practice-guide-panel-height');
         }
       }
 
@@ -2334,7 +2437,6 @@ ${cspMeta}
         practiceGuideGridSelect.addEventListener('change', () => {
           if (!['auto', '4', '8', '16'].includes(practiceGuideGridSelect.value)) return;
           guideGrid = practiceGuideGridSelect.value;
-          appliedGuideGrid = null;
           persistWebviewState();
           updatePracticeUi();
         });
@@ -2672,7 +2774,7 @@ function guidePitchText(pitch: { step: string; alter: number; octave: number }):
 
 function renderPracticeStringDiagram(voicing: Parameters<typeof resolveBaseFret>[0]): string {
   const base = resolveBaseFret(voicing);
-  const left = 32;
+  const left = 20;
   const fretWidth = 24;
   const top = 8;
   const stringGap = 13;
@@ -2682,21 +2784,21 @@ function renderPracticeStringDiagram(voicing: Parameters<typeof resolveBaseFret>
   for (let string = 1; string <= 6; string++) {
     const y = top + (string - 1) * stringGap;
     const fret = voicing.frets[6 - string];
-    content += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="currentColor" stroke-width="${string === 1 || string === 6 ? '1.2' : '0.8'}"/>`;
+    content += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="#9aaec0" stroke-width="${string === 1 || string === 6 ? '1.35' : '1.1'}"/>`;
     if (fret === 'x') {
-      content += `<text x="18" y="${y + 4}" text-anchor="middle" font-size="12" fill="currentColor">×</text>`;
+      content += `<text x="14" y="${y + 4}" text-anchor="middle" font-size="12" fill="#556c82">×</text>`;
     } else if (fret === 0) {
-      content += `<circle cx="18" cy="${y}" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/>`;
+      content += `<circle cx="14" cy="${y}" r="3" fill="none" stroke="#647e94" stroke-width="1.7"/>`;
     } else if (typeof fret === 'number' && fret >= base && fret < base + 5) {
       const x = left + (fret - base + 0.5) * fretWidth;
-      content += `<circle cx="${x}" cy="${y}" r="4" fill="currentColor"/>`;
+      content += `<circle cx="${x}" cy="${y}" r="4" fill="#121e2b"/>`;
     }
   }
   for (let fret = 0; fret <= 5; fret++) {
     const x = left + fret * fretWidth;
-    content += `<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="currentColor" stroke-width="${fret === 0 && base === 1 ? '2' : '0.8'}" opacity="${fret === 0 && base === 1 ? '1' : '0.65'}"/>`;
+    content += `<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="${fret === 0 && base === 1 ? '#5d7085' : '#b0bfce'}" stroke-width="${fret === 0 && base === 1 ? '2.25' : '1'}"/>`;
   }
-  const label = base > 1 ? `<text x="${left + 2}" y="${bottom + 13}" font-size="10" fill="currentColor">${base}fr</text>` : '';
+  const label = base > 1 ? `<text x="${left + 2}" y="${bottom + 13}" font-size="10" fill="#556c82">${base}fr</text>` : '';
   return `<svg class="practice-guide-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90" role="img" aria-label="${base} fret chord diagram">${content}${label}</svg>`;
 }
 
@@ -2969,7 +3071,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
   const chordNames = data.measures.flatMap(measure => measure.chords.map(chord => {
       const left = fnum(measure.startBeat) * pixelsPerBeat + chord.beat * pixelsPerBeat;
       const label = chord.label ? `${chord.name}@${chord.label}` : chord.name;
-      return `<span class="practice-guide-chord-name" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-at-beat="${chord.beat}" data-guide-align="${align(left, practiceGuideTextWidth(label, 20) / 2)}" style="left:${left.toFixed(3)}px" title="${escapeXml(label)}">${escapeXml(label)}</span>`;
+      return `<span class="practice-guide-chord-name" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-at-beat="${chord.beat}" data-guide-align="${align(left, 80)}" style="left:${left.toFixed(3)}px" title="${escapeXml(label)}">${escapeXml(label)}</span>`;
     }));
   const diagrams = data.measures.flatMap(measure => measure.chords.map(chord => {
       const left = fnum(measure.startBeat) * pixelsPerBeat + chord.beat * pixelsPerBeat;
@@ -2987,8 +3089,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
   const initialNextChord = data.initialNextChord;
   const nextChord = `<aside class="practice-guide-next-chord" id="practice-guide-next-chord"><span class="practice-guide-next-chord-label">${escapeXml(msgs.uiPracticeGuideNextChord)}</span><strong class="practice-guide-next-chord-name" id="practice-guide-next-chord-name">${escapeXml(initialNextChord?.name ?? '—')}</strong><div class="practice-guide-next-chord-diagram" id="practice-guide-next-chord-diagram">${initialNextChord?.svg ?? ''}</div></aside>`;
   const autoLabel = data.automaticFill ? `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill">${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>` : `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill" hidden>${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>`;
-  const initialGridStep = 4 * pixelsPerBeat / data.automaticGrid;
-  const timeline = `<div class="practice-guide-timeline" id="practice-guide-timeline" data-guide-total-beats="${fnum(data.totalBeats)}" data-guide-measure-count="${data.measures.length}" data-guide-px-per-beat="${pixelsPerBeat}" style="--guide-total-width:${totalWidth.toFixed(3)}px;--guide-grid-step:${initialGridStep}px;--guide-lyrics-height:${data.lyricsHeight}px;--guide-technique-height:${techniqueHeight}px;width:${totalWidth.toFixed(3)}px">${ruler}${lanes}<span class="practice-guide-playhead" id="practice-guide-playhead" hidden></span>${data.measures.length ? '' : `<p class="practice-guide-empty">${escapeXml(msgs.uiPlaybackEmpty)}</p>`}</div>`;
+  const timeline = `<div class="practice-guide-timeline" id="practice-guide-timeline" data-guide-total-beats="${fnum(data.totalBeats)}" data-guide-measure-count="${data.measures.length}" data-guide-px-per-beat="${pixelsPerBeat}" style="--guide-total-width:${totalWidth.toFixed(3)}px;--guide-lyrics-height:${data.lyricsHeight}px;--guide-technique-height:${techniqueHeight}px;width:${totalWidth.toFixed(3)}px">${ruler}${lanes}<span class="practice-guide-playhead" id="practice-guide-playhead" hidden></span>${data.measures.length ? '' : `<p class="practice-guide-empty">${escapeXml(msgs.uiPlaybackEmpty)}</p>`}</div>`;
   return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}" data-guide-grid="${data.automaticGrid}">
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
