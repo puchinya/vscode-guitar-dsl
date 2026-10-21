@@ -123,6 +123,12 @@ export interface Messages {
   uiPracticeLoopSet: string;
   uiPracticeLoopCleared: string;
   uiPracticeGuideTitle: string;
+  uiPracticeGuideView: string;
+  uiPracticeGuideDetailed: string;
+  uiPracticeGuideCompact: string;
+  uiPracticeGuidePrevious: string;
+  uiPracticeGuideNext: string;
+  uiPracticeGuideMeasures: string;
   uiPracticeGuideDiagrams: string;
   uiPracticeGuideMelody: string;
   uiPracticeGuideGrid: string;
@@ -415,6 +421,12 @@ export const MESSAGES_JA: Messages = {
   uiPracticeLoopSet: 'ループを設定しました。',
   uiPracticeLoopCleared: 'ループを解除しました。',
   uiPracticeGuideTitle: '弾き語り練習パネル',
+  uiPracticeGuideView: '表示',
+  uiPracticeGuideDetailed: '詳細タイムライン',
+  uiPracticeGuideCompact: 'コンパクト4小節表示',
+  uiPracticeGuidePrevious: '前へ',
+  uiPracticeGuideNext: '次へ',
+  uiPracticeGuideMeasures: '小節',
   uiPracticeGuideDiagrams: 'コード図',
   uiPracticeGuideMelody: 'メロディ',
   uiPracticeGuideGrid: '分割',
@@ -749,6 +761,12 @@ export const MESSAGES_EN: Messages = {
   uiPracticeLoopSet: 'Loop set.',
   uiPracticeLoopCleared: 'Loop cleared.',
   uiPracticeGuideTitle: 'Practice guide',
+  uiPracticeGuideView: 'View',
+  uiPracticeGuideDetailed: 'Detailed timeline',
+  uiPracticeGuideCompact: 'Compact 4-measure overview',
+  uiPracticeGuidePrevious: 'Previous',
+  uiPracticeGuideNext: 'Next',
+  uiPracticeGuideMeasures: 'measures',
   uiPracticeGuideDiagrams: 'Chord diagrams',
   uiPracticeGuideMelody: 'Melody',
   uiPracticeGuideGrid: 'Grid',

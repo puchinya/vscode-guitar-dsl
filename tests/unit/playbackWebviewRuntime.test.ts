@@ -186,7 +186,9 @@ describe('Preview production Webview runtime', () => {
   it('Issue #153 draws rest symbols with SVG shapes instead of platform-dependent music fonts', () => {
     const html = compileGuitarDslToHtml('| C | r4 r8 r16 r2 r16 |');
     const symbols = [...html.matchAll(/<svg class="practice-guide-rest-symbol"[^>]*data-guide-rest-base="(\d+)"[^>]*>[\s\S]*?<\/svg>/g)];
-    assert.deepStrictEqual(symbols.map(match => match[1]), ['4', '8', '16', '2', '16']);
+    const bases = symbols.map(match => match[1]);
+    assert.deepStrictEqual(bases.slice(0, 5), ['4', '8', '16', '2', '16'], 'the detailed timeline keeps each duration-specific rest');
+    assert.deepStrictEqual(bases.slice(5), ['4', '8', '16', '2', '16'], 'the compact cards preserve the same duration-specific rests');
     assert.ok(symbols.every(match => /<(?:path|rect|circle)\b/.test(match[0])), 'every rest contains a vector path or shape');
     assert.ok(symbols.every(match => !/<text\b/.test(match[0])), 'rest rendering does not depend on installed music fonts');
   });

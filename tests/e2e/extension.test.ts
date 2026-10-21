@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -334,7 +334,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
   });
 
   test('Issue #153 Practice guide shows the full score and responds to its controls', async function () {
-    this.timeout(45000);
+    this.timeout(90000);
     await withWorkbenchSnapshotRestored(async () => {
       const source = [
         'title: Practice guide evidence',
@@ -369,11 +369,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
       const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
       const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
-      const captureGuideEvidence = async (filename: string): Promise<void> => {
+      const captureGuideEvidence = async (filename: string, previewViewportWidth?: number): Promise<void> => {
         const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-153', filename);
         for (let attempt = 0; attempt < 3; attempt++) {
           await settle(500);
-          await capturePreviewWebviewScreenshot(filename, 153);
+          await capturePreviewWebviewScreenshot(filename, 153, previewViewportWidth);
           if ((await fs.stat(outputPath)).size >= 50000) return;
         }
         const size = (await fs.stat(outputPath)).size;
@@ -403,8 +403,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           if ((button.getAttribute('aria-pressed') === 'true') !== ${melodyVisible}) button.click();
         })()`);
       };
+      const setGuideViewMode = async (mode: 'detailed' | 'compact'): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const select = document.getElementById('practice-guide-view');
+          select.value = '${mode}';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+      };
       const expectedOn = ['melody', 'lyrics', 'technique', 'chord', 'diagrams'];
       const expectedOff = ['lyrics', 'technique', 'chord', 'diagrams'];
+      await setGuideViewMode('detailed');
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
         input.value = '2';
@@ -422,8 +430,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           workbenchWidth += width - actualPreviewWidth;
         }
         if (width === 1400 && actualPreviewWidth < width - 1) {
-          console.warn(`[NOT RUN] 1400px practice-guide screenshots require a wider E2E workbench; measured ${actualPreviewWidth}px.`);
-          continue;
+          await setPreviewWebviewViewportWidth(width);
+          await settle(250);
+          actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
         }
         assert.ok(Math.abs(actualPreviewWidth - width) <= 1,
           `practice guide acceptance uses ${width} CSS px within one-device-pixel sizing tolerance (actual=${actualPreviewWidth})`);
@@ -718,9 +727,72 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
           assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
           assert.strictEqual(guide.nextDiagramVisible, true, 'the next-chord name and detail stay available');
-          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154-r4.png`);
+          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154-r4.png`, width === 1400 ? 1400 : undefined);
+        }
+        if ([421, 840, 1100, 1400].includes(width)) {
+          await setGuideViewMode('compact');
+          await settle(120);
+          const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const panel = document.getElementById('practice-guide-panel');
+            const layout = document.querySelector('.practice-guide-layout');
+            const guide = document.getElementById('practice-guide-compact');
+            const grid = document.getElementById('practice-guide-compact-grid');
+            const cards = [...grid.querySelectorAll('.practice-guide-compact-measure')];
+            const visibleCards = cards.filter(card => !card.hidden);
+            const diagrams = visibleCards.flatMap(card => [...card.querySelectorAll('.practice-guide-compact-diagram svg')]);
+            return {
+              mode: document.getElementById('practice-guide-view').value,
+              selectorAccessible: document.getElementById('practice-guide-view').getAttribute('aria-label'),
+              detailedHidden: getComputedStyle(layout).display === 'none',
+              compactVisible: getComputedStyle(guide).display !== 'none',
+              range: document.getElementById('practice-guide-compact-range').textContent.trim(),
+              visibleMeasures: visibleCards.map(card => Number(card.dataset.guideCompactMeasure) + 1),
+              gridColumns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+              horizontalOverflow: guide.scrollWidth > guide.clientWidth + 1,
+              panelBackground: getComputedStyle(panel).backgroundColor,
+              cardBackgrounds: visibleCards.map(card => getComputedStyle(card).backgroundColor),
+              diagramCount: diagrams.length,
+              repeatedContinuationEvents: (() => {
+                const counts = new Map();
+                for (const item of guide.querySelectorAll('.practice-guide-grid-continuation')) {
+                  const key = [item.dataset.guideMeasure, item.dataset.guideEvent].join(':');
+                  counts.set(key, (counts.get(key) ?? 0) + 1);
+                }
+                return [...counts.values()].some(count => count > 1);
+              })(),
+              diagramsContained: diagrams.every(svg => {
+                const card = svg.closest('.practice-guide-compact-measure').getBoundingClientRect();
+                const rect = svg.getBoundingClientRect();
+                return rect.left >= card.left - 1 && rect.right <= card.right + 1 && rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1;
+              }),
+              currentMeasure: visibleCards.filter(card => card.classList.contains('is-current')).map(card => Number(card.dataset.guideCompactMeasure) + 1),
+              currentTechniqueCount: guide.querySelectorAll('.practice-guide-compact-symbol.is-current').length,
+              firstPattern: [...guide.querySelectorAll('[data-guide-compact-measure="0"] .practice-guide-compact-symbol')]
+                .filter(item => getComputedStyle(item).display !== 'none').map(item => item.textContent.trim())
+            };
+          })())`));
+          assert.strictEqual(compact.mode, 'compact', 'the view selector enters compact mode');
+          assert.strictEqual(compact.selectorAccessible, locale === 'ja' ? '表示' : 'View', 'the view selector has a localized accessible name');
+          assert.strictEqual(compact.detailedHidden, true, 'compact mode hides the wide detailed timeline');
+          assert.strictEqual(compact.compactVisible, true, 'the compact four-measure overview is visible');
+          assert.deepStrictEqual(compact.visibleMeasures, [1, 2, 3, 4], 'the first compact page contains four real measures');
+          assert.strictEqual(compact.gridColumns, width < 840 ? 2 : 4, `${width}px uses the contracted compact card columns`);
+          assert.strictEqual(compact.horizontalOverflow, false, `${width}px compact mode does not require horizontal scrolling`);
+          assert.strictEqual(compact.panelBackground, 'rgb(255, 255, 255)', 'compact mode keeps the approved white background');
+          assert.ok(compact.cardBackgrounds.every((color: string) => color === 'rgb(255, 255, 255)'), 'compact measure cards are white in both themes');
+          assert.strictEqual(compact.diagramCount, 4, 'the first four measures show their generated chord diagrams');
+          assert.strictEqual(compact.repeatedContinuationEvents, false, 'each sustained stroke event has only one compact continuation marker');
+          assert.strictEqual(compact.diagramsContained, true, 'scaled chord diagrams fit inside their measure cards');
+          assert.deepStrictEqual(compact.currentMeasure, [2], 'the visible current measure is highlighted');
+          assert.strictEqual(compact.currentTechniqueCount, 1, 'one current stroke slot is highlighted in compact mode');
+          assert.ok(compact.firstPattern.includes('↓') && compact.firstPattern.includes('〜'), 'the compact pattern preserves attack and continuation symbols');
+          if (captureScreenshots) await captureGuideEvidence(`practice-guide-compact-${locale}-${themeName}-${width}-pr154-r5.png`, width === 1400 ? 1400 : undefined);
+          await setGuideViewMode('detailed');
+          await settle(100);
         }
       }
+      await resetPreviewWebviewViewport();
+      await resetWorkbenchViewport();
 
       const readPanelGeometry = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
         const panel = document.getElementById('practice-guide-panel');
@@ -783,8 +855,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         loop: document.getElementById('practice-loop').value
       })`));
       await setGuideVisibility(false);
-      await settle(120);
-      const melodyHiddenGeometry = await readPanelGeometry();
+      let melodyHiddenGeometry = await readPanelGeometry();
+      for (let attempt = 0; attempt < 20 && melodyHiddenGeometry.height >= rebuiltPanelGeometry.height - 60; attempt++) {
+        await settle(50);
+        melodyHiddenGeometry = await readPanelGeometry();
+      }
       assert.ok(melodyHiddenGeometry.height < rebuiltPanelGeometry.height - 60,
         'melody OFF shrinks the natural panel by its removed lane');
       assert.ok(Math.abs(melodyHiddenGeometry.bodyPadding - melodyHiddenGeometry.height) <= 0.5,
@@ -1060,9 +1135,65 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(tabGuide.tabLabels, Array(8).fill('6'),
         'TAB-only measures show string numbers instead of the implicit slash pattern');
       } finally {
+      await resetPreviewWebviewViewport();
       await resetWorkbenchViewport();
       }
     });
+  });
+
+  test('Issue #153 compact overview advances in four-measure windows and follows seeks', async function () {
+    this.timeout(45000);
+    try {
+      await withWorkbenchSnapshotRestored(async () => {
+        const bars = ['F', 'G', 'Em7', 'Am', 'Dm7', 'C', 'G7', 'F'];
+        const source = [
+          'title: Compact guide paging',
+          'time: 4/4',
+          'bpm: 120',
+          ...bars.map(chord => `| ${chord} | 4.d 4.u 4.d 4.u |`)
+        ].join('\n');
+        const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+        await showAndFocus(doc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        await waitForPreviewDocument();
+        await setPreviewPracticeEnabled(true);
+        await evaluatePreviewWebview<void>(`(() => {
+          const input = document.getElementById('playback-seek');
+          input.value = '0'; input.dispatchEvent(new Event('change', { bubbles: true }));
+          const view = document.getElementById('practice-guide-view');
+          view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await settle(150);
+        const range = async (): Promise<string> => evaluatePreviewWebview<string>(
+          `document.getElementById('practice-guide-compact-range').textContent.trim()`);
+        assert.match(await range(), /^1–4 \/ 8 /, 'the eight-measure score starts with measures 1–4');
+
+        await clickPreviewElement('#btn-play');
+        for (let attempt = 0; attempt < 100 && !/^3–6 \/ 8 /.test(await range()); attempt++) await settle(50);
+        assert.match(await range(), /^3–6 \/ 8 /,
+          'playback advances by two measures when it enters the third displayed measure');
+        await clickPreviewElement('#btn-stop');
+
+        const seek = async (seconds: number): Promise<string> => {
+          await evaluatePreviewWebview<void>(`(() => {
+            const input = document.getElementById('playback-seek');
+            input.value = '${seconds}'; input.dispatchEvent(new Event('change', { bubbles: true }));
+          })()`);
+          await settle(100);
+          return range();
+        };
+        assert.match(await seek(8), /^5–8 \/ 8 /, 'seeking forward selects the overlapping measures 5–8 page');
+        assert.match(await seek(2), /^1–4 \/ 8 /, 'seeking backward returns to measures 1–4');
+        await clickPreviewElement('#practice-guide-compact-next');
+        await settle(80);
+        assert.match(await range(), /^3–6 \/ 8 /, 'Next moves the four-measure page by two measures');
+        await clickPreviewElement('#practice-guide-compact-previous');
+        await settle(80);
+        assert.match(await range(), /^1–4 \/ 8 /, 'Previous moves the page back by two measures');
+      });
+    } finally {
+      await resetWorkbenchViewport();
+    }
   });
 
   test('P145 Preview settings and P136 toolbar layout, focus, and transport remain usable', async function () {
