@@ -180,7 +180,89 @@ describe('Preview production Webview runtime', () => {
     runtime.advanceAudioTime(0.45);
     runtime.runSchedulerTicks();
     assert.strictEqual(melody!.stopCalls.length, 1, 'mute does not cancel the melody voice');
-    closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.025, 0.001);
+    closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.033, 0.001);
+  });
+
+  it('Issue #153 adds a short accompaniment release tail only for new techniques, which mute cancels and rest keeps', async () => {
+    const muteRuntime = createRuntime([
+      'bpm: 120',
+      '| C | 4.d 4.m 8.s5 8 4 |'
+    ].join('\n'));
+    const muteAttack = muteRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(muteAttack.releaseTailSeconds, 0.08);
+    await muteRuntime.click('btn-play');
+    muteRuntime.runSchedulerTicks();
+    const mutedVoice = muteRuntime.scheduledOscillators().find(node => (node.startAt ?? Infinity) < 0.1 && node.frequency.value < 200);
+    assert.ok(mutedVoice);
+    const naturalTailEnd = mutedVoice!.startAt! + Number(muteAttack.durationSeconds) + 0.08 + 0.002;
+    closeEnough(mutedVoice!.stopAt ?? NaN, naturalTailEnd, 0.001);
+    muteRuntime.advanceAudioTime(0.45);
+    muteRuntime.runSchedulerTicks();
+    assert.ok((mutedVoice!.stopAt ?? Infinity) < naturalTailEnd, 'mute shortens the scheduled tail');
+    const muteGain = (mutedVoice!.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+    assert.ok(muteGain.events.some(event => event.kind === 'cancel'), 'mute cancels the old gain ramp');
+    assert.ok(muteGain.events.some(event => event.kind === 'ramp' && event.value === 0), 'mute fades the active voice out');
+
+    const restRuntime = createRuntime([
+      'bpm: 120',
+      '| C | 4.d r4 8.s5 8 4 |'
+    ].join('\n'));
+    const restAttack = restRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(restAttack.releaseTailSeconds, 0.08);
+    await restRuntime.click('btn-play');
+    restRuntime.runSchedulerTicks();
+    const restingVoice = restRuntime.scheduledOscillators().find(node => (node.startAt ?? Infinity) < 0.1 && node.frequency.value < 200);
+    assert.ok(restingVoice);
+    const restTailEnd = restingVoice!.startAt! + Number(restAttack.durationSeconds) + 0.08 + 0.002;
+    restRuntime.advanceAudioTime(0.45);
+    restRuntime.runSchedulerTicks();
+    closeEnough(restingVoice!.stopAt ?? NaN, restTailEnd, 0.001);
+    const restGain = (restingVoice!.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+    assert.ok(!restGain.events.some(event => event.kind === 'cancel'), 'a rest leaves the preceding note tail alone');
+
+    const legacyRuntime = createRuntime('| C | 4.d 4 4 4 |');
+    const legacyAttack = legacyRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(legacyAttack.releaseTailSeconds, undefined, 'scores without new techniques keep the legacy envelope');
+
+    const brushRuntime = createRuntime('| C | 4.d.b 4 4 4 |');
+    const brushScoreAttack = brushRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(brushScoreAttack.releaseTailSeconds, 0.08, 'the new .b spelling opts into the new-technique accompaniment envelope');
+    const legacyGhostRuntime = createRuntime('| C | 4.d.g 4 4 4 |');
+    const legacyGhostAttack = legacyGhostRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(legacyGhostAttack.releaseTailSeconds, undefined, 'the legacy .g spelling keeps its existing envelope');
+  });
+
+  it('Issue #153 preserves every timed chord placement in detailed and compact practice guides', () => {
+    const score = '| C 4.d G 4.d C 4.d C 4.d |';
+    const html = compileGuitarDslToHtml(score);
+    const runtime = createFakePlaybackWebview(html);
+    const chords = runtime.playbackData.practiceGuide.measures[0].chords;
+    assert.deepStrictEqual(chords.map((chord: any) => [chord.name, chord.beat]), [
+      ['C', 0], ['G', 1], ['C', 2], ['C', 3]
+    ]);
+    assert.strictEqual((html.match(/class="practice-guide-chord-name"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-diagram-event"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-compact-chord"/g) ?? []).length, 4);
+  });
+
+  it('Issue #153 keeps one compact continuation marker per event across grid selections', async () => {
+    const html = compileGuitarDslToHtml('| C | 4.d 4.d 4.d 16.d 16.d 16.d 16.d |');
+    const runtime = createFakePlaybackWebview(html);
+    assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 16);
+    const compact = html.match(/<article class="practice-guide-compact-measure"[\s\S]*?<\/article>/)?.[0] ?? '';
+    const markers = [...compact.matchAll(/<span class="practice-guide-compact-symbol"[^>]*data-guide-kind="continuation"[^>]*data-guide-event="(\d+)"[^>]*>/g)];
+    const counts = new Map<string, number>();
+    for (const marker of markers) counts.set(marker[1], (counts.get(marker[1]) ?? 0) + 1);
+    assert.ok(markers.length > 0, 'the long attack has compact continuation marks');
+    assert.ok([...counts.values()].every(count => count === 1), 'each rhythm event has at most one compact continuation');
+    assert.ok(!compact.includes('data-guide-grid='), 'compact continuation visibility is independent of the detail grid');
+    assert.ok(!compact.includes('practice-guide-grid-continuation'), 'compact markers are not hidden by the detail-grid rule');
+
+    for (const grid of ['4', '8', '16']) {
+      runtime.element('practice-guide-grid').value = grid;
+      await runtime.change('practice-guide-grid');
+      assert.strictEqual(runtime.element('practice-guide-panel').getAttribute('data-guide-grid'), grid);
+    }
   });
 
   it('Issue #153 draws rest symbols with SVG shapes instead of platform-dependent music fonts', () => {

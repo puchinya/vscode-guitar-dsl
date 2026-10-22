@@ -1725,7 +1725,7 @@ ${cspMeta}
           && currentBeat > Number(activeCompactEvent.dataset.guideEventStart) + 0.000001
           ? visibleTechniqueMarkers.find(item => item.classList.contains('practice-guide-compact-symbol')
             && item.dataset.guideTechniqueEventKey === activeCompactEventKey
-            && item.dataset.guideGrid !== undefined)
+            && item.dataset.guideKind === 'continuation')
           : undefined;
         const currentCompactTechnique = activeCompactContinuation ?? activeCompactEvent;
         const currentTechniqueKey = currentDetailedTechnique?.dataset.guideTechniqueKey;
@@ -1904,7 +1904,7 @@ ${cspMeta}
         return disposed ? null : audioContext;
       }
 
-      function scheduleTone(ctx, when, duration, frequency, waveform, volume, category) {
+      function scheduleTone(ctx, when, duration, frequency, waveform, volume, category, releaseTailSeconds = 0) {
         if (duration <= 0 || when < ctx.currentTime - 0.005) return;
         const oscillator = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -1912,11 +1912,13 @@ ${cspMeta}
         oscillator.frequency.setValueAtTime(frequency, when);
         const attack = Math.min(0.008, duration / 3);
         const release = Math.min(0.04, duration / 3);
-        const releaseStart = Math.max(when + attack, when + duration - release);
+        const releaseTail = Math.min(0.12, Math.max(0, Number(releaseTailSeconds) || 0));
+        const endTime = when + duration + releaseTail;
+        const releaseStart = Math.max(when + attack, endTime - release);
         gain.gain.setValueAtTime(0, when);
         gain.gain.linearRampToValueAtTime(volume, when + attack);
         gain.gain.setValueAtTime(volume, releaseStart);
-        gain.gain.linearRampToValueAtTime(0, when + duration);
+        gain.gain.linearRampToValueAtTime(0, endTime);
         oscillator.connect(gain);
         gain.connect(masterGain);
         const entry = {
@@ -1928,7 +1930,7 @@ ${cspMeta}
           volume,
           attackEnd: when + attack,
           releaseStart,
-          endTime: when + duration,
+          endTime,
           cancelAt: undefined
         };
         activeNodes.add(entry);
@@ -1939,7 +1941,7 @@ ${cspMeta}
         };
         try {
           oscillator.start(when);
-          oscillator.stop(when + duration + 0.002);
+          oscillator.stop(endTime + 0.002);
         } catch (_) {
           activeNodes.delete(entry);
           try { oscillator.stop(ctx.currentTime); } catch (_) {}
@@ -2026,7 +2028,8 @@ ${cspMeta}
         for (const midi of event.midiNotes) {
           if (!Number.isFinite(midi)) continue;
           const frequency = 440 * Math.pow(2, (midi - 69) / 12);
-          scheduleTone(ctx, when, duration, frequency, isChord ? 'triangle' : 'sine', voiceGain, category);
+          const releaseTail = isChord || event.source === 'inline' ? event.releaseTailSeconds : 0;
+          scheduleTone(ctx, when, duration, frequency, isChord ? 'triangle' : 'sine', voiceGain, category, releaseTail);
         }
       }
 
@@ -2996,12 +2999,9 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
     const measure = sourceMeasure.isMeasureRepeat ? expandMeasureRepeat(sourceMeasure, score.measures) : sourceMeasure;
     const beats = measure.expectedBeats;
     const startBeat = totalBeats;
-    const seenChords = new Set<string>();
     const chords: PracticeGuideDiagram[] = [];
     for (const chord of measure.chords) {
       const key = chordKey(chord.name, chord.label);
-      if (seenChords.has(key)) continue;
-      seenChords.add(key);
       const resolved = resolveChordVoicing(key, score.chordDefinitions, instrument);
       chords.push({
         name: chord.name,
@@ -3239,9 +3239,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
         return true;
       });
       const symbols = spanTechniques.map(item => {
-        const isContinuation = item.grid !== undefined;
-        const classes = `practice-guide-compact-symbol${isContinuation ? ' practice-guide-grid-continuation' : ''}`;
-        const grid = item.grid === undefined ? '' : ` data-guide-grid="${item.grid}"`;
+        const classes = 'practice-guide-compact-symbol';
         const eventIndex = item.eventIndex === undefined ? '' : ` data-guide-event="${item.eventIndex}"`;
         const eventStart = fnum(item.eventStart);
         const eventEnd = fnum(item.eventEnd);
@@ -3251,7 +3249,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages): stri
           : escapeXml(item.label);
         const key = `${measure.number - 1}:${item.eventIndex ?? -1}:${fnum(item.at)}:${item.label}:${item.grid ?? 'attack'}`;
         const techniqueEventKey = `${measure.number - 1}:${item.eventIndex ?? -1}`;
-        return `<span class="${classes}" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(key)}" data-guide-technique-event-key="${escapeXml(techniqueEventKey)}"${grid} data-guide-kind="${item.kind ?? ''}"${eventIndex} data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${fnum(item.at)}" data-guide-slot-start="${fnum(item.at)}" title="${escapeXml(item.duration || ariaLabel)}" aria-label="${escapeXml(ariaLabel)}">${label}</span>`;
+        return `<span class="${classes}" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(key)}" data-guide-technique-event-key="${escapeXml(techniqueEventKey)}" data-guide-kind="${item.kind ?? ''}"${eventIndex} data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${fnum(item.at)}" data-guide-slot-start="${fnum(item.at)}" title="${escapeXml(item.duration || ariaLabel)}" aria-label="${escapeXml(ariaLabel)}">${label}</span>`;
       }).join('');
       const chord = span.chord;
       const chordLabel = chord ? (chord.label ? `${chord.name}@${chord.label}` : chord.name) : '—';

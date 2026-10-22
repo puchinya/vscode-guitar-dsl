@@ -130,7 +130,7 @@ Practice ON では既存の48 px playback row、44 px score-settings row、42 px
 
 奏法行の有音イベントはスコア時刻に一度だけ攻撃記号を置き、後続の選択グリッドスロットに音価継続 `〜` を配置する。タイ継続イベントは開始位置も `〜` として再攻撃を表さない。グリッドごとの継続位置は Fraction から計算し、連符の局所比を維持する。消音 `.m` と休符 `rN` は独立した記号で、持続マーカーを作らない。ブラッシングとスタッカートも継続マーカーを作らない。手動グリッド選択は表示する継続スロットだけを変える。
 
-Web Audio は既存 Preview の所有者と generation cleanup を維持する。`.m` は同じギター伴奏バスの active voice と最大120 ms程度の release tail だけを停止し、クリック防止の fade は最大8 msとする。メロディ、メトロノーム、他の Preview/Inspector セッションは対象外である。`.b` は短い非調和の打音、`.sN` はフォーム・調弦・カポに解決した単一弦音を予約する。Seek、Loop、速度変更、停止、再構築、破棄では旧 generation の予約を cancel/fade し、複数 dispose に安全に声部を解放する。
+Web Audio は既存 Preview の所有者と generation cleanup を維持する。`.m` は同じギター伴奏バスの active voice と最大120 ms程度の release tail だけを停止し、クリック防止の fade は最大8 msとする。`.b`、`.m`、`.sN` を含む新奏法の譜面だけがこの尾部を使い、既存譜面の音響包絡は変えない。メロディ、メトロノーム、他の Preview/Inspector セッションは対象外である。`.b` は短い非調和の打音、`.sN` はフォーム・調弦・カポに解決した単一弦音を予約する。Seek、Loop、速度変更、停止、再構築、破棄では旧 generation の予約を cancel/fade し、複数 dispose に安全に声部を解放する。
 
 ### TAB geometry and SVG (Issue #89)
 

@@ -136,7 +136,7 @@ Issue #135 tests S135-02 through S135-10 cover the reused section models, source
 
 ## Issue #153 implementation design
 
-Rhythm-token source edits keep the authored modifier spelling. In particular, `.b` is parsed as the existing brush/ghost meaning but source-preserving edits retain `.b`; generated canonical accompaniment patterns continue to use `.g`. A full RhythmItem formatter is not used to rewrite unrelated source text.
+Rhythm-token source edits preserve every retained modifier's meaning: `.m` remains a mute, `.s1`–`.s6` retain the selected physical string, and authored `.b` keeps its spelling while generated canonical accompaniment patterns use `.g`. Only the selected rhythm span is rewritten; unrelated source text remains untouched.
 
 Guitar Pro / GPIF export preflights every new rhythm technique before producing output. If the target interchange format cannot represent mute, percussive brush, or single-string attacks without losing meaning, export returns an explicit unsupported result and leaves the destination untouched. It never substitutes a full chord attack.
 

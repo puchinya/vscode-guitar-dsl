@@ -369,6 +369,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
       const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
       const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+      const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
       const captureGuideEvidence = async (filename: string, previewViewportWidth?: number): Promise<void> => {
         const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-153', filename);
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -727,7 +729,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
           assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
           assert.strictEqual(guide.nextDiagramVisible, true, 'the next-chord name and detail stay available');
-          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154-r4.png`, width === 1400 ? 1400 : undefined);
+          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154-r4${guideEvidenceSuffix}.png`, width === 1400 ? 1400 : undefined);
         }
         if ([421, 840, 1100, 1400].includes(width)) {
           await setGuideViewMode('compact');
@@ -786,7 +788,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.deepStrictEqual(compact.currentMeasure, [2], 'the visible current measure is highlighted');
           assert.strictEqual(compact.currentTechniqueCount, 1, 'one current stroke slot is highlighted in compact mode');
           assert.ok(compact.firstPattern.includes('↓') && compact.firstPattern.includes('〜'), 'the compact pattern preserves attack and continuation symbols');
-          if (captureScreenshots) await captureGuideEvidence(`practice-guide-compact-${locale}-${themeName}-${width}-pr154-r5.png`, width === 1400 ? 1400 : undefined);
+          if (captureScreenshots) await captureGuideEvidence(`practice-guide-compact-${locale}-${themeName}-${width}-pr154-r5${guideEvidenceSuffix}.png`, width === 1400 ? 1400 : undefined);
           await setGuideViewMode('detailed');
           await settle(100);
         }

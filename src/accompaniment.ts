@@ -426,9 +426,11 @@ const MODIFIER_ORDER: [keyof NonNullable<RhythmItem['techniques']>, string][] = 
 
 /** Rhythm token of an item with a (possibly new) duration string. */
 function formatItem(item: RhythmItem, duration = item.duration.replace(/^r/, ''), preserveGhostModifier = false): string {
+  if (item.mute) return [(item.isRest ? 'r' : '') + duration, 'm'].join('.');
   const mods: string[] = [];
   if (item.down) mods.push('d');
   if (item.up) mods.push('u');
+  if (item.stringAttack !== undefined) mods.push(`s${item.stringAttack}`);
   if (item.accent) mods.push('a');
   if (item.ghost) mods.push(preserveGhostModifier ? item.ghostModifier ?? 'g' : 'g');
   if (item.arpeggio) mods.push('arp');

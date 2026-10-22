@@ -34,8 +34,8 @@ interface PlaybackEventBase {
 }
 
 export type PlaybackEvent =
-  | (PlaybackEventBase & { kind: 'pitched'; source: 'melody' | 'inline'; pitches: Pitch[] })
-  | (PlaybackEventBase & { kind: 'rhythmAttack'; chord?: { name: string; label?: string }; stringAttack?: GuitarString })
+  | (PlaybackEventBase & { kind: 'pitched'; source: 'melody' | 'inline'; pitches: Pitch[]; releaseTailSeconds?: number })
+  | (PlaybackEventBase & { kind: 'rhythmAttack'; chord?: { name: string; label?: string }; stringAttack?: GuitarString; releaseTailSeconds?: number })
   | (PlaybackEventBase & { kind: 'rhythmBrush' })
   | (PlaybackEventBase & { kind: 'rhythmMute' })
   | (PlaybackEventBase & { kind: 'rest'; source: 'melody' | 'rhythm' })
@@ -93,6 +93,12 @@ function rhythmItemDuration(item: RhythmItem): Fraction | null {
  */
 export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResult {
   if (!score.playOrder.valid) return { ok: false, code: 'invalidPlayOrder' };
+
+  // Leave legacy accompaniment envelopes unchanged unless the score uses a newly added
+  // accompaniment technique. This gives a later `.m` onset a short tail to cancel.
+  const hasNewAccompanimentTechniques = score.measures.some(measure =>
+    measure.rhythms.some(item => item.mute || item.stringAttack !== undefined || item.ghostModifier === 'b')
+  );
 
   const sectionMembership = new Map<number, string>();
   let activeSection: string | undefined;
@@ -198,12 +204,19 @@ export function buildPlaybackTimeline(score: ParsedScore): PlaybackTimelineResul
         } else {
           const pitches = eventPitches(item).map(pitch => ({ ...pitch }));
           if (pitches.length > 0) {
-            rhythmEvent = { ...base, kind: 'pitched', source: 'inline', pitches };
+            rhythmEvent = {
+              ...base,
+              kind: 'pitched',
+              source: 'inline',
+              pitches,
+              ...(hasNewAccompanimentTechniques ? { releaseTailSeconds: 0.08 } : {})
+            };
           } else {
             const chord = chordAtOrBefore(measure, rhythmBeat);
+            const releaseTail = hasNewAccompanimentTechniques ? { releaseTailSeconds: 0.08 } : {};
             rhythmEvent = chord
-              ? { ...base, kind: 'rhythmAttack', chord, ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) }
-              : { ...base, kind: 'rhythmAttack', ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) };
+              ? { ...base, kind: 'rhythmAttack', chord, ...releaseTail, ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) }
+              : { ...base, kind: 'rhythmAttack', ...releaseTail, ...(item.stringAttack === undefined ? {} : { stringAttack: item.stringAttack }) };
           }
         }
       }
