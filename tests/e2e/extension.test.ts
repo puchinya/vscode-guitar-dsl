@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity, withPreviewReducedMotion } from './screenshotCapture';
 import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -333,7 +333,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     }
   });
 
-  test('Issue #153 Practice guide shows the full score and responds to its controls', async function () {
+  test('Issue #155 Practice guide preserves the detailed grid and renders compact SVG banks', async function () {
     this.timeout(90000);
     await withWorkbenchSnapshotRestored(async () => {
       const source = [
@@ -353,6 +353,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
       await waitForPreviewDocument();
       await setPreviewPracticeEnabled(true);
+      assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-guide-view').value`), 'compact',
+        'compact SVG practice guide is the default view');
       await evaluatePreviewWebview<void>(`(() => {
         const diagrams = document.getElementById('practice-guide-diagrams-toggle');
         const melody = document.getElementById('practice-guide-melody-toggle');
@@ -372,10 +374,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
       const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
       const captureGuideEvidence = async (filename: string, previewViewportWidth?: number): Promise<void> => {
-        const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-153', filename);
+        const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
         for (let attempt = 0; attempt < 3; attempt++) {
           await settle(500);
-          await capturePreviewWebviewScreenshot(filename, 153, previewViewportWidth);
+          await capturePreviewWebviewScreenshot(filename, 155, previewViewportWidth);
           if ((await fs.stat(outputPath)).size >= 50000) return;
         }
         const size = (await fs.stat(outputPath)).size;
@@ -414,6 +416,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       };
       const expectedOn = ['melody', 'lyrics', 'technique', 'chord', 'diagrams'];
       const expectedOff = ['lyrics', 'technique', 'chord', 'diagrams'];
+      const compactCapacities = new Map<number, number>();
       await setGuideViewMode('detailed');
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
@@ -470,9 +473,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             const alignedStartX = [
               first('.practice-guide-pitch-bar[data-guide-measure="0"]'),
               first('.practice-guide-lyric[data-guide-measure="0"]'),
-              first('.practice-guide-technique-marker[data-guide-measure="0"][data-guide-at-beat="0"]'),
-              first('.practice-guide-chord-name[data-guide-measure="0"]'),
-              first('.practice-guide-diagram-event[data-guide-measure="0"]')
+              first('.practice-guide-technique-marker[data-guide-measure="0"][data-guide-at-beat="0"]')
             ].map(item => item ? Number(item.style.left.replace('px', '')) : null);
             const bars = [...timeline.querySelectorAll('.practice-guide-pitch-bar')];
             const lyricEvents = [...timeline.querySelectorAll('.practice-guide-lyric')];
@@ -523,10 +524,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 ? svgRect.left + ((fretboardLeft + fretboardRight) / 2) * svgRect.width / viewBox.width
                 : NaN;
               const timelineRect = timeline.getBoundingClientRect();
+              const measureStartX = timelineRect.left + Number(name.dataset.guideMeasure) * 4 * Number(timeline.dataset.guidePxPerBeat);
+              const measureEndX = measureStartX + 4 * Number(timeline.dataset.guidePxPerBeat);
+              const pairCenter = pairRect ? (pairRect.left + pairRect.right) / 2 : NaN;
               return {
                 measure: name.dataset.guideMeasure,
                 chord: name.dataset.guideChord,
                 centerOffset: Number.isFinite(fretboardCenter) ? Math.abs((nameRect.left + nameRect.right) / 2 - fretboardCenter) : Infinity,
+                measureCenterOffset: Number.isFinite(pairCenter) ? Math.abs(pairCenter - (measureStartX + measureEndX) / 2) : Infinity,
+                insideMeasure: !!pairRect && pairRect.left >= measureStartX - 1 && pairRect.right <= measureEndX + 1,
                 clipped: !pairRect || nameRect.left < timelineRect.left - 1 || nameRect.right > timelineRect.right + 1
                   || pairRect.left < timelineRect.left - 1 || pairRect.right > timelineRect.right + 1,
                 left: pairRect?.left ?? 0,
@@ -619,21 +625,27 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               diagramHeight: diagramRect.height,
               diagramLaneHeight: timeline.querySelector('[data-guide-lane="diagrams"]').getBoundingClientRect().height,
               chordPairCount: chordPairs.length,
+              chordPairOffsets: chordPairs.map(pair => ({ measure: pair.measure, chord: pair.chord, offset: pair.centerOffset })),
               chordPairCenterOffsetMax: Math.max(...chordPairs.map(pair => pair.centerOffset)),
+              chordPairMeasureCenterOffsetMax: Math.max(...chordPairs.map(pair => pair.measureCenterOffset)),
+              chordPairsInsideMeasure: chordPairs.every(pair => pair.insideMeasure),
               chordPairClippedCount: chordPairs.filter(pair => pair.clipped).length,
               chordPairOverlapCount,
               pitchBarClipped: bars.some(item => item.offsetLeft + item.offsetWidth > item.parentElement.clientWidth + 1),
               markerFontMin: Math.min(...markers.map(item => parseFloat(item.size))),
               markerOverlapCount: overlapCount,
-              firstMeasureMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="mute"]')].map(item => item.textContent.trim()),
+              firstMeasureMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="mute"]')]
+                .map(item => item.querySelector('svg.practice-guide-stroke-icon')?.dataset.guideStroke),
               firstMeasureRestBases: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="rest"] svg[data-guide-rest-base]')].map(item => item.dataset.guideRestBase),
               firstMeasureRestVector: [...techniqueLane.querySelectorAll('[data-guide-measure="0"][data-guide-kind="rest"] svg')]
                 .every(item => !!item.querySelector('path, rect, circle') && !item.querySelector('text')),
               firstMeasureVisibleContinuationCount: visibleContinuations.filter(item => item.dataset.guideMeasure === '0').length,
-              tieContinuationLabel: techniqueLane.querySelector('[data-guide-measure="1"][data-guide-event="1"][data-guide-kind="continuation"]')?.textContent.trim(),
+              tieContinuationPath: techniqueLane.querySelector('[data-guide-measure="1"][data-guide-event="1"][data-guide-kind="continuation"] svg.practice-guide-wave path')?.getAttribute('d'),
               tieVisibleContinuationCount: visibleContinuations.filter(item => item.dataset.guideMeasure === '1' && ['0', '1'].includes(item.dataset.guideEvent)).length,
               brushEventContinuationCount: techniqueLane.querySelectorAll('.practice-guide-grid-continuation[data-guide-measure="2"][data-guide-event="0"]').length,
-              palmMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="2"][data-guide-kind="attack"]')].map(item => item.textContent.trim()),
+              palmMuteLabels: [...techniqueLane.querySelectorAll('[data-guide-measure="2"][data-guide-kind="attack"]')]
+                .map(item => ({ label: item.querySelector('.practice-guide-pm-label')?.textContent.trim(),
+                  arrow: item.querySelector('.practice-guide-pm-stroke svg.practice-guide-stroke-icon path')?.getAttribute('d') })),
               diagramCount: timeline.querySelectorAll('[data-guide-lane="diagrams"] .practice-guide-diagram-event svg').length,
               melodyHidden: getComputedStyle(timeline.querySelector('[data-guide-lane="melody"]')).display === 'none',
               melodyLabelHidden: getComputedStyle(rail.querySelector('[data-guide-lane="melody"]')).display === 'none',
@@ -686,7 +698,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.nextOutsideScroll, true, 'the next-chord panel is outside the axis scroller');
           assert.strictEqual(guide.fixedColumns, true, 'the labels and next-chord panel stay fixed while the timeline scrolls');
           assert.ok(guide.boundaries.every((x: number) => Math.abs(x - guide.boundaries[0]) < 0.01), 'each lane shares the same measure-boundary x coordinates');
-          assert.ok(guide.alignedStartX.every((x: number | null) => x !== null && Math.abs(x - guide.alignedStartX[0]) < 0.01), 'melody, lyric, technique, chord, and diagram events share onset x coordinates');
+          assert.ok(guide.alignedStartX.every((x: number | null) => x !== null && Math.abs(x - guide.alignedStartX[0]) < 0.01), 'melody, lyric, and technique events share onset x coordinates');
           assert.strictEqual(guide.melodyBarCount, 20, 'each written melody note becomes a pitch bar');
           assert.strictEqual(guide.firstBarInlineWidth, '24px', 'a sixteenth-note pitch bar retains duration at the collision-adjusted shared scale');
           if (melodyVisible) assert.ok(Math.abs(guide.firstBarWidth - guide.pixelsPerBeat / 4) < 1, 'a visible sixteenth-note pitch bar has the expected rendered width');
@@ -704,24 +716,29 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.nextLyric, 'す', 'the next syllable has a separate visual state');
           assert.strictEqual(guide.currentLyricSize, 24, 'the current lyric is promoted to 24px');
           assert.strictEqual(guide.defaultLyricSize, 18, 'other lyric syllables remain at the readable 18px size');
-          assert.strictEqual(guide.diagramWidth, 160, 'main timeline chord diagrams are 160px wide');
-          assert.strictEqual(guide.diagramHeight, 90, 'main timeline chord diagrams are 90px high');
-          assert.ok(guide.diagramLaneHeight >= 112, 'the diagram lane reserves enough height');
+          assert.strictEqual(guide.diagramWidth, 144, 'main timeline chord diagrams are 144px wide');
+          assert.strictEqual(guide.diagramHeight, 144, 'main timeline chord diagrams are 144px high');
+          assert.ok(guide.diagramLaneHeight >= 144, 'the diagram lane reserves enough height');
           assert.strictEqual(guide.chordPairCount, 5, 'each of F/G/Em7/Am/Dm7 has a paired label and diagram');
-          assert.ok(guide.chordPairCenterOffsetMax <= 2, 'chord names align to the visible fretboard centers within two CSS pixels');
+          assert.ok(guide.chordPairCenterOffsetMax <= 2,
+            `chord names align to visible fretboard centers within two CSS pixels: ${JSON.stringify(guide.chordPairOffsets)}`);
+          assert.ok(guide.chordPairMeasureCenterOffsetMax <= 2,
+            'single-chord measures place their name and diagram at the measure center, away from bar lines');
+          assert.strictEqual(guide.chordPairsInsideMeasure, true, 'chord diagram cards stay within their measure boundaries');
           assert.strictEqual(guide.chordPairClippedCount, 0, 'chord pairs stay inside the timeline content edges');
           assert.strictEqual(guide.chordPairOverlapCount, 0, 'the full-size chord pairs do not overlap');
           assert.strictEqual(guide.pitchBarClipped, false, 'pitch bars fit inside the full-score lane');
           assert.ok(guide.markerFontMin >= 14, 'attack and continuation marks use at least 14 CSS px');
           assert.strictEqual(guide.markerOverlapCount, 0, 'the dense technique lane has no overlapping markers');
-          assert.deepStrictEqual(guide.firstMeasureMuteLabels, ['・'], 'mute has its own marker and no continuation');
+          assert.deepStrictEqual(guide.firstMeasureMuteLabels, ['mute'], 'mute uses its own SVG dot and has no continuation');
           assert.deepStrictEqual(guide.firstMeasureRestBases, ['8'], 'the eighth rest is a duration-specific music symbol');
           assert.strictEqual(guide.firstMeasureRestVector, true, 'rest notation uses visible font-independent vector shapes');
           assert.strictEqual(guide.firstMeasureVisibleContinuationCount, 9, 'each quarter-note attack fills only the remaining sixteenth slots');
-          assert.strictEqual(guide.tieContinuationLabel, '〜', 'a valid tied token is a continuation, not a reattack');
+          assert.strictEqual(guide.tieContinuationPath, 'M2 9Q6 3 10 9T18 9', 'a valid tied token is a single vector wave, not a reattack');
           assert.strictEqual(guide.tieVisibleContinuationCount, 2, 'the tied eighth-note span has two remaining sixteenth slots');
           assert.strictEqual(guide.brushEventContinuationCount, 0, 'a percussive brush does not acquire sustained continuation marks');
-          assert.ok(guide.palmMuteLabels.includes('PM↑'), 'palm mute and stroke direction render as one mark');
+          assert.ok(guide.palmMuteLabels.some((mark: { label: string; arrow: string }) => mark.label === 'PM' && /M10 3v25|M10 31V6/.test(mark.arrow)),
+            `palm mute text and its downstroke vector render as one mark: ${JSON.stringify(guide.palmMuteLabels)}`);
           assert.strictEqual(guide.diagramCount, 5, 'all five chord diagrams share the timeline');
           assert.strictEqual(guide.melodyHidden, !melodyVisible, 'melody visibility matches its control');
           assert.strictEqual(guide.melodyLabelHidden, !melodyVisible, 'melody OFF removes only its fixed label');
@@ -729,70 +746,123 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
           assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
           assert.strictEqual(guide.nextDiagramVisible, true, 'the next-chord name and detail stay available');
-          if (captureScreenshots) await captureGuideEvidence(`practice-guide-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}-pr154-r4${guideEvidenceSuffix}.png`, width === 1400 ? 1400 : undefined);
         }
-        if ([421, 840, 1100, 1400].includes(width)) {
+        if ([421, 600, 840, 1100, 1400].includes(width)) {
           await setGuideViewMode('compact');
-          await settle(120);
-          const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-            const panel = document.getElementById('practice-guide-panel');
-            const layout = document.querySelector('.practice-guide-layout');
-            const guide = document.getElementById('practice-guide-compact');
-            const grid = document.getElementById('practice-guide-compact-grid');
-            const cards = [...grid.querySelectorAll('.practice-guide-compact-measure')];
-            const visibleCards = cards.filter(card => !card.hidden);
-            const diagrams = visibleCards.flatMap(card => [...card.querySelectorAll('.practice-guide-compact-diagram svg')]);
-            return {
-              mode: document.getElementById('practice-guide-view').value,
-              selectorAccessible: document.getElementById('practice-guide-view').getAttribute('aria-label'),
-              detailedHidden: getComputedStyle(layout).display === 'none',
-              compactVisible: getComputedStyle(guide).display !== 'none',
-              range: document.getElementById('practice-guide-compact-range').textContent.trim(),
-              visibleMeasures: visibleCards.map(card => Number(card.dataset.guideCompactMeasure) + 1),
-              gridColumns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-              horizontalOverflow: guide.scrollWidth > guide.clientWidth + 1,
-              panelBackground: getComputedStyle(panel).backgroundColor,
-              cardBackgrounds: visibleCards.map(card => getComputedStyle(card).backgroundColor),
-              diagramCount: diagrams.length,
-              repeatedContinuationEvents: (() => {
-                const counts = new Map();
-                for (const item of guide.querySelectorAll('.practice-guide-grid-continuation')) {
-                  const key = [item.dataset.guideMeasure, item.dataset.guideEvent].join(':');
-                  counts.set(key, (counts.get(key) ?? 0) + 1);
-                }
-                return [...counts.values()].some(count => count > 1);
-              })(),
-              diagramsContained: diagrams.every(svg => {
-                const card = svg.closest('.practice-guide-compact-measure').getBoundingClientRect();
-                const rect = svg.getBoundingClientRect();
-                return rect.left >= card.left - 1 && rect.right <= card.right + 1 && rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1;
-              }),
-              currentMeasure: visibleCards.filter(card => card.classList.contains('is-current')).map(card => Number(card.dataset.guideCompactMeasure) + 1),
-              currentTechniqueCount: guide.querySelectorAll('.practice-guide-compact-symbol.is-current').length,
-              firstPattern: [...guide.querySelectorAll('[data-guide-compact-measure="0"] .practice-guide-compact-symbol')]
-                .filter(item => getComputedStyle(item).display !== 'none').map(item => item.textContent.trim())
-            };
-          })())`));
-          assert.strictEqual(compact.mode, 'compact', 'the view selector enters compact mode');
-          assert.strictEqual(compact.selectorAccessible, locale === 'ja' ? '表示' : 'View', 'the view selector has a localized accessible name');
-          assert.strictEqual(compact.detailedHidden, true, 'compact mode hides the wide detailed timeline');
-          assert.strictEqual(compact.compactVisible, true, 'the compact four-measure overview is visible');
-          assert.deepStrictEqual(compact.visibleMeasures, [1, 2, 3, 4], 'the first compact page contains four real measures');
-          assert.strictEqual(compact.gridColumns, width < 840 ? 2 : 4, `${width}px uses the contracted compact card columns`);
-          assert.strictEqual(compact.horizontalOverflow, false, `${width}px compact mode does not require horizontal scrolling`);
-          assert.strictEqual(compact.panelBackground, 'rgb(255, 255, 255)', 'compact mode keeps the approved white background');
-          assert.ok(compact.cardBackgrounds.every((color: string) => color === 'rgb(255, 255, 255)'), 'compact measure cards are white in both themes');
-          assert.strictEqual(compact.diagramCount, 4, 'the first four measures show their generated chord diagrams');
-          assert.strictEqual(compact.repeatedContinuationEvents, false, 'each sustained stroke event has only one compact continuation marker');
-          assert.strictEqual(compact.diagramsContained, true, 'scaled chord diagrams fit inside their measure cards');
-          assert.deepStrictEqual(compact.currentMeasure, [2], 'the visible current measure is highlighted');
-          assert.strictEqual(compact.currentTechniqueCount, 1, 'one current stroke slot is highlighted in compact mode');
-          assert.ok(compact.firstPattern.includes('↓') && compact.firstPattern.includes('〜'), 'the compact pattern preserves attack and continuation symbols');
-          if (captureScreenshots) await captureGuideEvidence(`practice-guide-compact-${locale}-${themeName}-${width}-pr154-r5${guideEvidenceSuffix}.png`, width === 1400 ? 1400 : undefined);
+          for (const melodyVisible of [true, false]) {
+            await setGuideVisibility(melodyVisible);
+            await settle(150);
+            const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+              const panel = document.getElementById('practice-guide-panel');
+              const layout = document.getElementById('practice-guide-scroll');
+              const guide = document.getElementById('practice-guide-compact');
+              const stage = document.getElementById('practice-guide-pair-page');
+              const currentBank = stage.dataset.guideCurrentBank;
+              const occurrenceIndex = stage.dataset.guideOccurrenceIndex;
+              const currentMeasure = stage.querySelector('#practice-guide-bank-' + currentBank
+                + ' .practice-guide-compact-measure[data-guide-occurrence-index="' + occurrenceIndex + '"]');
+              const banks = [...stage.querySelectorAll('.practice-guide-page-bank')];
+              const cards = [...stage.querySelectorAll('.practice-guide-page-bank .practice-guide-compact-measure')];
+              const diagrams = [...stage.querySelectorAll('.practice-guide-compact-diagram-event svg')];
+              const stageRect = stage.getBoundingClientRect();
+              const compactDiagramPairs = [...stage.querySelectorAll('.practice-guide-compact-diagram-event')].map(event => {
+                const card = event.closest('.practice-guide-compact-measure');
+                const diagramLane = event.closest('[data-guide-lane="diagrams"]');
+                const rect = event.getBoundingClientRect();
+                const laneRect = diagramLane.getBoundingClientRect();
+                const cardRect = card.getBoundingClientRect();
+                const centerBeat = Number(event.dataset.guideCenterBeat);
+                const measureBeats = Number(card.dataset.guideMeasureBeats);
+                const expectedCenter = laneRect.left + laneRect.width * centerBeat / measureBeats;
+                const chordName = [...stage.querySelectorAll('.practice-guide-compact-chord-name')].find(name =>
+                  name.dataset.guideMeasure === event.dataset.guideMeasure
+                    && name.dataset.guideChord === event.dataset.guideChord
+                    && name.dataset.guideCenterBeat === event.dataset.guideCenterBeat);
+                const nameRect = chordName?.getBoundingClientRect();
+                return {
+                  centerOffset: Math.abs((rect.left + rect.right) / 2 - expectedCenter),
+                  labelOffset: nameRect ? Math.abs((rect.left + rect.right - nameRect.left - nameRect.right) / 2) : Infinity,
+                  insideMeasure: rect.left >= cardRect.left - 1 && rect.right <= cardRect.right + 1
+                };
+              });
+              const compactCardRects = cards.map(card => card.getBoundingClientRect());
+              const visibleGlyphText = [...guide.querySelectorAll('.practice-guide-compact-symbol')]
+                .flatMap(item => [...item.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent)).join('');
+              const firstMeasureTemplate = guide.querySelector('template[data-guide-template-measure="0"]')?.content;
+              const technique = stage.querySelector('.practice-guide-compact-technique');
+              return {
+                mode: document.getElementById('practice-guide-view').value,
+                selectorAccessible: document.getElementById('practice-guide-view').getAttribute('aria-label'),
+                detailedHidden: getComputedStyle(layout).display === 'none',
+                compactVisible: getComputedStyle(guide).display !== 'none',
+                capacity: Number(stage.dataset.guideCapacity),
+                currentOccurrence: Number(occurrenceIndex),
+                currentBank,
+                currentMeasureHighlighted: currentMeasure?.classList.contains('is-current') ?? false,
+                bankNumbers: Object.fromEntries(banks.map(bank => [bank.dataset.guideBank,
+                  [...bank.querySelectorAll('.practice-guide-compact-ruler')].map(ruler => Number(ruler.textContent.trim()))])),
+                measureNumbers: cards.map(card => Number(card.querySelector('.practice-guide-compact-ruler')?.textContent.trim())),
+                measureCount: cards.length,
+                laneOrder: [...cards[0]?.querySelectorAll('.practice-guide-compact-lane') ?? []].map(lane => lane.dataset.guideLane),
+                horizontalOverflow: stage.scrollWidth > stage.clientWidth + 1,
+                scrollOverflowX: getComputedStyle(stage).overflowX,
+                measuresReachable: stage.scrollWidth + 1 >= Math.max(...compactCardRects.map(rect => rect.right - stageRect.left + stage.scrollLeft)),
+                compactDiagramCenterOffsetMax: Math.max(...compactDiagramPairs.map(pair => pair.centerOffset)),
+                compactChordLabelCenterOffsetMax: Math.max(...compactDiagramPairs.map(pair => pair.labelOffset)),
+                compactDiagramsInsideMeasures: compactDiagramPairs.every(pair => pair.insideMeasure),
+                panelBackground: getComputedStyle(panel).backgroundColor,
+                diagramCount: diagrams.length,
+                diagramsSquare: diagrams.every(svg => svg.getAttribute('viewBox') === '0 0 144 144'
+                  && svg.getBoundingClientRect().width === 144 && svg.getBoundingClientRect().height === 144),
+                techniqueSvgCount: technique?.querySelectorAll('svg.practice-guide-stroke-icon').length ?? 0,
+                techniqueGlyphText: visibleGlyphText,
+                vectorMute: !!firstMeasureTemplate?.querySelector('.practice-guide-compact-symbol[data-guide-kind="mute"] svg[data-guide-stroke="mute"] circle'),
+                vectorWave: !!stage.querySelector('.practice-guide-compact-symbol svg.practice-guide-wave path[d="M2 9Q6 3 10 9T18 9"]'),
+                noBankHeadings: stage.querySelectorAll('.practice-guide-bank-heading,.practice-guide-bank-label,[data-guide-bank-label]').length === 0,
+                currentTechniqueCount: stage.querySelectorAll('.practice-guide-compact-symbol.is-current').length,
+                nextChordVisible: getComputedStyle(document.getElementById('practice-guide-next-chord-name')).display !== 'none'
+              };
+            })())`));
+            if (melodyVisible) compactCapacities.set(width, compact.capacity);
+            assert.strictEqual(compact.mode, 'compact', 'the view selector enters compact mode');
+            assert.strictEqual(compact.selectorAccessible, locale === 'ja' ? '表示' : 'View', 'the view selector has a localized accessible name');
+            assert.strictEqual(compact.detailedHidden, true, 'compact mode hides the wide detailed timeline');
+            assert.strictEqual(compact.compactVisible, true, 'the compact SVG banks are visible');
+            assert.strictEqual(compact.capacity, 4, `${width}px retains a four-measure page`);
+            assert.strictEqual(compact.currentOccurrence, 1, 'the current PlaybackTimeline occurrence remains selected');
+            assert.strictEqual(compact.currentMeasureHighlighted, true, 'the current occurrence is highlighted without depending on lyric presence');
+            assert.strictEqual(compact.measureCount, 4, `${width}px renders the current and next measure pairs together`);
+            assert.deepStrictEqual(compact.measureNumbers, [1, 2, 3, 4], `${width}px retains the four expected measure numbers`);
+            assert.strictEqual(compact.scrollOverflowX, 'auto', `${width}px compact mode keeps narrow measure rows horizontally reachable`);
+            assert.strictEqual(compact.measuresReachable, true, `${width}px scroll range reaches every rendered measure`);
+            assert.strictEqual(compact.panelBackground, 'rgb(255, 255, 255)', 'compact mode keeps the approved white background');
+            assert.ok(compact.diagramCount > 0, 'the active banks show generated chord diagrams');
+            assert.strictEqual(compact.diagramsSquare, true, 'Practice chord diagrams are 144px square SVGs');
+            assert.ok(compact.compactDiagramCenterOffsetMax <= 2,
+              `${width}px compact diagrams sit at the center of each chord interval: ${compact.compactDiagramCenterOffsetMax}px`);
+            assert.ok(compact.compactChordLabelCenterOffsetMax <= 2,
+              `${width}px compact chord names share their diagram centers: ${compact.compactChordLabelCenterOffsetMax}px`);
+            assert.strictEqual(compact.compactDiagramsInsideMeasures, true, `${width}px compact diagrams stay inside their measure cards`);
+            assert.ok(compact.techniqueSvgCount > 0, 'technique marks are rendered as SVG paths');
+            assert.doesNotMatch(compact.techniqueGlyphText, /[↓↑〜]/u, 'technique directions and waves are not visible Unicode glyphs');
+            assert.strictEqual(compact.vectorMute, true, 'mute uses a vector dot');
+            assert.strictEqual(compact.vectorWave, true, 'duration continuation uses the approved vector wave path');
+            assert.strictEqual(compact.noBankHeadings, true, 'the banks have no visible status or A/B headings');
+            assert.ok(compact.currentTechniqueCount > 0, 'the active technique event follows the current occurrence');
+            assert.strictEqual(compact.nextChordVisible, true, 'the fixed next-chord name remains visible');
+            assert.deepStrictEqual(compact.laneOrder, ['melody', 'lyrics', 'technique', 'chord', 'diagrams'], 'each measure uses the contracted lane order');
+            if (captureScreenshots) await captureGuideEvidence(
+              `practice-guide-compact-issue155-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}${guideEvidenceSuffix}.png`,
+              width === 1400 ? 1400 : undefined);
+          }
           await setGuideViewMode('detailed');
           await settle(100);
         }
       }
+      const capacitiesByWidth = [...compactCapacities.entries()].sort((a, b) => a[0] - b[0]).map(([, capacity]) => capacity);
+      assert.strictEqual(compactCapacities.size, 5, 'the capacity matrix covers all five contracted Preview widths');
+      assert.deepStrictEqual(capacitiesByWidth, [4, 4, 4, 4, 4],
+        `the compact guide always keeps four measures across all widths: ${capacitiesByWidth.join(',')}`);
       await resetPreviewWebviewViewport();
       await resetWorkbenchViewport();
 
@@ -862,8 +932,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         await settle(50);
         melodyHiddenGeometry = await readPanelGeometry();
       }
-      assert.ok(melodyHiddenGeometry.height < rebuiltPanelGeometry.height - 60,
-        'melody OFF shrinks the natural panel by its removed lane');
+      assert.ok(melodyHiddenGeometry.layoutScrollHeight < rebuiltPanelGeometry.layoutScrollHeight - 60,
+        'melody OFF removes its lane from the natural panel content height');
       assert.ok(Math.abs(melodyHiddenGeometry.bodyPadding - melodyHiddenGeometry.height) <= 0.5,
         'melody OFF updates the body spacer to the measured panel height');
       await setGuideVisibility(true);
@@ -875,8 +945,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
       await settle(120);
       const diagramsHiddenGeometry = await readPanelGeometry();
-      assert.ok(diagramsHiddenGeometry.height < melodyRestoredGeometry.height - 100,
-        'diagrams OFF removes the main diagram lane and the next-chord diagram height');
+      assert.ok(diagramsHiddenGeometry.layoutScrollHeight < melodyRestoredGeometry.layoutScrollHeight - 100,
+        'diagrams OFF removes the main diagram lane and the next-chord diagram from the natural content height');
       assert.ok(Math.abs(diagramsHiddenGeometry.bodyPadding - diagramsHiddenGeometry.height) <= 0.5,
         'diagrams OFF updates the body spacer to the measured panel height');
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
@@ -939,14 +1009,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         await settle(60);
         const current = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
           count: document.querySelectorAll('.practice-guide-technique-marker.is-current').length,
-          label: document.querySelector('.practice-guide-technique-marker.is-current')?.textContent.trim()
+          stroke: document.querySelector('.practice-guide-technique-marker.is-current svg')?.dataset.guideStroke
         })`));
         assert.strictEqual(current.count, 1, `only one written 16th slot is current at ${seconds}s`);
-        return current.label;
+        return current.stroke;
       };
       const sequentialSlots = [];
       for (const seconds of [0, 0.125, 0.25, 0.375]) sequentialSlots.push(await currentTechniqueLabelAt(seconds));
-      assert.deepStrictEqual(sequentialSlots, ['↓', '〜', '〜', '〜'], 'a sustained quarter note advances one written 16th marker every 125ms at 120 BPM');
+      assert.deepStrictEqual(sequentialSlots, ['attack', 'wave', 'wave', 'wave'], 'a sustained quarter note advances one written 16th marker every 125ms at 120 BPM');
 
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
@@ -1121,19 +1191,36 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await setPreviewPracticeEnabled(true);
       const tabGuide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
         const timeline = document.getElementById('practice-guide-timeline');
+        if (!timeline) return {
+          missingTimeline: true,
+          bodyClasses: document.body.className,
+          practicePressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+          pageTitle: document.title
+        };
         const techniqueItems = measure => [...timeline.querySelectorAll('[data-guide-lane="technique"] .practice-guide-technique-marker')]
           .filter(item => item.dataset.guideMeasure === String(measure) && !item.classList.contains('practice-guide-grid-continuation'));
+        const mark = item => {
+          const svg = item.querySelector('svg.practice-guide-stroke-icon');
+          if (!svg) return item.textContent.trim();
+          if (svg.dataset.guideStroke === 'string') return [...svg.querySelectorAll('text')].map(text => text.textContent.trim()).join('');
+          const paths = [...svg.querySelectorAll('path')].map(path => path.getAttribute('d')).join(' ');
+          if (paths.includes('M10 3v25')) return 'down';
+          if (paths.includes('M10 31V6')) return 'up';
+          return svg.dataset.guideStroke;
+        };
         return {
+          missingTimeline: false,
           grid: document.getElementById('practice-guide-panel').dataset.automaticGrid,
           measureCount: Number(timeline.dataset.guideMeasureCount),
-          explicitLabels: techniqueItems(0).map(item => item.textContent.trim()),
-          tabLabels: techniqueItems(1).map(item => item.textContent.trim())
+          explicitLabels: techniqueItems(0).map(mark),
+          tabLabels: techniqueItems(1).map(mark)
         };
       })())`));
+      assert.strictEqual(tabGuide.missingTimeline, false, `TAB fixture renders the Practice guide timeline: ${JSON.stringify(tabGuide)}`);
       assert.strictEqual(tabGuide.grid, '8', 'sixteenth-note TAB beside explicit rhythm does not change the song grid');
       assert.strictEqual(tabGuide.measureCount, 2);
-      assert.deepStrictEqual(tabGuide.explicitLabels, ['↓', '↑', '↓', '↑', '↓', '↑', '↓', '↑'],
-        'explicit rhythm takes precedence over same-measure TAB');
+      assert.deepStrictEqual(tabGuide.explicitLabels, ['down', 'up', 'down', 'up', 'down', 'up', 'down', 'up'],
+        'explicit rhythm vectors take precedence over same-measure TAB');
       assert.deepStrictEqual(tabGuide.tabLabels, Array(8).fill('6'),
         'TAB-only measures show string numbers instead of the implicit slash pattern');
       } finally {
@@ -1143,20 +1230,38 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('Issue #153 compact overview advances in four-measure windows and follows seeks', async function () {
-    this.timeout(45000);
+  test('Issue #155 crossfades only the previous-played bank and cleans up the old layer', async function () {
+    this.timeout(60000);
     try {
       await withWorkbenchSnapshotRestored(async () => {
-        const bars = ['F', 'G', 'Em7', 'Am', 'Dm7', 'C', 'G7', 'F'];
+        const bars = ['F', 'C', 'Dm7', 'E7', 'F', 'C', 'Dm7', 'E7'];
         const source = [
-          'title: Compact guide paging',
+          'title: SVG guide crossfade evidence',
           'time: 4/4',
-          'bpm: 120',
-          ...bars.map(chord => `| ${chord} | 4.d 4.u 4.d 4.u |`)
+          'bpm: 240',
+          ...bars.map(chord => `| ${chord} | 4.d 4.u 4.d 4.u |`),
+          'mel: | c5/4 d5/4 e5/4 f5/4 | g5/4 a5/4 g5/4 f5/4 | e5/4 f5/4 g5/4 a5/4 | b5/4 a5/4 g5/4 f5/4 | c5/4 d5/4 e5/4 f5/4 | g5/4 a5/4 g5/4 f5/4 | e5/4 f5/4 g5/4 a5/4 | b5/4 a5/4 g5/4 f5/4 |',
+          'lyr: 最 後 の 花 火 に 今 年 も な っ た な き み と'
         ].join('\n');
         const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
         await showAndFocus(doc);
+        const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
+          generation: number;
+          currentDocumentUri?: string;
+        };
+        const previousPreviewGeneration = previewLifecycle.generation;
         await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        for (let attempt = 0; attempt < 100
+          && (previewLifecycle.currentDocumentUri !== doc.uri.toString()
+            || previewLifecycle.generation === previousPreviewGeneration); attempt++) await settle(20);
+        assert.strictEqual(previewLifecycle.currentDocumentUri, doc.uri.toString(),
+          'the Preview finishes switching to the crossfade fixture document');
+        assert.ok(previewLifecycle.generation > previousPreviewGeneration,
+          'the crossfade fixture uses a newly rendered Preview generation');
+        await waitForPreviewIdentity({
+          documentUri: doc.uri.toString(), documentVersion: doc.version,
+          previewGeneration: previewLifecycle.generation
+        });
         await waitForPreviewDocument();
         await setPreviewPracticeEnabled(true);
         await evaluatePreviewWebview<void>(`(() => {
@@ -1165,35 +1270,216 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const view = document.getElementById('practice-guide-view');
           view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true }));
         })()`);
-        await settle(150);
-        const range = async (): Promise<string> => evaluatePreviewWebview<string>(
-          `document.getElementById('practice-guide-compact-range').textContent.trim()`);
-        assert.match(await range(), /^1–4 \/ 8 /, 'the eight-measure score starts with measures 1–4');
-
+        await setPreviewWebviewViewportWidth(1600);
+        await settle(350);
+        const initial = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const left = document.getElementById('practice-guide-bank-left');
+          const right = document.getElementById('practice-guide-bank-right');
+          const measures = bank => [...bank.querySelectorAll('.practice-guide-compact-ruler')].map(item => Number(item.textContent.trim()));
+          const next = document.getElementById('practice-guide-next-chord');
+          const rightContent = right.querySelector('.practice-guide-bank-content');
+          const rect = rightContent.getBoundingClientRect();
+          const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+          const stageRect = stage.getBoundingClientRect();
+          const diagramCenters = [...stage.querySelectorAll('.practice-guide-compact-diagram-event')].map(event => {
+            const card = event.closest('.practice-guide-compact-measure');
+            const laneRect = event.closest('[data-guide-lane="diagrams"]').getBoundingClientRect();
+            const eventRect = event.getBoundingClientRect();
+            const centerBeat = Number(event.dataset.guideCenterBeat);
+            const beats = Number(card.dataset.guideMeasureBeats);
+            return Math.abs((eventRect.left + eventRect.right) / 2 - (laneRect.left + laneRect.width * centerBeat / beats));
+          });
+          return {
+            viewportWidth: window.innerWidth,
+            capacity: Number(stage.dataset.guideCapacity),
+            currentOccurrence: Number(stage.dataset.guideOccurrenceIndex),
+            currentBank: stage.dataset.guideCurrentBank,
+            left: measures(left), right: measures(right),
+            allFourVisible: cards.length === 4 && cards.every(card => {
+              const cardRect = card.getBoundingClientRect();
+              return cardRect.left >= stageRect.left - 1 && cardRect.right <= stageRect.right + 1;
+            }),
+            nextChordVisible: (() => {
+              const layoutRect = document.querySelector('.practice-guide-layout').getBoundingClientRect();
+              const nextRect = next.getBoundingClientRect();
+              return nextRect.left >= layoutRect.left - 1 && nextRect.right <= layoutRect.right + 1;
+            })(),
+            compactDiagramCenterOffsetMax: Math.max(...diagramCenters),
+            leftContent: left.querySelector('.practice-guide-bank-content'),
+            rightContent,
+            next,
+            rightRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+            nextRect: (() => { const value = next.getBoundingClientRect(); return { left: value.left, top: value.top, width: value.width, height: value.height }; })(),
+            headings: document.querySelectorAll('.practice-guide-bank-heading,.practice-guide-bank-label,[data-guide-bank-label]').length
+          };
+        })())`));
+        assert.strictEqual(initial.viewportWidth, 1600, 'the reference layout is measured at 1600 CSS px');
+        assert.strictEqual(initial.capacity, 4, 'the wide Preview uses four-measure capacity');
+        assert.deepStrictEqual(initial.left, [1, 2], 'the initial left bank shows measures 01–02');
+        assert.deepStrictEqual(initial.right, [3, 4], 'the initial right bank shows measures 03–04');
+        assert.strictEqual(initial.allFourVisible, true, 'the reference width shows all four full-size measures at once');
+        assert.strictEqual(initial.nextChordVisible, true, 'the reference width keeps the next-chord area fully visible');
+        assert.ok(initial.compactDiagramCenterOffsetMax <= 2, 'each compact chord diagram centers within its measure interval');
+        assert.strictEqual(initial.currentOccurrence, 0, 'initial projection follows the current playback occurrence');
+        assert.strictEqual(initial.currentBank, 'left', 'the left bank contains the current opening pair');
+        assert.strictEqual(initial.headings, 0, 'no visible A/B or bank status headings are added');
+        const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+        const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+        const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+        if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+          const filename = `practice-guide-reference-4-measures-issue155-${locale}-${themeName}.png`;
+          await capturePreviewWebviewScreenshot(filename, 155, 1600);
+          const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
+          assert.ok((await fs.stat(outputPath)).size >= 50000, 'the four-measure reference view is captured at its 1600px layout width');
+        }
+        await evaluatePreviewWebview<void>(`window.__practiceGuideCrossfadeProbe = {
+          fadeStartedAt: 0,
+          activeBank: document.getElementById('practice-guide-bank-right').querySelector('.practice-guide-bank-content'),
+          activeRect: (() => { const r = document.getElementById('practice-guide-bank-right').getBoundingClientRect(); return { left:r.left, top:r.top, width:r.width, height:r.height }; })(),
+          next: document.getElementById('practice-guide-next-chord'),
+          nextRect: (() => { const r = document.getElementById('practice-guide-next-chord').getBoundingClientRect(); return { left:r.left, top:r.top, width:r.width, height:r.height }; })(),
+          playhead: document.getElementById('practice-guide-playhead'),
+          playheadRect: (() => { const r = document.getElementById('practice-guide-playhead').getBoundingClientRect(); return { left:r.left, top:r.top, width:r.width, height:r.height }; })()
+        }`);
         await clickPreviewElement('#btn-play');
-        for (let attempt = 0; attempt < 100 && !/^3–6 \/ 8 /.test(await range()); attempt++) await settle(50);
-        assert.match(await range(), /^3–6 \/ 8 /,
-          'playback advances by two measures when it enters the third displayed measure');
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const occurrence = await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-pair-page').dataset.guideOccurrenceIndex)`);
+          if (occurrence === 1) break;
+          await settle(20);
+        }
+        assert.strictEqual(await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-pair-page').dataset.guideOccurrenceIndex)`), 1,
+          'playback reaches occurrence index 1 before the pair boundary');
+        await evaluatePreviewWebview<void>(`(() => {
+          const right = document.getElementById('practice-guide-bank-right');
+          const content = right.querySelector('.practice-guide-bank-content');
+          const rect = right.getBoundingClientRect();
+          window.__practiceGuideCrossfadeProbe.activeBank = content;
+          window.__practiceGuideCrossfadeProbe.activeRect = { left:rect.left, top:rect.top, width:rect.width, height:rect.height };
+        })()`);
+        const state = async (): Promise<string> => evaluatePreviewWebview<string>(`(() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const bank = document.getElementById('practice-guide-bank-left');
+          const layers = [...bank.querySelectorAll('.practice-guide-bank-content')];
+          const opacity = item => Number.parseFloat(getComputedStyle(item).opacity);
+          if (Number(stage.dataset.guideOccurrenceIndex) === 2 && layers.length === 2
+            && !window.__practiceGuideCrossfadeProbe.fadeStartedAt) {
+            window.__practiceGuideCrossfadeProbe.fadeStartedAt = performance.now();
+          }
+          const right = document.getElementById('practice-guide-bank-right');
+          const activeMeasure = right.querySelector('.practice-guide-compact-measure[data-guide-occurrence-index="2"]');
+          return JSON.stringify({
+            occurrence: Number(stage.dataset.guideOccurrenceIndex),
+            page: Number(stage.dataset.guidePageIndex),
+            currentBank: stage.dataset.guideCurrentBank,
+            elapsedMs: window.__practiceGuideCrossfadeProbe.fadeStartedAt
+              ? performance.now() - window.__practiceGuideCrossfadeProbe.fadeStartedAt : null,
+            layers: layers.map(item => ({
+              measures: [...item.querySelectorAll('.practice-guide-compact-ruler')].map(ruler => Number(ruler.textContent.trim())),
+              opacity: opacity(item), ariaHidden: item.getAttribute('aria-hidden'), inert: Boolean(item.inert), pointerEvents: getComputedStyle(item).pointerEvents
+            })),
+            rightSame: document.getElementById('practice-guide-bank-right').querySelector('.practice-guide-bank-content') === window.__practiceGuideCrossfadeProbe.activeBank,
+            rightRectSame: (() => { const r = document.getElementById('practice-guide-bank-right').getBoundingClientRect(); const p = window.__practiceGuideCrossfadeProbe.activeRect; return Math.abs(r.left-p.left)<0.5 && Math.abs(r.top-p.top)<0.5 && Math.abs(r.width-p.width)<0.5 && Math.abs(r.height-p.height)<0.5; })(),
+            rightOpacity: opacity(right.querySelector('.practice-guide-bank-content')),
+            currentMeasureHighlighted: activeMeasure?.classList.contains('is-current') ?? false,
+            currentTechniqueCount: activeMeasure?.querySelectorAll('.practice-guide-compact-symbol.is-current').length ?? 0,
+            nextSame: document.getElementById('practice-guide-next-chord') === window.__practiceGuideCrossfadeProbe.next,
+            nextRectSame: (() => { const r = document.getElementById('practice-guide-next-chord').getBoundingClientRect(); const p = window.__practiceGuideCrossfadeProbe.nextRect; return Math.abs(r.left-p.left)<0.5 && Math.abs(r.top-p.top)<0.5 && Math.abs(r.width-p.width)<0.5 && Math.abs(r.height-p.height)<0.5; })(),
+            playheadSame: document.getElementById('practice-guide-playhead') === window.__practiceGuideCrossfadeProbe.playhead
+          });
+        })()`);
+        for (let attempt = 0; attempt < 140; attempt++) {
+          const frame = JSON.parse(await state());
+          if (frame.occurrence === 2 && frame.layers.length === 2) break;
+          await settle(25);
+        }
+        const atStart = JSON.parse(await state());
+        assert.strictEqual(atStart.occurrence, 2, 'playback enters occurrence index 2 at the 03 measure boundary');
+        assert.strictEqual(atStart.currentBank, 'right', 'the currently played 03–04 pair stays on the right');
+        assert.deepStrictEqual(atStart.layers.map((item: { measures: number[] }) => item.measures), [[1, 2], [5, 6]],
+          'only the previous-played left bank replaces 01–02 with 05–06');
+        assert.strictEqual(atStart.layers[0].ariaHidden, 'true', 'the outgoing bank layer is aria-hidden');
+        assert.strictEqual(atStart.layers[0].inert, true, 'the outgoing bank layer is inert');
+        assert.strictEqual(atStart.layers[0].pointerEvents, 'none', 'the outgoing bank layer cannot receive pointer input');
+        assert.strictEqual(atStart.rightSame, true, 'the active 03–04 bank keeps the same DOM node');
+        assert.strictEqual(atStart.rightRectSame, true, 'the active bank coordinates remain unchanged');
+        assert.strictEqual(atStart.nextSame, true, 'the fixed next-chord area keeps the same DOM node');
+        assert.strictEqual(atStart.nextRectSame, true, 'the next-chord area stays outside the crossfade');
+        assert.strictEqual(atStart.playheadSame, true, 'the playback highlight owner remains unchanged');
+        assert.strictEqual(atStart.currentMeasureHighlighted, true, 'the 03 measure is highlighted in the unchanged current bank');
+        assert.strictEqual(atStart.currentTechniqueCount, 1, 'the active bank keeps its current technique highlight');
+        assert.strictEqual(atStart.rightOpacity, 1, 'the active bank does not participate in the fade');
+        const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+        const captureCrossfade = async (phase: '0ms' | '110ms' | '220ms'): Promise<void> => {
+          if (!captureScreenshots) return;
+          const filename = `practice-guide-crossfade-issue155-${locale}-${themeName}-${phase}.png`;
+          await capturePreviewWebviewScreenshot(filename, 155);
+          const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
+          assert.ok((await fs.stat(outputPath)).size >= 50000, `${phase} crossfade evidence is a full Preview screenshot`);
+        };
+        await captureCrossfade('0ms');
+        const elapsedBeforeMidpoint = JSON.parse(await state()).elapsedMs ?? 0;
+        if (elapsedBeforeMidpoint < 95) await settle(95 - elapsedBeforeMidpoint);
+        const midpoint = JSON.parse(await state());
+        assert.strictEqual(midpoint.layers.length, 2, 'both old and new bank layers remain during the transition');
+        assert.ok(midpoint.layers[0].opacity > 0 && midpoint.layers[0].opacity < 1, 'the old bank is partially faded at about 110ms');
+        assert.ok(midpoint.layers[1].opacity > 0 && midpoint.layers[1].opacity < 1, 'the new bank is partially visible at about 110ms');
+        assert.strictEqual(midpoint.rightSame, true, 'the active bank DOM is unchanged at the midpoint');
+        assert.strictEqual(midpoint.rightRectSame, true, 'the active bank position is unchanged at the midpoint');
+        assert.strictEqual(midpoint.rightOpacity, 1, 'the active bank stays fully opaque during the crossfade');
+        assert.strictEqual(midpoint.currentMeasureHighlighted, true, 'the current measure highlight remains present at the midpoint');
+        await captureCrossfade('110ms');
+        const elapsedBeforeComplete = JSON.parse(await state()).elapsedMs ?? 0;
+        if (elapsedBeforeComplete < 320) await settle(320 - elapsedBeforeComplete);
+        const complete = JSON.parse(await state());
+        assert.strictEqual(complete.layers.length, 1, 'the old DOM layer is removed after the 220ms transition');
+        assert.deepStrictEqual(complete.layers[0].measures, [5, 6], 'the left bank retains only the new 05–06 content');
+        assert.strictEqual(complete.layers[0].opacity, 1, 'the incoming bank is fully visible after cleanup');
+        await captureCrossfade('220ms');
         await clickPreviewElement('#btn-stop');
-
-        const seek = async (seconds: number): Promise<string> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const input = document.getElementById('playback-seek');
+          input.value = '4'; input.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await settle(150);
+        const sought = JSON.parse(await state());
+        assert.strictEqual(sought.layers.length, 1, 'seeking reprojects the banks immediately without leaving fade layers');
+        assert.strictEqual(sought.occurrence, 4, 'the seek selects the matching PlaybackTimeline occurrence');
+        await clickPreviewElement('#btn-stop');
+        await withPreviewReducedMotion(true, async () => {
+          assert.strictEqual(await evaluatePreviewWebview<boolean>(`window.matchMedia('(prefers-reduced-motion: reduce)').matches`), true,
+            'the Preview renderer observes the emulated reduced-motion preference');
           await evaluatePreviewWebview<void>(`(() => {
             const input = document.getElementById('playback-seek');
-            input.value = '${seconds}'; input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.value = '0'; input.dispatchEvent(new Event('change', { bubbles: true }));
           })()`);
-          await settle(100);
-          return range();
-        };
-        assert.match(await seek(8), /^5–8 \/ 8 /, 'seeking forward selects the overlapping measures 5–8 page');
-        assert.match(await seek(2), /^1–4 \/ 8 /, 'seeking backward returns to measures 1–4');
-        await clickPreviewElement('#practice-guide-compact-next');
-        await settle(80);
-        assert.match(await range(), /^3–6 \/ 8 /, 'Next moves the four-measure page by two measures');
-        await clickPreviewElement('#practice-guide-compact-previous');
-        await settle(80);
-        assert.match(await range(), /^1–4 \/ 8 /, 'Previous moves the page back by two measures');
+          await settle(120);
+          await clickPreviewElement('#btn-play');
+          for (let attempt = 0; attempt < 140; attempt++) {
+            const occurrence = await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-pair-page').dataset.guideOccurrenceIndex)`);
+            if (occurrence === 2) break;
+            await settle(20);
+          }
+          const reducedMotion = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const bank = document.getElementById('practice-guide-bank-left');
+            const content = bank.querySelector('.practice-guide-bank-content');
+            return {
+              occurrence: Number(stage.dataset.guideOccurrenceIndex),
+              measures: [...bank.querySelectorAll('.practice-guide-compact-ruler')].map(ruler => Number(ruler.textContent.trim())),
+              layers: bank.querySelectorAll('.practice-guide-bank-content').length,
+              opacity: content ? Number.parseFloat(getComputedStyle(content).opacity) : null
+            };
+          })())`));
+          assert.strictEqual(reducedMotion.occurrence, 2, 'reduced-motion playback reaches the same occurrence boundary');
+          assert.deepStrictEqual(reducedMotion.measures, [5, 6], 'reduced-motion projection still selects the right pair');
+          assert.strictEqual(reducedMotion.layers, 1, 'reduced motion replaces immediately without a fade layer');
+          assert.strictEqual(reducedMotion.opacity, 1, 'reduced-motion content is immediately fully visible');
+          await clickPreviewElement('#btn-stop');
+        });
       });
     } finally {
+      await resetPreviewWebviewViewport();
       await resetWorkbenchViewport();
     }
   });

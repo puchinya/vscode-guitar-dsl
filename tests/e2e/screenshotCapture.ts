@@ -399,6 +399,25 @@ export async function evaluatePreviewWebview<T>(expression: string): Promise<T> 
   throw new Error('Preview Webview evaluation context remained unavailable');
 }
 
+/** Holds real Preview and workbench CDP sessions while reduced motion is emulated. */
+export async function withPreviewReducedMotion<T>(reduced: boolean, run: () => Promise<T>): Promise<T> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const targets = await Promise.all([waitForWorkbenchTarget(port), waitForPreviewTarget(port)]);
+  const apply = (send: SendDevToolsCommand) => send('Emulation.setEmulatedMedia', {
+    media: 'screen',
+    features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }]
+  }).then(() => undefined);
+  const withTarget = (index: number): Promise<T> => withDevToolsTarget(targets[index], async send => {
+    await apply(send);
+    try {
+      return index + 1 < targets.length ? await withTarget(index + 1) : await run();
+    } finally {
+      await send('Emulation.setEmulatedMedia', { media: 'screen', features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    }
+  });
+  return withTarget(0);
+}
+
 /** Evaluates an expression in the singleton YouTube transcription webview. */
 export async function evaluateTranscriptionWebview<T>(expression: string): Promise<T> {
   const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));

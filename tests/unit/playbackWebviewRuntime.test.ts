@@ -136,7 +136,7 @@ async function assertPlayheadAlignsWithOnsets(runtime: FakePlaybackWebview): Pro
 }
 
 describe('Preview production Webview runtime', () => {
-  it('Issue #153 keeps the full-song guide and mute scope in the Preview runtime', async () => {
+  it('Issue #155 keeps the detailed scroll guide and Practice-only SVG diagram geometry in the Preview runtime', async () => {
     const score = [
       'bpm: 120',
       'chord C = x32010',
@@ -153,18 +153,20 @@ describe('Preview production Webview runtime', () => {
     assert.ok(html.includes('class="practice-guide-lane practice-guide-melody"'));
     assert.ok(html.includes('class="practice-guide-lane practice-guide-technique"'));
     assert.ok(html.includes('class="practice-guide-next-chord" id="practice-guide-next-chord"'));
-    assert.ok(!html.includes('class="practice-guide-measure"'), 'the time axis is continuous instead of repeating measure cards');
+    assert.ok(html.includes('id="practice-guide-pair-page"'), 'compact mode has a fixed two-bank page');
+    assert.ok(html.includes('value="compact"') || html.includes('<option value="compact">'), 'compact mode is the default');
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].durationBeats.n, 4);
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].pitches[0].midi, 60);
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
     assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
     const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
-    assert.strictEqual((diagram.match(/x1="20" y1="\d+" x2="140" y2="\d+"/g) ?? []).length, 6,
-      'the diagram has six horizontal string lines');
-    assert.strictEqual((diagram.match(/x1="\d+" y1="8" x2="\d+" y2="73"/g) ?? []).length, 6,
-      'the diagram has vertical fret marks and keeps the first string above the sixth');
+    assert.strictEqual((diagram.match(/x1="18" y1="[\d.]+" x2="126" y2="[\d.]+"/g) ?? []).length, 6,
+      'the square diagram has six horizontal string lines');
+    assert.strictEqual((diagram.match(/x1="[\d.]+" y1="18" x2="[\d.]+" y2="126"/g) ?? []).length, 6,
+      'the square diagram has vertical fret marks and keeps the first string above the sixth');
     assert.ok(html.includes('.practice-guide-diagram-event { position: absolute;'));
-    assert.ok(html.includes('width: 160px; height: 90px;'));
+    assert.ok(html.includes('viewBox="0 0 144 144"'));
+    assert.ok(html.includes('width: 144px; height: 144px;'));
 
     const mute = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmMute');
     const brush = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmBrush');
@@ -232,7 +234,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(legacyGhostAttack.releaseTailSeconds, undefined, 'the legacy .g spelling keeps its existing envelope');
   });
 
-  it('Issue #153 preserves every timed chord placement in detailed and compact practice guides', () => {
+  it('Issue #155 preserves timed chord placements in the detailed guide and compact measure templates', () => {
     const score = '| C 4.d G 4.d C 4.d C 4.d |';
     const html = compileGuitarDslToHtml(score);
     const runtime = createFakePlaybackWebview(html);
@@ -242,21 +244,21 @@ describe('Preview production Webview runtime', () => {
     ]);
     assert.strictEqual((html.match(/class="practice-guide-chord-name"/g) ?? []).length, 4);
     assert.strictEqual((html.match(/class="practice-guide-diagram-event"/g) ?? []).length, 4);
-    assert.strictEqual((html.match(/class="practice-guide-compact-chord"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-compact-chord-name"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-compact-diagram-event"/g) ?? []).length, 4);
   });
 
-  it('Issue #153 keeps one compact continuation marker per event across grid selections', async () => {
+  it('Issue #155 keeps one vector wave per sustained event and selects its duration grid', async () => {
     const html = compileGuitarDslToHtml('| C | 4.d 4.d 4.d 16.d 16.d 16.d 16.d |');
     const runtime = createFakePlaybackWebview(html);
     assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 16);
     const compact = html.match(/<article class="practice-guide-compact-measure"[\s\S]*?<\/article>/)?.[0] ?? '';
-    const markers = [...compact.matchAll(/<span class="practice-guide-compact-symbol"[^>]*data-guide-kind="continuation"[^>]*data-guide-event="(\d+)"[^>]*>/g)];
-    const counts = new Map<string, number>();
-    for (const marker of markers) counts.set(marker[1], (counts.get(marker[1]) ?? 0) + 1);
-    assert.ok(markers.length > 0, 'the long attack has compact continuation marks');
-    assert.ok([...counts.values()].every(count => count === 1), 'each rhythm event has at most one compact continuation');
-    assert.ok(!compact.includes('data-guide-grid='), 'compact continuation visibility is independent of the detail grid');
-    assert.ok(!compact.includes('practice-guide-grid-continuation'), 'compact markers are not hidden by the detail-grid rule');
+    const markers = [...compact.matchAll(/<span class="practice-guide-compact-symbol"[^>]*data-guide-event="(\d+)"[^>]*>([\s\S]*?)<\/span>/g)];
+    const waveCounts = markers.map(marker => (marker[2].match(/data-guide-wave-grid=/g) ?? []).length);
+    assert.ok(waveCounts.some(count => count > 0), 'long attacks have a duration wave');
+    assert.ok(waveCounts.every(count => count <= 2), 'a sustained event stores only its available grid-specific single wave');
+    assert.ok(compact.includes('d="M2 9Q6 3 10 9T18 9"'), 'waves use the specified SVG path');
+    assert.doesNotMatch(compact, /<text[^>]*>[↓↑〜]/, 'compact direction and wave marks do not use visible Unicode glyphs');
 
     for (const grid of ['4', '8', '16']) {
       runtime.element('practice-guide-grid').value = grid;
@@ -270,7 +272,7 @@ describe('Preview production Webview runtime', () => {
     const symbols = [...html.matchAll(/<svg class="practice-guide-rest-symbol"[^>]*data-guide-rest-base="(\d+)"[^>]*>[\s\S]*?<\/svg>/g)];
     const bases = symbols.map(match => match[1]);
     assert.deepStrictEqual(bases.slice(0, 5), ['4', '8', '16', '2', '16'], 'the detailed timeline keeps each duration-specific rest');
-    assert.deepStrictEqual(bases.slice(5), ['4', '8', '16', '2', '16'], 'the compact cards preserve the same duration-specific rests');
+    assert.deepStrictEqual(bases.slice(5), ['4', '8', '16', '2', '16'], 'the compact templates preserve the same duration-specific rests');
     assert.ok(symbols.every(match => /<(?:path|rect|circle)\b/.test(match[0])), 'every rest contains a vector path or shape');
     assert.ok(symbols.every(match => !/<text\b/.test(match[0])), 'rest rendering does not depend on installed music fonts');
   });

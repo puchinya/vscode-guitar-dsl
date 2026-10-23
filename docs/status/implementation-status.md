@@ -3,8 +3,8 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-22
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。Issue #153 は PR #154 がopen（ready）で、白背景・グリッド非表示・1400 CSS px 実画面・4小節コンパクト表示の指摘対応を反映して再レビュー待ち。
+- **最終更新日**: 2026-10-24
+- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）はマージ済み。Issue #136 と PR #141 は 2026-10-17 に `main` へマージ済み、Issue #136 は closed。Issue #137 は PR #152 でレビュー中（open / ready）。PR #143 は Issue #142 とともにマージ済み。Issue #144 は PR #146 でレビュー中。Issue #153 は PR #154 が 2026-10-23 に `main` へマージ済み。Issue #155 は承認済み契約に沿って実装・検証中。
 
 ---
 
@@ -101,8 +101,8 @@
 
 ## Issue #153: 弾き語り練習ガイドとギター伴奏リズム
 
-- **状態**: [PR #154](https://github.com/puchinya/vscode-guitar-dsl/pull/154) はopen（ready）で、修正後レビュー待ち。
-- **実装**: Practice ON時に下端固定の全曲時間軸を表示する。固定左レールに小節番号と各レーン名を置き、右側に現在時刻から更新する次コード区画を固定する。横スクロールするのは時間軸だけ。基準尺は80 CSS px/四分音符（20 px/16分音符）で、実際の表示衝突がある区間だけ小節幅を広げる。1100 pxでは2小節以上、1400 pxでは3小節以上を初期表示する。コード図は160×90 px、コード図レーンは112 px以上とし、小節内コード名と図の中心を揃える。ガイド面・下段レーン・図カードは白背景、ヘッダーとメロディ／歌詞レーンは仕様画像の固定配色とする。16分などの細分グリッド線は描画せず、小節境界と再生ヘッドを残す。メロディは音高と音価を上下位置・幅で示し、12 px以上のバーと高低ガイドを使う。歌詞は音節を音符の時刻へ結び、通常18 px・現在音節24 pxで過去/現在/次を区別する。1本のスコア時間playheadでメロディ、歌詞、奏法、コードを同期強調し、メロディだけを隠せる。休符はOS音楽フォントに依存しないSVG図形、`.m` は `・`、方向のない有音攻撃は `●` で区別し、ブラッシングとスタッカートには持続記号を付けない。音価継続 `〜` は正確なスコア時刻と選択グリッドから算出し、詳細表示では16分スロットを順番に強調する。有効なタイ継続は再攻撃せず `〜` で示す。自動分割は小節反復 `%` を展開した全曲の明示リズムと、明示リズムがないTAB-only小節の記譜音価から4分・8分・16分を選ぶ。明示リズムと同じ小節にあるTABは二重計上せず、暗黙リズム、メロディ、未使用 `let` は分割判定へ混ぜない。コード図は共有コード・フォーム解決を使い、1弦を上にした横弦・縦フレットの向きで描画する。`.b` を従来の ghost として受け付け、`.m` の伴奏消音と `.s1`〜`.s6` の実弦音を追加する。表示設定はPreview文書ごとの一時状態で、DSL、譜面SVG/PDF、再生timelineを変更しない。表示モードに「詳細タイムライン」と「コンパクト4小節表示」を追加し、コンパクトではストローク記号・コード名・図を小節カード内にまとめる。4小節を421〜839 pxでは2×2、840 px以上では1行に配置し、横スクロールを使わない。再生が表示中の3小節目に入ると2小節進め、前後送りは2小節単位、シークとループは現在位置を含む4小節範囲に合わせる。
+- **状態**: [PR #154](https://github.com/puchinya/vscode-guitar-dsl/pull/154) は2026-10-23に `main` へマージ済み。現行表示の変更は Issue #155 を参照。
+- **実装**: Issue #153でPractice ON時の詳細タイムライン、コード図、奏法・歌詞・メロディ表示と再生連動を実装した。画面レイアウトとコンパクト表示の契約は後続のIssue #155で更新する。
 - **コンパクト奏法記号**: 持続イベントの `〜` は小節内でリズムイベントごとに最大1つだけ表示し、選択グリッドのセル数を反映した詳細表示と区別する。コードチェンジをまたぐイベントも小節内で重複しない。
 - **再レビュー修正**: リズム書き戻しは `.m` と `.s1`〜`.s6` の意味を保持し、`%` の継承比較にも含める。詳細・コンパクト表示とも全コード時刻イベントを残す。コンパクト `〜` はリズムイベントごとに1つで、選択グリッドに左右されない。`.m` / `.b` / `.sN` を含む譜面では伴奏有音攻撃に80 msのrelease tailを用意し、`.m` が先行する伴奏声だけを最大8 ms fadeで止め、休符は尾を止めない。これら新技法がない既存譜面のgain envelopeは維持する。Practice LoopではBをexclusive境界とし、gainの無音終端と`source.stop`をB以内にそろえてrelease tailを次周回へ持ち越さない。
 - **検証**: macOS arm64 / VS Code 1.143.0。2026-10-23 の `npm test` はHelp/AI同期PASS、単体 **1,184件PASS**、VS Code E2E **106件PASS・6件pending**。`npm run compile`、`npm run compile:all`（画面証拠E2E実行前）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（**1,601項目**、Audio MIR worker/WASMとNOTICEを含む）、`verify-implementation-contract 153`、`validate-docs --issue 153`、`git diff --check` もPASS。Practice Guide の実Workbench E2EはEN/JA × Dark/Lightの4条件で実行し、詳細表示の421/600/840/1100/1400 CSS px × メロディON/OFF **40ケース**と、コンパクト表示の421/840/1100/1400 CSS px **16ケース**をDOM検査・撮影した。同じ長い歌詞・16分リズム・F/G/Em7/Am/Dm7のfixtureを使い、ガイド色・白背景・細分グリッド非表示・小節境界・再生ヘッド・図の寸法とコード名の中心、レーン順と共通x座標、音高バー、奏法強調、固定列、シーク・速度・再生・一時停止・A/Bループの同期、ソース不変、継続記号の重複なしを確認した。今回のレビュー修正後は同Webviewテストを再実行してEN暗色の詳細／コンパクト **14枚**を撮影し、追加でrelease tail・コード再出現・グリッド切替を含む単体回帰テストを確認した。1400 CSS pxはホストのWorkbench幅上限1382 pxのためPreview iframe幅を1400 pxに設定し、Webview内幅1400 pxを確認して撮影した。既存pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
@@ -128,6 +128,14 @@
 | 1400px | [画像](evidence/issue-153/practice-guide-compact-en-dark-1400-pr154-r5.png) | [画像](evidence/issue-153/practice-guide-compact-en-light-1400-pr154-r5.png) | [画像](evidence/issue-153/practice-guide-compact-ja-dark-1400-pr154-r5.png) | [画像](evidence/issue-153/practice-guide-compact-ja-light-1400-pr154-r5.png) |
 
 - **文書オーナー**: `docs/specs/guitardsl-syntax.md`、`extension.md`、`gui_design.md`、`docs/design/language-and-score-processing.md`、`preview-rendering-and-export.md`、`score-editing.md`、EN/JA Helpとmanifest、生成済み `media/help/`、AI syntax reference、本書。
+
+## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード
+
+- **状態**: [Issue #155](https://github.com/puchinya/vscode-guitar-dsl/issues/155) の更新済みImplementation Contract（SHA-256 `81b60f006aa6f1350884bb522d3e7c7b84a94f5d0868662688cf624c2767e0c1`）を承認済み。実装・最終検証中。
+- **表示仕様**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。
+- **検証**: `verify-implementation-contract 155`、`validate-docs --issue 155`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx --yes @vscode/vsce ls`（**1,601項目**）、`git diff --check` はPASS。`npm test` は単体 **1,190件PASS**、VS Code E2E **106件PASS・6件pending**。Issue #155 E2Eは1600 CSS pxで4小節すべてと次コード欄が可視範囲に収まり、コード図の中心が区間中央から2 px以内であること、クロスフェードと後処理を検査する。既存pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: `docs/status/evidence/issue-155/` にEN暗色・明色のコンパクト表示（421/600/840/1100/1400 CSS px、メロディON/OFF）と、クロスフェード0/110/220 msの画像を保存。1600 CSS pxの4小節基準画面も保存し、E2Eで全カードと次コード欄のDOM可視範囲を確認した。Extension Development Hostの外側の表示領域が狭いため、PNGの右端がホスト画面で切れる場合がある。
+- **文書オーナー**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
 
