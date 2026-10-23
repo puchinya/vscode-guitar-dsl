@@ -78,6 +78,7 @@ The Inspector is a shared place for document-aware assistance as features move i
 **GuitarDSL: Open Preview to the Side** shows the rendered score next to the editor. The preview follows your edits and the active GuitarDSL editor. Its 48 px playback row keeps Play, Pause, Stop, seek, and elapsed/total time visible. A dedicated 44 px Score settings row sits directly below it at every width, with directly operable Capo, colored Playability, and Beginner controls. At 840 CSS px and wider it also shows barre policy, capo selection mode, and Inspector links; below that width, use **More** for those supplemental controls. When playback is unavailable, the controls remain visible with a reason.
 
 - **Practice** shows its 42 px row below Score settings only while enabled; it starts at 92 px from the top. Practice OFF leaves no extra row. The score begins at 110 px when Practice is OFF and 152 px when ON.
+- The fixed bottom guide follows score time and shows every measure, melody, lyrics, techniques, chord names/diagrams, and the next chord. During playback it highlights the current lyric syllable and written rhythm slot, including each continuation slot in sequence. The automatic 4/8/16 grid is songwide; a manual grid changes guide marks only. `〜` marks a sustained value or valid tie continuation, `.m` uses `・`, and rests keep their own value-specific mark. Brushes and staccato do not imply sustain.
 - **Playback settings** opens a disclosure for **Count-in** and **Metronome**, both off by default.
 - **View & Export** opens a disclosure for *Single Page*, *Spread*, *Web*, paper size (A4, A3, A5, B4, B5, Letter), orientation (*Portrait* or *Landscape*), and **📄 Save PDF**. Web mode is one continuous page with manual page breaks shown as a dotted line.
 - **? Help** opens this guide. Disclosure panels can be opened by click or keyboard; press Escape to close and return to the trigger.
@@ -94,6 +95,8 @@ The Inspector is a shared place for document-aware assistance as features move i
 ### Practice Mode
 
 Turn on **Practice** in the Preview toolbar to show the Practice row below it. Practice changes playback only; it does not edit the GuitarDSL source or its written tempo. Turn it off to remove the row and its keyboard stops.
+
+Practice also opens a fixed guide at the bottom of the Preview for the whole song. Choose **Detailed timeline** to show melody, lyrics, techniques, chord names and diagrams on one continuous time axis. Its left labels and next-chord name stay fixed while the timeline scrolls horizontally. Melody notes appear as pitch bars sized by duration; lyric syllables follow their notes. **Melody** hides only that lane. **Chord diagrams** can be toggled separately. Choose **Compact 4-measure overview** to show four white measure cards with ordered stroke symbols, chord names and diagrams; each sustained stroke event uses at most one continuation mark instead of repeating it for every grid cell. It uses four columns at 840 CSS px and above, and a two-by-two layout below 840 CSS px. Playback advances the window by two measures when it enters the third displayed measure. **Previous** and **Next** turn the window by two measures; seeking and loop wrap follow the current measure. **Auto** scans written note values across the song and uses one quarter-, eighth- or sixteenth-note grid for every measure. A manual grid and the selected view are temporary settings for this Preview and do not change the DSL or playback position.
 
 - **Speed** ranges from 25% to 200% in 5% steps. The selected speed is remembered by the Preview.
 - During playback, the playhead aligns with the score's note and rhythm positions and moves with score time between them.
@@ -318,7 +321,17 @@ A rhythm token is a note value plus optional `.`-separated modifiers:
 | `4+8` | Added lengths, drawn tied (use this for dotted values) |
 | `r4`, `r8`, … | Rests |
 
-Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` ghost, `t` tie, `arp` arpeggio, `pm` palm mute, `lr` let ring, `stacc`, `ten`, `fermata`, `vib`, `breath`. For example, `16.d.a` is an accented sixteenth down stroke.
+Modifiers: `d` down stroke, `u` up stroke, `a` accent, `g` / `ghost` ghost brush, `b` brush alias, `t` tie, `arp` arpeggio, `m` mute, `s1`–`s6` pick one physical string, `pm` palm mute, `lr` let ring, `stacc`, `ten`, `fermata`, `vib`, `breath`. For example, `16.d.a` is an accented sixteenth down stroke.
+
+`.b` plays a short non-harmonic brush sound. `.m` stops active accompaniment voices and cannot be combined with another modifier; a rest does not mute. Use only one `.sN`, optionally with `.a`. A muted string or unresolved chord form is an error and never falls back to another string or a full chord. Unknown modifiers are errors too.
+
+```guitardsl
+| C | 8.d.b 8.u.b 8.m r8 8.s5 8.s3.a r4 |
+```
+
+The practice guide chooses one subdivision for the whole song: sixteenth notes anywhere make every measure use sixteenths; otherwise songs that need eighth notes use eighths throughout. TAB note values count only in measures without explicit rhythm.
+
+In the technique row, `〜` marks later slots held by a note value or a valid rhythm tie; a tie continuation does not attack again. `.m` is shown as `・`, and rests remain value-specific rests such as `r8`. Mutes and rests do not create continuation marks, and brushes or staccato do not imply sustain. A directionless attack uses a neutral mark. These are guide symbols, not new tokens or automatic empty strokes.
 
 Use `.t` or `.tie` on a slash token to sustain into the immediately following slash token when their times touch. A score tie must keep the same chord name and voicing label from the source attack through the continuation duration; a chord change anywhere in that held span invalidates the tie. A `4+8.t` tie is drawn from the compound token's last head, while chord validation starts at the token's first attack. Rhythm-only templates may tie two chordless slash tokens structurally; a score tie with chord information missing on only one side is invalid. The continuation cannot be a rest, ghost, pitched note, down stroke, up stroke, accent, or arpeggio. Ties may cross an adjacent barline; they cannot cross a `let` fragment boundary or `%` repeat. Playback holds one attack for the whole tie and uses each measure's tempo to calculate its duration. If a Practice loop starts on a continuation, playback attacks at the loop start.
 
@@ -378,6 +391,8 @@ lyr: | low down open up | chord hit | rise then bend now | hold |
 
 When a row contains TAB, it uses a modern six-line profile with equal string lines, a stacked `T` / `A` / `B` clef, and a time signature inside the staff prefix. Ten-point semibold fret marks sit centered on their lines, which are masked behind each number. Rhythm stems and beams sit above TAB; whole notes have no stem, half notes have a short stem, quarters have a normal stem, and shorter values use flags or beams. Standard rests, barlines and repeat signs are shown. Adjacent beat-scope P.M. and let-ring effects use a continuous dashed span. TAB is rendered below melody and its lyrics when present. TAB carries its own rhythm. An implicit slash-rhythm staff is suppressed; an explicitly authored rhythm staff can still be shown with `show_rhythm: true`. PDF uses the same page rendering as Preview.
 
+TAB-only measures without explicit rhythm use their TAB note values for the whole-song practice grid. When explicit rhythm and TAB share a measure, rhythm takes priority so the TAB values are not counted twice.
+
 ### Key Signature and Display Options
 
 The `key:` header sets the melody key signature, for example `C`, `G`, `Bb`, `F#m`. Melody is always written at the real pitch. With `show_rhythm: false`, measures that have a melody show only the melody staff.
@@ -401,6 +416,8 @@ bpm: 120
 
 Events: `@key:`, `@tempo:` (a number, `rit.`, `accel.`, `a tempo`, `tempo primo`), `@time:`, `@feel:`, `@dynamic:`, `@mark:`, `@text:` and `@ottava:` (`8va`, `8vb`, `off`). Numeric `@tempo:` values change Preview playback from that measure; `tempo primo` restores the header `bpm:`. `rit.`, `accel.`, `a tempo` and `feel` remain display-only and do not change playback timing. Dynamics and ottava affect notation only.
 
+The practice guide scans every written measure. Explicit rhythm, resolved `%` repeats and used `let` rhythms count; melody, BPM and unused `let` definitions do not make the grid denser. Any sixteenth note selects sixteenths for the whole song; otherwise a song that needs eighths uses eighths throughout, and other songs use quarters.
+
 ### Reusable Fragments (`let`)
 
 Name a rhythm or note sequence with `let`, then reuse it with `$name` in a measure cell or `mel:` cell. Definitions can appear anywhere in the file.
@@ -417,6 +434,8 @@ mel: | $riff $riff | c5/2 r/2 |
 - The first note of a definition must spell out its octave and length (`let riff = e4/8 g`).
 - A reference neither takes nor passes on octave or length from the notes around it.
 - `%` cannot be used inside a definition, and definitions cannot refer to themselves in a loop.
+
+Used rhythm fragments contribute their expanded note values to the whole-song practice grid. Unused definitions do not change it.
 
 ### Note Groups (Simultaneous Notes)
 

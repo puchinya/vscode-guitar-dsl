@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="354" viewBox="0 0 1320 354" role="img" aria-labelledby="title desc">
+  <title id="title">弾き語り練習ガイド・コンパクト4小節</title>
+  <desc id="desc">白い4小節カードにストローク記号、コード名、コード図をまとめた練習ガイド。再生位置に合わせて2小節ずつ送る。</desc>
+  <rect width="1320" height="354" fill="#ffffff"/>
+  <rect width="1320" height="44" fill="#243953"/>
+  <text x="22" y="28" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="700">弾き語り練習ガイド</text>
+  <rect x="196" y="9" width="220" height="27" rx="4" fill="#ffffff"/>
+  <text x="210" y="28" fill="#21354b" font-family="sans-serif" font-size="13">コンパクト4小節表示　⌄</text>
+  <g fill="#ffffff" font-family="sans-serif" font-size="13">
+    <text x="1012" y="28">分割　自動</text>
+    <text x="1124" y="28">コード図 ON</text>
+    <text x="1223" y="28">メロディ ON</text>
+  </g>
+  <g font-family="sans-serif">
+    <rect x="16" y="60" width="316" height="278" rx="5" fill="#ffffff" stroke="#d2dde9"/>
+    <rect x="340" y="60" width="316" height="278" rx="5" fill="#ffffff" stroke="#d2dde9"/>
+    <rect x="664" y="60" width="316" height="278" rx="5" fill="#ffffff" stroke="#087fac" stroke-width="2"/>
+    <rect x="988" y="60" width="316" height="278" rx="5" fill="#ffffff" stroke="#d2dde9"/>
+    <g fill="#66829c" font-size="12" font-weight="600">
+      <text x="28" y="82">小節 1</text><text x="352" y="82">小節 2</text>
+      <text x="676" y="82">小節 3</text><text x="1000" y="82">小節 4</text>
+    </g>
+    <g fill="#21354b" font-size="23" text-anchor="middle">
+      <text x="174" y="125">↓　〜　↓　↑</text><text x="498" y="125">↓　↑　↓　↑</text>
+      <text x="822" y="125">↓　〜　↓　↑</text><text x="1146" y="125">↓　↑　↓　↑</text>
+    </g>
+    <g fill="#21354b" font-size="24" font-weight="700" text-anchor="middle">
+      <text x="174" y="163">FM7</text><text x="498" y="163">E7</text>
+      <text x="822" y="163">Am7</text><text x="1146" y="163">Dm7</text>
+    </g>
+    <g fill="none" stroke="#72869a" stroke-width="1.3">
+      <g transform="translate(112 177)">
+        <path d="M0 0H124M0 14H124M0 28H124M0 42H124M0 56H124"/>
+        <path d="M0 0V56M24.8 0V56M49.6 0V56M74.4 0V56M99.2 0V56M124 0V56"/>
+        <circle cx="24.8" cy="14" r="5" fill="#172435" stroke="#172435"/><circle cx="49.6" cy="28" r="5" fill="#172435" stroke="#172435"/><circle cx="74.4" cy="42" r="5" fill="#172435" stroke="#172435"/><circle cx="99.2" cy="14" r="5" fill="#172435" stroke="#172435"/>
+      </g>
+      <g transform="translate(436 177)">
+        <path d="M0 0H124M0 14H124M0 28H124M0 42H124M0 56H124"/>
+        <path d="M0 0V56M24.8 0V56M49.6 0V56M74.4 0V56M99.2 0V56M124 0V56"/>
+        <circle cx="24.8" cy="14" r="5" fill="#172435" stroke="#172435"/><circle cx="74.4" cy="42" r="5" fill="#172435" stroke="#172435"/><circle cx="99.2" cy="28" r="5" fill="#172435" stroke="#172435"/>
+      </g>
+      <g transform="translate(760 177)">
+        <path d="M0 0H124M0 14H124M0 28H124M0 42H124M0 56H124"/>
+        <path d="M0 0V56M24.8 0V56M49.6 0V56M74.4 0V56M99.2 0V56M124 0V56"/>
+        <circle cx="24.8" cy="14" r="5" fill="#172435" stroke="#172435"/><circle cx="49.6" cy="42" r="5" fill="#172435" stroke="#172435"/><circle cx="99.2" cy="28" r="5" fill="#172435" stroke="#172435"/>
+      </g>
+      <g transform="translate(1084 177)">
+        <path d="M0 0H124M0 14H124M0 28H124M0 42H124M0 56H124"/>
+        <path d="M0 0V56M24.8 0V56M49.6 0V56M74.4 0V56M99.2 0V56M124 0V56"/>
+        <circle cx="24.8" cy="14" r="5" fill="#172435" stroke="#172435"/><circle cx="49.6" cy="28" r="5" fill="#172435" stroke="#172435"/><circle cx="99.2" cy="42" r="5" fill="#172435" stroke="#172435"/>
+      </g>
+    </g>
+    <g fill="#405268" font-size="12" text-anchor="middle">
+      <text x="174" y="255">○　○　○　×　○　○</text><text x="498" y="255">○　○　○　○　○　○</text>
+      <text x="822" y="255">○　○　○　○　○　○</text><text x="1146" y="255">○　○　○　○　○　○</text>
+    </g>
+  </g>
+  <path d="M16 345H1304" stroke="#d2dde9"/>
+  <g font-family="sans-serif" font-size="12" fill="#21354b">
+    <text x="34" y="350">‹ 前へ</text><text x="640" y="350" text-anchor="middle">1–4 / 8 小節</text><text x="1262" y="350" text-anchor="end">次へ ›</text>
+  </g>
+</svg>

@@ -1,5 +1,7 @@
 import { parseChordName } from './chordDetect';
-import { pitchToMidi as instrumentPitchToMidi } from './instrumentModel';
+import { chordKey, ChordDefinition } from './chordDefinition';
+import { resolveChordVoicing } from './chordVoicingResolver';
+import { createInstrumentModel, GuitarString, pitchToMidi as instrumentPitchToMidi, STANDARD_TUNING, Tuning } from './instrumentModel';
 import type { Pitch } from './melody';
 import type { PlaybackEvent } from './playbackTimeline';
 
@@ -34,9 +36,25 @@ export function chordToMidiNotes(name: string, capoSemitones: number): number[] 
 }
 
 /** Symbolic oscillator pitches for one timeline event; empty means this event has no pitched voice. */
-export function playbackEventMidiNotes(event: PlaybackEvent, effectiveCapo: number): number[] {
+export function playbackEventMidiNotes(
+  event: PlaybackEvent,
+  effectiveCapo: number,
+  chordDefinitions: readonly ChordDefinition[] = [],
+  tuning: Tuning = STANDARD_TUNING
+): number[] {
   if (event.kind === 'pitched') return event.pitches.map(pitchToMidi);
   if (event.kind === 'rhythmAttack' && event.chord) {
+    if (event.stringAttack !== undefined) {
+      const instrument = createInstrumentModel(tuning, effectiveCapo);
+      const resolved = resolveChordVoicing(chordKey(event.chord.name, event.chord.label), chordDefinitions, instrument);
+      const fret = resolved?.voicing.frets[6 - event.stringAttack];
+      if (typeof fret !== 'number' || !Number.isInteger(fret)) return [];
+      try {
+        return [instrument.pitchAt(event.stringAttack as GuitarString, fret)];
+      } catch (_) {
+        return [];
+      }
+    }
     return chordToMidiNotes(event.chord.name, effectiveCapo) ?? [];
   }
   return [];

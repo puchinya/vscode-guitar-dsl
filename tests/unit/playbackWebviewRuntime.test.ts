@@ -136,6 +136,145 @@ async function assertPlayheadAlignsWithOnsets(runtime: FakePlaybackWebview): Pro
 }
 
 describe('Preview production Webview runtime', () => {
+  it('Issue #153 keeps the full-song guide and mute scope in the Preview runtime', async () => {
+    const score = [
+      'bpm: 120',
+      'chord C = x32010',
+      '| C | 4 8.m 8.b 8.s5 8 8 8 |',
+      'mel: | c4/1 |'
+    ].join('\n');
+    const html = compileGuitarDslToHtml(score);
+    const runtime = createFakePlaybackWebview(html);
+    assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 8);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures.length, 1);
+    assert.ok(html.includes('id="practice-guide-panel"'));
+    assert.ok(html.includes('body.guide-melody-hidden .practice-guide-melody { display: none; }'));
+    assert.ok(html.includes('id="practice-guide-timeline"'));
+    assert.ok(html.includes('class="practice-guide-lane practice-guide-melody"'));
+    assert.ok(html.includes('class="practice-guide-lane practice-guide-technique"'));
+    assert.ok(html.includes('class="practice-guide-next-chord" id="practice-guide-next-chord"'));
+    assert.ok(!html.includes('class="practice-guide-measure"'), 'the time axis is continuous instead of repeating measure cards');
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].durationBeats.n, 4);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].pitches[0].midi, 60);
+    assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
+    assert.ok(html.includes('createBufferSource()'), 'brush attacks use a non-oscillator noise source');
+    const diagram = html.match(/<svg class="practice-guide-diagram"[\s\S]*?<\/svg>/)?.[0] ?? '';
+    assert.strictEqual((diagram.match(/x1="20" y1="\d+" x2="140" y2="\d+"/g) ?? []).length, 6,
+      'the diagram has six horizontal string lines');
+    assert.strictEqual((diagram.match(/x1="\d+" y1="8" x2="\d+" y2="73"/g) ?? []).length, 6,
+      'the diagram has vertical fret marks and keeps the first string above the sixth');
+    assert.ok(html.includes('.practice-guide-diagram-event { position: absolute;'));
+    assert.ok(html.includes('width: 160px; height: 90px;'));
+
+    const mute = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmMute');
+    const brush = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmBrush');
+    const stringAttack = runtime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack' && event.stringAttack === 5);
+    assert.ok(mute);
+    assert.ok(brush && brush.midiNotes.length === 0);
+    assert.deepStrictEqual(stringAttack?.midiNotes, [48]);
+
+    await runtime.click('btn-play');
+    const melody = runtime.scheduledOscillators().find(node => Math.abs(node.frequency.value - 261.625565) < 0.1);
+    const rhythm = runtime.scheduledOscillators().find(node => node.frequency.value < 200);
+    assert.ok(melody && rhythm, 'melody and accompaniment voices are both scheduled');
+    runtime.advanceAudioTime(0.45);
+    runtime.runSchedulerTicks();
+    assert.strictEqual(melody!.stopCalls.length, 1, 'mute does not cancel the melody voice');
+    closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.033, 0.001);
+  });
+
+  it('Issue #153 adds a short accompaniment release tail only for new techniques, which mute cancels and rest keeps', async () => {
+    const muteRuntime = createRuntime([
+      'bpm: 120',
+      '| C | 4.d 4.m 8.s5 8 4 |'
+    ].join('\n'));
+    const muteAttack = muteRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(muteAttack.releaseTailSeconds, 0.08);
+    await muteRuntime.click('btn-play');
+    muteRuntime.runSchedulerTicks();
+    const mutedVoice = muteRuntime.scheduledOscillators().find(node => (node.startAt ?? Infinity) < 0.1 && node.frequency.value < 200);
+    assert.ok(mutedVoice);
+    const naturalTailEnd = mutedVoice!.startAt! + Number(muteAttack.durationSeconds) + 0.08 + 0.002;
+    closeEnough(mutedVoice!.stopAt ?? NaN, naturalTailEnd, 0.001);
+    muteRuntime.advanceAudioTime(0.45);
+    muteRuntime.runSchedulerTicks();
+    assert.ok((mutedVoice!.stopAt ?? Infinity) < naturalTailEnd, 'mute shortens the scheduled tail');
+    const muteGain = (mutedVoice!.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+    assert.ok(muteGain.events.some(event => event.kind === 'cancel'), 'mute cancels the old gain ramp');
+    assert.ok(muteGain.events.some(event => event.kind === 'ramp' && event.value === 0), 'mute fades the active voice out');
+
+    const restRuntime = createRuntime([
+      'bpm: 120',
+      '| C | 4.d r4 8.s5 8 4 |'
+    ].join('\n'));
+    const restAttack = restRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(restAttack.releaseTailSeconds, 0.08);
+    await restRuntime.click('btn-play');
+    restRuntime.runSchedulerTicks();
+    const restingVoice = restRuntime.scheduledOscillators().find(node => (node.startAt ?? Infinity) < 0.1 && node.frequency.value < 200);
+    assert.ok(restingVoice);
+    const restTailEnd = restingVoice!.startAt! + Number(restAttack.durationSeconds) + 0.08 + 0.002;
+    restRuntime.advanceAudioTime(0.45);
+    restRuntime.runSchedulerTicks();
+    closeEnough(restingVoice!.stopAt ?? NaN, restTailEnd, 0.001);
+    const restGain = (restingVoice!.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+    assert.ok(!restGain.events.some(event => event.kind === 'cancel'), 'a rest leaves the preceding note tail alone');
+
+    const legacyRuntime = createRuntime('| C | 4.d 4 4 4 |');
+    const legacyAttack = legacyRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(legacyAttack.releaseTailSeconds, undefined, 'scores without new techniques keep the legacy envelope');
+
+    const brushRuntime = createRuntime('| C | 4.d.b 4 4 4 |');
+    const brushScoreAttack = brushRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(brushScoreAttack.releaseTailSeconds, 0.08, 'the new .b spelling opts into the new-technique accompaniment envelope');
+    const legacyGhostRuntime = createRuntime('| C | 4.d.g 4 4 4 |');
+    const legacyGhostAttack = legacyGhostRuntime.playbackData.events.find((event: any) => event.kind === 'rhythmAttack');
+    assert.strictEqual(legacyGhostAttack.releaseTailSeconds, undefined, 'the legacy .g spelling keeps its existing envelope');
+  });
+
+  it('Issue #153 preserves every timed chord placement in detailed and compact practice guides', () => {
+    const score = '| C 4.d G 4.d C 4.d C 4.d |';
+    const html = compileGuitarDslToHtml(score);
+    const runtime = createFakePlaybackWebview(html);
+    const chords = runtime.playbackData.practiceGuide.measures[0].chords;
+    assert.deepStrictEqual(chords.map((chord: any) => [chord.name, chord.beat]), [
+      ['C', 0], ['G', 1], ['C', 2], ['C', 3]
+    ]);
+    assert.strictEqual((html.match(/class="practice-guide-chord-name"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-diagram-event"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-compact-chord"/g) ?? []).length, 4);
+  });
+
+  it('Issue #153 keeps one compact continuation marker per event across grid selections', async () => {
+    const html = compileGuitarDslToHtml('| C | 4.d 4.d 4.d 16.d 16.d 16.d 16.d |');
+    const runtime = createFakePlaybackWebview(html);
+    assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 16);
+    const compact = html.match(/<article class="practice-guide-compact-measure"[\s\S]*?<\/article>/)?.[0] ?? '';
+    const markers = [...compact.matchAll(/<span class="practice-guide-compact-symbol"[^>]*data-guide-kind="continuation"[^>]*data-guide-event="(\d+)"[^>]*>/g)];
+    const counts = new Map<string, number>();
+    for (const marker of markers) counts.set(marker[1], (counts.get(marker[1]) ?? 0) + 1);
+    assert.ok(markers.length > 0, 'the long attack has compact continuation marks');
+    assert.ok([...counts.values()].every(count => count === 1), 'each rhythm event has at most one compact continuation');
+    assert.ok(!compact.includes('data-guide-grid='), 'compact continuation visibility is independent of the detail grid');
+    assert.ok(!compact.includes('practice-guide-grid-continuation'), 'compact markers are not hidden by the detail-grid rule');
+
+    for (const grid of ['4', '8', '16']) {
+      runtime.element('practice-guide-grid').value = grid;
+      await runtime.change('practice-guide-grid');
+      assert.strictEqual(runtime.element('practice-guide-panel').getAttribute('data-guide-grid'), grid);
+    }
+  });
+
+  it('Issue #153 draws rest symbols with SVG shapes instead of platform-dependent music fonts', () => {
+    const html = compileGuitarDslToHtml('| C | r4 r8 r16 r2 r16 |');
+    const symbols = [...html.matchAll(/<svg class="practice-guide-rest-symbol"[^>]*data-guide-rest-base="(\d+)"[^>]*>[\s\S]*?<\/svg>/g)];
+    const bases = symbols.map(match => match[1]);
+    assert.deepStrictEqual(bases.slice(0, 5), ['4', '8', '16', '2', '16'], 'the detailed timeline keeps each duration-specific rest');
+    assert.deepStrictEqual(bases.slice(5), ['4', '8', '16', '2', '16'], 'the compact cards preserve the same duration-specific rests');
+    assert.ok(symbols.every(match => /<(?:path|rect|circle)\b/.test(match[0])), 'every rest contains a vector path or shape');
+    assert.ok(symbols.every(match => !/<text\b/.test(match[0])), 'rest rendering does not depend on installed music fonts');
+  });
+
   it('T01 creates one lazy AudioContext and bounds scheduling to the 100 ms horizon', async () => {
     const runtime = createRuntime();
     assert.strictEqual(runtime.playbackData.available, true);
@@ -433,6 +572,8 @@ describe('Preview production Webview runtime', () => {
       return Math.abs(duration - 0.252) < 0.01;
     });
     assert.ok(clipped, 'a note crossing B is clipped at the exclusive loop end');
+    closeEnough((clipped!.stopAt ?? 0) - (clipped!.startAt ?? 0), 0.25, 0.002,
+      'the oscillator stops at B without the normal post-envelope safety padding');
 
     for (let elapsed = 0; elapsed < 0.75; elapsed += 0.025) {
       runtime.advanceAudioTime(0.025);
@@ -441,6 +582,96 @@ describe('Preview production Webview runtime', () => {
     const wrappedPosition = Number(runtime.element('playback-seek').value);
     assert.ok(wrappedPosition >= 0.5 && wrappedPosition < 0.75, `wrapped position ${wrappedPosition} stays in [A, B)`);
     assert.strictEqual(runtime.intervalCount, 1);
+  });
+
+  it('T13 release tails stop at Measure and A/B loop boundaries across speeds and mute locations', async () => {
+    const fixtures = [
+      {
+        name: '.m outside the loop',
+        score: [
+          'bpm: 120',
+          'time: 4/4',
+          '| C | 4.d 4.d 4.d 4.d |',
+          '| G | 4.m 4.d 4.d 4.d |'
+        ].join('\n')
+      },
+      {
+        name: '.m inside the loop',
+        score: [
+          'bpm: 120',
+          'time: 4/4',
+          '| C | 4.d 4.m 4.d 4.d |',
+          '| G | 4.d 4.d 4.d 4.d |'
+        ].join('\n')
+      }
+    ];
+
+    for (const fixture of fixtures) {
+      for (const loopMode of ['measure', 'ab'] as const) {
+        for (const speed of [50, 100, 200]) {
+          const runtime = createRuntime(fixture.score);
+          await runtime.click('practice-toggle');
+
+          if (loopMode === 'measure') {
+            runtime.setRange('playback-seek', 0);
+            await runtime.change('playback-seek');
+            runtime.element('practice-loop').value = 'measure';
+            await runtime.change('practice-loop');
+          } else {
+            runtime.setRange('playback-seek', 0);
+            await runtime.change('playback-seek');
+            await runtime.click('practice-set-a');
+            runtime.setRange('playback-seek', 2);
+            await runtime.change('playback-seek');
+            await runtime.click('practice-set-b');
+            assert.strictEqual(runtime.element('practice-loop').value, 'ab');
+          }
+
+          runtime.element('practice-speed').value = String(speed);
+          await runtime.change('practice-speed');
+          const events = runtime.playbackData.events as Array<any>;
+          const firstAttackEvent = events.find(event => event.kind === 'rhythmAttack' && Math.abs(event.timeSeconds) < 0.000001);
+          const lastAttackEvent = events
+            .filter(event => event.kind === 'rhythmAttack' && Math.abs(event.timeSeconds + event.durationSeconds - 2) < 0.000001)
+            .sort((left, right) => right.timeSeconds - left.timeSeconds)[0];
+          assert.ok(firstAttackEvent, `${fixture.name}/${loopMode}/${speed}% has an attack at A`);
+          assert.ok(lastAttackEvent, `${fixture.name}/${loopMode}/${speed}% has an attack ending exactly at B`);
+          assert.strictEqual(lastAttackEvent.releaseTailSeconds, 0.08);
+
+          await runtime.click('btn-play');
+          const chordVoices = () => runtime.scheduledOscillators().filter(node => node.type === 'triangle');
+          const firstAttackStart = Math.min(...chordVoices().map(node => node.startAt ?? Number.POSITIVE_INFINITY));
+          const speedRatio = speed / 100;
+          const boundaryAudioTime = firstAttackStart + 2 / speedRatio;
+          const lastAttackAudioTime = firstAttackStart + lastAttackEvent.timeSeconds / speedRatio;
+          let audioNow = 0;
+          while (audioNow < lastAttackAudioTime - 0.05) {
+            runtime.advanceAudioTime(0.025);
+            runtime.runSchedulerTicks();
+            audioNow += 0.025;
+          }
+          const lastAttackVoices = chordVoices().filter(node => Math.abs((node.startAt ?? Infinity) - lastAttackAudioTime) < 0.002);
+          assert.strictEqual(lastAttackVoices.length, lastAttackEvent.midiNotes.length,
+            `${fixture.name}/${loopMode}/${speed}% schedules every voice for the final attack`);
+          for (const voice of lastAttackVoices) {
+            assert.ok((voice.stopAt ?? Infinity) <= boundaryAudioTime + 0.001,
+              `${fixture.name}/${loopMode}/${speed}% stops the old voice by the exclusive B boundary`);
+            const gain = (voice.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+            assert.ok(gain.events.some(event => event.kind === 'ramp' && event.value === 0 && Math.abs(event.time - boundaryAudioTime) < 0.001),
+              `${fixture.name}/${loopMode}/${speed}% ramps the old voice to silence by B`);
+          }
+
+          while (audioNow < boundaryAudioTime - 0.05) {
+            runtime.advanceAudioTime(0.025);
+            runtime.runSchedulerTicks();
+            audioNow += 0.025;
+          }
+          const nextIterationVoices = chordVoices().filter(node => Math.abs((node.startAt ?? Infinity) - boundaryAudioTime) < 0.002);
+          assert.strictEqual(nextIterationVoices.length, firstAttackEvent.midiNotes.length,
+            `${fixture.name}/${loopMode}/${speed}% schedules the next iteration's attack at B`);
+        }
+      }
+    }
   });
 
   it('re-attacks a tied rhythm once when a Practice measure loop starts at its continuation bar', async () => {

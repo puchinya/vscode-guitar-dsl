@@ -329,6 +329,24 @@ describe('compiler - parseGuitarDsl', () => {
       assert.strictEqual(rhythms[1].ghost, true);
       assert.strictEqual(rhythms[2].accent, true);
     });
+
+    it('parses brush, mute and physical-string modifiers and rejects invalid modifiers', () => {
+      const parsed = parseGuitarDsl([
+        'chord C = x32010',
+        '| C C C C | 8.b 8.m 8.s5.a 8.s6 |'
+      ].join('\n'));
+      const rhythms = parsed.measures[0].rhythms;
+      assert.strictEqual(rhythms[0].ghost, true, '.b aliases the brush/ghost modifier');
+      assert.strictEqual(rhythms[1].mute, true);
+      assert.strictEqual(rhythms[2].stringAttack, 5);
+      assert.strictEqual(rhythms[2].accent, true);
+      assert.strictEqual(rhythms[3].invalidTechnique, true, 'a muted chord string cannot fall back to a full chord');
+      assert.ok(parsed.diagnostics.some(d => d.code === 'invalidTechnique' && d.severity === 'error'));
+
+      const invalid = parseGuitarDsl('| C | 8.unknown 8.m.d 8.s5.arp r8.m 8.b.g |');
+      assert.strictEqual(invalid.measures[0].rhythms.every(item => item.invalidTechnique), true);
+      assert.strictEqual(invalid.diagnostics.filter(d => d.code === 'invalidTechnique').length, 5);
+    });
   });
 
   describe('rhythm ties (Issue #142)', () => {

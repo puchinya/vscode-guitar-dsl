@@ -425,12 +425,14 @@ const MODIFIER_ORDER: [keyof NonNullable<RhythmItem['techniques']>, string][] = 
 ];
 
 /** Rhythm token of an item with a (possibly new) duration string. */
-function formatItem(item: RhythmItem, duration = item.duration.replace(/^r/, '')): string {
+function formatItem(item: RhythmItem, duration = item.duration.replace(/^r/, ''), preserveGhostModifier = false): string {
+  if (item.mute) return [(item.isRest ? 'r' : '') + duration, 'm'].join('.');
   const mods: string[] = [];
   if (item.down) mods.push('d');
   if (item.up) mods.push('u');
+  if (item.stringAttack !== undefined) mods.push(`s${item.stringAttack}`);
   if (item.accent) mods.push('a');
-  if (item.ghost) mods.push('g');
+  if (item.ghost) mods.push(preserveGhostModifier ? item.ghostModifier ?? 'g' : 'g');
   if (item.arpeggio) mods.push('arp');
   for (const [key, mod] of MODIFIER_ORDER) if (item.techniques?.[key]) mods.push(mod);
   if (item.tie) mods.push('t');
@@ -439,6 +441,11 @@ function formatItem(item: RhythmItem, duration = item.duration.replace(/^r/, '')
 
 export function formatRhythms(rhythms: readonly RhythmItem[]): string {
   return rhythms.map(r => formatItem(r)).join(' ');
+}
+
+/** Source edits keep each retained ghost token's authored alias; generated patterns stay canonical `.g`. */
+function formatSourceRhythms(rhythms: readonly RhythmItem[]): string {
+  return rhythms.map(r => formatItem(r, r.duration.replace(/^r/, ''), true)).join(' ');
 }
 
 /** Rest tokens filling `beats` (one token per part). */
@@ -2023,7 +2030,7 @@ function buildEdits(text: string, all: readonly MeasureData[], desired: Map<numb
     if (!rhythms) continue;
     const src = m.rhythmSource;
     if (!src) return fail('editRejected', `measure ${i + 1}: its rhythm tokens are interleaved with chords, marks or a lyric and cannot be replaced safely`);
-    const pattern = formatRhythms(rhythms);
+    const pattern = formatSourceRhythms(rhythms);
     if (src.kind === 'explicit') {
       edits.push({ line: src.line, startCol: src.startCol, endCol: src.endCol, text: pattern });
     } else {

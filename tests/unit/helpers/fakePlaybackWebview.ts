@@ -27,7 +27,7 @@ class FakeClassList {
 
 class FakeElement {
   readonly classList = new FakeClassList();
-  readonly style: Record<string, string> = {};
+  readonly style: Record<string, any> = {};
   readonly dataset: Record<string, string> = {};
   readonly attributes = new Map<string, string>();
   private readonly listeners = new Map<string, Listener[]>();
@@ -45,6 +45,9 @@ class FakeElement {
 
   constructor(tagName = 'div') {
     this.tagName = tagName;
+    this.style.setProperty = (name: string, value: string): void => {
+      this.style[name] = value;
+    };
   }
 
   addEventListener(type: string, listener: Listener): void {
@@ -386,6 +389,10 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       const values = windowListeners.get(name) ?? [];
       values.push(listener);
       windowListeners.set(name, values);
+    },
+    removeEventListener(name: string, listener: (event?: unknown) => unknown): void {
+      const values = windowListeners.get(name) ?? [];
+      windowListeners.set(name, values.filter(value => value !== listener));
     }
   };
   const postedMessages: Record<string, unknown>[] = [];

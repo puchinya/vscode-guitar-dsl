@@ -260,6 +260,23 @@ describe('accompaniment engine (Issue #101)', () => {
   });
 
   describe('source-preserving transform (§5.2 – §5.4)', () => {
+    it('retains .m, .sN and authored .b in a source-preserving hold while generated ghosts stay canonical', () => {
+      const text = '| C | 4.d.b 4.m 8.s5.a 8 4 |';
+      const held = run(text, {
+        plans: [],
+        ending: { candidates: [{ kind: 'hold', measures: [{ relativeMeasure: -1, pattern: { source: 'hold' } }] }] }
+      });
+      assert.ok(held.ok, JSON.stringify(held));
+      assert.match(held.text, /\.b\b/);
+      assert.match(held.text, /\.m\b/);
+      assert.match(held.text, /\.s5\.a\b/);
+
+      const generated = ok('| C | 4.d 4.d 4.d 4.d |', [
+        { sectionIndex: 0, mode: 'grid', style: 'strum', gridUnit: 'quarter', attacks: [0, 2], ghosts: [2] }
+      ], { phraseVariation: false });
+      assert.match(generated.text, /\.g\b/);
+    });
+
     it('T021 different intents per section; everything outside the target is byte-identical', () => {
       const r = ok(SONG, [intent(0, { energy: 'low', density: 'sparse', style: 'sustain' }), intent(1, { energy: 'high', density: 'dense' })], { phraseVariation: false });
       const before = SONG.split('\n');
@@ -305,6 +322,17 @@ describe('accompaniment engine (Issue #101)', () => {
       assert.strictEqual(both.text, ['[A]', '| C | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |', '| % |', '[B]', '| % |'].join('\n'));
       // Section B alone would need its % to differ from A.
       assert.strictEqual(failCode(text, [{ sectionIndex: 1, mode: 'preset', presetId: 'arp_4_4_eighth' }]), 'repeatWouldChangeMeaning');
+    });
+
+    it('a % repeat rejects edits that would erase inherited mute or single-string attacks', () => {
+      for (const technique of ['4.m', '4.s5']) {
+        const text = `[A]\n| C | ${technique} 4.d 4.d 4.d |\n[B]\n| % |`;
+        assert.strictEqual(
+          failCode(text, [{ sectionIndex: 0, mode: 'dsl', style: 'strum', pattern: '4 4.d 4.d 4.d', directionPolicy: 'literal' }]),
+          'repeatWouldChangeMeaning',
+          `${technique} must remain part of the inherited rhythm comparison`
+        );
+      }
     });
 
     it('T025 an inline pitched measure in the target fails the whole request without edits', () => {

@@ -133,3 +133,13 @@ Settings and progression sessions are mutually exclusive. User-directed document
 ### Verification strategy
 
 Issue #135 tests S135-02 through S135-10 cover the reused section models, source preservation, stale/reentrant Apply, Preview snapshot precedence, and one-Undo behavior. S135-11 and S135-12 cover progression lease handoff, View replay, document switching, and relocation. S135-13 and S135-14 verify that a new progression intent supersedes pending Settings resolution and survives a delayed Stop acknowledgement; S135-07 verifies invalid candidate/section messages are no-ops while valid changes update the selection. Run the configured unit/E2E and final hooks, plus Issue-scoped Schema 2 validation and Help synchronization; GUI states not observed in the Extension Development Host remain NOT RUN.
+
+## Issue #153 implementation design
+
+Rhythm-token source edits preserve every retained modifier's meaning: `.m` remains a mute, `.s1`–`.s6` retain the selected physical string, and authored `.b` keeps its spelling while generated canonical accompaniment patterns use `.g`. Only the selected rhythm span is rewritten; unrelated source text remains untouched.
+
+Guitar Pro / GPIF export preflights every new rhythm technique before producing output. If the target interchange format cannot represent mute, percussive brush, or single-string attacks without losing meaning, export returns an explicit unsupported result and leaves the destination untouched. It never substitutes a full chord attack.
+
+### Verification strategy
+
+Unit coverage checks authored `.b` survives source-preserving edits, canonical generated patterns keep `.g`, and unsupported interchange export fails before writing. E2E coverage checks one Undo step for a GUI edit that includes a technique token.

@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 
 interface DevToolsTarget {
+  readonly id?: string;
   readonly type: string;
   readonly title: string;
   readonly url: string;
@@ -153,11 +154,14 @@ export async function captureWorkbenchScreenshot(filename: string, issueNumber =
 }
 
 /** Captures only the active Preview Webview at its real CSS viewport size. */
-export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145): Promise<void> {
+let previewViewportWasOverridden = false;
+
+export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145, previewViewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   await waitForPreviewTarget(port);
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
+  if (previewViewportWidth !== undefined) await setPreviewWebviewViewportWidth(previewViewportWidth);
   await withWorkbenchDevTools(async send => {
     const boundsResult = await send('Runtime.evaluate', {
       expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
@@ -186,6 +190,71 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
   });
+}
+
+/** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
+export async function setPreviewWebviewViewportWidth(width: number): Promise<void> {
+  if (!Number.isFinite(width) || width < 320) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  await withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify((() => {
+        const frame = [...document.querySelectorAll('iframe')].find(item => {
+          const rect = item.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && (item.getAttribute('src') || '').startsWith('vscode-webview://');
+        });
+        if (!frame) return { error: 'Preview Webview frame not found' };
+        if (!window.__guitardslPreviewViewportState) {
+          window.__guitardslPreviewViewportState = {
+            frame,
+            width: frame.style.width,
+            minWidth: frame.style.minWidth,
+            maxWidth: frame.style.maxWidth,
+            flex: frame.style.flex
+          };
+        }
+        frame.style.width = '${Math.round(width)}px';
+        frame.style.minWidth = '${Math.round(width)}px';
+        frame.style.maxWidth = 'none';
+        frame.style.flex = '0 0 ${Math.round(width)}px';
+        const rect = frame.getBoundingClientRect();
+        return { width: rect.width, parentWidth: frame.parentElement?.getBoundingClientRect().width };
+      })())`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not resize the Preview Webview frame');
+    const dimensions = JSON.parse(value) as { error?: string; width?: number };
+    if (dimensions.error) throw new Error(dimensions.error);
+    if (Math.abs((dimensions.width ?? 0) - width) > 1) {
+      throw new Error(`The Preview Webview frame could not reach ${width}px (actual=${dimensions.width})`);
+    }
+    previewViewportWasOverridden = true;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+}
+
+/** Clears the Preview Webview viewport override after exact-width acceptance. */
+export async function resetPreviewWebviewViewport(): Promise<void> {
+  if (!previewViewportWasOverridden) return;
+  await withWorkbenchDevTools(async send => {
+    await send('Runtime.evaluate', {
+      expression: `(() => {
+        const state = window.__guitardslPreviewViewportState;
+        if (!state) return;
+        const frame = state.frame?.isConnected ? state.frame : [...document.querySelectorAll('iframe')].find(item =>
+          (item.getAttribute('src') || '').startsWith('vscode-webview://'));
+        if (frame) {
+          frame.style.width = state.width;
+          frame.style.minWidth = state.minWidth;
+          frame.style.maxWidth = state.maxWidth;
+          frame.style.flex = state.flex;
+        }
+        delete window.__guitardslPreviewViewportState;
+      })()`,
+      returnByValue: true
+    });
+  });
+  previewViewportWasOverridden = false;
 }
 
 /** Captures the active YouTube transcription Webview at its real CSS viewport size. */
@@ -611,7 +680,7 @@ async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Prom
 
 /** Resizes the Extension Development Host viewport before editor sash tests. */
 export async function setWorkbenchViewportWidth(width: number): Promise<void> {
-  if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
+  if (!Number.isFinite(width) || width < 320) throw new Error(`Invalid workbench viewport width: ${width}`);
   await withWorkbenchDevTools(async send => {
     const sizeResult = await send('Runtime.evaluate', {
       expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
@@ -629,14 +698,36 @@ export async function setWorkbenchViewportWidth(width: number): Promise<void> {
   });
 }
 
+/** Resizes the Extension Development Host viewport in both dimensions for score-reservation checks. */
+export async function setWorkbenchViewportSize(width: number, height: number): Promise<void> {
+  if (!Number.isFinite(width) || width < 800) throw new Error(`Invalid workbench viewport width: ${width}`);
+  if (!Number.isFinite(height) || height < 500) throw new Error(`Invalid workbench viewport height: ${height}`);
+  await withWorkbenchDevTools(async send => {
+    const sizeResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      returnByValue: true
+    });
+    const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
+    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    workbenchWindowSizeForRestore ??= currentSize;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${Math.round(width)}, ${Math.round(height)})`,
+      returnByValue: true
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+}
+
 /** Clears the optional emulated viewport after a width-matrix test. */
 export async function resetWorkbenchViewport(): Promise<void> {
   await withWorkbenchDevTools(async send => {
-    if (!workbenchWindowSizeForRestore) return;
-    await send('Runtime.evaluate', {
-      expression: `window.resizeTo(${workbenchWindowSizeForRestore.width}, ${workbenchWindowSizeForRestore.height})`,
-      returnByValue: true
-    });
+    if (workbenchWindowSizeForRestore) {
+      await send('Runtime.evaluate', {
+        expression: `window.resizeTo(${workbenchWindowSizeForRestore.width}, ${workbenchWindowSizeForRestore.height})`,
+        returnByValue: true
+      });
+    }
     workbenchWindowSizeForRestore = undefined;
   });
 }

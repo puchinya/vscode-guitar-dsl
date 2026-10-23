@@ -33,6 +33,18 @@ describe('playbackTimeline', () => {
     assert.deepStrictEqual(eventsOf(underfilled, 'rhythmAttack').map(event => [event.timeSeconds, event.durationSeconds]), [[0, 0.5]]);
   });
 
+  it('emits mute, brush and single-string attacks as separate ordered events', () => {
+    const timeline = validTimeline([
+      'chord C = x32010',
+      '| C C C C | 8.m 8.b 8.s5.a 8 |'
+    ].join('\n'));
+    assert.deepStrictEqual(timeline.events.filter(event => event.measureIndex === 0 && event.kind !== 'metronome').map(event => event.kind), [
+      'rhythmMute', 'rhythmBrush', 'rhythmAttack', 'rhythmAttack'
+    ]);
+    const stringAttack = eventsOf(timeline, 'rhythmAttack').find(event => event.stringAttack !== undefined);
+    assert.strictEqual(stringAttack?.stringAttack, 5);
+  });
+
   it('sustains a rhythm tie once across a barline at the same tempo and accumulates seconds per tempo', () => {
     const source = fs.readFileSync(path.join(__dirname, '../../samples/sample_rhythm_tie_syncopation.guitardsl'), 'utf8');
     const timeline = validTimeline(source);
