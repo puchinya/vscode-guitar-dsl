@@ -572,6 +572,8 @@ describe('Preview production Webview runtime', () => {
       return Math.abs(duration - 0.252) < 0.01;
     });
     assert.ok(clipped, 'a note crossing B is clipped at the exclusive loop end');
+    closeEnough((clipped!.stopAt ?? 0) - (clipped!.startAt ?? 0), 0.25, 0.002,
+      'the oscillator stops at B without the normal post-envelope safety padding');
 
     for (let elapsed = 0; elapsed < 0.75; elapsed += 0.025) {
       runtime.advanceAudioTime(0.025);
@@ -580,6 +582,96 @@ describe('Preview production Webview runtime', () => {
     const wrappedPosition = Number(runtime.element('playback-seek').value);
     assert.ok(wrappedPosition >= 0.5 && wrappedPosition < 0.75, `wrapped position ${wrappedPosition} stays in [A, B)`);
     assert.strictEqual(runtime.intervalCount, 1);
+  });
+
+  it('T13 release tails stop at Measure and A/B loop boundaries across speeds and mute locations', async () => {
+    const fixtures = [
+      {
+        name: '.m outside the loop',
+        score: [
+          'bpm: 120',
+          'time: 4/4',
+          '| C | 4.d 4.d 4.d 4.d |',
+          '| G | 4.m 4.d 4.d 4.d |'
+        ].join('\n')
+      },
+      {
+        name: '.m inside the loop',
+        score: [
+          'bpm: 120',
+          'time: 4/4',
+          '| C | 4.d 4.m 4.d 4.d |',
+          '| G | 4.d 4.d 4.d 4.d |'
+        ].join('\n')
+      }
+    ];
+
+    for (const fixture of fixtures) {
+      for (const loopMode of ['measure', 'ab'] as const) {
+        for (const speed of [50, 100, 200]) {
+          const runtime = createRuntime(fixture.score);
+          await runtime.click('practice-toggle');
+
+          if (loopMode === 'measure') {
+            runtime.setRange('playback-seek', 0);
+            await runtime.change('playback-seek');
+            runtime.element('practice-loop').value = 'measure';
+            await runtime.change('practice-loop');
+          } else {
+            runtime.setRange('playback-seek', 0);
+            await runtime.change('playback-seek');
+            await runtime.click('practice-set-a');
+            runtime.setRange('playback-seek', 2);
+            await runtime.change('playback-seek');
+            await runtime.click('practice-set-b');
+            assert.strictEqual(runtime.element('practice-loop').value, 'ab');
+          }
+
+          runtime.element('practice-speed').value = String(speed);
+          await runtime.change('practice-speed');
+          const events = runtime.playbackData.events as Array<any>;
+          const firstAttackEvent = events.find(event => event.kind === 'rhythmAttack' && Math.abs(event.timeSeconds) < 0.000001);
+          const lastAttackEvent = events
+            .filter(event => event.kind === 'rhythmAttack' && Math.abs(event.timeSeconds + event.durationSeconds - 2) < 0.000001)
+            .sort((left, right) => right.timeSeconds - left.timeSeconds)[0];
+          assert.ok(firstAttackEvent, `${fixture.name}/${loopMode}/${speed}% has an attack at A`);
+          assert.ok(lastAttackEvent, `${fixture.name}/${loopMode}/${speed}% has an attack ending exactly at B`);
+          assert.strictEqual(lastAttackEvent.releaseTailSeconds, 0.08);
+
+          await runtime.click('btn-play');
+          const chordVoices = () => runtime.scheduledOscillators().filter(node => node.type === 'triangle');
+          const firstAttackStart = Math.min(...chordVoices().map(node => node.startAt ?? Number.POSITIVE_INFINITY));
+          const speedRatio = speed / 100;
+          const boundaryAudioTime = firstAttackStart + 2 / speedRatio;
+          const lastAttackAudioTime = firstAttackStart + lastAttackEvent.timeSeconds / speedRatio;
+          let audioNow = 0;
+          while (audioNow < lastAttackAudioTime - 0.05) {
+            runtime.advanceAudioTime(0.025);
+            runtime.runSchedulerTicks();
+            audioNow += 0.025;
+          }
+          const lastAttackVoices = chordVoices().filter(node => Math.abs((node.startAt ?? Infinity) - lastAttackAudioTime) < 0.002);
+          assert.strictEqual(lastAttackVoices.length, lastAttackEvent.midiNotes.length,
+            `${fixture.name}/${loopMode}/${speed}% schedules every voice for the final attack`);
+          for (const voice of lastAttackVoices) {
+            assert.ok((voice.stopAt ?? Infinity) <= boundaryAudioTime + 0.001,
+              `${fixture.name}/${loopMode}/${speed}% stops the old voice by the exclusive B boundary`);
+            const gain = (voice.connectedTo as { gain: { events: Array<{ kind: string; value: number; time: number }> } }).gain;
+            assert.ok(gain.events.some(event => event.kind === 'ramp' && event.value === 0 && Math.abs(event.time - boundaryAudioTime) < 0.001),
+              `${fixture.name}/${loopMode}/${speed}% ramps the old voice to silence by B`);
+          }
+
+          while (audioNow < boundaryAudioTime - 0.05) {
+            runtime.advanceAudioTime(0.025);
+            runtime.runSchedulerTicks();
+            audioNow += 0.025;
+          }
+          const nextIterationVoices = chordVoices().filter(node => Math.abs((node.startAt ?? Infinity) - boundaryAudioTime) < 0.002);
+          assert.strictEqual(nextIterationVoices.length, firstAttackEvent.midiNotes.length,
+            `${fixture.name}/${loopMode}/${speed}% schedules the next iteration's attack at B`);
+        }
+      }
+    }
   });
 
   it('re-attacks a tied rhythm once when a Practice measure loop starts at its continuation bar', async () => {

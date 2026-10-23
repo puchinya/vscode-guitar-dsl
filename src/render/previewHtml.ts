@@ -1904,7 +1904,7 @@ ${cspMeta}
         return disposed ? null : audioContext;
       }
 
-      function scheduleTone(ctx, when, duration, frequency, waveform, volume, category, releaseTailSeconds = 0) {
+      function scheduleTone(ctx, when, duration, frequency, waveform, volume, category, releaseTailSeconds = 0, endTimeLimit = Number.POSITIVE_INFINITY) {
         if (duration <= 0 || when < ctx.currentTime - 0.005) return;
         const oscillator = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -1913,7 +1913,7 @@ ${cspMeta}
         const attack = Math.min(0.008, duration / 3);
         const release = Math.min(0.04, duration / 3);
         const releaseTail = Math.min(0.12, Math.max(0, Number(releaseTailSeconds) || 0));
-        const endTime = when + duration + releaseTail;
+        const endTime = Math.min(when + duration + releaseTail, endTimeLimit);
         const releaseStart = Math.max(when + attack, endTime - release);
         gain.gain.setValueAtTime(0, when);
         gain.gain.linearRampToValueAtTime(volume, when + attack);
@@ -1941,7 +1941,7 @@ ${cspMeta}
         };
         try {
           oscillator.start(when);
-          oscillator.stop(endTime + 0.002);
+          oscillator.stop(Math.min(endTime + 0.002, endTimeLimit));
         } catch (_) {
           activeNodes.delete(entry);
           try { oscillator.stop(ctx.currentTime); } catch (_) {}
@@ -1950,8 +1950,11 @@ ${cspMeta}
         }
       }
 
-      function scheduleBrush(ctx, when, duration) {
+      function scheduleBrush(ctx, when, duration, endTimeLimit = Number.POSITIVE_INFINITY) {
         if (duration <= 0 || when < ctx.currentTime - 0.005) return;
+        const endTime = Math.min(when + duration, endTimeLimit);
+        duration = endTime - when;
+        if (duration <= 0) return;
         if (!brushBuffer || brushBuffer.sampleRate !== ctx.sampleRate) {
           const sampleCount = Math.max(1, Math.floor(ctx.sampleRate * 0.05));
           brushBuffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
@@ -1963,11 +1966,11 @@ ${cspMeta}
         source.buffer = brushBuffer;
         const attack = Math.min(0.003, duration / 3);
         const release = Math.min(0.025, duration / 2);
-        const releaseStart = Math.max(when + attack, when + duration - release);
+        const releaseStart = Math.max(when + attack, endTime - release);
         gain.gain.setValueAtTime(0, when);
         gain.gain.linearRampToValueAtTime(0.14, when + attack);
         gain.gain.setValueAtTime(0.14, releaseStart);
-        gain.gain.linearRampToValueAtTime(0, when + duration);
+        gain.gain.linearRampToValueAtTime(0, endTime);
         source.connect(gain);
         gain.connect(masterGain);
         const entry = {
@@ -1978,7 +1981,7 @@ ${cspMeta}
           volume: 0.14,
           attackEnd: when + attack,
           releaseStart,
-          endTime: when + duration,
+          endTime,
           cancelAt: undefined
         };
         activeNodes.add(entry);
@@ -1989,7 +1992,7 @@ ${cspMeta}
         };
         try {
           source.start(when);
-          source.stop(when + duration + 0.002);
+          source.stop(Math.min(endTime + 0.002, endTimeLimit));
         } catch (_) {
           activeNodes.delete(entry);
           try { source.stop(ctx.currentTime); } catch (_) {}
@@ -2003,17 +2006,20 @@ ${cspMeta}
           cancelScheduledNodes('rhythm', when, 0.008);
           return;
         }
+        const endTimeLimit = loopRange
+          ? when + Math.max(0, loopRange.endSeconds - event.timeSeconds) / speed
+          : Number.POSITIVE_INFINITY;
         if (event.kind === 'rhythmBrush') {
           let duration = Math.min(0.04, Math.max(0.012, Number(event.durationSeconds) || 0.03));
           if (loopRange) duration = Math.min(duration, Math.max(0, loopRange.endSeconds - event.timeSeconds));
-          scheduleBrush(ctx, when, duration / speed);
+          scheduleBrush(ctx, when, duration / speed, endTimeLimit);
           return;
         }
         if (event.kind === 'metronome') {
           if (metronomeEnabled) {
             let duration = 0.03;
             if (loopRange) duration = Math.min(duration, Math.max(0, loopRange.endSeconds - event.timeSeconds));
-            scheduleTone(ctx, when, duration / speed, event.accent ? 1000 : 700, 'sine', 0.25, 'metronome');
+            scheduleTone(ctx, when, duration / speed, event.accent ? 1000 : 700, 'sine', 0.25, 'metronome', 0, endTimeLimit);
           }
           return;
         }
@@ -2029,7 +2035,7 @@ ${cspMeta}
           if (!Number.isFinite(midi)) continue;
           const frequency = 440 * Math.pow(2, (midi - 69) / 12);
           const releaseTail = isChord || event.source === 'inline' ? event.releaseTailSeconds : 0;
-          scheduleTone(ctx, when, duration, frequency, isChord ? 'triangle' : 'sine', voiceGain, category, releaseTail);
+          scheduleTone(ctx, when, duration, frequency, isChord ? 'triangle' : 'sine', voiceGain, category, releaseTail, endTimeLimit);
         }
       }
 
