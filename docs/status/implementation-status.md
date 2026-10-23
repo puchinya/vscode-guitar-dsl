@@ -131,10 +131,10 @@
 
 ## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード
 
-- **状態**: [Issue #155](https://github.com/puchinya/vscode-guitar-dsl/issues/155) の更新済みImplementation Contract（SHA-256 `81b60f006aa6f1350884bb522d3e7c7b84a94f5d0868662688cf624c2767e0c1`）を承認済み。実装・最終検証中。
+- **状態**: [Issue #155](https://github.com/puchinya/vscode-guitar-dsl/issues/155) の更新済みImplementation Contract（SHA-256 `81b60f006aa6f1350884bb522d3e7c7b84a94f5d0868662688cf624c2767e0c1`）を承認済み。[PR #156](https://github.com/puchinya/vscode-guitar-dsl/pull/156) を公開し、Issueを `phase:review` へ移行済み。現在HEADのself-reviewとdelivery-checkはPASS。
 - **表示仕様**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。
-- **検証**: `verify-implementation-contract 155`、`validate-docs --issue 155`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx --yes @vscode/vsce ls`（**1,601項目**）、`git diff --check` はPASS。`npm test` は単体 **1,190件PASS**、VS Code E2E **106件PASS・6件pending**。Issue #155 E2Eは1600 CSS pxで4小節すべてと次コード欄が可視範囲に収まり、コード図の中心が区間中央から2 px以内であること、クロスフェードと後処理を検査する。既存pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
-- **画面証拠**: `docs/status/evidence/issue-155/` にEN暗色・明色のコンパクト表示（421/600/840/1100/1400 CSS px、メロディON/OFF）と、クロスフェード0/110/220 msの画像を保存。1600 CSS pxの4小節基準画面も保存し、E2Eで全カードと次コード欄のDOM可視範囲を確認した。Extension Development Hostの外側の表示領域が狭いため、PNGの右端がホスト画面で切れる場合がある。
+- **検証**: `verify-implementation-contract 155`、`validate-docs --issue 155`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx --yes @vscode/vsce ls`（**1,601項目**）、`git diff --check`、`validate-self-review 155 156`、`delivery-check 155 156` はPASS。`npm test` は単体 **1,190件PASS**、VS Code E2E **106件PASS・6件pending**。Issue #155 E2Eは1600 CSS pxで4小節すべてと次コード欄が可視範囲に収まり、コード図の中心が区間中央から2 px以内であること、クロスフェードと後処理を検査する。pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
+- **画面証拠**: `docs/status/evidence/issue-155/` にEN暗色・明色のコンパクト表示（421/600/840/1100/1400 CSS px、メロディON/OFF）と、クロスフェード0/110/220 msの画像を保存。1600 CSS pxの4小節基準画面も保存し、E2Eで全カードと次コード欄のDOM可視範囲を確認した。Extension Development Hostの外側の表示領域が狭いため、PNGの右端がホスト画面で切れる場合がある。PNGは全4小節の見た目検収には用いず、E2EのDOM可視範囲検査を根拠とする。Issueの証拠コメントにもこの制約を記載した。
 - **文書オーナー**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。
 
 ## 1. 機能実装状況マトリクス (Feature Implementation Matrix)
