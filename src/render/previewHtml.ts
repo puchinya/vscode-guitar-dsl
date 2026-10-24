@@ -756,7 +756,7 @@ ${cspMeta}
   .practice-guide-compact-playhead { position: absolute; z-index: 8; top: 24px; bottom: 0; width: 2px; background: var(--guide-playhead); box-shadow: 0 0 3px var(--guide-playhead); pointer-events: none; }
   .practice-guide-compact-playhead[hidden] { display: none; }
   .practice-guide-compact-melody-event, .practice-guide-compact-lyric, .practice-guide-compact-symbol, .practice-guide-compact-chord-name, .practice-guide-compact-diagram-event { position: absolute; }
-  .practice-guide-compact-pitch-bar { height: 6px; min-width: 3px; border: 1px solid #50c8ff; border-radius: 3px; background: #55d4ef; box-sizing: border-box; }
+  .practice-guide-compact-pitch-bar { position: absolute; display: block; height: 6px; min-width: 3px; border: 1px solid #50c8ff; border-radius: 3px; background: #55d4ef; box-sizing: border-box; }
   .practice-guide-compact-pitch-bar.is-current { border-color: var(--guide-playhead); background: var(--guide-playhead); box-shadow: 0 0 0 1px rgba(0, 161, 215, 0.35); }
   .practice-guide-compact-pitch-bar.is-past { border-color: #7f95aa; background: #7f95aa; }
   .practice-guide-compact-melody-rest { position: absolute; top: 17px; display: block; width: 24px; height: 26px; }
@@ -1756,7 +1756,7 @@ ${cspMeta}
           practiceGuideLabelRail.style.height = stageHeight + 'px';
           practiceGuideLabelRail.style.transform = 'scale(' + scale + ')';
           practiceGuideLabelRail.style.transformOrigin = 'top left';
-          practiceGuideLabelRail.style.paddingTop = '10px';
+          practiceGuideLabelRail.style.paddingTop = (8 / scale) + 'px';
         } else if (practiceGuideLabelRailShell && practiceGuideLabelRail) {
           practiceGuideLabelRailShell.style.removeProperty('width');
           practiceGuideLabelRailShell.style.removeProperty('height');
@@ -3553,7 +3553,7 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
   return { automaticGrid, automaticFill, totalBeats, lyricsHeight, pitchMinMidi, pitchMaxMidi, measures, ...(initialNextChord ? { initialNextChord } : {}) };
 }
 
-function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occurrences: readonly PlaybackHtmlOccurrence[]): string {
+export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occurrences: readonly PlaybackHtmlOccurrence[]): string {
   const pixelsPerBeat = practiceGuidePixelsPerBeat(data);
   const totalWidth = Math.max(pixelsPerBeat, fnum(data.totalBeats) * pixelsPerBeat);
   const guideX = (measure: PracticeGuideMeasure, localBeat: ReturnType<typeof frac>): number =>

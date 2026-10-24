@@ -1495,6 +1495,114 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('Issue #155 compact melody pitch bars are visible and follow fractional onset and pitch', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Compact melody pitch bars',
+        'time: 4/4',
+        '| C | 4.d 4.u 4.d 4.u | G | 4.d 4.u 4.d 4.u | D | 4.d 4.u 4.d 4.u | A | 4.d 4.u 4.d 4.u |',
+        'mel: | c5/4 d5/4 e5/4 f5/4 | g5/4 a5/4 b5/4 c6/4 | d6/4 e6/4 f6/4 g6/4 | c5/4 d5/4 e5/4 f5/4 |'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(150);
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      const themeName = requestedTheme.toLowerCase().includes('light') ? 'light' : 'dark';
+      if (captureScreenshots) {
+        assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
+        await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+      }
+
+      const setMelodyVisibility = async (visible: boolean): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const button = document.getElementById('practice-guide-melody-toggle');
+          if ((button.getAttribute('aria-pressed') === 'true') !== ${visible}) button.click();
+        })()`);
+        await settle(100);
+      };
+
+      try {
+        for (const width of [320, 421, 1600]) {
+          await setPreviewWebviewViewportWidth(width);
+          await settle(150);
+          await setMelodyVisibility(true);
+          const visibleGeometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+            const scale = Number(stage.dataset.guideScale);
+            const bars = [...stage.querySelectorAll('.practice-guide-compact-pitch-bar')]
+              .filter(bar => bar.getClientRects().length > 0)
+              .map(bar => {
+                const rect = bar.getBoundingClientRect();
+                const lane = bar.closest('[data-guide-lane="melody"]');
+                const laneRect = lane.getBoundingClientRect();
+                const card = bar.closest('.practice-guide-compact-measure');
+                return {
+                  measure: Number(bar.dataset.guideMeasure),
+                  beat: Number(bar.dataset.guideStartBeat),
+                  midi: Number(bar.dataset.guidePitchMidi),
+                  left: rect.left,
+                  expectedLeft: laneRect.left + laneRect.width * Number(bar.dataset.guideStartBeat) / Number(card.dataset.guideMeasureBeats),
+                  top: rect.top,
+                  laneTop: laneRect.top,
+                  laneBottom: laneRect.bottom,
+                  width: rect.width,
+                  height: rect.height,
+                  position: getComputedStyle(bar).position,
+                  display: getComputedStyle(bar).display,
+                  scale
+                };
+              });
+            return { cardCount: cards.length, scale, bars };
+          })())`));
+          assert.strictEqual(visibleGeometry.cardCount, 4,
+            `${width}px retains all four compact measures while melody bars are visible`);
+          assert.strictEqual(visibleGeometry.bars.length, 16,
+            `${width}px renders the 16 pitch bars across four measures, not only the playhead`);
+          for (let measure = 0; measure < 4; measure++) {
+            const bars = visibleGeometry.bars.filter((bar: { measure: number }) => bar.measure === measure)
+              .sort((a: { beat: number }, b: { beat: number }) => a.beat - b.beat);
+            assert.deepStrictEqual(bars.map((bar: { beat: number }) => bar.beat), [0, 1, 2, 3],
+              `${width}px measure ${measure + 1} keeps its four note onsets in timeline order`);
+            assert.ok(bars.every((bar: { position: string; display: string; left: number; expectedLeft: number; width: number; height: number; scale: number; top: number; laneTop: number; laneBottom: number }) =>
+              bar.position === 'absolute' && bar.display === 'block'
+                && bar.width > 0 && Math.abs(bar.height / bar.scale - 6) <= 0.75
+                && Math.abs(bar.left - bar.expectedLeft) <= 2
+                && bar.top >= bar.laneTop && bar.top + bar.height <= bar.laneBottom + 1),
+            `${width}px measure ${measure + 1} has visible, correctly placed six-pixel pitch bars`);
+            const pitchOrder = [...bars].sort((a: { midi: number }, b: { midi: number }) => a.midi - b.midi);
+            assert.ok(pitchOrder.every((bar: { top: number }, index: number) => index === 0 || pitchOrder[index - 1].top > bar.top),
+              `${width}px measure ${measure + 1} maps higher pitches to higher screen positions`);
+          }
+
+          if (captureScreenshots && width < 1600) {
+            const filename = `practice-guide-melody-bars-issue155-${requestedLocale}-${themeName}-${width}.png`;
+            await capturePreviewWebviewScreenshot(filename, 155, width);
+            const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
+            const image = await fs.readFile(outputPath);
+            assert.ok(image.length >= 5000 && image.readUInt32BE(16) === width,
+              `${width}px melody evidence is captured at the exact compact viewport width`);
+          }
+
+          await setMelodyVisibility(false);
+          const hiddenCount = await evaluatePreviewWebview<number>(`[...document.querySelectorAll('#practice-guide-pair-page .practice-guide-compact-pitch-bar')]
+            .filter(bar => bar.getClientRects().length > 0).length`);
+          assert.strictEqual(hiddenCount, 0, `${width}px hides pitch bars when Melody is OFF`);
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+
   test('Issue #155 compact technique height aligns stacked and single-row measures with the fixed label rail', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
@@ -1530,7 +1638,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       };
 
       try {
-        for (const width of [280, 320, 421, 600, 1400, 1600]) {
+        for (const width of [280, 320, 360, 400, 420, 421, 600, 1400, 1600]) {
           await setPreviewWebviewViewportWidth(width);
           await settle(120);
           for (const melodyVisible of [true, false]) {
@@ -1542,8 +1650,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               const compact = document.getElementById('practice-guide-compact');
               const stage = document.getElementById('practice-guide-pair-page');
               const sharedHeight = Math.max(48, 2 * 31 + 5); // two 28px rows at a 31px pitch, plus 5px lane allowance
-              // The public DSL currently accepts one TAB voice. Add a second simultaneous SVG to the live DOM
-              // to exercise the renderer's multi-row layout without changing that syntax contract.
+              // This section verifies CSS geometry only. The renderer's real two-row allocation and shared
+              // height calculation are covered with internal events in practiceGuidePanel.test.ts.
+              // Keep the public DSL's one-TAB-voice contract unchanged.
               panel.style.setProperty('--guide-compact-technique-height', sharedHeight + 'px');
               compact.dataset.guideTechniqueHeight = String(sharedHeight);
               const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
@@ -1937,7 +2046,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           playheadRect: (() => { const r = document.getElementById('practice-guide-playhead').getBoundingClientRect(); return { left:r.left, top:r.top, width:r.width, height:r.height }; })()
         }`);
         await clickPreviewElement('#btn-play');
-        for (let attempt = 0; attempt < 60; attempt++) {
+        for (let attempt = 0; attempt < 160; attempt++) {
           const occurrence = await evaluatePreviewWebview<number>(`Number(document.getElementById('practice-guide-pair-page').dataset.guideOccurrenceIndex)`);
           if (occurrence === 1) break;
           await settle(20);
@@ -1962,6 +2071,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           }
           const right = document.getElementById('practice-guide-bank-right');
           const activeMeasure = right.querySelector('.practice-guide-compact-measure[data-guide-occurrence-index="2"]');
+          const activePitchBars = [...(activeMeasure?.querySelectorAll('.practice-guide-compact-pitch-bar') ?? [])]
+            .filter(bar => bar.getClientRects().length > 0);
           return JSON.stringify({
             occurrence: Number(stage.dataset.guideOccurrenceIndex),
             page: Number(stage.dataset.guidePageIndex),
@@ -1977,6 +2088,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             rightOpacity: opacity(right.querySelector('.practice-guide-bank-content')),
             currentMeasureHighlighted: activeMeasure?.classList.contains('is-current') ?? false,
             currentTechniqueCount: activeMeasure?.querySelectorAll('.practice-guide-compact-symbol.is-current').length ?? 0,
+            activePitchBarCount: activePitchBars.length,
+            currentPitchBarCount: activePitchBars.filter(bar => bar.classList.contains('is-current')).length,
+            activePitchBarsSized: activePitchBars.every(bar => {
+              const rect = bar.getBoundingClientRect();
+              return rect.width > 0 && Math.abs(rect.height - 6) <= 0.5;
+            }),
             nextSame: document.getElementById('practice-guide-next-chord') === window.__practiceGuideCrossfadeProbe.next,
             nextRectSame: (() => { const r = document.getElementById('practice-guide-next-chord').getBoundingClientRect(); const p = window.__practiceGuideCrossfadeProbe.nextRect; return Math.abs(r.left-p.left)<0.5 && Math.abs(r.top-p.top)<0.5 && Math.abs(r.width-p.width)<0.5 && Math.abs(r.height-p.height)<0.5; })(),
             playheadSame: document.getElementById('practice-guide-playhead') === window.__practiceGuideCrossfadeProbe.playhead
@@ -2002,6 +2119,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(atStart.playheadSame, true, 'the playback highlight owner remains unchanged');
         assert.strictEqual(atStart.currentMeasureHighlighted, true, 'the 03 measure is highlighted in the unchanged current bank');
         assert.strictEqual(atStart.currentTechniqueCount, 1, 'the active bank keeps its current technique highlight');
+        assert.strictEqual(atStart.activePitchBarCount, 4, 'the active measure retains all four melody bars during bank replacement');
+        assert.ok(atStart.currentPitchBarCount > 0, 'the active melody bar receives its current-playback highlight');
+        assert.strictEqual(atStart.activePitchBarsSized, true, 'the active bank keeps nonzero, six-pixel melody bar rectangles');
         assert.strictEqual(atStart.rightOpacity, 1, 'the active bank does not participate in the fade');
         const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
         const captureCrossfade = async (phase: '0ms' | '110ms' | '220ms'): Promise<void> => {
@@ -2026,6 +2146,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(midpoint.rightRectSame, true, 'the active bank position is unchanged at the midpoint');
         assert.strictEqual(midpoint.rightOpacity, 1, 'the active bank stays fully opaque during the crossfade');
         assert.strictEqual(midpoint.currentMeasureHighlighted, true, 'the current measure highlight remains present at the midpoint');
+        assert.strictEqual(midpoint.activePitchBarCount, 4, 'the unchanged bank keeps all four pitch bars while the other bank fades');
+        assert.ok(midpoint.currentPitchBarCount > 0, 'the current melody highlight survives the crossfade midpoint');
+        assert.strictEqual(midpoint.activePitchBarsSized, true, 'pitch bar rectangles remain visible during the crossfade');
         await captureCrossfade('110ms');
         const elapsedBeforeComplete = JSON.parse(await state()).elapsedMs ?? 0;
         if (elapsedBeforeComplete < 320) await settle(320 - elapsedBeforeComplete);
