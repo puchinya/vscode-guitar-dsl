@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
 import { frac } from '../../src/duration';
-import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideRestGlyph, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets } from '../../src/practiceGuide';
+import { automaticPracticeGuideGrid, practiceGuideContinuationOffsets, practiceGuideRestGlyph, practiceGuideRhythmLabel, practiceGuideTabEvents, practiceGuideValueContinuationOffsets, projectPracticeGuidePage, selectPracticeGuideCapacity } from '../../src/practiceGuide';
 
 describe('practice guide grid', () => {
   it('uses the densest explicit rhythm subdivision across the written song', () => {
@@ -76,5 +76,32 @@ describe('practice guide grid', () => {
     assert.deepStrictEqual(events.map(event => event.label), Array(8).fill('6'));
     assert.deepStrictEqual(events.map(event => event.at), Array.from({ length: 8 }, (_, index) => frac(index, 2)));
     assert.deepStrictEqual(practiceGuideValueContinuationOffsets(events[0].duration, 16), [{ n: 1, d: 4 }]);
+  });
+
+  it('projects alternating banks from playback occurrence order', () => {
+    const occurrences = Array.from({ length: 8 }, (_, occurrenceIndex) => ({
+      occurrenceIndex,
+      measureIndex: [0, 1, 0, 1, 2, 3, 2, 3][occurrenceIndex],
+      lyricVerse: occurrenceIndex === 4 ? 2 : 1
+    }));
+    const start = projectPracticeGuidePage(occurrences, 0, 4);
+    assert.deepStrictEqual(start.banks.left.occurrences.map(item => item.measureIndex), [0, 1]);
+    assert.deepStrictEqual(start.banks.right.occurrences.map(item => item.measureIndex), [0, 1]);
+    const third = projectPracticeGuidePage(occurrences, 2, 4);
+    assert.strictEqual(third.currentBank, 'right');
+    assert.deepStrictEqual(third.banks.right.occurrences.map(item => item.occurrenceIndex), [2, 3]);
+    assert.deepStrictEqual(third.banks.left.occurrences.map(item => item.occurrenceIndex), [4, 5]);
+    assert.strictEqual(third.banks.left.occurrences[0].lyricVerse, 2);
+    const fifth = projectPracticeGuidePage(occurrences, 4, 4);
+    assert.strictEqual(fifth.currentBank, 'left');
+    assert.deepStrictEqual(fifth.banks.right.occurrences.map(item => item.occurrenceIndex), [6, 7]);
+  });
+
+  it('keeps a fixed four-measure capacity at every viewport width', () => {
+    const widths = [144, 144, 170, 144, 144, 144];
+    assert.strictEqual(selectPracticeGuideCapacity(widths, 900), 4);
+    assert.strictEqual(selectPracticeGuideCapacity(widths, 640), 4);
+    assert.strictEqual(selectPracticeGuideCapacity(widths, 421), 4);
+    assert.strictEqual(selectPracticeGuideCapacity([], 1), 4);
   });
 });

@@ -4,6 +4,76 @@ import type { ParsedScore, RhythmItem } from './compiler';
 import type { TabBeat, TabVoiceMeasure } from './tab';
 
 export type PracticeGuideGrid = 4 | 8 | 16;
+export type PracticeGuideCapacity = 4 | 2 | 1;
+
+export interface PracticeGuideOccurrence {
+  occurrenceIndex: number;
+  measureIndex: number;
+  lyricVerse?: number;
+}
+
+export interface PracticeGuideBank<T extends PracticeGuideOccurrence> {
+  id: 'left' | 'right';
+  occurrences: readonly T[];
+  startIndex: number | null;
+}
+
+export interface PracticeGuidePageProjection<T extends PracticeGuideOccurrence> {
+  capacity: PracticeGuideCapacity;
+  bankSize: number;
+  currentOccurrence: T | null;
+  currentBank: 'left' | 'right';
+  pageIndex: number;
+  banks: { left: PracticeGuideBank<T>; right: PracticeGuideBank<T> };
+}
+
+/** Projects the ordered playback occurrences into two fixed banks without resolving play order. */
+export function projectPracticeGuidePage<T extends PracticeGuideOccurrence>(
+  occurrences: readonly T[],
+  occurrenceIndex: number,
+  capacity: PracticeGuideCapacity
+): PracticeGuidePageProjection<T> {
+  const requestedIndex = occurrences.findIndex(item => item.occurrenceIndex === occurrenceIndex);
+  const index = requestedIndex >= 0 ? requestedIndex : Number.isInteger(occurrenceIndex) ? occurrenceIndex : -1;
+  const currentOccurrence = index >= 0 && index < occurrences.length ? occurrences[index] : null;
+  const bankSize = capacity === 4 ? 2 : 1;
+  const pageIndex = currentOccurrence ? Math.floor(index / bankSize) : -1;
+  const currentBank: 'left' | 'right' = pageIndex >= 0 && pageIndex % 2 === 1 ? 'right' : 'left';
+  const makeBank = (id: 'left' | 'right'): PracticeGuideBank<T> => {
+    if (!currentOccurrence) return { id, occurrences: [], startIndex: null };
+    if (capacity === 1 && id !== currentBank) return { id, occurrences: [], startIndex: null };
+    const isCurrent = id === currentBank;
+    const startIndex = isCurrent
+      ? Math.floor(index / bankSize) * bankSize
+      : (Math.floor(index / bankSize) + 1) * bankSize;
+    return { id, occurrences: occurrences.slice(startIndex, startIndex + bankSize), startIndex };
+  };
+  return {
+    capacity,
+    bankSize,
+    currentOccurrence,
+    currentBank,
+    pageIndex,
+    banks: { left: makeBank('left'), right: makeBank('right') }
+  };
+}
+
+export interface PracticeGuideCapacityOptions {
+  leftRailWidth?: number;
+  rightRailWidth?: number;
+  measureGap?: number;
+  bankGap?: number;
+  horizontalPadding?: number;
+}
+
+/** The compact practice guide always projects four measures; width changes scrolling, not capacity. */
+export function selectPracticeGuideCapacity(
+  _measureWidths: readonly number[],
+  _availableWidth: number,
+  _options: PracticeGuideCapacityOptions = {}
+): PracticeGuideCapacity {
+  return 4;
+}
 
 const REST_GLYPHS: Readonly<Record<number, string>> = Object.freeze({
   1: '\u{1D13B}',
