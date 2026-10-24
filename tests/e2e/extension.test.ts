@@ -1296,11 +1296,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         return `16.${direction}.${index % 2 === 0 ? 'b' : 'g'}`;
       }).join(' ');
       const measures = [
-        '| C | 4 4 4 8.d |',
-        '| G | 4 4 4 16.d |',
+        '| C | 4.d 4.u 4.d 4.u |',
+        '| G | 8.d 16.d 4 4 4 16 |',
         '| D | 4.u.t 4 2 |',
         `| A | ${denseBrushRhythm} |`,
-        '| Em | 4 4 4 4 |',
+        '| Em | 4.d.b 4.u.g 4.d.stacc 4 |',
         '| F | 4 4 4 4 |'
       ];
       const melody = 'mel: ' + Array.from({ length: measures.length }, () => '| c4/4 d4/4 e4/4 f4/4 |').join(' ');
@@ -1334,14 +1334,20 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       };
 
       await setGrid('8');
-      assert.strictEqual(await visibleWaveCount(0, 3), 0, '8.d on an eighth-note grid draws only its attack');
+      assert.strictEqual(await visibleWaveCount(1, 0), 0, '8.d on an eighth-note grid draws only its attack');
       assert.strictEqual(await visibleWaveCount(2, 0), 1, '4.d on an eighth-note grid draws one continuation wave');
+      for (const event of [0, 1, 2, 3]) {
+        assert.strictEqual(await visibleWaveCount(0, event), 1, `quarter attack ${event} keeps exactly one wave on an eighth-note grid`);
+      }
       await setGrid('16');
-      assert.strictEqual(await visibleWaveCount(0, 3), 1, '8.d on a sixteenth-note grid draws one continuation wave');
-      assert.strictEqual(await visibleWaveCount(1, 3), 0, '16.d on a sixteenth-note grid draws only its attack');
+      assert.strictEqual(await visibleWaveCount(1, 0), 1, '8.d on a sixteenth-note grid draws one continuation wave');
+      assert.strictEqual(await visibleWaveCount(1, 1), 0, '16.d on a sixteenth-note grid draws only its attack');
       assert.strictEqual(await visibleWaveCount(2, 0), 1, '4.d on a sixteenth-note grid draws one continuation wave');
       await setGrid('4');
       assert.strictEqual(await visibleWaveCount(2, 0), 1, '4.d on a quarter-note grid draws one continuation wave');
+      for (const event of [0, 1, 2, 3]) {
+        assert.strictEqual(await visibleWaveCount(0, event), 1, `quarter attack ${event} keeps exactly one wave on a quarter-note grid`);
+      }
 
       const geometry = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); const events = [...stage.querySelectorAll('.practice-guide-compact-lyric, .practice-guide-compact-symbol')]; const outOfBounds = events.flatMap(item => { const rect = item.getBoundingClientRect(); const card = item.closest('.practice-guide-compact-measure'); const cardRect = card.getBoundingClientRect(); return rect.left < cardRect.left - 1 || rect.right > cardRect.right + 1 ? [{ lane: item.closest('.practice-guide-compact-lane')?.dataset.guideLane, measure: card.dataset.guideMeasureIndex, left: rect.left, right: rect.right, cardLeft: cardRect.left, cardRight: cardRect.right }] : []; }); return { outOfBounds, range: document.getElementById('practice-guide-compact-range').textContent.trim() }; })())"));
       assert.deepStrictEqual(geometry.outOfBounds, [],
@@ -1363,6 +1369,25 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               let palmMuteCount = 0;
               let tieCount = 0;
               let visibleWaveCount = 0;
+              let quarterStroke = { marks: [], laneWidth: 0 };
+              const quarterCard = [...stage.querySelectorAll('.practice-guide-compact-measure')]
+                .find(card => Number(card.dataset.guideMeasureIndex) === 0);
+              const quarterLane = quarterCard?.querySelector('[data-guide-lane="technique"]');
+              if (quarterCard && quarterLane) {
+                const laneRect = quarterLane.getBoundingClientRect();
+                const beatCount = Number(quarterCard.dataset.guideMeasureBeats);
+                const marks = [...quarterCard.querySelectorAll('.practice-guide-compact-symbol[data-guide-kind="attack"]')]
+                  .filter(item => Number(item.dataset.guideEvent) >= 0 && Number(item.dataset.guideEvent) <= 3)
+                  .sort((left, right) => Number(left.dataset.guideEvent) - Number(right.dataset.guideEvent))
+                  .map(item => {
+                    const rect = item.getBoundingClientRect();
+                    const startBeat = Number(item.dataset.guideStartBeat);
+                    const expectedLeft = laneRect.left + startBeat / beatCount * laneRect.width;
+                    return { event: Number(item.dataset.guideEvent), top: rect.top, left: rect.left,
+                      right: rect.right, onsetError: rect.left - expectedLeft, align: item.dataset.guideAlign };
+                  });
+                quarterStroke = { marks, laneWidth: laneRect.width };
+              }
               for (const layer of [...stage.querySelectorAll('.practice-guide-bank-content')]) {
                 if (!layer.isConnected || Number(getComputedStyle(layer).opacity) < 0.99
                     || getComputedStyle(layer).display === 'none' || getComputedStyle(layer).visibility === 'hidden') continue;
@@ -1405,12 +1430,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                   }
                 }
               }
-              return { collisions, outOfBounds, brushCount, palmMuteCount, tieCount, visibleWaveCount };
+              return { collisions, outOfBounds, brushCount, palmMuteCount, tieCount, visibleWaveCount, quarterStroke };
             })())`));
             assert.deepStrictEqual(compactGeometry.collisions, [],
               `${width}px / ${grid}-grid compact strokes have at least 2px of separation: ${JSON.stringify(compactGeometry.collisions)}`);
             assert.deepStrictEqual(compactGeometry.outOfBounds, [],
               `${width}px / ${grid}-grid compact strokes stay inside their technique lanes and measure cards: ${JSON.stringify(compactGeometry.outOfBounds)}`);
+            assert.strictEqual(compactGeometry.quarterStroke.marks.length, 4,
+              `${width}px / ${grid}-grid keeps all four quarter attacks visible`);
+            assert.ok(Math.max(...compactGeometry.quarterStroke.marks.map((mark: { top: number }) => mark.top))
+              - Math.min(...compactGeometry.quarterStroke.marks.map((mark: { top: number }) => mark.top)) <= 0.5,
+            `${width}px / ${grid}-grid keeps the single-voice quarter pattern on one row`);
+            assert.ok(compactGeometry.quarterStroke.marks.every((mark: { onsetError: number; align: string }) =>
+              Math.abs(mark.onsetError) <= 2 && mark.align === 'start'),
+            `${width}px / ${grid}-grid left-aligns each attack SVG to its beat onset: ${JSON.stringify(compactGeometry.quarterStroke.marks)}`);
+            assert.ok(compactGeometry.quarterStroke.marks.every((mark: { event: number; left: number }, index: number) =>
+              mark.event === index && (index === 0 || compactGeometry.quarterStroke.marks[index - 1].left < mark.left)),
+            `${width}px / ${grid}-grid preserves increasing quarter-beat order`);
+            assert.ok(compactGeometry.quarterStroke.marks.every((mark: { left: number; right: number }, index: number) =>
+              index === 0 || compactGeometry.quarterStroke.marks[index - 1].right + 2 <= mark.left),
+            `${width}px / ${grid}-grid leaves at least 2px between left-anchored visible marks`);
             assert.ok(compactGeometry.brushCount >= 12,
               `${width}px / ${grid}-grid scans the continuous 16th-note brush row`);
             assert.ok(compactGeometry.palmMuteCount >= 2,
@@ -1436,6 +1475,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(nextPage.playbackPositions, [3, 4, 5, 6], 'the manually selected page follows playback occurrence positions');
       assert.strictEqual(nextPage.seek, seekBefore, 'manual page navigation does not seek or change playback time');
       assert.strictEqual(nextPage.nextDisabled, true, 'Next is disabled at the end of the score');
+      for (const grid of ['4', '8', '16'] as const) {
+        await setGrid(grid);
+        for (const event of [0, 1, 2]) {
+          assert.strictEqual(await visibleWaveCount(4, event), 0,
+            `${grid}-grid ${['4.d.b', '4.u.g', '4.d.stacc'][event]} has no duration wave`);
+        }
+        assert.strictEqual(await visibleWaveCount(4, 3), 1,
+          `${grid}-grid ordinary quarter attack retains its one duration wave`);
+      }
 
       await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-previous').click()");
       await settle(120);
@@ -1453,8 +1501,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const source = [
         'title: Compact tie wave checks',
         'time: 4/4',
-        '| C | 4.u.t 4 2 | G |',
-        'tab: | 3f5~/4 3f5/4 3f5/2 | 3f5~/4 3f5/4 3f5/2 |'
+        '| C | 4.u.t 4 2 | G | D | A |',
+        'tab: | 3f5~/4 3f5/4 3f5/2 | 3f5~/4 3f5/4 3f5/2 | 6x/4 6x/4 6x/4 6x/4 | 6f0/4 6f0/4 6f0/4 6f0/4 |'
       ].join('\n');
       const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
       await showAndFocus(doc);
@@ -1468,6 +1516,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'the compact view exposes one rhythm tie and one TAB tie continuation');
       assert.ok(ties.every((item: { tieSvgCount: number; extraWaveCount: number }) => item.tieSvgCount === 1 && item.extraWaveCount === 0),
         'each TAB or rhythm tie renders its tie wave once without a grid-derived duplicate');
+      const tabAttackWaves = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify([...document.querySelectorAll(
+        '.practice-guide-compact-symbol[data-guide-kind="attack"]')]
+        .map(item => ({ measure: Number(item.dataset.guideMeasure), event: Number(item.dataset.guideEvent), waves: [...item.querySelectorAll('.practice-guide-compact-wave')]
+          .filter(wave => getComputedStyle(wave).display !== 'none').length })))`));
+      assert.deepStrictEqual(tabAttackWaves.filter((item: { measure: number }) => item.measure === 2).map((item: { waves: number }) => item.waves),
+        [0, 0, 0, 0], `TAB dead-note attacks are percussive and never receive the quarter-attack wave exception: ${JSON.stringify(tabAttackWaves)}`);
+      assert.deepStrictEqual(tabAttackWaves.filter((item: { measure: number }) => item.measure === 3).map((item: { waves: number }) => item.waves),
+        [1, 1, 1, 1], 'ordinary TAB quarter attacks each retain one duration wave');
     });
   });
 

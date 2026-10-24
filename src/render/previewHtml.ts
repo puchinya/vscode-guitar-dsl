@@ -119,6 +119,7 @@ interface PracticeGuideItem {
   eventIndex?: number;
   restBase?: number;
   stroke?: PracticeGuideStrokeSpec;
+  durationWaveEligible: boolean;
 }
 
 interface PracticeGuideMelodyNote {
@@ -3430,15 +3431,16 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
       eventIndex: number,
       restBase: number | undefined,
       getContinuationOffsets: (grid: PracticeGuideGrid) => ReturnType<typeof practiceGuideContinuationOffsets>,
+      durationWaveEligible: boolean,
       stroke?: PracticeGuideStrokeSpec
     ) => {
       const eventEnd = fadd(itemStart, eventDuration);
-      techniques.push({ at: itemStart, durationBeats: eventDuration, eventStart: itemStart, eventEnd, label, duration: durationLabel, kind, eventIndex, ...(restBase === undefined ? {} : { restBase }), ...(stroke ? { stroke } : {}) });
+      techniques.push({ at: itemStart, durationBeats: eventDuration, eventStart: itemStart, eventEnd, label, duration: durationLabel, kind, eventIndex, durationWaveEligible, ...(restBase === undefined ? {} : { restBase }), ...(stroke ? { stroke } : {}) });
       for (const grid of [4, 8, 16] as const) {
         for (const offset of getContinuationOffsets(grid)) {
           const continuationBeat = fadd(itemStart, offset);
           if (beats.n > 0 && fcmp(continuationBeat, beats) >= 0) continue;
-          techniques.push({ at: continuationBeat, durationBeats: frac(0), eventStart: itemStart, eventEnd, label: '〜', duration: '', kind: 'continuation', grid, eventIndex });
+          techniques.push({ at: continuationBeat, durationBeats: frac(0), eventStart: itemStart, eventEnd, label: '〜', duration: '', kind: 'continuation', grid, eventIndex, durationWaveEligible: false });
         }
       }
     };
@@ -3462,6 +3464,7 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
           eventIndex,
           event.kind === 'rest' ? event.duration.parts[0]?.base : undefined,
           grid => practiceGuideValueContinuationOffsets(event.duration, grid, { isRest: event.kind === 'rest', percussive: event.percussive }),
+          event.kind === 'attack' && !event.percussive,
           event.kind === 'rest' ? undefined : event.kind === 'continuation'
             ? { kind: 'tie', label: event.label }
             : event.percussive
@@ -3484,6 +3487,7 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
           eventIndex,
           item.isRest ? duration?.parts[0]?.base : undefined,
           grid => practiceGuideContinuationOffsets(item, grid),
+          kind === 'attack' && !item.mute && !item.isRest && !item.ghost && !item.invalidTechnique && !item.techniques?.staccato,
           item.mute
             ? { kind: 'mute', label: item.duration + ' mute' }
             : item.isRest
@@ -3693,7 +3697,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
     }, 144);
     return Math.ceil(Math.max(measureWidth(items, duration, minGap), edgeSafeWidth));
   };
-  const leftAnchoredMeasureWidth = (items: { at: number; width: number }[], duration: number): number => {
+  const leftAnchoredMeasureWidth = (items: { at: number; width: number }[], duration: number, minGap = 2): number => {
     if (!items.length) return 144;
     const ordered = [...items].sort((a, b) => a.at - b.at).reduce<{ at: number; width: number }[]>((groups, item) => {
       const previous = groups[groups.length - 1];
@@ -3714,7 +3718,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
       if (index === 0) continue;
       const previous = ordered[index - 1];
       const delta = item.at - previous.at;
-      if (delta > 0) required = Math.max(required, Math.ceil((previous.width + 2) * duration / delta) + 12);
+      if (delta > 0) required = Math.max(required, Math.ceil((previous.width + minGap) * duration / delta) + 12);
     }
     return Math.ceil(required);
   };
@@ -3726,7 +3730,8 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
         || base === 4 || grid > base;
       const hasGridContinuation = measure.techniques.some(continuation => continuation.grid === grid
         && continuation.eventIndex === item.eventIndex && continuation.kind === 'continuation');
-      return durationAllowsWave && (hasGridContinuation || (item.kind === 'attack' && base === 4));
+      const quarterAttackWave = item.kind === 'attack' && item.durationWaveEligible && base === 4;
+      return durationAllowsWave && (hasGridContinuation || quarterAttackWave);
     });
   };
   const compactWaveWidth = (item: PracticeGuideItem, measure: PracticeGuideMeasure): number =>
@@ -3784,7 +3789,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
     const diagramWidths = chordSpans.filter(span => span.chord?.svg).map(span => ({ at: chordSpanCenter(span), width: 144 }));
     const minWidth = Math.max(
       leftAnchoredMeasureWidth(melodyWidths, beatCount), leftAnchoredMeasureWidth(lyricWidths, beatCount),
-      centeredMeasureWidth(techniqueWidths, beatCount, 3), centeredMeasureWidth(chordWidths, beatCount),
+      leftAnchoredMeasureWidth(techniqueWidths, beatCount, 3), centeredMeasureWidth(chordWidths, beatCount),
       centeredMeasureWidth(diagramWidths, beatCount), 144
     );
     compactMeasureWidths.push(minWidth);
@@ -3800,12 +3805,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
     const compactTechniqueRowByKey = new Map<string, number>();
     const compactTechniqueRowRightEdges: number[] = [];
     for (const [rowKey, group] of [...compactTechniqueGroups.entries()].sort((a, b) => a[1].at - b[1].at)) {
-      const center = group.at / beatCount * compactContentWidth;
-      const left = group.at <= 0.000001
-        ? center
-        : group.at >= beatCount - 0.000001
-          ? center - group.width
-          : center - group.width / 2;
+      const left = group.at / beatCount * compactContentWidth;
       let row = compactTechniqueRowRightEdges.findIndex(right => right + 3 <= left);
       if (row < 0) row = compactTechniqueRowRightEdges.length;
       compactTechniqueRowRightEdges[row] = left + group.width;
@@ -3824,7 +3824,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
         .map(grid => `<span class="practice-guide-compact-wave" data-guide-wave-grid="${grid}">${renderPracticeGuideWaveSvg(`${item.duration} ${msgs.uiPracticeGuideTechnique}`, compactWaveWidth(item, measure))}</span>`).join('');
       const eventStart = fnum(item.eventStart);
       const eventEnd = fnum(item.eventEnd);
-      const compactAlign = at <= 0.000001 ? 'start' : at >= beatCount - 0.000001 ? 'end' : 'center';
+      const compactAlign = 'start';
       const key = `${measure.number - 1}:${item.eventIndex ?? -1}:${at}:${item.label}`;
       const eventKey = `${measure.number - 1}:${item.eventIndex ?? -1}`;
       const rowTop = 2 + (compactTechniqueRowByKey.get(rowKey) ?? 0) * 31;
