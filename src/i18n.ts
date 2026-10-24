@@ -128,9 +128,12 @@ export interface Messages {
   uiPracticeGuideCompact: string;
   uiPracticeGuidePrevious: string;
   uiPracticeGuideNext: string;
+  uiPracticeGuidePlaybackOrder: string;
   uiPracticeGuideMeasures: string;
   uiPracticeGuideDiagrams: string;
   uiPracticeGuideMelody: string;
+  uiPracticeGuideMelodyShort: string;
+  uiPracticeGuideTechniqueShort: string;
   uiPracticeGuideGrid: string;
   uiPracticeGuideAuto: string;
   uiPracticeGuideGrid4: string;
@@ -426,9 +429,12 @@ export const MESSAGES_JA: Messages = {
   uiPracticeGuideCompact: 'コンパクト4小節表示',
   uiPracticeGuidePrevious: '前へ',
   uiPracticeGuideNext: '次へ',
+  uiPracticeGuidePlaybackOrder: '演奏順',
   uiPracticeGuideMeasures: '小節',
   uiPracticeGuideDiagrams: 'コード図',
   uiPracticeGuideMelody: 'メロディ',
+  uiPracticeGuideMelodyShort: 'メロディ',
+  uiPracticeGuideTechniqueShort: '奏法',
   uiPracticeGuideGrid: '分割',
   uiPracticeGuideAuto: '自動',
   uiPracticeGuideGrid4: '4分',
@@ -766,9 +772,12 @@ export const MESSAGES_EN: Messages = {
   uiPracticeGuideCompact: 'Compact 4-measure overview',
   uiPracticeGuidePrevious: 'Previous',
   uiPracticeGuideNext: 'Next',
+  uiPracticeGuidePlaybackOrder: 'Playback order',
   uiPracticeGuideMeasures: 'measures',
   uiPracticeGuideDiagrams: 'Chord diagrams',
   uiPracticeGuideMelody: 'Melody',
+  uiPracticeGuideMelodyShort: 'Melody',
+  uiPracticeGuideTechniqueShort: 'Strum',
   uiPracticeGuideGrid: 'Grid',
   uiPracticeGuideAuto: 'Auto',
   uiPracticeGuideGrid4: 'Quarter',
