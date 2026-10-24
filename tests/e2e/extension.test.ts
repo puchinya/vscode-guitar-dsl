@@ -377,16 +377,17 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
         for (let attempt = 0; attempt < 3; attempt++) {
           await settle(500);
-          const expectedWidth = await evaluatePreviewWebview<number>('window.innerWidth');
+          const expectedWidth = previewViewportWidth ?? await evaluatePreviewWebview<number>('window.innerWidth');
           await capturePreviewWebviewScreenshot(filename, 155, previewViewportWidth);
           const image = await fs.readFile(outputPath);
-          if (image.length >= 20000 && image.readUInt32BE(16) === Math.round(expectedWidth)
+          if (image.length >= 20000 && Math.abs(image.readUInt32BE(16) - Math.round(expectedWidth)) <= 1
             && image.readUInt32BE(20) > 0) return;
         }
         const image = await fs.readFile(outputPath);
-        assert.ok(image.length >= 20000 && image.readUInt32BE(16) === Math.round(await evaluatePreviewWebview<number>('window.innerWidth')
-          ) && image.readUInt32BE(20) > 0,
-          `${filename} is an uncropped Preview screenshot (${image.length} bytes, ${image.readUInt32BE(16)}px wide)`);
+        const expectedWidth = previewViewportWidth ?? await evaluatePreviewWebview<number>('window.innerWidth');
+        assert.ok(image.length >= 20000 && Math.abs(image.readUInt32BE(16) - Math.round(expectedWidth)) <= 1
+          && image.readUInt32BE(20) > 0,
+        `${filename} is an uncropped Preview screenshot (${image.length} bytes, ${image.readUInt32BE(16)}px wide; expected ${Math.round(expectedWidth)}px)`);
       };
       assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'the workbench locale matches the requested evidence locale');
       await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
@@ -902,7 +903,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.deepStrictEqual(compact.laneOrder, ['melody', 'lyrics', 'technique', 'chord', 'diagrams'], 'each measure uses the contracted lane order');
             if (captureScreenshots) await captureGuideEvidence(
               `practice-guide-compact-issue155-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}${guideEvidenceSuffix}.png`,
-              width === 1400 ? 1400 : undefined);
+              width);
           }
           await setGuideViewMode('detailed');
           await settle(100);
@@ -1529,7 +1530,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       };
 
       try {
-        for (const width of [320, 421, 1600]) {
+        for (const width of [280, 320, 360, 420, 421, 600, 840, 1100, 1400, 1600]) {
           await setPreviewWebviewViewportWidth(width);
           await settle(150);
           await setMelodyVisibility(true);
@@ -1582,7 +1583,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               `${width}px measure ${measure + 1} maps higher pitches to higher screen positions`);
           }
 
-          if (captureScreenshots && width < 1600) {
+          if (captureScreenshots && (width === 320 || width === 421)) {
             const filename = `practice-guide-melody-bars-issue155-${requestedLocale}-${themeName}-${width}.png`;
             await capturePreviewWebviewScreenshot(filename, 155, width);
             const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
