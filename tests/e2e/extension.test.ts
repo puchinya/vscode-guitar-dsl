@@ -377,11 +377,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
         for (let attempt = 0; attempt < 3; attempt++) {
           await settle(500);
+          const expectedWidth = await evaluatePreviewWebview<number>('window.innerWidth');
           await capturePreviewWebviewScreenshot(filename, 155, previewViewportWidth);
-          if ((await fs.stat(outputPath)).size >= 50000) return;
+          const image = await fs.readFile(outputPath);
+          if (image.length >= 50000 && image.readUInt32BE(16) === Math.round(expectedWidth)) return;
         }
-        const size = (await fs.stat(outputPath)).size;
-        assert.ok(size >= 50000, `${filename} is a fully rendered Preview screenshot (${size} bytes)`);
+        const image = await fs.readFile(outputPath);
+        assert.ok(image.length >= 50000 && image.readUInt32BE(16) === Math.round(await evaluatePreviewWebview<number>('window.innerWidth')),
+          `${filename} is an uncropped Preview screenshot (${image.length} bytes, ${image.readUInt32BE(16)}px wide)`);
       };
       assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'the workbench locale matches the requested evidence locale');
       await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
@@ -487,7 +490,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             const defaultLyricSize = defaultLyric ? parseFloat(getComputedStyle(defaultLyric).fontSize) : 0;
             const panelRect = panel.getBoundingClientRect();
             const nextRect = nextName.getBoundingClientRect();
-            const nextDiagramRect = document.getElementById('practice-guide-next-chord-diagram').getBoundingClientRect();
+            const nextDiagram = document.getElementById('practice-guide-next-chord-diagram');
+            const nextDiagramRect = nextDiagram.getBoundingClientRect();
+            const nextDiagramSvg = nextDiagram.querySelector('svg.practice-guide-diagram');
+            const nextDiagramSvgRect = nextDiagramSvg?.getBoundingClientRect();
             const layout = document.querySelector('.practice-guide-layout');
             const visibleLaneBottoms = [...timeline.querySelectorAll('.practice-guide-lane')]
               .filter(item => getComputedStyle(item).display !== 'none').map(item => item.getBoundingClientRect().bottom);
@@ -563,6 +569,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               panelBottomGap: panelRect.bottom - lowestContentBottom,
               timelineLaneBottom,
               nextContentBottom: Math.max(nextRect.bottom, nextDiagramRect.bottom),
+              nextDiagramSvgInsideCard: !!nextDiagramSvgRect
+                && nextDiagramSvgRect.left >= nextDiagramRect.left - 1
+                && nextDiagramSvgRect.right <= nextDiagramRect.right + 1
+                && nextDiagramSvgRect.top >= nextDiagramRect.top - 1
+                && nextDiagramSvgRect.bottom <= nextDiagramRect.bottom + 1,
+              nextDiagramSvgWidth: nextDiagramSvgRect?.width ?? 0,
               contentExtendsBelowPanel,
               timelineLaneBottomAtScrollEnd,
               nextContentBottomAtScrollEnd,
@@ -746,6 +758,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
           assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
           assert.strictEqual(guide.nextDiagramVisible, true, 'the next-chord name and detail stay available');
+          assert.strictEqual(guide.nextDiagramSvgInsideCard, true,
+            `${width}px next-chord SVG stays inside its right-rail card (width ${guide.nextDiagramSvgWidth}px)`);
         }
         if ([421, 600, 840, 1100, 1400].includes(width)) {
           await setGuideViewMode('compact');
@@ -1230,6 +1244,77 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('Issue #155 compact lanes fit measure edges, dotted waves follow the guide grid, and pages navigate without seeking', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const measures = [
+        '| C | 4 4 4 8.d |',
+        '| G | 4 4 4 16.d |',
+        '| D | 4.d 4.d |',
+        '| A | 4 4 4 4 |',
+        '| Em | 4 4 4 4 |',
+        '| F | 4 4 4 4 |'
+      ];
+      const melody = 'mel: ' + Array.from({ length: measures.length }, () => '| c4/4 d4/4 e4/4 f4/4 |').join(' ');
+      const lyrics = 'lyr: ' + [
+        'あ', 'あ', 'あ', '隣小節へはみ出さない歌詞',
+        'い', 'い', 'い', 'い',
+        'う', 'う', 'う', 'う',
+        'え', 'え', 'え', 'え',
+        'お', 'お', 'お', 'お',
+        'か', 'か', 'か', 'か'
+      ].join(' ');
+      const source = ['title: Compact review checks', 'time: 4/4', 'bpm: 120', ...measures, melody, lyrics].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(150);
+
+      const setGrid = async (grid: '8' | '16'): Promise<void> => {
+        const expression = "(() => { const select = document.getElementById('practice-guide-grid'); select.value = "
+          + JSON.stringify(grid) + "; select.dispatchEvent(new Event('change', { bubbles: true })); })()";
+        await evaluatePreviewWebview<void>(expression);
+        await settle(100);
+      };
+      const visibleWaveCount = async (measure: number, event: number): Promise<number> => {
+        const expression = "(() => { const item = document.querySelector('.practice-guide-compact-symbol[data-guide-measure=\"" + measure
+          + "\"][data-guide-event=\"" + event + "\"][data-guide-kind=\"attack\"]'); if (!item) return -1; return [...item.querySelectorAll('.practice-guide-compact-wave')].filter(wave => getComputedStyle(wave).display !== 'none').length; })()";
+        return evaluatePreviewWebview<number>(expression);
+      };
+
+      await setGrid('8');
+      assert.strictEqual(await visibleWaveCount(0, 3), 0, '8.d on an eighth-note grid draws only its attack');
+      await setGrid('16');
+      assert.strictEqual(await visibleWaveCount(0, 3), 1, '8.d on a sixteenth-note grid draws one continuation wave');
+      assert.strictEqual(await visibleWaveCount(1, 3), 0, '16.d on a sixteenth-note grid draws only its attack');
+      assert.strictEqual(await visibleWaveCount(2, 0), 1, '4.d on a sixteenth-note grid draws one continuation wave');
+
+      const geometry = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); const events = [...stage.querySelectorAll('.practice-guide-compact-lyric, .practice-guide-compact-symbol')]; const outOfBounds = events.flatMap(item => { const rect = item.getBoundingClientRect(); const card = item.closest('.practice-guide-compact-measure'); const cardRect = card.getBoundingClientRect(); return rect.left < cardRect.left - 1 || rect.right > cardRect.right + 1 ? [{ lane: item.closest('.practice-guide-compact-lane')?.dataset.guideLane, measure: card.dataset.guideMeasureIndex, left: rect.left, right: rect.right, cardLeft: cardRect.left, cardRight: cardRect.right }] : []; }); return { outOfBounds, range: document.getElementById('practice-guide-compact-range').textContent.trim() }; })())"));
+      assert.deepStrictEqual(geometry.outOfBounds, [],
+        'long lyrics and technique SVGs stay within their own measure cards: ' + JSON.stringify(geometry.outOfBounds));
+      assert.strictEqual(geometry.range, '1–4/6', 'compact navigation starts on measures 1–4');
+
+      const seekBefore = await evaluatePreviewWebview<string>("document.getElementById('playback-seek').value");
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+      await settle(120);
+      const nextPage = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); return { range: document.getElementById('practice-guide-compact-range').textContent.trim(), measures: [...stage.querySelectorAll('.practice-guide-compact-ruler')].map(item => Number(item.textContent.trim())).sort((a, b) => a - b), seek: document.getElementById('playback-seek').value, nextDisabled: document.getElementById('practice-guide-compact-next').disabled }; })())"));
+      assert.strictEqual(nextPage.range, '3–6/6', 'Next advances by a two-measure pair');
+      assert.deepStrictEqual(nextPage.measures, [3, 4, 5, 6], 'the manually selected page contains four real measures');
+      assert.strictEqual(nextPage.seek, seekBefore, 'manual page navigation does not seek or change playback time');
+      assert.strictEqual(nextPage.nextDisabled, true, 'Next is disabled at the end of the score');
+
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-previous').click()");
+      await settle(120);
+      const previousPage = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); return { range: document.getElementById('practice-guide-compact-range').textContent.trim(), measures: [...stage.querySelectorAll('.practice-guide-compact-ruler')].map(item => Number(item.textContent.trim())).sort((a, b) => a - b), previousDisabled: document.getElementById('practice-guide-compact-previous').disabled }; })())"));
+      assert.strictEqual(previousPage.range, '1–4/6', 'Previous returns to the opening measure pair');
+      assert.deepStrictEqual(previousPage.measures, [1, 2, 3, 4]);
+      assert.strictEqual(previousPage.previousDisabled, true, 'Previous is disabled at the beginning of the score');
+    });
+  });
+
   test('Issue #155 crossfades only the previous-played bank and cleans up the old layer', async function () {
     this.timeout(60000);
     try {
@@ -1263,6 +1348,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           previewGeneration: previewLifecycle.generation
         });
         await waitForPreviewDocument();
+        const previewLayout = JSON.parse(await inspectWorkbenchLayout()) as {
+          groups: unknown[];
+          parts: { sidebar: { visible: boolean }; auxiliarybar: { visible: boolean } };
+        };
+        if (previewLayout.parts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        if (previewLayout.parts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        if (previewLayout.groups.length > 1) {
+          await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+          await vscode.commands.executeCommand('workbench.action.moveEditorToFirstGroup');
+          await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+          await vscode.commands.executeCommand('workbench.action.closeEditorsAndGroup');
+        }
+        await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+        await settle(250);
+        assert.strictEqual(JSON.parse(await inspectWorkbenchLayout()).groups.length, 1,
+          'the crossfade Preview occupies one editor group so its 1600px reference is not clipped');
         await setPreviewPracticeEnabled(true);
         await evaluatePreviewWebview<void>(`(() => {
           const input = document.getElementById('playback-seek');
@@ -1270,6 +1371,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const view = document.getElementById('practice-guide-view');
           view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true }));
         })()`);
+        await setWorkbenchViewportSize(1920, 1100);
         await setPreviewWebviewViewportWidth(1600);
         await settle(350);
         const initial = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
@@ -1280,6 +1382,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const next = document.getElementById('practice-guide-next-chord');
           const rightContent = right.querySelector('.practice-guide-bank-content');
           const rect = rightContent.getBoundingClientRect();
+          const nextDiagram = document.getElementById('practice-guide-next-chord-diagram');
+          const nextDiagramRect = nextDiagram.getBoundingClientRect();
+          const nextDiagramSvgRect = nextDiagram.querySelector('svg.practice-guide-diagram')?.getBoundingClientRect();
           const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
           const stageRect = stage.getBoundingClientRect();
           const diagramCenters = [...stage.querySelectorAll('.practice-guide-compact-diagram-event')].map(event => {
@@ -1305,6 +1410,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               const nextRect = next.getBoundingClientRect();
               return nextRect.left >= layoutRect.left - 1 && nextRect.right <= layoutRect.right + 1;
             })(),
+            nextDiagramSvgInsideCard: !!nextDiagramSvgRect
+              && nextDiagramSvgRect.left >= nextDiagramRect.left - 1
+              && nextDiagramSvgRect.right <= nextDiagramRect.right + 1
+              && nextDiagramSvgRect.top >= nextDiagramRect.top - 1
+              && nextDiagramSvgRect.bottom <= nextDiagramRect.bottom + 1,
+            nextDiagramSvgWidth: nextDiagramSvgRect?.width ?? 0,
             compactDiagramCenterOffsetMax: Math.max(...diagramCenters),
             leftContent: left.querySelector('.practice-guide-bank-content'),
             rightContent,
@@ -1320,6 +1431,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.deepStrictEqual(initial.right, [3, 4], 'the initial right bank shows measures 03–04');
         assert.strictEqual(initial.allFourVisible, true, 'the reference width shows all four full-size measures at once');
         assert.strictEqual(initial.nextChordVisible, true, 'the reference width keeps the next-chord area fully visible');
+        assert.strictEqual(initial.nextDiagramSvgInsideCard, true,
+          `1600px next-chord SVG stays inside its rail card (width ${initial.nextDiagramSvgWidth}px)`);
         assert.ok(initial.compactDiagramCenterOffsetMax <= 2, 'each compact chord diagram centers within its measure interval');
         assert.strictEqual(initial.currentOccurrence, 0, 'initial projection follows the current playback occurrence');
         assert.strictEqual(initial.currentBank, 'left', 'the left bank contains the current opening pair');
@@ -1328,10 +1441,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
         const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
         if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
-          const filename = `practice-guide-reference-4-measures-issue155-${locale}-${themeName}.png`;
+          const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+          const suffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
+          const filename = `practice-guide-reference-4-measures-issue155-${locale}-${themeName}${suffix}.png`;
           await capturePreviewWebviewScreenshot(filename, 155, 1600);
           const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
-          assert.ok((await fs.stat(outputPath)).size >= 50000, 'the four-measure reference view is captured at its 1600px layout width');
+          const image = await fs.readFile(outputPath);
+          assert.ok(image.length >= 50000 && image.readUInt32BE(16) === 1600,
+            `the full four-measure reference view is captured at 1600px (${image.length} bytes, ${image.readUInt32BE(16)}px wide)`);
         }
         await evaluatePreviewWebview<void>(`window.__practiceGuideCrossfadeProbe = {
           fadeStartedAt: 0,
@@ -1412,10 +1529,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
         const captureCrossfade = async (phase: '0ms' | '110ms' | '220ms'): Promise<void> => {
           if (!captureScreenshots) return;
-          const filename = `practice-guide-crossfade-issue155-${locale}-${themeName}-${phase}.png`;
+          const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+          const suffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
+          const filename = `practice-guide-crossfade-issue155-${locale}-${themeName}-${phase}${suffix}.png`;
           await capturePreviewWebviewScreenshot(filename, 155);
           const outputPath = path.resolve(__dirname, '../../../docs/status/evidence/issue-155', filename);
-          assert.ok((await fs.stat(outputPath)).size >= 50000, `${phase} crossfade evidence is a full Preview screenshot`);
+          const image = await fs.readFile(outputPath);
+          assert.ok(image.length >= 50000 && image.readUInt32BE(16) === 1600,
+            `${phase} crossfade evidence is an uncropped 1600px Preview screenshot`);
         };
         await captureCrossfade('0ms');
         const elapsedBeforeMidpoint = JSON.parse(await state()).elapsedMs ?? 0;

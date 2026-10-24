@@ -159,36 +159,98 @@ let previewViewportWasOverridden = false;
 export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145, previewViewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  await waitForPreviewTarget(port);
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
   if (previewViewportWidth !== undefined) await setPreviewWebviewViewportWidth(previewViewportWidth);
-  await withWorkbenchDevTools(async send => {
-    const boundsResult = await send('Runtime.evaluate', {
-      expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
-        const rect = frame.getBoundingClientRect();
-        return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
-          x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
-      }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')))` ,
+  const target = await waitForPreviewTarget(port);
+  const viewport = await withDevToolsTarget(target, async send => {
+    await send('Page.enable');
+    const viewportResult = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio })',
       returnByValue: true
     });
-    const boundsValue = (boundsResult.result as { value?: unknown } | undefined)?.value;
-    if (typeof boundsValue !== 'string') throw new Error('Could not locate the visible Preview Webview in the workbench');
-    const visibleFrames = JSON.parse(boundsValue) as Array<{ x: number; y: number; width: number; height: number }>;
-    if (visibleFrames.length !== 1) {
-      throw new Error(`Expected one visible Preview iframe for capture, found ${visibleFrames.length}`);
+    const viewportValue = (viewportResult.result as { value?: unknown } | undefined)?.value;
+    if (typeof viewportValue !== 'string') throw new Error('Could not read the Preview Webview viewport');
+    const viewport = JSON.parse(viewportValue) as { width?: unknown; height?: unknown; devicePixelRatio?: unknown };
+    if (typeof viewport.width !== 'number' || typeof viewport.height !== 'number'
+      || typeof viewport.devicePixelRatio !== 'number'
+      || viewport.width < 1 || viewport.height < 1 || viewport.devicePixelRatio <= 0) {
+      throw new Error('The Preview Webview returned invalid screenshot dimensions');
     }
-    const frame = visibleFrames[0];
+    if (previewViewportWidth !== undefined && Math.abs(viewport.width - previewViewportWidth) > 1) {
+      throw new Error(`The Preview Webview screenshot viewport is ${viewport.width}px; expected ${previewViewportWidth}px`);
+    }
+    return { width: viewport.width, height: viewport.height, screenshotScale: 1 / viewport.devicePixelRatio };
+  });
+
+  const inspectVisiblePreviewFrame = async (): Promise<{
+    workbenchWidth: number;
+    workbenchHeight: number;
+    workbenchOuterWidth: number;
+    frames: Array<{ x: number; y: number; width: number; height: number }>;
+  }> => withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: `JSON.stringify({
+        workbenchWidth: window.innerWidth,
+        workbenchHeight: window.innerHeight,
+        workbenchOuterWidth: window.outerWidth,
+        frames: [...document.querySelectorAll('iframe')].map(frame => {
+          const rect = frame.getBoundingClientRect();
+          return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
+            x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
+        }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://'))
+      })`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not locate the visible Preview Webview in the workbench');
+    return JSON.parse(value) as {
+      workbenchWidth: number;
+      workbenchHeight: number;
+      workbenchOuterWidth: number;
+      frames: Array<{ x: number; y: number; width: number; height: number }>;
+    };
+  });
+
+  let workbench = await inspectVisiblePreviewFrame();
+  if (workbench.frames.length !== 1) {
+    throw new Error(`Expected one visible Preview iframe for capture, found ${workbench.frames.length}`);
+  }
+  let frame = workbench.frames[0];
+  if (Math.abs(frame.width - viewport.width) > 1) {
+    throw new Error(`The Preview iframe is ${frame.width}px wide; expected its ${viewport.width}px viewport`);
+  }
+  if (frame.x < -1 || frame.x + frame.width > workbench.workbenchWidth + 1) {
+    await setWorkbenchViewportWidth(Math.ceil(Math.max(workbench.workbenchOuterWidth, frame.x + frame.width + 56)));
+    workbench = await inspectVisiblePreviewFrame();
+    if (workbench.frames.length !== 1) {
+      throw new Error(`Expected one visible Preview iframe after resizing the workbench, found ${workbench.frames.length}`);
+    }
+    frame = workbench.frames[0];
+  }
+  if (frame.x < -1 || frame.y < -1 || frame.x + frame.width > workbench.workbenchWidth + 1
+    || frame.y + frame.height > workbench.workbenchHeight + 1
+    || frame.height + 1 < viewport.height) {
+    throw new Error(`The Preview iframe is clipped by the workbench (${frame.width}x${frame.height} at ${frame.x},${frame.y}; workbench ${workbench.workbenchWidth}x${workbench.workbenchHeight}; Preview ${viewport.width}x${viewport.height})`);
+  }
+
+  await withWorkbenchDevTools(async send => {
     await send('Page.enable');
     const result = await send('Page.captureScreenshot', {
       format: 'png',
       fromSurface: true,
       captureBeyondViewport: true,
-      clip: { x: frame.x, y: frame.y, width: frame.width, height: frame.height, scale: 1 }
+      clip: { x: frame.x, y: frame.y, width: viewport.width, height: viewport.height, scale: viewport.screenshotScale }
     });
     const data = result.data;
     if (typeof data !== 'string') throw new Error('DevTools did not return a Preview screenshot');
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+    const image = Buffer.from(data, 'base64');
+    const screenshotWidth = image.readUInt32BE(16);
+    const screenshotHeight = image.readUInt32BE(20);
+    if (screenshotWidth !== Math.round(viewport.width) || screenshotHeight !== Math.round(viewport.height)) {
+      throw new Error(`The Preview screenshot is clipped to ${screenshotWidth}x${screenshotHeight}px; expected ${Math.round(viewport.width)}x${Math.round(viewport.height)}px`);
+    }
+    await fs.writeFile(outputPath, image);
   });
 }
 
