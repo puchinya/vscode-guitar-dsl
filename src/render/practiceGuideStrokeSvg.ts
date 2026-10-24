@@ -16,6 +16,13 @@ function escapeAttribute(value: string): string {
 const DOWN = '<path d="M10 3v25M4 22l6 7 6-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
 const UP = '<path d="M10 31V6M4 12l6-7 6 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
 const CROSS = '<path d="m1 9 6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
+const PALM_MUTE_LABEL_WIDTH = 12;
+
+/** Returns the CSS width occupied by a stroke and its optional palm-mute label. */
+export function practiceGuideStrokeVisualWidth(spec: PracticeGuideStrokeSpec): number {
+  const iconWidth = spec.kind === 'tie' ? 32 : spec.kind === 'brush' ? 20 : spec.kind === 'string' ? 16 : 14;
+  return spec.palmMute ? PALM_MUTE_LABEL_WIDTH + 2 + iconWidth : iconWidth;
+}
 
 /** Renders a visible stroke mark with vector geometry; descriptive text is only metadata. */
 export function renderPracticeGuideStrokeSvg(spec: PracticeGuideStrokeSpec): string {
@@ -44,7 +51,7 @@ export function renderPracticeGuideStrokeSvg(spec: PracticeGuideStrokeSpec): str
     }
     if (direction === 'neutral') marks += '<circle cx="10" cy="17" r="3" fill="currentColor"/>';
   }
-  const width = spec.kind === 'brush' ? 20 : spec.kind === 'string' ? 16 : 14;
+  const width = practiceGuideStrokeVisualWidth(spec);
   return `<svg class="practice-guide-stroke-icon" data-guide-stroke="${spec.kind}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 34" role="img" aria-label="${label}" width="${width}" height="28"><title>${label}</title>${marks}</svg>`;
 }
 

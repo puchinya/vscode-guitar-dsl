@@ -1290,11 +1290,16 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
       const playbackOrderLabel = vscode.env.language.toLowerCase().startsWith('ja') ? '演奏順' : 'Playback order';
+      const denseBrushRhythm = Array.from({ length: 16 }, (_, index) => {
+        const direction = index % 2 === 0 ? 'd' : 'u';
+        if (index === 6 || index === 13) return `16.${direction}.pm`;
+        return `16.${direction}.${index % 2 === 0 ? 'b' : 'g'}`;
+      }).join(' ');
       const measures = [
         '| C | 4 4 4 8.d |',
         '| G | 4 4 4 16.d |',
-        '| D | 4.d 4.d |',
-        '| A | 4 4 4 4 |',
+        '| D | 4.u.t 4 2 |',
+        `| A | ${denseBrushRhythm} |`,
         '| Em | 4 4 4 4 |',
         '| F | 4 4 4 4 |'
       ];
@@ -1342,6 +1347,84 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(geometry.outOfBounds, [],
         'long lyrics and technique SVGs stay within their own measure cards: ' + JSON.stringify(geometry.outOfBounds));
       assert.strictEqual(geometry.range, '1–4/6', 'compact navigation starts on measures 1–4');
+
+      try {
+        for (const width of [280, 320, 421, 600, 1400, 1600]) {
+          await setPreviewWebviewViewportWidth(width);
+          await settle(120);
+          for (const grid of ['4', '8', '16'] as const) {
+            await setGrid(grid);
+            await settle(60);
+            const compactGeometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+              const stage = document.getElementById('practice-guide-pair-page');
+              const collisions = [];
+              const outOfBounds = [];
+              let brushCount = 0;
+              let palmMuteCount = 0;
+              let tieCount = 0;
+              let visibleWaveCount = 0;
+              for (const layer of [...stage.querySelectorAll('.practice-guide-bank-content')]) {
+                if (!layer.isConnected || Number(getComputedStyle(layer).opacity) < 0.99
+                    || getComputedStyle(layer).display === 'none' || getComputedStyle(layer).visibility === 'hidden') continue;
+                for (const card of [...layer.querySelectorAll('.practice-guide-compact-measure')]) {
+                  const cardRect = card.getBoundingClientRect();
+                  const symbols = [...card.querySelectorAll('.practice-guide-compact-symbol')]
+                    .filter(item => item.getClientRects().length > 0 && getComputedStyle(item).visibility !== 'hidden');
+                  const rects = symbols.map(item => {
+                    const rect = item.getBoundingClientRect();
+                    const laneRect = item.closest('[data-guide-lane="technique"]').getBoundingClientRect();
+                    if (rect.left < cardRect.left - 0.5 || rect.right > cardRect.right + 0.5
+                        || rect.top < laneRect.top + 1.25 || rect.bottom > laneRect.bottom - 2) {
+                      outOfBounds.push({ measure: card.dataset.guideMeasure, event: item.dataset.guideEvent,
+                        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+                        card: { left: cardRect.left, right: cardRect.right }, lane: { top: laneRect.top, bottom: laneRect.bottom } });
+                    }
+                    brushCount += item.querySelectorAll('svg[data-guide-stroke="brush"]').length;
+                    palmMuteCount += item.querySelectorAll('.practice-guide-pm-stroke').length;
+                    tieCount += item.querySelectorAll('svg[data-guide-stroke="tie"]').length;
+                    visibleWaveCount += [...item.querySelectorAll('.practice-guide-compact-wave')]
+                      .filter(wave => getComputedStyle(wave).display !== 'none').length;
+                    return { item, rect };
+                  });
+                  for (let leftIndex = 0; leftIndex < rects.length; leftIndex++) {
+                    for (let rightIndex = leftIndex + 1; rightIndex < rects.length; rightIndex++) {
+                      const left = rects[leftIndex];
+                      const right = rects[rightIndex];
+                      const separatedByTwoPixels = left.rect.right + 2 <= right.rect.left
+                        || right.rect.right + 2 <= left.rect.left
+                        || left.rect.bottom + 2 <= right.rect.top
+                        || right.rect.bottom + 2 <= left.rect.top;
+                      if (!separatedByTwoPixels) collisions.push({
+                        measure: card.dataset.guideMeasure,
+                        leftEvent: left.item.dataset.guideEvent,
+                        rightEvent: right.item.dataset.guideEvent,
+                        left: { x: left.rect.left, y: left.rect.top, width: left.rect.width, height: left.rect.height },
+                        right: { x: right.rect.left, y: right.rect.top, width: right.rect.width, height: right.rect.height }
+                      });
+                    }
+                  }
+                }
+              }
+              return { collisions, outOfBounds, brushCount, palmMuteCount, tieCount, visibleWaveCount };
+            })())`));
+            assert.deepStrictEqual(compactGeometry.collisions, [],
+              `${width}px / ${grid}-grid compact strokes have at least 2px of separation: ${JSON.stringify(compactGeometry.collisions)}`);
+            assert.deepStrictEqual(compactGeometry.outOfBounds, [],
+              `${width}px / ${grid}-grid compact strokes stay inside their technique lanes and measure cards: ${JSON.stringify(compactGeometry.outOfBounds)}`);
+            assert.ok(compactGeometry.brushCount >= 12,
+              `${width}px / ${grid}-grid scans the continuous 16th-note brush row`);
+            assert.ok(compactGeometry.palmMuteCount >= 2,
+              `${width}px / ${grid}-grid includes palm-mute composite marks`);
+            assert.ok(compactGeometry.tieCount > 0,
+              `${width}px / ${grid}-grid includes a tie mark`);
+            assert.ok(compactGeometry.visibleWaveCount > 0,
+              `${width}px / ${grid}-grid includes visible duration waves`);
+          }
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
 
       const seekBefore = await evaluatePreviewWebview<string>("document.getElementById('playback-seek').value");
       await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");

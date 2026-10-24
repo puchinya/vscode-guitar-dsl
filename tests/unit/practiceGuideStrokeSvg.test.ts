@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { renderPracticeGuideStrokeSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
+import { practiceGuideStrokeVisualWidth, renderPracticeGuideStrokeSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
 
 describe('practice guide stroke SVG', () => {
   it('renders down and up attacks as vector geometry with descriptive labels', () => {
@@ -23,6 +23,15 @@ describe('practice guide stroke SVG', () => {
     assert.match(string, />5<\/text>/);
     assert.match(palmMute, /<span class="practice-guide-pm-label">PM<\/span>/);
     assert.doesNotMatch(`${mute}${brush}${string}${palmMute}`, /[↓↑〜]/);
+  });
+
+  it('shares each rendered stroke width with compact layout, including palm mute composites', () => {
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'attack', label: 'Attack' }), 14);
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'brush', label: 'Brush' }), 20);
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'tie', label: 'Tie' }), 32);
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'string', label: 'String' }), 16);
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'attack', palmMute: true, label: 'PM attack' }), 28);
+    assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'brush', palmMute: true, label: 'PM brush' }), 34);
   });
 
   it('draws one stretchable duration wave with the specified Bezier path', () => {
