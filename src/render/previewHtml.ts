@@ -681,6 +681,7 @@ ${cspMeta}
   .practice-guide-pitch-range { display: flex; flex-direction: column; color: #a0b4c8; font-size: 10px; line-height: 12px; }
   .practice-guide-label[data-guide-lane="lyrics"] { flex-basis: auto; }
   .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-technique-height, 48px); }
+  body.guide-compact-mode .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-compact-technique-height, 48px); }
   .practice-guide-label[data-guide-lane="chord"] { height: 36px; }
   .practice-guide-label[data-guide-lane="diagrams"] { height: 154px; }
   .practice-guide-scroll { grid-column: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
@@ -1755,6 +1756,7 @@ ${cspMeta}
           practiceGuideLabelRail.style.height = stageHeight + 'px';
           practiceGuideLabelRail.style.transform = 'scale(' + scale + ')';
           practiceGuideLabelRail.style.transformOrigin = 'top left';
+          practiceGuideLabelRail.style.paddingTop = '10px';
         } else if (practiceGuideLabelRailShell && practiceGuideLabelRail) {
           practiceGuideLabelRailShell.style.removeProperty('width');
           practiceGuideLabelRailShell.style.removeProperty('height');
@@ -1762,6 +1764,7 @@ ${cspMeta}
           practiceGuideLabelRail.style.removeProperty('height');
           practiceGuideLabelRail.style.removeProperty('transform');
           practiceGuideLabelRail.style.removeProperty('transform-origin');
+          practiceGuideLabelRail.style.removeProperty('padding-top');
         }
         practiceGuidePairPage.dataset.guideCapacity = String(capacity);
         practiceGuidePairPage.dataset.guideScale = String(scale);
@@ -3843,7 +3846,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
       return `<span class="practice-guide-compact-diagram-event" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-start-beat="${span.start}" data-guide-end-beat="${span.end}" data-guide-center-beat="${centerBeat}" style="left:${percent(centerBeat)}%" title="${escapeXml(label)}">${chord.svg}</span>`;
     }).join('');
     const ruler = `<div class="practice-guide-compact-ruler" data-guide-compact-measure-label="${measure.number - 1}">${measure.number}</div>`;
-    const compactCard = `<article class="practice-guide-compact-measure" data-guide-compact-measure="${measure.number - 1}" data-guide-measure-beats="${beatCount}" style="width:${minWidth}px;--guide-compact-lyrics-height:${data.lyricsHeight}px;--guide-compact-technique-height:${compactTechniqueHeight}px" aria-label="${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}">
+    const compactCard = `<article class="practice-guide-compact-measure" data-guide-compact-measure="${measure.number - 1}" data-guide-measure-beats="${beatCount}" style="width:${minWidth}px;--guide-compact-lyrics-height:${data.lyricsHeight}px" aria-label="${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}">
       <span class="practice-guide-compact-playhead" aria-hidden="true" hidden></span>
       ${ruler}
       <div class="practice-guide-compact-lane practice-guide-compact-melody" data-guide-lane="melody">${melody}</div>
@@ -3905,7 +3908,7 @@ function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages, occur
   const nextChord = `<aside class="practice-guide-next-chord" id="practice-guide-next-chord"><span class="practice-guide-next-chord-label">${escapeXml(msgs.uiPracticeGuideNextChord)}</span><strong class="practice-guide-next-chord-name" id="practice-guide-next-chord-name">${escapeXml(initialNextChord?.name ?? '—')}</strong><div class="practice-guide-next-chord-diagram" id="practice-guide-next-chord-diagram">${initialNextChord?.svg ?? ''}</div></aside>`;
   const autoLabel = data.automaticFill ? `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill">${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>` : `<span class="practice-guide-auto-fill" id="practice-guide-auto-fill" hidden>${escapeXml(msgs.uiPracticeGuideAutoFill)}</span>`;
   const timeline = `<div class="practice-guide-timeline" id="practice-guide-timeline" data-guide-total-beats="${fnum(data.totalBeats)}" data-guide-measure-count="${data.measures.length}" data-guide-px-per-beat="${pixelsPerBeat}" style="--guide-total-width:${totalWidth.toFixed(3)}px;--guide-lyrics-height:${data.lyricsHeight}px;--guide-technique-height:${techniqueHeight}px;width:${totalWidth.toFixed(3)}px">${ruler}${lanes}<span class="practice-guide-playhead" id="practice-guide-playhead" hidden></span>${data.measures.length ? '' : `<p class="practice-guide-empty">${escapeXml(msgs.uiPlaybackEmpty)}</p>`}</div>`;
-  return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}" data-guide-grid="${data.automaticGrid}">
+  return `<aside class="practice-guide-panel" id="practice-guide-panel" aria-label="${escapeXml(msgs.uiPracticeGuideTitle)}" data-automatic-grid="${data.automaticGrid}" data-guide-grid="${data.automaticGrid}" style="--guide-compact-technique-height:${compactTechniqueHeight}px">
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
       <strong>${escapeXml(msgs.uiPracticeGuideTitle)}</strong>

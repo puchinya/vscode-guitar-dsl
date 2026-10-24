@@ -1495,6 +1495,142 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('Issue #155 compact technique height aligns stacked and single-row measures with the fixed label rail', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Shared compact technique lane',
+        'time: 4/4',
+        '| C | 4.d 4.u 4.d 4.u |',
+        '| G | 4.d 4.u 4.d 4.u |',
+        '| D | 4.d 4.u 4.d 4.u |',
+        '| A | 4.d 4.u 4.d 4.u |'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(150);
+
+      const setMelodyVisibility = async (visible: boolean): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const button = document.getElementById('practice-guide-melody-toggle');
+          if ((button.getAttribute('aria-pressed') === 'true') !== ${visible}) button.click();
+        })()`);
+        await settle(80);
+      };
+      const setGrid = async (grid: '4' | '8' | '16'): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const select = document.getElementById('practice-guide-grid');
+          select.value = '${grid}'; select.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await settle(60);
+      };
+
+      try {
+        for (const width of [280, 320, 421, 600, 1400, 1600]) {
+          await setPreviewWebviewViewportWidth(width);
+          await settle(120);
+          for (const melodyVisible of [true, false]) {
+            await setMelodyVisibility(melodyVisible);
+            for (const grid of ['4', '8', '16'] as const) {
+            await setGrid(grid);
+            const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+              const panel = document.getElementById('practice-guide-panel');
+              const compact = document.getElementById('practice-guide-compact');
+              const stage = document.getElementById('practice-guide-pair-page');
+              const sharedHeight = Math.max(48, 2 * 31 + 5); // two 28px rows at a 31px pitch, plus 5px lane allowance
+              // The public DSL currently accepts one TAB voice. Add a second simultaneous SVG to the live DOM
+              // to exercise the renderer's multi-row layout without changing that syntax contract.
+              panel.style.setProperty('--guide-compact-technique-height', sharedHeight + 'px');
+              compact.dataset.guideTechniqueHeight = String(sharedHeight);
+              const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+              const technique = cards[0]?.querySelector('[data-guide-lane="technique"]');
+              if (technique && !technique.querySelector('[data-guide-synthetic-row="true"]')) {
+                const first = technique.querySelector('.practice-guide-compact-symbol');
+                if (first) {
+                  const second = first.cloneNode(true);
+                  second.dataset.guideSyntheticRow = 'true';
+                  second.setAttribute('aria-hidden', 'true');
+                  second.style.top = '33px';
+                  technique.appendChild(second);
+                }
+              }
+              const laneNames = ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'];
+              const rows = laneNames.map(name => {
+                const selector = name === 'ruler'
+                  ? '.practice-guide-compact-ruler'
+                  : '.practice-guide-compact-lane[data-guide-lane="' + name + '"]';
+                const laneRects = cards.map(card => card.querySelector(selector))
+                  .filter(lane => lane && getComputedStyle(lane).display !== 'none')
+                  .map(lane => { const rect = lane.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; });
+                const label = document.querySelector('.practice-guide-label[data-guide-lane="' + name + '"]');
+                const labelRect = label && getComputedStyle(label).display !== 'none'
+                  ? label.getBoundingClientRect() : null;
+                const all = [...laneRects, ...(labelRect ? [{ top: labelRect.top, bottom: labelRect.bottom }] : [])];
+                return {
+                  name,
+                  visible: all.length > 0,
+                  rects: all,
+                  topDelta: all.length ? Math.max(...all.map(rect => rect.top)) - Math.min(...all.map(rect => rect.top)) : 0,
+                  bottomDelta: all.length ? Math.max(...all.map(rect => rect.bottom)) - Math.min(...all.map(rect => rect.bottom)) : 0
+                };
+              }).filter(row => row.visible);
+              const lane = technique;
+              const first = lane?.querySelector('.practice-guide-compact-symbol');
+              const second = lane?.querySelector('[data-guide-synthetic-row="true"]');
+              const laneRect = lane?.getBoundingClientRect();
+              const firstRect = first?.getBoundingClientRect();
+              const secondRect = second?.getBoundingClientRect();
+              const symbolRects = cards.flatMap(card => [...card.querySelectorAll('.practice-guide-compact-symbol')]
+                .map(symbol => ({ card: card.dataset.guideCompactMeasure, rect: symbol.getBoundingClientRect() })));
+              const symbolCollisions = symbolRects.reduce((count, current, index) => count + symbolRects.slice(index + 1)
+                .filter(next => current.card === next.card
+                  && current.rect.left < next.rect.right - 1 && next.rect.left < current.rect.right - 1
+                  && current.rect.top < next.rect.bottom - 1 && next.rect.top < current.rect.bottom - 1).length, 0);
+              const symbolsInsideTechnique = cards.every(card => {
+                const row = card.querySelector('[data-guide-lane="technique"]');
+                const rect = row.getBoundingClientRect();
+                return [...row.querySelectorAll('.practice-guide-compact-symbol')].every(symbol => {
+                  const symbolRect = symbol.getBoundingClientRect();
+                  return symbolRect.top >= rect.top - 1 && symbolRect.bottom <= rect.bottom + 1;
+                });
+              });
+              return {
+                cardCount: cards.length,
+                sharedHeight: Number(compact.dataset.guideTechniqueHeight),
+                rows,
+                symbolCollisions,
+                symbolsInsideTechnique,
+                secondRowFits: !!(laneRect && secondRect && secondRect.top > (firstRect?.top ?? Infinity)
+                  && secondRect.bottom <= laneRect.bottom + 1)
+              };
+            })())`));
+            assert.strictEqual(geometry.cardCount, 4,
+              `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} retains four measures`);
+            assert.strictEqual(geometry.sharedHeight, 67,
+              `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} uses the two-row shared height`);
+            assert.strictEqual(geometry.secondRowFits, true,
+              `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps the second SVG inside its technique lane`);
+            assert.strictEqual(geometry.symbolCollisions, 0,
+              `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} has no same-card technique SVG collisions`);
+            assert.strictEqual(geometry.symbolsInsideTechnique, true,
+              `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps every technique SVG inside its lane`);
+            assert.ok(geometry.rows.every((row: { topDelta: number; bottomDelta: number }) =>
+              row.topDelta <= 1 && row.bottomDelta <= 1),
+            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} aligns every visible measure lane with the fixed label rail: ${JSON.stringify(geometry.rows)}`);
+            }
+          }
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+
   test('Issue #155 rhythm and TAB tie marks do not duplicate compact continuation waves', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
