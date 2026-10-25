@@ -102,7 +102,8 @@ function eventsUnchangedOutsideTarget(before: ParsedScore, after: ParsedScore, c
   const newSuffix = newEvents.slice(newRange.end);
   if (oldPrefix.length !== newPrefix.length || oldSuffix.length !== newSuffix.length) return false;
   for (let i = 0; i < oldPrefix.length; i++) {
-    if (oldPrefix[i].signature !== newPrefix[i].signature || oldPrefix[i].onset !== newPrefix[i].onset) return false;
+    if (oldPrefix[i].signature !== newPrefix[i].signature || oldPrefix[i].duration !== newPrefix[i].duration
+      || oldPrefix[i].onset !== newPrefix[i].onset) return false;
   }
   const oldTargetDuration = oldEvents.slice(oldRange.start, oldRange.end).reduce((sum, event) => sum + event.duration, 0);
   const newTargetDuration = newEvents.slice(newRange.start, newRange.end).reduce((sum, event) => sum + event.duration, 0);
@@ -111,18 +112,158 @@ function eventsUnchangedOutsideTarget(before: ParsedScore, after: ParsedScore, c
   const expectedOnsetShift = allowOnsetShift ? onsetShift : 0;
   for (let i = 0; i < oldSuffix.length; i++) {
     if (oldSuffix[i].signature !== newSuffix[i].signature
+      || oldSuffix[i].duration !== newSuffix[i].duration
       || Math.abs(newSuffix[i].onset - oldSuffix[i].onset - expectedOnsetShift) > 1e-9) return false;
+  }
+
+  // Melody octave/length state and TAB inherited duration continue across authored measure cells.
+  // Compare every later measure so a safe-looking edit at the end of one cell cannot change the next.
+  for (let index = measureIndex + 1; index < Math.max(before.measures.length, after.measures.length); index++) {
+    const previous = eventSnapshots(before, collection, index);
+    const next = eventSnapshots(after, collection, index);
+    if (previous.length !== next.length) return false;
+    for (let eventIndex = 0; eventIndex < previous.length; eventIndex++) {
+      if (previous[eventIndex].signature !== next[eventIndex].signature
+        || previous[eventIndex].duration !== next[eventIndex].duration
+        || previous[eventIndex].onset !== next[eventIndex].onset) return false;
+    }
   }
   return true;
 }
 
+type LyricMutation = { kind: 'insert'; insertedBinding: VisualSourceBinding }
+  | { kind: 'delete' }
+  | { kind: 'replace' };
+
+function lyricGroupKey(binding: VisualSourceBinding): string {
+  return `${binding.cellId}\u0000${binding.visualVerse ?? ''}`;
+}
+
+function lyricGroups(score: ParsedScore): Map<string, VisualSourceBinding[]> {
+  const groups = new Map<string, VisualSourceBinding[]>();
+  for (const binding of score.visualSourceBindings ?? []) {
+    if (binding.kind !== 'lyric') continue;
+    const key = lyricGroupKey(binding);
+    const group = groups.get(key) ?? [];
+    group.push(binding);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) group.sort((a, b) => a.startCol - b.startCol);
+  return groups;
+}
+
+function sameLyricAssignment(before: VisualSourceBinding, after: VisualSourceBinding, compareText = true): boolean {
+  return (!compareText || before.expected === after.expected)
+    && before.measureIndex === after.measureIndex
+    && before.eventRange?.collection === after.eventRange?.collection
+    && before.eventRange?.start === after.eventRange?.start
+    && before.eventRange?.end === after.eventRange?.end
+    && before.visualVerse === after.visualVerse;
+}
+
+function lyricEventSlots(score: ParsedScore, collection: 'melody' | 'tab'): Map<string, readonly unknown[]> {
+  const slots = new Map<string, readonly unknown[]>();
+  score.measures.forEach((measure, measureIndex) => {
+    const events = collection === 'melody'
+      ? measure.melody ?? []
+      : measure.tabVoices?.find(voice => voice.voice === 1)?.beats ?? [];
+    events.forEach((event, eventIndex) => slots.set(`${measureIndex}:${eventIndex}`, event.syllables ?? []));
+  });
+  return slots;
+}
+
+/** Preserve all rendered lyric slots, including melisma/skip markers without their own source binding. */
+function lyricEventSlotsUnchanged(before: ParsedScore, after: ParsedScore, target: VisualSourceBinding,
+  mutation: LyricMutation, nextBinding?: VisualSourceBinding): boolean {
+  const targetBinding = mutation.kind === 'insert' ? mutation.insertedBinding
+    : mutation.kind === 'replace' ? nextBinding ?? target : target;
+  const range = targetBinding.eventRange;
+  const verse = target.visualVerse;
+  if (!range || (range.collection !== 'melody' && range.collection !== 'tab')
+    || range.end !== range.start + 1 || verse === undefined) return false;
+  const targetKey = `${targetBinding.measureIndex}:${range.start}`;
+  let targetChanged = false;
+
+  for (const collection of ['melody', 'tab'] as const) {
+    const oldSlots = lyricEventSlots(before, collection);
+    const newSlots = lyricEventSlots(after, collection);
+    const keys = new Set([...oldSlots.keys(), ...newSlots.keys()]);
+    for (const key of keys) {
+      const oldValues = oldSlots.get(key) ?? [];
+      const newValues = newSlots.get(key) ?? [];
+      const maxVerse = Math.max(oldValues.length, newValues.length);
+      if (collection === range.collection && key === targetKey) {
+        for (let index = 0; index < maxVerse; index++) {
+          if (index === verse) continue;
+          if (JSON.stringify(oldValues[index]) !== JSON.stringify(newValues[index])) return false;
+        }
+        targetChanged = JSON.stringify(oldValues[verse]) !== JSON.stringify(newValues[verse]);
+      } else if (JSON.stringify(oldValues) !== JSON.stringify(newValues)) return false;
+    }
+  }
+  return mutation.kind === 'replace' || targetChanged;
+}
+
+/** Existing syllables may not move to a different note or verse as a side effect of a lyric edit. */
+function lyricAssignmentsUnchanged(before: ParsedScore, after: ParsedScore, target: VisualSourceBinding,
+  mutation: LyricMutation, nextBinding?: VisualSourceBinding): boolean {
+  const beforeGroups = lyricGroups(before);
+  const afterGroups = lyricGroups(after);
+  const targetKey = lyricGroupKey(target);
+  const oldTargetGroup = beforeGroups.get(targetKey) ?? [];
+  const newTargetGroup = afterGroups.get(targetKey) ?? [];
+  const targetIndex = oldTargetGroup.findIndex(binding => binding.id === target.id);
+  if (targetIndex < 0) return false;
+
+  const keys = new Set([...beforeGroups.keys(), ...afterGroups.keys()]);
+  for (const key of keys) {
+    const oldGroup = beforeGroups.get(key) ?? [];
+    const newGroup = afterGroups.get(key) ?? [];
+    if (key !== targetKey) {
+      if (oldGroup.length !== newGroup.length
+        || oldGroup.some((binding, index) => !sameLyricAssignment(binding, newGroup[index]))) return false;
+      continue;
+    }
+
+    if (mutation.kind === 'insert') {
+      if (!nextBinding || newGroup.length !== oldGroup.length + 1) return false;
+      const insertedIndex = newGroup.findIndex(binding => binding.id === mutation.insertedBinding.id);
+      if (insertedIndex < 0 || newGroup[insertedIndex].expected !== mutation.insertedBinding.expected
+        || newGroup[insertedIndex].startCol !== target.endCol + 1) return false;
+      for (let oldIndex = 0; oldIndex < oldGroup.length; oldIndex++) {
+        const newIndex = oldIndex < insertedIndex ? oldIndex : oldIndex + 1;
+        if (!sameLyricAssignment(oldGroup[oldIndex], newGroup[newIndex])) return false;
+      }
+    } else if (mutation.kind === 'delete') {
+      if (newGroup.length !== oldGroup.length - 1) return false;
+      for (let oldIndex = 0; oldIndex < oldGroup.length; oldIndex++) {
+        if (oldIndex === targetIndex) continue;
+        const newIndex = oldIndex < targetIndex ? oldIndex : oldIndex - 1;
+        if (!sameLyricAssignment(oldGroup[oldIndex], newGroup[newIndex])) return false;
+      }
+    } else {
+      if (!nextBinding || newGroup.length !== oldGroup.length) return false;
+      const replacementIndex = newGroup.findIndex(binding => binding.id === nextBinding.id);
+      if (replacementIndex !== targetIndex) return false;
+      for (let index = 0; index < oldGroup.length; index++) {
+        if (!sameLyricAssignment(oldGroup[index], newGroup[index], index !== targetIndex)) return false;
+      }
+    }
+  }
+  return lyricEventSlotsUnchanged(before, after, target, mutation, nextBinding);
+}
+
 function finishVisual(source: string, score: ParsedScore, edits: readonly SourceOffsetEdit[], binding: VisualSourceBinding,
   nextBinding?: VisualSourceBinding, allowOnsetShift = false, deleted = false,
-  oldRangeOverride?: { collection: EventCollection; start: number; end: number }): VisualEditResult {
+  oldRangeOverride?: { collection: EventCollection; start: number; end: number },
+  lyricMutation?: LyricMutation): VisualEditResult {
   const spliced = spliceSourceOffsets(source, edits);
   if (!spliced.ok) return failure('staleSource');
   const validated = validateCandidateSource(source, spliced.text, score);
   if (!validated.ok) return failure(validated.code);
+  if (binding.kind === 'lyric' && lyricMutation
+    && !lyricAssignmentsUnchanged(score, validated.score, binding, lyricMutation,
+      lyricMutation.kind === 'insert' ? lyricMutation.insertedBinding : nextBinding)) return failure('diagnosticRegression');
   const oldRange = binding.kind === 'lyric' ? undefined : oldRangeOverride ?? binding.eventRange;
   if (oldRange) {
     const nextRange = deleted
@@ -241,7 +382,8 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
     const beforeCount = (score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
     const afterCount = (validated.score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
     if (afterCount !== beforeCount - 1) return failure('unsupportedTarget');
-    return finishVisual(source, score, [edit], binding, undefined, true, true);
+    return finishVisual(source, score, [edit], binding, undefined, true, true, undefined,
+      binding.kind === 'lyric' ? { kind: 'delete' } : undefined);
   }
 
   if (operation.kind === 'insertToken') {
@@ -262,7 +404,8 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
     const insertionRange = binding.eventRange
       ? { collection: binding.eventRange.collection, start: binding.eventRange.end, end: binding.eventRange.end }
       : undefined;
-    return finishVisual(source, score, [edit], binding, nextBinding, true, false, insertionRange);
+    return finishVisual(source, score, [edit], binding, nextBinding, true, false, insertionRange,
+      binding.kind === 'lyric' ? { kind: 'insert', insertedBinding: nextBinding } : undefined);
   }
 
   if (operation.kind === 'addTabChordNote' || operation.kind === 'deleteTabChordNote') {
@@ -288,13 +431,26 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
         const suffixStart = closingBracket + 1;
         edit = { start: tokenStart, end: suffixStart, expected: source.slice(tokenStart, suffixStart), text: remaining.text };
       } else if (noteIndex < binding.subTokens.length - 1) {
+        const note = binding.subTokens[noteIndex];
         const next = binding.subTokens[noteIndex + 1];
-        edit = { start: binding.subTokens[noteIndex].startCol, end: next.startCol,
-          expected: source.slice(binding.subTokens[noteIndex].startCol, next.startCol), text: '' };
+        const start = offsetAt(source, binding.line, note.startCol);
+        const end = offsetAt(source, binding.line, next.startCol);
+        if (start === undefined || end === undefined || end < start) return failure('staleSource');
+        const expected = source.slice(start, end);
+        if (!expected.startsWith(note.text) || !/^,[ \t]*$/u.test(expected.slice(note.text.length))) return failure('staleSource');
+        edit = { start, end, expected, text: '' };
       } else {
         const previous = binding.subTokens[noteIndex - 1];
-        edit = { start: previous.endCol, end: binding.subTokens[noteIndex].endCol,
-          expected: source.slice(previous.endCol, binding.subTokens[noteIndex].endCol), text: '' };
+        const note = binding.subTokens[noteIndex];
+        const start = offsetAt(source, binding.line, previous.endCol);
+        const end = offsetAt(source, binding.line, note.endCol);
+        if (start === undefined || end === undefined || end < start) return failure('staleSource');
+        const expected = source.slice(start, end);
+        const separatorLength = expected.length - note.text.length;
+        if (separatorLength < 0 || expected.slice(0, separatorLength) === ''
+          || !/^,[ \t]*$/u.test(expected.slice(0, separatorLength))
+          || expected.slice(separatorLength) !== note.text) return failure('staleSource');
+        edit = { start, end, expected, text: '' };
       }
     }
     if (!edit) return failure('staleSource');
@@ -342,7 +498,8 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
   if (!validated.ok) return failure(validated.code);
   const nextBinding = bindingAt(validated.score, binding, binding.startCol);
   if (!nextBinding) return failure('unsupportedTarget');
-  return finishVisual(source, score, [edit], binding, nextBinding);
+  return finishVisual(source, score, [edit], binding, nextBinding, false, false, undefined,
+    binding.kind === 'lyric' && operation.kind === 'replaceLyric' ? { kind: 'replace' } : undefined);
 }
 
 /** Plans one lyric syllable edit without allowing the Webview to submit source offsets unchecked. */

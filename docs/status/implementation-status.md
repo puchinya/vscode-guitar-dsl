@@ -10,14 +10,14 @@
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
-- **状態**: 実装・レビュー指摘対応・検証完了、PR #159をレビュー中。基準は main@ed2c037559cc8bbc1e4835ef2f9a61ba060a7ac4、ブランチは feature/158-preview-bidirectional-editing。
+- **状態**: 実装・コード指摘対応・macOS検証完了。C012の外部アクセシビリティ／OS検証は未実施で、PR #159は再レビュー待ち。基準は main@ed2c037559cc8bbc1e4835ef2f9a61ba060a7ac4、ブランチは feature/158-preview-bidirectional-editing。
 - **契約**: Issue #158 の固定コミットから取得した契約本文と approved comment 6393539991 は同一の30,175 bytesで、実ファイル SHA-256 は 3c794edca4d7504ac7011ab7e12d2ab6cc586b27df371fb3bd35be3ed2b63941。Issue本文に記載された SHA-256 6e3b108cea2a403be1d9f3b60a149161d169b9fa3cc2a7322d7daadd66d2f3cf とは一致しないため、本文は変更せず、ユーザーの指示どおり登録済み契約本文を実装基準とする。
 - **Milestone**: profile version 0.1.0 を割当済み。
 - **設計**: 承認済みの2枚の提案SVGを追加。実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
-- **検証**: `npm test` PASS（Help/AI同期、unit 1,211件、E2E 119件、6件 pending）。`npm run vscode:prepublish`、`npx @vscode/vsce ls`、契約検証、文書検証もPASS。英語・日本語 × light/dark × Preview幅421/600/840/1100pxの画面16枚とInspector狭幅4枚を実Extension Development Hostから撮り直し、編集行と操作ボタンの表示を目視確認した。E2E-PB04でnoteGroup/inlineNote Apply、コード・メロディ・リズム・TAB・歌詞の追加/削除、TAB和音内ノートの追加/削除を実行し、各操作が1回のUndoで戻ることを確認した。危険な暗黙TAB音価継承編集は拒否理由とソースジャンプを表示し、対象操作を無効にすることをE2E確認した。BV-04の暗黙TAB音価継承、BV-09のrepeat/arrangement、BV-10の遅延Stop ACK後の草稿更新とPreview破棄、BV-11のStop ACK false/timeoutは専用unit fixtureがPASS。Previewのキーボード半音/音価操作、Inspectorのglobal/local/clone適用とUndoもE2E確認。Windows/Linux、VoiceOver/NVDA、E2Eの6 pendingは未実施。
-- **受入状態**: BV-04、BV-09、BV-10、BV-11 PASS。C010 PASS（Stop失敗/timeoutとstale intentを適用前に拒否）。BV-12 PARTIAL、C012はVoiceOver/NVDA未実施のためNOT RUN。Windows/LinuxもNOT RUN。
-- **実画面差分**: [提案SVGとの差分理由と実Extension Development Hostの画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)。
-- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。レビュー対応後のHEADに対する自己レビューとRequired Checkを確認する。
+- **検証**: `npm test` PASS（Help/AI同期、unit 1,214件、E2E 120件、既存E2Eの6件 pending）。`npm run vscode:prepublish`、`npx @vscode/vsce ls`、契約検証、文書検証もPASS。英語・日本語 × light/dark × Preview幅421/600/840/1100pxの画面16枚とInspector狭幅4枚を実Extension Development Hostから撮り直し、編集行と操作ボタンの表示を目視確認した。E2E-PB04でnoteGroup/inlineNote Apply、コード・メロディ・リズム・TAB・歌詞の追加/削除を実行し、1 Undoでの復元を確認した。TAB和音3音の先頭・中間・末尾削除も各1 Undoで確認し、歌詞の安全な末尾追加とUndoでは実描画位置を音符と照合した。危険な暗黙TAB音価継承と小節越しのメロディ音域継承は適用前に拒否され、理由とソースジャンプを表示し、対象操作が無効になることをE2E確認した。unitではTAB和音3/4音、LF/CRLF、先頭/中間/末尾、複数小節のメロディ音域・TAB音価継承、複数節/小節の歌詞割当保持を検証した。BV-09のrepeat/arrangementもunit fixtureがPASS。BV-10のdispose後草稿、BV-11のStop ACK false/timeoutはpure helper unit fixtureがPASSだが、実Preview Webviewのpanel-disposal replayとStop失敗注入は未実施。Windows/Linux、VoiceOver/NVDA、E2Eの6 pendingも未実施。
+- **受入状態**: BV-04、BV-09 PASS。BV-10、BV-11 PARTIAL（unit guardはPASS、実Preview WebviewのE2E注入は未実施）。C010 PARTIAL、C012 BLOCKED / NOT RUN（VoiceOver/NVDA、focus維持、Windows/Linuxの確認環境がなく、免除は申請・仮定していない）。
+- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[レビュー対応後の代表画面と確認範囲](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6395457420)。
+- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新HEADの自己レビューとRequired Checkは再レビュー後に確認する。
 
 ## Issue #132: GUI再設計の統合受入れ
 

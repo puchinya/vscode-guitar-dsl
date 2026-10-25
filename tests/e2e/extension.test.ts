@@ -6299,7 +6299,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         '| C [c4,e4]/4 f4/4 4.d 4.u |',
         'mel: | c4/8 d4/8 e4/8 f4/8 g4/4. |',
         'lyr: あ い う え',
-        'tab: | [6f0,5f2]/2. |'
+        'tab: | [6f0,5f2,4f2]/2. |'
       ].join('\n') + '\n';
       const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
       await showAndFocus(doc);
@@ -6335,7 +6335,8 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         `Array.from(document.getElementById('preview-edit-target').options).find(option =>
           option.textContent.includes(${JSON.stringify(` · ${kind} · ${expected}`)}))?.value || ''`);
       const editAndUndo = async (kind: string, expected: string, buttonId: string, value?: string,
-        verifyEditedSource?: (text: string) => boolean): Promise<void> => {
+        verifyEditedSource?: (text: string) => boolean,
+        verifyEditedRender?: () => Promise<void>, verifyUndoneRender?: () => Promise<void>): Promise<void> => {
         await waitForPreviewSource();
         const id = await bindingId(kind, expected);
         assert.ok(id, `source binding exists for ${kind} ${expected}`);
@@ -6363,10 +6364,15 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         assert.notStrictEqual(doc.getText(), before, `${buttonId} commits a source edit (Preview status: ${status})`);
         const edited = doc.getText();
         if (verifyEditedSource) assert.strictEqual(verifyEditedSource(edited), true, `${buttonId} applies the selected operation`);
+        if (verifyEditedRender) {
+          await waitForPreviewSource();
+          await verifyEditedRender();
+        }
         await undoIn(doc);
         assert.strictEqual(doc.getText(), before, `${kind} ${expected} uses exactly one Undo`);
         assert.notStrictEqual(edited, before);
         await waitForPreviewSource();
+        if (verifyUndoneRender) await verifyUndoneRender();
       };
 
       await editAndUndo('noteGroup', '[c4,e4]/4', 'preview-edit-apply', '[d4,f4]/4', text => text.includes('[d4,f4]/4'));
@@ -6377,10 +6383,38 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       await editAndUndo('melodyNote', 'g4/4.', 'preview-edit-delete', undefined, text => !text.includes('g4/4.'));
       await editAndUndo('rhythm', '4.d', 'preview-edit-insert', '4.d', text => text.includes('4.d 4.d 4.u'));
       await editAndUndo('rhythm', '4.u', 'preview-edit-delete', undefined, text => !text.includes('4.u'));
-      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-insert', '4f0/4', text => text.includes('[6f0,5f2]/2. 4f0/4'));
-      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-add-tab-note', '4f4', text => text.includes('[6f0,5f2,4f4]/2.'));
-      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-delete-tab-note', '6f0', text => text.includes('5f2/2.'));
-      await editAndUndo('lyric', 'あ', 'preview-edit-insert', 'お', text => text.includes('lyr: あ お い'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-insert', '3f4/4', text => text.includes('[6f0,5f2,4f2]/2. 3f4/4'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-add-tab-note', '3f4', text => text.includes('[6f0,5f2,4f2,3f4]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '6f0', text => text.includes('[5f2,4f2]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '5f2', text => text.includes('[6f0,4f2]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '4f2', text => text.includes('[6f0,5f2]/2.'));
+      const lyricAndNoteX = async (lyric: string, melody: string): Promise<{ lyricText: string; lyricX: number; noteCenterX: number }> => {
+        const lyricId = await bindingId('lyric', lyric);
+        const melodyId = await bindingId('melodyNote', melody);
+        assert.ok(lyricId, `Preview has a rendered lyric binding for ${lyric}`);
+        assert.ok(melodyId, `Preview has a rendered melody binding for ${melody}`);
+        return evaluatePreviewWebview<{ lyricText: string; lyricX: number; noteCenterX: number }>(`(() => {
+          const lyric = document.querySelector('[data-visual-binding="${lyricId}"]');
+          const melody = document.querySelector('[data-visual-binding="${melodyId}"]');
+          if (!lyric || !melody) return { lyricText: '', lyricX: NaN, noteCenterX: NaN };
+          const bounds = melody.getBBox();
+          return { lyricText: lyric.textContent.trim(), lyricX: Number(lyric.getAttribute('x')),
+            noteCenterX: bounds.x + bounds.width / 2 };
+        })()`);
+      };
+      await editAndUndo('lyric', 'え', 'preview-edit-insert', 'お', text => text.includes('lyr: あ い う え お'),
+        async () => {
+          const rendered = await lyricAndNoteX('お', 'g4/4.');
+          assert.strictEqual(rendered.lyricText, 'お');
+          assert.ok(Math.abs(rendered.lyricX - rendered.noteCenterX) < 2,
+            'the appended lyric renders under the next note instead of moving an existing syllable');
+        },
+        async () => {
+          assert.strictEqual(await bindingId('lyric', 'お'), '', 'one Undo removes the appended lyric binding');
+          const rendered = await lyricAndNoteX('え', 'f4/8');
+          assert.strictEqual(rendered.lyricText, 'え');
+          assert.ok(Math.abs(rendered.lyricX - rendered.noteCenterX) < 2, 'Undo restores the original lyric-to-note alignment');
+        });
       await editAndUndo('lyric', 'え', 'preview-edit-delete', undefined, text => !text.includes('え'));
     });
   });
@@ -6433,6 +6467,55 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       assert.strictEqual(vscode.window.activeTextEditor?.document.uri.toString(), doc.uri.toString(),
         'source navigation opens the owning GuitarDSL document');
       assert.strictEqual(vscode.window.activeTextEditor?.selection.start.line, 1, 'source navigation selects the rejected TAB token');
+    });
+  });
+
+  test('E2E-PB04 rejects a melody edit that propagates inherited octave across a measure boundary', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C | G |\nmel: | c4/2 d4/2 | e/2 f/2 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as { currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const id = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · melodyNote · d4/2'))?.value || ''`);
+      assert.ok(id, 'the authored melody note before the measure boundary has a parser binding');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(id)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = 'd5/2';
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+        const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
+        if (status && sourceLinkVisible) break;
+        await settle(20);
+      }
+      assert.strictEqual(doc.getText(), source, 'the document is unchanged when the edit would alter the next measure');
+      const feedback = await evaluatePreviewWebview<{ status: string; sourceLinkVisible: boolean; applyDisabled: boolean }>(`(() => ({
+        status: document.getElementById('preview-edit-status').textContent,
+        sourceLinkVisible: !document.getElementById('preview-edit-open-source').hidden,
+        applyDisabled: document.getElementById('preview-edit-apply').disabled
+      }))()`);
+      assert.ok(feedback.status, 'Preview explains why the inherited-octave edit is read-only');
+      assert.strictEqual(feedback.sourceLinkVisible, true);
+      assert.strictEqual(feedback.applyDisabled, true);
+      await evaluatePreviewWebview<void>('document.getElementById("preview-edit-open-source").click()');
+      for (let attempt = 0; attempt < 100
+        && vscode.window.activeTextEditor?.document.uri.toString() !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(vscode.window.activeTextEditor?.selection.start.line, 1, 'the source link selects the affected melody token');
     });
   });
 });

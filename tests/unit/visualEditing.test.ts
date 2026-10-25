@@ -205,13 +205,44 @@ describe('source-preserving visual and variable planners', () => {
     const lyric = lyricScore.visualSourceBindings?.find(binding => binding.kind === 'lyric');
     assert.ok(lyric);
     const lyricInsert = planVisualEdit(lyricSource, lyricScore, { kind: 'insertToken', bindingId: lyric.id, text: 'う' });
-    assert.ok(lyricInsert.ok, lyricInsert.ok ? '' : lyricInsert.code);
-    assert.ok(lyricInsert.resultingSource.includes('lyr: あ う い'));
+    assert.deepStrictEqual(lyricInsert, { ok: false, code: 'diagnosticRegression' },
+      'inserting between syllables must not shift existing syllable-to-note assignments');
     const secondLyric = lyricScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric')[1];
     assert.ok(secondLyric);
+    const lyricAppend = planVisualEdit(lyricSource, lyricScore, { kind: 'insertToken', bindingId: secondLyric.id, text: 'う' });
+    assert.ok(lyricAppend.ok, lyricAppend.ok ? '' : lyricAppend.code);
+    assert.ok(lyricAppend.resultingSource.includes('lyr: あ い う'), 'appending into an unused note slot preserves existing assignments');
     const lyricDelete = planVisualEdit(lyricSource, lyricScore, { kind: 'deleteToken', bindingId: secondLyric.id });
     assert.ok(lyricDelete.ok, lyricDelete.ok ? '' : lyricDelete.code);
     assert.strictEqual(lyricDelete.resultingSource, '| C |\nmel: | c4/4 d4/4 e4/2 |\nlyr: あ\n');
+  });
+
+  it('uses document offsets for first, middle, and last notes in three- and four-note TAB chords', () => {
+    for (const eol of ['\n', '\r\n']) {
+      for (const notes of [
+        ['6f0', '5f2', '4f2'],
+        ['6f0', '5f2', '4f2', '3f0']
+      ]) {
+        for (let index = 0; index < notes.length; index++) {
+          const chord = `[${notes.join(',')}]`;
+          const prefix = `title: preserve${eol}| C |${eol}`;
+          const source = `${prefix}tab: | ${chord}/1 |${eol}# keep${eol}`;
+          const score = parsed(source);
+          const binding = score.visualSourceBindings?.find(item => item.kind === 'tab' && item.expected === `${chord}/1`);
+          assert.ok(binding?.subTokens);
+
+          const edit = planVisualEdit(source, score, { kind: 'deleteTabChordNote', bindingId: binding.id, note: notes[index] });
+          assert.ok(edit.ok, edit.ok ? '' : `${eol === '\r\n' ? 'CRLF' : 'LF'} ${chord} index ${index}: ${edit.code}`);
+          const remaining = notes.filter((_note, at) => at !== index);
+          const updated = remaining.length === 1 ? remaining[0] : `[${remaining.join(',')}]`;
+          assert.strictEqual(edit.resultingSource, `${prefix}tab: | ${updated}/1 |${eol}# keep${eol}`,
+            'the exact TAB chord changes while the header, earlier measure, line ending, and trailing comment remain byte-identical');
+          assert.strictEqual(source.slice(edit.edits[0].start, edit.edits[0].end), edit.edits[0].expected,
+            'the expected bytes are sliced from the document offsets');
+          assert.ok(edit.edits[0].start >= prefix.length, 'the edit never points into an earlier document line');
+        }
+      }
+    }
   });
 
   it('rejects TAB duration edits that alter inherited following events or their onsets (BV-04)', () => {
@@ -221,6 +252,65 @@ describe('source-preserving visual and variable planners', () => {
     assert.ok(first);
     assert.deepStrictEqual(planVisualEdit(source, score, { kind: 'replaceTabToken', bindingId: first.id, text: '6f0/8' }),
       { ok: false, code: 'diagnosticRegression' }, 'implicit duration inheritance must not change other TAB beats');
+  });
+
+  it('rejects inherited melody pitch and TAB duration changes that cross a measure boundary (BV-04)', () => {
+    const melodySource = '| C | G |\nmel: | c4/2 d4/2 | e/2 f/2 |\n';
+    const melodyScore = parsed(melodySource);
+    const inheritedMelody = melodyScore.visualSourceBindings?.find(binding => binding.kind === 'melodyNote' && binding.expected === 'd4/2');
+    assert.ok(inheritedMelody);
+    assert.deepStrictEqual(planVisualEdit(melodySource, melodyScore, {
+      kind: 'replaceMelodyToken', bindingId: inheritedMelody.id, text: 'd5/2'
+    }), { ok: false, code: 'diagnosticRegression' }, 'the next cell inherits octave 5 and must remain unchanged');
+
+    const tabSource = '| C | G |\ntab: | 6f0/4 | 6f1 |\n';
+    const tabScore = parsed(tabSource);
+    const inheritedTab = tabScore.visualSourceBindings?.find(binding => binding.kind === 'tab' && binding.expected === '6f0/4');
+    assert.ok(inheritedTab);
+    assert.deepStrictEqual(planVisualEdit(tabSource, tabScore, {
+      kind: 'replaceTabToken', bindingId: inheritedTab.id, text: '6f0/8'
+    }), { ok: false, code: 'diagnosticRegression' }, 'the next measure inherits the changed TAB duration and must remain unchanged');
+  });
+
+  it('preserves existing lyric-to-note assignments across verses and measures (BV-04)', () => {
+    const source = '| C | G |\nmel: | c4/2 d4/2 | e4/2 f4/2 |\nlyr: あ い う\nlyr: A B C\n';
+    const score = parsed(source);
+    const verseOne = score.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 0) ?? [];
+    const verseTwo = score.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 1) ?? [];
+    assert.strictEqual(verseOne.length, 3);
+    assert.strictEqual(verseTwo.length, 3);
+    const assignment = (binding: NonNullable<typeof verseOne[number]>) => [
+      binding.expected, binding.measureIndex, binding.eventRange?.collection, binding.eventRange?.start, binding.visualVerse
+    ];
+
+    for (const target of verseOne.slice(0, 2)) {
+      assert.deepStrictEqual(planVisualEdit(source, score, { kind: 'deleteToken', bindingId: target.id }),
+        { ok: false, code: 'diagnosticRegression' }, `deleting ${target.expected} must not move a remaining syllable to another note`);
+    }
+    const append = planVisualEdit(source, score, { kind: 'insertToken', bindingId: verseOne[2].id, text: 'え' });
+    assert.ok(append.ok, append.ok ? '' : append.code);
+    const appendedScore = parsed(append.resultingSource);
+    const appendedVerseOne = appendedScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 0) ?? [];
+    const appendedVerseTwo = appendedScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 1) ?? [];
+    assert.deepStrictEqual(appendedVerseOne.slice(0, 3).map(assignment), verseOne.map(assignment));
+    assert.deepStrictEqual(appendedVerseTwo.map(assignment), verseTwo.map(assignment));
+    assert.deepStrictEqual(assignment(appendedVerseOne[3]), ['え', 1, 'melody', 1, 0], 'the new syllable is assigned to the next available note');
+
+    const deleteLast = planVisualEdit(source, score, { kind: 'deleteToken', bindingId: verseOne[2].id });
+    assert.ok(deleteLast.ok, deleteLast.ok ? '' : deleteLast.code);
+    const deletedScore = parsed(deleteLast.resultingSource);
+    const deletedVerseOne = deletedScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 0) ?? [];
+    const deletedVerseTwo = deletedScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric' && binding.visualVerse === 1) ?? [];
+    assert.deepStrictEqual(deletedVerseOne.map(assignment), verseOne.slice(0, 2).map(assignment));
+    assert.deepStrictEqual(deletedVerseTwo.map(assignment), verseTwo.map(assignment));
+
+    const melismaSource = '| C |\nmel: | c4/4 d4/4 e4/2 |\nlyr: あ _\n';
+    const melismaScore = parsed(melismaSource);
+    const beforeMelisma = melismaScore.visualSourceBindings?.find(binding => binding.kind === 'lyric');
+    assert.ok(beforeMelisma);
+    assert.deepStrictEqual(planVisualEdit(melismaSource, melismaScore, {
+      kind: 'insertToken', bindingId: beforeMelisma.id, text: 'い'
+    }), { ok: false, code: 'diagnosticRegression' }, 'an unbound melisma marker must not move to another note');
   });
 
   it('keeps repeat and arrangement edits on their authored source token (BV-09)', () => {
