@@ -3246,6 +3246,210 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     assert.strictEqual(doc.getText(), source, 'candidate selection adds no undo step ahead of a pre-existing edit');
   });
 
+  test('GUI132-01 progression context, Settings takeover, stale intent rejection, and cleanup', async () => withWorkbenchSnapshotRestored(async () => {
+    const waitUntil = async (predicate: () => boolean, message: string): Promise<void> => {
+      for (let attempt = 0; attempt < 150; attempt++) {
+        if (predicate()) return;
+        await settle(20);
+      }
+      assert.fail(message);
+    };
+    const waitForInspectorExpression = async (expression: string, message: string): Promise<void> => {
+      for (let attempt = 0; attempt < 150; attempt++) {
+        if (await evaluateInspectorWebview<boolean>(expression)) return;
+        await settle(20);
+      }
+      assert.fail(message);
+    };
+    const clickInspectorButton = async (selector: string, message: string): Promise<void> => {
+      const clicked = await evaluateInspectorWebview<boolean>(
+        `(() => { const button = document.querySelector(${JSON.stringify(selector)}); if (!(button instanceof HTMLButtonElement) || button.disabled) return false; button.click(); return true; })()`
+      );
+      assert.strictEqual(clicked, true, message);
+    };
+    const candidateButtonExpression = (containerId: 'candidate-list' | 'settings-content', candidateId: string): string =>
+      `Array.from(document.querySelectorAll('#${containerId} button[data-inspector-control="candidate"]')).find(button => button.dataset.inspectorKey === ${JSON.stringify(candidateId)})`;
+    const clickInspectorCandidate = async (containerId: 'candidate-list' | 'settings-content', candidateId: string, message: string): Promise<void> => {
+      const clicked = await evaluateInspectorWebview<boolean>(
+        `(() => { const button = ${candidateButtonExpression(containerId, candidateId)}; if (!(button instanceof HTMLButtonElement) || button.disabled) return false; button.click(); return true; })()`
+      );
+      assert.strictEqual(clicked, true, message);
+    };
+    const source = 'key: C\nbpm: 120\n[Verse]\n| C | Dm | Em | F |\n[Chorus]\n| G | Am | F | C |';
+    const document = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    const editor = await showAndFocus(document, vscode.ViewColumn.One);
+    assert.ok(await editor.edit(edit => edit.insert(document.positionAt(document.getText().length), '\n# pre-existing edit')));
+    await settle(50);
+    const sourceAtStart = document.getText();
+    const versionAtStart = document.version;
+
+    await vscode.commands.executeCommand('guitardsl.showPreview', document.uri);
+    await waitForPreviewDocument();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const preview = require('../../previewCapo') as {
+      effectiveDslProbe: { previewInput?: string };
+      previewLifecycleProbe: { generation: number };
+    };
+    await waitUntil(() => preview.effectiveDslProbe.previewInput === sourceAtStart, 'Preview resolves document A before the Inspector flow');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const progression = require('../../progressionAssistant').progressionAssistantProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const audioLease = require('../../extension').progressionAudioLeaseProbe.coordinator;
+
+    let testFailed = false;
+    let testFailure: unknown;
+    try {
+      const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+        'vscode.executeCodeLensProvider', document.uri);
+      const suggestion = (codeLenses ?? []).find(lens => lens.command?.command === 'guitardsl.suggestChordProgression');
+      assert.ok(suggestion?.command, 'document A exposes the production progression CodeLens');
+      const windowApi = vscode.window as unknown as Record<string, unknown>;
+      const originalShowQuickPick = windowApi.showQuickPick;
+      let quickPickCalls = 0;
+      try {
+        windowApi.showQuickPick = async () => {
+          quickPickCalls++;
+          return undefined;
+        };
+        await vscode.commands.executeCommand(suggestion.command.command, ...(suggestion.command.arguments ?? []));
+      } finally {
+        windowApi.showQuickPick = originalShowQuickPick;
+      }
+      assert.strictEqual(quickPickCalls, 0, 'the production CodeLens enters Inspector without invoking the former three-stage Quick Pick');
+      await waitUntil(() => inspector.getContext?.()?.kind === 'progression', 'the CodeLens opens the production Inspector progression context');
+      await waitUntil(() => inspector.resolvedView?.visible === true, 'the registered production WebviewView is visible');
+      const productionView = inspector.resolvedView;
+      assert.ok(productionView?.webview.html.includes('id="inspector-state"'), 'the singleton production Inspector shell is rendered');
+
+      const session = progression.getSession();
+      assert.ok(session, 'the CodeLens creates a host-owned progression session');
+      assert.strictEqual(session.uri, document.uri.toString());
+      assert.strictEqual(session.version, versionAtStart);
+      const alternate = session.candidates.find((candidate: { id: string }) => candidate.id !== session.activeCandidateId);
+      assert.ok(alternate, 'the progression session has an alternate candidate');
+      const progressionCandidateExpression = candidateButtonExpression('candidate-list', alternate.id);
+      await waitForInspectorExpression(
+        `(() => { const button = ${progressionCandidateExpression}; return button instanceof HTMLButtonElement && !button.disabled; })()`,
+        'the alternate progression candidate is rendered as an enabled Inspector button'
+      );
+      await clickInspectorCandidate('candidate-list', alternate.id, 'the actual progression candidate button accepts a renderer click');
+      await waitUntil(() => progression.getSession()?.activeCandidateId === alternate.id,
+        'the renderer click posts candidate selection through the production Webview message bridge');
+      await waitForInspectorExpression(
+        `(() => { const button = ${progressionCandidateExpression}; return button instanceof HTMLButtonElement && button.getAttribute('aria-pressed') === 'true'; })()`,
+        'the selected progression candidate is reflected by the rendered Inspector button'
+      );
+      for (const side of ['A', 'B'] as const) {
+        const sideButtonId = `progression-side-${side.toLowerCase()}`;
+        await clickInspectorButton(`#${sideButtonId}`, `the actual Preview ${side} comparison button accepts a renderer click`);
+        await waitUntil(() => progression.getSession()?.side === side,
+          `the renderer click posts the ${side} comparison through the production Webview message bridge`);
+        await waitForInspectorExpression(
+          `document.getElementById(${JSON.stringify(sideButtonId)})?.getAttribute('aria-pressed') === 'true'`,
+          `the rendered Inspector marks Preview ${side} as active`
+        );
+      }
+      assert.strictEqual(document.getText(), sourceAtStart, 'candidate and A/B actions leave document A unchanged');
+      assert.strictEqual(document.version, versionAtStart, 'candidate and A/B actions do not advance document A version');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'no audition lease is held before Settings takes over');
+
+      const progressionContext = progression.getInspectorContext();
+      const progressionController = progression.controller as unknown as {
+        inspector: {
+          currentGeneration: number;
+          handleWebviewMessage(message: unknown): Promise<boolean>;
+        };
+      };
+      const inspectorController = progressionController.inspector;
+      const delayedProgressionMessage = {
+        generation: inspectorController.currentGeneration,
+        sessionUri: progressionContext.uri,
+        sessionVersion: progressionContext.version,
+        sessionGeneration: progressionContext.sessionGeneration,
+        selectedCandidateId: alternate.id,
+        command: 'progressionCandidateChanged',
+        candidateId: session.candidates.find((candidate: { id: string }) => candidate.id !== alternate.id)?.id ?? alternate.id
+      };
+
+      await vscode.commands.executeCommand('guitardsl.editCapo', document.uri);
+      await waitUntil(() => inspector.getContext?.()?.kind === 'settings', 'explicit Capo opens Settings in the same Inspector');
+      assert.strictEqual(progression.getSession(), undefined, 'Settings takeover invalidates the old progression session');
+      assert.strictEqual(inspector.resolvedView, productionView, 'Settings reuses the same Inspector WebviewView');
+      assert.strictEqual(settings.hasSession?.(), true, 'Settings owns the only active Inspector context');
+      const settingsContext = inspector.getContext?.();
+      assert.strictEqual(settingsContext.uri, document.uri.toString(), 'Settings remains associated with document A');
+      const settingsPreviewBaseline = preview.effectiveDslProbe.previewInput;
+      const capoCandidate = settingsContext.model.candidates.find((candidate: { supported: boolean; capo: number }) =>
+        candidate.supported && candidate.capo !== settingsContext.model.selectedCapo);
+      assert.ok(capoCandidate, 'Settings provides another supported temporary Capo comparison');
+      const settingsCandidateExpression = candidateButtonExpression('settings-content', String(capoCandidate.capo));
+      await waitForInspectorExpression(
+        `(() => { const button = ${settingsCandidateExpression}; return button instanceof HTMLButtonElement && !button.disabled; })()`,
+        'the alternate supported Capo is rendered as an enabled Inspector button'
+      );
+      await clickInspectorCandidate('settings-content', String(capoCandidate.capo), 'the actual Settings Capo candidate button accepts a renderer click');
+      await waitUntil(() => preview.effectiveDslProbe.previewInput !== settingsPreviewBaseline,
+        'the renderer click posts through the production Webview bridge and changes the effective Preview DSL');
+      await waitForInspectorExpression(
+        `(() => { const button = ${settingsCandidateExpression}; return button instanceof HTMLButtonElement && button.getAttribute('aria-pressed') === 'true'; })()`,
+        'the rendered Inspector marks the selected temporary Capo'
+      );
+
+      const settingsContextBeforeStale = inspector.getContext?.();
+      const previewAtSettings = preview.effectiveDslProbe.previewInput;
+      const previewGenerationAtSettings = preview.previewLifecycleProbe.generation;
+      await inspectorController.handleWebviewMessage(delayedProgressionMessage);
+      assert.strictEqual(inspector.getContext?.(), settingsContextBeforeStale, 'a delayed old progression message cannot replace Settings');
+      assert.strictEqual(settings.hasSession?.(), true, 'the delayed message leaves the Settings session active');
+      assert.strictEqual(preview.effectiveDslProbe.previewInput, previewAtSettings,
+        'the delayed message cannot change the Preview settings comparison');
+      assert.strictEqual(preview.previewLifecycleProbe.generation, previewGenerationAtSettings,
+        'the delayed message does not trigger a Preview rebuild');
+      assert.strictEqual(document.getText(), sourceAtStart, 'the delayed message does not edit document A');
+      assert.strictEqual(document.version, versionAtStart, 'the delayed message does not advance document A version');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'the context transition leaves no audio lease');
+
+      await clickInspectorButton('#settings-cancel', 'the actual Inspector Settings Cancel button accepts a renderer click');
+      await waitUntil(() => settings.hasSession?.() === false, 'Cancel ends the Settings transaction');
+      await waitUntil(() => preview.effectiveDslProbe.previewInput === settingsPreviewBaseline,
+        'Cancel restores the Preview DSL from before the temporary comparison');
+      assert.strictEqual(inspector.resolvedView, productionView, 'Cancel keeps the single Inspector view');
+      assert.strictEqual(document.getText(), sourceAtStart, 'Cancel leaves document A unchanged');
+      assert.strictEqual(document.version, versionAtStart, 'Cancel does not advance document A version');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'Cancel leaves no audio lease');
+
+      await undoIn(document);
+      assert.strictEqual(document.getText(), source, 'Undo still removes the pre-existing edit, so the Inspector flow added no undo step');
+    } catch (error) {
+      testFailed = true;
+      testFailure = error;
+      throw error;
+    } finally {
+      const cleanupErrors: unknown[] = [];
+      try {
+        if (settings.hasSession?.()) {
+          await clickInspectorButton('#settings-cancel', 'cleanup clicks the actual Inspector Settings Cancel button');
+          await waitUntil(() => settings.hasSession?.() === false, 'cleanup waits for Settings cancellation');
+        }
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      try {
+        await vscode.commands.executeCommand('guitardsl.progression.close');
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(testFailed ? [testFailure, ...cleanupErrors] : cleanupErrors, 'GUI132-01 cleanup failed');
+      }
+    }
+  }));
+
   test('ED-02/ED-03 Inspector controls recompute candidates and preserve audition speed', async () => {
     const source = 'key: C\n| C | Dm | Em | F |';
     const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
