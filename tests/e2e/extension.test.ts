@@ -412,6 +412,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const button = document.getElementById('practice-guide-melody-toggle');
           if ((button.getAttribute('aria-pressed') === 'true') !== ${melodyVisible}) button.click();
         })()`);
+        await settle(100);
       };
       const setGuideViewMode = async (mode: 'detailed' | 'compact'): Promise<void> => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -5831,6 +5832,226 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (originalKey === undefined) await secretStorage.delete('guitardsl.geminiApiKey');
         else await secretStorage.store('guitardsl.geminiApiKey', originalKey);
       }
+    });
+  });
+
+  test('applies rhythm, duration, TAB, lyric, and keyboard edits as single undoable source changes', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C 4.d 4.u 4.d 4.u |\nmel: | c4/4 d4/4 e4/4 f4/4 |\nlyr: あ い う え\ntab: | 6f0/4 6f1/4 6f3/4 6f5/4 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+
+      const probe = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      const waitIdentity = async () => {
+        for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      };
+      await waitIdentity();
+      let mode = await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode');
+      if (mode !== 'true') await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitIdentity();
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      const applyTextAndUndo = async (kind: string, expected: string, replacement: string) => {
+        await waitIdentity();
+        const label = ` · ${kind} · ${expected}`;
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(${JSON.stringify(label)}))?.value || ''`);
+        assert.ok(bindingId, `Preview exposes ${kind} source binding for ${expected}`);
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = ${JSON.stringify(replacement)};
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        const edited = source.replace(expected, replacement);
+        for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+        assert.strictEqual(doc.getText(), edited, `${kind} edits only its authored token`);
+        await undoIn(doc);
+        assert.strictEqual(doc.getText(), source, `one Undo restores the source after ${kind} editing`);
+      };
+
+      await applyTextAndUndo('rhythm', '4.d', '4.u');
+      await applyTextAndUndo('tab', '6f0/4', '6f2/4');
+      await applyTextAndUndo('lyric', 'あ', 'お');
+
+      const durationSource = '| C |\nmel: | c4/4 |\n';
+      const durationDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: durationSource });
+      await showAndFocus(durationDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', durationDoc.uri);
+      const waitDurationIdentity = async () => {
+        for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== durationDoc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(probe.currentDocumentUri, durationDoc.uri.toString());
+        await waitForPreviewIdentity({ documentUri: durationDoc.uri.toString(), documentVersion: durationDoc.version, previewGeneration: probe.generation });
+      };
+      await waitDurationIdentity();
+      if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') !== 'true') {
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+        await waitDurationIdentity();
+      }
+      const melodyId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · melodyNote · c4/4'))?.value || ''`);
+      assert.ok(melodyId, 'Preview exposes a melody note source binding');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(melodyId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-duration-shorter').click();
+      })()`);
+      for (let attempt = 0; attempt < 100 && durationDoc.getText() === durationSource; attempt++) await settle(20);
+      assert.ok(durationDoc.getText().includes('c4/8'), 'duration control halves the selected note duration');
+      await undoIn(durationDoc);
+      assert.strictEqual(durationDoc.getText(), durationSource, 'one Undo restores the selected duration');
+
+      await waitDurationIdentity();
+      await clickPreviewElement(`[data-visual-binding="${melodyId}"]`);
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(melodyId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        const button = document.getElementById('preview-edit-pitch-up');
+        button.focus(); window.focus();
+      })()`);
+      await dispatchPreviewKeyboardKey('Enter');
+      for (let attempt = 0; attempt < 100 && durationDoc.getText() === durationSource; attempt++) await settle(20);
+      assert.ok(durationDoc.getText().includes('c#4/4'), 'keyboard activation transposes the selected melody note');
+      await undoIn(durationDoc);
+      assert.strictEqual(durationDoc.getText(), durationSource, 'one Undo restores the keyboard melody edit');
+    });
+  });
+
+  test('applies, cancels, and undoes global and local let variable edits in the Inspector', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = 'let riff = 4.d 4.d\nlet spare = 8.u\n| C $riff |\n| G $riff |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showVariables');
+      const inspectorState = async () => {
+        try { return await evaluateInspectorWebview<string>('document.getElementById("variables-state")?.hidden === false ? "variables" : "other"'); }
+        catch { return 'unavailable'; }
+      };
+      for (let attempt = 0; attempt < 100 && await inspectorState() !== 'variables'; attempt++) await settle(20);
+      assert.strictEqual(await inspectorState(), 'variables');
+
+      const selectVariable = async (name: string) => {
+        const selected = await evaluateInspectorWebview<boolean>(`(() => {
+          const button = Array.from(document.querySelectorAll('#variables-list button')).find(item => item.textContent.trim() === ${JSON.stringify(name)});
+          if (!button) return false;
+          button.click(); return true;
+        })()`);
+        assert.strictEqual(selected, true, `Inspector lists ${name}`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const current = await evaluateInspectorWebview<string>('document.querySelector("#variables-list button[aria-pressed=true]")?.textContent.trim() || ""');
+          if (current === name) return;
+          await settle(20);
+        }
+        assert.fail(`Inspector did not select ${name}`);
+      };
+      const setOperation = async (operation: string, name?: string, value?: string) => {
+        await evaluateInspectorWebview<void>(`(() => {
+          const operation = document.getElementById('variables-operation');
+          operation.value = ${JSON.stringify(operation)};
+          operation.dispatchEvent(new Event('change', { bubbles: true }));
+          if (${JSON.stringify(name)} !== undefined) {
+            const field = document.getElementById('variables-name'); field.value = ${JSON.stringify(name)};
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          if (${JSON.stringify(value)} !== undefined) {
+            const field = document.getElementById('variables-value'); field.value = ${JSON.stringify(value)};
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        })()`);
+        await settle(100);
+      };
+      const apply = async () => evaluateInspectorWebview<void>('document.getElementById("variables-apply").click()');
+
+      await selectVariable('riff');
+      await setOperation('editGlobal', undefined, '8.d 8.d');
+      await apply();
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), source.replace('let riff = 4.d 4.d', 'let riff = 8.d 8.d'),
+        'global Apply edits the definition while preserving all references');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'global variable edit is one Undo');
+      await settle(250);
+
+      await selectVariable('riff');
+      await setOperation('editGlobal', undefined, '8.d 8.d');
+      await evaluateInspectorWebview<void>('document.getElementById("variables-cancel").click()');
+      await settle(100);
+      assert.strictEqual(doc.getText(), source, 'Cancel leaves the saved document unchanged');
+
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      const probe = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') !== 'true') {
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      }
+      const referenceId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · letReference · $riff'))?.value || ''`);
+      assert.ok(referenceId);
+      await clickPreviewElement(`[data-visual-binding="${referenceId}"]`);
+      for (let attempt = 0; attempt < 100 && await evaluateInspectorWebview<string>('document.getElementById("variables-operation")?.value || ""') !== 'chooseReference'; attempt++) await settle(20);
+      assert.strictEqual(await evaluateInspectorWebview<string>('document.getElementById("variables-operation")?.value'), 'chooseReference');
+      await setOperation('detachLocal', undefined, '4.d 4.d');
+      await apply();
+      const detached = 'let riff = 4.d 4.d\nlet spare = 8.u\n| C 4.d 4.d |\n| G $riff |\n';
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), detached, 'local detach changes only the selected occurrence');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'local detach and expansion are one Undo');
+    });
+  });
+
+  test('clones a definition from the Inspector as one undoable source change', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const cloneSource = 'let riff = 4.d 4.d\n| C $riff |\n';
+      const cloneDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: cloneSource });
+      await showAndFocus(cloneDoc);
+      await vscode.commands.executeCommand('guitardsl.showVariables');
+      const waitForVariableList = async (name: string) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          try {
+            const names = await evaluateInspectorWebview<string>('Array.from(document.querySelectorAll("#variables-list button")).map(item => item.textContent.trim()).join(",")');
+            if (names.split(',').includes(name)) return;
+          } catch { /* The Inspector Webview may not exist until the command opens it. */ }
+          await settle(20);
+        }
+        assert.fail(`Inspector did not list ${name}`);
+      };
+      const selectVariable = async (name: string) => {
+        await waitForVariableList(name);
+        await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button')).find(item => item.textContent.trim() === ${JSON.stringify(name)})?.click()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const selected = await evaluateInspectorWebview<string>('document.querySelector("#variables-list button[aria-pressed=true]")?.textContent.trim() || ""');
+          if (selected === name) return;
+          await settle(20);
+        }
+        assert.fail(`Inspector did not select ${name}`);
+      };
+      await selectVariable('riff');
+      await evaluateInspectorWebview<void>(`(() => {
+        const operation = document.getElementById('variables-operation'); operation.value = 'clone';
+        operation.dispatchEvent(new Event('change', { bubbles: true }));
+        const name = document.getElementById('variables-name'); name.value = 'riffCopy';
+        name.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await settle(100);
+      await evaluateInspectorWebview<void>('document.getElementById("variables-apply").click()');
+      for (let attempt = 0; attempt < 100 && cloneDoc.getText() === cloneSource; attempt++) await settle(20);
+      assert.ok(cloneDoc.getText().includes('let riffCopy = 4.d 4.d'), 'clone writes an independent definition');
+      assert.ok(cloneDoc.getText().includes('| C $riff |'), 'clone does not retarget existing references');
+      await undoIn(cloneDoc);
+      assert.strictEqual(cloneDoc.getText(), cloneSource, 'clone is one Undo');
     });
   });
 });

@@ -1308,6 +1308,23 @@ ${cspMeta}
       document.getElementById('preview-edit-pitch-up').addEventListener('click', () => postPreviewVisualEdit('transposeMelody', { semitones: 1 }));
       document.getElementById('preview-edit-duration-longer').addEventListener('click', () => postPreviewVisualEdit('changeDuration', { direction: 'longer' }));
       document.getElementById('preview-edit-duration-shorter').addEventListener('click', () => postPreviewVisualEdit('changeDuration', { direction: 'shorter' }));
+      const bindKeyboardEditAction = (button, action) => {
+        button.addEventListener('keydown', event => {
+          if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat) return;
+          event.preventDefault();
+          event.stopPropagation();
+          action();
+        });
+        button.addEventListener('keyup', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      };
+      bindKeyboardEditAction(document.getElementById('preview-edit-pitch-down'), () => postPreviewVisualEdit('transposeMelody', { semitones: -1 }));
+      bindKeyboardEditAction(document.getElementById('preview-edit-pitch-up'), () => postPreviewVisualEdit('transposeMelody', { semitones: 1 }));
+      bindKeyboardEditAction(document.getElementById('preview-edit-duration-longer'), () => postPreviewVisualEdit('changeDuration', { direction: 'longer' }));
+      bindKeyboardEditAction(document.getElementById('preview-edit-duration-shorter'), () => postPreviewVisualEdit('changeDuration', { direction: 'shorter' }));
       document.getElementById('preview-edit-apply').addEventListener('click', () => {
         const binding = selectedPreviewBinding();
         if (!previewEditMode || !binding || body.dataset.previewEditAvailable !== 'true'

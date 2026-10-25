@@ -160,8 +160,14 @@ describe('source-preserving visual and variable planners', () => {
   it('rejects invalid or duplicate definitions without changing source', () => {
     const source = 'let riff = 4.d 4.d\nkey: C\n| C $riff |\n';
     const score = parsed(source);
+    const clone = planLetOperation(source, score, { kind: 'clone', name: 'riff', newName: 'riffCopy' });
+    assert.ok(clone.ok, clone.ok ? '' : clone.code);
+    assert.ok(clone.resultingSource.includes('let riffCopy = 4.d 4.d\n'));
+    assert.ok(clone.resultingSource.includes('| C $riff |'), 'cloning leaves existing references unchanged');
     assert.deepStrictEqual(planLetOperation(source, score, { kind: 'rename', name: 'riff', newName: 'bad-name' }),
       { ok: false, code: 'invalidValue' });
+    assert.deepStrictEqual(planLetOperation(source, score, { kind: 'clone', name: 'riff', newName: 'riff' }),
+      { ok: false, code: 'duplicateName' });
     assert.deepStrictEqual(planLetOperation(source, score, { kind: 'add', name: 'riff', value: '8.d 8.d' }),
       { ok: false, code: 'duplicateName' });
   });
