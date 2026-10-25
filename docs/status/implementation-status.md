@@ -228,7 +228,7 @@
 | | Web Audio 再生（Play/Resume・Pause・Stop・シーク） | ✅ 完了 | `ParsedScore.playOrder` の順で再生。再生・一時停止・再開・停止・シークと Preview の再構築で音源を管理 |
 | | カウントイン / メトロノーム | ✅ 完了 | 既定 OFF。カウントインは弱起でも最初の拍子を 1 小節再生し、メトロノームは拍子のビームグループに合わせる |
 | | Practice Mode（速度・小節 / セクション / A-B ループ・追従） | ✅ 完了 | 速度 25〜200% を 5% 刻みで変更し、演奏順に沿ったループと音符・リズム符の位置に合う再生ヘッドを表示。Section は再生タイムラインで書かれた小節ごとの所属を解決し、複数小節と連続した反復を含める。DSL は変更しない |
-| | コード進行アシスタント（Issue #129） | ✅ 完了 | 固定カタログと調・前後のコード・メロディから最大5候補を順位付け。CodeLens と標準 Quick Pick でエディタから選び、Decoration で元ソースを変えずに候補を表示。選択は自動再生せず、Play/Stop/A/B/Apply/Close は独立操作。Preview の既存 Web Audio engine を再利用し、50〜150%の試聴速度をA/B・候補切替後も保持。確認後に単一 WorkspaceEdit で適用。転調直後の対象調、曖昧な和声、未対応構文、古いWebview message、showPreview内の非同期document解決後に遅れるPreview副作用をsession / 描画世代で拒否。自動テストはPASS。CodeLens / Quick Pick / narrow layout画像は保存・Issue添付済み。実音再生はユーザーから確認報告あり |
+| | コード進行アシスタント (共通 Inspector, Issue #134) | ✅ 完了 | 固定カタログと調・前後コード・メロディから最大5候補を順位付けし、CodeLens から共通 Inspector に4/8/16小節の操作と候補一覧を表示。候補 / A-B 選択は Decoration と既に開いている Preview の表示だけを更新し、ソース編集も自動再生もしない。試聴は Inspector 内の一時 AudioContext / scheduler で行い、Extension Host が Preview 停止 ACK 後に排他 lease を付与して同時再生を防ぐ。確認後の Apply は対象文書・候補を再検証して単一 WorkspaceEdit に適用し、1回の Undo で戻せる。Stop、Close、自然終了、文書切替時に試聴と lease を解放する |
 | **PDFエクスポート** | ブラウザ不要の PDF 生成（`src/pdf.ts`） | ✅ 完了 | pdfkit + svg-to-pdfkit、同梱フォントのサブセット埋め込み。プレビューのカポ一時変更中は同じ有効 DSL を出力。macOS で確認済み、Windows / Linux は未検証 |
 | **診断** | `DiagnosticCollection('guitardsl')` | ✅ 完了 | 調弦の弦数・音名・未知プリセット・重複・本文配置を含む問題を日英メッセージと位置付き診断で表示。メロディ・歌詞・長さ・拍数・表示設定、小節内の解釈できないトークン・`mel:` / `lyr:` の続きの行（エラー）、`\|:` のない `:\|`（警告）も検出 |
 | **アウトライン** | `GuitarDslDocumentSymbolProvider` | ✅ 完了 | メタデータ詳細は `splitHeaderValue` で行末コメントを除去。セクション、小節コード要約と階層化 |
