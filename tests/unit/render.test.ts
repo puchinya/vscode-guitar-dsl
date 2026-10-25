@@ -320,7 +320,10 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.match(html, /id="view-export-panel" role="group"[^>]* hidden>/);
     assert.match(html, /id="temporary-score-settings-panel" role="group"[^>]*data-inline="false" data-details-open="false" hidden>/);
     assert.ok(!html.includes('role="menu"'));
-    assert.ok(html.includes('id="practice-toggle"'));
+    assert.ok(html.includes('id="preview-mode-practice"'));
+    assert.ok(html.includes('id="preview-mode-control" role="group"'));
+    assert.ok(html.includes('id="preview-mode-select"'));
+    assert.ok(!html.includes('id="practice-toggle"'), 'Practice is one member of the exclusive mode selector, not a separate toggle');
     assert.ok(html.includes('id="count-in-toggle"') && html.includes('id="metronome-toggle"'));
     assert.ok(html.includes('id="select-preview-barre-policy"'));
     assert.ok(html.includes('id="open-score-settings-capo-from-preview"'));
@@ -350,7 +353,8 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.match(css, /\.score-settings-playability\[data-level="moderate"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#8d6e00/);
     assert.match(css, /\.score-settings-playability\[data-level="hard"\] \.score-settings-playability-value,\s*\.score-settings-playability\[data-level="veryHard"\] \.score-settings-playability-value\s*\{[^}]*background-color:\s*#b71c1c/);
     assert.match(css, /\.score-settings-playability\[data-level="unavailable"\] \.score-settings-playability-value\s*\{[^}]*var\(--vscode-descriptionForeground/);
-    assert.match(css, /@media \(max-width: 600px\)\s*\{\s*\.score-settings-playability-separator\s*\{\s*display:\s*none;\s*\}[^}]*\.score-settings-playability-value\s*\{\s*column-gap:\s*4px;/s);
+    assert.match(css, /@media \(max-width: 599px\)\s*\{\s*\.preview-mode-control\s*\{\s*display:\s*none;\s*\}\s*\.preview-mode-compact\s*\{\s*display:\s*inline-flex;/s);
+    assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.score-settings-playability-separator\s*\{\s*display:\s*none;\s*\}[\s\S]*?\.score-settings-playability-value\s*\{\s*column-gap:\s*4px;/);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*width:\s*min\(360px, calc\(100vw - 16px\)\)/s);
     assert.match(css, /\.toolbar-disclosure-panel\s*\{[^}]*max-height:\s*calc\(100vh - 64px\)/s);
     assert.match(css, /@media \(max-width: 839px\)[\s\S]*?\.score-settings-overflow-toggle\s*\{\s*display:\s*inline-flex;/);

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1950" height="1110" viewBox="0 0 1950 1110" role="img" aria-labelledby="artTitle artDesc">
 <title id="artTitle">Issue #158 GuitarDSL 双方向編集・変数 GUI 画面仕様提案</title>
-<desc id="artDesc">Issue #158。既存GUI仕様書の48px Preview再生、44px一時設定、Practiceと4小節ガイドおよびInspectorを参照した新規UI提案図。実際のVS Codeスクリーンショットではない。</desc>
+<desc id="artDesc">Issue #158。48px再生行に常設する通常・編集・練習の排他的セレクター、編集モードのPreview下端固定ドック、4つのInspector上位タブを示す新規UI提案図。Practice行と4小節ガイドは編集モードでは非表示。実際のVS Codeスクリーンショットではない。</desc>
 <rect x="0" y="0" width="1950" height="1110" rx="0" fill="#0e1520" stroke="none" stroke-width="1" opacity="1"/>
 <rect x="0" y="0" width="1950" height="56" rx="0" fill="#151d28" stroke="none" stroke-width="1" opacity="1"/>
 <line x1="0" y1="56" x2="1950" y2="56" stroke="#2c3a4d" stroke-width="1" stroke-opacity="1" />
@@ -125,10 +125,13 @@
 <text x="754.5" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">■ 停止</text>
 <line x1="802" y1="167" x2="802" y2="187" stroke="#4d6178" stroke-width="1" stroke-opacity="1" />
 <text x="820" y="181" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#d2deef" opacity="1" text-anchor="start">00:04 / 00:16</text>
-<line x1="938" y1="177" x2="1065" y2="177" stroke="#607188" stroke-width="3" stroke-opacity="1" />
-<circle cx="980" cy="177" r="6" fill="#51a5ff" stroke="none" stroke-width="1"/>
-<rect x="1080" y="159" width="110" height="35" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
-<text x="1135.0" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">Practice ON</text>
+<line x1="938" y1="177" x2="984" y2="177" stroke="#607188" stroke-width="3" stroke-opacity="1" />
+<circle cx="958" cy="177" r="6" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<rect x="990" y="159" width="200" height="35" rx="7" fill="#172334" stroke="#52677e" stroke-width="1" opacity="1" aria-label="Preview モード: 通常、編集、練習"><title>Preview モード</title></rect>
+<rect x="1056" y="160" width="66" height="33" rx="5" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1023" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="middle">通常</text>
+<text x="1089" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="700" fill="#f4f9ff" opacity="1" text-anchor="middle">編集</text>
+<text x="1156" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="middle">練習</text>
 <rect x="1198" y="159" width="115" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
 <text x="1255.5" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">再生設定 ▾</text>
 <rect x="1320" y="159" width="148" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
@@ -159,22 +162,9 @@
 <text x="1262.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">4 / 8 / 16分</text>
 <rect x="1327" y="265" width="143" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
 <text x="1398.5" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">メロディ表示 ✓</text>
-<rect x="646" y="308" width="838" height="43" rx="8" fill="#163453" stroke="#51a5ff" stroke-width="1" opacity="1"/>
-<rect x="657" y="314" width="108" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="711.0" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">表示モード</text>
-<rect x="774" y="314" width="113" height="31" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
-<text x="830.5" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">編集モード ✓</text>
-<rect x="896" y="314" width="95" height="31" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
-<text x="943.5" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">音符</text>
-<rect x="998" y="314" width="83" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1039.5" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">コード</text>
-<rect x="1088" y="314" width="83" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1129.5" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">歌詞</text>
-<rect x="1178" y="314" width="86" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1221.0" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">TAB</text>
-<rect x="1271" y="314" width="103" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1322.5" y="333.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">リズム</text>
-<text x="1388" y="336" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#3bd2b4" opacity="1" text-anchor="start">新機能</text>
+<rect x="646" y="308" width="838" height="43" rx="8" fill="#1a2a3b" stroke="#40536a" stroke-width="1" opacity="1"/>
+<circle cx="670" cy="329.5" r="5" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<text x="686" y="334" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="start">譜面を選ぶと、操作欄が画面下端の固定ドックに表示されます</text>
 <rect x="646" y="359" width="838" height="449" rx="8" fill="#fffdf8" stroke="#b5c4d3" stroke-width="1" opacity="1"/>
 <text x="669" y="389" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="20" font-weight="700" fill="#19232f" opacity="1" text-anchor="start">風のコンパス</text>
 <text x="671" y="410" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#6a7b86" opacity="1" text-anchor="start">Key: C     BPM: 120     Time: 4/4      Capo: 0</text>
@@ -430,8 +420,14 @@
 <line x1="1072" y1="666" x2="1072" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
 <line x1="1253" y1="666" x2="1253" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
 <line x1="1459" y1="666" x2="1459" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
-<rect x="702" y="757" width="745" height="34" rx="6" fill="#e9f5f3" stroke="none" stroke-width="1" opacity="1"/>
-<text x="717" y="780" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="580" fill="#287568" opacity="1" text-anchor="start">選択した音符・コード・TAB はソース位置に結び付けて最小編集 → 1回の Undo</text>
+<rect x="646" y="751" width="838" height="58" rx="8" fill="#e9f5f3" stroke="#54a99a" stroke-width="1" opacity="1"/>
+<text x="661" y="773" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#287568" opacity="1" text-anchor="start">固定編集ドック · 選択: mel c4/4</text>
+<rect x="661" y="780" width="112" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="717" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">音高 − / ＋</text>
+<rect x="781" y="780" width="112" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="837" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">音価 長く / 短く</text>
+<rect x="901" y="780" width="115" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="958.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">値を編集</text>
+<rect x="1024" y="780" width="105" height="22" rx="5" fill="#1d7a60" stroke="#288d70" stroke-width="1"/><text x="1076.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="650" fill="#f7fbff" text-anchor="middle">適用</text>
+<rect x="1137" y="780" width="105" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="1189.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">挿入 / 削除</text>
+<text x="1254" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#287568" text-anchor="start">ソース位置を維持 · 1 Undo</text>
 <rect x="646" y="817" width="838" height="254" rx="9" fill="#172535" stroke="#3b4d64" stroke-width="1" opacity="1"/>
 <text x="667" y="844" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="17" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">4小節 Practice ガイド</text>
 <text x="952" y="844" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">コンパクト  ·  4小節固定  ·  詳細グリッドに切替可</text>
@@ -569,12 +565,14 @@
 <rect x="1522" y="72" width="408" height="69" rx="11" fill="#202d3d" stroke="none" stroke-width="1" opacity="1"/>
 <text x="1544" y="108" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="21" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">GuitarDSL Inspector</text>
 <text x="1544" y="131" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">設定・候補・変数を共通サイドバーに統合</text>
-<rect x="1541" y="153" width="107" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1594.5" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">進行提案</text>
-<rect x="1656" y="153" width="106" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
-<text x="1709.0" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">楽譜設定</text>
-<rect x="1770" y="153" width="143" height="37" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
-<text x="1841.5" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">変数（追加）</text>
+<rect x="1541" y="153" width="82" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1582" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">文書</text>
+<rect x="1627" y="153" width="82" height="37" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1668" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="700" fill="#f4f9ff" opacity="1" text-anchor="middle">変数</text>
+<rect x="1713" y="153" width="96" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1761" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">楽譜設定</text>
+<rect x="1813" y="153" width="100" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1863" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">コード進行</text>
 <text x="1544" y="227" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">変数一覧</text>
 <rect x="1838" y="204" width="76" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
 <text x="1876.0" y="223.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">＋ 新規</text>
@@ -662,6 +660,11 @@
 <text x="1632.0" y="1061.32" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">参照箇所を表示</text>
 <rect x="1733" y="1040" width="182" height="34" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
 <text x="1824.0" y="1061.32" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">削除（未使用時）</text>
+<rect x="646" y="254" width="838" height="61" rx="4" fill="#151e2a" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="646" y="834" width="838" height="247" rx="8" fill="#151e2a" stroke="#334256" stroke-width="1" opacity="1"/>
+<text x="686" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">編集モードではPractice操作行とガイドを表示しない</text>
+<text x="686" y="914" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="450" fill="#b4c6da" opacity="1" text-anchor="start">練習へ切り替えると、編集ドックとhit-areaを閉じ、42 px操作行と4小節ガイドを表示します。</text>
+<text x="686" y="944" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="450" fill="#91a3ba" opacity="1" text-anchor="start">通常 / 編集 / 練習は同時に1つだけ選択されます。</text>
 <rect x="0" y="1090" width="1950" height="20" rx="0" fill="#0d141d" stroke="none" stroke-width="1" opacity="1"/>
-<text x="27" y="1104" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#9ab1c5" opacity="1" text-anchor="start">既存: Preview 再生・一時設定・4小節Practiceガイド・Inspector 基盤   /   追加提案: Preview 編集モード・GUI直接編集・変数一覧/編集</text>
+<text x="27" y="1104" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#9ab1c5" opacity="1" text-anchor="start">既存: Preview 再生・一時設定・Practiceガイド・Inspector 基盤   /   追加提案: 排他的なPreviewモード・GUI直接編集・変数一覧/編集</text>
 </svg>

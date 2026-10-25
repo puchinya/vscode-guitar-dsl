@@ -24,14 +24,40 @@ describe('renderInspectorHtml', () => {
     assert.doesNotMatch(html, /<script[^>]+src=|https?:\/\//i);
   });
 
-  it('renders document status without putting its URI or version into the Webview', () => {
+  it('keeps document identity machine-readable without showing it in document status', () => {
     const uri = 'file:///private/song.guitardsl';
     const html = renderInspectorHtml('en', { kind: 'document', uri, version: 9 }, 'vscode-webview://unit', 'nonce-9');
 
     assert.match(html, /data-context-kind="document"/);
+    assert.match(html, /data-document-uri="file:\/\/\/private\/song\.guitardsl"/);
+    assert.match(html, /data-document-version="9"/);
     assert.match(html, /Showing the active GuitarDSL document context/);
     assert.match(html, /This foundation is read-only/);
-    assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
+    const documentPanel = html.match(/<div id="document-state"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+    assert.doesNotMatch(documentPanel, /private\/song\.guitardsl|version.{0,10}9/i);
+  });
+
+  it('renders the shared top-level tabs with session identity and keyboard activation', () => {
+    const context = {
+      kind: 'variables',
+      uri: 'file:///song.guitardsl', version: 12, sessionGeneration: 4, revision: 0, draftRevision: 0,
+      definitions: []
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'top-tabs', 7);
+
+    assert.match(html, /id="inspector-context-tabs" role="tablist"/);
+    for (const tab of ['document', 'variables', 'settings', 'progression']) {
+      assert.match(html, new RegExp(`id="inspector-tab-${tab}"[^>]*role="tab"[^>]*aria-controls="${tab}-state"`));
+    }
+    assert.match(html, /id="inspector-tab-variables"[^>]*aria-selected="true"/);
+    assert.match(html, /id="inspector-tab-progression"[^>]* disabled/,
+      'progression stays disabled unless the host has a valid suggestion session');
+    assert.match(html, /data-document-uri="file:\/\/\/song\.guitardsl" data-document-version="12" data-session-generation="4"/);
+    assert.match(html, /command: "inspectorSelectTab", tab, generation: lastGeneration, documentUri: uri, documentVersion: version/);
+    assert.match(html, /event\.key === "ArrowRight"/);
+    assert.match(html, /event\.key === "Home"/);
+    assert.match(html, /event\.key === "End"/);
+    assert.match(html, /event\.key === "Enter" \|\| event\.key === " "/);
   });
 
   it('shows direct and indirect let references and disables invalid definition edits', () => {
@@ -192,7 +218,8 @@ describe('renderInspectorHtml', () => {
         getElementById: (id: string) => {
           if (!elements.has(id)) elements.set(id, makeElement());
           return elements.get(id);
-        }
+        },
+        querySelectorAll: () => []
       },
       window: {
         addEventListener: (type: string, listener: (event: { data: unknown }) => void) => {

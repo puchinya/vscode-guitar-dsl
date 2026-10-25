@@ -44,7 +44,7 @@ function getPreviewProbe(): PreviewProbe {
 
 async function readPreviewPracticeEnabled(): Promise<boolean> {
   const json = await evaluatePreviewWebview<string>(`JSON.stringify({
-    pressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+    pressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
     enabled: document.body.classList.contains('has-practice-row')
   })`);
   const state = JSON.parse(json) as { pressed?: string | null; enabled?: boolean };

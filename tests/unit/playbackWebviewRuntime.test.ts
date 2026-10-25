@@ -85,7 +85,9 @@ const REPEATED_SECTION_SCORE = [
 ].join('\n');
 
 function createRuntime(score = PLAYABLE_SCORE, state?: unknown): FakePlaybackWebview {
-  return createFakePlaybackWebview(compileGuitarDslToHtml(score), state);
+  return createFakePlaybackWebview(compileGuitarDslToHtml(score, {
+    documentUri: 'file:///fake-preview.guitardsl', documentVersion: 1, previewGeneration: 1
+  }), state);
 }
 
 function totalStopCalls(runtime: FakePlaybackWebview): number {
@@ -503,7 +505,7 @@ describe('Preview production Webview runtime', () => {
 
   it('T09 Practice speed is clamped, persisted, and host commands use the same controls', async () => {
     const runtime = createRuntime();
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     assert.strictEqual(runtime.element('practice-speed').disabled, false);
     assert.strictEqual(runtime.element('practice-speed').value, '100');
     runtime.element('practice-speed').value = '75';
@@ -520,8 +522,34 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.intervalCount, 1, 'speed changes keep one scheduler');
 
     const restored = createRuntime(PLAYABLE_SCORE, runtime.savedWebviewState);
-    assert.strictEqual(restored.element('practice-toggle').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(restored.element('preview-mode-practice').getAttribute('aria-pressed'), 'false',
+      'the transient UI mode returns to Normal when a new Preview Webview is built');
     assert.strictEqual(restored.element('practice-speed').value, '80');
+  });
+
+  it('uses one exclusive, transient mode selector for all six mode transitions', async () => {
+    const runtime = createRuntime();
+    const transitions = [
+      ['preview-mode-edit', 'edit'],
+      ['preview-mode-practice', 'practice'],
+      ['preview-mode-normal', 'normal'],
+      ['preview-mode-practice', 'practice'],
+      ['preview-mode-edit', 'edit'],
+      ['preview-mode-normal', 'normal']
+    ] as const;
+    for (const [control, expected] of transitions) {
+      await runtime.click(control);
+      assert.strictEqual(runtime.body.dataset.previewUiMode, expected, `${control} selects ${expected}`);
+      assert.deepStrictEqual(
+        ['normal', 'edit', 'practice'].map(mode => runtime.element(`preview-mode-${mode}`).getAttribute('aria-pressed')),
+        ['normal', 'edit', 'practice'].map(mode => String(mode === expected)),
+        `${expected} is the only selected mode`
+      );
+      assert.strictEqual(runtime.body.classList.contains('has-practice-row'), expected === 'practice');
+      assert.strictEqual(runtime.element('preview-edit-row').hidden, expected !== 'edit');
+    }
+    assert.strictEqual(runtime.postedMessages.filter(message => message.command === 'previewUiModeRequest').length, 6,
+      'each user transition is routed through the Host mode authority');
   });
 
   it('T09a Practice speed scales score time and note duration at 50%, 100%, and 150%', async () => {
@@ -532,7 +560,7 @@ describe('Preview production Webview runtime', () => {
 
     for (const speed of [50, 100, 150]) {
       const runtime = createRuntime();
-      await runtime.click('practice-toggle');
+      await runtime.click('preview-mode-practice');
       runtime.element('practice-speed').value = String(speed);
       await runtime.change('practice-speed');
       await runtime.click('btn-play');
@@ -550,7 +578,7 @@ describe('Preview production Webview runtime', () => {
 
   it('T10 A/B loop uses a half-open interval, rejects B at or before A, and wraps playback', async () => {
     const runtime = createRuntime();
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', 0.5);
     await runtime.change('playback-seek');
     await runtime.click('practice-set-a');
@@ -612,7 +640,7 @@ describe('Preview production Webview runtime', () => {
       for (const loopMode of ['measure', 'ab'] as const) {
         for (const speed of [50, 100, 200]) {
           const runtime = createRuntime(fixture.score);
-          await runtime.click('practice-toggle');
+          await runtime.click('preview-mode-practice');
 
           if (loopMode === 'measure') {
             runtime.setRange('playback-seek', 0);
@@ -683,7 +711,7 @@ describe('Preview production Webview runtime', () => {
       '| G | 4 4 4 4 |'
     ].join('\n');
     const runtime = createRuntime(tied);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', 2);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'measure';
@@ -709,7 +737,7 @@ describe('Preview production Webview runtime', () => {
       { score: SECTION_SCORE, mode: 'section', outside: 4.1 }
     ]) {
       const runtime = createRuntime(selection.score);
-      await runtime.click('practice-toggle');
+      await runtime.click('preview-mode-practice');
       runtime.setRange('playback-seek', 0.25);
       await runtime.change('playback-seek');
       await runtime.click('practice-set-a');
@@ -730,7 +758,7 @@ describe('Preview production Webview runtime', () => {
     }
 
     const invalidSection = createRuntime(UNNAMED_SECTION_SCORE);
-    await invalidSection.click('practice-toggle');
+    await invalidSection.click('preview-mode-practice');
     invalidSection.setRange('playback-seek', 2.1);
     await invalidSection.change('playback-seek');
     invalidSection.element('practice-loop').value = 'measure';
@@ -747,7 +775,7 @@ describe('Preview production Webview runtime', () => {
   it('T10c Off, Clear, and Practice OFF clear all transient A/B points', async () => {
     for (const clearAction of ['off', 'clear', 'practice-off'] as const) {
       const runtime = createRuntime(SECTION_SCORE);
-      await runtime.click('practice-toggle');
+      await runtime.click('preview-mode-practice');
       runtime.setRange('playback-seek', 0.25);
       await runtime.change('playback-seek');
       await runtime.click('practice-set-a');
@@ -762,8 +790,7 @@ describe('Preview production Webview runtime', () => {
       } else if (clearAction === 'clear') {
         await runtime.click('practice-clear-loop');
       } else {
-        await runtime.click('practice-toggle');
-        await runtime.click('practice-toggle');
+        await runtime.click('preview-mode-normal');
       }
       runtime.element('practice-loop').value = 'ab';
       await runtime.change('practice-loop');
@@ -780,7 +807,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(repeated.length, 2);
     assert.deepStrictEqual(repeated.map((occurrence: any) => occurrence.occurrenceIndex), [0, 1]);
 
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', repeated[1].startSeconds + 0.25);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'measure';
@@ -792,7 +819,7 @@ describe('Preview production Webview runtime', () => {
 
   it('S121-02 selecting Section from its later measure spans the full written section', async () => {
     const runtime = createRuntime(LATER_SECTION_SCORE);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', 2.1);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'section';
@@ -816,7 +843,7 @@ describe('Preview production Webview runtime', () => {
       ['Verse', 'Verse', 'Verse', 'Verse', 'Chorus']);
     assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.startSeconds),
       [0, 2, 4, 6, 8]);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', 6.1);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'section';
@@ -835,7 +862,7 @@ describe('Preview production Webview runtime', () => {
     const runtime = createRuntime(SECTION_SCORE);
     assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
       ['Verse', 'Verse', 'Chorus', 'Chorus', 'Verse']);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setRange('playback-seek', 8.1);
     await runtime.change('playback-seek');
     runtime.element('practice-loop').value = 'section';
@@ -851,7 +878,7 @@ describe('Preview production Webview runtime', () => {
     const runtime = createRuntime(SECTION_SCORE);
     assert.deepStrictEqual(runtime.playbackData.occurrences.map((occurrence: any) => occurrence.sectionName),
       ['Verse', 'Verse', 'Chorus', 'Chorus', 'Verse']);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.element('practice-loop').value = 'section';
     await runtime.change('practice-loop');
     assert.strictEqual(runtime.element('practice-loop').value, 'section');
@@ -863,7 +890,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(Number(runtime.element('playback-seek').value), 0, 'seeking into Chorus returns to the first Verse start');
 
     const unnamed = createRuntime();
-    await unnamed.click('practice-toggle');
+    await unnamed.click('preview-mode-practice');
     unnamed.element('practice-loop').value = 'section';
     await unnamed.change('practice-loop');
     assert.strictEqual(unnamed.element('practice-loop').value, 'off');
@@ -872,7 +899,7 @@ describe('Preview production Webview runtime', () => {
 
   it('T12 playback highlight, playhead, Follow scrolling, and manual navigation stay in the Preview', async () => {
     const runtime = createRuntime();
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setAnchorRectTop(900);
     await runtime.click('btn-play');
     assert.ok(runtime.scoreOverlayElementCount() >= 2, 'playback adds a highlight and playhead to the score SVG');
@@ -919,7 +946,7 @@ describe('Preview production Webview runtime', () => {
 
   it('T12b Follow stores the bottom-clamped target and manual scrolling still disables it', async () => {
     const runtime = createRuntime();
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setScrollHeight(1000);
     runtime.setAnchorRectTop(900);
     await runtime.click('btn-play');
@@ -936,7 +963,7 @@ describe('Preview production Webview runtime', () => {
 
   it('T13 Practice count-in runs after a non-zero seek and holds the selected score position', async () => {
     const runtime = createRuntime(PICKUP_SCORE);
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.setChecked('count-in-toggle', true);
     await runtime.change('count-in-toggle');
     runtime.setRange('playback-seek', 0.25);
@@ -952,15 +979,15 @@ describe('Preview production Webview runtime', () => {
   it('T14 playback-ineligible scores disable Practice and report a localized reason for host actions', async () => {
     const runtime = createRuntime('|: C |');
     assert.strictEqual(runtime.playbackData.available, false);
-    assert.strictEqual(runtime.element('practice-toggle').disabled, true);
+    assert.strictEqual(runtime.element('preview-mode-practice').disabled, true);
     await runtime.sendPlaybackAction('practiceFaster');
     assert.ok(runtime.element('playback-error').textContent.length > 0);
     assert.strictEqual(runtime.audioContextCount, 0);
   });
 
-  it('T15 Practice OFF clears A/B, uses normal speed, and rebuild restores preferences without transient loop state', async () => {
+  it('T15 Normal mode clears A/B, uses normal speed, and rebuild restores preferences without transient mode state', async () => {
     const runtime = createRuntime();
-    await runtime.click('practice-toggle');
+    await runtime.click('preview-mode-practice');
     runtime.element('practice-speed').value = '75';
     await runtime.change('practice-speed');
     runtime.setRange('playback-seek', 0.25);
@@ -972,18 +999,19 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.element('practice-loop').value, 'ab');
 
     const rebuilt = createRuntime(PLAYABLE_SCORE, runtime.savedWebviewState);
-    assert.strictEqual(rebuilt.element('practice-toggle').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(rebuilt.element('preview-mode-practice').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(rebuilt.element('preview-mode-normal').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(rebuilt.element('practice-speed').value, '75');
     assert.strictEqual(rebuilt.element('practice-loop').value, 'off');
     assert.strictEqual(Number(rebuilt.element('playback-seek').value), 0);
     assert.strictEqual(rebuilt.scoreOverlayElementCount(), 0);
     assert.strictEqual(rebuilt.intervalCount, 0);
 
-    await runtime.click('practice-toggle');
-    assert.strictEqual(runtime.element('practice-toggle').getAttribute('aria-pressed'), 'false');
+    await runtime.click('preview-mode-normal');
+    assert.strictEqual(runtime.element('preview-mode-practice').getAttribute('aria-pressed'), 'false');
     assert.strictEqual(runtime.element('practice-loop').value, 'off');
-    const savedState = runtime.savedWebviewState as { practiceEnabled: boolean; practiceSpeed: number };
-    assert.strictEqual(savedState.practiceEnabled, false);
+    const savedState = runtime.savedWebviewState as { practiceSpeed: number };
+    assert.ok(!('practiceEnabled' in (runtime.savedWebviewState as Record<string, unknown>)), 'mode is not persisted');
     assert.strictEqual(savedState.practiceSpeed, 75);
 
     runtime.setRange('playback-seek', 0);

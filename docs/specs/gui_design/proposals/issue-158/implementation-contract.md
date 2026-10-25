@@ -160,6 +160,11 @@ git diff --check
 - [ ] 承認ベクターSVGと実Webview画像の差分・観点・限界が Issue に添付/記録。
 - [ ] `verify_final`＋追加検証 PASS、未検証環境列挙、レビュー指摘自己解消済み。
 - [ ] commit、push、`Closes #158` の PR を作成し、ラベル/Issue/PR を review stateへ遷移済み。
+- [ ] **C016 / UX1:** Preview 編集 OFF でも48px再生行に ON/OFF トグルが常時見え、`aria-pressed`、accessible name、focus が日英・狭幅で保たれる。公開コマンドと Webview 操作は同じ Host 遷移関数を通り、URI/version/generation と重複遷移を検証する。非恒等カポ/Beginner変換中の ON は理由付きで拒否し、文書・一時設定・Inspector 草稿を変えない。
+- [ ] **C017 / UX2:** Preview 編集フォームは選択依存の固定下端ドックにあり、OFF は非表示・余白なし、ON 未選択はコンパクト案内、選択時は対応する操作を表示する。Practice ガイド直上に置き、421/600/840/1100px と低い高さで固定行や譜面を覆わず、選択後のHTML更新でもスクロール位置を維持する。削除・別文書・古い世代では選択を解除する。PDF/通常表示SVGへ編集UIを含めない。
+- [ ] **C018 / UX3:** Preview 編集 ON 成功時だけ、Preview 対象の TextDocument を持つ既存 Inspector を表示して変数を初期選択する。利用者のタブ選択を描画のたびに上書きせず、手動 hide に対する再表示ループも作らない。settings 草稿の破棄確認と progression audition の Stop ACK を ON 前に完了し、Cancel/失敗/stale なら編集モード OFF・Inspector状態維持・0編集。OFF は Inspector を閉じない。
+- [ ] **C019 / UX4:** 既存の単一 Inspector 上部に「文書/変数/楽譜設定/コード進行」の ARIA tablist を置き、既存の設定サブタブを維持する。各切替は Host の URI/version/generation 検証と既存 feature owner を使う。progression は有効sessionがないと無効、タブ移動時は Stop/lease release を待ち、候補保持・自動再試聴なし。draft の破棄確認、Cancel、矢印/Home/End/Enter/Space/focus、日英/light/dark/狭幅を検証する。
+- [ ] **C020 / Acceptance gate:** PR本文の既存 Issue #155 421px scroll E2E failure は Required Check の成功で置き換えない。最終 `npm test` が PASS するか、独立Issueへの切り分けと受入/免除判断を明記して承認されるまで Issue #158 を完了扱いにしない。
 
 ## 10. Completion Report（実装時に埋める）
 
@@ -171,5 +176,52 @@ git diff --check
 - **Windows/Linux、VoiceOver/NVDA、その他未実施条件:**
 - **契約逸脱・新規発見事項（分類 A:契約違反 / B:曖昧 / C:新規要件 / D:任意改善）:**
 - **残存障害、ブロッカー、残作業:**
+
+## 11. Supplemental UX Requirements — PR #159 review comment 6397980472
+
+この追補は既存の承認済み §§1–10 を保持し、2026-10-25 の UX 再レビューで確定した追加要件を上書きなしで加える。既存の singleton Preview/Inspector、TextDocument 正本、parser-owned source binding、単一 WorkspaceEdit/Undo、AudioContext/lease 所有は維持する。
+
+### UX1 — Preview の直接編集モード切替
+
+- Preview の48px再生行 `.toolbar-container > .toolbar-actions` に、OFF時も常時表示する編集 ON/OFF トグルを置く。押下状態は `aria-pressed`、accessible name、キーボード focus で表し、狭幅では視覚表現だけをコンパクト化する。`#preview-edit-row` 内に重複トグルを残さない。
+- Webview の `previewEditModeToggle(enabled: boolean)` と公開 `guitardsl.togglePreviewEditMode` は同じ Host-owned transition を呼ぶ。Host は document URI/version/Preview generation を検証し、stale intent を拒否して重複遷移を冪等にする。
+- 非恒等の一時 Capo/Beginner 変換中に ON を拒否し、理由を表示する。文書、一時設定、Inspector draft を変更しない。OFF では Preview の未適用選択/draft を破棄し、既存 Inspector を閉じない。新規 Webview、永続設定、AudioContextを作らない。
+
+### UX2 — Preview 固定編集ドック
+
+- 既存編集フォームを Preview 下端の固定・選択依存ドックへ移す。OFF時は非表示で余白0、ON未選択時は短い案内、選択時は該当する編集・Apply・Insert/Delete・statusを表示する。別Editor/Inspectorへ編集フォームを移さない。
+- Practice ON では固定4小節ガイドの直上に置き、`--practice-guide-panel-height` と `--preview-edit-dock-height` を合成して本文下余白を確保する。48/44/42px行、ガイド、譜面を覆わない。421/600/840/1100 CSS px と低い viewport 高さでも末尾の譜面とドックを操作できる。
+- SVG選択後のHTML更新はスクロール位置を維持する。Host は現在の URI/version/generation/source binding に合う場合だけ選択・focus・scrollを復元する。対象削除、別文書、stale generation では選択を解除する。PDFと通常表示モードのSVGへ編集UIを出さない。
+
+### UX3 — 編集モードと Inspector の初期表示
+
+- OFF→ONが成功したとき、Previewが保持する GuitarDSL TextDocument を使い既存の単一 Inspector を表示し、変数コンテキストを初期選択する。アクティブな無関係エディタへフォールバックしない。
+- 利用者が Inspector を別タブへ移した後、Preview更新で変数タブへ戻さない。利用者の手動 hide 後に再表示を繰り返さず、次の明示的な OFF→ON で表示する。
+- settings の未適用草稿には破棄確認を行い、progression audition 中は Stop ACK/lease 解放を待つ。Cancel、Stop失敗、URI/version失効時は編集モードOFF・古いInspector状態維持・ソース0編集とする。
+
+### UX4 — Inspector 上位タブ
+
+- 単一 Inspector の最上段に「文書 | 変数 | 楽譜設定 | コード進行」の `role=tablist` を置き、既存の `#settings-tabs` は楽譜設定内のサブタブとして維持する。上位タブは presentation/navigation で、状態所有者を複製しない。
+- `inspectorSelectTab` は Host で generation/URI/version を検証し、既存の `showDocument` / `setVariablesContext` / `ScoreSettingsInspectorController.open` / 有効な `ProgressionAssistant` session再表示に接続する。progression sessionが無い時は無効にし、クリックで候補生成を開始しない。
+- progression試聴中のタブ切替は Stop ACK と lease 解放後にのみ確定する。候補sessionは保持し、再選択時に自動再試聴しない。変数/設定の未適用草稿は明示確認なしに破棄せず、Cancelなら現在タブを維持し、許可時だけ既存 cancel/rollback と Preview snapshot 復元を使う。
+- ARIA Tabs の矢印/Home/End、Enter/Space、focus、`aria-selected`/`aria-controls`、日本語/英語、light/dark、狭幅を検証する。
+
+### UX acceptance tests (Setup → Action → Expected)
+
+1. OFFでPreview toolbar toggleが可視。押下と公開コマンドの双方でON/OFFし、Host modeと`aria-pressed`が一致する。stale URI/version/generationは拒否され、重複操作は安全に冪等となる。
+2. Practice OFF/ONで Preview を下方へスクロールし、五線譜/TAB/コード/リズム/歌詞を選択する。固定ドックで編集し、1 Undoで戻り、元スクロール位置が保たれる。
+3. Practice OFF/ON × 421/600/840/1100px × 低い viewport高さで、再生行/設定行/ドック/ガイドが重ならず末尾譜面へ到達できる。
+4. 編集ONでInspectorが対象文書の変数を示す。手動で別タブ選択後にPreview再描画しても選択は維持され、手動hideで再表示ループが起きず、次回ONで開く。非DSL文書や別文書を誤表示しない。
+5. 変数/settings draft中のタブ切替で、Cancelなら元状態、破棄許可なら既存cancel/rollback・Preview snapshot復元となる。
+6. コード進行の候補試聴中にタブ切替する。Stop ACK false/timeoutでは切替せずleaseを維持し、成功時は候補を保持して自動再試聴なしで再表示する。
+7. stale intent、連打、dispose、keyboard/ARIA、日英・theme・viewport、および既存TAB/小節越し継承/歌詞回帰を再実行する。
+
+## 12. Supplemental Document Impact
+
+- **Specification:** `docs/specs/extension.md` §§3.26, 4.2, 4.9, 4D; `docs/specs/gui_design.md` §§2–3; this Issue 158 contract.
+- **Design:** `docs/design/preview-rendering-and-export.md`; `docs/design/vscode-editor-experience.md`; `docs/design/score-editing.md`.
+- **Status:** `docs/status/implementation-status.md`.
+- **Help:** Review `docs/help/` and regenerate/validate its source digest because Preview and Inspector user-facing behavior changes.
+- **Reviewer Checklist:** retain C001–C015 and add C016–C020 above.
 
 実装コードだけ、テストだけ、pushだけでは**完了扱いしない**。PR作成・review状態への移行が失敗した場合、正確な手段／エラー／認証・権限上の障害を記して `BLOCKED` と報告する。

@@ -7,7 +7,8 @@ export function renderInspectorHtml(
   cspSource: string,
   nonce: string,
   generation = 0,
-  settingsScriptUri = ''
+  settingsScriptUri = '',
+  progressionTabAvailable = context.kind === 'progression'
 ): string {
   const messages = getMessages(locale);
   const status = context.kind === 'document' ? messages.inspectorDocumentStatus
@@ -21,8 +22,18 @@ export function renderInspectorHtml(
   const safeNonce = escapeHtml(nonce);
   const safeSettingsScriptUri = escapeHtml(settingsScriptUri);
   const safeGeneration = Number.isSafeInteger(generation) && generation >= 0 ? generation : 0;
+  const contextUri = context.kind === 'empty' ? '' : context.uri;
+  const contextVersion = context.kind === 'empty' ? '' : String(context.version);
+  const contextSessionGeneration = context.kind === 'empty' || context.kind === 'document' ? '' : String(context.sessionGeneration);
+  const activeTab = context.kind === 'settings' ? 'settings' : context.kind === 'variables' ? 'variables'
+    : context.kind === 'progression' ? 'progression' : 'document';
   const labels = {
     heading: messages.inspectorHeading,
+    inspectorTablistLabel: messages.inspectorTablistLabel,
+    inspectorTabDocument: messages.inspectorTabDocument,
+    inspectorTabVariables: messages.inspectorTabVariables,
+    inspectorTabSettings: messages.inspectorTabSettings,
+    inspectorTabProgression: messages.inspectorTabProgression,
     progressionTitle: messages.uiProgressionTitle,
     bars: messages.uiProgressionBars,
     lengthFour: messages.progressionLengthFour,
@@ -104,6 +115,10 @@ export function renderInspectorHtml(
     '    body { margin: 0; background: var(--vscode-sideBar-background); color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.45; }',
     '    main { width: min(100%, 46rem); margin: 0 auto; padding: clamp(12px, 4vw, 22px); }',
     '    h1 { margin: 0 0 12px; font-size: 1.15em; font-weight: 600; }',
+    '    .inspector-context-tabs { display: flex; gap: 4px; overflow-x: auto; margin: 0 0 12px; border-bottom: 1px solid var(--vscode-panel-border); scrollbar-width: thin; }',
+    '    .inspector-context-tabs button { flex: 0 0 auto; min-width: max-content; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--vscode-foreground); }',
+    '    .inspector-context-tabs button[aria-selected="true"] { border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }',
+    '    .inspector-context-tabs button:disabled { opacity: .5; }',
     '    h2 { margin: 0 0 8px; font-size: 1em; font-weight: 600; }',
     '    .status { margin: 0 0 8px; padding-left: 10px; border-left: 2px solid var(--vscode-focusBorder); font-weight: 600; }',
     '    .description { margin: 0; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }',
@@ -174,13 +189,19 @@ export function renderInspectorHtml(
     '  </style>',
     '</head>',
     '<body>',
-    '  <main id="inspector-state" data-generation="' + safeGeneration + '" data-context-kind="' + context.kind + '" data-audio-state="idle" aria-label="' + escapeHtml(messages.inspectorRegionLabel) + '" aria-labelledby="inspector-heading">',
+    '  <main id="inspector-state" data-generation="' + safeGeneration + '" data-context-kind="' + context.kind + '" data-document-uri="' + escapeHtml(contextUri) + '" data-document-version="' + escapeHtml(contextVersion) + '" data-session-generation="' + escapeHtml(contextSessionGeneration) + '" data-progression-tab-available="' + String(progressionTabAvailable) + '" data-audio-state="idle" aria-label="' + escapeHtml(messages.inspectorRegionLabel) + '" aria-labelledby="inspector-heading">',
     '    <h1 id="inspector-heading">' + escapeHtml(messages.inspectorHeading) + '</h1>',
-    '    <div id="document-state">',
+    '    <div class="inspector-context-tabs" id="inspector-context-tabs" role="tablist" aria-label="' + escapeHtml(messages.inspectorTablistLabel) + '">',
+    '      <button id="inspector-tab-document" type="button" role="tab" data-inspector-tab="document" aria-controls="document-state" aria-selected="' + String(activeTab === 'document') + '" tabindex="' + (activeTab === 'document' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '>' + escapeHtml(messages.inspectorTabDocument) + '</button>',
+    '      <button id="inspector-tab-variables" type="button" role="tab" data-inspector-tab="variables" aria-controls="variables-state" aria-selected="' + String(activeTab === 'variables') + '" tabindex="' + (activeTab === 'variables' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '>' + escapeHtml(messages.inspectorTabVariables) + '</button>',
+    '      <button id="inspector-tab-settings" type="button" role="tab" data-inspector-tab="settings" aria-controls="settings-state" aria-selected="' + String(activeTab === 'settings') + '" tabindex="' + (activeTab === 'settings' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '>' + escapeHtml(messages.inspectorTabSettings) + '</button>',
+    '      <button id="inspector-tab-progression" type="button" role="tab" data-inspector-tab="progression" aria-controls="progression-state" aria-selected="' + String(activeTab === 'progression') + '" tabindex="' + (activeTab === 'progression' ? '0' : '-1') + '"' + (!progressionTabAvailable ? ' disabled' : '') + '>' + escapeHtml(messages.inspectorTabProgression) + '</button>',
+    '    </div>',
+    '    <div id="document-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-document">',
     '      <p id="inspector-status" class="status" role="status" aria-live="polite">' + escapeHtml(status) + '</p>',
     '      <p id="inspector-description" class="description">' + escapeHtml(description) + '</p>',
     '    </div>',
-    '    <section id="settings-state" aria-labelledby="settings-heading" hidden>',
+    '    <section id="settings-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-settings" hidden>',
     '      <h2 id="settings-heading" tabindex="-1"></h2>',
     '      <div id="settings-tabs" class="settings-tabs" role="tablist"></div>',
     '      <div id="settings-content"></div>',
@@ -189,7 +210,7 @@ export function renderInspectorHtml(
     '        <button id="settings-cancel" type="button" data-inspector-control="action" data-inspector-key="close"></button>',
     '      </div>',
     '    </section>',
-    '    <section id="variables-state" aria-labelledby="variables-heading" hidden>',
+    '    <section id="variables-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-variables" hidden>',
     '      <h2 id="variables-heading"></h2>',
     '      <p id="variables-description" class="description"></p>',
     '      <ul id="variables-list" class="variable-list" aria-label="' + escapeHtml(messages.inspectorVariablesTitle) + '"></ul>',
@@ -216,7 +237,7 @@ export function renderInspectorHtml(
     '        <p id="variables-error" class="error" role="alert" hidden></p>',
     '      </div>',
     '    </section>',
-    '    <section id="progression-state" aria-labelledby="progression-heading" hidden>',
+    '    <section id="progression-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-progression" hidden>',
     '      <h2 id="progression-heading"></h2>',
     '      <p id="progression-description" class="description"></p>',
     '      <fieldset><legend id="bars-legend"></legend><div class="choice-row" id="bars-options"></div></fieldset>',
@@ -290,6 +311,13 @@ export function renderInspectorHtml(
     '      const activeNodes = new Set();',
     '      let completionTimer = undefined;',
     '      const vscodeApi = acquireVsCodeApi();',
+    '      const inspectorTabs = Array.from(document.querySelectorAll("[data-inspector-tab]"));',
+    '      const inspectorTablist = document.getElementById("inspector-context-tabs");',
+    '      const postInspectorTab = tab => { const uri = root.dataset.documentUri || ""; const version = Number(root.dataset.documentVersion); if (!uri || !Number.isSafeInteger(version)) return; const sessionGeneration = Number(root.dataset.sessionGeneration); vscodeApi.postMessage({ command: "inspectorSelectTab", tab, generation: lastGeneration, documentUri: uri, documentVersion: version, ...(Number.isSafeInteger(sessionGeneration) && sessionGeneration > 0 ? { sessionGeneration } : {}) }); };',
+    '      const syncInspectorTabs = kind => { const selected = kind === "settings" ? "settings" : kind === "variables" ? "variables" : kind === "progression" ? "progression" : "document"; const hasDocument = !!root.dataset.documentUri && Number.isSafeInteger(Number(root.dataset.documentVersion)); const focused = inspectorTabs.includes(document.activeElement) ? document.activeElement : null; for (const tab of inspectorTabs) { const name = tab.dataset.inspectorTab; tab.setAttribute("aria-selected", String(name === selected)); tab.tabIndex = focused ? (tab === focused ? 0 : -1) : (name === selected ? 0 : -1); tab.disabled = !hasDocument || (name === "progression" && root.dataset.progressionTabAvailable !== "true"); } };',
+    '      inspectorTabs.forEach(tab => tab.addEventListener("click", () => { if (!tab.disabled) postInspectorTab(tab.dataset.inspectorTab); }));',
+    '      inspectorTabs.forEach(tab => tab.addEventListener("focus", () => { inspectorTabs.forEach(other => { other.tabIndex = other === tab ? 0 : -1; }); }));',
+    '      inspectorTablist.addEventListener("keydown", event => { const enabled = inspectorTabs.filter(tab => !tab.disabled); if (!enabled.length) return; const foundIndex = enabled.indexOf(document.activeElement); const index = foundIndex >= 0 ? foundIndex : Math.max(0, enabled.findIndex(tab => tab.getAttribute("aria-selected") === "true")); let next = null; if (event.key === "ArrowRight") next = enabled[(index + 1) % enabled.length]; else if (event.key === "ArrowLeft") next = enabled[(index - 1 + enabled.length) % enabled.length]; else if (event.key === "Home") next = enabled[0]; else if (event.key === "End") next = enabled[enabled.length - 1]; else if ((event.key === "Enter" || event.key === " ") && document.activeElement?.matches("[data-inspector-tab]")) { event.preventDefault(); document.activeElement.click(); return; } if (next) { event.preventDefault(); next.focus(); } });',
     '      window.guitarDslInspectorPostSettings = (command, extra = {}) => { const context = currentContext; if (!context || context.kind !== "settings") return; vscodeApi.postMessage({ ...extra, command, generation: lastGeneration, sessionUri: context.uri, sessionVersion: context.version, sessionGeneration: context.sessionGeneration, revision: context.revision, section: context.section }); };',
     '      window.guitarDslInspectorContext = currentContext;',
     '      document.getElementById("bars-legend").textContent = labels.bars;',
@@ -491,6 +519,7 @@ export function renderInspectorHtml(
     '        currentContext = context;',
     '        window.guitarDslInspectorContext = context;',
     '        root.dataset.contextKind = context.kind;',
+    '        syncInspectorTabs(context.kind);',
     '        document.getElementById("inspector-heading").textContent = labels.heading;',
     '        documentState.hidden = context.kind === "progression" || context.kind === "settings" || context.kind === "variables";',
     '        progressionState.hidden = context.kind !== "progression";',
@@ -568,6 +597,10 @@ export function renderInspectorHtml(
     '        if (!message.context || !["empty", "document", "settings", "variables", "progression"].includes(message.context.kind)) return;',
     '        lastGeneration = message.generation;',
     '        root.dataset.generation = String(message.generation);',
+    '        root.dataset.documentUri = typeof message.documentUri === "string" ? message.documentUri : "";',
+    '        root.dataset.documentVersion = Number.isSafeInteger(message.documentVersion) ? String(message.documentVersion) : "";',
+    '        root.dataset.sessionGeneration = Number.isSafeInteger(message.sessionGeneration) ? String(message.sessionGeneration) : "";',
+    '        root.dataset.progressionTabAvailable = String(message.progressionTabAvailable === true);',
     '        render(message.context, message.status, message.description);',
     '      });',
     '      window.addEventListener("pagehide", () => stopLocalAudio(labels.audioStopped));',

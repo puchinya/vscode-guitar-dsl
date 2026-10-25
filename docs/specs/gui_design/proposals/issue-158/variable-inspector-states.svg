@@ -3,18 +3,20 @@
 <desc id="desc">既存共通 Inspector 内に新設する変数一覧、定義編集、参照上の全体変更・この箇所だけの編集分岐を定義する編集可能なベクター SVG。新規設計図であり動作中の画面を撮影したものではない。</desc>
 <rect x="0" y="0" width="1600" height="1110" rx="0" fill="#0e1520" stroke="none" stroke-width="1"/>
 <text x="35" y="48" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="27" font-weight="700" fill="#e6edf8" text-anchor="start">Issue #158  /  Inspector 変数管理・編集フロー</text>
-<text x="36" y="77" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="16" font-weight="400" fill="#92a4ba" text-anchor="start">既存: 単一 Inspector WebviewView  •  追加: variables コンテキスト  •  UI案（現行実画面ではない）</text>
+<text x="36" y="77" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="16" font-weight="400" fill="#92a4ba" text-anchor="start">既存: 単一 Inspector WebviewView  •  上位4タブでコンテキスト切替  •  UI案（現行実画面ではない）</text>
 <rect x="26" y="106" width="494" height="900" rx="12" fill="#1b2533" stroke="#354154" stroke-width="1.2"/>
 <rect x="27" y="107" width="492" height="61" rx="11" fill="#202d3d" stroke="none" stroke-width="1"/>
 <text x="50" y="139" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="21" font-weight="700" fill="#e6edf8" text-anchor="start">1  変数一覧</text>
 <text x="50" y="159" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#92a4ba" text-anchor="start">既存のInspectorに追加。文書に紐づく let のみを表示。</text>
 <text x="49" y="206" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="17" font-weight="700" fill="#e6edf8" text-anchor="start">GuitarDSL Inspector</text>
-<rect x="48" y="225" width="130" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
-<text x="113.0" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="13" font-weight="400" fill="#e6edf8" text-anchor="middle">コード進行</text>
-<rect x="188" y="225" width="125" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
-<text x="250.5" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="13" font-weight="400" fill="#e6edf8" text-anchor="middle">楽譜設定</text>
-<rect x="324" y="225" width="170" height="38" rx="6" fill="#1d4775" stroke="#51a5ff" stroke-width="1"/>
-<text x="409.0" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="13" font-weight="700" fill="#e6edf8" text-anchor="middle">変数（追加）</text>
+<rect x="48" y="225" width="80" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
+<text x="88" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">文書</text>
+<rect x="132" y="225" width="92" height="38" rx="6" fill="#1d4775" stroke="#51a5ff" stroke-width="1"/>
+<text x="178" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="700" fill="#e6edf8" text-anchor="middle">変数</text>
+<rect x="228" y="225" width="108" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
+<text x="282" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">楽譜設定</text>
+<rect x="340" y="225" width="154" height="38" rx="6" fill="#202a36" stroke="#354154" stroke-width="1"/>
+<text x="417" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#8795a6" text-anchor="middle">コード進行 · 無効</text>
 <text x="50" y="301" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="20" font-weight="700" fill="#e6edf8" text-anchor="start">定義された変数</text>
 <rect x="383" y="274" width="105" height="40" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
 <text x="435.5" y="298.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="13" font-weight="400" fill="#e6edf8" text-anchor="middle">＋ 新規</text>

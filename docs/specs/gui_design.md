@@ -30,8 +30,8 @@
 | Preview・ページ表示 | [preview-paged.svg](gui_design/preview-paged.svg) | 640 × 930 px | 楽譜ページ下端とページ番号 1/1 |
 | Preview・連続表示 | [preview-continuous.svg](gui_design/preview-continuous.svg) | 640 × 560 px | サンプル譜面の2段目の五線譜 |
 | Preview・Practice 有効 | [preview-practice.svg](gui_design/preview-practice.svg) | 640 × 650 px | 練習行、2段目の五線譜を含む譜面 |
-| TextEditor・Preview編集・変数Inspector | [bidirectional-editor-overview.svg](gui_design/proposals/issue-158/bidirectional-editor-overview.svg) | 1950 × 1110 px | TextEditor、Preview編集操作、既存Inspectorの変数表示 |
-| Inspector・変数一覧と参照編集 | [variable-inspector-states.svg](gui_design/proposals/issue-158/variable-inspector-states.svg) | 1600 × 1110 px | 変数一覧、定義ドラフト、参照編集の選択状態 |
+| TextEditor・Preview編集・変数Inspector | [bidirectional-editor-overview.svg](gui_design/proposals/issue-158/bidirectional-editor-overview.svg) | 1950 × 1110 px | 常設の通常 / 編集 / 練習セレクター、排他的な編集ドックとPracticeガイド、4つのInspector上位タブ、変数表示 |
+| Inspector・変数一覧と参照編集 | [variable-inspector-states.svg](gui_design/proposals/issue-158/variable-inspector-states.svg) | 1600 × 1110 px | 上位4タブ、変数一覧、定義ドラフト、参照編集の選択状態 |
 | Inspector・対象文書なし | [inspector-empty.svg](gui_design/inspector-empty.svg) | 293 × 190 px | 対象文書を開く案内文 |
 | Inspector・カポ / 弾きやすさ | [inspector-capo-playability.svg](gui_design/inspector-capo-playability.svg) | 293 × 900 px | 候補12と「適用」「閉じる」 |
 | Inspector・初心者モード | [inspector-beginner.svg](gui_design/inspector-beginner.svg) | 293 × 850 px | 候補2の理由と「適用」「閉じる」 |
@@ -142,11 +142,15 @@ Practice のコード図は `viewBox="0 0 144 144"` の144×144 CSS pxとし、�
 
 #### 2.5 双方向編集モード（Issue #158）
 
-Preview は既存の単一 WebviewPanel を使い、表示モードと編集モードを切り替える。既定は表示モードであり、既存の再生行48 px、楽譜設定行44 px、Practice有効時だけの42 px行、4小節ガイド、PDFと通常再生を保つ。編集モード専用の操作行は有効時だけ表示し、無効時の譜面とツールバーの寸法を変えない。編集 overlay と hit-area は Preview にのみ存在し、PDF の SVG には出力しない。
+Preview は既存の単一 WebviewPanel を使い、既定の「通常」、双方向編集の「編集」、練習操作の「練習」を排他的に切り替える。48 px再生行の右側 `.toolbar-actions` に通常 / 編集 / 練習のセレクターを常設する。幅600 px未満は現在値が読めるネイティブselect、600 px以上はsegmented controlを表示し、ARIA状態、フォーカスとキーボード操作を備える。旧Practice単独トグルと編集フォーム内の切替を置かない。
+
+通常は48 px再生行と44 px楽譜設定行の下に楽譜を表示し、編集ドック・Practice行・ガイドを隠す。編集は同じ2行の下に楽譜と下端固定編集ドックを表示し、42 px Practice行と4小節ガイドを隠す。練習は同じ2行と42 px Practice行、4小節ガイドを表示し、編集ドックと編集hit-areaを隠す。編集フォームは通常 / 練習では高さ0、編集で未選択なら案内、選択時は種別別操作を表示する。編集overlayとhit-areaはPreviewにのみ存在し、PDFのSVGには出力しない。
 
 標準 TextEditor が唯一の永続ソースである。Preview は明示した URI・文書version・Preview世代に結び付けた選択と編集 intent を送り、Host が最新テキスト、parser source binding、token種別、期待原文、音楽的整合性を検証してから一回の WorkspaceEdit を行う。1回のドラッグまたはキー確定は1 Undoとし、キャンセル、古い世代、文書切替、二重適用、解析・検証・音声停止失敗では文書を変更しない。
 
 編集対象はauthored chord名、melody音符・休符・音価、rhythm token、単一TAB声部の弦・フレット・音価、lyrの一音節とする。省略値の継承、拍数、tie/slur、歌詞対応、TAB制約が壊れる場合は安全な明示化ができるときだけ許可し、それ以外は編集不可の理由と「コードで開く」を示す。同じソースが反復・編曲で複数表示される場合、曖昧な単一出現編集を行わない。
+
+編集ドックとPracticeガイドは同時に表示しない。編集時はドックの高さだけを譜面の下余白に加え、練習時は既存Practiceガイドの高さを使う。どちらも幅421 / 600 / 840 / 1100 CSS pxと短い高さで本文を覆わず、末尾の譜面に到達できる。Host HTML再構築後のスクロール、フォーカス、選択は同一URI/version/generationとsource bindingに再解決できる場合だけ復元し、stale document・削除・disposeでは破棄する。同一URIの再構築ではモードを維持し、別文書またはPreview disposeで通常に戻す。
 
 **図の位置づけ:** 追加した2枚は承認済みの純ベクター設計図であり、実装済み画面のキャプチャではない。画面一覧の元の Preview・Inspector 図は引き続き現行画面の基準とする。実 Extension Development Host の証拠は実装検収に別途記録し、設計図との差を説明する。
 
@@ -218,6 +222,12 @@ Inspector の設定・候補操作の意味は [拡張機能仕様 §4B、§4D](
 既存の共通 Inspector に「変数」表示を追加し、現在アクティブな GuitarDSL 文書だけを対象にする。変数一覧には有効なlet定義、使用文脈、直接参照数、間接参照数、参照位置、未使用状態と診断を示す。chord定義は変数として表示しない。
 
 Inspector の検証済みドラフトから新規作成、定義編集、名前変更、複製、未使用定義の削除を行う。「変更を適用」までは原文、Preview、PDF、音声を変えず、適用は一つの編集・一回のUndoとする。名前変更は定義と前方・後方・入れ子の全参照を一回で更新する。参照位置から元ソースへジャンプできる。
+
+#### 3.7 Inspector 上部コンテキストタブ（Issue #158）
+
+既存 singleton Inspector の見出し直下に「文書」「変数」「楽譜設定」「コード進行」の上部タブを1組だけ表示する。各タブは同じ Inspector 領域を切り替え、設定内の既存タブはその内側に残す。コード進行は有効な候補 session があるときだけ操作可能にし、切替だけで候補を作らない。変数 / 設定 draft の破棄確認とコード進行試聴停止が必要な場合は、確認・Stop ACK・lease 解放の完了後に遷移する。
+
+上部タブは `role=tablist` / `role=tab` を使い、矢印キー、Home / End、Enter / Space、roving focus、`aria-selected`、`aria-controls` を実装する。全状態は日英、ライト / ダーク、狭い Inspector 幅で読めること。編集モードから開く場合は Preview が保持する文書の「変数」を初期表示する。Preview の再描画で現在のタブを再初期化しない。
 
 Preview で変数参照を編集するときは「定義を編集（全参照）」「この箇所だけ展開して編集」「キャンセル」を明示する。後者は選択した一つのauthored参照だけが展開され、全スコアの音楽的意味が保たれるとHostが確認できる場合に限る。繰返しや編曲で複数回表示される出現、曖昧な範囲、入れ子で安全性を確定できない対象は変更しない。
 

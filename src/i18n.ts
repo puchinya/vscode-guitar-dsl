@@ -85,6 +85,15 @@ export interface Messages {
   uiHelpTitle: string;
   uiEditPreview: string;
   uiPreviewEditMode: string;
+  uiPreviewModeGroup: string;
+  uiPreviewModeNormal: string;
+  uiPreviewModeEdit: string;
+  uiPreviewModePractice: string;
+  uiPreviewModeCompactLabel: string;
+  previewEditDiscardDraftPrompt: string;
+  previewEditDiscardDraft: string;
+  previewEditKeepDraft: string;
+  uiPreviewEditDockInstruction: string;
   uiPreviewEditTarget: string;
   uiPreviewEditValue: string;
   uiPreviewApplyEdit: string;
@@ -258,6 +267,15 @@ export interface Messages {
   sidebarTranscribeAudio: string;
   inspectorHeading: string;
   inspectorRegionLabel: string;
+  inspectorTablistLabel: string;
+  inspectorTabDocument: string;
+  inspectorTabVariables: string;
+  inspectorTabSettings: string;
+  inspectorTabProgression: string;
+  inspectorDiscardDraftPrompt: string;
+  inspectorDiscardDraft: string;
+  inspectorKeepDraft: string;
+  inspectorProgressionStopFailed: string;
   inspectorEmptyStatus: string;
   inspectorEmptyDescription: string;
   inspectorDocumentStatus: string;
@@ -430,6 +448,15 @@ export const MESSAGES_JA: Messages = {
   uiHelpTitle: 'GuitarDSL ヘルプを開く',
   uiEditPreview: '譜面を編集',
   uiPreviewEditMode: 'プレビュー編集モード',
+  uiPreviewModeGroup: 'プレビューモード',
+  uiPreviewModeNormal: '通常',
+  uiPreviewModeEdit: '編集',
+  uiPreviewModePractice: '練習',
+  uiPreviewModeCompactLabel: 'モード',
+  previewEditDiscardDraftPrompt: 'プレビュー編集に未適用の入力があります。破棄しますか？',
+  previewEditDiscardDraft: '破棄して切替',
+  previewEditKeepDraft: '編集を続ける',
+  uiPreviewEditDockInstruction: '譜面の編集箇所を選択するか、一覧から選んでください。',
   uiPreviewEditTarget: '編集するソース要素',
   uiPreviewEditValue: 'コード・トークン・歌詞・TAB音',
   uiPreviewApplyEdit: '適用',
@@ -602,6 +629,15 @@ export const MESSAGES_JA: Messages = {
   sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
   inspectorHeading: 'GuitarDSL Inspector',
   inspectorRegionLabel: 'GuitarDSL Inspector',
+  inspectorTablistLabel: 'Inspector の表示',
+  inspectorTabDocument: '文書',
+  inspectorTabVariables: '変数',
+  inspectorTabSettings: '楽譜設定',
+  inspectorTabProgression: 'コード進行',
+  inspectorDiscardDraftPrompt: '未適用のInspector変更を破棄して切り替えますか？',
+  inspectorDiscardDraft: '破棄して切替',
+  inspectorKeepDraft: 'キャンセル',
+  inspectorProgressionStopFailed: '試聴を停止できなかったため、Inspectorの表示を切り替えませんでした。',
   inspectorEmptyStatus: 'GuitarDSL 文書が選択されていません',
   inspectorEmptyDescription: 'エディタで GuitarDSL 文書を開くと、この場所に文書コンテキストが表示されます。',
   inspectorDocumentStatus: 'アクティブな GuitarDSL 文書に対応しています',
@@ -817,6 +853,15 @@ export const MESSAGES_EN: Messages = {
   uiHelpTitle: 'Open GuitarDSL Help',
   uiEditPreview: 'Edit score',
   uiPreviewEditMode: 'Preview editing mode',
+  uiPreviewModeGroup: 'Preview mode',
+  uiPreviewModeNormal: 'Normal',
+  uiPreviewModeEdit: 'Edit',
+  uiPreviewModePractice: 'Practice',
+  uiPreviewModeCompactLabel: 'Mode',
+  previewEditDiscardDraftPrompt: 'Preview editing has unapplied input. Discard it and switch modes?',
+  previewEditDiscardDraft: 'Discard and switch',
+  previewEditKeepDraft: 'Keep editing',
+  uiPreviewEditDockInstruction: 'Select a score element or choose one from the list to edit it.',
   uiPreviewEditTarget: 'Source element to edit',
   uiPreviewEditValue: 'Chord, token, lyric, or TAB note',
   uiPreviewApplyEdit: 'Apply',
@@ -989,6 +1034,15 @@ export const MESSAGES_EN: Messages = {
   sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
   inspectorHeading: 'GuitarDSL Inspector',
   inspectorRegionLabel: 'GuitarDSL Inspector',
+  inspectorTablistLabel: 'Inspector views',
+  inspectorTabDocument: 'Document',
+  inspectorTabVariables: 'Variables',
+  inspectorTabSettings: 'Score settings',
+  inspectorTabProgression: 'Progression',
+  inspectorDiscardDraftPrompt: 'Discard unapplied Inspector changes and switch views?',
+  inspectorDiscardDraft: 'Discard and switch',
+  inspectorKeepDraft: 'Cancel',
+  inspectorProgressionStopFailed: 'The audition could not be stopped, so the Inspector view was not changed.',
   inspectorEmptyStatus: 'No active GuitarDSL document',
   inspectorEmptyDescription: 'Open a GuitarDSL document in the editor to show its context here.',
   inspectorDocumentStatus: 'Showing the active GuitarDSL document context',

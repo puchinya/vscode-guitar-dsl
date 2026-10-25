@@ -589,7 +589,7 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 
 ### 4.9 Preview 双方向編集（Issue #158）
 
-- Preview は既存のsingleton Panelを使い、既定の表示モードと明示的な編集モードを切り替える。表示モードでは既存Previewの可視SVG、48 px再生行、44 px設定行、Practice有効時だけの42 px行、4小節ガイド、再生・PDFの結果を変えない。編集用rowとhit-areaは編集モードだけに表示し、PDF SVGへ含めない。
+- Preview は既存のsingleton Panelを使い、既定の「通常」、双方向編集を行う「編集」、練習操作を行う「練習」の排他的な3モードを切り替える。通常は48 px再生行と44 px設定行だけ、編集はその2行と編集ドックだけ、練習はその2行・42 px練習行・4小節ガイドを表示する。編集ドックとPractice行・ガイドを同時に表示しない。モード切替は48 px再生行に常設する。編集overlayとhit-areaは編集モードだけに表示し、PDF SVGへ含めない。
 - 標準TextEditorのTextDocumentが唯一の永続ソースである。GUI gestureは {uri, documentVersion, previewGeneration, visualElementId, operation, payload} のintentだけを送り、source offset、置換テキスト、WorkspaceEditをWebviewから受け取らない。Hostは対象、現在のversion/generation、parser-owned binding、token種別と期待原文を再検証してpure plannerを呼ぶ。
 - GUIから確定した1 gestureは一つのWorkspaceEditとして適用し一回のUndoで戻せる。ドラッグ中は文書を変更せず、pointerupまたはキー確定で一度だけ適用する。Escape、pointercancel、古い世代、version不一致、二重適用、再解析または意味検証失敗、applyEdit拒否、必要な音声Stop ACK失敗では0編集とする。
 - 編集はauthored chord名、melody音符・休符・音価、rhythm token、単一TAB声部の弦・フレット・音価、lyrの一音節だけを対象にする。ソースの非対象bytes、Unicode、コメント、空白、改行を保ち、音価継承や歌詞対応などに不整合が出る変更は拒否するか、音楽的意味が等価な明示記法へ変換する。横方向の拍移動、複数声部TAB、format全体の書換えは行わない。
@@ -598,6 +598,21 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 - Preview表示中のCapo / Beginner一時変換が非恒等なら編集overlayを無効化し、原文表示へ戻すことを明示して求める。暗黙に一時設定を捨てない。
 - Preview再生・Practiceは既存Preview owner、進行候補の試聴はInspector ownerとProgressionAudioLeaseCoordinatorのままにする。編集の前後で既存Stop / ACK規則を使い、追加AudioContext、scheduler、tempo authorityを作らない。
 - 文書切替、version変更、再描画、Preview / Inspector破棄、編集モードOFFでは対象sessionとdraftを失効させる。選択はURI/version/generation/stableElementKeyで再解決できる場合のみ復元する。すべての操作にキーボード代替、可視フォーカス、ARIA状態とローカライズ名を設ける。
+
+#### 4.9.1 モード選択と固定編集ドック
+- 排他的な `PreviewUiMode = 'normal' | 'edit' | 'practice'` を既存の48 px再生行 `.toolbar-container > .toolbar-actions` に常設する。幅600 px未満は選択中の「モード: 編集」等を読めるネイティブ `select`、600 px以上は「通常 | 編集 | 練習」の segmented control を使う。ARIA選択状態、可視フォーカス、矢印キーと Home / End 操作を備える。旧 `#practice-toggle` と編集row内の独立したモード切替を置かない。
+- 既存の `guitardsl.togglePreviewEditMode` と `guitardsl.practice.toggle` は同じHost遷移関数へ接続する。現在と同じ公開コマンドの対象モードなら通常へ、別モードなら指定モードへ移る。Webview要求はURI、document version、Preview generationを検証し、Hostのみがモード状態を所有する。
+- 編集操作フォームは既存Preview内の固定bottom dockとする。通常・練習では非表示かつ高さ0、編集で未選択なら短い選択案内、選択時は対象種別に応じた既存の編集欄・Apply/Insert/Delete・状態を表示する。選択した五線譜 / TAB / chord / rhythm / lyric と操作欄は同じPreviewの中で利用できる。
+- 練習モードでは編集ドックを表示しない。固定4小節ガイド、`--practice-guide-panel-height`、および練習行の下余白を使い、再生48 px・設定44 px・Practice42 px・ガイド・譜面を覆わない。幅421 / 600 / 840 / 1100 CSS pxと短い高さで末尾の譜面へスクロール到達できる。
+- Preview は要素選択と Host による HTML 再構築をまたいでスクロール位置を維持する。選択・フォーカスは同一 URI/version/generation と source binding に再解決できる場合のみ復元し、削除・編集後に不一致となった選択は解除する。URI変更、stale document、Preview dispose では復元情報を破棄する。PDF と通常 SVG に編集 UI を含めない。
+
+#### 4.9.2 Inspector の Preview 編集コンテキスト
+- 通常から編集へ入るときだけ、Previewが保持するGuitarDSL TextDocumentを対象に既存singleton Inspectorを表示し、最初に「変数」を選択する。現在のアクティブエディタや別文書へフォールバックしない。Previewの再レンダーはユーザーが選んだInspectorタブを初期値へ戻さない。Inspectorを手動で隠しても自動再表示を繰り返さず、次回に通常から編集へ入る際は再表示する。編集を離れてもInspectorを閉じない。
+- 通常から編集へ入るとき、非identity Capo / Beginner transformが有効なら理由を通知して失敗し、モード・一時設定・Inspector draftを変更しない。編集を離れるときは経路を問わず、未Applyの編集フォーム草稿について破棄確認を行う。キャンセルは編集モードと草稿を維持する。コード進行の試聴中は既存Stop acknowledgementとlease解放を完了してから切り替える。停止失敗、URI/versionの陳腐化、stale generation、disposeでは切り替えない。
+- 編集から練習へ入るときは編集session・選択・handleを破棄し、練習から通常へ移るときはloopとFollowを終了する。練習へ再入しても再生を自動開始しない。失敗した切替では以前のモードを保つ。同一URIのHTML再構築では現在モードを再投影し、別文書への切替またはPreview disposeでは通常へ戻す。モードをDSLや設定へ保存しない。
+- Inspector 上部には単一の `role=tablist` を置き、「文書」「変数」「楽譜設定」「コード進行」を切り替える。既存 `#settings-tabs` は楽譜設定内のサブタブのままとする。Host message `inspectorSelectTab` は Inspector generation、URI/version、必要な session generation を検証して、既存 `showDocument` / `setVariablesContext` / `ScoreSettingsInspectorController.open` / 有効な `ProgressionAssistant` session 再表示へ委譲する。進行 session がないとき「コード進行」は無効とし、候補を自動生成しない。いずれの切替でも `InspectorContext` は一つだけ有効とし、機能 owner が draft / session を所有する。
+- 変数または楽譜設定に未適用 draft があれば、別タブへの切替前に破棄確認を出す。キャンセルは現在タブと draft を保持する。破棄を承認した場合は既存 Cancel / rollback と Preview snapshot restore を完了してから切り替える。コード進行の試聴中は Stop ACK と lease 解放後だけ切り替え、候補は保持し、戻っても自動再生しない。
+- 上部タブは矢印キー、Home / End、Enter / Space で操作し、roving focus、`aria-selected`、`aria-controls`、日英ラベル、ライト / ダークテーマ、狭幅表示を提供する。
 
 ## 4B. 楽譜設定 (Score Settings)
 

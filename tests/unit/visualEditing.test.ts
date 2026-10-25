@@ -386,9 +386,23 @@ describe('source-preserving visual and variable planners', () => {
     });
     assert.match(html, /id="preview-edit-row"[^>]* hidden/);
     assert.match(html, /data-preview-edit-mode="false"/);
+    assert.match(html, /id="preview-mode-edit"[^>]*aria-pressed="false"[^>]*aria-label=/);
+    assert.match(html, /id="toolbar-actions"[\s\S]*id="preview-mode-edit"/);
+    assert.match(html, /id="preview-mode-normal"[^>]*aria-pressed="true"/);
+    assert.match(html, /id="preview-mode-practice"[^>]*aria-pressed="false"/);
+    assert.match(html, /id="preview-mode-select"[^>]*aria-label=/);
+    assert.doesNotMatch(html, /id="(?:practice-toggle|preview-edit-mode-toggle)"/,
+      'the mode choices do not expose the superseded independent toggles');
+    assert.match(html, /position: fixed;[\s\S]{0,120}bottom: var\(--practice-guide-panel-height, 0px\)/);
     assert.doesNotMatch(html, /data-visual-binding=/, 'ordinary Preview output contains no editing attributes');
     assert.match(editHtml, /id="preview-edit-row"[^>]*>/);
     assert.match(editHtml, /data-preview-edit-mode="true"/);
+    assert.match(editHtml, /id="preview-mode-edit"[^>]*aria-pressed="true"/);
+    assert.match(editHtml, /id="preview-mode-normal"[^>]*aria-pressed="false"/);
+    assert.match(editHtml, /id="preview-mode-practice"[^>]*aria-pressed="false"/);
+    assert.match(editHtml, /--practice-guide-panel-height, 0px\) \+ var\(--preview-edit-dock-height, 0px\)/);
+    assert.match(editHtml, /focusedVisualEditControlId/);
+    assert.match(editHtml, /focusTarget\.focus\(\{ preventScroll: true \}\)/);
     assert.match(editHtml, /data-visual-binding="source-/);
     assert.match(editHtml, /postPreviewVisualEdit\('transposeMelody'/);
     assert.match(editHtml, /document\.addEventListener\('pointerup'/);

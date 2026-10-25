@@ -43,12 +43,20 @@ export interface CompileHtmlOptions {
   nonce?: string;
   /** One-shot target to focus after the host rebuilds Preview for a paper/orientation change. */
   restoreFocusControl?: PreviewFocusControl;
+  /** One-shot score scroll restoration tied to the same source edit identity. */
+  restoreScoreScrollTop?: number;
+  /** Parser binding that may be reselected after a source edit if it still exists. */
+  restoreVisualElementId?: string;
+  /** Edit control focus restored only with the matching source binding. */
+  restoreVisualEditFocusId?: string;
   /** Identity bound to the one-shot focus hint so stale messages cannot restore focus. */
   documentUri?: string;
   documentVersion?: number;
   previewGeneration?: number;
   /** Explicit Preview edit mode; false retains the existing toolbar and layout. */
   previewEditMode?: boolean;
+  /** Mutually-exclusive, Host-owned Preview presentation mode. */
+  previewUiMode?: 'normal' | 'edit' | 'practice';
   /** Source identity must be literal TextDocument text for editable Preview bindings. */
   previewEditAvailable?: boolean;
   /** Parser-owned authored token bindings, never inferred from SVG coordinates. */
@@ -58,6 +66,10 @@ export interface CompileHtmlOptions {
 export type PreviewLayoutFocusControl = 'select-page-size' | 'orientation-portrait' | 'orientation-landscape';
 
 export type PreviewFocusControl = PreviewLayoutFocusControl
+  | 'preview-mode-normal'
+  | 'preview-mode-edit'
+  | 'preview-mode-practice'
+  | 'preview-mode-select'
   | 'preview-capo-select'
   | 'toggle-preview-beginner'
   | 'select-preview-barre-policy'
@@ -70,6 +82,10 @@ export function isPreviewLayoutFocusControl(value: unknown): value is PreviewLay
 export function isPreviewFocusControl(value: unknown): value is PreviewFocusControl {
   return isPreviewLayoutFocusControl(value)
     || value === 'preview-capo-select'
+    || value === 'preview-mode-normal'
+    || value === 'preview-mode-edit'
+    || value === 'preview-mode-practice'
+    || value === 'preview-mode-select'
     || value === 'toggle-preview-beginner'
     || value === 'select-preview-barre-policy'
     || value === 'select-preview-beginner-capo-mode';
@@ -226,7 +242,8 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     expandPageBreakRepeats: options?.expandPageBreakRepeats
   });
   const previewEditAvailable = options?.previewEditAvailable === true;
-  const previewEditMode = options?.previewEditMode === true;
+  const previewUiMode = options?.previewUiMode ?? (options?.previewEditMode === true ? 'edit' : 'normal');
+  const previewEditMode = previewUiMode === 'edit';
   const visualBindings = previewEditAvailable ? (options?.visualBindings ?? []) : [];
   const visualBindingsJson = escapeJsonForHtml(JSON.stringify(visualBindings.map(binding => ({
     id: binding.id, kind: binding.kind, line: binding.line, startCol: binding.startCol,
@@ -236,6 +253,19 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const visualBindingOptions = visualBindings.map(binding =>
     `<option value="${escapeXml(binding.id)}">L${binding.line + 1}:${binding.startCol + 1} · ${escapeXml(binding.kind)} · ${escapeXml(binding.expected)}</option>`
   ).join('');
+  const restoreScoreScrollTop = typeof options?.restoreScoreScrollTop === 'number'
+    && Number.isFinite(options.restoreScoreScrollTop) && options.restoreScoreScrollTop >= 0
+    ? Math.min(1_000_000, Math.floor(options!.restoreScoreScrollTop!)) : null;
+  const restoreVisualElementIdJson = JSON.stringify(typeof options?.restoreVisualElementId === 'string'
+    && options.restoreVisualElementId.length <= 256 ? options.restoreVisualElementId : null);
+  const previewEditFocusControlIds = new Set([
+    'preview-edit-target', 'preview-edit-value', 'preview-edit-apply', 'preview-edit-insert',
+    'preview-edit-delete', 'preview-edit-add-tab-note', 'preview-edit-delete-tab-note',
+    'preview-edit-pitch-down', 'preview-edit-pitch-up', 'preview-edit-duration-longer',
+    'preview-edit-duration-shorter', 'preview-edit-open-source'
+  ]);
+  const restoreVisualEditFocusIdJson = JSON.stringify(typeof options?.restoreVisualEditFocusId === 'string'
+    && previewEditFocusControlIds.has(options.restoreVisualEditFocusId) ? options.restoreVisualEditFocusId : null);
   const playback = buildPlaybackHtmlData(score, msgs);
   if (options?.progressionAudioLeaseId) playback.progressionAudioLeaseId = options.progressionAudioLeaseId;
   const playbackJson = escapeJsonForHtml(JSON.stringify(playback));
@@ -505,9 +535,49 @@ ${cspMeta}
     white-space: nowrap;
   }
   .toolbar-action-label { white-space: nowrap; }
-  .practice-toggle[aria-pressed="true"] {
+  .preview-mode-control {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 5px;
+    background: var(--vscode-input-background, #1e1e1e);
+  }
+  .preview-mode-choice {
+    min-height: 28px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--vscode-foreground, #cccccc);
+    padding: 3px 8px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .preview-mode-choice[aria-pressed="true"] {
     background: var(--vscode-button-background, #0e639c);
     color: var(--vscode-button-foreground, #fff);
+  }
+  .preview-mode-choice:disabled { opacity: 0.45; cursor: default; }
+  .preview-mode-choice:focus-visible, #preview-mode-select:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #3794ff);
+    outline-offset: 1px;
+  }
+  .preview-mode-compact { display: none; flex: 0 0 auto; min-width: 0; }
+  #preview-mode-select {
+    min-width: 92px;
+    max-width: 122px;
+    height: 30px;
+    padding: 2px 4px;
+    border: 1px solid var(--vscode-widget-border, #555);
+    border-radius: 4px;
+    background: var(--vscode-input-background, #1e1e1e);
+    color: var(--vscode-input-foreground, #eee);
+    font: inherit;
+    font-size: 11px;
   }
   .toolbar-disclosure { position: relative; flex: 0 0 auto; }
   .toolbar-disclosure-panel {
@@ -613,7 +683,8 @@ ${cspMeta}
   @media (max-height: 699px) {
     .practice-guide-panel { max-height: max(42px, calc(100vh - 152px - max(80px, 20vh))); }
   }
-  body.has-practice-guide { padding-bottom: var(--practice-guide-panel-height, 0px) !important; }
+  body.has-practice-guide,
+  body.has-preview-edit-dock { padding-bottom: calc(var(--practice-guide-panel-height, 0px) + var(--preview-edit-dock-height, 0px)) !important; }
   body.has-practice-guide .practice-guide-panel { display: flex; }
   body.guide-collapsed .practice-guide-panel { height: 42px; min-height: 42px; max-height: 42px; }
   body.guide-collapsed .practice-guide-layout { display: none; }
@@ -702,7 +773,7 @@ ${cspMeta}
   body.guide-compact-mode .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-compact-technique-height, 48px); }
   .practice-guide-label[data-guide-lane="chord"] { height: 36px; }
   .practice-guide-label[data-guide-lane="diagrams"] { height: 154px; }
-  .practice-guide-scroll { grid-column: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+  .practice-guide-scroll { grid-column: 2; min-width: 0; min-height: max-content; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
   .practice-guide-timeline { position: relative; width: var(--guide-total-width); min-width: 100%; background: var(--guide-light-surface); }
   .practice-guide-ruler, .practice-guide-lane { position: relative; box-sizing: border-box; flex: 0 0 auto; width: var(--guide-total-width); background-image: none; }
   .practice-guide-ruler { height: 24px; background-color: var(--guide-light-surface); }
@@ -1006,6 +1077,10 @@ ${cspMeta}
     .score-settings-playability-separator { display: none; }
     .score-settings-playability-value { column-gap: 4px; }
   }
+  @media (max-width: 599px) {
+    .preview-mode-control { display: none; }
+    .preview-mode-compact { display: inline-flex; }
+  }
   @media (max-width: 839px) {
     .score-settings-overflow { flex: 0 0 auto; }
     .score-settings-overflow-toggle { display: inline-flex; }
@@ -1040,15 +1115,23 @@ ${cspMeta}
     fill-opacity: 0.08;
   }
   .preview-edit-row {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--practice-guide-panel-height, 0px);
+    z-index: 998;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--vscode-widget-border, #555);
+    border-top: 1px solid var(--vscode-widget-border, #555);
     background: var(--vscode-editorWidget-background, #252526);
     color: var(--vscode-foreground, #eee);
     font-size: 12px;
+    max-height: max(42px, calc(100vh - 152px - max(80px, 20vh) - var(--practice-guide-panel-height, 0px)));
+    overflow-y: auto;
   }
   .preview-edit-row[hidden] { display: none !important; }
   .preview-edit-controls { display: inline-flex; gap: 4px; }
@@ -1072,7 +1155,7 @@ ${cspMeta}
   data-preview-document-uri="${escapeXml(options?.documentUri ?? '')}"
   data-preview-document-version="${Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : ''}"
   data-preview-generation="${Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : ''}"
-  data-preview-edit-mode="${previewEditMode}" data-preview-edit-available="${previewEditAvailable}">
+  data-preview-ui-mode="${previewUiMode}" data-preview-edit-mode="${previewEditMode}" data-preview-edit-available="${previewEditAvailable}">
   <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
     <div class="toolbar-transport">
     <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
@@ -1082,7 +1165,18 @@ ${cspMeta}
     <span class="playback-time" id="playback-time" aria-label="${escapeXml(msgs.uiPlaybackTime)}">00:00 / ${formatPlaybackTime(playback.durationSeconds)}</span>
     </div>
     <div id="toolbar-actions" class="toolbar-actions">
-      <button class="toolbar-action practice-toggle" id="practice-toggle" type="button" aria-pressed="false" title="${escapeXml(msgs.uiPracticeTitle)}" aria-label="${escapeXml(msgs.uiPracticeTitle)}"${playback.available ? '' : ' disabled'}><span aria-hidden="true">◎</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPractice)}</span></button>
+      <div class="preview-mode-control" id="preview-mode-control" role="group" aria-label="${escapeXml(msgs.uiPreviewModeGroup)}">
+        <button class="preview-mode-choice" id="preview-mode-normal" type="button" data-preview-ui-mode="normal" aria-pressed="${previewUiMode === 'normal' ? 'true' : 'false'}" aria-label="${escapeXml(msgs.uiPreviewModeNormal)}" tabindex="${previewUiMode === 'normal' ? '0' : '-1'}" title="${escapeXml(msgs.uiPreviewModeNormal)}">${escapeXml(msgs.uiPreviewModeNormal)}</button>
+        <button class="preview-mode-choice" id="preview-mode-edit" type="button" data-preview-ui-mode="edit" aria-pressed="${previewUiMode === 'edit' ? 'true' : 'false'}" aria-label="${escapeXml(msgs.uiPreviewModeEdit)}" tabindex="${previewUiMode === 'edit' ? '0' : '-1'}" title="${escapeXml(msgs.uiPreviewModeEdit)}">${escapeXml(msgs.uiPreviewModeEdit)}</button>
+        <button class="preview-mode-choice" id="preview-mode-practice" type="button" data-preview-ui-mode="practice" aria-pressed="${previewUiMode === 'practice' ? 'true' : 'false'}" aria-label="${escapeXml(msgs.uiPreviewModePractice)}" tabindex="${previewUiMode === 'practice' ? '0' : '-1'}" title="${escapeXml(msgs.uiPreviewModePractice)}"${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPreviewModePractice)}</button>
+      </div>
+      <label class="preview-mode-compact" for="preview-mode-select">
+        <select id="preview-mode-select" aria-label="${escapeXml(msgs.uiPreviewModeGroup)}">
+          <option value="normal"${previewUiMode === 'normal' ? ' selected' : ''}>${escapeXml(msgs.uiPreviewModeCompactLabel)}: ${escapeXml(msgs.uiPreviewModeNormal)}</option>
+          <option value="edit"${previewUiMode === 'edit' ? ' selected' : ''}>${escapeXml(msgs.uiPreviewModeCompactLabel)}: ${escapeXml(msgs.uiPreviewModeEdit)}</option>
+          <option value="practice"${previewUiMode === 'practice' ? ' selected' : ''}${playback.available ? '' : ' disabled'}>${escapeXml(msgs.uiPreviewModeCompactLabel)}: ${escapeXml(msgs.uiPreviewModePractice)}</option>
+        </select>
+      </label>
       <div class="toolbar-disclosure">
         <button class="toolbar-action" id="playback-options-toggle" type="button" aria-expanded="false" aria-controls="playback-options-panel" aria-label="${escapeXml(msgs.uiPlaybackOptionsTitle)}" title="${escapeXml(msgs.uiPlaybackOptionsTitle)}"><span aria-hidden="true">⚙</span> <span class="toolbar-action-label">${escapeXml(msgs.uiPlaybackOptions)}</span></button>
         <div class="toolbar-disclosure-panel" id="playback-options-panel" role="group" aria-label="${escapeXml(msgs.uiPlaybackOptions)}" hidden>
@@ -1122,6 +1216,7 @@ ${cspMeta}
   </div>
 
   <div class="preview-edit-row" id="preview-edit-row" role="group" aria-label="${escapeXml(msgs.uiPreviewEditMode)}"${previewEditMode ? '' : ' hidden'}>
+    <span class="preview-edit-instruction" id="preview-edit-instruction"${visualBindings.length ? '' : ' hidden'}>${escapeXml(msgs.uiPreviewEditDockInstruction)}</span>
     <label for="preview-edit-target">${escapeXml(msgs.uiPreviewEditTarget)}</label>
     <select id="preview-edit-target" aria-label="${escapeXml(msgs.uiPreviewEditTarget)}"${previewEditAvailable && visualBindings.length ? '' : ' disabled'}>${visualBindingOptions}</select>
     <label id="preview-edit-value-label" for="preview-edit-value">${escapeXml(msgs.uiPreviewEditValue)}</label>
@@ -1138,7 +1233,6 @@ ${cspMeta}
     <button class="toolbar-action" id="preview-edit-add-tab-note" type="button" hidden>${escapeXml(msgs.uiPreviewAddTabChordNote)}</button>
     <button class="toolbar-action" id="preview-edit-delete-tab-note" type="button" hidden>${escapeXml(msgs.uiPreviewDeleteTabChordNote)}</button>
     <button class="toolbar-action" id="preview-edit-open-source" type="button" hidden>${escapeXml(msgs.uiOpenVisualSource)}</button>
-    <button class="toolbar-action" id="preview-edit-mode-toggle" type="button" aria-pressed="true">${escapeXml(msgs.uiPreviewEditMode)}</button>
     <span class="preview-edit-status" id="preview-edit-status" role="status" aria-live="polite">${previewEditAvailable ? '' : escapeXml(msgs.uiPreviewEditDisabled)}</span>
   </div>
 
@@ -1206,8 +1300,12 @@ ${cspMeta}
       const currentOrientation = body.getAttribute('data-orientation');
       const previewIdentity = ${previewIdentityJson};
       const restoreFocusControl = ${restoreFocusControlJson};
+      const restoreScoreScrollTop = ${restoreScoreScrollTop === null ? 'null' : restoreScoreScrollTop};
+      const restoreVisualElementId = ${restoreVisualElementIdJson};
+      const restoreVisualEditFocusId = ${restoreVisualEditFocusIdJson};
       const previewVisualBindings = ${visualBindingsJson};
       const previewEditRow = document.getElementById('preview-edit-row');
+      const previewEditInstruction = document.getElementById('preview-edit-instruction');
       const previewEditTarget = document.getElementById('preview-edit-target');
       const previewEditValue = document.getElementById('preview-edit-value');
       const previewEditStatus = document.getElementById('preview-edit-status');
@@ -1221,19 +1319,64 @@ ${cspMeta}
       const previewEditPitchUp = document.getElementById('preview-edit-pitch-up');
       const previewEditDurationLonger = document.getElementById('preview-edit-duration-longer');
       const previewEditDurationShorter = document.getElementById('preview-edit-duration-shorter');
-      let previewEditMode = body.dataset.previewEditMode === 'true';
+      let previewUiMode = ['normal', 'edit', 'practice'].includes(body.dataset.previewUiMode)
+        ? body.dataset.previewUiMode : body.dataset.previewEditMode === 'true' ? 'edit' : 'normal';
+      let previewEditMode = previewUiMode === 'edit';
+      const previewModeButtons = ['preview-mode-normal', 'preview-mode-edit', 'preview-mode-practice']
+        .map(id => document.getElementById(id));
+      const previewModeSelect = document.getElementById('preview-mode-select');
       let melodyPointerGesture;
-      const setPreviewEditMode = enabled => {
-        previewEditMode = enabled === true;
+      if (restoreVisualElementId && previewVisualBindings.some(binding => binding.id === restoreVisualElementId)) {
+        previewEditTarget.value = restoreVisualElementId;
+      } else {
+        previewEditTarget.selectedIndex = -1;
+      }
+      const setPreviewUiMode = mode => {
+        if (!['normal', 'edit', 'practice'].includes(mode)) return;
+        const previousMode = previewUiMode;
+        previewUiMode = mode;
+        previewEditMode = mode === 'edit';
+        body.dataset.previewUiMode = mode;
         body.dataset.previewEditMode = String(previewEditMode);
         previewEditRow.hidden = !previewEditMode;
-        document.getElementById('preview-edit-mode-toggle').setAttribute('aria-pressed', String(previewEditMode));
+        for (const button of previewModeButtons) {
+          const selected = button.getAttribute('data-preview-ui-mode') === mode;
+          button.setAttribute('aria-pressed', String(selected));
+          button.setAttribute('tabindex', selected ? '0' : '-1');
+        }
+        if (previewModeSelect) previewModeSelect.value = mode;
+        if (previousMode !== mode) {
+          const wasPractice = previousMode === 'practice';
+          practiceEnabled = mode === 'practice';
+          if (wasPractice && !practiceEnabled) {
+            loopMode = 'off';
+            abStartPoint = null;
+            abEndPoint = null;
+            loopRange = null;
+            followEnabled = false;
+            practiceNotice = '';
+          }
+          persistWebviewState();
+          updatePracticeUi();
+          syncPracticeGuidePanelGeometry();
+        }
+        syncPreviewEditTarget();
+        syncPreviewBottomPanelsGeometry();
       };
       const previewEditIdentity = () => ({
         documentUri: body.dataset.previewDocumentUri || '',
         documentVersion: Number(body.dataset.previewDocumentVersion),
-        previewGeneration: Number(body.dataset.previewGeneration)
+        previewGeneration: Number(body.dataset.previewGeneration),
+        selectedVisualElementId: selectedPreviewBinding()?.id ?? '',
+        focusedVisualEditControlId: previewEditRow.contains(document.activeElement) ? document.activeElement.id : '',
+        focusedControlId: document.activeElement?.id ?? '',
+        scoreScrollTop: Math.max(0, Math.min(1_000_000, Math.floor(window.scrollY || document.documentElement.scrollTop || 0)))
       });
+      const requestPreviewUiMode = mode => {
+        if (vscode && ['normal', 'edit', 'practice'].includes(mode)) {
+          vscode.postMessage({ ...previewEditIdentity(), command: 'previewUiModeRequest', mode });
+        }
+      };
       const selectedPreviewBinding = () => previewVisualBindings.find(binding => binding.id === previewEditTarget.value);
       const markSelectedPreviewBinding = id => {
         document.querySelectorAll('[data-visual-binding].preview-edit-selected').forEach(element => element.classList.remove('preview-edit-selected'));
@@ -1243,6 +1386,7 @@ ${cspMeta}
       };
       const syncPreviewEditTarget = () => {
         const binding = selectedPreviewBinding();
+        const hasSelection = !!binding;
         previewEditValue.value = binding ? binding.expected : '';
         const available = body.dataset.previewEditAvailable === 'true' && !!binding;
         const editableText = binding && ['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric', 'melodyNote', 'melodyGroup', 'melodyRest'].includes(binding.kind);
@@ -1250,6 +1394,9 @@ ${cspMeta}
         const melodyDuration = binding && ['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'].includes(binding.kind);
         const readOnly = binding && !['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric', 'melodyNote', 'melodyGroup', 'melodyRest', 'letReference'].includes(binding.kind);
         const tabChord = binding?.kind === 'tab' && Array.isArray(binding.subTokens) && binding.subTokens.length >= 2;
+        previewEditInstruction.hidden = hasSelection || previewVisualBindings.length === 0;
+        previewEditTarget.hidden = previewVisualBindings.length === 0;
+        document.querySelector('label[for="preview-edit-target"]').hidden = previewVisualBindings.length === 0;
         previewEditValue.hidden = !editableText;
         document.getElementById('preview-edit-value-label').hidden = !editableText;
         previewEditMelodyControls.hidden = !melodyNote && !melodyDuration;
@@ -1257,18 +1404,19 @@ ${cspMeta}
         previewEditPitchUp.hidden = !melodyNote;
         previewEditDurationLonger.hidden = !melodyDuration;
         previewEditDurationShorter.hidden = !melodyDuration;
-        previewEditTarget.disabled = !available;
+        previewEditTarget.disabled = body.dataset.previewEditAvailable !== 'true' || previewVisualBindings.length === 0;
         previewEditValue.disabled = !available || !editableText;
+        document.getElementById('preview-edit-apply').hidden = !hasSelection;
         document.getElementById('preview-edit-apply').disabled = !available || !editableText;
-        previewEditInsert.hidden = !editableText;
-        previewEditDelete.hidden = !editableText;
+        previewEditInsert.hidden = !hasSelection || !editableText;
+        previewEditDelete.hidden = !hasSelection || !editableText;
         previewEditInsert.disabled = !available || !editableText;
         previewEditDelete.disabled = !available || !editableText;
-        previewEditAddTabNote.hidden = !tabChord;
-        previewEditDeleteTabNote.hidden = !tabChord;
+        previewEditAddTabNote.hidden = !hasSelection || !tabChord;
+        previewEditDeleteTabNote.hidden = !hasSelection || !tabChord;
         previewEditAddTabNote.disabled = !available || !tabChord;
         previewEditDeleteTabNote.disabled = !available || !tabChord;
-        previewEditOpenSource.hidden = !readOnly;
+        previewEditOpenSource.hidden = !hasSelection || !readOnly;
         markSelectedPreviewBinding(binding?.id);
         if (!available && body.dataset.previewEditAvailable !== 'true') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
         else if (binding?.kind === 'letReference') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewReferenceChoice)}';
@@ -1371,9 +1519,6 @@ ${cspMeta}
       previewEditDeleteTabNote.addEventListener('click', () => {
         if (previewEditValue.value) postPreviewVisualEdit('deleteTabChordNote', { note: previewEditValue.value });
       });
-      document.getElementById('preview-edit-mode-toggle').addEventListener('click', () => {
-        vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewEditModeToggle', enabled: false });
-      });
       previewEditOpenSource.addEventListener('click', () => {
         const binding = selectedPreviewBinding();
         if (binding && previewEditMode && body.dataset.previewEditAvailable === 'true') {
@@ -1381,10 +1526,19 @@ ${cspMeta}
         }
       });
       syncPreviewEditTarget();
+      if (restoreVisualElementId && previewVisualBindings.some(binding => binding.id === restoreVisualElementId)
+        && restoreScoreScrollTop !== null) {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+          const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+          window.scrollTo(0, Math.min(restoreScoreScrollTop, maxScroll));
+          const focusTarget = restoreVisualEditFocusId && document.getElementById(restoreVisualEditFocusId);
+          if (focusTarget && !focusTarget.hidden && !focusTarget.disabled) focusTarget.focus({ preventScroll: true });
+        }));
+      }
       let currentMode = 'single';
       let countInEnabled = false;
       let metronomeEnabled = false;
-      let practiceEnabled = false;
+      let practiceEnabled = previewUiMode === 'practice';
       let practiceSpeed = 100;
       let followEnabled = true;
       let guideMelodyVisible = true;
@@ -1405,7 +1559,6 @@ ${cspMeta}
         }
         if (state && typeof state.countInEnabled === 'boolean') countInEnabled = state.countInEnabled;
         if (state && typeof state.metronomeEnabled === 'boolean') metronomeEnabled = state.metronomeEnabled;
-        if (state && typeof state.practiceEnabled === 'boolean') practiceEnabled = state.practiceEnabled;
         if (state && typeof state.guideMelodyVisible === 'boolean') guideMelodyVisible = state.guideMelodyVisible;
         if (state && typeof state.guideDiagramsVisible === 'boolean') guideDiagramsVisible = state.guideDiagramsVisible;
         if (state && typeof state.guideCollapsed === 'boolean') guideCollapsed = state.guideCollapsed;
@@ -1531,7 +1684,6 @@ ${cspMeta}
       }
       const countInToggle = document.getElementById('count-in-toggle');
       const metronomeToggle = document.getElementById('metronome-toggle');
-      const practiceToggle = document.getElementById('practice-toggle');
       const practiceSpeedSelect = document.getElementById('practice-speed');
       const practiceLoopSelect = document.getElementById('practice-loop');
       const practiceSetAButton = document.getElementById('practice-set-a');
@@ -1540,6 +1692,7 @@ ${cspMeta}
       const practiceFollowButton = document.getElementById('practice-follow');
       const practiceStatus = document.getElementById('practice-status');
       const practiceGuidePanel = document.getElementById('practice-guide-panel');
+      let previewEditDockResizeObserver = null;
       const practiceGuideLayout = practiceGuidePanel?.querySelector?.('.practice-guide-layout');
       const practiceGuideLabelRailShell = practiceGuidePanel?.querySelector?.('.practice-guide-label-rail-shell');
       const practiceGuideLabelRail = practiceGuidePanel?.querySelector?.('.practice-guide-label-rail');
@@ -1587,11 +1740,23 @@ ${cspMeta}
         const pairStart = Math.floor((Number(value) || 0) / 2) * 2;
         return Math.max(0, Math.min(maxPairStart, pairStart));
       };
+      function syncPreviewBottomPanelsGeometry() {
+        if (!body.style || typeof body.style.setProperty !== 'function') return;
+        const dockVisible = !!previewEditRow && !previewEditRow.hidden;
+        const dockHeight = dockVisible ? Math.max(0, previewEditRow.getBoundingClientRect().height) : 0;
+        const guideVisible = body.classList.contains('has-practice-guide');
+        const guideHeight = guideVisible && practiceGuidePanel
+          ? Math.max(0, practiceGuidePanel.getBoundingClientRect().height) : 0;
+        body.classList.toggle('has-preview-edit-dock', dockVisible);
+        body.style.setProperty('--preview-edit-dock-height', dockHeight + 'px');
+        body.style.setProperty('--practice-guide-panel-height', guideHeight + 'px');
+      }
       function syncPracticeGuidePanelGeometry() {
         if (!practiceGuidePanel) return;
         const viewportHeight = Math.max(0, window.innerHeight || 0);
         const reservedScoreHeight = viewportHeight >= 700 ? 160 : Math.max(80, viewportHeight * 0.2);
-        practiceGuidePanel.style.maxHeight = Math.max(42, viewportHeight - 152 - reservedScoreHeight) + 'px';
+        const dockHeight = previewEditRow && !previewEditRow.hidden ? previewEditRow.getBoundingClientRect().height : 0;
+        practiceGuidePanel.style.maxHeight = Math.max(42, viewportHeight - 152 - reservedScoreHeight - dockHeight) + 'px';
         if (practiceGuideLayoutFrame) window.cancelAnimationFrame(practiceGuideLayoutFrame);
         practiceGuideLayoutFrame = window.requestAnimationFrame(() => {
           practiceGuideLayoutFrame = 0;
@@ -1646,11 +1811,13 @@ ${cspMeta}
           if (body.style && typeof body.style.setProperty === 'function') {
             body.style.setProperty('--practice-guide-panel-height', panelHeight + 'px');
           }
+          syncPreviewBottomPanelsGeometry();
         });
       }
       window.addEventListener('resize', () => {
         guideCompactSnapPending = true;
         syncPracticeGuidePanelGeometry();
+        syncPreviewBottomPanelsGeometry();
         updatePracticeUi();
       }, { passive: true });
       if (practiceGuidePanel && typeof ResizeObserver === 'function') {
@@ -1667,12 +1834,21 @@ ${cspMeta}
         });
         practiceGuideResizeObserver.observe(practiceGuidePanel);
       }
+      if (previewEditRow && typeof ResizeObserver === 'function') {
+        previewEditDockResizeObserver = new ResizeObserver(() => {
+          syncPreviewBottomPanelsGeometry();
+          syncPracticeGuidePanelGeometry();
+        });
+        previewEditDockResizeObserver.observe(previewEditRow);
+      }
+      syncPreviewBottomPanelsGeometry();
+      syncPracticeGuidePanelGeometry();
       if (countInToggle) countInToggle.checked = countInEnabled;
       if (metronomeToggle) metronomeToggle.checked = metronomeEnabled;
       if (practiceSpeedSelect) practiceSpeedSelect.value = String(practiceSpeed);
 
       function persistWebviewState() {
-        if (vscode) vscode.setState({ currentMode, countInEnabled, metronomeEnabled, practiceEnabled, practiceSpeed, followEnabled, guideMelodyVisible, guideDiagramsVisible, guideCollapsed, guideGrid, guideViewMode, guideCompactStartOccurrence });
+        if (vscode) vscode.setState({ currentMode, countInEnabled, metronomeEnabled, practiceSpeed, followEnabled, guideMelodyVisible, guideDiagramsVisible, guideCollapsed, guideGrid, guideViewMode, guideCompactStartOccurrence });
       }
 
       const playbackDataElement = document.getElementById('playback-data');
@@ -2429,10 +2605,15 @@ ${cspMeta}
       function updatePracticeUi() {
         body.classList.toggle('has-practice-row', practiceEnabled);
         updatePracticeGuideUi();
-        if (practiceToggle) {
-          practiceToggle.setAttribute('aria-pressed', String(practiceEnabled));
-          practiceToggle.disabled = !playbackAvailable || disposed || !!progressionAudioLeaseId;
+        for (const button of previewModeButtons) {
+          const mode = button.getAttribute('data-preview-ui-mode');
+          button.setAttribute('aria-pressed', String(mode === previewUiMode));
+          button.setAttribute('tabindex', mode === previewUiMode ? '0' : '-1');
+          button.disabled = mode === 'practice' && (!playbackAvailable || disposed || !!progressionAudioLeaseId);
         }
+        if (previewModeSelect) previewModeSelect.value = previewUiMode;
+        const practiceOption = previewModeSelect?.querySelector?.('option[value="practice"]');
+        if (practiceOption) practiceOption.disabled = !playbackAvailable || disposed || !!progressionAudioLeaseId;
         if (practiceSpeedSelect) {
           practiceSpeedSelect.value = String(practiceSpeed);
           practiceSpeedSelect.disabled = !playbackAvailable || disposed || !practiceEnabled || !!progressionAudioLeaseId;
@@ -3072,32 +3253,6 @@ ${cspMeta}
         setPracticeNotice(message || '');
       }
 
-      function togglePractice() {
-        if (disposed || progressionAudioLeaseId) return;
-        if (!playbackAvailable) {
-          announcePractice(audioLabels.practiceUnavailable || audioLabels.audioUnavailable);
-          return;
-        }
-        const wasPlaying = transport === 'playing' || transport === 'counting-in';
-        const current = currentScorePosition();
-        const practiceRow = document.getElementById('practice-toolbar');
-        const activeElement = document.activeElement;
-        if (practiceEnabled && activeElement && practiceRow?.contains(activeElement)) {
-          practiceToggle?.focus();
-        }
-        practiceEnabled = !practiceEnabled;
-        if (!practiceEnabled) {
-          loopMode = 'off';
-          abStartPoint = null;
-          abEndPoint = null;
-          loopRange = null;
-        }
-        persistWebviewState();
-        if (wasPlaying) rescheduleAtPosition(current);
-        else updatePlaybackUi();
-        announcePractice('');
-      }
-
       function setPracticeSpeed(value) {
         if (!practiceEnabled || disposed) {
           announcePractice(audioLabels.practiceEnableFirst);
@@ -3145,7 +3300,7 @@ ${cspMeta}
           return;
         }
         if (action === 'practiceToggle') {
-          togglePractice();
+          requestPreviewUiMode(previewUiMode === 'practice' ? 'normal' : 'practice');
           return;
         }
         if (!playbackAvailable) {
@@ -3168,6 +3323,8 @@ ${cspMeta}
         disposed = true;
         if (practiceGuideResizeObserver) practiceGuideResizeObserver.disconnect();
         practiceGuideResizeObserver = null;
+        if (previewEditDockResizeObserver) previewEditDockResizeObserver.disconnect();
+        previewEditDockResizeObserver = null;
         window.removeEventListener('resize', syncPracticeGuidePanelGeometry);
         cancelAllPracticeGuideFades(true);
         if (practiceGuideLayoutFrame) window.cancelAnimationFrame(practiceGuideLayoutFrame);
@@ -3185,13 +3342,30 @@ ${cspMeta}
         }
         if (body.style && typeof body.style.removeProperty === 'function') {
           body.style.removeProperty('--practice-guide-panel-height');
+          body.style.removeProperty('--preview-edit-dock-height');
         }
       }
 
       if (playBtn) playBtn.addEventListener('click', playOrResume);
       if (pauseBtn) pauseBtn.addEventListener('click', pausePlayback);
       if (stopBtn) stopBtn.addEventListener('click', stopPlayback);
-      if (practiceToggle) practiceToggle.addEventListener('click', togglePractice);
+      for (const button of previewModeButtons) {
+        button.addEventListener('click', () => requestPreviewUiMode(button.getAttribute('data-preview-ui-mode')));
+      }
+      const previewModeControl = document.getElementById('preview-mode-control');
+      if (previewModeControl) previewModeControl.addEventListener('keydown', event => {
+        const key = event.key;
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key)) return;
+        const available = previewModeButtons.filter(button => !button.disabled);
+        const current = available.findIndex(button => button.getAttribute('data-preview-ui-mode') === previewUiMode);
+        if (!available.length) return;
+        const nextIndex = key === 'Home' ? 0 : key === 'End' ? available.length - 1
+          : (current + (key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1) + available.length) % available.length;
+        event.preventDefault();
+        available[nextIndex].focus();
+        available[nextIndex].click();
+      });
+      if (previewModeSelect) previewModeSelect.addEventListener('change', () => requestPreviewUiMode(previewModeSelect.value));
       if (practiceSpeedSelect) {
         practiceSpeedSelect.addEventListener('change', () => setPracticeSpeed(practiceSpeedSelect.value));
       }
@@ -3264,13 +3438,27 @@ ${cspMeta}
           updatePlaybackUi();
           return;
         }
-        if (message && message.command === 'previewEditModeChanged'
+        if (message && message.command === 'previewModeDraftCheck' && typeof message.requestId === 'string'
           && message.documentUri === previewIdentity.documentUri
           && message.documentVersion === previewIdentity.documentVersion
           && message.previewGeneration === previewIdentity.previewGeneration) {
-          setPreviewEditMode(message.enabled === true);
-          if (message.available === false) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
-          syncPreviewEditTarget();
+          const binding = selectedPreviewBinding();
+          const hasDraft = previewEditMode && !!binding && previewEditValue.value !== binding.expected;
+          if (vscode) vscode.postMessage({ command: 'previewModeDraftCheckAcknowledged', requestId: message.requestId,
+            hasDraft, documentUri: previewIdentity.documentUri, documentVersion: previewIdentity.documentVersion,
+            previewGeneration: previewIdentity.previewGeneration });
+          return;
+        }
+        if (message && message.command === 'previewUiModeResult'
+          && message.documentUri === previewIdentity.documentUri
+          && message.documentVersion === previewIdentity.documentVersion
+          && message.previewGeneration === previewIdentity.previewGeneration) {
+          if (['normal', 'edit', 'practice'].includes(message.mode) && message.mode !== previewUiMode) {
+            setPreviewUiMode(message.mode);
+          }
+          if (message.success !== true && message.reason === 'temporaryTransform') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
+          else if (message.success !== true && message.reason === 'stopFailed') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStopFailed)}';
+          else if (message.success !== true && message.reason === 'staleContext') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStale)}';
           return;
         }
         if (message && message.command === 'previewVisualEditResult'
@@ -3546,8 +3734,9 @@ ${cspMeta}
         if (!restoreFocusControl) return;
         const target = document.getElementById(restoreFocusControl);
         const scoreSettingsTarget = target?.closest('#score-settings-row');
+        const previewModeTarget = target?.closest('#preview-mode-control') || target?.closest('.preview-mode-compact');
         const item = disclosureItems.find(entry => target && entry.panel.contains(target))
-          || (!scoreSettingsTarget && disclosureItems.find(entry => entry.button === viewExportToggle));
+          || (!scoreSettingsTarget && !previewModeTarget && disclosureItems.find(entry => entry.button === viewExportToggle));
         if (item && item.panel.dataset.inline !== 'true') {
           disclosureItems.forEach(other => closeDisclosure(other, false));
           item.panel.hidden = false;
@@ -3557,8 +3746,11 @@ ${cspMeta}
           item.buttons.forEach(button => button.setAttribute('aria-expanded', String(button === item.button)));
           positionDisclosure(item);
         }
-        (target || item && item.button || viewExportToggle).focus();
-        if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        const compactModeTarget = previewModeTarget && target?.getClientRects?.().length === 0
+          ? document.getElementById('preview-mode-select') : undefined;
+        const focusTarget = compactModeTarget || target || item && item.button || viewExportToggle;
+        focusTarget.focus();
+        if (focusTarget && typeof focusTarget.scrollIntoView === 'function') focusTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
 
       if (savePdfBtn) {
