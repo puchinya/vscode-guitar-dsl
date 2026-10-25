@@ -201,16 +201,16 @@
 | | Issue #93 再生 / Practice Mode コマンド | ✅ 完了 | `guitardsl.playback.togglePlayPause` / `guitardsl.playback.stop`、`guitardsl.practice.toggle` / `setLoopStart` / `setLoopEnd` / `clearLoop` / `slower` / `faster` |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
 | | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレットから共通 Inspector の Capo / Playability を開く。Capo / Beginner / Transpose の設定 UI は Inspector に集約 |
-| | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ新規エディタを開く。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、非実験的な分類を支える根拠がなく、生成結果は下書きとして要確認 |
+| | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ採譜パネル内に読み取り専用プレビューを表示し、Copy からエディタへ貼り付ける。文書は自動作成しない。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、生成結果は下書きとして要確認 |
 | | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
 | | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
 | | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
 | | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
 | | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完と CodeLens から決定論的な候補を提示。単一コード補完は prefix のみを置換し、多小節の置換・末尾追加は共通 Inspector で選択・確認後に適用 |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
-| | `guitardsl.openInspector` (共通 Inspector を開く, Issue #133) | ✅ 実装済み・PR #138 マージ済み | Secondary Sidebar の単一 Webview View。アクティブな GuitarDSL 文書の URI / version のみを表示し、対象がなければローカライズした空状態。ソース編集・音声再生の所有権は既存のまま |
+| | `guitardsl.openInspector` (共通 Inspector を開く, Issue #133) | ✅ 実装済み・PR #138 マージ済み | Secondary Sidebar の単一 Webview View。アクティブな GuitarDSL 文書の URI / version のみを表示し、対象がなければローカライズした空状態。進行の一時試聴はInspector内AudioContext、Extension Hostの排他leaseはPreview停止ACK後に付与する。候補選択はソースを編集せず、確認済みApplyだけが1回のUndo可能な編集になる |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
-| **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | Get Started / Current File（アクティブなエディタのみ）/ Tools。`onView:guitardsl.sidebar` で起動 |
+| **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | アクティブなGuitarDSL文書のTarget行と5分類（Create、Open / Import、Edit Assist、Export、Help）。Current Fileの対象はアクティブ文書のみ。`onView:guitardsl.sidebar` で起動 |
 | **設定** | `guitardsl.gemini.model`, `guitardsl.transcription.compressRepeats`, `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
 | **ヘルプ同期** | `docs/help/` → `media/help/`（`generate:help` / `check:help`） | ✅ 完了 | 仕様セクションの割り当てとダイジェスト、見出しごとの `help-sources` による本文の所有、コマンド・設定の仕様との一致、NLS、生成物の最新性を `npm test` で検査。コマンド・設定一覧は `package.json` から生成 |
 | **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入。倍音の差し引き {3,5,6} と 7th ゲートで maj7/7 への偏りを抑制）、拍は学習済みモデル Beat This! small（ONNX を tract で推論、最大 2 Worker で並列。拍が得られなければ従来方式に切り替え）、ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／ギター以外のドラム無し音源（ピアノ・ストリングス・パッド）では倍・半分テンポの選択を誤りやすい（#59）／5 分の曲の解析に約 45 秒・ピーク約 1.5 GB（M1）／ファンク・ジャズ等のテンションの多い和音のルート精度が低い／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
