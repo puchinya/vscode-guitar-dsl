@@ -1,5 +1,7 @@
 # Issue #132 統合受入れ記録
 
+Related PR: [#157](https://github.com/puchinya/vscode-guitar-dsl/pull/157) (open for review)
+
 ## Scope and decision precedence
 
 This record verifies the completed GUI work owned by Issues #133–#137 and #145. The change set does not restart those implementations or change their approved UI/audio design.
@@ -72,4 +74,4 @@ The other #133–#137/#145 regressions listed in the matrix completed in the sam
 
 - Windows, Linux, VS Code 1.109.0, VoiceOver, NVDA and physical-speaker playback were **NOT RUN** in this environment.
 - Six screenshot/audio E2E cases above remain **PENDING**, not PASS. The test command did not set the documented capture/audio gate.
-- The configured Required Check `agent-required-check`, current-HEAD self-review, and PR review state will be recorded after the PR is created. Issue #132 remains open until the PR is reviewed and merged.
+- The configured Required Check `agent-required-check` and current-HEAD self-review are tracked on [PR #157](https://github.com/puchinya/vscode-guitar-dsl/pull/157). Issue #132 remains open until the PR is reviewed and merged.
