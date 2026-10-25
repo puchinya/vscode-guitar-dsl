@@ -16,6 +16,8 @@
     "onView:guitardsl.sidebar",
     "onView:guitardsl.inspector",
     "onCommand:guitardsl.openInspector",
+    "onCommand:guitardsl.togglePreviewEditMode",
+    "onCommand:guitardsl.showVariables",
     "onLanguageModelTool:guitardsl_validate_dsl",
     "onLanguageModelTool:guitardsl_analyze_playability",
     "onLanguageModelTool:guitardsl_apply_capo",
@@ -56,6 +58,14 @@
       {
         "command": "guitardsl.openInspector",
         "title": "%command.openInspector.title%"
+      },
+      {
+        "command": "guitardsl.togglePreviewEditMode",
+        "title": "%command.togglePreviewEditMode.title%"
+      },
+      {
+        "command": "guitardsl.showVariables",
+        "title": "%command.showVariables.title%"
       },
       {
         "command": "guitardsl.exportPdf",

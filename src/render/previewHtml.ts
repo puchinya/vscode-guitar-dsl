@@ -18,6 +18,7 @@ import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
 import { practiceGuideStrokeVisualWidth, renderPracticeGuideStrokeSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
 import type { PracticeGuideStrokeSpec } from './practiceGuideStrokeSvg';
+import type { VisualSourceBinding } from '../compiler';
 
 export interface ScoreFontUris {
   regular: string;
@@ -46,6 +47,12 @@ export interface CompileHtmlOptions {
   documentUri?: string;
   documentVersion?: number;
   previewGeneration?: number;
+  /** Explicit Preview edit mode; false retains the existing toolbar and layout. */
+  previewEditMode?: boolean;
+  /** Source identity must be literal TextDocument text for editable Preview bindings. */
+  previewEditAvailable?: boolean;
+  /** Parser-owned authored token bindings, never inferred from SVG coordinates. */
+  visualBindings?: readonly VisualSourceBinding[];
 }
 
 export type PreviewLayoutFocusControl = 'select-page-size' | 'orientation-portrait' | 'orientation-landscape';
@@ -218,6 +225,16 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const score = parseGuitarDsl(dslContent, {
     expandPageBreakRepeats: options?.expandPageBreakRepeats
   });
+  const previewEditAvailable = options?.previewEditAvailable === true;
+  const previewEditMode = options?.previewEditMode === true;
+  const visualBindings = previewEditAvailable ? (options?.visualBindings ?? []) : [];
+  const visualBindingsJson = escapeJsonForHtml(JSON.stringify(visualBindings.map(binding => ({
+    id: binding.id, kind: binding.kind, line: binding.line, startCol: binding.startCol,
+    endCol: binding.endCol, expected: binding.expected
+  }))));
+  const visualBindingOptions = visualBindings.map(binding =>
+    `<option value="${escapeXml(binding.id)}">L${binding.line + 1}:${binding.startCol + 1} · ${escapeXml(binding.kind)} · ${escapeXml(binding.expected)}</option>`
+  ).join('');
   const playback = buildPlaybackHtmlData(score, msgs);
   if (options?.progressionAudioLeaseId) playback.progressionAudioLeaseId = options.progressionAudioLeaseId;
   const playbackJson = escapeJsonForHtml(JSON.stringify(playback));
@@ -226,12 +243,12 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     ? renderCspMeta(options.cspSource, options.nonce)
     : '';
 
-  const sheets = renderScoreSheets(score, pageSize, orientation);
+  const sheets = renderScoreSheets(score, pageSize, orientation, previewEditMode && previewEditAvailable);
   const spreadGroups: string[] = [];
   for (let i = 0; i < sheets.length; i += 2) {
     spreadGroups.push(`<div class="spread-sheet">${sheets.slice(i, i + 2).join('\n')}</div>`);
   }
-  const continuousSvg = renderContinuousSvg(score, pageSize);
+  const continuousSvg = renderContinuousSvg(score, pageSize, previewEditMode && previewEditAvailable);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const previewIdentityJson = escapeJsonForHtml(JSON.stringify({
@@ -1021,12 +1038,40 @@ ${cspMeta}
     fill: #0078d4;
     fill-opacity: 0.08;
   }
+  .preview-edit-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--vscode-widget-border, #555);
+    background: var(--vscode-editorWidget-background, #252526);
+    color: var(--vscode-foreground, #eee);
+    font-size: 12px;
+  }
+  .preview-edit-row[hidden] { display: none !important; }
+  .preview-edit-controls { display: inline-flex; gap: 4px; }
+  .preview-edit-controls[hidden], .preview-edit-row input[hidden], .preview-edit-row label[hidden], .preview-edit-row button[hidden] { display: none !important; }
+  body[data-preview-edit-mode="true"] svg [data-visual-binding] { cursor: pointer; pointer-events: all; touch-action: none; }
+  body[data-preview-edit-mode="true"] svg [data-visual-binding].preview-edit-selected { filter: drop-shadow(0 0 2px var(--vscode-focusBorder, #007fd4)); }
+  .preview-edit-row select, .preview-edit-row input {
+    min-width: 110px;
+    max-width: min(42vw, 420px);
+    min-height: 28px;
+    padding: 3px 6px;
+    background: var(--vscode-input-background, #1e1e1e);
+    color: var(--vscode-input-foreground, #eee);
+    border: 1px solid var(--vscode-input-border, #555);
+    font: inherit;
+  }
+  .preview-edit-status { color: var(--vscode-descriptionForeground, #aaa); }
 </style>
 </head>
 <body data-display-mode="single" data-orientation="${orientation}" data-page-size="${pageSize}"
   data-preview-document-uri="${escapeXml(options?.documentUri ?? '')}"
   data-preview-document-version="${Number.isSafeInteger(options?.documentVersion) ? options?.documentVersion : ''}"
-  data-preview-generation="${Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : ''}">
+  data-preview-generation="${Number.isSafeInteger(options?.previewGeneration) ? options?.previewGeneration : ''}"
+  data-preview-edit-mode="${previewEditMode}" data-preview-edit-available="${previewEditAvailable}">
   <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
     <div class="toolbar-transport">
     <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
@@ -1073,6 +1118,23 @@ ${cspMeta}
       </div>
       <button class="toolbar-action btn-help" id="btn-help" type="button" title="${escapeXml(msgs.uiHelpTitle)}" aria-label="${escapeXml(msgs.uiHelpTitle)}"><span aria-hidden="true">?</span><span class="toolbar-action-label"> ${escapeXml(msgs.uiHelp)}</span></button>
     </div>
+  </div>
+
+  <div class="preview-edit-row" id="preview-edit-row" role="group" aria-label="${escapeXml(msgs.uiPreviewEditMode)}"${previewEditMode ? '' : ' hidden'}>
+    <label for="preview-edit-target">${escapeXml(msgs.uiPreviewEditTarget)}</label>
+    <select id="preview-edit-target" aria-label="${escapeXml(msgs.uiPreviewEditTarget)}"${previewEditAvailable && visualBindings.length ? '' : ' disabled'}>${visualBindingOptions}</select>
+    <label id="preview-edit-value-label" for="preview-edit-value">${escapeXml(msgs.uiPreviewEditValue)}</label>
+    <input id="preview-edit-value" type="text" maxlength="256" autocomplete="off"${previewEditAvailable && visualBindings.length ? '' : ' disabled'}>
+    <div class="preview-edit-controls" id="preview-edit-melody-controls" role="group" aria-label="${escapeXml(msgs.uiPreviewEditMode)}" hidden>
+      <button class="toolbar-action" id="preview-edit-pitch-down" type="button" aria-label="${escapeXml(msgs.uiPreviewPitchDown)}">${escapeXml(msgs.uiPreviewPitchDown)}</button>
+      <button class="toolbar-action" id="preview-edit-pitch-up" type="button" aria-label="${escapeXml(msgs.uiPreviewPitchUp)}">${escapeXml(msgs.uiPreviewPitchUp)}</button>
+      <button class="toolbar-action" id="preview-edit-duration-longer" type="button" aria-label="${escapeXml(msgs.uiPreviewDurationLonger)}">${escapeXml(msgs.uiPreviewDurationLonger)}</button>
+      <button class="toolbar-action" id="preview-edit-duration-shorter" type="button" aria-label="${escapeXml(msgs.uiPreviewDurationShorter)}">${escapeXml(msgs.uiPreviewDurationShorter)}</button>
+    </div>
+    <button class="toolbar-action" id="preview-edit-apply" type="button"${previewEditAvailable && visualBindings.length ? '' : ' disabled'}>${escapeXml(msgs.uiPreviewApplyEdit)}</button>
+    <button class="toolbar-action" id="preview-edit-open-source" type="button" hidden>${escapeXml(msgs.uiOpenVisualSource)}</button>
+    <button class="toolbar-action" id="preview-edit-mode-toggle" type="button" aria-pressed="true">${escapeXml(msgs.uiPreviewEditMode)}</button>
+    <span class="preview-edit-status" id="preview-edit-status" role="status" aria-live="polite">${previewEditAvailable ? '' : escapeXml(msgs.uiPreviewEditDisabled)}</span>
   </div>
 
   <div class="score-settings-row" id="score-settings-row" role="group" aria-label="${escapeXml(msgs.uiScoreSettings)}">
@@ -1139,6 +1201,134 @@ ${cspMeta}
       const currentOrientation = body.getAttribute('data-orientation');
       const previewIdentity = ${previewIdentityJson};
       const restoreFocusControl = ${restoreFocusControlJson};
+      const previewVisualBindings = ${visualBindingsJson};
+      const previewEditRow = document.getElementById('preview-edit-row');
+      const previewEditTarget = document.getElementById('preview-edit-target');
+      const previewEditValue = document.getElementById('preview-edit-value');
+      const previewEditStatus = document.getElementById('preview-edit-status');
+      const previewEditMelodyControls = document.getElementById('preview-edit-melody-controls');
+      const previewEditOpenSource = document.getElementById('preview-edit-open-source');
+      const previewEditPitchDown = document.getElementById('preview-edit-pitch-down');
+      const previewEditPitchUp = document.getElementById('preview-edit-pitch-up');
+      const previewEditDurationLonger = document.getElementById('preview-edit-duration-longer');
+      const previewEditDurationShorter = document.getElementById('preview-edit-duration-shorter');
+      let previewEditMode = body.dataset.previewEditMode === 'true';
+      let melodyPointerGesture;
+      const setPreviewEditMode = enabled => {
+        previewEditMode = enabled === true;
+        body.dataset.previewEditMode = String(previewEditMode);
+        previewEditRow.hidden = !previewEditMode;
+        document.getElementById('preview-edit-mode-toggle').setAttribute('aria-pressed', String(previewEditMode));
+      };
+      const previewEditIdentity = () => ({
+        documentUri: body.dataset.previewDocumentUri || '',
+        documentVersion: Number(body.dataset.previewDocumentVersion),
+        previewGeneration: Number(body.dataset.previewGeneration)
+      });
+      const selectedPreviewBinding = () => previewVisualBindings.find(binding => binding.id === previewEditTarget.value);
+      const markSelectedPreviewBinding = id => {
+        document.querySelectorAll('[data-visual-binding].preview-edit-selected').forEach(element => element.classList.remove('preview-edit-selected'));
+        if (id) document.querySelectorAll('[data-visual-binding]').forEach(element => {
+          if (element.getAttribute('data-visual-binding') === id) element.classList.add('preview-edit-selected');
+        });
+      };
+      const syncPreviewEditTarget = () => {
+        const binding = selectedPreviewBinding();
+        previewEditValue.value = binding ? binding.expected : '';
+        const available = body.dataset.previewEditAvailable === 'true' && !!binding;
+        const editableText = binding && ['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric'].includes(binding.kind);
+        const melodyNote = binding?.kind === 'melodyNote';
+        const melodyDuration = binding && ['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'].includes(binding.kind);
+        const readOnly = binding && !['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric', 'melodyNote', 'melodyGroup', 'melodyRest', 'letReference'].includes(binding.kind);
+        previewEditValue.hidden = !editableText;
+        document.getElementById('preview-edit-value-label').hidden = !editableText;
+        previewEditMelodyControls.hidden = !melodyNote && !melodyDuration;
+        previewEditPitchDown.hidden = !melodyNote;
+        previewEditPitchUp.hidden = !melodyNote;
+        previewEditDurationLonger.hidden = !melodyDuration;
+        previewEditDurationShorter.hidden = !melodyDuration;
+        previewEditTarget.disabled = !available;
+        previewEditValue.disabled = !available || !editableText;
+        document.getElementById('preview-edit-apply').disabled = !available || !editableText;
+        previewEditOpenSource.hidden = !readOnly;
+        markSelectedPreviewBinding(binding?.id);
+        if (!available && body.dataset.previewEditAvailable !== 'true') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
+        else if (binding?.kind === 'letReference') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewReferenceChoice)}';
+        else if (readOnly) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditReadOnly)}';
+        else if (!binding) previewEditStatus.textContent = '';
+        else if (!available) previewEditStatus.textContent = '';
+      };
+      const requestPreviewReferenceChoice = binding => {
+        if (!binding || binding.kind !== 'letReference' || !previewEditMode || body.dataset.previewEditAvailable !== 'true') return;
+        vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewEditReference', visualElementId: binding.id });
+      };
+      previewEditTarget.addEventListener('change', () => { syncPreviewEditTarget(); requestPreviewReferenceChoice(selectedPreviewBinding()); });
+      document.addEventListener('pointerdown', event => {
+        if (!event.isPrimary || event.button !== 0 || !previewEditMode || body.dataset.previewEditAvailable !== 'true') return;
+        const element = event.target instanceof Element ? event.target.closest('[data-visual-binding]') : null;
+        const id = element?.getAttribute('data-visual-binding');
+        const binding = previewVisualBindings.find(item => item.id === id);
+        if (!element || !binding || binding.kind !== 'melodyNote') return;
+        previewEditTarget.value = binding.id;
+        syncPreviewEditTarget();
+        melodyPointerGesture = { pointerId: event.pointerId, bindingId: binding.id, startY: event.clientY };
+        try { element.setPointerCapture(event.pointerId); } catch (_) { /* Document listeners still finish the gesture. */ }
+      });
+      document.addEventListener('pointerup', event => {
+        const gesture = melodyPointerGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        melodyPointerGesture = undefined;
+        if (!previewEditMode || selectedPreviewBinding()?.id !== gesture.bindingId) return;
+        const delta = gesture.startY - event.clientY;
+        if (Math.abs(delta) < 8) return;
+        const semitones = Math.max(-11, Math.min(11, Math.round(delta / 12)));
+        if (semitones !== 0) postPreviewVisualEdit('transposeMelody', { semitones });
+      });
+      document.addEventListener('pointercancel', event => {
+        if (melodyPointerGesture?.pointerId === event.pointerId) melodyPointerGesture = undefined;
+      });
+      document.addEventListener('click', event => {
+        if (!previewEditMode || body.dataset.previewEditAvailable !== 'true') return;
+        const element = event.target instanceof Element ? event.target.closest('[data-visual-binding]') : null;
+        const id = element?.getAttribute('data-visual-binding');
+        if (!id || !previewVisualBindings.some(binding => binding.id === id)) return;
+        previewEditTarget.value = id;
+        syncPreviewEditTarget();
+        const binding = selectedPreviewBinding();
+        if (binding?.kind === 'letReference') requestPreviewReferenceChoice(binding);
+        else if (!previewEditValue.hidden) previewEditValue.focus();
+        else document.getElementById('preview-edit-pitch-down').focus();
+      });
+      const postPreviewVisualEdit = (operation, payload) => {
+        const binding = selectedPreviewBinding();
+        if (!previewEditMode || !binding || body.dataset.previewEditAvailable !== 'true') return;
+        vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewVisualEdit', visualElementId: binding.id, operation, payload });
+      };
+      document.getElementById('preview-edit-pitch-down').addEventListener('click', () => postPreviewVisualEdit('transposeMelody', { semitones: -1 }));
+      document.getElementById('preview-edit-pitch-up').addEventListener('click', () => postPreviewVisualEdit('transposeMelody', { semitones: 1 }));
+      document.getElementById('preview-edit-duration-longer').addEventListener('click', () => postPreviewVisualEdit('changeDuration', { direction: 'longer' }));
+      document.getElementById('preview-edit-duration-shorter').addEventListener('click', () => postPreviewVisualEdit('changeDuration', { direction: 'shorter' }));
+      document.getElementById('preview-edit-apply').addEventListener('click', () => {
+        const binding = selectedPreviewBinding();
+        if (!previewEditMode || !binding || body.dataset.previewEditAvailable !== 'true'
+          || !previewEditValue.value || previewEditValue.value.length > 256 || /[\\r\\n\\0]/.test(previewEditValue.value)) return;
+        const operation = binding.kind === 'chord' ? 'replaceChord'
+          : binding.kind === 'tab' ? 'replaceTabToken'
+            : binding.kind === 'rhythm' ? 'replaceRhythmToken'
+              : 'replaceLyric';
+        vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewVisualEdit', visualElementId: binding.id,
+          operation, payload: binding.kind === 'chord' ? { name: previewEditValue.value } : { text: previewEditValue.value } });
+      });
+      document.getElementById('preview-edit-mode-toggle').addEventListener('click', () => {
+        vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewEditModeToggle', enabled: false });
+      });
+      previewEditOpenSource.addEventListener('click', () => {
+        const binding = selectedPreviewBinding();
+        if (binding && previewEditMode && body.dataset.previewEditAvailable === 'true') {
+          vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewOpenVisualSource', visualElementId: binding.id });
+        }
+      });
+      syncPreviewEditTarget();
       let currentMode = 'single';
       let countInEnabled = false;
       let metronomeEnabled = false;
@@ -3020,6 +3210,44 @@ ${cspMeta}
           progressionAudioLeaseId = '';
           body.dataset.progressionAudioLocked = 'false';
           updatePlaybackUi();
+          return;
+        }
+        if (message && message.command === 'previewEditModeChanged'
+          && message.documentUri === previewIdentity.documentUri
+          && message.documentVersion === previewIdentity.documentVersion
+          && message.previewGeneration === previewIdentity.previewGeneration) {
+          setPreviewEditMode(message.enabled === true);
+          if (message.available === false) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
+          syncPreviewEditTarget();
+          return;
+        }
+        if (message && message.command === 'previewVisualEditResult'
+          && message.documentUri === previewIdentity.documentUri
+          && message.documentVersion === previewIdentity.documentVersion
+          && message.previewGeneration === previewIdentity.previewGeneration) {
+          if (message.success === true) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditApplied)}';
+          else if (message.reason === 'staleSource' || message.reason === 'staleContext') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStale)}';
+          else if (message.reason === 'unsupportedTarget') {
+            previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditReadOnly)}';
+            previewEditOpenSource.hidden = false;
+          } else if (message.reason === 'stopFailed') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStopFailed)}';
+          else previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditFailed)}';
+          return;
+        }
+        if (message && message.command === 'previewEditStopRequest' && typeof message.requestId === 'string') {
+          const identity = {
+            documentUri: body.dataset.previewDocumentUri || '',
+            documentVersion: Number(body.dataset.previewDocumentVersion),
+            previewGeneration: Number(body.dataset.previewGeneration)
+          };
+          const matches = message.documentUri === identity.documentUri
+            && message.documentVersion === identity.documentVersion
+            && message.previewGeneration === identity.previewGeneration;
+          let stopped = false;
+          if (matches && !progressionAudioLeaseId) {
+            try { performPlaybackAction('stop'); stopped = true; } catch (_) { stopped = false; }
+          }
+          if (vscode) vscode.postMessage({ command: 'previewEditStopAcknowledged', requestId: message.requestId, stopped, ...identity });
           return;
         }
         if (message && message.command === 'playbackAction' && typeof message.action === 'string') {

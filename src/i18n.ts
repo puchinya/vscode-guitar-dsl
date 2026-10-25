@@ -83,6 +83,24 @@ export interface Messages {
   uiSavePdfTitle: string;
   uiHelp: string;
   uiHelpTitle: string;
+  uiEditPreview: string;
+  uiPreviewEditMode: string;
+  uiPreviewEditTarget: string;
+  uiPreviewEditValue: string;
+  uiPreviewApplyEdit: string;
+  uiPreviewPitchDown: string;
+  uiPreviewPitchUp: string;
+  uiPreviewDurationLonger: string;
+  uiPreviewDurationShorter: string;
+  uiPreviewReferenceChoice: string;
+  uiPreviewEditDisabled: string;
+  uiPreviewEditReadOnly: string;
+  uiOpenVisualSource: string;
+  uiPreviewEditApplied: string;
+  uiPreviewEditFailed: string;
+  uiPreviewEditStale: string;
+  uiPreviewEditStopFailed: string;
+  inspectorVariableInvalid: string;
   msgHelpOpenFailed: string;
   uiPlaybackGroup: string;
   uiPlay: string;
@@ -239,6 +257,27 @@ export interface Messages {
   inspectorEmptyDescription: string;
   inspectorDocumentStatus: string;
   inspectorDocumentDescription: string;
+  inspectorVariablesTitle: string;
+  inspectorVariablesDescription: string;
+  inspectorVariableName: string;
+  inspectorVariableValue: string;
+  inspectorVariableReference: string;
+  inspectorVariableChoose: string;
+  inspectorVariableUsage: string;
+  inspectorVariableContexts: string;
+  inspectorVariableDirect: string;
+  inspectorVariableIndirect: string;
+  inspectorVariableAdd: string;
+  inspectorVariableEditGlobal: string;
+  inspectorVariableRename: string;
+  inspectorVariableClone: string;
+  inspectorVariableDelete: string;
+  inspectorVariableDetach: string;
+  inspectorVariableJump: string;
+  inspectorVariableApply: string;
+  inspectorVariableCancel: string;
+  inspectorVariableDeleteConfirm: string;
+  inspectorVariableError: string;
   templatePickPlaceholder: string;
   templates: Record<StarterTemplateId, { label: string; description: string }>;
   samplePickPlaceholder: string;
@@ -384,6 +423,24 @@ export const MESSAGES_JA: Messages = {
   uiSavePdfTitle: '選択中の用紙サイズと向きでPDFを保存',
   uiHelp: 'ヘルプ',
   uiHelpTitle: 'GuitarDSL ヘルプを開く',
+  uiEditPreview: '譜面を編集',
+  uiPreviewEditMode: 'プレビュー編集モード',
+  uiPreviewEditTarget: '編集するソース要素',
+  uiPreviewEditValue: 'コード名・トークン・歌詞',
+  uiPreviewApplyEdit: '適用',
+  uiPreviewPitchDown: '半音下げる',
+  uiPreviewPitchUp: '半音上げる',
+  uiPreviewDurationLonger: '音価を長く',
+  uiPreviewDurationShorter: '音価を短く',
+  uiPreviewReferenceChoice: 'Inspectorで全参照編集か、この箇所だけ展開を選択してください。',
+  uiPreviewEditDisabled: '一時的なカポ・初心者設定が有効なため、ソース編集できません。',
+  uiPreviewEditReadOnly: 'この要素はプレビューから編集できません。ソースを開いてください。',
+  uiOpenVisualSource: 'ソースを開く',
+  uiPreviewEditApplied: '変更を反映しました。',
+  uiPreviewEditFailed: '変更できませんでした。ソースと選択対象を確認してください。',
+  uiPreviewEditStale: 'ソースが変更されました。対象を選び直してください。',
+  uiPreviewEditStopFailed: '再生を停止できなかったため、編集していません。',
+  inspectorVariableInvalid: 'この定義は重複または無効なため、Inspectorから編集できません。ソースで修正してください。',
   msgHelpOpenFailed: 'GuitarDSL ヘルプを開けませんでした。拡張機能を再インストールしてください。',
   uiPlaybackGroup: '再生操作',
   uiPlay: '再生',
@@ -539,6 +596,27 @@ export const MESSAGES_JA: Messages = {
   inspectorEmptyDescription: 'エディタで GuitarDSL 文書を開くと、この場所に文書コンテキストが表示されます。',
   inspectorDocumentStatus: 'アクティブな GuitarDSL 文書に対応しています',
   inspectorDocumentDescription: 'この基盤は読み取り専用です。文書の編集は標準エディタで行います。',
+  inspectorVariablesTitle: 'let 変数',
+  inspectorVariablesDescription: '定義の変更は全参照に反映されます。特定の使用箇所だけを編集する場合は、その箇所を選んでローカル展開します。',
+  inspectorVariableName: '変数名',
+  inspectorVariableValue: '定義内容',
+  inspectorVariableReference: '使用箇所',
+  inspectorVariableChoose: '参照の編集方法を選択',
+  inspectorVariableUsage: '有効な使用箇所',
+  inspectorVariableContexts: '利用可能な場所',
+  inspectorVariableDirect: '直接',
+  inspectorVariableIndirect: '間接',
+  inspectorVariableAdd: '新規作成',
+  inspectorVariableEditGlobal: '定義を編集（全参照）',
+  inspectorVariableRename: '名前を変更',
+  inspectorVariableClone: '複製',
+  inspectorVariableDelete: '未使用の定義を削除',
+  inspectorVariableDetach: 'この箇所だけ編集',
+  inspectorVariableJump: '定義へ移動',
+  inspectorVariableApply: '変更を適用',
+  inspectorVariableCancel: 'キャンセル',
+  inspectorVariableDeleteConfirm: 'この未使用の let 定義を削除しますか？',
+  inspectorVariableError: '変更を適用できませんでした。文書を再選択してやり直してください。',
   templatePickPlaceholder: '新しい GuitarDSL ドキュメントのテンプレートを選択',
   templates: {
     basicChordSong: { label: 'コード譜（基本）', description: 'コードとストロークのリズム、小節単位の歌詞' },
@@ -727,6 +805,24 @@ export const MESSAGES_EN: Messages = {
   uiSavePdfTitle: 'Save score as PDF with selected paper size and orientation',
   uiHelp: 'Help',
   uiHelpTitle: 'Open GuitarDSL Help',
+  uiEditPreview: 'Edit score',
+  uiPreviewEditMode: 'Preview editing mode',
+  uiPreviewEditTarget: 'Source element to edit',
+  uiPreviewEditValue: 'Chord, token, or lyric',
+  uiPreviewApplyEdit: 'Apply',
+  uiPreviewPitchDown: 'Lower by a semitone',
+  uiPreviewPitchUp: 'Raise by a semitone',
+  uiPreviewDurationLonger: 'Lengthen duration',
+  uiPreviewDurationShorter: 'Shorten duration',
+  uiPreviewReferenceChoice: 'Choose all references or this occurrence in the Inspector.',
+  uiPreviewEditDisabled: 'Source editing is unavailable while temporary capo or beginner settings are active.',
+  uiPreviewEditReadOnly: 'This item cannot be edited in Preview. Open its source instead.',
+  uiOpenVisualSource: 'Open source',
+  uiPreviewEditApplied: 'The change was applied.',
+  uiPreviewEditFailed: 'The change could not be applied. Check the source and selected target.',
+  uiPreviewEditStale: 'The source changed. Select the target again.',
+  uiPreviewEditStopFailed: 'Playback could not be stopped, so no edit was applied.',
+  inspectorVariableInvalid: 'This definition is duplicated or invalid and cannot be edited in the Inspector. Fix it in source.',
   msgHelpOpenFailed: 'Could not open GuitarDSL Help. Try reinstalling the extension.',
   uiPlaybackGroup: 'Playback controls',
   uiPlay: 'Play',
@@ -882,6 +978,27 @@ export const MESSAGES_EN: Messages = {
   inspectorEmptyDescription: 'Open a GuitarDSL document in the editor to show its context here.',
   inspectorDocumentStatus: 'Showing the active GuitarDSL document context',
   inspectorDocumentDescription: 'This foundation is read-only. Edit the document in the standard editor.',
+  inspectorVariablesTitle: 'let variables',
+  inspectorVariablesDescription: 'Changing a definition updates every reference. Select a use when you want to edit only that occurrence.',
+  inspectorVariableName: 'Variable name',
+  inspectorVariableValue: 'Definition value',
+  inspectorVariableReference: 'Use location',
+  inspectorVariableChoose: 'Choose how to edit this reference',
+  inspectorVariableUsage: 'Valid uses',
+  inspectorVariableContexts: 'Allowed contexts',
+  inspectorVariableDirect: 'Direct',
+  inspectorVariableIndirect: 'Indirect',
+  inspectorVariableAdd: 'New variable',
+  inspectorVariableEditGlobal: 'Edit definition (all uses)',
+  inspectorVariableRename: 'Rename',
+  inspectorVariableClone: 'Clone',
+  inspectorVariableDelete: 'Delete unused definition',
+  inspectorVariableDetach: 'Edit this occurrence only',
+  inspectorVariableJump: 'Go to definition',
+  inspectorVariableApply: 'Apply changes',
+  inspectorVariableCancel: 'Cancel',
+  inspectorVariableDeleteConfirm: 'Delete this unused let definition?',
+  inspectorVariableError: 'Could not apply the change. Reselect the document and try again.',
   templatePickPlaceholder: 'Choose a template for the new GuitarDSL document',
   templates: {
     basicChordSong: { label: 'Basic Chord Song', description: 'Chords, strumming rhythm and per-bar lyrics' },

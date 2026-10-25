@@ -10,6 +10,7 @@
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -192,6 +193,18 @@ Compiler 診断、レイアウト・SVG 生成、フォント初期化、PDF 書
 source/effective DSL 再構築時は occurrence index を古い loop point とともに破棄し、推測で再解決しない。再生不可、無名 Section、`B <= A` は部分状態を適用せず、既存有効状態を保持して localized status を返す。
 
 Practice bank transition の Seek、loop wrap、resize、再構築、再入、Dispose は generation を進め、古い transitionend/rAF/fallback callback を無効化して旧 node を確実に除去する。transitionend が background throttle 等で届かない場合も fallback で cleanup し、reduced motion では旧層を残さない。存在しない後続 occurrence は空の小節として捏造せず、現在ページだけを表示する。
+
+## Issue #158 implementation design
+
+The score renderer keeps a single notation source for Preview and PDF. Parser-owned bindings are added as non-visible identity metadata or a Preview-only adapter projection; selection borders, handles, and interaction targets are composed only into Preview HTML. PDF generation receives the same existing score SVG without edit metadata rendered as visible content or controls.
+
+Preview rebuilds retain the current 48 px playback row, 44 px score-settings row, optional 42 px Practice row, and Practice guide geometry. Edit controls occupy a separate row only while editing. The Preview renderer uses captured source bindings to associate hit areas with visual elements and emits only escaped stable IDs, not source ranges or replacement text.
+
+Selection and draft state are disposable UI state. Rebuilds rebind a selected stable key only when URI, version, and render generation match; otherwise they clear it. Temporary Capo or Beginner output that differs from source suspends visual editing until the user explicitly restores the original DSL. Rendering and PDF export never serialize edited objects; the Host applies source splices and then the ordinary parse/render cycle projects the document again.
+
+### Verification strategy
+
+Render tests compare the existing display-mode and PDF SVG output with the Preview interaction-enabled output while ignoring only non-visible Preview metadata. Tests also verify that edit controls and overlays are absent from PDF, disabled-mode row heights remain stable, source bindings are escaped, and SVG contains no script, event handler, or external URL. Real Extension Development Host screenshots are compared with the two approved vector proposals and remain separate evidence.
 
 ## Alternatives considered
 

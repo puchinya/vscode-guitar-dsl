@@ -8,6 +8,7 @@
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
@@ -99,12 +100,14 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の24のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
+拡張機能は以下の34のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
 | `guitardsl.showPreview` | `GuitarDSL: Open Preview to the Side` | エディタタイトルバー、エクスプローラーコンテキストメニュー、コマンドパレット | `$(open-preview)` |
 | `guitardsl.openInspector` | `GuitarDSL: Open Inspector` | コマンドパレット | - |
+| `guitardsl.togglePreviewEditMode` | `GuitarDSL: Toggle Preview Editing` | コマンドパレット | - |
+| `guitardsl.showVariables` | `GuitarDSL: Manage let Variables` | コマンドパレット | - |
 | `guitardsl.exportPdf` | `GuitarDSL: Export PDF / Print` | コマンドパレット、プレビュー内ツールバー | - |
 | `guitardsl.importGuitarPro` | `GuitarDSL: Import Guitar Pro 7/8` | コマンドパレット、`.gp` ファイルのエクスプローラーコンテキストメニュー | - |
 | `guitardsl.exportGuitarPro` | `GuitarDSL: Export Guitar Pro 7` | コマンドパレット、GuitarDSL 文書のエクスプローラーコンテキストメニュー | - |
@@ -430,6 +433,12 @@ B（候補）を選択して提案コードDecorationを表示する。再生は
 ### 3.25 `guitardsl.openInspector`
 GuitarDSL 共通 Inspector（§4D）を明示的に開く。対象は現在アクティブなエディタだけとし、GuitarDSL 文書がない場合は空の案内を表示する。他の開いている文書へフォールバックしない。呼び出しを繰り返してもビューは増えない。通常の入力・カーソル移動・文書切替・拡張機能の起動ではビューを表示しない。
 
+### 3.26 `guitardsl.togglePreviewEditMode`
+現在表示している単一 Preview の編集モードを切り替える。新しい Preview を開かず、DSL の永続化は行わない。Preview がない場合は何もしない。Capo / Beginner の一時変換が非恒等の場合、切替を拒否して原文へ戻す明示的な操作を案内する。
+
+### 3.27 `guitardsl.showVariables`
+現在アクティブな GuitarDSL 文書のlet変数を、既存の単一 Inspector のvariablesコンテキストで表示する。GuitarDSL文書がない場合は空状態を維持し、別文書へフォールバックしない。chord定義編集には遷移しない。
+
 ## 4. プレビュー機能仕様 (Webview Preview Specification)
 
 プレビュー画面は VS Code Webview API を使用して提供される。
@@ -577,6 +586,18 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 - Preview が候補セッションを表示中に A/B または候補を切り替えたときは Inspector の予約音源を stop/fade し、同じ singleton Preview の表示だけを選択側 DSL へ同期する。Preview が閉じていれば候補切替で開かない。速度・モード変更では予約音源と scheduler を停止する。Inspector の再生中は Preview の UI / command start をロックし、Preview の再構築後もロック状態を適用する。試聴の自然終了または Stop は lease を解放し、通常の Preview / Practice 再生を再び許可する。文書変更・別文書への切替・Inspector / Preview の破棄・通常 Preview への復帰時は必要な音声を止め、session と Decoration を破棄する。同一文書へフォーカスを戻しても Preview の表示を通常 Preview に差し替えない。
 - Inspector の Webview message は candidate ID など識別子のみを送信する。ホストは session generation・URI・document version と候補を照合し、同一 URI/version でも以前の session から遅れて届いた message を拒否する。Webview が送る DSL は適用しない。候補 rationale、音声エラー、操作ラベルを日本語・英語で提供する。AudioContext / 合成失敗でも候補選択と適用は使える。
 - lease 取得・解放の非同期メッセージは要求世代、lease ID、現在の session identity を再確認する。Preview の停止確認が遅延・欠落した場合は Inspector の再生を開始しない。後続の A/B・候補・停止・閉じる操作で古くなった許可・描画要求は現在の Preview 表示や再生状態に反映しない。
+
+### 4.9 Preview 双方向編集（Issue #158）
+
+- Preview は既存のsingleton Panelを使い、既定の表示モードと明示的な編集モードを切り替える。表示モードでは既存Previewの可視SVG、48 px再生行、44 px設定行、Practice有効時だけの42 px行、4小節ガイド、再生・PDFの結果を変えない。編集用rowとhit-areaは編集モードだけに表示し、PDF SVGへ含めない。
+- 標準TextEditorのTextDocumentが唯一の永続ソースである。GUI gestureは {uri, documentVersion, previewGeneration, visualElementId, operation, payload} のintentだけを送り、source offset、置換テキスト、WorkspaceEditをWebviewから受け取らない。Hostは対象、現在のversion/generation、parser-owned binding、token種別と期待原文を再検証してpure plannerを呼ぶ。
+- GUIから確定した1 gestureは一つのWorkspaceEditとして適用し一回のUndoで戻せる。ドラッグ中は文書を変更せず、pointerupまたはキー確定で一度だけ適用する。Escape、pointercancel、古い世代、version不一致、二重適用、再解析または意味検証失敗、applyEdit拒否、必要な音声Stop ACK失敗では0編集とする。
+- 編集はauthored chord名、melody音符・休符・音価、rhythm token、単一TAB声部の弦・フレット・音価、lyrの一音節だけを対象にする。ソースの非対象bytes、Unicode、コメント、空白、改行を保ち、音価継承や歌詞対応などに不整合が出る変更は拒否するか、音楽的意味が等価な明示記法へ変換する。横方向の拍移動、複数声部TAB、format全体の書換えは行わない。
+- 同一authored sourceのrepeat / arrangement occurrenceはソース元の一つの要素として扱う。表示だけの単一occurrenceを複製・編集しない。source originが曖昧な場合はread-onlyとし、「コードで開く」と理由を示す。
+- let参照を使う譜面要素を編集する場合は「定義を編集（全参照）」「この箇所だけ展開して編集」「キャンセル」を選ばせる。局所展開は唯一のauthored参照範囲で、全スコアの意味が変わらない場合だけ許可する。
+- Preview表示中のCapo / Beginner一時変換が非恒等なら編集overlayを無効化し、原文表示へ戻すことを明示して求める。暗黙に一時設定を捨てない。
+- Preview再生・Practiceは既存Preview owner、進行候補の試聴はInspector ownerとProgressionAudioLeaseCoordinatorのままにする。編集の前後で既存Stop / ACK規則を使い、追加AudioContext、scheduler、tempo authorityを作らない。
+- 文書切替、version変更、再描画、Preview / Inspector破棄、編集モードOFFでは対象sessionとdraftを失効させる。選択はURI/version/generation/stableElementKeyで再解決できる場合のみ復元する。すべての操作にキーボード代替、可視フォーカス、ARIA状態とローカライズ名を設ける。
 
 ## 4B. 楽譜設定 (Score Settings)
 
@@ -738,6 +759,13 @@ Inspector は編集補助機能を同じ場所へ段階的に集約するため�
 
 ---
 
+### 4D.4 let 変数管理
+- variablesはInspectorの既存singletonに追加するコンテキストであり、対象は明示された現在のGuitarDSL URI/versionだけとする。変数モデルはcompilerのsourceDefinitionsとparser-owned $name reference spansから作る。chord definitionは混ぜない。
+- 有効なletについて、定義source位置、使用文脈、direct参照数、indirect参照数、参照source位置、unused状態を表示する。directとindirectは別に数え、同じ参照を重複計上しない。invalid / duplicate / cyclic定義はread-onlyで診断とソース位置を示す。
+- Inspectorは新規、定義編集、名前変更、複製、未使用削除の草稿とrevisionをHost sessionに保持する。変更を適用するまで文書、Preview、PDF、音声は変えない。ApplyはURI/version/session generation/revision/expected bytesを再確認し、一回のWorkspaceEditにする。使用中の定義は削除できない。
+- 名前変更は衝突、無効名、循環を検証し、一致する定義名とすべての直接 $name token（前方・後方・入れ子を含む）だけを置換する。コメントや部分一致する別名は変更しない。参照ジャンプは元文書のsource spanへ移動する。
+- Webview messageはgeneration、session URI/version/generation、revision、variable id、操作種別とpayloadをHostで検証する。stale / malformed / duplicate Apply、Cancel、対象文書切替、View破棄は0編集とする。ドラフトと状態はWebview永続stateへ保存しない。
+
 ## 5. アウトライン仕様 (DocumentSymbol Specification)
 
 `GuitarDslDocumentSymbolProvider` により、VS Code の「アウトライン (Outline)」ビューおよび「シンボルへ移動 (Go to Symbol in File)」に楽譜の論理構造を提供する。
@@ -888,6 +916,9 @@ Code Action の計画は VS Code API に依存しない純粋変換として実�
 - サイドバーのセクション名・項目ラベル・案内項目、テンプレートとサンプルのクイックピック（プレースホルダー・ラベル・説明）、テンプレート・サンプルを開けなかったときのエラーメッセージをロケールに従ってローカライズする。サンプルのラベルはファイル名のまま表示する。
 
 ---
+
+### 6.9 Preview 編集と変数 Inspector のローカライズ
+- 編集モードの切替、編集対象・操作・適用・キャンセル、read-only理由、参照編集の選択、stale / validation / stop失敗、変数一覧と直接・間接参照数を日本語・英語で表示する。ツールチップ、ARIA名、無効理由にも同じロケールを使い、固定英語文言を追加しない。
 
 ## 7. ヘルプと仕様の同期 (Help Synchronization)
 

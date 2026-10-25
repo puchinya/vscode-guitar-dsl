@@ -34,6 +34,33 @@ describe('renderInspectorHtml', () => {
     assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
   });
 
+  it('shows direct and indirect let references and disables invalid definition edits', () => {
+    const context = {
+      kind: 'variables',
+      uri: 'file:///song.guitardsl',
+      version: 4,
+      sessionGeneration: 1,
+      revision: 0,
+      draftRevision: 0,
+      selectedName: 'riff',
+      definitions: [{
+        name: 'riff', valid: false, duplicate: true, line: 0, nameStartCol: 4, nameEndCol: 8,
+        valueStartCol: 11, valueEndCol: 14, value: '4.d', allowedContexts: ['measure'],
+        directReferences: [{ name: 'riff', line: 2, startCol: 8, endCol: 13, kind: 'score' }],
+        usageLocations: [
+          { name: 'riff', line: 2, startCol: 8, endCol: 13, kind: 'score' },
+          { name: 'riff', line: 1, startCol: 10, endCol: 15, kind: 'definition', ownerName: 'groove', via: 'groove' }
+        ]
+      }]
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'variables-nonce');
+    assert.match(html, /id="variables-usages"/);
+    assert.match(html, /labels\.variablesDirect \+ ": " \+ directCount/);
+    assert.match(html, /deleteOption\.disabled = !valid \|\| !unused/);
+    assert.match(html, /labels\.variablesInvalid/);
+    assert.match(html, /postVariables\("variablesJump", \{ name: selected\.name, line: item\.line/);
+  });
+
   it('renders the settings state inside the shared Inspector and loads its nonce-authorized renderer', () => {
     const context = {
       kind: 'settings',

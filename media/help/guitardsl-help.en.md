@@ -63,7 +63,9 @@ The Command Palette commands **GuitarDSL: New from Template** and **GuitarDSL: O
 
 ### GuitarDSL Inspector
 
-The Inspector is a shared place for document-aware assistance as features move into it. Use **GuitarDSL: Open Inspector** from the Command Palette. It follows only the active GuitarDSL document and shows an empty state when none is active. Typing, cursor movement, and ordinary document switches do not reveal it. Document information is read-only. Progression auditions play from the Inspector; regular playback and Practice stay in Preview. If you move the view, VS Code keeps it in that location.
+The Inspector is a shared place for document-aware assistance as features move into it. Use **GuitarDSL: Open Inspector** from the Command Palette. It follows only the active GuitarDSL document and shows an empty state when none is active. Typing, cursor movement, and ordinary document switches do not reveal it. Document information is read-only, while the **Variables** tab can edit let definitions. Progression auditions play from the Inspector; regular playback and Practice stay in Preview. If you move the view, VS Code keeps it in that location.
+
+**GuitarDSL: Show Variables** opens the active document's let-variable list in the existing Inspector. These fragments remain distinct from chord-diagram definitions. Review each definition's usage and source references, then jump to a reference. Create, duplicate, rename, edit, or remove an unused definition in a draft and choose **Apply Changes** to make one undoable edit. Rename updates all references; a used definition cannot be deleted. When editing a score element that uses a variable, choose between editing the definition for all references and safely expanding only that source location.
 
 ### Editor Support
 
@@ -76,6 +78,8 @@ The Inspector is a shared place for document-aware assistance as features move i
 ### Score Preview
 
 **GuitarDSL: Open Preview to the Side** shows the rendered score next to the editor. The preview follows your edits and the active GuitarDSL editor. Its 48 px playback row keeps Play, Pause, Stop, seek, and elapsed/total time visible. A dedicated 44 px Score settings row sits directly below it at every width, with directly operable Capo, colored Playability, and Beginner controls. At 840 CSS px and wider it also shows barre policy, capo selection mode, and Inspector links; below that width, use **More** for those supplemental controls. When playback is unavailable, the controls remain visible with a reason.
+
+**GuitarDSL: Toggle Preview Edit Mode** adds temporary editing controls to the same Preview. Changes to chords, melody, rhythm, TAB, and lyrics are written to the GuitarDSL source, with one undo step per action. When a source location is ambiguous or unsafe to change, Preview explains why and offers navigation to the editor. Display mode, PDF appearance, playback, and Practice settings remain in place. If temporary capo or Beginner transformations are active, explicitly return to the original source before editing.
 
 - **Practice** shows its 42 px row below Score settings only while enabled; it starts at 92 px from the top. Practice OFF leaves no extra row. The score begins at 110 px when Practice is OFF and 152 px when ON.
 - The fixed bottom guide follows score time and shows every measure, melody, lyrics, techniques, chord names/diagrams, and the next chord. During playback it highlights the current lyric syllable and written rhythm slot, including each continuation slot in sequence. The automatic 4/8/16 grid is songwide; a manual grid changes guide marks only. `〜` marks a sustained value or valid tie continuation, `.m` uses `・`, and rests keep their own value-specific mark. Brushes and staccato do not imply sustain.
@@ -527,6 +531,8 @@ Run these from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). This list i
 |---|---|
 | GuitarDSL: Open Preview to the Side | `guitardsl.showPreview` |
 | GuitarDSL: Open Inspector | `guitardsl.openInspector` |
+| GuitarDSL: Toggle Preview Editing | `guitardsl.togglePreviewEditMode` |
+| GuitarDSL: Manage let Variables | `guitardsl.showVariables` |
 | GuitarDSL: Export PDF / Print | `guitardsl.exportPdf` |
 | GuitarDSL: Import Guitar Pro 7/8 | `guitardsl.importGuitarPro` |
 | GuitarDSL: Export Guitar Pro 7 | `guitardsl.exportGuitarPro` |

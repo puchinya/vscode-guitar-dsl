@@ -26,8 +26,8 @@ export const FETA_TREBLE_CLEF_PATH = "m12.049 3.5296c0.305 3.1263-2.019 5.6563-4
  * Chord name above the staff (baseline y = 33). A diagram label (`C@barre`, spec §7.1) is added as a
  * small grey superscript. Returns the SVG and the horizontal space it takes (for spacing the next chord).
  */
-export function renderChordName(ch: { name: string; label?: string }, x: number, chordSize: number): { svg: string; width: number } {
-  let svg = `<text x="${fmt(x)}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
+export function renderChordName(ch: { name: string; label?: string }, x: number, chordSize: number, extraAttrs = ''): { svg: string; width: number } {
+  let svg = `<text${extraAttrs} x="${fmt(x)}" y="33" font-size="${chordSize}" font-weight="900" fill="#000">${escapeXml(ch.name)}</text>`;
   let width = ch.name.length * (chordSize * 0.6);
   if (ch.label) {
     const labelSize = chordSize * 0.5;
@@ -296,21 +296,21 @@ export function rhythmHeads(m: MeasureData): { heads: RhythmHead[]; graces: { it
 }
 
 /** Rest glyph centred on (x, midY); `staveLines` are the five line y positions (top to bottom). */
-export function renderRestGlyph(base: NoteBase, rx: number, midY: number, staveLines: number[]): string {
+export function renderRestGlyph(base: NoteBase, rx: number, midY: number, staveLines: number[], extraAttrs = ''): string {
   if (base === 1) {
-    return `<rect x="${rx - 6}" y="${staveLines[1]}" width="12" height="5" fill="#000"/>`;
+    return `<rect${extraAttrs} x="${rx - 6}" y="${staveLines[1]}" width="12" height="5" fill="#000"/>`;
   }
   if (base === 2) {
-    return `<rect x="${rx - 6}" y="${staveLines[2] - 5}" width="12" height="5" fill="#000"/>`;
+    return `<rect${extraAttrs} x="${rx - 6}" y="${staveLines[2] - 5}" width="12" height="5" fill="#000"/>`;
   }
   if (base === 8) {
-    return `<g transform="translate(${rx}, ${midY})">
+    return `<g${extraAttrs} transform="translate(${rx}, ${midY})">
             <circle cx="-2" cy="-5" r="2.4" fill="#000"/>
             <path d="M -0.2,-5 C 1.2,-5 2.8,-6.2 3.8,-8.5 L 4.5,-8.5 C 3.2,-3.5 0.5,3.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-1.5 1.5,-4.5 C 0.8,-4.2 0.2,-4.2 -0.2,-4.2 Z" fill="#000"/>
           </g>`;
   }
   if (base === 16) {
-    return `<g transform="translate(${rx}, ${midY})">
+    return `<g${extraAttrs} transform="translate(${rx}, ${midY})">
             <circle cx="-2" cy="-8" r="2.2" fill="#000"/>
             <circle cx="-3" cy="-1" r="2.2" fill="#000"/>
             <path d="M -0.2,-8 C 1.2,-8 2.5,-9.2 3.5,-11.5 L 4.2,-11.5 C 3.0,-6.5 0.5,2.5 -3.5,8.5 L -4.5,8.0 C -1.5,4.0 0.8,-2.5 1.5,-5.5 C 0.8,-5.2 0.2,-5.2 -0.2,-5.2 Z" fill="#000"/>
@@ -318,7 +318,7 @@ export function renderRestGlyph(base: NoteBase, rx: number, midY: number, staveL
           </g>`;
   }
   // Quarter rest: zigzag glyph spanning 3 staff spaces (y = -12..12 around the middle line).
-  return `<g transform="translate(${rx}, ${midY})"><path d="M -1.6,-12 L 3.6,-5.4 C 2,-3.6 1.2,-2 1.6,-0.4 L 3.8,4.2 C 1.4,3.4 -1.4,4.2 -1.4,6.8 C -1.4,8.8 -0.2,10.6 1.2,12 C -2.2,10.8 -4.2,8.4 -4.2,5.8 C -4.2,3.4 -2.4,2.2 0,2.4 L -2.8,-1.6 C -1,-3.2 -0.2,-4.8 -0.6,-6.8 L -3,-9.6 Z" fill="#000"/></g>`;
+  return `<g${extraAttrs} transform="translate(${rx}, ${midY})"><path d="M -1.6,-12 L 3.6,-5.4 C 2,-3.6 1.2,-2 1.6,-0.4 L 3.8,4.2 C 1.4,3.4 -1.4,4.2 -1.4,6.8 C -1.4,8.8 -0.2,10.6 1.2,12 C -2.2,10.8 -4.2,8.4 -4.2,5.8 C -4.2,3.4 -2.4,2.2 0,2.4 L -2.8,-1.6 C -1,-3.2 -0.2,-4.8 -0.6,-6.8 L -3,-9.6 Z" fill="#000"/></g>`;
 }
 
 // Flag outlines in local coordinates: origin at the stem end, x to the right of the stem, y towards the notehead.
@@ -429,14 +429,14 @@ export function ellipsePath(cx: number, cy: number, rx: number, ry: number, deg:
  * Whole note: level oval with thick sides and a hole tilted to the upper right.
  * Half note: tilted oval with a thin elongated hole. Quarter and shorter: filled tilted oval.
  */
-export function renderNotehead(base: NoteBase, x: number, y: number): string {
+export function renderNotehead(base: NoteBase, x: number, y: number, extraAttrs = ''): string {
   if (base === 1) {
-    return `<path class="notehead" d="${ellipsePath(x, y, 6.4, 4.2, 0)} ${ellipsePath(x, y, 3.3, 1.9, -55)}" fill="#000" fill-rule="evenodd"/>`;
+    return `<path class="notehead"${extraAttrs} d="${ellipsePath(x, y, 6.4, 4.2, 0)} ${ellipsePath(x, y, 3.3, 1.9, -55)}" fill="#000" fill-rule="evenodd"/>`;
   }
   if (base === 2) {
-    return `<path class="notehead" d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
+    return `<path class="notehead"${extraAttrs} d="${ellipsePath(x, y, HEAD_RX + 0.2, HEAD_RY + 0.1, -20)} ${ellipsePath(x, y, 4.3, 1.5, -30)}" fill="#000" fill-rule="evenodd"/>`;
   }
-  return `<ellipse class="notehead" cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
+  return `<ellipse class="notehead"${extraAttrs} cx="${fmt(x)}" cy="${fmt(y)}" rx="${HEAD_RX}" ry="${HEAD_RY}" transform="rotate(-20 ${fmt(x)} ${fmt(y)})" fill="#000"/>`;
 }
 
 /** Horizontal distance between the two columns of noteheads on either side of a shared stem. */

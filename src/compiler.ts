@@ -32,7 +32,8 @@ import {
   parseNoteGroupToken,
   pitchTextLength,
   takesSyllable,
-  tokenizeLyrics
+  tokenizeLyrics,
+  tokenizeLyricsWithSpans
 } from './melody';
 import type { Syllable } from './melody';
 import { CHORD_LABEL_PATTERN, CHORD_NAME_PATTERN, ChordDefinition, chordKey, isChordDefinitionLine, parseChordDefinition } from './chordDefinition';
@@ -177,12 +178,14 @@ export interface CodeActionSourceToken {
   startCol: number;
   endCol: number;
   text: string;
-  kind: 'rhythm' | 'noteGroup' | 'inlineNote' | 'melodyNote' | 'melodyGroup' | 'melodyRest' | 'letReference' | 'chord';
+  kind: 'rhythm' | 'noteGroup' | 'inlineNote' | 'melodyNote' | 'melodyGroup' | 'melodyRest' | 'letReference' | 'chord' | 'tab' | 'lyric';
   /** Tokens in one authored measure rhythm or one `mel:` cell share this identifier. */
   cellId: string;
   measureIndex?: number;
   /** Parser event indexes represented by this token; melody and rhythm use their measure arrays separately. */
-  eventRange?: { collection: 'rhythm' | 'melody'; start: number; end: number };
+  eventRange?: { collection: 'rhythm' | 'melody' | 'tab'; start: number; end: number };
+  /** Zero-based lyric verse rendered against eventRange. */
+  visualVerse?: number;
   /** Present only when this authored token contains a parseable explicit duration. */
   duration?: {
     startCol: number;
@@ -205,6 +208,49 @@ export interface CodeActionDefinitionSpan {
   valueEndCol?: number;
   trailingComment: boolean;
   duplicate?: boolean;
+}
+
+/** A parser-owned reference to a `let` definition. Columns use UTF-16 offsets, like VS Code. */
+export interface LetReferenceSummary {
+  name: string;
+  line: number;
+  startCol: number;
+  endCol: number;
+  kind: 'score' | 'definition';
+  ownerName?: string;
+  /** Present when a visible score occurrence reaches this definition through another `let`. */
+  via?: string;
+}
+
+/** Resolved parser summary used by Inspector and source-preserving planners. */
+export interface LetDefinitionSummary {
+  name: string;
+  valid: boolean;
+  duplicate: boolean;
+  line: number;
+  nameStartCol: number;
+  nameEndCol: number;
+  valueStartCol: number;
+  valueEndCol: number;
+  value: string;
+  allowedContexts: Array<'measure' | 'melody' | 'tab'>;
+  directReferences: LetReferenceSummary[];
+  usageLocations: LetReferenceSummary[];
+}
+
+/** Parser-owned authored token mapping; rendering adapters may bind this id to an SVG element. */
+export interface VisualSourceBinding {
+  id: string;
+  kind: CodeActionSourceToken['kind'];
+  line: number;
+  startCol: number;
+  endCol: number;
+  expected: string;
+  cellId: string;
+  measureIndex?: number;
+  eventRange?: CodeActionSourceToken['eventRange'];
+  visualVerse?: number;
+  origin: 'authored-token' | 'let-reference';
 }
 
 /** Source location of one header line; the value range excludes the `key:` prefix. */
@@ -572,6 +618,8 @@ export interface ParsedScore {
   /** Exact source spans emitted by the same parser that owns the score model. */
   codeActionTokens?: CodeActionSourceToken[];
   sourceDefinitions?: CodeActionDefinitionSpan[];
+  visualSourceBindings?: VisualSourceBinding[];
+  letDefinitions?: LetDefinitionSummary[];
   hasTab?: boolean;
 }
 
@@ -2084,9 +2132,11 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
   function assignLyrics(group: MelodyGroup, text: string, lineIdx: number, lineStart: number, lineEnd: number) {
     const verse = group.verseCount++;
     const items = tokenizeLyrics(text);
+    const lyricSpans = tokenizeLyricsWithSpans(text).filter(spanned => spanned.item.kind === 'syllable');
     const sung = group.notes.map((n, idx) => ({ n, idx })).filter(x => takesSyllable(x.n));
 
     let noteCursor = 0;
+    let syllableCursor = 0;
     let consumed = 0;
     for (const item of items) {
       if (item.kind === 'bar') continue;
@@ -2094,6 +2144,22 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
       if (noteCursor >= sung.length) continue;
       const note = sung[noteCursor++].n;
       if (item.kind === 'syllable') {
+        const spanned = lyricSpans[syllableCursor++];
+        if (spanned) {
+          const startCol = lineStart + spanned.start;
+          const endCol = lineStart + spanned.end;
+          const measure = measures.find(candidate => candidate.melody?.includes(note));
+          const eventIndex = measure?.melody?.indexOf(note) ?? -1;
+          codeActionTokens.push({
+            line: lineIdx, startCol, endCol, text: (lines[lineIdx] ?? '').slice(startCol, endCol),
+            kind: 'lyric', cellId: `lyric:${lineIdx}:${verse}`,
+            ...(measure && eventIndex >= 0 ? {
+              measureIndex: measure.measureIndex,
+              eventRange: { collection: 'melody' as const, start: eventIndex, end: eventIndex + 1 },
+              visualVerse: verse
+            } : {})
+          });
+        }
         note.syllables[verse] = { text: item.text, hyphenToNext: item.hyphenToNext, extend: false };
       } else if (item.kind === 'extend') {
         note.syllables[verse] = { text: '', hyphenToNext: false, extend: true };
@@ -2577,8 +2643,20 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         const tokenized = tokenizeTabItems(cell.text);
         for (const token of tokenized) {
           const tokenStart = cell.startCol + token.start;
+          const tokenEventStart = beats.length;
+          const sourceToken: CodeActionSourceToken = {
+            line: group.line,
+            startCol: tokenStart,
+            endCol: tokenStart + token.text.length,
+            text: token.text,
+            kind: token.text.startsWith('$') ? 'letReference' : 'tab',
+            cellId: `tab:${group.line}:${cell.startCol}:${measureIndex}`,
+            measureIndex
+          };
+          codeActionTokens.push(sourceToken);
           if (token.text === '%') {
             report(group.line, tokenStart, tokenStart + token.text.length, 'invalidTabToken', { token: token.text });
+            sourceToken.eventRange = { collection: 'tab', start: tokenEventStart, end: tokenEventStart };
             continue;
           }
           let parsedBeats: ParsedTabBeat[] = [];
@@ -2644,6 +2722,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             }
             beats.push({ isRest: sourceBeat.isRest, notes, duration, effects: cloneEffects(sourceBeat.effects), syllables: [] });
           }
+          sourceToken.eventRange = { collection: 'tab', start: tokenEventStart, end: beats.length };
         }
         targetMeasure.tabVoices = [{ voice: 1, beats }];
         byMeasure.set(measureIndex, beats);
@@ -2700,18 +2779,34 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     };
     for (const lyric of group.lyrics) {
       const items = tokenizeLyrics(lyric.text);
+      const lyricSpans = tokenizeLyricsWithSpans(lyric.text).filter(spanned => spanned.item.kind === 'syllable');
       const sung = flattened.map((entry, index) => ({ entry, index })).filter(({ entry, index }) =>
         !entry.beat.isRest && entry.beat.notes.some(note => takesSlot(index, note))
       );
       let cursor = 0;
+      let syllableCursor = 0;
       let consumed = 0;
+      const verse = group.lyrics.indexOf(lyric);
       for (const item of items) {
         if (item.kind === 'bar') continue;
         consumed++;
         const slot = sung[cursor++];
         if (!slot) continue;
+        if (item.kind === 'syllable') {
+          const spanned = lyricSpans[syllableCursor++];
+          if (spanned) {
+            const startCol = lyric.startCol + spanned.start;
+            const endCol = lyric.startCol + spanned.end;
+            codeActionTokens.push({
+              line: lyric.line, startCol, endCol, text: (lines[lyric.line] ?? '').slice(startCol, endCol),
+              kind: 'lyric', cellId: `lyric:${lyric.line}`,
+              measureIndex: slot.entry.measureIndex,
+              eventRange: { collection: 'tab', start: slot.entry.beatIndex, end: slot.entry.beatIndex + 1 },
+              visualVerse: verse
+            });
+          }
+        }
         const syllables = [...slot.entry.beat.syllables];
-        const verse = group.lyrics.indexOf(lyric);
         const syllable: Syllable | null = item.kind === 'syllable'
           ? { text: item.text, hyphenToNext: item.hyphenToNext, extend: false }
           : item.kind === 'extend'
@@ -2820,6 +2915,129 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     p.pageNumber = idx + 1;
   });
 
+  const parsedCodeActionTokens = codeActionTokens.map(token => {
+    if (!token.cellId.startsWith('measure:') || token.kind === 'chord') return token;
+    const measureIndex = measures.findIndex(measure => {
+      const span = measure.rhythmSource;
+      return span?.kind === 'explicit'
+        && span.line === token.line
+        && token.startCol >= span.startCol
+        && token.endCol <= span.endCol;
+    });
+    if (measureIndex < 0) return { ...token, measureIndex: undefined };
+    const span = measures[measureIndex].rhythmSource!;
+    return { ...token, measureIndex, cellId: `measure:${measureIndex}:${span.line}:${span.startCol}` };
+  });
+  const parsedSourceDefinitions = [
+    ...sourceDefinitions,
+    ...chordDefinitions.map(definition => {
+      const rawLine = lines[definition.line] ?? '';
+      const nonWhitespace = rawLine.search(/\S/);
+      const startCol = nonWhitespace < 0 ? 0 : nonWhitespace;
+      return {
+        kind: 'chord' as const,
+        name: definition.name,
+        ...(definition.label !== undefined ? { label: definition.label } : {}),
+        line: definition.line,
+        startCol,
+        endCol: rawLine.length,
+        trailingComment: /\s#/.test(rawLine.slice(startCol))
+      };
+    })
+  ];
+  const letDefinitionSummaries: LetDefinitionSummary[] = parsedSourceDefinitions
+    .filter((definition): definition is CodeActionDefinitionSpan & { kind: 'let' } => definition.kind === 'let')
+    .map(definition => {
+      const nameStartCol = (lines[definition.line] ?? '').indexOf(definition.name, definition.startCol);
+      const nameEndCol = nameStartCol + definition.name.length;
+      const parsedDefinition = letDefinitions.get(definition.name);
+      const directReferences: LetReferenceSummary[] = [
+        ...parsedCodeActionTokens
+          .filter(token => token.kind === 'letReference' && token.text === `$${definition.name}`)
+          .map(token => ({
+            name: definition.name, line: token.line, startCol: token.startCol, endCol: token.endCol, kind: 'score' as const
+          })),
+        ...Array.from(letDefinitions.values()).flatMap(owner => owner.elements
+          .filter(element => element.ref === definition.name)
+          .map(element => ({
+            name: definition.name,
+            line: element.loc.line,
+            startCol: element.loc.startCol,
+            endCol: element.loc.endCol,
+            kind: 'definition' as const,
+            ownerName: owner.name
+          })))
+      ].sort((a, b) => a.line - b.line || a.startCol - b.startCol);
+      const usageLocations: LetReferenceSummary[] = directReferences.filter(reference => reference.kind === 'score');
+      const addNestedUsage = (ownerName: string, rootReference: LetReferenceSummary, path: Set<string>) => {
+        if (path.has(ownerName)) return;
+        const owner = letDefinitions.get(ownerName);
+        if (!owner) return;
+        const nextPath = new Set(path).add(ownerName);
+        for (const element of owner.elements) {
+          if (!element.ref) continue;
+          if (element.ref === definition.name) {
+            usageLocations.push({
+              name: definition.name,
+              line: element.loc.line,
+              startCol: element.loc.startCol,
+              endCol: element.loc.endCol,
+              kind: 'definition',
+              ownerName,
+              via: rootReference.name
+            });
+          }
+          addNestedUsage(element.ref, rootReference, nextPath);
+        }
+      };
+      for (const rootReference of parsedCodeActionTokens) {
+        if (rootReference.kind !== 'letReference') continue;
+        const rootName = rootReference.text.slice(1);
+        addNestedUsage(rootName, {
+          name: rootName, line: rootReference.line, startCol: rootReference.startCol,
+          endCol: rootReference.endCol, kind: 'score'
+        }, new Set());
+      }
+      const seenUsages = new Set<string>();
+      const uniqueUsages = usageLocations.filter(reference => {
+        const key = `${reference.line}:${reference.startCol}:${reference.endCol}:${reference.via ?? ''}`;
+        if (seenUsages.has(key)) return false;
+        seenUsages.add(key);
+        return true;
+      });
+      const allowedContexts: LetDefinitionSummary['allowedContexts'] = [];
+      if (parsedDefinition?.ctx && (parsedDefinition.ctx & CTX_MEASURE) !== 0) allowedContexts.push('measure');
+      if (parsedDefinition?.ctx && (parsedDefinition.ctx & CTX_MELODY) !== 0) allowedContexts.push('melody');
+      if (parsedDefinition?.ctx && (parsedDefinition.ctx & CTX_TAB) !== 0) allowedContexts.push('tab');
+      return {
+        name: definition.name,
+        valid: !!parsedDefinition && !parsedDefinition.invalid && !definition.duplicate,
+        duplicate: definition.duplicate === true,
+        line: definition.line,
+        nameStartCol,
+        nameEndCol,
+        valueStartCol: definition.valueStartCol ?? nameEndCol,
+        valueEndCol: definition.valueEndCol ?? nameEndCol,
+        value: (lines[definition.line] ?? '').slice(definition.valueStartCol ?? nameEndCol, definition.valueEndCol ?? nameEndCol),
+        allowedContexts,
+        directReferences,
+        usageLocations: uniqueUsages
+      };
+    });
+  const visualSourceBindings: VisualSourceBinding[] = parsedCodeActionTokens.map((token, index) => ({
+    id: `source-${token.line}-${token.startCol}-${token.endCol}-${index}`,
+    kind: token.kind,
+    line: token.line,
+    startCol: token.startCol,
+    endCol: token.endCol,
+    expected: token.text,
+    cellId: token.cellId,
+    ...(token.measureIndex !== undefined ? { measureIndex: token.measureIndex } : {}),
+    ...(token.eventRange ? { eventRange: token.eventRange } : {}),
+    ...(token.visualVerse !== undefined ? { visualVerse: token.visualVerse } : {}),
+    origin: token.kind === 'letReference' ? 'let-reference' as const : 'authored-token' as const
+  }));
+
   return {
     title,
     artist,
@@ -2849,36 +3067,10 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     pickup: pickupBeats,
     events,
     pitchTokens,
-    codeActionTokens: codeActionTokens.map(token => {
-      if (!token.cellId.startsWith('measure:') || token.kind === 'chord') return token;
-      const measureIndex = measures.findIndex(measure => {
-        const span = measure.rhythmSource;
-        return span?.kind === 'explicit'
-          && span.line === token.line
-          && token.startCol >= span.startCol
-          && token.endCol <= span.endCol;
-      });
-      if (measureIndex < 0) return { ...token, measureIndex: undefined };
-      const span = measures[measureIndex].rhythmSource!;
-      return { ...token, measureIndex, cellId: `measure:${measureIndex}:${span.line}:${span.startCol}` };
-    }),
-    sourceDefinitions: [
-      ...sourceDefinitions,
-      ...chordDefinitions.map(definition => {
-        const rawLine = lines[definition.line] ?? '';
-        const nonWhitespace = rawLine.search(/\S/);
-        const startCol = nonWhitespace < 0 ? 0 : nonWhitespace;
-        return {
-          kind: 'chord' as const,
-          name: definition.name,
-          ...(definition.label !== undefined ? { label: definition.label } : {}),
-          line: definition.line,
-          startCol,
-          endCol: rawLine.length,
-          trailingComment: /\s#/.test(rawLine.slice(startCol))
-        };
-      })
-    ],
+    codeActionTokens: parsedCodeActionTokens,
+    sourceDefinitions: parsedSourceDefinitions,
+    visualSourceBindings,
+    letDefinitions: letDefinitionSummaries,
     hasTab: tabGroups.length > 0
   };
 }

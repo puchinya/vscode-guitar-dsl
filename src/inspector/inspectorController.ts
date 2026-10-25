@@ -1,4 +1,5 @@
 import type * as vscode from 'vscode';
+import type { LetDefinitionSummary } from '../compiler';
 import type { SupportedLocale } from '../i18n';
 
 export const INSPECTOR_VIEW_ID = 'guitardsl.inspector';
@@ -53,10 +54,25 @@ export interface InspectorSettingsContext {
   readonly description: string;
 }
 
+export interface InspectorVariablesContext {
+  readonly kind: 'variables';
+  readonly uri: string;
+  readonly version: number;
+  readonly sessionGeneration: number;
+  readonly revision: number;
+  readonly draftRevision: number;
+  readonly definitions: readonly LetDefinitionSummary[];
+  readonly selectedName?: string;
+  readonly error?: string;
+  readonly requiresReferenceChoice?: boolean;
+  readonly referenceSelection?: string;
+}
+
 export type InspectorContext =
   | { readonly kind: 'empty' }
   | { readonly kind: 'document'; readonly uri: string; readonly version: number }
   | InspectorSettingsContext
+  | InspectorVariablesContext
   | InspectorProgressionContext;
 
 export interface InspectorProgressionMessage extends Record<string, unknown> {
@@ -81,6 +97,18 @@ export interface InspectorSettingsMessage extends Record<string, unknown> {
 }
 
 export type InspectorSettingsMessageHandler = (message: InspectorSettingsMessage) => void | Promise<void>;
+
+export interface InspectorVariablesMessage extends Record<string, unknown> {
+  readonly command: string;
+  readonly generation: number;
+  readonly sessionUri: string;
+  readonly sessionVersion: number;
+  readonly sessionGeneration: number;
+  readonly revision: number;
+  readonly draftRevision?: number;
+}
+
+export type InspectorVariablesMessageHandler = (message: InspectorVariablesMessage) => void | Promise<void>;
 
 export interface InspectorProgressionAudioAcknowledgement extends Record<string, unknown> {
   readonly command: 'progressionAudioStarted' | 'progressionAudioStopped' | 'progressionAudioFailed';
@@ -113,9 +141,11 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   private progressionMessageHandler: InspectorProgressionMessageHandler | undefined;
   private progressionIntentPredicate: InspectorProgressionIntentPredicate | undefined;
   private settingsMessageHandler: InspectorSettingsMessageHandler | undefined;
+  private variablesMessageHandler: InspectorVariablesMessageHandler | undefined;
   private progressionAudioAcknowledgementHandler: InspectorProgressionAudioAcknowledgementHandler | undefined;
   private settingsSessionEndHandler: ((uri: string) => void) | undefined;
   private endingSettingsForContextChange = false;
+  private endingVariablesForContextChange = false;
 
   constructor(
     private readonly presentation: InspectorPresentation,
@@ -167,6 +197,20 @@ export class GuitarDslInspectorController implements vscode.Disposable {
     if (!this.presentation.show(false)) await this.focusView();
   }
 
+  async showVariables(context: InspectorVariablesContext): Promise<void> {
+    if (this.disposed || !isValidVariablesContext(context)) return;
+    this.beginExplicitIntent();
+    this.setContext(context);
+    if (!this.presentation.show(false)) await this.focusView();
+  }
+
+  updateVariables(context: InspectorVariablesContext): void {
+    if (this.disposed || !isValidVariablesContext(context) || this.context.kind !== 'variables'
+      || this.context.uri !== context.uri || this.context.sessionGeneration !== context.sessionGeneration
+      || context.revision < this.context.revision) return;
+    this.setContext(context);
+  }
+
   updateSettings(context: InspectorSettingsContext): void {
     if (this.disposed || !isValidSettingsContext(context) || this.context.kind !== 'settings'
       || this.context.uri !== context.uri || this.context.sessionGeneration !== context.sessionGeneration
@@ -206,6 +250,10 @@ export class GuitarDslInspectorController implements vscode.Disposable {
 
   setSettingsMessageHandler(handler: InspectorSettingsMessageHandler | undefined): void {
     this.settingsMessageHandler = handler;
+  }
+
+  setVariablesMessageHandler(handler: InspectorVariablesMessageHandler | undefined): void {
+    this.variablesMessageHandler = handler;
   }
 
   setSettingsSessionEndHandler(handler: ((uri: string) => void) | undefined): void {
@@ -253,6 +301,20 @@ export class GuitarDslInspectorController implements vscode.Disposable {
       await this.settingsMessageHandler?.(message);
       return true;
     }
+    if (isVariablesMessage(message)) {
+      if (this.context.kind !== 'variables') return true;
+      const context = this.context;
+      if (message.generation !== this.generation || message.sessionUri !== context.uri
+        || message.sessionVersion !== context.version || message.sessionGeneration !== context.sessionGeneration
+        || message.revision !== context.revision) return true;
+      if (message.command === 'variablesCancel') this.endingVariablesForContextChange = true;
+      try {
+        await this.variablesMessageHandler?.(message);
+      } finally {
+        this.endingVariablesForContextChange = false;
+      }
+      return true;
+    }
     if (!isProgressionMessage(message) || this.context.kind !== 'progression') return false;
     const context = this.context;
     if (message.generation !== this.generation
@@ -279,6 +341,18 @@ export class GuitarDslInspectorController implements vscode.Disposable {
       });
       return;
     }
+    if (this.context.kind === 'variables') {
+      const context = this.context;
+      void this.variablesMessageHandler?.({
+        command: 'variablesCancel',
+        generation: this.generation,
+        sessionUri: context.uri,
+        sessionVersion: context.version,
+        sessionGeneration: context.sessionGeneration,
+        revision: context.revision
+      });
+      return;
+    }
     if (this.context.kind !== 'progression') return;
     const context = this.context;
     void this.progressionMessageHandler?.({
@@ -292,7 +366,8 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   }
 
   invalidate(uri: string): void {
-    if ((this.context.kind === 'document' || this.context.kind === 'settings' || this.context.kind === 'progression') && this.context.uri === uri) {
+    if ((this.context.kind === 'document' || this.context.kind === 'settings' || this.context.kind === 'variables'
+      || this.context.kind === 'progression') && this.context.uri === uri) {
       this.beginExplicitIntent();
       this.setContext(EMPTY_CONTEXT);
     }
@@ -313,6 +388,23 @@ export class GuitarDslInspectorController implements vscode.Disposable {
         this.settingsSessionEndHandler?.(uri);
       } finally {
         this.endingSettingsForContextChange = false;
+      }
+      if (this.disposed) return;
+    }
+    if (this.context.kind === 'variables' && context.kind !== 'variables' && !this.endingVariablesForContextChange) {
+      const variables = this.context;
+      this.endingVariablesForContextChange = true;
+      try {
+        void this.variablesMessageHandler?.({
+          command: 'variablesCancel',
+          generation: this.generation,
+          sessionUri: variables.uri,
+          sessionVersion: variables.version,
+          sessionGeneration: variables.sessionGeneration,
+          revision: variables.revision
+        });
+      } finally {
+        this.endingVariablesForContextChange = false;
       }
       if (this.disposed) return;
     }
@@ -345,6 +437,19 @@ function isValidSettingsContext(context: InspectorSettingsContext): boolean {
     && typeof context.model === 'object' && context.model !== null;
 }
 
+function isValidVariablesContext(context: InspectorVariablesContext): boolean {
+  return context.kind === 'variables' && typeof context.uri === 'string' && context.uri.length > 0
+    && Number.isSafeInteger(context.version) && context.version >= 0
+    && Number.isSafeInteger(context.sessionGeneration) && context.sessionGeneration > 0
+    && Number.isSafeInteger(context.revision) && context.revision >= 0
+    && Number.isSafeInteger(context.draftRevision) && context.draftRevision >= 0
+    && Array.isArray(context.definitions) && context.definitions.length <= 1000
+    && (context.selectedName === undefined || typeof context.selectedName === 'string')
+    && (context.error === undefined || typeof context.error === 'string')
+    && (context.requiresReferenceChoice === undefined || typeof context.requiresReferenceChoice === 'boolean')
+    && (context.referenceSelection === undefined || typeof context.referenceSelection === 'string');
+}
+
 function isProgressionMessage(message: unknown): message is InspectorProgressionMessage {
   if (typeof message !== 'object' || message === null || !('command' in message)) return false;
   const command = (message as { command?: unknown }).command;
@@ -365,6 +470,19 @@ function isSettingsMessage(message: unknown): message is InspectorSettingsMessag
     && Number.isSafeInteger(value.sessionGeneration)
     && Number.isSafeInteger(value.revision)
     && (value.section === 'capo' || value.section === 'beginner' || value.section === 'transpose');
+}
+
+function isVariablesMessage(message: unknown): message is InspectorVariablesMessage {
+  if (typeof message !== 'object' || message === null || !('command' in message)) return false;
+  const value = message as Record<string, unknown>;
+  return typeof value.command === 'string' && value.command.startsWith('variables')
+    && Number.isSafeInteger(value.generation)
+    && typeof value.sessionUri === 'string'
+    && Number.isSafeInteger(value.sessionVersion)
+    && Number.isSafeInteger(value.sessionGeneration)
+    && Number.isSafeInteger(value.revision)
+    && (value.command !== 'variablesDraft' && value.command !== 'variablesApply'
+      || Number.isSafeInteger(value.draftRevision));
 }
 
 function isProgressionAudioAcknowledgement(message: unknown): message is InspectorProgressionAudioAcknowledgement {

@@ -68,9 +68,42 @@ async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
     // Preview, while Inspector views retain purpose=webviewView metadata.
     const previewTargets = lastTargets.filter(item => item.type === 'iframe'
       && item.url.startsWith('vscode-webview://')
-      && !(item.url.includes('purpose=webviewView')
-        && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')));
-    if (previewTargets.length === 1) return previewTargets[0];
+      && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')
+      && !item.url.includes('purpose=webviewView'));
+    for (const candidate of previewTargets) {
+      try {
+        const containsPreviewDom = await withDevToolsTarget(candidate, async send => {
+          await send('Runtime.enable');
+          const tree = await send('Page.getFrameTree');
+          const frameTree = tree.frameTree as Record<string, unknown> | undefined;
+          let frameId: string | undefined;
+          const visit = (node: Record<string, unknown>): void => {
+            const frame = node.frame as { id?: string; name?: string } | undefined;
+            if (frame?.name === 'active-frame') frameId = frame.id;
+            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+          };
+          if (frameTree) {
+            visit(frameTree);
+            if (!frameId) {
+              const root = frameTree.frame as { id?: string; url?: string } | undefined;
+              if (root?.url?.startsWith('vscode-webview://')) frameId = root.id;
+            }
+          }
+          if (!frameId) return false;
+          const isolated = await send('Page.createIsolatedWorld', { frameId, worldName: 'guitardsl-preview-target-check' });
+          if (typeof isolated.executionContextId !== 'number') return false;
+          const result = await send('Runtime.evaluate', {
+            contextId: isolated.executionContextId,
+            expression: `!!document.querySelector('.toolbar-container') && !!document.getElementById('preview-edit-row')`,
+            returnByValue: true
+          });
+          return (result.result as { value?: unknown } | undefined)?.value === true;
+        });
+        if (containsPreviewDom) return candidate;
+      } catch {
+        // A webview may be shutting down while a different Preview target is opening.
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
@@ -257,17 +290,25 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
 /** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
 export async function setPreviewWebviewViewportWidth(width: number): Promise<void> {
   if (!Number.isFinite(width) || width < 280) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  const previewTarget = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  const previewTargetId = new URL(previewTarget.url).searchParams.get('id');
+  if (!previewTargetId) throw new Error('The GuitarDSL Preview target has no Webview id');
   await withWorkbenchDevTools(async send => {
     const result = await send('Runtime.evaluate', {
       expression: `JSON.stringify((() => {
+        const previewTargetId = ${JSON.stringify(previewTargetId)};
         const frame = [...document.querySelectorAll('iframe')].find(item => {
           const rect = item.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && (item.getAttribute('src') || '').startsWith('vscode-webview://');
+          const src = item.getAttribute('src') || '';
+          if (rect.width <= 0 || rect.height <= 0 || !src.startsWith('vscode-webview://')) return false;
+          try { return new URL(src, location.href).searchParams.get('id') === previewTargetId; }
+          catch { return false; }
         });
         if (!frame) return { error: 'Preview Webview frame not found' };
         if (!window.__guitardslPreviewViewportState) {
           window.__guitardslPreviewViewportState = {
             frame,
+            previewTargetId,
             width: frame.style.width,
             minWidth: frame.style.minWidth,
             maxWidth: frame.style.maxWidth,
@@ -303,8 +344,12 @@ export async function resetPreviewWebviewViewport(): Promise<void> {
       expression: `(() => {
         const state = window.__guitardslPreviewViewportState;
         if (!state) return;
-        const frame = state.frame?.isConnected ? state.frame : [...document.querySelectorAll('iframe')].find(item =>
-          (item.getAttribute('src') || '').startsWith('vscode-webview://'));
+        const frame = state.frame?.isConnected ? state.frame : [...document.querySelectorAll('iframe')].find(item => {
+          const src = item.getAttribute('src') || '';
+          if (!src.startsWith('vscode-webview://')) return false;
+          try { return new URL(src, location.href).searchParams.get('id') === state.previewTargetId; }
+          catch { return false; }
+        });
         if (frame) {
           frame.style.width = state.width;
           frame.style.minWidth = state.minWidth;
@@ -449,7 +494,10 @@ export async function evaluatePreviewWebview<T>(expression: string): Promise<T> 
         }
         if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
         const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-        if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
+        if (response.exceptionDetails) {
+          const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
+          throw new Error(`Preview Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'})`);
+        }
         const value = (response.result as { value?: unknown } | undefined)?.value;
         return value as T;
       });

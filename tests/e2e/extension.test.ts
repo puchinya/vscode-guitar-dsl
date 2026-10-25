@@ -5835,6 +5835,243 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
   });
 });
 
+suite('Preview visual editing and let variables (Issue #158)', () => {
+  test('keeps ordinary rendering unchanged and applies one source edit per pointer or form action', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'let riff = 4.d 4.u 4.d 4.u',
+        '| C $riff |',
+        'mel: | c4/4 d4/4 e4/4 f4/4 |',
+        'lyr: あ い う え',
+        'tab: | 6f0/4 6f1/4 6f3/4 6f5/4 |'
+      ].join('\n') + '\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+
+      const ordinary = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        mode: document.body.dataset.previewEditMode,
+        hidden: document.getElementById('preview-edit-row').hidden,
+        bindings: document.querySelectorAll('[data-visual-binding]').length
+      })`));
+      assert.deepStrictEqual(ordinary, { mode: 'false', hidden: true, bindings: 0 },
+        'ordinary Preview renders without editing targets or controls');
+
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      let active = { mode: '', hidden: true, bindings: 0 };
+      for (let attempt = 0; attempt < 100; attempt++) {
+        active = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+          mode: document.body.dataset.previewEditMode,
+          hidden: document.getElementById('preview-edit-row').hidden,
+          bindings: document.querySelectorAll('[data-visual-binding]').length
+        })`));
+        if (active.mode === 'true') break;
+        await settle(20);
+      }
+      assert.strictEqual(active.mode, 'true');
+      assert.strictEqual(active.hidden, false);
+      assert.ok(active.bindings > 0, 'edit mode exposes source-backed SVG targets');
+
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      let restoreSidebarAfterPreviewCapture = false;
+      let restoreAuxiliaryBarAfterPreviewCapture = false;
+      if (captureScreenshots) {
+        await setWorkbenchViewportWidth(2200);
+        const parts = JSON.parse(await inspectWorkbenchLayout()).parts as {
+          sidebar: { visible: boolean };
+          auxiliarybar: { visible: boolean };
+        };
+        restoreSidebarAfterPreviewCapture = parts.sidebar.visible;
+        restoreAuxiliaryBarAfterPreviewCapture = parts.auxiliarybar.visible;
+        if (parts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        if (parts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        await settle(250);
+        await waitForPreviewDocument();
+      }
+      for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
+        await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+        await settle(250);
+        if (captureScreenshots) {
+          await waitForPreviewDocument();
+          await settle(500);
+        }
+        const themeName = theme.includes('Light') ? 'light' : 'dark';
+        for (const width of [421, 600, 840, 1100]) {
+          if (captureScreenshots) {
+            await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+            await resizeActiveEditorGroupToWidth(width);
+            await settle(200);
+          }
+          await setPreviewWebviewViewportWidth(width);
+          let previewPaintReady = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            previewPaintReady = await evaluatePreviewWebview<boolean>(`(() => {
+              const score = [...document.querySelectorAll('svg')].some(svg => {
+                const rect = svg.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && getComputedStyle(svg).display !== 'none';
+              });
+              return document.body.dataset.previewEditMode === 'true'
+                && document.querySelectorAll('[data-visual-binding]').length > 0 && score;
+            })()`);
+            if (previewPaintReady) break;
+            await settle(50);
+          }
+          assert.strictEqual(previewPaintReady, true, `${themeName} Preview has rendered score content at ${width}px`);
+          await settle(150);
+          assert.strictEqual(await evaluatePreviewWebview<number>('window.innerWidth'), width,
+            `${themeName} Preview evidence uses ${width} CSS px`);
+          if (captureScreenshots) {
+            const filename = `preview-edit-${locale}-${themeName}-${width}.png`;
+            await capturePreviewWebviewScreenshot(filename, 158, width);
+            const imagePath = path.resolve(__dirname, '../../../docs/status/evidence/issue-158', filename);
+            let image = await fs.readFile(imagePath);
+            for (let attempt = 0; attempt < 4 && image.length < 5000; attempt++) {
+              await settle(300);
+              await waitForPreviewDocument();
+              await capturePreviewWebviewScreenshot(filename, 158, width);
+              image = await fs.readFile(imagePath);
+            }
+            assert.ok(image.length >= 5000 && image.readUInt32BE(16) === width,
+              `${filename} is a complete Preview screenshot at the requested width`);
+          }
+        }
+        if (captureScreenshots) await resetPreviewWebviewViewport();
+      }
+      await resetPreviewWebviewViewport();
+      if (restoreSidebarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+      if (restoreAuxiliaryBarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+      if (captureScreenshots) {
+        await settle(250);
+        await waitForPreviewDocument();
+      }
+
+      const chordId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+      assert.ok(chordId, 'the authored chord has a visual source binding');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(chordId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = 'G';
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      const chordEdited = source.replace('| C $riff |', '| G $riff |');
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), chordEdited, 'one Preview action changes only the selected chord token');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'one Undo restores the exact CRLF/LF source bytes and comments');
+
+      const melodySource = '| C |\nmel: | c4/4 |\n';
+      const melodyDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: melodySource });
+      await showAndFocus(melodyDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', melodyDoc.uri);
+      await waitForPreviewDocument();
+      // `showPreview` is fire-and-forget with respect to the Webview renderer;
+      // wait for the active Preview identity before selecting a source binding.
+      const melodyPreview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+      for (let attempt = 0; attempt < 100 && melodyPreview.currentDocumentUri !== melodyDoc.uri.toString(); attempt++) {
+        await settle(20);
+      }
+      assert.strictEqual(melodyPreview.currentDocumentUri, melodyDoc.uri.toString(),
+        'the Preview finishes switching to the melody fixture document');
+      await waitForPreviewIdentity({
+        documentUri: melodyDoc.uri.toString(),
+        documentVersion: melodyDoc.version,
+        previewGeneration: melodyPreview.generation
+      });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      let melodyEditMode = 'false';
+      for (let attempt = 0; attempt < 100; attempt++) {
+        melodyEditMode = await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode');
+        if (melodyEditMode === 'true') break;
+        await settle(20);
+      }
+      assert.strictEqual(melodyEditMode, 'true');
+      let melodyId = '';
+      for (let attempt = 0; attempt < 100 && !melodyId; attempt++) {
+        melodyId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · melodyNote · c4/4'))?.value || ''`);
+        if (!melodyId) await settle(20);
+      }
+      assert.ok(melodyId);
+      await evaluatePreviewWebview<void>(`(() => {
+        const note = document.querySelector('[data-visual-binding=${JSON.stringify(melodyId)}]');
+        const event = (name, y) => new PointerEvent(name, { bubbles: true, pointerId: 7, isPrimary: true, button: 0, clientY: y });
+        note.dispatchEvent(event('pointerdown', 120));
+        note.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, isPrimary: true, button: 0, clientY: 108 }));
+        document.dispatchEvent(event('pointercancel', 108));
+      })()`);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'pointercancel makes no source edit');
+      await evaluatePreviewWebview<void>(`(() => {
+        const note = document.querySelector('[data-visual-binding=${JSON.stringify(melodyId)}]');
+        const event = (name, y) => new PointerEvent(name, { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: y });
+        note.dispatchEvent(event('pointerdown', 120));
+        note.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: 108 }));
+      })()`);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'pointermove does not edit the source');
+      await evaluatePreviewWebview<void>(`document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: 108 }))`);
+      for (let attempt = 0; attempt < 100 && melodyDoc.getText() === melodySource; attempt++) await settle(20);
+      assert.ok(melodyDoc.getText().includes('c#4/4'), 'pointerup applies one semitone edit');
+      await undoIn(melodyDoc);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'one Undo restores the dragged note');
+
+      const variableSource = 'let riff = 4.d 4.u 4.d 4.u\n| C $riff |\n| G $riff |\n';
+      const variableDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: variableSource });
+      await showAndFocus(variableDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', variableDoc.uri);
+      await waitForPreviewDocument();
+      const variablePreview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+      for (let attempt = 0; attempt < 100 && variablePreview.currentDocumentUri !== variableDoc.uri.toString(); attempt++) {
+        await settle(20);
+      }
+      assert.strictEqual(variablePreview.currentDocumentUri, variableDoc.uri.toString(),
+        'the Preview finishes switching to the variable fixture document');
+      await waitForPreviewIdentity({
+        documentUri: variableDoc.uri.toString(),
+        documentVersion: variableDoc.version,
+        previewGeneration: variablePreview.generation
+      });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const referenceId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · letReference · $riff'))?.value || ''`);
+      assert.ok(referenceId);
+      await clickPreviewElement(`[data-visual-binding="${referenceId}"]`);
+      await settle(250);
+      assert.strictEqual(await evaluateInspectorWebview<string>(`document.getElementById('variables-operation')?.value`), 'chooseReference',
+        'clicking a rendered variable reference opens the explicit global-versus-local choice');
+      const usageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
+      assert.match(usageSummary, locale === 'ja' ? /直接: 2/ : /Direct: 2/,
+        'the Inspector shows the two direct uses');
+      if (captureScreenshots) {
+        await resizePrimarySidebarToWidth(320);
+        await settle(150);
+        for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
+          await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+          await settle(200);
+          const themeName = theme.includes('Light') ? 'light' : 'dark';
+          await captureWorkbenchScreenshot(`inspector-variables-${locale}-${themeName}-narrow.png`, 158, 800);
+        }
+      }
+    });
+  });
+});
+
 suite('Sidebar navigation (Issue #137)', () => {
   test('active-only Preview action ignores a stale target and plaintext never falls back', async () => {
     await withWorkbenchSnapshotRestored(async () => {

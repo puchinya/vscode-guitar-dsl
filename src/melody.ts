@@ -398,6 +398,95 @@ export function tokenizeLyrics(text: string): LyricItem[] {
   return items;
 }
 
+export interface SpannedLyricItem {
+  item: LyricItem;
+  /** UTF-16 source range relative to the text after `lyr:`. */
+  start: number;
+  end: number;
+}
+
+/** Same lyric tokenization with exact authored spans for source-aware Preview editing. */
+export function tokenizeLyricsWithSpans(text: string): SpannedLyricItem[] {
+  const items: SpannedLyricItem[] = [];
+  const segments = text.split(/(\|)/);
+  let segmentStart = 0;
+  for (const segment of segments) {
+    if (segment === '|') {
+      items.push({ item: { kind: 'bar' }, start: segmentStart, end: segmentStart + 1 });
+      segmentStart++;
+      continue;
+    }
+    const chars = Array.from(segment);
+    const offsets: number[] = [];
+    let utf16Offset = segmentStart;
+    for (const char of chars) {
+      offsets.push(utf16Offset);
+      utf16Offset += char.length;
+    }
+    offsets.push(utf16Offset);
+    let lastSyllableIndex: number | null = null;
+    let lastJapaneseSyllableIndex: number | null = null;
+    let i = 0;
+    const push = (item: LyricItem, startIndex: number, endIndex: number, japanese = false) => {
+      items.push({ item, start: offsets[startIndex], end: offsets[endIndex] });
+      lastSyllableIndex = item.kind === 'syllable' ? items.length - 1 : null;
+      lastJapaneseSyllableIndex = item.kind === 'syllable' && japanese ? lastSyllableIndex : null;
+    };
+    while (i < chars.length) {
+      const ch = chars[i];
+      if (/\s/.test(ch)) {
+        lastSyllableIndex = null;
+        lastJapaneseSyllableIndex = null;
+        i++;
+        continue;
+      }
+      if (ch === '_') { push({ kind: 'extend' }, i, i + 1); i++; continue; }
+      if (ch === '*') { push({ kind: 'skip' }, i, i + 1); i++; continue; }
+      if (ch === '(' || ch === '（') {
+        const close = ch === '(' ? ')' : '）';
+        let endIndex = i + 1;
+        let group = '';
+        while (endIndex < chars.length && chars[endIndex] !== close) group += chars[endIndex++];
+        const closed = endIndex < chars.length;
+        push({ kind: 'syllable', text: group.trim(), hyphenToNext: false }, i, closed ? endIndex + 1 : endIndex);
+        lastJapaneseSyllableIndex = null;
+        i = closed ? endIndex + 1 : endIndex;
+        continue;
+      }
+      if (isAsciiWordChar(ch)) {
+        const startIndex = i;
+        let word = '';
+        while (i < chars.length && (isAsciiWordChar(chars[i]) || TRAILING_PUNCT.has(chars[i]))) word += chars[i++];
+        const hyphen = word.length > 1 && word.endsWith('-');
+        push({ kind: 'syllable', text: hyphen ? word.slice(0, -1) : word, hyphenToNext: hyphen }, startIndex, i);
+        continue;
+      }
+      if (TRAILING_PUNCT.has(ch) && lastSyllableIndex !== null) {
+        const previous = items[lastSyllableIndex];
+        if (previous.item.kind === 'syllable') {
+          previous.item.text += ch;
+          previous.end = offsets[i + 1];
+          i++;
+          continue;
+        }
+      }
+      if (isJoiningSmallKana(ch) && lastJapaneseSyllableIndex !== null) {
+        const previous = items[lastJapaneseSyllableIndex];
+        if (previous.item.kind === 'syllable') {
+          previous.item.text += ch;
+          previous.end = offsets[i + 1];
+          i++;
+          continue;
+        }
+      }
+      push({ kind: 'syllable', text: ch, hyphenToNext: false }, i, i + 1, isJapaneseLyricChar(ch));
+      i++;
+    }
+    segmentStart += segment.length;
+  }
+  return items;
+}
+
 /** A melody note takes a syllable unless it is a rest or a grace note. */
 export function takesSyllable(note: MelodyNote): boolean {
   return !note.isRest && !isGrace(note);

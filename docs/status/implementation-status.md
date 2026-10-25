@@ -4,9 +4,18 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-25
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #132 は統合受入れを記録した [PR #157](https://github.com/puchinya/vscode-guitar-dsl/pull/157) のレビュー待ちでopen。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #158 は実装中。
 
 ---
+
+## Issue #158: Preview 双方向楽譜編集と変数 Inspector
+
+- **状態**: 実装・検証完了、PR提出準備中。基準は main@ed2c037559cc8bbc1e4835ef2f9a61ba060a7ac4、ブランチは feature/158-preview-bidirectional-editing。
+- **契約**: Issue #158 の固定コミットから取得した契約本文と approved comment 6393539991 は同一の30,175 bytesで、実ファイル SHA-256 は 3c794edca4d7504ac7011ab7e12d2ab6cc586b27df371fb3bd35be3ed2b63941。Issue本文に記載された SHA-256 6e3b108cea2a403be1d9f3b60a149161d169b9fa3cc2a7322d7daadd66d2f3cf とは一致しないため、本文は変更せず、ユーザーの指示どおり登録済み契約本文を実装基準とする。
+- **Milestone**: profile version 0.1.0 を割当済み。
+- **設計**: 承認済みの2枚の提案SVGを追加。実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
+- **検証**: `npm test` PASS（Help/AI同期、unit 1,204件、E2E 114件、6件 pending）。`npm run vscode:prepublish`、`npx @vscode/vsce ls`、契約検証、文書検証、英語・日本語のスクリーンショットE2EもPASS。Windows/Linux、VoiceOver/NVDAは未実施。
+- **PR / Completion Report**: PR作成後にURLとレビュー状態を記録する。
 
 ## Issue #132: GUI再設計の統合受入れ
 

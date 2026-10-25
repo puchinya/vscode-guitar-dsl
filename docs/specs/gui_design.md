@@ -6,6 +6,7 @@
 - Status: Current
 - Owning Issue: [Issue #150](https://github.com/puchinya/vscode-guitar-dsl/issues/150)
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related specification: [拡張機能仕様](extension.md)
 
 ## Purpose
@@ -29,6 +30,8 @@
 | Preview・ページ表示 | [preview-paged.svg](gui_design/preview-paged.svg) | 640 × 930 px | 楽譜ページ下端とページ番号 1/1 |
 | Preview・連続表示 | [preview-continuous.svg](gui_design/preview-continuous.svg) | 640 × 560 px | サンプル譜面の2段目の五線譜 |
 | Preview・Practice 有効 | [preview-practice.svg](gui_design/preview-practice.svg) | 640 × 650 px | 練習行、2段目の五線譜を含む譜面 |
+| TextEditor・Preview編集・変数Inspector | [bidirectional-editor-overview.svg](gui_design/proposals/issue-158/bidirectional-editor-overview.svg) | 1950 × 1110 px | TextEditor、Preview編集操作、既存Inspectorの変数表示 |
+| Inspector・変数一覧と参照編集 | [variable-inspector-states.svg](gui_design/proposals/issue-158/variable-inspector-states.svg) | 1600 × 1110 px | 変数一覧、定義ドラフト、参照編集の選択状態 |
 | Inspector・対象文書なし | [inspector-empty.svg](gui_design/inspector-empty.svg) | 293 × 190 px | 対象文書を開く案内文 |
 | Inspector・カポ / 弾きやすさ | [inspector-capo-playability.svg](gui_design/inspector-capo-playability.svg) | 293 × 900 px | 候補12と「適用」「閉じる」 |
 | Inspector・初心者モード | [inspector-beginner.svg](gui_design/inspector-beginner.svg) | 293 × 850 px | 候補2の理由と「適用」「閉じる」 |
@@ -137,6 +140,16 @@ Practice のコード図は `viewBox="0 0 144 144"` の144×144 CSS pxとし、�
 
 視覚検収は幅280 / 320 / 360 / 420 / 421 / 600 / 840 / 1100 / 1400 CSS px、日英、ライト / ダーク、メロディ ON / OFF の組合せで、4小節の存在、縮小率、横スクロール到達性、現在出現カードの可視性、レーン順、短縮ラベル、奏法 SVG、歌詞位置、コード図、次コード固定、重なり、端切れ、メロディOFF時の高さを確認する。1600 CSS pxでは4小節ストリップ全体の左右余白差を2 px以内にする。コード名と図は各コード区間の中央に表示する。通常表示に加え小節03切替の0 ms、約110 ms、220 ms以降を実 Preview 画像で記録し、旧 DOM 除去と演奏中バンク不変を確認する。参照表示は Issue #155 の承認済み編集可能 SVG を使い、同一 fixture と幅で比較する。
 
+#### 2.5 双方向編集モード（Issue #158）
+
+Preview は既存の単一 WebviewPanel を使い、表示モードと編集モードを切り替える。既定は表示モードであり、既存の再生行48 px、楽譜設定行44 px、Practice有効時だけの42 px行、4小節ガイド、PDFと通常再生を保つ。編集モード専用の操作行は有効時だけ表示し、無効時の譜面とツールバーの寸法を変えない。編集 overlay と hit-area は Preview にのみ存在し、PDF の SVG には出力しない。
+
+標準 TextEditor が唯一の永続ソースである。Preview は明示した URI・文書version・Preview世代に結び付けた選択と編集 intent を送り、Host が最新テキスト、parser source binding、token種別、期待原文、音楽的整合性を検証してから一回の WorkspaceEdit を行う。1回のドラッグまたはキー確定は1 Undoとし、キャンセル、古い世代、文書切替、二重適用、解析・検証・音声停止失敗では文書を変更しない。
+
+編集対象はauthored chord名、melody音符・休符・音価、rhythm token、単一TAB声部の弦・フレット・音価、lyrの一音節とする。省略値の継承、拍数、tie/slur、歌詞対応、TAB制約が壊れる場合は安全な明示化ができるときだけ許可し、それ以外は編集不可の理由と「コードで開く」を示す。同じソースが反復・編曲で複数表示される場合、曖昧な単一出現編集を行わない。
+
+**図の位置づけ:** 追加した2枚は承認済みの純ベクター設計図であり、実装済み画面のキャプチャではない。画面一覧の元の Preview・Inspector 図は引き続き現行画面の基準とする。実 Extension Development Host の証拠は実装検収に別途記録し、設計図との差を説明する。
+
 ### 3. GuitarDSL Inspector
 
 Inspector は対象文書がない状態と、文書に応じた設定画面を同じ領域に表示する。設定画面はタブ、説明または入力、結果、確定操作の順に構成する。
@@ -199,6 +212,14 @@ Inspector は対象文書がない状態と、文書に応じた設定画面を�
 候補カードの順序とコード列は、C→F→Fm→C、C→G→Am→F、C→Am→F→G、C→Am→Dm→G。図では2番目を選択状態にする。各カードには表示したスコアと調性、進行のローマ数字、同一開始・主音終止・メロディ評価の注記を含める。候補4枚と最下部の操作までを1枚の図に含め、スクロール領域の途中で切らない。
 
 Inspector の設定・候補操作の意味は [拡張機能仕様 §4B、§4D](extension.md) を参照する。
+
+#### 3.6 変数
+
+既存の共通 Inspector に「変数」表示を追加し、現在アクティブな GuitarDSL 文書だけを対象にする。変数一覧には有効なlet定義、使用文脈、直接参照数、間接参照数、参照位置、未使用状態と診断を示す。chord定義は変数として表示しない。
+
+Inspector の検証済みドラフトから新規作成、定義編集、名前変更、複製、未使用定義の削除を行う。「変更を適用」までは原文、Preview、PDF、音声を変えず、適用は一つの編集・一回のUndoとする。名前変更は定義と前方・後方・入れ子の全参照を一回で更新する。参照位置から元ソースへジャンプできる。
+
+Preview で変数参照を編集するときは「定義を編集（全参照）」「この箇所だけ展開して編集」「キャンセル」を明示する。後者は選択した一つのauthored参照だけが展開され、全スコアの音楽的意味が保たれるとHostが確認できる場合に限る。繰返しや編曲で複数回表示される出現、曖昧な範囲、入れ子で安全性を確定できない対象は変更しない。
 
 ### 4. コード図エディタ
 

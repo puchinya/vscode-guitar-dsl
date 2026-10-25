@@ -7,6 +7,10 @@ import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
+import { planLetOperation } from './visualEditing/planners';
+import { VisualEditingHostController, type VisualEditingSessionIdentity } from './visualEditing/hostController';
+import type { LetOperation, VisualEditOperation } from './visualEditing/model';
+import { planVisualEdit } from './visualEditing/planners';
 import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
 import { OPEN_HELP_COMMAND, openGuitarDslHelp } from './help';
 import { NEW_FROM_TEMPLATE_COMMAND, OPEN_SAMPLE_COMMAND, newDocumentFromTemplate, openSample } from './onboarding';
@@ -35,6 +39,33 @@ export interface ExportPdfOptions {
   dslContentOverride?: string;
   /** Output file; when given, the save dialog is skipped. */
   targetUri?: vscode.Uri;
+}
+
+function parseLetOperation(value: unknown): LetOperation | undefined {
+  if (typeof value !== 'object' || value === null || !('kind' in value)) return undefined;
+  const operation = value as Record<string, unknown>;
+  const name = operation.name;
+  if (typeof name !== 'string' || name.length === 0) return undefined;
+  switch (operation.kind) {
+    case 'add':
+      return typeof operation.value === 'string' ? { kind: 'add', name, value: operation.value } : undefined;
+    case 'editGlobal':
+      return typeof operation.value === 'string' ? { kind: 'editGlobal', name, value: operation.value } : undefined;
+    case 'rename':
+      return typeof operation.newName === 'string' ? { kind: 'rename', name, newName: operation.newName } : undefined;
+    case 'clone':
+      return typeof operation.newName === 'string' ? { kind: 'clone', name, newName: operation.newName } : undefined;
+    case 'deleteUnused':
+      return { kind: 'deleteUnused', name };
+    case 'detachLocal':
+      return Number.isSafeInteger(operation.line) && Number.isSafeInteger(operation.startCol)
+        && Number.isSafeInteger(operation.endCol) && (operation.value === undefined || typeof operation.value === 'string')
+        ? { kind: 'detachLocal', name, line: operation.line as number, startCol: operation.startCol as number,
+          endCol: operation.endCol as number, ...(typeof operation.value === 'string' ? { value: operation.value } : {}) }
+        : undefined;
+    default:
+      return undefined;
+  }
 }
 
 export async function exportScoreToPdf(
@@ -109,6 +140,18 @@ export function activate(context: vscode.ExtensionContext) {
   const currentLocale = resolveLocale(vscode.env.language);
   const msgs = getMessages(currentLocale);
   const inspector = registerGuitarDslInspector(context, currentLocale);
+  const visualEditingHost = new VisualEditingHostController();
+  let variableSelectionName: string | undefined;
+  let previewEditModeEnabled = false;
+  let previewEditModeUri: string | undefined;
+  let variableDraftRevision = 0;
+  let variableDraftState = { name: '', value: '', operation: 'add', reference: '' };
+  let variableDraftSessionGeneration = 0;
+  const pendingPreviewEditStops = new Map<string, {
+    identity: { documentUri: string; documentVersion: number; previewGeneration: number };
+    resolve: (stopped: boolean) => void;
+  }>();
+  context.subscriptions.push({ dispose: () => visualEditingHost.dispose() });
   const audioLeaseCoordinator = new ProgressionAudioLeaseCoordinator({
     hasPreview: () => !!currentPanel,
     lockPreview: async leaseId => currentPanel ? await currentPanel.webview.postMessage({ command: 'progressionAudioLock', leaseId }) : false,
@@ -127,12 +170,206 @@ export function activate(context: vscode.ExtensionContext) {
     audioLeaseCoordinator.dispose();
     if (progressionAudioLeaseProbe.coordinator === audioLeaseCoordinator) progressionAudioLeaseProbe.coordinator = undefined;
   } });
+  const setVariablesContext = (document: vscode.TextDocument, explicit: boolean, error?: string,
+    referenceChoice?: { name: string; line: number; startCol: number; endCol: number }) => {
+    const uri = document.uri.toString();
+    let identity = visualEditingHost.current('variables');
+    if (!identity || identity.uri !== uri || identity.documentVersion !== document.version) {
+      visualEditingHost.cancel('variables');
+      identity = visualEditingHost.begin('variables', uri, document.version, 0);
+      variableSelectionName = undefined;
+      variableDraftRevision = 0;
+      variableDraftState = { name: '', value: '', operation: 'add', reference: '' };
+      variableDraftSessionGeneration = identity?.sessionGeneration ?? 0;
+    }
+    if (!identity) return;
+    if (explicit) {
+      variableDraftRevision = 0;
+      variableDraftState = referenceChoice
+        ? { name: referenceChoice.name, value: '', operation: 'chooseReference',
+          reference: [referenceChoice.line, referenceChoice.startCol, referenceChoice.endCol].join(':') }
+        : { name: '', value: '', operation: 'add', reference: '' };
+      variableDraftSessionGeneration = identity.sessionGeneration;
+    }
+    if (referenceChoice) variableSelectionName = referenceChoice.name;
+    const score = parseGuitarDsl(document.getText());
+    const selectedName = score.letDefinitions?.some(definition => definition.name === variableSelectionName)
+      ? variableSelectionName : undefined;
+    const variablesContext = {
+      kind: 'variables' as const,
+      uri,
+      version: document.version,
+      sessionGeneration: identity.sessionGeneration,
+      revision: identity.revision,
+      draftRevision: variableDraftRevision,
+      definitions: score.letDefinitions ?? [],
+      ...(selectedName ? { selectedName } : {}),
+      ...(referenceChoice ? {
+        requiresReferenceChoice: true,
+        referenceSelection: [referenceChoice.line, referenceChoice.startCol, referenceChoice.endCol].join(':')
+      } : {}),
+      ...(error ? { error } : {})
+    };
+    if (explicit) void inspector.showVariables(variablesContext);
+    else if (inspector.currentContext.kind === 'variables') inspector.updateVariables(variablesContext);
+    else void inspector.showVariables(variablesContext);
+  };
+  const stopAudioForEdit = async (uri: string): Promise<boolean> => {
+    if (!await audioLeaseCoordinator.stopForSession(uri)) return false;
+    if (!currentPanel || previewLifecycleProbe.currentDocumentUri !== uri) return true;
+    const activeDocument = lastActiveGuitarDslDoc;
+    if (!activeDocument || activeDocument.uri.toString() !== uri) return false;
+    const identity = {
+      documentUri: uri,
+      documentVersion: activeDocument.version,
+      previewGeneration: previewLifecycleProbe.generation
+    };
+    const requestId = randomBytes(12).toString('hex');
+    let resolveStop: (stopped: boolean) => void = () => {};
+    const acknowledgement = new Promise<boolean>(resolve => { resolveStop = resolve; });
+    pendingPreviewEditStops.set(requestId, { identity, resolve: resolveStop });
+    const timer = setTimeout(() => {
+      pendingPreviewEditStops.delete(requestId);
+      resolveStop(false);
+    }, 2000);
+    const posted = await currentPanel.webview.postMessage({ command: 'previewEditStopRequest', requestId, ...identity });
+    if (!posted) {
+      clearTimeout(timer);
+      pendingPreviewEditStops.delete(requestId);
+      return false;
+    }
+    const stopped = await acknowledgement;
+    clearTimeout(timer);
+    pendingPreviewEditStops.delete(requestId);
+    return stopped;
+  };
+  inspector.setVariablesMessageHandler(async message => {
+    const identity = visualEditingHost.current('variables');
+    if (!identity || identity.uri !== message.sessionUri || identity.documentVersion !== message.sessionVersion
+      || identity.sessionGeneration !== message.sessionGeneration || identity.revision !== message.revision) return;
+    const document = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+    if (!document || document.version !== identity.documentVersion) return;
+    if (message.command === 'variablesCancel') {
+      visualEditingHost.cancel('variables');
+      variableSelectionName = undefined;
+      variableDraftRevision = 0;
+      variableDraftState = { name: '', value: '', operation: 'add', reference: '' };
+      inspector.showDocument(document.uri.toString(), document.version);
+      return;
+    }
+    if (message.command === 'variablesJump') {
+      const name = typeof message.name === 'string' ? message.name : undefined;
+      const score = parseGuitarDsl(document.getText());
+      const definition = score.letDefinitions?.find(item => item.name === name);
+      if (!definition) return;
+      let line = definition.line;
+      let startCol = definition.nameStartCol;
+      let endCol = definition.nameEndCol;
+      if (message.line !== undefined || message.startCol !== undefined || message.endCol !== undefined) {
+        if (!Number.isSafeInteger(message.line) || !Number.isSafeInteger(message.startCol) || !Number.isSafeInteger(message.endCol)) return;
+        const reference = definition.usageLocations.find(item => item.line === message.line
+          && item.startCol === message.startCol && item.endCol === message.endCol);
+        if (!reference) return;
+        line = reference.line;
+        startCol = reference.startCol;
+        endCol = reference.endCol;
+      }
+      const editor = await vscode.window.showTextDocument(document, { preserveFocus: true });
+      const start = new vscode.Position(line, startCol);
+      const end = new vscode.Position(line, endCol);
+      editor.selection = new vscode.Selection(start, end);
+      editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      return;
+    }
+    if (message.command === 'variablesSelect') {
+      const name = typeof message.name === 'string' ? message.name : undefined;
+      const selected = parseGuitarDsl(document.getText()).letDefinitions?.find(item => item.name === name);
+      if (!selected) return;
+      variableSelectionName = name;
+      variableDraftRevision = 0;
+      variableDraftState = { name: selected.name, value: selected.value, operation: 'editGlobal', reference: '' };
+      variableDraftSessionGeneration = identity.sessionGeneration;
+      const next = visualEditingHost.advanceRevision(identity);
+      if (next) setVariablesContext(document, false);
+      return;
+    }
+    if (message.command === 'variablesDraft') {
+      if (message.sessionGeneration !== variableDraftSessionGeneration
+        || !Number.isSafeInteger(message.draftRevision) || message.draftRevision !== variableDraftRevision + 1
+        || typeof message.draft !== 'object' || message.draft === null) return;
+      const draft = message.draft as Record<string, unknown>;
+      const allowedOperations = ['add', 'editGlobal', 'rename', 'clone', 'deleteUnused', 'detachLocal', 'chooseReference'];
+      if (typeof draft.name !== 'string' || draft.name.length > 64
+        || typeof draft.value !== 'string' || draft.value.length > 2048
+        || typeof draft.reference !== 'string' || draft.reference.length > 64
+        || typeof draft.operation !== 'string' || !allowedOperations.includes(draft.operation)) return;
+      variableDraftRevision = message.draftRevision as number;
+      variableDraftState = { name: draft.name, value: draft.value, operation: draft.operation, reference: draft.reference };
+      return;
+    }
+    if (message.command !== 'variablesApply' || message.draftRevision !== variableDraftRevision) return;
+    const selectedName = variableSelectionName;
+    let operation: LetOperation | undefined;
+    switch (variableDraftState.operation) {
+      case 'add': operation = { kind: 'add', name: variableDraftState.name, value: variableDraftState.value }; break;
+      case 'editGlobal': operation = selectedName ? { kind: 'editGlobal', name: selectedName, value: variableDraftState.value } : undefined; break;
+      case 'rename': operation = selectedName ? { kind: 'rename', name: selectedName, newName: variableDraftState.name } : undefined; break;
+      case 'clone': operation = selectedName ? { kind: 'clone', name: selectedName, newName: variableDraftState.name } : undefined; break;
+      case 'deleteUnused': operation = selectedName ? { kind: 'deleteUnused', name: selectedName } : undefined; break;
+      case 'detachLocal': {
+        const reference = variableDraftState.reference.split(':').map(Number);
+        operation = selectedName && reference.length === 3 && reference.every(Number.isSafeInteger)
+          ? { kind: 'detachLocal', name: selectedName, line: reference[0], startCol: reference[1], endCol: reference[2], value: variableDraftState.value }
+          : undefined;
+        break;
+      }
+      default: operation = undefined;
+    }
+    if (!operation) return;
+    if (!await stopAudioForEdit(identity.uri)) {
+      const next = visualEditingHost.advanceRevision(identity);
+      if (next) setVariablesContext(document, false, msgs.inspectorVariableError);
+      return;
+    }
+    const result = await visualEditingHost.applyOnce(identity, () => {
+      const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+      return current ? { uri: current.uri.toString(), documentVersion: current.version, renderGeneration: 0 } : undefined;
+    }, async () => {
+      const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+      if (!current || current.version !== identity.documentVersion) return false;
+      const source = current.getText();
+      const score = parseGuitarDsl(source);
+      const plan = planLetOperation(source, score, operation);
+      if (!plan.ok) return false;
+      const edit = new vscode.WorkspaceEdit();
+      for (const item of plan.edits) {
+        edit.replace(current.uri, new vscode.Range(current.positionAt(item.start), current.positionAt(item.end)), item.text);
+      }
+      return vscode.workspace.applyEdit(edit);
+    });
+    if (!result.ok || !result.value) {
+      const next = visualEditingHost.advanceRevision(identity);
+      if (next) setVariablesContext(document, false, msgs.inspectorVariableError);
+      return;
+    }
+    const updated = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+    if (updated) setVariablesContext(updated, false);
+  });
   const refreshInspectorContext = (document?: vscode.TextDocument) => {
     settingsController?.invalidateIfDifferent(isGuitarDslDocument(document) ? document.uri.toString() : undefined);
     if (isGuitarDslDocument(document)) {
-      inspector.showDocument(document.uri.toString(), document.version);
+      if (inspector.currentContext.kind === 'variables' && inspector.currentContext.uri === document.uri.toString()) {
+        if (inspector.currentContext.version !== document.version) setVariablesContext(document, false);
+      } else inspector.showDocument(document.uri.toString(), document.version);
     } else if (inspector.currentContext.kind === 'document') {
       inspector.invalidate(inspector.currentContext.uri);
+    } else if (inspector.currentContext.kind === 'variables') {
+      const previewOwnsCurrentDocument = currentPanel?.active === true
+        && previewLifecycleProbe.currentDocumentUri === inspector.currentContext.uri;
+      if (!previewOwnsCurrentDocument) {
+        visualEditingHost.cancel('variables');
+        inspector.invalidate(inspector.currentContext.uri);
+      }
     }
   };
   refreshInspectorContext(vscode.window.activeTextEditor?.document);
@@ -145,8 +382,18 @@ export function activate(context: vscode.ExtensionContext) {
   }, null, context.subscriptions);
   vscode.workspace.onDidCloseTextDocument(document => {
     settingsController?.invalidate(document.uri.toString());
+    visualEditingHost.invalidateUri(document.uri.toString());
     inspector.invalidate(document.uri.toString());
   }, null, context.subscriptions);
+  context.subscriptions.push(vscode.commands.registerCommand('guitardsl.showVariables', () => {
+    const document = vscode.window.activeTextEditor?.document;
+    if (!isGuitarDslDocument(document)) {
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
+      return;
+    }
+    variableSelectionName = undefined;
+    setVariablesContext(document, true);
+  }));
   registerGp78Commands(context, { locale: currentLocale, getLastActiveDocument: () => lastActiveGuitarDslDoc });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection('guitardsl');
@@ -198,6 +445,11 @@ export function activate(context: vscode.ExtensionContext) {
       const config = vscode.workspace.getConfiguration('guitardsl');
       const expandPageBreakRepeats = config.get<boolean>('expandPageBreakRepeats', true);
       const effective = resolvePreviewEffectiveDsl(doc, previewBeginner, previewCapo);
+      const previewEditAvailable = effective.text === doc.getText();
+      const previewEditMode = previewEditModeEnabled && previewEditModeUri === doc.uri.toString();
+      const visualBindings = previewEditAvailable
+        ? (parseGuitarDsl(doc.getText(), { expandPageBreakRepeats }).visualSourceBindings ?? [])
+        : [];
       effectiveDslProbe.previewInput = effective.text;
       const focusRestore = pendingPreviewFocusRestore
         && pendingPreviewFocusRestore.uri === doc.uri.toString()
@@ -214,6 +466,9 @@ export function activate(context: vscode.ExtensionContext) {
         documentUri: doc.uri.toString(),
         documentVersion: doc.version,
         previewGeneration: previewLifecycleProbe.generation + 1,
+        previewEditMode,
+        previewEditAvailable,
+        visualBindings,
         ...(focusRestore ? { restoreFocusControl: focusRestore.control } : {}),
         expandPageBreakRepeats,
         capo: effective.capo,
@@ -227,6 +482,9 @@ export function activate(context: vscode.ExtensionContext) {
       webview.html = htmlContent;
       previewLifecycleProbe.generation++;
       previewLifecycleProbe.currentDocumentUri = doc.uri.toString();
+      if (previewEditMode && previewEditAvailable) {
+        visualEditingHost.begin('preview', doc.uri.toString(), doc.version, previewLifecycleProbe.generation);
+      } else visualEditingHost.cancel('preview');
     }
   };
 
@@ -252,6 +510,11 @@ export function activate(context: vscode.ExtensionContext) {
       || doc.version !== progressionSessionIdentity.version)) return;
     if (!progressionSessionIdentity) progressionAssistantController?.invalidateIfDifferent(doc.uri.toString());
 
+    if (previewEditModeUri && previewEditModeUri !== doc.uri.toString()) {
+      previewEditModeEnabled = false;
+      previewEditModeUri = undefined;
+      visualEditingHost.cancel('preview');
+    }
     lastActiveGuitarDslDoc = doc;
 
     if (currentPanel) {
@@ -271,6 +534,142 @@ export function activate(context: vscode.ExtensionContext) {
 
       currentPanel.webview.onDidReceiveMessage(
         async (message) => {
+          if (message.command === 'previewEditStopAcknowledged' && typeof message.requestId === 'string'
+            && typeof message.stopped === 'boolean') {
+            const pending = pendingPreviewEditStops.get(message.requestId);
+            if (pending && message.documentUri === pending.identity.documentUri
+              && message.documentVersion === pending.identity.documentVersion
+              && message.previewGeneration === pending.identity.previewGeneration
+              && previewLifecycleProbe.currentDocumentUri === pending.identity.documentUri
+              && previewLifecycleProbe.generation === pending.identity.previewGeneration) {
+              pending.resolve(message.stopped);
+            }
+            return;
+          }
+          if (message.command === 'previewEditModeToggle' && message.enabled === false
+            && typeof message.documentUri === 'string' && Number.isSafeInteger(message.documentVersion)
+            && Number.isSafeInteger(message.previewGeneration)) {
+            const activeDocument = lastActiveGuitarDslDoc;
+            if (activeDocument && message.documentUri === activeDocument.uri.toString()
+              && message.documentVersion === activeDocument.version
+              && message.previewGeneration === previewLifecycleProbe.generation
+              && previewLifecycleProbe.currentDocumentUri === message.documentUri) {
+              await stopAudioForEdit(message.documentUri);
+              previewEditModeEnabled = false;
+              previewEditModeUri = undefined;
+              visualEditingHost.cancel('preview');
+              updateWebview(activeDocument);
+            }
+            return;
+          }
+          if (message.command === 'previewEditReference') {
+            const activeDocument = lastActiveGuitarDslDoc;
+            const identity = visualEditingHost.current('preview');
+            if (!activeDocument || !previewEditModeEnabled || typeof message.visualElementId !== 'string'
+              || message.documentUri !== activeDocument.uri.toString() || message.documentVersion !== activeDocument.version
+              || message.previewGeneration !== previewLifecycleProbe.generation
+              || previewLifecycleProbe.currentDocumentUri !== message.documentUri || !identity
+              || identity.uri !== message.documentUri || identity.documentVersion !== message.documentVersion
+              || identity.renderGeneration !== message.previewGeneration) return;
+            const score = parseGuitarDsl(activeDocument.getText());
+            const binding = score.visualSourceBindings?.find(item => item.id === message.visualElementId);
+            if (!binding || binding.kind !== 'letReference' || !binding.expected.startsWith('$')) return;
+            const definition = score.letDefinitions?.find(item => item.name === binding.expected.slice(1));
+            const reference = definition?.directReferences.find(item => item.kind === 'score'
+              && item.line === binding.line && item.startCol === binding.startCol && item.endCol === binding.endCol);
+            if (!definition?.valid || !reference) return;
+            setVariablesContext(activeDocument, true, undefined, reference);
+            return;
+          }
+          if (message.command === 'previewOpenVisualSource') {
+            const activeDocument = lastActiveGuitarDslDoc;
+            const identity = visualEditingHost.current('preview');
+            if (!activeDocument || !previewEditModeEnabled || typeof message.visualElementId !== 'string'
+              || message.documentUri !== activeDocument.uri.toString() || message.documentVersion !== activeDocument.version
+              || message.previewGeneration !== previewLifecycleProbe.generation
+              || previewLifecycleProbe.currentDocumentUri !== message.documentUri || !identity
+              || identity.uri !== message.documentUri || identity.documentVersion !== message.documentVersion
+              || identity.renderGeneration !== message.previewGeneration) return;
+            const binding = parseGuitarDsl(activeDocument.getText()).visualSourceBindings
+              ?.find(item => item.id === message.visualElementId);
+            if (!binding) return;
+            const selection = new vscode.Range(binding.line, binding.startCol, binding.line, binding.endCol);
+            await vscode.window.showTextDocument(activeDocument, { preview: true, selection });
+            return;
+          }
+          if (message.command === 'previewVisualEdit') {
+            const activeDocument = lastActiveGuitarDslDoc;
+            const payload = typeof message.payload === 'object' && message.payload !== null
+              ? message.payload as Record<string, unknown> : undefined;
+            const identity = visualEditingHost.current('preview');
+            if (!activeDocument || !previewEditModeEnabled
+              || typeof message.documentUri !== 'string' || typeof message.visualElementId !== 'string'
+              || message.visualElementId.length > 256 || !payload || message.documentUri !== activeDocument.uri.toString()
+              || message.documentVersion !== activeDocument.version || message.previewGeneration !== previewLifecycleProbe.generation
+              || previewLifecycleProbe.currentDocumentUri !== message.documentUri || !identity
+              || identity.uri !== message.documentUri || identity.documentVersion !== message.documentVersion
+              || identity.renderGeneration !== message.previewGeneration) return;
+            const sourceBinding = parseGuitarDsl(activeDocument.getText()).visualSourceBindings
+              ?.find(binding => binding.id === message.visualElementId);
+            if (!sourceBinding) return;
+            let visualOperation: VisualEditOperation | undefined;
+            const text = typeof payload.text === 'string' && payload.text.length <= 256 && !/[\r\n\0]/.test(payload.text)
+              ? payload.text : undefined;
+            if (sourceBinding.kind === 'chord' && message.operation === 'replaceChord'
+              && typeof payload.name === 'string' && payload.name.length <= 64 && !/[\r\n\0]/.test(payload.name)) {
+              visualOperation = { kind: 'replaceChord', bindingId: sourceBinding.id, name: payload.name };
+            } else if (sourceBinding.kind === 'melodyNote' && message.operation === 'transposeMelody'
+              && Number.isSafeInteger(payload.semitones) && payload.semitones !== 0 && Math.abs(payload.semitones as number) <= 11) {
+              visualOperation = { kind: 'transposeMelody', bindingId: sourceBinding.id, semitones: payload.semitones as number };
+            } else if (['melodyNote', 'melodyGroup', 'melodyRest', 'rhythm', 'noteGroup', 'inlineNote'].includes(sourceBinding.kind)
+              && message.operation === 'changeDuration' && (payload.direction === 'longer' || payload.direction === 'shorter')) {
+              visualOperation = { kind: 'changeDuration', bindingId: sourceBinding.id, direction: payload.direction };
+            } else if (['rhythm', 'noteGroup', 'inlineNote'].includes(sourceBinding.kind)
+              && message.operation === 'replaceRhythmToken' && text !== undefined) {
+              visualOperation = { kind: 'replaceRhythmToken', bindingId: sourceBinding.id, text };
+            } else if (sourceBinding.kind === 'tab' && message.operation === 'replaceTabToken' && text !== undefined) {
+              visualOperation = { kind: 'replaceTabToken', bindingId: sourceBinding.id, text };
+            } else if (sourceBinding.kind === 'lyric' && message.operation === 'replaceLyric' && text !== undefined) {
+              visualOperation = { kind: 'replaceLyric', bindingId: sourceBinding.id, text };
+            }
+            if (!visualOperation) return;
+            if (!await stopAudioForEdit(identity.uri)) {
+              await currentPanel?.webview.postMessage({ command: 'previewVisualEditResult', success: false,
+                reason: 'stopFailed', documentUri: identity.uri, documentVersion: identity.documentVersion, previewGeneration: identity.renderGeneration });
+              return;
+            }
+            let failureReason = 'staleSource';
+            const applied = await visualEditingHost.applyOnce(identity, () => {
+              const current = lastActiveGuitarDslDoc;
+              if (!current || !currentPanel || current.uri.toString() !== identity.uri
+                || previewLifecycleProbe.currentDocumentUri !== identity.uri) return undefined;
+              return { uri: identity.uri, documentVersion: current.version, renderGeneration: previewLifecycleProbe.generation };
+            }, async () => {
+              const current = lastActiveGuitarDslDoc;
+              if (!current || current.version !== identity.documentVersion) return false;
+              const currentSource = current.getText();
+              const parsed = parseGuitarDsl(currentSource);
+              const plan = planVisualEdit(currentSource, parsed, visualOperation!);
+              if (!plan.ok) {
+                failureReason = plan.code;
+                return false;
+              }
+              const edit = new vscode.WorkspaceEdit();
+              for (const item of plan.edits) {
+                edit.replace(current.uri, new vscode.Range(current.positionAt(item.start), current.positionAt(item.end)), item.text);
+              }
+              return vscode.workspace.applyEdit(edit);
+            });
+            if (!applied.ok || !applied.value) {
+              await currentPanel?.webview.postMessage({ command: 'previewVisualEditResult', success: false,
+                reason: failureReason,
+                documentUri: identity.uri, documentVersion: identity.documentVersion, previewGeneration: identity.renderGeneration });
+            } else {
+              await currentPanel?.webview.postMessage({ command: 'previewVisualEditResult', success: true,
+                documentUri: identity.uri, documentVersion: identity.documentVersion, previewGeneration: identity.renderGeneration });
+            }
+            return;
+          }
           if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
             audioLeaseCoordinator.acknowledgePreviewStopped(message.leaseId);
             return;
@@ -400,6 +799,9 @@ export function activate(context: vscode.ExtensionContext) {
         audioLeaseCoordinator.previewDisposed();
         if (previewLifecycleProbe.currentDocumentUri) settingsController?.externalPreviewChanged(previewLifecycleProbe.currentDocumentUri);
         progressionAssistantController?.invalidateActive();
+        previewEditModeEnabled = false;
+        previewEditModeUri = undefined;
+        visualEditingHost.cancel('preview');
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();
@@ -408,6 +810,28 @@ export function activate(context: vscode.ExtensionContext) {
 
     updateWebview(doc);
     settingsController?.previewOpened(doc);
+  });
+
+  const togglePreviewEditModeDisposable = vscode.commands.registerCommand('guitardsl.togglePreviewEditMode', async () => {
+    if (!currentPanel) {
+      await vscode.commands.executeCommand('guitardsl.showPreview');
+    }
+    const document = lastActiveGuitarDslDoc;
+    if (!currentPanel || !document) {
+      vscode.window.showWarningMessage(msgs.msgOpenGuitarDslFile);
+      return;
+    }
+    const uri = document.uri.toString();
+    const enabled = !(previewEditModeEnabled && previewEditModeUri === uri);
+    const effective = resolvePreviewEffectiveDsl(document, previewBeginner, previewCapo);
+    if (enabled && effective.text !== document.getText()) {
+      vscode.window.showWarningMessage(msgs.uiPreviewEditDisabled);
+      return;
+    }
+    previewEditModeEnabled = enabled;
+    previewEditModeUri = enabled ? uri : undefined;
+    if (!enabled) await stopAudioForEdit(uri);
+    updateWebview(document);
   });
 
   progressionAssistantController = registerProgressionAssistant(context, currentLocale, {
@@ -802,6 +1226,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     previewDisposable,
+    togglePreviewEditModeDisposable,
     printDisposable,
     symbolDisposable,
     editChordDisposable,

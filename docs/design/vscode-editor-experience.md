@@ -12,6 +12,7 @@
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -152,3 +153,19 @@ Unit coverage exercises the five groups, their localized labels and stable IDs, 
 ### Verification strategy
 
 Issue #135 E2E coverage verifies both legacy commands, Preview editCapo routing, URI selection before reveal, one View across repeated operations, settings/progression replacement, ready/replay after relocation, keyboard focus retention, and absence of a duplicate settings WebviewPanel. Visual evidence is captured from the actual Extension Development Host; automated accessibility-tree results and manual VoiceOver evidence are reported separately.
+
+## Issue #158 implementation design
+
+Preview editing extends the existing singleton Panel. The extension captures the active panel URI, current TextDocument version, and render generation when it renders; Preview messages carry that identity and an operation intent, never offsets or replacement source. The Host verifies the captured document is still the panel target, retrieves fresh parser bindings, plans a source-preserving edit, checks post-parse semantics, stops existing audio owners when required, and applies one WorkspaceEdit.
+
+The common Inspector gains a variables context alongside empty, document, settings, and progression. The controller owns a URI/version/session-generation/revision snapshot and a draft distinct from source text. Apply validates the current document and candidate again; Cancel and all context changes discard drafts. Existing Settings and Progression dispatch remain isolated and retain their current context ownership and audio lease.
+
+The Preview-only edit row is absent in display mode. The existing transport, settings, Practice row, guide, PDF renderer, and Web Audio owner remain unchanged. Commands only open the existing surfaces or toggle the current Preview mode. If temporary Capo or Beginner rendering changes the source projection, editing requires an explicit return to the original source.
+
+### Failure handling and boundaries
+
+No editor switch, Preview reveal, alternate document fallback, or source write is caused by selection alone. Invalid or stale URI/version/generation/revision, missing source bindings, ambiguous occurrences, unsafe local detach, parse/semantic failure, rejected edits, cancellation, and failed audio Stop acknowledgement do not write text. A read-only target remains keyboard-navigable to the source editor with a localized reason. Inspector and Preview disposal releases session state without changing existing progression playback ownership.
+
+### Verification strategy
+
+Tests exercise current-document identity, Preview and Inspector context replacement, one-Undo edits, stale and duplicate messages, no-op selection, and separation from the existing Settings and Progression flows. Real Extension Development Host captures cover Japanese/English, light/dark, narrow and wide Preview widths, Inspector variable states, visible focus, and comparison with the approved proposal SVGs. Manual screen-reader and non-macOS results are recorded separately.
