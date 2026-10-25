@@ -551,7 +551,12 @@ export function activate(context: vscode.ExtensionContext) {
               && message.previewGeneration === pending.identity.previewGeneration
               && previewLifecycleProbe.currentDocumentUri === pending.identity.documentUri
               && previewLifecycleProbe.generation === pending.identity.previewGeneration) {
-              pending.resolve(message.stopped);
+              const testInterception = previewLifecycleProbe.nextStopAcknowledgementForTests;
+              previewLifecycleProbe.nextStopAcknowledgementForTests = undefined;
+              if (testInterception) {
+                try { pending.resolve(await testInterception(message.stopped)); }
+                catch { pending.resolve(false); }
+              } else pending.resolve(message.stopped);
             }
             return;
           }

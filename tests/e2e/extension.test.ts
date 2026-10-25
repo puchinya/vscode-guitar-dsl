@@ -6419,6 +6419,123 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
     });
   });
 
+  test('E2E-PB05 fails closed on a Stop ACK failure injected after the real Preview Webview response', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C Dm |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+      assert.strictEqual(await audioLeaseCoordinator.stop(), true, 'no prior progression audio lease can lock the new Preview');
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        currentDocumentUri?: string;
+        generation: number;
+        nextStopAcknowledgementForTests?: (stopped: boolean) => Promise<boolean>;
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      let webviewAcknowledgedStop: boolean | undefined;
+      probe.nextStopAcknowledgementForTests = async stopped => {
+        webviewAcknowledgedStop = stopped;
+        return false;
+      };
+      try {
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+        assert.ok(bindingId, 'the real Preview Webview renders the parser-bound chord');
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = 'Am';
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        let status = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+          if (status && webviewAcknowledgedStop !== undefined) break;
+          await settle(20);
+        }
+        assert.strictEqual(typeof webviewAcknowledgedStop, 'boolean', 'Preview processed the request and returned its real Stop ACK');
+        assert.ok(status, 'Preview reports that the rejected Stop prevents editing');
+        assert.strictEqual(doc.getText(), source, 'an injected failed Stop ACK leaves the source unchanged');
+      } finally {
+        probe.nextStopAcknowledgementForTests = undefined;
+      }
+    });
+  });
+
+  test('E2E-PB06 does not replay a Preview edit when its captured Stop ACK is released after panel disposal', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C Dm |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+      assert.strictEqual(await audioLeaseCoordinator.stop(), true, 'no prior progression audio lease can lock the new Preview');
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        currentDocumentUri?: string;
+        generation: number;
+        disposedGeneration?: number;
+        nextStopAcknowledgementForTests?: (stopped: boolean) => Promise<boolean>;
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      let webviewAcknowledgedStop: boolean | undefined;
+      let releaseAcknowledgement: ((stopped: boolean) => void) | undefined;
+      probe.nextStopAcknowledgementForTests = stopped => {
+        webviewAcknowledgedStop = stopped;
+        return new Promise<boolean>(resolve => { releaseAcknowledgement = resolve; });
+      };
+      try {
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+        assert.ok(bindingId, 'the real Preview Webview renders the parser-bound chord');
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = 'Am';
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        for (let attempt = 0; attempt < 100 && releaseAcknowledgement === undefined; attempt++) await settle(20);
+        assert.strictEqual(typeof webviewAcknowledgedStop, 'boolean', 'the Preview Webview sent its Stop ACK before the test delayed host resolution');
+        assert.ok(releaseAcknowledgement, 'the actual Preview response is held at the host boundary');
+
+        const disposedGeneration = probe.generation;
+        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+        for (let attempt = 0; attempt < 100 && probe.disposedGeneration === undefined; attempt++) await settle(20);
+        assert.ok(Number.isSafeInteger(probe.disposedGeneration), 'the Preview panel was disposed while the edit awaited its ACK');
+        assert.ok(probe.disposedGeneration! >= disposedGeneration, 'the recorded disposal belongs to the waiting Preview generation');
+
+        releaseAcknowledgement(true);
+        await settle(100);
+        assert.strictEqual(doc.getText(), source, 'a late Stop ACK cannot replay the edit after Preview disposal');
+      } finally {
+        releaseAcknowledgement?.(false);
+        probe.nextStopAcknowledgementForTests = undefined;
+      }
+    });
+  });
+
   test('E2E-PB04 rejects an unsafe inherited TAB edit with a reason and source navigation', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
