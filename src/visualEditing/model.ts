@@ -10,11 +10,15 @@ export type VisualEditTarget =
 
 export type VisualEditOperation =
   | { readonly kind: 'replaceChord'; readonly bindingId: string; readonly name: string }
+  | { readonly kind: 'insertToken'; readonly bindingId: string; readonly text: string }
+  | { readonly kind: 'deleteToken'; readonly bindingId: string }
   | { readonly kind: 'replaceMelodyToken'; readonly bindingId: string; readonly text: string }
   | { readonly kind: 'transposeMelody'; readonly bindingId: string; readonly semitones: number }
   | { readonly kind: 'changeDuration'; readonly bindingId: string; readonly direction: 'longer' | 'shorter' }
   | { readonly kind: 'replaceRhythmToken'; readonly bindingId: string; readonly text: string }
   | { readonly kind: 'replaceTabToken'; readonly bindingId: string; readonly text: string }
+  | { readonly kind: 'addTabChordNote'; readonly bindingId: string; readonly note: string }
+  | { readonly kind: 'deleteTabChordNote'; readonly bindingId: string; readonly note: string }
   | { readonly kind: 'replaceLyric'; readonly bindingId: string; readonly text: string };
 
 export type LetOperation =

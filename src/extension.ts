@@ -8,7 +8,8 @@ import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChord
 import { ChordDefinitionCodeLensProvider, ChordEditorPanel, EDIT_CHORD_COMMAND, isValidChordKey, pickChordKey } from './chordEditor';
 import { parseGuitarDsl } from './compiler';
 import { planLetOperation } from './visualEditing/planners';
-import { VisualEditingHostController, type VisualEditingSessionIdentity } from './visualEditing/hostController';
+import { applyAfterStopAcknowledgement, VisualEditingHostController, waitForStopAcknowledgement,
+  type VisualEditingSessionIdentity } from './visualEditing/hostController';
 import type { LetOperation, VisualEditOperation } from './visualEditing/model';
 import { planVisualEdit } from './visualEditing/planners';
 import { StrummingCodeLensProvider, StrummingCodeLensTarget, promptAndApplyStrummingPattern, APPLY_STRUMMING_PATTERN_COMMAND } from './strummingCodeLens';
@@ -228,18 +229,14 @@ export function activate(context: vscode.ExtensionContext) {
     let resolveStop: (stopped: boolean) => void = () => {};
     const acknowledgement = new Promise<boolean>(resolve => { resolveStop = resolve; });
     pendingPreviewEditStops.set(requestId, { identity, resolve: resolveStop });
-    const timer = setTimeout(() => {
-      pendingPreviewEditStops.delete(requestId);
-      resolveStop(false);
-    }, 2000);
-    const posted = await currentPanel.webview.postMessage({ command: 'previewEditStopRequest', requestId, ...identity });
+    let posted = false;
+    try { posted = await currentPanel.webview.postMessage({ command: 'previewEditStopRequest', requestId, ...identity }); }
+    catch { posted = false; }
     if (!posted) {
-      clearTimeout(timer);
       pendingPreviewEditStops.delete(requestId);
       return false;
     }
-    const stopped = await acknowledgement;
-    clearTimeout(timer);
+    const stopped = await waitForStopAcknowledgement(acknowledgement, 2000);
     pendingPreviewEditStops.delete(requestId);
     return stopped;
   };
@@ -308,45 +305,57 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     if (message.command !== 'variablesApply' || message.draftRevision !== variableDraftRevision) return;
+    const submittedDraftRevision = variableDraftRevision;
+    const submittedDraftState = variableDraftState;
     const selectedName = variableSelectionName;
     let operation: LetOperation | undefined;
-    switch (variableDraftState.operation) {
-      case 'add': operation = { kind: 'add', name: variableDraftState.name, value: variableDraftState.value }; break;
-      case 'editGlobal': operation = selectedName ? { kind: 'editGlobal', name: selectedName, value: variableDraftState.value } : undefined; break;
-      case 'rename': operation = selectedName ? { kind: 'rename', name: selectedName, newName: variableDraftState.name } : undefined; break;
-      case 'clone': operation = selectedName ? { kind: 'clone', name: selectedName, newName: variableDraftState.name } : undefined; break;
+    switch (submittedDraftState.operation) {
+      case 'add': operation = { kind: 'add', name: submittedDraftState.name, value: submittedDraftState.value }; break;
+      case 'editGlobal': operation = selectedName ? { kind: 'editGlobal', name: selectedName, value: submittedDraftState.value } : undefined; break;
+      case 'rename': operation = selectedName ? { kind: 'rename', name: selectedName, newName: submittedDraftState.name } : undefined; break;
+      case 'clone': operation = selectedName ? { kind: 'clone', name: selectedName, newName: submittedDraftState.name } : undefined; break;
       case 'deleteUnused': operation = selectedName ? { kind: 'deleteUnused', name: selectedName } : undefined; break;
       case 'detachLocal': {
-        const reference = variableDraftState.reference.split(':').map(Number);
+        const reference = submittedDraftState.reference.split(':').map(Number);
         operation = selectedName && reference.length === 3 && reference.every(Number.isSafeInteger)
-          ? { kind: 'detachLocal', name: selectedName, line: reference[0], startCol: reference[1], endCol: reference[2], value: variableDraftState.value }
+          ? { kind: 'detachLocal', name: selectedName, line: reference[0], startCol: reference[1], endCol: reference[2], value: submittedDraftState.value }
           : undefined;
         break;
       }
       default: operation = undefined;
     }
     if (!operation) return;
-    if (!await stopAudioForEdit(identity.uri)) {
+    const isSubmittedDraftCurrent = () => {
+      const current = visualEditingHost.current('variables');
+      return variableDraftRevision === submittedDraftRevision && variableDraftState === submittedDraftState
+        && variableSelectionName === selectedName && !!current
+        && current.uri === identity.uri && current.documentVersion === identity.documentVersion
+        && current.sessionGeneration === identity.sessionGeneration && current.revision === identity.revision;
+    };
+    const guarded = await applyAfterStopAcknowledgement(() => stopAudioForEdit(identity.uri), isSubmittedDraftCurrent,
+      () => visualEditingHost.applyOnce(identity, () => {
+        const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+        return current ? { uri: current.uri.toString(), documentVersion: current.version, renderGeneration: 0 } : undefined;
+      }, async () => {
+        if (!isSubmittedDraftCurrent()) return false;
+        const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
+        if (!current || current.version !== identity.documentVersion) return false;
+        const source = current.getText();
+        const score = parseGuitarDsl(source);
+        const plan = planLetOperation(source, score, operation!);
+        if (!plan.ok || !isSubmittedDraftCurrent()) return false;
+        const edit = new vscode.WorkspaceEdit();
+        for (const item of plan.edits) {
+          edit.replace(current.uri, new vscode.Range(current.positionAt(item.start), current.positionAt(item.end)), item.text);
+        }
+        return vscode.workspace.applyEdit(edit);
+      }));
+    if (!guarded.ok) {
       const next = visualEditingHost.advanceRevision(identity);
       if (next) setVariablesContext(document, false, msgs.inspectorVariableError);
       return;
     }
-    const result = await visualEditingHost.applyOnce(identity, () => {
-      const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
-      return current ? { uri: current.uri.toString(), documentVersion: current.version, renderGeneration: 0 } : undefined;
-    }, async () => {
-      const current = vscode.workspace.textDocuments.find(item => item.uri.toString() === identity.uri);
-      if (!current || current.version !== identity.documentVersion) return false;
-      const source = current.getText();
-      const score = parseGuitarDsl(source);
-      const plan = planLetOperation(source, score, operation);
-      if (!plan.ok) return false;
-      const edit = new vscode.WorkspaceEdit();
-      for (const item of plan.edits) {
-        edit.replace(current.uri, new vscode.Range(current.positionAt(item.start), current.positionAt(item.end)), item.text);
-      }
-      return vscode.workspace.applyEdit(edit);
-    });
+    const result = guarded.value;
     if (!result.ok || !result.value) {
       const next = visualEditingHost.advanceRevision(identity);
       if (next) setVariablesContext(document, false, msgs.inspectorVariableError);
@@ -618,6 +627,13 @@ export function activate(context: vscode.ExtensionContext) {
             if (sourceBinding.kind === 'chord' && message.operation === 'replaceChord'
               && typeof payload.name === 'string' && payload.name.length <= 64 && !/[\r\n\0]/.test(payload.name)) {
               visualOperation = { kind: 'replaceChord', bindingId: sourceBinding.id, name: payload.name };
+            } else if (message.operation === 'insertToken' && text !== undefined) {
+              visualOperation = { kind: 'insertToken', bindingId: sourceBinding.id, text };
+            } else if (message.operation === 'deleteToken') {
+              visualOperation = { kind: 'deleteToken', bindingId: sourceBinding.id };
+            } else if (['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'].includes(sourceBinding.kind)
+              && message.operation === 'replaceMelodyToken' && text !== undefined) {
+              visualOperation = { kind: 'replaceMelodyToken', bindingId: sourceBinding.id, text };
             } else if (sourceBinding.kind === 'melodyNote' && message.operation === 'transposeMelody'
               && Number.isSafeInteger(payload.semitones) && payload.semitones !== 0 && Math.abs(payload.semitones as number) <= 11) {
               visualOperation = { kind: 'transposeMelody', bindingId: sourceBinding.id, semitones: payload.semitones as number };
@@ -629,6 +645,12 @@ export function activate(context: vscode.ExtensionContext) {
               visualOperation = { kind: 'replaceRhythmToken', bindingId: sourceBinding.id, text };
             } else if (sourceBinding.kind === 'tab' && message.operation === 'replaceTabToken' && text !== undefined) {
               visualOperation = { kind: 'replaceTabToken', bindingId: sourceBinding.id, text };
+            } else if (sourceBinding.kind === 'tab' && message.operation === 'addTabChordNote'
+              && typeof payload.note === 'string' && payload.note.length <= 64 && !/[\r\n\0]/.test(payload.note)) {
+              visualOperation = { kind: 'addTabChordNote', bindingId: sourceBinding.id, note: payload.note };
+            } else if (sourceBinding.kind === 'tab' && message.operation === 'deleteTabChordNote'
+              && typeof payload.note === 'string' && payload.note.length <= 64 && !/[\r\n\0]/.test(payload.note)) {
+              visualOperation = { kind: 'deleteTabChordNote', bindingId: sourceBinding.id, note: payload.note };
             } else if (sourceBinding.kind === 'lyric' && message.operation === 'replaceLyric' && text !== undefined) {
               visualOperation = { kind: 'replaceLyric', bindingId: sourceBinding.id, text };
             }

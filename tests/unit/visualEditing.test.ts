@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
 import { renderContinuousSvg } from '../../src/render/svg';
 import { compileGuitarDslToHtml } from '../../src/render/previewHtml';
-import { VisualEditingHostController } from '../../src/visualEditing/hostController';
+import { applyAfterStopAcknowledgement, VisualEditingHostController, waitForStopAcknowledgement } from '../../src/visualEditing/hostController';
 import { planLetOperation, planVisualEdit } from '../../src/visualEditing/planners';
 
 function parsed(source: string) {
@@ -134,6 +134,155 @@ describe('source-preserving visual and variable planners', () => {
     assert.ok(tabEdit.resultingSource.includes('tab: | 6f2/4 6f1/4 6f3/4 6f5/4 |\r\n# keep\r\n'));
   });
 
+  it('inserts and deletes parser-bound chord, melody, rhythm, TAB, and lyric tokens', () => {
+    const chordSource = '| C/2 G/2 |\n';
+    const chordScore = parsed(chordSource);
+    const chord = chordScore.visualSourceBindings?.find(binding => binding.kind === 'chord' && binding.expected === 'C/2');
+    assert.ok(chord);
+    const chordName = planVisualEdit(chordSource, chordScore, { kind: 'replaceChord', bindingId: chord.id, name: 'Am' });
+    assert.ok(chordName.ok, chordName.ok ? '' : chordName.code);
+    assert.strictEqual(chordName.resultingSource, '| Am/2 G/2 |\n', 'chord-name editing preserves explicit timing');
+    const chordInsert = planVisualEdit(chordSource, chordScore, { kind: 'insertToken', bindingId: chord.id, text: 'F/2' });
+    assert.ok(chordInsert.ok, chordInsert.ok ? '' : chordInsert.code);
+    assert.strictEqual(chordInsert.resultingSource, '| C/2 F/2 G/2 |\n');
+    const lastChord = chordScore.visualSourceBindings?.find(binding => binding.kind === 'chord' && binding.expected === 'G/2');
+    assert.ok(lastChord);
+    const chordDelete = planVisualEdit(chordSource, chordScore, { kind: 'deleteToken', bindingId: lastChord.id });
+    assert.ok(chordDelete.ok, chordDelete.ok ? '' : chordDelete.code);
+    assert.strictEqual(chordDelete.resultingSource, '| C/2 |\n');
+
+    const melodySource = '| C |\nmel: | c4/4 d4/4 |\n';
+    const melodyScore = parsed(melodySource);
+    const melody = melodyScore.visualSourceBindings?.find(binding => binding.kind === 'melodyNote');
+    assert.ok(melody);
+    const melodyInsert = planVisualEdit(melodySource, melodyScore, { kind: 'insertToken', bindingId: melody.id, text: 'e4/4' });
+    assert.ok(melodyInsert.ok, melodyInsert.ok ? '' : melodyInsert.code);
+    assert.ok(melodyInsert.resultingSource.includes('mel: | c4/4 e4/4 d4/4 |'));
+    const inlineGroupSource = '| C [c4,e4]/4 f4/4 |\n';
+    const inlineGroupScore = parsed(inlineGroupSource);
+    const group = inlineGroupScore.visualSourceBindings?.find(binding => binding.kind === 'noteGroup');
+    assert.ok(group);
+    const groupReplace = planVisualEdit(inlineGroupSource, inlineGroupScore, {
+      kind: 'replaceMelodyToken', bindingId: group.id, text: '[d4,f4]/4'
+    });
+    assert.ok(groupReplace.ok, groupReplace.ok ? '' : groupReplace.code);
+    assert.ok(groupReplace.resultingSource.includes('[d4,f4]/4'), 'noteGroup Apply uses its melody-token planner');
+    const inlineNote = inlineGroupScore.visualSourceBindings?.find(binding => binding.kind === 'inlineNote');
+    assert.ok(inlineNote);
+    const inlineReplace = planVisualEdit(inlineGroupSource, inlineGroupScore, {
+      kind: 'replaceMelodyToken', bindingId: inlineNote.id, text: 'g4/4'
+    });
+    assert.ok(inlineReplace.ok, inlineReplace.ok ? '' : inlineReplace.code);
+
+    const rhythmSource = '| C 4.d 4.u |\n';
+    const rhythmScore = parsed(rhythmSource);
+    const rhythm = rhythmScore.visualSourceBindings?.find(binding => binding.kind === 'rhythm');
+    assert.ok(rhythm);
+    const rhythmInsert = planVisualEdit(rhythmSource, rhythmScore, { kind: 'insertToken', bindingId: rhythm.id, text: '8.d' });
+    assert.ok(rhythmInsert.ok, rhythmInsert.ok ? '' : rhythmInsert.code);
+    assert.ok(rhythmInsert.resultingSource.includes('4.d 8.d 4.u'));
+    const lastRhythm = rhythmScore.visualSourceBindings?.filter(binding => binding.kind === 'rhythm').at(-1);
+    assert.ok(lastRhythm);
+    const rhythmDelete = planVisualEdit(rhythmSource, rhythmScore, { kind: 'deleteToken', bindingId: lastRhythm.id });
+    assert.ok(rhythmDelete.ok, rhythmDelete.ok ? '' : rhythmDelete.code);
+    assert.strictEqual(rhythmDelete.resultingSource, '| C 4.d |\n');
+
+    const tabSource = '| C |\ntab: | [6f0,5f2]/1 4f0/4 |\n';
+    const tabScore = parsed(tabSource);
+    const tabChord = tabScore.visualSourceBindings?.find(binding => binding.kind === 'tab' && binding.expected.startsWith('['));
+    assert.ok(tabChord?.subTokens && tabChord.subTokens.length === 2);
+    const tabAdd = planVisualEdit(tabSource, tabScore, { kind: 'addTabChordNote', bindingId: tabChord.id, note: '4f4' });
+    assert.ok(tabAdd.ok, tabAdd.ok ? '' : tabAdd.code);
+    assert.ok(tabAdd.resultingSource.includes('[6f0,5f2,4f4]/1'));
+    const tabRemove = planVisualEdit(tabSource, tabScore, { kind: 'deleteTabChordNote', bindingId: tabChord.id, note: '6f0' });
+    assert.ok(tabRemove.ok, tabRemove.ok ? '' : tabRemove.code);
+    assert.ok(tabRemove.resultingSource.includes('5f2/1'), 'removing one of two notes converts the remainder to a TAB beat');
+    assert.deepStrictEqual(planVisualEdit(tabSource, tabScore, { kind: 'addTabChordNote', bindingId: tabChord.id, note: '5f4' }),
+      { ok: false, code: 'invalidValue' }, 'one TAB chord cannot contain the same string twice');
+
+    const lyricSource = '| C |\nmel: | c4/4 d4/4 e4/2 |\nlyr: あ い\n';
+    const lyricScore = parsed(lyricSource);
+    const lyric = lyricScore.visualSourceBindings?.find(binding => binding.kind === 'lyric');
+    assert.ok(lyric);
+    const lyricInsert = planVisualEdit(lyricSource, lyricScore, { kind: 'insertToken', bindingId: lyric.id, text: 'う' });
+    assert.ok(lyricInsert.ok, lyricInsert.ok ? '' : lyricInsert.code);
+    assert.ok(lyricInsert.resultingSource.includes('lyr: あ う い'));
+    const secondLyric = lyricScore.visualSourceBindings?.filter(binding => binding.kind === 'lyric')[1];
+    assert.ok(secondLyric);
+    const lyricDelete = planVisualEdit(lyricSource, lyricScore, { kind: 'deleteToken', bindingId: secondLyric.id });
+    assert.ok(lyricDelete.ok, lyricDelete.ok ? '' : lyricDelete.code);
+    assert.strictEqual(lyricDelete.resultingSource, '| C |\nmel: | c4/4 d4/4 e4/2 |\nlyr: あ\n');
+  });
+
+  it('rejects TAB duration edits that alter inherited following events or their onsets (BV-04)', () => {
+    const source = '| C |\ntab: | 6f0/4 6f1 6f2 6f3 |\n';
+    const score = parsed(source);
+    const first = score.visualSourceBindings?.find(binding => binding.kind === 'tab');
+    assert.ok(first);
+    assert.deepStrictEqual(planVisualEdit(source, score, { kind: 'replaceTabToken', bindingId: first.id, text: '6f0/8' }),
+      { ok: false, code: 'diagnosticRegression' }, 'implicit duration inheritance must not change other TAB beats');
+  });
+
+  it('keeps repeat and arrangement edits on their authored source token (BV-09)', () => {
+    const source = 'arrangement {\nVerse x2\n}\n[Verse]\n| C |\n| % |\n';
+    const score = parsed(source);
+    const chordBindings = score.visualSourceBindings?.filter(binding => binding.kind === 'chord' && binding.expected === 'C') ?? [];
+    assert.strictEqual(chordBindings.length, 1, 'repeat and arrangement occurrences do not mint editable source tokens');
+    const edit = planVisualEdit(source, score, { kind: 'replaceChord', bindingId: chordBindings[0].id, name: 'G' });
+    assert.ok(edit.ok, edit.ok ? '' : edit.code);
+    assert.strictEqual((edit.resultingSource.match(/\| G \|/g) ?? []).length, 1, 'one action changes the authored definition once');
+    assert.ok(edit.resultingSource.includes('| % |'), 'repeat source syntax remains intact');
+  });
+
+  it('supports melody groups and rests while preserving measure count and tie boundaries', () => {
+    const source = '| C |\nmel: | c4/4 [e4,g4]/4 r/2 |\nlyr: あ い\n';
+    const score = parsed(source);
+    const group = score.visualSourceBindings?.find(binding => binding.kind === 'melodyGroup');
+    const rest = score.visualSourceBindings?.find(binding => binding.kind === 'melodyRest');
+    assert.ok(group && rest);
+
+    const groupInsert = planVisualEdit(source, score, {
+      kind: 'insertToken', bindingId: group.id, text: '[a4,c5]/8'
+    });
+    assert.ok(groupInsert.ok, groupInsert.ok ? '' : groupInsert.code);
+    assert.ok(groupInsert.resultingSource.includes('[e4,g4]/4 [a4,c5]/8 r/2'));
+    assert.strictEqual(parsed(groupInsert.resultingSource).measures.length, score.measures.length,
+      'adding a melody group stays in its authored measure');
+
+    const groupDelete = planVisualEdit(source, score, { kind: 'deleteToken', bindingId: group.id });
+    assert.ok(groupDelete.ok, groupDelete.ok ? '' : groupDelete.code);
+    assert.ok(!groupDelete.resultingSource.includes('[e4,g4]/4'));
+    const restDelete = planVisualEdit(source, score, { kind: 'deleteToken', bindingId: rest.id });
+    assert.ok(restDelete.ok, restDelete.ok ? '' : restDelete.code);
+    assert.ok(!restDelete.resultingSource.includes('r/2'));
+
+    const tiedSource = '| C |\nmel: | c4/2~ c4/2 |\n';
+    const tiedScore = parsed(tiedSource);
+    const tiedNote = tiedScore.visualSourceBindings?.find(binding => binding.kind === 'melodyNote');
+    assert.ok(tiedNote);
+    assert.deepStrictEqual(planVisualEdit(tiedSource, tiedScore, { kind: 'deleteToken', bindingId: tiedNote.id }),
+      { ok: false, code: 'diagnosticRegression' }, 'deleting one side of a tie cannot rewrite the remaining event');
+  });
+
+  it('inserts melody rests and rejects an insertion that would remap authored lyrics', () => {
+    const source = '| C |\nmel: | c4/4 e4/4 r/2 |\n';
+    const score = parsed(source);
+    const note = score.visualSourceBindings?.find(binding => binding.kind === 'melodyNote');
+    assert.ok(note);
+    const insertRest = planVisualEdit(source, score, { kind: 'insertToken', bindingId: note.id, text: 'r/4' });
+    assert.ok(insertRest.ok, insertRest.ok ? '' : insertRest.code);
+    assert.ok(insertRest.resultingSource.includes('c4/4 r/4 e4/4 r/2'));
+    assert.strictEqual(parsed(insertRest.resultingSource).measures.length, score.measures.length);
+
+    const lyricSource = '| C |\nmel: | c4/4 d4/4 e4/2 |\nlyr: あ い う\n';
+    const lyricScore = parsed(lyricSource);
+    const firstNote = lyricScore.visualSourceBindings?.find(binding => binding.kind === 'melodyNote');
+    assert.ok(firstNote);
+    assert.deepStrictEqual(planVisualEdit(lyricSource, lyricScore, {
+      kind: 'insertToken', bindingId: firstNote.id, text: 'g4/4'
+    }), { ok: false, code: 'diagnosticRegression' }, 'inserting before lyrics cannot silently remap existing syllables');
+  });
+
   it('keeps Preview edit controls hidden by default while rendering parser targets', () => {
     const source = '| C 4.d 4.u 4.d 4.u |\n';
     const score = parsed(source);
@@ -197,5 +346,51 @@ describe('visual editing session guards', () => {
     assert.deepStrictEqual(await active, { ok: true, value: 'applied' });
     controller.invalidateUri(next.uri);
     assert.strictEqual(controller.current('variables'), undefined);
+  });
+
+  it('rejects an old variable draft after a delayed Stop ACK and rejects replay after Preview disposal (BV-10/11)', async () => {
+    const controller = new VisualEditingHostController();
+    const identity = controller.begin('variables', 'file:///score.guitardsl', 1, 0);
+    assert.ok(identity);
+    let draftRevision = 4;
+    let acknowledge!: (stopped: boolean) => void;
+    const stop = new Promise<boolean>(resolve => { acknowledge = resolve; });
+    let applyCount = 0;
+    const pending = applyAfterStopAcknowledgement(() => stop, () => draftRevision === 4, async () => ++applyCount);
+    draftRevision = 5;
+    acknowledge(true);
+    assert.deepStrictEqual(await pending, { ok: false, code: 'stale' }, 'draft N is rejected after draft N+1 arrives');
+    assert.strictEqual(applyCount, 0, 'the stale operation never reaches TextDocument apply');
+
+    const preview = controller.begin('preview', 'file:///preview.guitardsl', 2, 1);
+    assert.ok(preview);
+    let acknowledgeDisposed!: (stopped: boolean) => void;
+    const disposedStop = new Promise<boolean>(resolve => { acknowledgeDisposed = resolve; });
+    let replayCount = 0;
+    const replay = applyAfterStopAcknowledgement(() => disposedStop,
+      () => !!controller.current('preview') && controller.matchesCurrent(preview,
+        { uri: preview.uri, documentVersion: preview.documentVersion, renderGeneration: preview.renderGeneration }),
+      async () => ++replayCount);
+    controller.cancel('preview'); // panel disposal invalidates the Preview session
+    acknowledgeDisposed(true);
+    assert.deepStrictEqual(await replay, { ok: false, code: 'stale' });
+    assert.strictEqual(replayCount, 0, 'a delayed Stop ACK cannot replay an intent after panel disposal');
+  });
+
+  it('fails closed on false and timed-out Stop ACKs before apply (BV-11)', async () => {
+    let applyCount = 0;
+    const falseAck = await applyAfterStopAcknowledgement(async () => false, () => true, async () => ++applyCount);
+    assert.deepStrictEqual(falseAck, { ok: false, code: 'stopFailed' });
+    assert.strictEqual(applyCount, 0);
+
+    const timeoutAck = await waitForStopAcknowledgement(new Promise<boolean>(() => {}), 5);
+    assert.strictEqual(timeoutAck, false);
+    const timedOutApply = await applyAfterStopAcknowledgement(
+      () => waitForStopAcknowledgement(new Promise<boolean>(() => {}), 5),
+      () => true,
+      async () => ++applyCount
+    );
+    assert.deepStrictEqual(timedOutApply, { ok: false, code: 'stopFailed' });
+    assert.strictEqual(applyCount, 0, 'the edit remains unapplied after timeout');
   });
 });

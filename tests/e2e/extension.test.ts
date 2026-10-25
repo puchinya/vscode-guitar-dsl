@@ -6291,6 +6291,150 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       }
     });
   });
+
+  test('E2E-PB04 applies source-token insertions, deletions, and inline note edits with one Undo', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        '| C [c4,e4]/4 f4/4 4.d 4.u |',
+        'mel: | c4/8 d4/8 e4/8 f4/8 g4/4. |',
+        'lyr: あ い う え',
+        'tab: | [6f0,5f2]/2. |'
+      ].join('\n') + '\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number; currentDocumentUri?: string;
+      };
+      const waitForPreviewSource = async (): Promise<void> => {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          const state = await evaluatePreviewWebview<{ uri: string; version: number; editMode: string }>(`(() => ({
+            uri: document.body.dataset.previewDocumentUri || '',
+            version: Number(document.body.dataset.previewDocumentVersion),
+            editMode: document.body.dataset.previewEditMode || ''
+          }))()`);
+          if (state.uri === doc.uri.toString() && state.version === doc.version && state.editMode === 'true') return;
+          await settle(20);
+        }
+        assert.fail('Preview did not render the current document version in edit mode');
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+      await waitForPreviewSource();
+
+      const bindingId = async (kind: string, expected: string): Promise<string> => evaluatePreviewWebview<string>(
+        `Array.from(document.getElementById('preview-edit-target').options).find(option =>
+          option.textContent.includes(${JSON.stringify(` · ${kind} · ${expected}`)}))?.value || ''`);
+      const editAndUndo = async (kind: string, expected: string, buttonId: string, value?: string,
+        verifyEditedSource?: (text: string) => boolean): Promise<void> => {
+        await waitForPreviewSource();
+        const id = await bindingId(kind, expected);
+        assert.ok(id, `source binding exists for ${kind} ${expected}`);
+        const before = doc.getText();
+        const enabled = await evaluatePreviewWebview<boolean>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(id)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          return !document.getElementById(${JSON.stringify(buttonId)}).disabled
+            && !document.getElementById(${JSON.stringify(buttonId)}).hidden;
+        })()`);
+        assert.strictEqual(enabled, true, `${buttonId} is enabled for ${kind}`);
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(id)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          const valueInput = document.getElementById('preview-edit-value');
+          if (${value === undefined ? 'false' : 'true'}) valueInput.value = ${JSON.stringify(value ?? '')};
+          document.getElementById(${JSON.stringify(buttonId)}).click();
+        })()`);
+        for (let attempt = 0; attempt < 150 && doc.getText() === before; attempt++) await settle(20);
+        const status = doc.getText() === before
+          ? await evaluatePreviewWebview<string>(`document.getElementById('preview-edit-status').textContent`)
+          : '';
+        assert.notStrictEqual(doc.getText(), before, `${buttonId} commits a source edit (Preview status: ${status})`);
+        const edited = doc.getText();
+        if (verifyEditedSource) assert.strictEqual(verifyEditedSource(edited), true, `${buttonId} applies the selected operation`);
+        await undoIn(doc);
+        assert.strictEqual(doc.getText(), before, `${kind} ${expected} uses exactly one Undo`);
+        assert.notStrictEqual(edited, before);
+        await waitForPreviewSource();
+      };
+
+      await editAndUndo('noteGroup', '[c4,e4]/4', 'preview-edit-apply', '[d4,f4]/4', text => text.includes('[d4,f4]/4'));
+      await editAndUndo('inlineNote', 'f4/4', 'preview-edit-apply', 'g4/4', text => text.includes('g4/4'));
+      await editAndUndo('chord', 'C', 'preview-edit-insert', 'Am', text => text.includes('C Am'));
+      await editAndUndo('chord', 'C', 'preview-edit-delete', undefined, text => !text.split('\n')[0].includes(' C '));
+      await editAndUndo('melodyNote', 'f4/8', 'preview-edit-insert', 'a4/8', text => text.includes('f4/8 a4/8 g4/4.'));
+      await editAndUndo('melodyNote', 'g4/4.', 'preview-edit-delete', undefined, text => !text.includes('g4/4.'));
+      await editAndUndo('rhythm', '4.d', 'preview-edit-insert', '4.d', text => text.includes('4.d 4.d 4.u'));
+      await editAndUndo('rhythm', '4.u', 'preview-edit-delete', undefined, text => !text.includes('4.u'));
+      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-insert', '4f0/4', text => text.includes('[6f0,5f2]/2. 4f0/4'));
+      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-add-tab-note', '4f4', text => text.includes('[6f0,5f2,4f4]/2.'));
+      await editAndUndo('tab', '[6f0,5f2]/2.', 'preview-edit-delete-tab-note', '6f0', text => text.includes('5f2/2.'));
+      await editAndUndo('lyric', 'あ', 'preview-edit-insert', 'お', text => text.includes('lyr: あ お い'));
+      await editAndUndo('lyric', 'え', 'preview-edit-delete', undefined, text => !text.includes('え'));
+    });
+  });
+
+  test('E2E-PB04 rejects an unsafe inherited TAB edit with a reason and source navigation', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C |\ntab: | 6f0/4 6f1 6f2 6f3 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as { currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const id = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · tab · 6f0/4'))?.value || ''`);
+      assert.ok(id, 'the first parser-bound TAB beat is available');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(id)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = '6f0/8';
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+        const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
+        if (status && sourceLinkVisible) break;
+        await settle(20);
+      }
+      assert.strictEqual(doc.getText(), source, 'unsafe inherited duration changes leave the document unchanged');
+      const feedback = await evaluatePreviewWebview<{ status: string; sourceLinkVisible: boolean; applyDisabled: boolean }>(`(() => ({
+        status: document.getElementById('preview-edit-status').textContent,
+        sourceLinkVisible: !document.getElementById('preview-edit-open-source').hidden,
+        applyDisabled: document.getElementById('preview-edit-apply').disabled
+      }))()`);
+      assert.ok(feedback.status, 'Preview explains why the selected source token is read-only');
+      assert.strictEqual(feedback.sourceLinkVisible, true);
+      assert.strictEqual(feedback.applyDisabled, true);
+      await evaluatePreviewWebview<void>('document.getElementById("preview-edit-open-source").click()');
+      for (let attempt = 0; attempt < 100
+        && vscode.window.activeTextEditor?.document.uri.toString() !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(vscode.window.activeTextEditor?.document.uri.toString(), doc.uri.toString(),
+        'source navigation opens the owning GuitarDSL document');
+      assert.strictEqual(vscode.window.activeTextEditor?.selection.start.line, 1, 'source navigation selects the rejected TAB token');
+    });
+  });
 });
 
 suite('Sidebar navigation (Issue #137)', () => {

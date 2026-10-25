@@ -230,7 +230,8 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
   const visualBindings = previewEditAvailable ? (options?.visualBindings ?? []) : [];
   const visualBindingsJson = escapeJsonForHtml(JSON.stringify(visualBindings.map(binding => ({
     id: binding.id, kind: binding.kind, line: binding.line, startCol: binding.startCol,
-    endCol: binding.endCol, expected: binding.expected
+    endCol: binding.endCol, expected: binding.expected, cellId: binding.cellId,
+    measureIndex: binding.measureIndex, eventRange: binding.eventRange, subTokens: binding.subTokens
   }))));
   const visualBindingOptions = visualBindings.map(binding =>
     `<option value="${escapeXml(binding.id)}">L${binding.line + 1}:${binding.startCol + 1} · ${escapeXml(binding.kind)} · ${escapeXml(binding.expected)}</option>`
@@ -1132,6 +1133,10 @@ ${cspMeta}
       <button class="toolbar-action" id="preview-edit-duration-shorter" type="button" aria-label="${escapeXml(msgs.uiPreviewDurationShorter)}">${escapeXml(msgs.uiPreviewDurationShorter)}</button>
     </div>
     <button class="toolbar-action" id="preview-edit-apply" type="button"${previewEditAvailable && visualBindings.length ? '' : ' disabled'}>${escapeXml(msgs.uiPreviewApplyEdit)}</button>
+    <button class="toolbar-action" id="preview-edit-insert" type="button" hidden>${escapeXml(msgs.uiPreviewInsertToken)}</button>
+    <button class="toolbar-action" id="preview-edit-delete" type="button" hidden>${escapeXml(msgs.uiPreviewDeleteToken)}</button>
+    <button class="toolbar-action" id="preview-edit-add-tab-note" type="button" hidden>${escapeXml(msgs.uiPreviewAddTabChordNote)}</button>
+    <button class="toolbar-action" id="preview-edit-delete-tab-note" type="button" hidden>${escapeXml(msgs.uiPreviewDeleteTabChordNote)}</button>
     <button class="toolbar-action" id="preview-edit-open-source" type="button" hidden>${escapeXml(msgs.uiOpenVisualSource)}</button>
     <button class="toolbar-action" id="preview-edit-mode-toggle" type="button" aria-pressed="true">${escapeXml(msgs.uiPreviewEditMode)}</button>
     <span class="preview-edit-status" id="preview-edit-status" role="status" aria-live="polite">${previewEditAvailable ? '' : escapeXml(msgs.uiPreviewEditDisabled)}</span>
@@ -1208,6 +1213,10 @@ ${cspMeta}
       const previewEditStatus = document.getElementById('preview-edit-status');
       const previewEditMelodyControls = document.getElementById('preview-edit-melody-controls');
       const previewEditOpenSource = document.getElementById('preview-edit-open-source');
+      const previewEditInsert = document.getElementById('preview-edit-insert');
+      const previewEditDelete = document.getElementById('preview-edit-delete');
+      const previewEditAddTabNote = document.getElementById('preview-edit-add-tab-note');
+      const previewEditDeleteTabNote = document.getElementById('preview-edit-delete-tab-note');
       const previewEditPitchDown = document.getElementById('preview-edit-pitch-down');
       const previewEditPitchUp = document.getElementById('preview-edit-pitch-up');
       const previewEditDurationLonger = document.getElementById('preview-edit-duration-longer');
@@ -1236,10 +1245,11 @@ ${cspMeta}
         const binding = selectedPreviewBinding();
         previewEditValue.value = binding ? binding.expected : '';
         const available = body.dataset.previewEditAvailable === 'true' && !!binding;
-        const editableText = binding && ['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric'].includes(binding.kind);
+        const editableText = binding && ['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric', 'melodyNote', 'melodyGroup', 'melodyRest'].includes(binding.kind);
         const melodyNote = binding?.kind === 'melodyNote';
         const melodyDuration = binding && ['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'].includes(binding.kind);
         const readOnly = binding && !['chord', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric', 'melodyNote', 'melodyGroup', 'melodyRest', 'letReference'].includes(binding.kind);
+        const tabChord = binding?.kind === 'tab' && Array.isArray(binding.subTokens) && binding.subTokens.length >= 2;
         previewEditValue.hidden = !editableText;
         document.getElementById('preview-edit-value-label').hidden = !editableText;
         previewEditMelodyControls.hidden = !melodyNote && !melodyDuration;
@@ -1250,10 +1260,19 @@ ${cspMeta}
         previewEditTarget.disabled = !available;
         previewEditValue.disabled = !available || !editableText;
         document.getElementById('preview-edit-apply').disabled = !available || !editableText;
+        previewEditInsert.hidden = !editableText;
+        previewEditDelete.hidden = !editableText;
+        previewEditInsert.disabled = !available || !editableText;
+        previewEditDelete.disabled = !available || !editableText;
+        previewEditAddTabNote.hidden = !tabChord;
+        previewEditDeleteTabNote.hidden = !tabChord;
+        previewEditAddTabNote.disabled = !available || !tabChord;
+        previewEditDeleteTabNote.disabled = !available || !tabChord;
         previewEditOpenSource.hidden = !readOnly;
         markSelectedPreviewBinding(binding?.id);
         if (!available && body.dataset.previewEditAvailable !== 'true') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditDisabled)}';
         else if (binding?.kind === 'letReference') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewReferenceChoice)}';
+        else if (tabChord) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewTabChordHint)}';
         else if (readOnly) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditReadOnly)}';
         else if (!binding) previewEditStatus.textContent = '';
         else if (!available) previewEditStatus.textContent = '';
@@ -1329,12 +1348,28 @@ ${cspMeta}
         const binding = selectedPreviewBinding();
         if (!previewEditMode || !binding || body.dataset.previewEditAvailable !== 'true'
           || !previewEditValue.value || previewEditValue.value.length > 256 || /[\\r\\n\\0]/.test(previewEditValue.value)) return;
-        const operation = binding.kind === 'chord' ? 'replaceChord'
-          : binding.kind === 'tab' ? 'replaceTabToken'
-            : binding.kind === 'rhythm' ? 'replaceRhythmToken'
-              : 'replaceLyric';
+        const operationByKind = {
+          chord: 'replaceChord', melodyNote: 'replaceMelodyToken', melodyGroup: 'replaceMelodyToken',
+          melodyRest: 'replaceMelodyToken', rhythm: 'replaceRhythmToken', noteGroup: 'replaceMelodyToken',
+          inlineNote: 'replaceMelodyToken', tab: 'replaceTabToken', lyric: 'replaceLyric'
+        };
+        const operation = operationByKind[binding.kind];
+        if (!operation) return;
         vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewVisualEdit', visualElementId: binding.id,
           operation, payload: binding.kind === 'chord' ? { name: previewEditValue.value } : { text: previewEditValue.value } });
+      });
+      previewEditInsert.addEventListener('click', () => {
+        const binding = selectedPreviewBinding();
+        if (binding && previewEditMode && body.dataset.previewEditAvailable === 'true' && previewEditValue.value) {
+          postPreviewVisualEdit('insertToken', { text: previewEditValue.value });
+        }
+      });
+      previewEditDelete.addEventListener('click', () => postPreviewVisualEdit('deleteToken', {}));
+      previewEditAddTabNote.addEventListener('click', () => {
+        if (previewEditValue.value) postPreviewVisualEdit('addTabChordNote', { note: previewEditValue.value });
+      });
+      previewEditDeleteTabNote.addEventListener('click', () => {
+        if (previewEditValue.value) postPreviewVisualEdit('deleteTabChordNote', { note: previewEditValue.value });
       });
       document.getElementById('preview-edit-mode-toggle').addEventListener('click', () => {
         vscode && vscode.postMessage({ ...previewEditIdentity(), command: 'previewEditModeToggle', enabled: false });
@@ -3244,9 +3279,15 @@ ${cspMeta}
           && message.previewGeneration === previewIdentity.previewGeneration) {
           if (message.success === true) previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditApplied)}';
           else if (message.reason === 'staleSource' || message.reason === 'staleContext') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStale)}';
-          else if (message.reason === 'unsupportedTarget') {
+          else if (message.reason === 'unsupportedTarget' || message.reason === 'diagnosticRegression') {
             previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditReadOnly)}';
             previewEditOpenSource.hidden = false;
+            previewEditValue.disabled = true;
+            for (const id of ['preview-edit-apply', 'preview-edit-insert', 'preview-edit-delete',
+              'preview-edit-add-tab-note', 'preview-edit-delete-tab-note', 'preview-edit-pitch-down',
+              'preview-edit-pitch-up', 'preview-edit-duration-longer', 'preview-edit-duration-shorter']) {
+              document.getElementById(id).disabled = true;
+            }
           } else if (message.reason === 'stopFailed') previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditStopFailed)}';
           else previewEditStatus.textContent = '${escapeXml(msgs.uiPreviewEditFailed)}';
           return;

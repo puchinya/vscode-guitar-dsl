@@ -184,6 +184,10 @@ export interface CodeActionSourceToken {
   measureIndex?: number;
   /** Parser event indexes represented by this token; melody and rhythm use their measure arrays separately. */
   eventRange?: { collection: 'rhythm' | 'melody' | 'tab'; start: number; end: number };
+  /** Parser-issued note spans inside one authored TAB chord token. */
+  subTokens?: readonly { startCol: number; endCol: number; text: string }[];
+  /** The chord name span, excluding its label, timing and trailing source text. */
+  nameSpan?: { startCol: number; endCol: number; text: string };
   /** Zero-based lyric verse rendered against eventRange. */
   visualVerse?: number;
   /** Present only when this authored token contains a parseable explicit duration. */
@@ -249,6 +253,8 @@ export interface VisualSourceBinding {
   cellId: string;
   measureIndex?: number;
   eventRange?: CodeActionSourceToken['eventRange'];
+  subTokens?: CodeActionSourceToken['subTokens'];
+  nameSpan?: CodeActionSourceToken['nameSpan'];
   visualVerse?: number;
   origin: 'authored-token' | 'let-reference';
 }
@@ -1657,6 +1663,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             codeActionTokens.push({
               line: lineIdx, startCol: tokCol, endCol: tokCol + tok.length, text: tok, kind: 'chord',
               cellId: `measure:${measures.length}`, measureIndex: measures.length,
+              nameSpan: { startCol: spanCol, endCol: spanCol + parsedChord.name.length, text: parsedChord.name },
               ...(parsedChord.durationText !== undefined && parsedChord.durationStart !== undefined && parsedChord.duration !== undefined
                 ? { duration: {
                     startCol: tokCol + parsedChord.durationStart,
@@ -2723,6 +2730,13 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
             beats.push({ isRest: sourceBeat.isRest, notes, duration, effects: cloneEffects(sourceBeat.effects), syllables: [] });
           }
           sourceToken.eventRange = { collection: 'tab', start: tokenEventStart, end: beats.length };
+          if (token.text.startsWith('[') && parsedBeats.length === 1 && parsedBeats[0].notes.length >= 2) {
+            sourceToken.subTokens = parsedBeats[0].notes.map(note => ({
+              startCol: note.startCol,
+              endCol: note.endCol,
+              text: (lines[group.line] ?? '').slice(note.startCol, note.endCol)
+            }));
+          }
         }
         targetMeasure.tabVoices = [{ voice: 1, beats }];
         byMeasure.set(measureIndex, beats);
@@ -3034,6 +3048,8 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
     cellId: token.cellId,
     ...(token.measureIndex !== undefined ? { measureIndex: token.measureIndex } : {}),
     ...(token.eventRange ? { eventRange: token.eventRange } : {}),
+    ...(token.subTokens ? { subTokens: token.subTokens } : {}),
+    ...(token.nameSpan ? { nameSpan: token.nameSpan } : {}),
     ...(token.visualVerse !== undefined ? { visualVerse: token.visualVerse } : {}),
     origin: token.kind === 'letReference' ? 'let-reference' as const : 'authored-token' as const
   }));

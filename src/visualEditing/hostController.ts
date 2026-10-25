@@ -9,6 +9,26 @@ export interface VisualEditingSessionIdentity {
   readonly revision: number;
 }
 
+export async function waitForStopAcknowledgement(acknowledgement: Promise<boolean>, timeoutMs: number): Promise<boolean> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) return false;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    acknowledgement.then(
+      stopped => { clearTimeout(timer); resolve(stopped === true); },
+      () => { clearTimeout(timer); resolve(false); }
+    );
+  });
+}
+
+export async function applyAfterStopAcknowledgement<T>(stop: () => Promise<boolean>, isCurrent: () => boolean,
+  apply: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; code: 'stopFailed' | 'stale' }> {
+  let stopped = false;
+  try { stopped = await stop(); } catch { stopped = false; }
+  if (!stopped) return { ok: false, code: 'stopFailed' };
+  if (!isCurrent()) return { ok: false, code: 'stale' };
+  return { ok: true, value: await apply() };
+}
+
 interface MutableSession {
   kind: VisualEditingSessionKind;
   uri: string;

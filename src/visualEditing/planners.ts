@@ -1,7 +1,8 @@
 import { isValidChordName } from '../chordDefinition';
-import { parseGuitarDsl, type LetDefinitionSummary, type ParsedScore, type VisualSourceBinding } from '../compiler';
+import { parseGuitarDsl, rhythmItemBeats, type LetDefinitionSummary, type ParsedScore, type VisualSourceBinding } from '../compiler';
 import { planMusicCodeAction } from '../codeActions/planners';
 import { spliceSourceOffsets, type SourceOffsetEdit } from '../sourceEdits';
+import { fnum } from '../duration';
 import type { LetOperation, VisualEditFailure, VisualEditOperation, VisualEditResult } from './model';
 import { validateCandidateSource } from './validation';
 
@@ -44,6 +45,130 @@ function finish(source: string, score: ParsedScore, edits: readonly SourceOffset
   const validated = validateCandidateSource(source, spliced.text, score);
   if (!validated.ok) return failure(validated.code);
   return { ok: true, edits: [...edits], resultingSource: spliced.text, postcondition: 'no-new-errors' };
+}
+
+type EventCollection = NonNullable<VisualSourceBinding['eventRange']>['collection'];
+interface EventSnapshot { readonly onset: number; readonly duration: number; readonly signature: string }
+
+function eventSnapshots(score: ParsedScore, collection: EventCollection, measureIndex: number): EventSnapshot[] {
+  const measure = score.measures[measureIndex];
+  if (!measure) return [];
+  const snapshots: EventSnapshot[] = [];
+  let onset = 0;
+  const append = (duration: number, signature: unknown) => {
+    snapshots.push({ onset: Math.round(onset * 1e9) / 1e9, duration, signature: JSON.stringify(signature) });
+    onset += duration;
+  };
+  if (collection === 'rhythm') {
+    for (const event of measure.rhythms) {
+      append(fnum(rhythmItemBeats(event)), {
+        isRest: event.isRest, down: event.down, up: event.up, ghost: event.ghost,
+        accent: event.accent, mute: event.mute, stringAttack: event.stringAttack,
+        tie: event.tie, arpeggio: event.arpeggio, pitch: event.pitch, pitches: event.pitches,
+        inlineLyric: event.inlineLyric, techniques: event.techniques
+      });
+    }
+  } else if (collection === 'melody') {
+    for (const event of measure.melody ?? []) {
+      append(fnum(event.beats), {
+        isRest: event.isRest, pitch: event.pitch, pitches: event.pitches, parts: event.parts,
+        techniques: event.techniques, tieToNext: event.tieToNext, tiedFromPrev: event.tiedFromPrev,
+        syllables: event.syllables
+      });
+    }
+  } else {
+    for (const event of measure.tabVoices?.find(voice => voice.voice === 1)?.beats ?? []) {
+      append(fnum(event.duration.beats), {
+        isRest: event.isRest, notes: event.notes, duration: event.duration,
+        effects: event.effects, syllables: event.syllables
+      });
+    }
+  }
+  return snapshots;
+}
+
+/** Ensures a source-token edit cannot silently change another event through inherited state. */
+function eventsUnchangedOutsideTarget(before: ParsedScore, after: ParsedScore, collection: EventCollection,
+  measureIndex: number, oldRange: { start: number; end: number }, newRange: { start: number; end: number },
+  allowOnsetShift: boolean): boolean {
+  const oldEvents = eventSnapshots(before, collection, measureIndex);
+  const newEvents = eventSnapshots(after, collection, measureIndex);
+  if (oldRange.start < 0 || oldRange.end < oldRange.start || oldRange.end > oldEvents.length
+    || newRange.start < 0 || newRange.end < newRange.start || newRange.end > newEvents.length
+    || oldRange.start !== newRange.start) return false;
+  const oldPrefix = oldEvents.slice(0, oldRange.start);
+  const newPrefix = newEvents.slice(0, newRange.start);
+  const oldSuffix = oldEvents.slice(oldRange.end);
+  const newSuffix = newEvents.slice(newRange.end);
+  if (oldPrefix.length !== newPrefix.length || oldSuffix.length !== newSuffix.length) return false;
+  for (let i = 0; i < oldPrefix.length; i++) {
+    if (oldPrefix[i].signature !== newPrefix[i].signature || oldPrefix[i].onset !== newPrefix[i].onset) return false;
+  }
+  const oldTargetDuration = oldEvents.slice(oldRange.start, oldRange.end).reduce((sum, event) => sum + event.duration, 0);
+  const newTargetDuration = newEvents.slice(newRange.start, newRange.end).reduce((sum, event) => sum + event.duration, 0);
+  const onsetShift = Math.round((newTargetDuration - oldTargetDuration) * 1e9) / 1e9;
+  if (!allowOnsetShift && oldSuffix.length > 0 && onsetShift !== 0) return false;
+  const expectedOnsetShift = allowOnsetShift ? onsetShift : 0;
+  for (let i = 0; i < oldSuffix.length; i++) {
+    if (oldSuffix[i].signature !== newSuffix[i].signature
+      || Math.abs(newSuffix[i].onset - oldSuffix[i].onset - expectedOnsetShift) > 1e-9) return false;
+  }
+  return true;
+}
+
+function finishVisual(source: string, score: ParsedScore, edits: readonly SourceOffsetEdit[], binding: VisualSourceBinding,
+  nextBinding?: VisualSourceBinding, allowOnsetShift = false, deleted = false,
+  oldRangeOverride?: { collection: EventCollection; start: number; end: number }): VisualEditResult {
+  const spliced = spliceSourceOffsets(source, edits);
+  if (!spliced.ok) return failure('staleSource');
+  const validated = validateCandidateSource(source, spliced.text, score);
+  if (!validated.ok) return failure(validated.code);
+  const oldRange = binding.kind === 'lyric' ? undefined : oldRangeOverride ?? binding.eventRange;
+  if (oldRange) {
+    const nextRange = deleted
+      ? { collection: oldRange.collection, start: oldRange.start, end: oldRange.start }
+      : nextBinding?.eventRange;
+    if (!nextRange || nextRange.collection !== oldRange.collection
+      || !eventsUnchangedOutsideTarget(score, validated.score, oldRange.collection, binding.measureIndex ?? -1,
+        { start: oldRange.start, end: oldRange.end }, { start: nextRange.start, end: nextRange.end }, allowOnsetShift)) {
+      return failure('diagnosticRegression');
+    }
+  }
+  return { ok: true, edits: [...edits], resultingSource: spliced.text, postcondition: 'no-new-errors' };
+}
+
+function tokenFamily(kind: VisualSourceBinding['kind']): string {
+  if (kind === 'chord') return 'chord';
+  if (kind === 'tab') return 'tab';
+  if (kind === 'lyric') return 'lyric';
+  if (kind === 'melodyNote' || kind === 'melodyGroup' || kind === 'melodyRest') return 'melody';
+  if (kind === 'rhythm' || kind === 'noteGroup' || kind === 'inlineNote') return 'measure-rhythm';
+  return 'readonly';
+}
+
+function bindingAt(score: ParsedScore, binding: VisualSourceBinding, startCol: number): VisualSourceBinding | undefined {
+  const family = tokenFamily(binding.kind);
+  return score.visualSourceBindings?.find(candidate => candidate.line === binding.line && candidate.startCol === startCol
+    && candidate.cellId === binding.cellId && tokenFamily(candidate.kind) === family);
+}
+
+function validateSingleToken(text: string): boolean {
+  return text.length > 0 && text.length <= 256 && text.trim() === text && !/[\s\0]/u.test(text);
+}
+
+function deleteTokenEdit(source: string, binding: VisualSourceBinding): SourceOffsetEdit | undefined {
+  const start = offsetAt(source, binding.line, binding.startCol);
+  const end = offsetAt(source, binding.line, binding.endCol);
+  if (start === undefined || end === undefined || source.slice(start, end) !== binding.expected) return undefined;
+  let deleteStart = start;
+  let deleteEnd = end;
+  if (source[deleteEnd] === ' ' || source[deleteEnd] === '\t') deleteEnd++;
+  else if (source[deleteStart - 1] === ' ' || source[deleteStart - 1] === '\t') deleteStart--;
+  return { start: deleteStart, end: deleteEnd, expected: source.slice(deleteStart, deleteEnd), text: '' };
+}
+
+function tabNoteTextValid(text: string): boolean {
+  return /^[1-6](?:f[0-9]+|x)(?:~)?$/u.test(text);
 }
 
 function existingNames(score: ParsedScore): Set<string> {
@@ -92,14 +217,96 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
   if (!binding) return failure('targetNotFound');
   const expectedKinds: Record<VisualEditOperation['kind'], readonly VisualSourceBinding['kind'][]> = {
     replaceChord: ['chord'],
+    insertToken: ['chord', 'melodyNote', 'melodyGroup', 'melodyRest', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric'],
+    deleteToken: ['chord', 'melodyNote', 'melodyGroup', 'melodyRest', 'rhythm', 'noteGroup', 'inlineNote', 'tab', 'lyric'],
     replaceMelodyToken: ['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'],
     transposeMelody: ['melodyNote'],
     changeDuration: ['melodyNote', 'melodyGroup', 'melodyRest', 'rhythm', 'noteGroup', 'inlineNote'],
     replaceRhythmToken: ['rhythm', 'noteGroup', 'inlineNote'],
     replaceTabToken: ['tab'],
+    addTabChordNote: ['tab'],
+    deleteTabChordNote: ['tab'],
     replaceLyric: ['lyric']
   };
   if (binding.kind === 'letReference' || !expectedKinds[operation.kind]?.includes(binding.kind)) return failure('unsupportedTarget');
+
+  if (operation.kind === 'deleteToken') {
+    const edit = deleteTokenEdit(source, binding);
+    if (!edit) return failure('staleSource');
+    const candidate = spliceSourceOffsets(source, [edit]);
+    if (!candidate.ok) return failure('staleSource');
+    const validated = validateCandidateSource(source, candidate.text, score);
+    if (!validated.ok) return failure(validated.code);
+    const family = tokenFamily(binding.kind);
+    const beforeCount = (score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
+    const afterCount = (validated.score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
+    if (afterCount !== beforeCount - 1) return failure('unsupportedTarget');
+    return finishVisual(source, score, [edit], binding, undefined, true, true);
+  }
+
+  if (operation.kind === 'insertToken') {
+    if (!validateSingleToken(operation.text)) return failure('invalidValue');
+    const start = offsetAt(source, binding.line, binding.endCol);
+    if (start === undefined) return failure('staleSource');
+    const edit: SourceOffsetEdit = { start, end: start, expected: '', text: ` ${operation.text}` };
+    const candidate = spliceSourceOffsets(source, [edit]);
+    if (!candidate.ok) return failure('staleSource');
+    const validated = validateCandidateSource(source, candidate.text, score);
+    if (!validated.ok) return failure(validated.code);
+    const nextBinding = bindingAt(validated.score, binding, binding.endCol + 1);
+    if (!nextBinding) return failure('unsupportedTarget');
+    const family = tokenFamily(binding.kind);
+    const beforeCount = (score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
+    const afterCount = (validated.score.visualSourceBindings ?? []).filter(item => item.cellId === binding.cellId && tokenFamily(item.kind) === family).length;
+    if (afterCount !== beforeCount + 1) return failure('unsupportedTarget');
+    const insertionRange = binding.eventRange
+      ? { collection: binding.eventRange.collection, start: binding.eventRange.end, end: binding.eventRange.end }
+      : undefined;
+    return finishVisual(source, score, [edit], binding, nextBinding, true, false, insertionRange);
+  }
+
+  if (operation.kind === 'addTabChordNote' || operation.kind === 'deleteTabChordNote') {
+    if (!binding.subTokens || binding.subTokens.length < 2) return failure('unsupportedTarget');
+    const tokenStart = offsetAt(source, binding.line, binding.startCol);
+    const tokenEnd = offsetAt(source, binding.line, binding.endCol);
+    if (tokenStart === undefined || tokenEnd === undefined || source.slice(tokenStart, tokenEnd) !== binding.expected) return failure('staleSource');
+    let edit: SourceOffsetEdit | undefined;
+    if (operation.kind === 'addTabChordNote') {
+      if (!tabNoteTextValid(operation.note) || binding.subTokens.some(note => note.text.match(/^[1-6]/)?.[0] === operation.note.match(/^[1-6]/)?.[0])) {
+        return failure('invalidValue');
+      }
+      const close = source.indexOf(']', tokenStart);
+      if (close < tokenStart || close >= tokenEnd) return failure('unsupportedTarget');
+      edit = { start: close, end: close, expected: '', text: `,${operation.note}` };
+    } else {
+      const noteIndex = binding.subTokens.findIndex(note => note.text === operation.note);
+      if (noteIndex < 0) return failure('targetNotFound');
+      const closingBracket = source.indexOf(']', tokenStart);
+      if (closingBracket < tokenStart || closingBracket >= tokenEnd) return failure('unsupportedTarget');
+      if (binding.subTokens.length === 2) {
+        const remaining = binding.subTokens[1 - noteIndex];
+        const suffixStart = closingBracket + 1;
+        edit = { start: tokenStart, end: suffixStart, expected: source.slice(tokenStart, suffixStart), text: remaining.text };
+      } else if (noteIndex < binding.subTokens.length - 1) {
+        const next = binding.subTokens[noteIndex + 1];
+        edit = { start: binding.subTokens[noteIndex].startCol, end: next.startCol,
+          expected: source.slice(binding.subTokens[noteIndex].startCol, next.startCol), text: '' };
+      } else {
+        const previous = binding.subTokens[noteIndex - 1];
+        edit = { start: previous.endCol, end: binding.subTokens[noteIndex].endCol,
+          expected: source.slice(previous.endCol, binding.subTokens[noteIndex].endCol), text: '' };
+      }
+    }
+    if (!edit) return failure('staleSource');
+    const candidate = spliceSourceOffsets(source, [edit]);
+    if (!candidate.ok) return failure('staleSource');
+    const validated = validateCandidateSource(source, candidate.text, score);
+    if (!validated.ok) return failure(validated.code);
+    const nextBinding = bindingAt(validated.score, binding, binding.startCol);
+    if (!nextBinding) return failure('unsupportedTarget');
+    return finishVisual(source, score, [edit], binding, nextBinding);
+  }
+
   if (operation.kind === 'transposeMelody' || operation.kind === 'changeDuration') {
     if (operation.kind === 'transposeMelody'
       && (!Number.isSafeInteger(operation.semitones) || operation.semitones === 0 || Math.abs(operation.semitones) > 11)) {
@@ -115,15 +322,27 @@ export function planVisualEdit(source: string, score: ParsedScore, operation: Vi
     if (!planned.ok) return failure(planned.code === 'staleSource' ? 'staleSource' : 'unsupportedTarget');
     const validated = validateCandidateSource(source, planned.text, score);
     if (!validated.ok) return failure(validated.code);
-    return { ok: true, edits: planned.edits, resultingSource: planned.text, postcondition: 'no-new-errors' };
+    const nextBinding = bindingAt(validated.score, binding, binding.startCol);
+    if (!nextBinding) return failure('unsupportedTarget');
+    return finishVisual(source, score, planned.edits, binding, nextBinding);
   }
   const replacement = operation.kind === 'replaceChord' ? operation.name : operation.text;
   if (!replacement || replacement.length > 256 || /[\r\n\0]/.test(replacement)) return failure('invalidValue');
+  if ((operation.kind === 'replaceMelodyToken' || operation.kind === 'replaceRhythmToken' || operation.kind === 'replaceTabToken')
+    && !validateSingleToken(replacement)) return failure('invalidValue');
   if (operation.kind === 'replaceChord' && !isValidChordName(replacement)) return failure('invalidValue');
   if (operation.kind === 'replaceLyric' && /[\s|_*]/u.test(replacement)) return failure('invalidValue');
-  const edit = spanEdit(source, binding.line, binding.startCol, binding.endCol, replacement);
-  if (!edit || edit.expected !== binding.expected) return failure('staleSource');
-  return finish(source, score, [edit]);
+  const targetSpan = operation.kind === 'replaceChord' ? binding.nameSpan : undefined;
+  const edit = spanEdit(source, binding.line, targetSpan?.startCol ?? binding.startCol,
+    targetSpan?.endCol ?? binding.endCol, replacement);
+  if (!edit || edit.expected !== (targetSpan?.text ?? binding.expected)) return failure('staleSource');
+  const candidate = spliceSourceOffsets(source, [edit]);
+  if (!candidate.ok) return failure('staleSource');
+  const validated = validateCandidateSource(source, candidate.text, score);
+  if (!validated.ok) return failure(validated.code);
+  const nextBinding = bindingAt(validated.score, binding, binding.startCol);
+  if (!nextBinding) return failure('unsupportedTarget');
+  return finishVisual(source, score, [edit], binding, nextBinding);
 }
 
 /** Plans one lyric syllable edit without allowing the Webview to submit source offsets unchecked. */

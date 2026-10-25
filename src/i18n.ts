@@ -88,6 +88,11 @@ export interface Messages {
   uiPreviewEditTarget: string;
   uiPreviewEditValue: string;
   uiPreviewApplyEdit: string;
+  uiPreviewInsertToken: string;
+  uiPreviewDeleteToken: string;
+  uiPreviewAddTabChordNote: string;
+  uiPreviewDeleteTabChordNote: string;
+  uiPreviewTabChordHint: string;
   uiPreviewPitchDown: string;
   uiPreviewPitchUp: string;
   uiPreviewDurationLonger: string;
@@ -426,8 +431,13 @@ export const MESSAGES_JA: Messages = {
   uiEditPreview: '譜面を編集',
   uiPreviewEditMode: 'プレビュー編集モード',
   uiPreviewEditTarget: '編集するソース要素',
-  uiPreviewEditValue: 'コード名・トークン・歌詞',
+  uiPreviewEditValue: 'コード・トークン・歌詞・TAB音',
   uiPreviewApplyEdit: '適用',
+  uiPreviewInsertToken: '後に追加',
+  uiPreviewDeleteToken: '削除',
+  uiPreviewAddTabChordNote: 'TAB和音に音を追加',
+  uiPreviewDeleteTabChordNote: 'TAB和音から音を削除',
+  uiPreviewTabChordHint: 'TAB音を入力してください（例: 5f2）。削除は既存の弦・フレットを入力します。',
   uiPreviewPitchDown: '半音下げる',
   uiPreviewPitchUp: '半音上げる',
   uiPreviewDurationLonger: '音価を長く',
@@ -808,8 +818,13 @@ export const MESSAGES_EN: Messages = {
   uiEditPreview: 'Edit score',
   uiPreviewEditMode: 'Preview editing mode',
   uiPreviewEditTarget: 'Source element to edit',
-  uiPreviewEditValue: 'Chord, token, or lyric',
+  uiPreviewEditValue: 'Chord, token, lyric, or TAB note',
   uiPreviewApplyEdit: 'Apply',
+  uiPreviewInsertToken: 'Insert after',
+  uiPreviewDeleteToken: 'Delete',
+  uiPreviewAddTabChordNote: 'Add TAB chord note',
+  uiPreviewDeleteTabChordNote: 'Remove TAB chord note',
+  uiPreviewTabChordHint: 'Enter a TAB note (for example, 5f2). For removal, enter an existing string and fret.',
   uiPreviewPitchDown: 'Lower by a semitone',
   uiPreviewPitchUp: 'Raise by a semitone',
   uiPreviewDurationLonger: 'Lengthen duration',
