@@ -10,12 +10,27 @@ This record verifies the completed GUI work owned by Issues #133–#137 and #145
 - PR #149 restored Preview's 48 px transport row, 44 px temporary score-settings row, and 42 px Practice row when Practice is on. Preview settings remain temporary and source-safe; detailed comparison and persistent Apply/Cancel remain in Inspector.
 - Standard text editor and Extension Host own source edits. Inspector contexts are document/version-bound and a confirmed Apply is one undoable edit.
 
-## Verification environment
+## Verification environment and history
 
-- Full `npm test` run finished: 2026-10-25 00:04:52 UTC (2026-10-25 09:04:52 JST).
-- Repository `HEAD` at run start: `78f97ee8f2a820dec10e8c6d51ee7ff659540e05` (`main` base); the run used this PR's working-tree changes in `tests/e2e/extension.test.ts` and `docs/status/implementation-status.md`.
+### Initial working-tree run (historical; not exact-HEAD evidence)
+
+- `env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test` finished at 2026-10-25 00:04:52 UTC (09:04:52 JST), with the pre-PR worktree changes present.
+- The repository `HEAD` was `78f97ee8f2a820dec10e8c6d51ee7ff659540e05` (`main` base) while the test and status files were uncommitted. This run is retained as historical context and does not establish a committed PR revision.
+- The E2E portion reported 113 passing and 6 pending. `GUITARDSL_E2E_CAPTURE_SCREENSHOTS` was unset.
+
+### Previous committed PR HEAD (before reviewer remediation)
+
+- `npm test` passed on `f063fc17130bab5d4c278d42fe0486d1535292e8` and finished at 2026-10-25 00:12:08 UTC: 1,192 unit passing, 113 E2E passing, 6 conditional pending.
+- This is exact-HEAD evidence for the prior PR revision, not the post-review remediation.
+
+### Current remediation code/test HEAD
+
+- Command: `rtk env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test`.
+- Tested `HEAD`: `012d83849f4f6ab346d600861e8a6d269e7237c2`.
+- Result: **PASS**, finished 2026-10-25 00:27:43 UTC (09:27:43 JST): 1,192 unit passing, 113 E2E passing, 6 conditional pending. The command ran Help/AI sync checks and `compile:all` as part of the full suite.
+- The E2E capture gate was unset; the six pending cases remain pending and are not counted as passing.
 - Host: macOS 26.6.2, arm64; Node.js v26.7.0; npm 11.19.0; VS Code 1.143.1.
-- `GUITARDSL_E2E_CAPTURE_SCREENSHOTS` was unset for the normal E2E run.
+- The following report update changes this acceptance document only; the tested code and E2E test sources are at the recorded SHA above.
 
 ## Related Issue and PR acceptance matrix
 
@@ -34,9 +49,9 @@ These images are historical captures from the owning Issues/PRs, not new screens
 
 ## GUI132-01 integrated E2E
 
-**PASS** — [`GUI132-01`](../../../../tests/e2e/extension.test.ts) ran in the real VS Code Extension Development Host as part of `npm run test:e2e`.
+**PASS** — [`GUI132-01`](../../../../tests/e2e/extension.test.ts) ran in the real VS Code Extension Development Host as part of the current-head `npm test` run above.
 
-The test opens valid document A, invokes the production CodeLens, selects a candidate and compares A/B without changing document text, version or the pre-existing Undo step, then opens Capo Settings in the same production WebviewView. It sends a saved message from the old progression generation after the Settings context is active, verifies the context, effective Preview DSL, Preview generation and document remain unchanged, cancels Settings, verifies the temporary Preview comparison is restored, confirms no audio lease remains, and verifies Undo still removes only the edit created before the flow. `withWorkbenchSnapshotRestored` and `finally` cleanup restore tabs, editor focus, sidebar visibility, Preview, Practice and temporary document state after success or failure.
+Observed result: **0** `showQuickPick` calls during CodeLens execution and **5** real Inspector button clicks (progression candidate, A, B, Settings Capo candidate, Settings Cancel). The test uses CDP in the active production Webview frame; candidate/side session state, Settings state, effective Preview DSL, and rendered `aria-pressed` values confirm the renderer handlers' `postMessage` path through the Extension Host. Only the saved stale-generation message is injected through the host test seam. Document text/version and the pre-existing Undo step remain unchanged; Cancel restores the temporary Preview comparison and leaves no audio lease. Cleanup independently attempts Settings Cancel and `guitardsl.progression.close`; if either fails, it reports cleanup errors together with the original test failure. `withWorkbenchSnapshotRestored` restores tabs, focus, sidebar visibility, Preview, Practice and temporary document state.
 
 ## GUI132-02 existing regression run
 
@@ -63,7 +78,7 @@ The other #133–#137/#145 regressions listed in the matrix completed in the sam
 | `npm run test:unit` | PASS — 1,192 passing |
 | `npm run check:help` | PASS |
 | `npm run check:ai` | PASS |
-| `npm test` | PASS — unit tests and E2E; 113 passing, 6 conditional pending |
+| `npm test` | PASS — remediation code/test HEAD `012d83849f4f6ab346d600861e8a6d269e7237c2`; 1,192 unit passing, 113 E2E passing, 6 conditional pending; finished 2026-10-25 00:27:43 UTC |
 | `npm run vscode:prepublish` | PASS |
 | `npx @vscode/vsce ls` | PASS — 1,602 package entries; extension output, Help assets and syntaxes included |
 | `python3 -m agent_workflow validate-docs --issue 132` | PASS — valid |
@@ -74,4 +89,5 @@ The other #133–#137/#145 regressions listed in the matrix completed in the sam
 
 - Windows, Linux, VS Code 1.109.0, VoiceOver, NVDA and physical-speaker playback were **NOT RUN** in this environment.
 - Six screenshot/audio E2E cases above remain **PENDING**, not PASS. The test command did not set the documented capture/audio gate.
-- The configured Required Check `agent-required-check` and current-HEAD self-review are tracked on [PR #157](https://github.com/puchinya/vscode-guitar-dsl/pull/157). Issue #132 remains open until the PR is reviewed and merged.
+- Acceptance decision: the integrated macOS regression is **PASS** and is ready for PR review with the listed platform, screen-reader and physical-speaker checks explicitly remaining **NOT RUN**. This record makes no claim that those environments passed; Issue #132 remains open until review and merge.
+- The configured Required Check `agent-required-check` and current-HEAD self-review are tracked on [PR #157](https://github.com/puchinya/vscode-guitar-dsl/pull/157).
