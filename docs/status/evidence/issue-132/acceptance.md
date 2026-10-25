@@ -23,14 +23,20 @@ This record verifies the completed GUI work owned by Issues #133–#137 and #145
 - `npm test` passed on `f063fc17130bab5d4c278d42fe0486d1535292e8` and finished at 2026-10-25 00:12:08 UTC: 1,192 unit passing, 113 E2E passing, 6 conditional pending.
 - This is exact-HEAD evidence for the prior PR revision, not the post-review remediation.
 
-### Current remediation code/test HEAD
+### Post-review implementation commit
 
 - Command: `rtk env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test`.
 - Tested `HEAD`: `012d83849f4f6ab346d600861e8a6d269e7237c2`.
 - Result: **PASS**, finished 2026-10-25 00:27:43 UTC (09:27:43 JST): 1,192 unit passing, 113 E2E passing, 6 conditional pending. The command ran Help/AI sync checks and `compile:all` as part of the full suite.
 - The E2E capture gate was unset; the six pending cases remain pending and are not counted as passing.
 - Host: macOS 26.6.2, arm64; Node.js v26.7.0; npm 11.19.0; VS Code 1.143.1.
-- The following report update changes this acceptance document only; the tested code and E2E test sources are at the recorded SHA above.
+
+### Final PR HEAD before this report-only amendment
+
+- Command: `rtk env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm test`.
+- Tested `HEAD`: `e5f7b34ff175188ff4232002570102e17baac33e`.
+- Result: **PASS**, finished 2026-10-25 00:32:15.112 UTC (09:32:15.112 JST): 1,192 unit passing, 113 E2E passing, 6 conditional pending. Help/AI sync and `compile:all` were included.
+- The six capture-gated E2E cases were not run. This report amendment changes this evidence file only; runtime and test sources remain at the tested revision.
 
 ## Related Issue and PR acceptance matrix
 
@@ -78,7 +84,7 @@ The other #133–#137/#145 regressions listed in the matrix completed in the sam
 | `npm run test:unit` | PASS — 1,192 passing |
 | `npm run check:help` | PASS |
 | `npm run check:ai` | PASS |
-| `npm test` | PASS — remediation code/test HEAD `012d83849f4f6ab346d600861e8a6d269e7237c2`; 1,192 unit passing, 113 E2E passing, 6 conditional pending; finished 2026-10-25 00:27:43 UTC |
+| `npm test` | PASS — final pre-amendment PR HEAD `e5f7b34ff175188ff4232002570102e17baac33e`; 1,192 unit passing, 113 E2E passing, 6 conditional pending; finished 2026-10-25 00:32:15.112 UTC |
 | `npm run vscode:prepublish` | PASS |
 | `npx @vscode/vsce ls` | PASS — 1,602 package entries; extension output, Help assets and syntaxes included |
 | `python3 -m agent_workflow validate-docs --issue 132` | PASS — valid |
