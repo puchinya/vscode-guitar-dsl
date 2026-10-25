@@ -17,7 +17,7 @@
 - **検証**: `npm run test:unit` PASS（1,214件）、新規E2E-PB05/PB06 PASS（2件）、E2E `compile:all` PASS。最新 `npm test` はFAIL（121 E2E PASS、Issue #155の421px縦スクロール assertion 1件FAIL、6件pending）。再現は同テスト単独でも確認し、#158対象外の既存ケースとして記録する。
 - **受入状態**: BV-04、BV-09、BV-10 PASS。BV-11 PARTIAL（実Webview false ACKはE2E、timeoutはunit）。C010 PARTIAL、C012 BLOCKED / NOT RUN（VoiceOver/NVDA、focus維持、Windows/Linuxの確認環境がなく、免除は申請・仮定していない）。
 - **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[レビュー対応後の代表画面と確認範囲](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6395457420)。
-- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新HEADの自己レビューとRequired Checkを確認中。
+- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新HEADの自己レビューとRequired CheckはPR上で追跡する。
 
 ## Issue #132: GUI再設計の統合受入れ
 
