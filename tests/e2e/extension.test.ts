@@ -6684,9 +6684,23 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       assert.strictEqual(staleApplyCount, 0, 'an Apply message from the stale Inspector version creates no WorkspaceEdit');
       assert.strictEqual(variableDoc.getText(), sourceBeforeStaleApply, 'stale Apply leaves the latest source untouched');
 
+      const webviewGenerationBeforeSelection = Number(await evaluateInspectorWebview<string>(
+        'document.getElementById("inspector-state").dataset.generation'));
       await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button'))
         .find(button => button.textContent.trim() === 'riff')?.click()`);
-      for (let attempt = 0; attempt < 100 && inspectorViewProbe.getContext?.().selectedName !== 'riff'; attempt++) await settle(20);
+      let selectedVariablesDomUpdated = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const hostContext = inspectorViewProbe.getContext?.();
+        const webviewGeneration = Number(await evaluateInspectorWebview<string>(
+          'document.getElementById("inspector-state").dataset.generation'));
+        if (hostContext?.selectedName === 'riff' && webviewGeneration > webviewGenerationBeforeSelection) {
+          selectedVariablesDomUpdated = true;
+          break;
+        }
+        await settle(20);
+      }
+      assert.strictEqual(selectedVariablesDomUpdated, true,
+        'the Webview receives the selected variable context and its revision before Jump is activated');
       const latestUsageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
       assert.match(latestUsageSummary, locale === 'ja' ? /直接: 1/ : /Direct: 1/,
         'the selected variable usage count reflects the external source edit');
