@@ -144,6 +144,8 @@ Practice のコード図は `viewBox="0 0 144 144"` の144×144 CSS pxとし、�
 
 Preview は既存の単一 WebviewPanel を使い、既定の「通常」、双方向編集の「編集」、練習操作の「練習」を排他的に切り替える。48 px再生行の右側 `.toolbar-actions` に通常 / 編集 / 練習のセレクターを常設する。幅600 px未満は現在値が読めるネイティブselect、600 px以上はsegmented controlを表示し、ARIA状態、フォーカスとキーボード操作を備える。旧Practice単独トグルと編集フォーム内の切替を置かない。
 
+再生・一時停止・停止は全幅でアイコンのみを表示する。ボタンのtitleとaccessible nameは維持し、再生状態に応じて再生 / 再開へ更新する。
+
 通常は48 px再生行と44 px楽譜設定行の下に楽譜を表示し、編集ドック・Practice行・ガイドを隠す。編集は同じ2行の下に楽譜と下端固定編集ドックを表示し、42 px Practice行と4小節ガイドを隠す。練習は同じ2行と42 px Practice行、4小節ガイドを表示し、編集ドックと編集hit-areaを隠す。編集フォームは通常 / 練習では高さ0、編集で未選択なら案内、選択時は種別別操作を表示する。編集overlayとhit-areaはPreviewにのみ存在し、PDFのSVGには出力しない。
 
 標準 TextEditor が唯一の永続ソースである。Preview は明示した URI・文書version・Preview世代に結び付けた選択と編集 intent を送り、Host が最新テキスト、parser source binding、token種別、期待原文、音楽的整合性を検証してから一回の WorkspaceEdit を行う。1回のドラッグまたはキー確定は1 Undoとし、キャンセル、古い世代、文書切替、二重適用、解析・検証・音声停止失敗では文書を変更しない。

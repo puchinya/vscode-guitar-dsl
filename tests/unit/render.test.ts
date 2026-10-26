@@ -303,6 +303,11 @@ describe('render - Preview playback and score-settings rows', () => {
   it('keeps the 48px playback row and always-visible 44px settings row separate', () => {
     const html = compileGuitarDslToHtml(sampleDsl, { locale: 'en' });
     assert.ok(html.includes('<div class="toolbar-container" role="group"'));
+    assert.ok(!html.includes('transport-label'), 'Play, Pause, and Stop have no visible text at any width');
+    for (const [id, label] of [['btn-play', 'Play'], ['btn-pause', 'Pause'], ['btn-stop', 'Stop']]) {
+      assert.ok(html.includes(`id="${id}" type="button" title="${label}" aria-label="${label}"`),
+        `${label} keeps its title and accessible name`);
+    }
     for (const control of ['id="btn-play"', 'id="btn-pause"', 'id="btn-stop"', 'id="playback-seek"', 'id="playback-time"']) {
       assert.ok(html.indexOf(control) < html.indexOf('class="toolbar-actions"'), `${control} stays in the transport row`);
     }

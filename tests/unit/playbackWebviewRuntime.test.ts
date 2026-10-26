@@ -302,6 +302,8 @@ describe('Preview production Webview runtime', () => {
 
   it('T02 Pause fades active nodes without a click and freezes position; Resume continues without another scheduler', async () => {
     const runtime = createRuntime();
+    assert.strictEqual(runtime.element('btn-play').getAttribute('aria-label'), 'Play');
+    assert.strictEqual(runtime.element('btn-play').title, 'Play');
     await runtime.click('btn-play');
     runtime.advanceAudioTime(0.45);
     runtime.runSchedulerTicks();
@@ -320,11 +322,14 @@ describe('Preview production Webview runtime', () => {
         'the gain ramps to zero at the oscillator stop time');
     }
     assert.strictEqual(runtime.element('btn-play').getAttribute('aria-label'), 'Resume');
+    assert.strictEqual(runtime.element('btn-play').title, 'Resume');
     runtime.advanceAudioTime(0.7);
     runtime.runSchedulerTicks();
     closeEnough(Number(runtime.element('playback-seek').value), pausedAt);
 
     await runtime.click('btn-play');
+    assert.strictEqual(runtime.element('btn-play').getAttribute('aria-label'), 'Play');
+    assert.strictEqual(runtime.element('btn-play').title, 'Play');
     assert.strictEqual(runtime.intervalCount, 1);
     closeEnough(Number(runtime.element('playback-seek').value), pausedAt);
     assert.strictEqual(runtime.audioContextCount, 1);
@@ -341,6 +346,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.activeOscillators().length, 0);
     assert.strictEqual(Number(runtime.element('playback-seek').value), 0);
     assert.strictEqual(runtime.element('btn-play').getAttribute('aria-label'), 'Play');
+    assert.strictEqual(runtime.element('btn-play').title, 'Play');
     assert.strictEqual(runtime.element('btn-stop').disabled, true);
     assert.strictEqual(runtime.audioContextCount, 1);
   });

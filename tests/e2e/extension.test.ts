@@ -6084,6 +6084,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
   test('keeps ordinary rendering unchanged and applies one source edit per pointer or form action', async function () {
     this.timeout(180000);
     await withWorkbenchSnapshotRestored(async () => {
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       const source = [
         'let riff = 4.d 4.u 4.d 4.u',
         '| C $riff |',
@@ -6095,6 +6096,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       await showAndFocus(doc);
       await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
       await waitForPreviewDocument();
+      await setPreviewWebviewViewportWidth(1100);
 
       const ordinary = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         mode: document.body.dataset.previewUiMode,
@@ -6104,13 +6106,25 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         normalChoicePressed: document.getElementById('preview-mode-normal').getAttribute('aria-pressed'),
         practiceChoicePressed: document.getElementById('preview-mode-practice').getAttribute('aria-pressed'),
         modeInToolbar: document.getElementById('toolbar-actions').contains(document.getElementById('preview-mode-control')),
-        obsoleteIndependentToggles: !!document.getElementById('practice-toggle') || !!document.getElementById('preview-edit-mode-toggle')
+        obsoleteIndependentToggles: !!document.getElementById('practice-toggle') || !!document.getElementById('preview-edit-mode-toggle'),
+        transport: ['btn-play', 'btn-pause', 'btn-stop'].map(id => {
+          const button = document.getElementById(id);
+          return { id, text: button.textContent.trim(), name: button.getAttribute('aria-label'), title: button.title, focusable: button.tabIndex >= 0 };
+        })
       })`));
+      const playName = locale === 'ja' ? '再生' : 'Play';
+      const pauseName = locale === 'ja' ? '一時停止' : 'Pause';
+      const stopName = locale === 'ja' ? '停止' : 'Stop';
       assert.deepStrictEqual(ordinary, {
         mode: 'normal', hidden: true, bindings: 0, editChoicePressed: 'false', normalChoicePressed: 'true',
-        practiceChoicePressed: 'false', modeInToolbar: true, obsoleteIndependentToggles: false
+        practiceChoicePressed: 'false', modeInToolbar: true, obsoleteIndependentToggles: false,
+        transport: [
+          { id: 'btn-play', text: '▶', name: playName, title: playName, focusable: true },
+          { id: 'btn-pause', text: 'Ⅱ', name: pauseName, title: pauseName, focusable: true },
+          { id: 'btn-stop', text: '■', name: stopName, title: stopName, focusable: true }
+        ]
       },
-        'Normal Preview renders without editing targets or superseded independent toggles');
+        'Normal Preview keeps icon-only transport controls with localized accessible names and keyboard focus');
 
       await evaluatePreviewWebview<void>('document.getElementById("preview-mode-edit").click()');
       let toolbarEnabled = false;
@@ -6334,7 +6348,6 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       })()`);
 
       const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
-      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       let restoreSidebarAfterPreviewCapture = false;
       let restoreAuxiliaryBarAfterPreviewCapture = false;
       if (captureScreenshots) {
@@ -6581,18 +6594,245 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       const usageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
       assert.match(usageSummary, locale === 'ja' ? /直接: 2/ : /Direct: 2/,
         'the Inspector shows the two direct uses');
-      if (captureScreenshots) {
+      const inspectorViewProbe = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+        getContext?: () => {
+          kind: string; uri?: string; version?: number; sessionGeneration?: number; revision?: number;
+          draftRevision?: number; selectedName?: string; section?: string;
+        };
+        getGeneration?: () => number;
+        dispatchMessage?: (message: Record<string, unknown>) => boolean | Promise<boolean>;
+      };
+      await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button'))
+        .find(button => button.textContent.trim() === 'riff')?.click()`);
+      for (let attempt = 0; attempt < 100 && inspectorViewProbe.getContext?.().selectedName !== 'riff'; attempt++) await settle(20);
+      await evaluateInspectorWebview<void>(`(() => {
+        const operation = document.getElementById('variables-operation');
+        operation.value = 'editGlobal';
+        operation.dispatchEvent(new Event('change', { bubbles: true }));
+        const value = document.getElementById('variables-value');
+        value.value = '8.d 8.d 8.d 8.d';
+        value.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await settle(100);
+      const staleContext = inspectorViewProbe.getContext!();
+      assert.strictEqual(staleContext.kind, 'variables');
+      const externalEdit = new vscode.WorkspaceEdit();
+      externalEdit.replace(variableDoc.uri, variableDoc.lineAt(2).range, '| G |');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const windowApi = vscode.window as unknown as object;
+      const activeEditorDescriptor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+      Object.defineProperty(windowApi, 'activeTextEditor', { configurable: true, get: () => undefined });
+      try {
+        assert.strictEqual(vscode.window.activeTextEditor, undefined, 'the Inspector is tested while no text editor is active');
+        assert.strictEqual(await vscode.workspace.applyEdit(externalEdit), true, 'an external source edit changes the Preview document');
+      } finally {
+        if (activeEditorDescriptor) Object.defineProperty(windowApi, 'activeTextEditor', activeEditorDescriptor);
+        else delete (windowApi as { activeTextEditor?: vscode.TextEditor }).activeTextEditor;
+      }
+      let variablesRefreshed = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const context = inspectorViewProbe.getContext?.();
+        if (context?.kind === 'variables' && context.uri === variableDoc.uri.toString() && context.version === variableDoc.version) {
+          variablesRefreshed = true;
+          break;
+        }
+        await settle(20);
+      }
+      assert.strictEqual(variablesRefreshed, true,
+        'the bound Inspector Variables context refreshes independently of activeTextEditor');
+
+      const unrelated = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'unrelated\n' });
+      const unrelatedEdit = new vscode.WorkspaceEdit();
+      unrelatedEdit.insert(unrelated.uri, new vscode.Position(0, 0), 'changed ');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const unrelatedDescriptor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+      Object.defineProperty(windowApi, 'activeTextEditor', { configurable: true, get: () => undefined });
+      try {
+        assert.strictEqual(await vscode.workspace.applyEdit(unrelatedEdit), true);
+      } finally {
+        if (unrelatedDescriptor) Object.defineProperty(windowApi, 'activeTextEditor', unrelatedDescriptor);
+        else delete (windowApi as { activeTextEditor?: vscode.TextEditor }).activeTextEditor;
+      }
+      const afterUnrelatedEdit = inspectorViewProbe.getContext?.();
+      assert.strictEqual(afterUnrelatedEdit?.kind, 'variables');
+      assert.strictEqual(afterUnrelatedEdit?.uri, variableDoc.uri.toString(), 'an unrelated URI cannot refresh the bound Variables context');
+      assert.strictEqual(afterUnrelatedEdit?.version, variableDoc.version);
+
+      const sourceBeforeStaleApply = variableDoc.getText();
+      const workspaceApi = vscode.workspace as unknown as { applyEdit: (edit: vscode.WorkspaceEdit) => Promise<boolean> };
+      const originalApplyEdit = workspaceApi.applyEdit;
+      let staleApplyCount = 0;
+      workspaceApi.applyEdit = function (edit: vscode.WorkspaceEdit): Promise<boolean> {
+        staleApplyCount++;
+        return originalApplyEdit.call(vscode.workspace, edit);
+      };
+      try {
+        await inspectorViewProbe.dispatchMessage?.({
+          command: 'variablesApply',
+          generation: inspectorViewProbe.getGeneration!(),
+          sessionUri: staleContext.uri,
+          sessionVersion: staleContext.version,
+          sessionGeneration: staleContext.sessionGeneration,
+          revision: staleContext.revision,
+          draftRevision: (staleContext.draftRevision ?? 0) + 1
+        });
+      } finally {
+        workspaceApi.applyEdit = originalApplyEdit;
+      }
+      assert.strictEqual(staleApplyCount, 0, 'an Apply message from the stale Inspector version creates no WorkspaceEdit');
+      assert.strictEqual(variableDoc.getText(), sourceBeforeStaleApply, 'stale Apply leaves the latest source untouched');
+
+      await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button'))
+        .find(button => button.textContent.trim() === 'riff')?.click()`);
+      for (let attempt = 0; attempt < 100 && inspectorViewProbe.getContext?.().selectedName !== 'riff'; attempt++) await settle(20);
+      const latestUsageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
+      assert.match(latestUsageSummary, locale === 'ja' ? /直接: 1/ : /Direct: 1/,
+        'the selected variable usage count reflects the external source edit');
+      const usageLocations = await evaluateInspectorWebview<string>(`String(document.querySelectorAll('#variables-usages button').length)`);
+      assert.strictEqual(usageLocations, '1', 'the Inspector lists only the latest reference location');
+      await evaluateInspectorWebview<void>('document.querySelector("#variables-usages button")?.click()');
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const visible = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
+        if (visible && variableDoc.offsetAt(visible.selection.start) === variableDoc.getText().indexOf('$riff')) break;
+        await settle(20);
+      }
+      const jumpedEditor = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
+      assert.ok(jumpedEditor, 'the latest usage can be opened in its source document');
+      assert.strictEqual(variableDoc.getText().slice(variableDoc.offsetAt(jumpedEditor!.selection.start), variableDoc.offsetAt(jumpedEditor!.selection.end)),
+        '$riff', 'Jump selects the latest reference range');
+    });
+  });
+
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+    test('Issue #158 Inspector top tabs and settings subtabs screenshot evidence', async function () {
+      this.timeout(120000);
+      await withWorkbenchSnapshotRestored(async () => {
+        const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+        const source = 'let riff = 4.d 4.u\n| C $riff |\n| G $riff |\n';
+        const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+        await showAndFocus(doc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        await waitForPreviewDocument();
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+
+        const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+          ready?: boolean;
+          resolvedView?: { visible: boolean };
+          getContext?: () => { kind: string; uri?: string; section?: string; selectedName?: string };
+        };
+        for (let attempt = 0; attempt < 200
+          && (inspector.ready !== true || inspector.resolvedView?.visible !== true
+            || inspector.getContext?.().kind !== 'variables'); attempt++) await settle(20);
+        assert.strictEqual(inspector.ready, true, 'the production Inspector Webview completes its ready handshake');
+        assert.strictEqual(inspector.resolvedView?.visible, true, 'Edit reveals the existing Inspector view');
+        assert.strictEqual(inspector.getContext?.().uri, doc.uri.toString(), 'the Inspector follows the Preview document');
+
         await resizePrimarySidebarToWidth(320);
-        await settle(150);
+        await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
         for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
           await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
           await settle(200);
           const themeName = theme.includes('Light') ? 'light' : 'dark';
+          const topTabs = JSON.parse(await evaluateInspectorWebview<string>(`(() => {
+            const tablist = document.getElementById('inspector-context-tabs');
+            const documentTab = document.getElementById('inspector-tab-document');
+            documentTab.focus();
+            tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+            return JSON.stringify({
+              role: tablist.getAttribute('role'), overflowX: getComputedStyle(tablist).overflowX,
+              focus: document.activeElement.id,
+              tabs: Array.from(tablist.querySelectorAll('[role="tab"]')).map(tab => ({
+                label: tab.getAttribute('aria-label') || tab.textContent.trim(),
+                selected: tab.getAttribute('aria-selected'), disabled: tab.disabled
+              }))
+            });
+          })()`));
+          assert.strictEqual(topTabs.role, 'tablist');
+          assert.strictEqual(topTabs.overflowX, 'auto', 'narrow Inspector tabs retain horizontal overflow');
+          assert.strictEqual(topTabs.focus, 'inspector-tab-variables', 'ArrowRight moves focus without losing the selected Variables tab');
+          assert.strictEqual(topTabs.tabs.length, 4, 'the Inspector keeps Document, Variables, Score Settings, and Progression tabs');
+          assert.ok(topTabs.tabs.every((tab: { label: string }) => tab.label.length > 0), 'each top-level tab has an accessible name');
+          const expectedVariablesTabLabel = locale === 'ja' ? '変数' : 'Variables';
+          assert.ok(topTabs.tabs.some((tab: { label: string }) => tab.label === expectedVariablesTabLabel),
+            `the real Extension Development Host Inspector uses the requested ${locale} locale`);
+          assert.strictEqual(topTabs.tabs.filter((tab: { selected: string }) => tab.selected === 'true').length, 1,
+            'exactly one top-level tab is selected');
+
+          await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+          for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'settings'; attempt++) await settle(20);
+          const settingsTabs = JSON.parse(await evaluateInspectorWebview<string>(`JSON.stringify({
+            role: document.getElementById('settings-tabs').getAttribute('role'),
+            tabs: Array.from(document.querySelectorAll('#settings-tabs button')).map(tab => ({
+              role: tab.getAttribute('role'), label: tab.getAttribute('aria-label') || tab.textContent.trim(),
+              selected: tab.getAttribute('aria-selected')
+            }))
+          })`));
+          assert.strictEqual(settingsTabs.role, 'tablist');
+          assert.strictEqual(settingsTabs.tabs.length, 3, 'Capo, Beginner, and Transpose settings subtabs are visible');
+          assert.ok(settingsTabs.tabs.every((tab: { role: string; label: string }) => tab.role === 'tab' && tab.label.length > 0),
+            'each score-settings subtab has a semantic role and accessible name');
+          assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'beginner'), true,
+            'the settings subtab is reachable by keyboard');
+          for (let attempt = 0; attempt < 100 && inspector.getContext?.().section !== 'beginner'; attempt++) await settle(20);
+          assert.strictEqual(inspector.getContext?.().section, 'beginner');
+          const settingsScreenshotLayout = JSON.parse(await evaluateInspectorWebview<string>(`(() => {
+            const tablist = document.getElementById('inspector-context-tabs');
+            tablist.scrollLeft = tablist.scrollWidth;
+            document.scrollingElement?.scrollTo({ top: 0 });
+            const topTabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+            const settingsTabs = document.getElementById('settings-tabs');
+            const rect = element => {
+              const bounds = element.getBoundingClientRect();
+              return { top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right };
+            };
+            return JSON.stringify({
+              viewportHeight: window.innerHeight,
+              topTablist: rect(tablist),
+              settingsTabs: rect(settingsTabs),
+              visibleTopTabLabels: topTabs.filter(tab => {
+                const bounds = tab.getBoundingClientRect();
+                const clip = tablist.getBoundingClientRect();
+                return bounds.left >= clip.left && bounds.right <= clip.right;
+              }).map(tab => tab.textContent.trim())
+            });
+          })()`));
+          assert.ok(settingsScreenshotLayout.topTablist.top >= 0
+            && settingsScreenshotLayout.topTablist.bottom <= settingsScreenshotLayout.viewportHeight,
+          'the narrow screenshot keeps the primary tabs in view after keyboard navigation');
+          assert.ok(settingsScreenshotLayout.settingsTabs.top >= 0
+            && settingsScreenshotLayout.settingsTabs.bottom <= settingsScreenshotLayout.viewportHeight,
+          'the narrow screenshot keeps the Score Settings subtabs in view');
+          assert.ok(settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Score settings|楽譜設定/i.test(label))
+            && settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Progression|進行/i.test(label)),
+          'the scrolled primary tab strip visibly covers Score Settings and Progression');
+          await captureWorkbenchScreenshot(`inspector-settings-${locale}-${themeName}-narrow.png`, 158, 800);
+
+          await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');
+          let variablesDomReady = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const state = JSON.parse(await evaluateInspectorWebview<string>(`JSON.stringify({
+              kind: document.getElementById('inspector-state').dataset.contextKind,
+              uri: document.getElementById('inspector-state').dataset.documentUri,
+              version: Number(document.getElementById('inspector-state').dataset.documentVersion),
+              definitions: Array.from(document.querySelectorAll('#variables-list button')).map(button => button.textContent.trim())
+            })`));
+            if (state.kind === 'variables' && state.uri === doc.uri.toString()
+              && state.version === doc.version && state.definitions.includes('riff')) {
+              variablesDomReady = true;
+              break;
+            }
+            await settle(20);
+          }
+          assert.strictEqual(variablesDomReady, true, 'the Variables Webview has received the current document context');
+          await evaluateInspectorWebview<void>(`(() => {
+            document.getElementById('inspector-context-tabs').scrollLeft = 0;
+            document.scrollingElement?.scrollTo({ top: 0 });
+          })()`);
           await captureWorkbenchScreenshot(`inspector-variables-${locale}-${themeName}-narrow.png`, 158, 800);
         }
-      }
+      });
     });
-  });
+  }
 
   test('top-level Inspector tab cancellation preserves and then restores a settings draft', async () => {
     const source = ['key: B', 'bpm: 120', 'time: 4/4', '| B | E | F#m7 | E/G# |'].join('\n') + '\n';

@@ -10,14 +10,14 @@
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
-- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿って、Previewを通常/編集/練習の排他3モードへ統合し、既存コマンド互換、Inspector変数タブ初期表示、ドラフト破棄確認を実装・検証中。基準は main@ed2c037559cc8bbc1e4835ef2f9a61ba060a7ac4、ブランチは feature/158-preview-bidirectional-editing。PR #159 はレビュー待ちで、未マージ。
+- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿って、Previewを通常/編集/練習の排他3モードへ統合し、既存コマンド互換、Inspector変数タブ初期表示、ドラフト破棄確認を実装。最新レビュー `6404783623` の変数コンテキスト更新、全幅アイコン再生操作、Inspector実画面証拠と音声/lease受入れ指摘を反映し、最終ゲートを実行中。基準は main@ed2c037559cc8bbc1e4835ef2f9a61ba060a7ac4、ブランチは feature/158-preview-bidirectional-editing。PR #159 はレビュー待ちで、未マージ。
 - **契約**: Issue本文の最新 approved contract comment `6398128339` を正本とし、ローカルコピーは **38,687 bytes / SHA-256 `f0396b27751bd79f8dfff646c415fe23846ee635f7fba55d4b77785f6579abcf`** と完全一致することを確認。PR追補 `6398576705` は独立Edit/Practice切替を排他3モードへ置き換える決定で、契約本文/SHAは変更せず、旧追補との優先関係を記録する。
 - **Milestone**: profile version 0.1.0 を割当済み。
 - **設計**: 承認済みの2枚の提案SVGを追加。Previewの通常/編集/練習モード、600px未満のネイティブselect、モード別の編集ドック/Practice Guide排他を反映した実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
-- **検証**: 最新ソースで `npm run test:unit` **1,219件 PASS**、`check:help`、`check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,607項目）、`git diff --check` はPASS。最初の `npm test` はE2E開始後、#155の次テスト `beforeEach` でExtension Development Hostのフォーカス取得が2秒で完了せず終了した。その後ユーザー依頼で最終HEAD `b73e1a46b706566abc2979f53fed3e3a93cc18a4` の `npm run test:e2e` を再実行し、**123件 PASS / 6件 pending / 失敗0件**。#158の排他モード・Inspector編集E2Eも到達してPASS。`npm test` wrapper自体は再実行していない。`agent-required-check` は最終HEADのPR上で確認する。VoiceOver/NVDA、Windows/Linux、6 pendingは未実施。`validate-docs --issue 158` はDocument impact owner URLを許容パスとして認識せずFAIL、`verify-implementation-contract 158` と `prepare-self-review 158 159` はworkflow側 `section_body` のIndexErrorでBLOCKED。いずれもPASSには数えない。
-- **受入状態**: BV-04、BV-09、BV-10 PASS。BV-11 PARTIAL（実Webview false ACKはE2E、timeoutはunit）。C010 PARTIAL、C012 BLOCKED / NOT RUN（VoiceOver/NVDA、focus維持、Windows/Linuxの確認環境がなく、免除は申請・仮定していない）。
-- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[最新三モードUIの実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)。421pxではモードselect、600pxでは3モードsegmentと編集ドックが表示されることを画像で確認した。画像は英語/日本語 × light/dark × 421/600/840/1100px の16状態。
-- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新HEADの自己レビューとRequired CheckはPR上で追跡する。
+- **検証**: 最新コードで `npm run compile:all` PASS、`npm run test:unit` **1,219件 PASS**。音声/lease opt-in E2EのED-08、S135-11の3ケース、ED-09、ED-10は**6件 PASS**。実Inspector証拠E2Eは日本語Language Packを読み込んだjaとenで各**1件 PASS**し、設定サブタブへのキーボード操作、狭幅タブstripのARIA/overflow/focus、実localeラベルを検査した。`validate-docs --issue 158` と `verify-implementation-contract 158` もPASS（approved contract SHA-256は上記のとおり）。最終コミット上の `npm test`、prepublish/package listing、self-review、Required Check、delivery-checkはPR #159の最新Completion Reportに記録する。VoiceOver/NVDAとWindows/Linuxの手動確認は未実施。
+- **受入状態**: BV-04、BV-09、BV-10 PASS。音声/leaseのopt-in 6ケースはPASS。VoiceOver/NVDAとWindows/LinuxはNOT RUN。C010/C012/C018/C019/C020のexact-HEAD判定は最終Completion Reportを正本とする。
+- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[最新三モードUIの実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)。Preview編集状態は英語/日本語 × light/dark × 421/600/840/1100px の16状態。InspectorはExtension Development Hostから英語/日本語 × light/dark × 狭幅で撮影し、`docs/status/evidence/issue-158/inspector-settings-*-narrow.png` に設定サブタブ、`inspector-variables-*-narrow.png` に変数欄を保存する。日本語はLanguage Packを有効にした実Workbenchで確認。
+- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。現HEADの自己レビュー、検証ゲート、未実施の手動/OS範囲は最新Completion ReportとRequired Checkを正本として追跡する。
 
 ## Issue #132: GUI再設計の統合受入れ
 

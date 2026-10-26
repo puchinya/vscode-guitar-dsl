@@ -1069,7 +1069,6 @@ ${cspMeta}
     .toolbar-actions { max-width: 57%; gap: 4px; }
   }
   @media (max-width: 660px) {
-    .transport-label { display: none; }
     .playback-time { min-width: 70px; }
     .toolbar-actions { max-width: 60%; }
   }
@@ -1093,7 +1092,6 @@ ${cspMeta}
   @media (max-width: 440px) {
     .toolbar-container { padding-left: 4px; padding-right: 4px; gap: 3px; }
     .toolbar-transport { gap: 2px; }
-    .transport-label { display: none; }
     .playback-time { min-width: 70px; font-size: 10px; }
     .playback-control-btn { width: 30px; padding: 3px 2px; font-size: 11px; }
     .toolbar-actions { max-width: 36%; gap: 3px; }
@@ -1158,9 +1156,9 @@ ${cspMeta}
   data-preview-ui-mode="${previewUiMode}" data-preview-edit-mode="${previewEditMode}" data-preview-edit-available="${previewEditAvailable}">
   <div class="toolbar-container" role="group" aria-label="${escapeXml(msgs.uiPlaybackGroup)}">
     <div class="toolbar-transport">
-    <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span> <span id="play-label" class="transport-label">${escapeXml(msgs.uiPlay)}</span></button>
-    <button class="playback-control-btn" id="btn-pause" type="button" title="${escapeXml(msgs.uiPause)}" aria-label="${escapeXml(msgs.uiPause)}" disabled><span aria-hidden="true">Ⅱ</span> <span class="transport-label">${escapeXml(msgs.uiPause)}</span></button>
-    <button class="playback-control-btn" id="btn-stop" type="button" title="${escapeXml(msgs.uiStop)}" aria-label="${escapeXml(msgs.uiStop)}" disabled><span aria-hidden="true">■</span> <span class="transport-label">${escapeXml(msgs.uiStop)}</span></button>
+    <button class="playback-control-btn" id="btn-play" type="button" title="${escapeXml(msgs.uiPlay)}" aria-label="${escapeXml(msgs.uiPlay)}"${playback.available ? '' : ' disabled'}><span class="transport-glyph" aria-hidden="true">▶</span></button>
+    <button class="playback-control-btn" id="btn-pause" type="button" title="${escapeXml(msgs.uiPause)}" aria-label="${escapeXml(msgs.uiPause)}" disabled><span aria-hidden="true">Ⅱ</span></button>
+    <button class="playback-control-btn" id="btn-stop" type="button" title="${escapeXml(msgs.uiStop)}" aria-label="${escapeXml(msgs.uiStop)}" disabled><span aria-hidden="true">■</span></button>
     <input class="playback-seek" id="playback-seek" type="range" min="0" max="${playback.durationSeconds}" step="0.01" value="0" aria-label="${escapeXml(msgs.uiSeek)}"${playback.available ? '' : ' disabled'}>
     <span class="playback-time" id="playback-time" aria-label="${escapeXml(msgs.uiPlaybackTime)}">00:00 / ${formatPlaybackTime(playback.durationSeconds)}</span>
     </div>
@@ -1872,7 +1870,6 @@ ${cspMeta}
       }
       guideCompactStartOccurrence = clampCompactStart(guideCompactStartOccurrence);
       const playBtn = document.getElementById('btn-play');
-      const playLabelNode = document.getElementById('play-label');
       const pauseBtn = document.getElementById('btn-pause');
       const stopBtn = document.getElementById('btn-stop');
       const seekSlider = document.getElementById('playback-seek');
@@ -2643,7 +2640,6 @@ ${cspMeta}
         if (playbackTime) playbackTime.textContent = formatClock(shownTime) + ' / ' + formatClock(playbackDuration);
         if (playBtn) {
           const playLabel = transport === 'paused' ? audioLabels.resume : audioLabels.play;
-          if (playLabelNode) playLabelNode.textContent = playLabel || 'Play';
           playBtn.setAttribute('aria-label', playLabel || 'Play');
           playBtn.title = playLabel || 'Play';
           playBtn.disabled = !playbackAvailable || startPending || disposed || !!progressionAudioLeaseId || transport === 'playing' || transport === 'counting-in';

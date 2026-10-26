@@ -10,6 +10,8 @@ export const inspectorViewTestProbe: {
   ready?: boolean;
   transformHtml?: (html: string) => string;
   getContext?: () => InspectorContext;
+  getGeneration?: () => number;
+  dispatchMessage?: (message: unknown) => boolean | Promise<boolean>;
 } = {};
 
 export class GuitarDslInspectorView implements vscode.WebviewViewProvider, InspectorPresentation {
@@ -36,6 +38,8 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     this.getContext = getContext;
     inspectorViewTestProbe.getContext = getContext;
     this.handleMessage = handleMessage;
+    inspectorViewTestProbe.getGeneration = () => this.generation;
+    inspectorViewTestProbe.dispatchMessage = message => this.handleMessage(message);
     this.noteGeneration = noteGeneration;
     this.onViewDisposed = onViewDisposed;
     this.getProgressionTabAvailable = getProgressionTabAvailable;
@@ -94,6 +98,8 @@ export class GuitarDslInspectorView implements vscode.WebviewViewProvider, Inspe
     if (this.disposed) return;
     this.disposed = true;
     if (this.view) this.releaseView(this.view);
+    if (inspectorViewTestProbe.getGeneration) inspectorViewTestProbe.getGeneration = undefined;
+    if (inspectorViewTestProbe.dispatchMessage) inspectorViewTestProbe.dispatchMessage = undefined;
   }
 
   private render(): void {

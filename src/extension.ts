@@ -391,8 +391,12 @@ export function activate(context: vscode.ExtensionContext) {
   refreshInspectorContext(vscode.window.activeTextEditor?.document);
   vscode.window.onDidChangeActiveTextEditor(editor => refreshInspectorContext(editor?.document), null, context.subscriptions);
   vscode.workspace.onDidChangeTextDocument(event => {
-    settingsController?.invalidate(event.document.uri.toString());
-    if (vscode.window.activeTextEditor?.document.uri.toString() === event.document.uri.toString()) {
+    const changedUri = event.document.uri.toString();
+    settingsController?.invalidate(changedUri);
+    const inspectorTracksChangedDocument = inspector.currentContext.kind === 'variables'
+      && inspector.currentContext.uri === changedUri;
+    if (inspectorTracksChangedDocument
+      || vscode.window.activeTextEditor?.document.uri.toString() === changedUri) {
       refreshInspectorContext(event.document);
     }
   }, null, context.subscriptions);
