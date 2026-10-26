@@ -6706,17 +6706,30 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         'the selected variable usage count reflects the external source edit');
       const usageLocations = await evaluateInspectorWebview<string>(`String(document.querySelectorAll('#variables-usages button').length)`);
       assert.strictEqual(usageLocations, '1', 'the Inspector lists only the latest reference location');
-      await evaluateInspectorWebview<void>('document.querySelector("#variables-usages button")?.click()');
       const expectedJumpStart = variableDoc.getText().indexOf('$riff');
       const expectedJumpEnd = expectedJumpStart + '$riff'.length;
-      for (let attempt = 0; attempt < 100; attempt++) {
-        const visible = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
-        if (visible && variableDoc.offsetAt(visible.selection.start) === expectedJumpStart
-          && variableDoc.offsetAt(visible.selection.end) === expectedJumpEnd) break;
-        await settle(20);
+      const jumpWindowApi = vscode.window as unknown as {
+        showTextDocument: (...args: unknown[]) => Promise<vscode.TextEditor>;
+      };
+      const originalShowTextDocument = jumpWindowApi.showTextDocument;
+      let jumpedEditor: vscode.TextEditor | undefined;
+      jumpWindowApi.showTextDocument = async function (...args: unknown[]): Promise<vscode.TextEditor> {
+        const editor = await originalShowTextDocument.apply(vscode.window, args);
+        const requestedDocument = args[0] as vscode.TextDocument | undefined;
+        if (requestedDocument?.uri.toString() === variableDoc.uri.toString()) jumpedEditor = editor;
+        return editor;
+      };
+      try {
+        await evaluateInspectorWebview<void>('document.querySelector("#variables-usages button")?.click()');
+        for (let attempt = 0; attempt < 100; attempt++) {
+          if (jumpedEditor && variableDoc.offsetAt(jumpedEditor.selection.start) === expectedJumpStart
+            && variableDoc.offsetAt(jumpedEditor.selection.end) === expectedJumpEnd) break;
+          await settle(20);
+        }
+      } finally {
+        jumpWindowApi.showTextDocument = originalShowTextDocument;
       }
-      const jumpedEditor = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
-      assert.ok(jumpedEditor, 'the latest usage can be opened in its source document');
+      assert.ok(jumpedEditor, 'Jump opens the source editor returned by showTextDocument');
       assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.start), expectedJumpStart,
         'Jump selects the latest reference start');
       assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.end), expectedJumpEnd,
