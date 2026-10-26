@@ -6640,6 +6640,8 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       }
       assert.strictEqual(variablesRefreshed, true,
         'the bound Inspector Variables context refreshes independently of activeTextEditor');
+      assert.strictEqual(inspectorViewProbe.getContext?.().selectedName, 'riff',
+        'a same-document refresh preserves the selected variable while its definition still exists');
 
       const unrelated = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'unrelated\n' });
       const unrelatedEdit = new vscode.WorkspaceEdit();
@@ -6691,13 +6693,20 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       const usageLocations = await evaluateInspectorWebview<string>(`String(document.querySelectorAll('#variables-usages button').length)`);
       assert.strictEqual(usageLocations, '1', 'the Inspector lists only the latest reference location');
       await evaluateInspectorWebview<void>('document.querySelector("#variables-usages button")?.click()');
+      const expectedJumpStart = variableDoc.getText().indexOf('$riff');
+      const expectedJumpEnd = expectedJumpStart + '$riff'.length;
       for (let attempt = 0; attempt < 100; attempt++) {
         const visible = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
-        if (visible && variableDoc.offsetAt(visible.selection.start) === variableDoc.getText().indexOf('$riff')) break;
+        if (visible && variableDoc.offsetAt(visible.selection.start) === expectedJumpStart
+          && variableDoc.offsetAt(visible.selection.end) === expectedJumpEnd) break;
         await settle(20);
       }
       const jumpedEditor = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === variableDoc.uri.toString());
       assert.ok(jumpedEditor, 'the latest usage can be opened in its source document');
+      assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.start), expectedJumpStart,
+        'Jump selects the latest reference start');
+      assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.end), expectedJumpEnd,
+        'Jump selects the latest reference end');
       assert.strictEqual(variableDoc.getText().slice(variableDoc.offsetAt(jumpedEditor!.selection.start), variableDoc.offsetAt(jumpedEditor!.selection.end)),
         '$riff', 'Jump selects the latest reference range');
     });

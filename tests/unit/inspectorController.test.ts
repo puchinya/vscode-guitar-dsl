@@ -3,7 +3,8 @@ import {
   GuitarDslInspectorController,
   type InspectorActiveDocument,
   type InspectorContext,
-  type InspectorPresentation
+  type InspectorPresentation,
+  type InspectorVariablesContext
 } from '../../src/inspector/inspectorController';
 
 class FakePresentation implements InspectorPresentation {
@@ -78,6 +79,32 @@ describe('GuitarDslInspectorController', () => {
 
     assert.strictEqual(focusCalls, 1, 'explicit Variables mode focuses the registered view even when already resolved');
     assert.deepStrictEqual(presentation.shown, [false, false], 'the view is refreshed after the focus command');
+  });
+
+  it('accepts a newer Variables session for the same document and rejects stale identities', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
+    const initial: InspectorVariablesContext = {
+      kind: 'variables', uri: 'file:///song.guitardsl', version: 3, sessionGeneration: 4,
+      revision: 2, draftRevision: 7, definitions: [], selectedName: 'riff'
+    };
+    await controller.showVariables(initial);
+
+    const refreshed: InspectorVariablesContext = {
+      kind: 'variables', uri: initial.uri, version: 4, sessionGeneration: 5,
+      revision: 0, draftRevision: 0, definitions: [], selectedName: 'riff'
+    };
+    controller.updateVariables(refreshed);
+    assert.deepStrictEqual(controller.currentContext, refreshed,
+      'a source-version change may start a fresh guarded session without revealing or focusing the Inspector');
+    assert.deepStrictEqual(presentation.shown, [false], 'background context refresh preserves the current Webview focus');
+
+    controller.updateVariables({ ...initial, revision: 3 });
+    controller.updateVariables({ ...refreshed, sessionGeneration: 4, revision: 9 });
+    controller.updateVariables({ ...refreshed, uri: 'file:///other.guitardsl', version: 5, sessionGeneration: 6 });
+    assert.deepStrictEqual(controller.currentContext, refreshed,
+      'older version/session identities and an unrelated URI cannot replace the refreshed context');
   });
 
   it('routes only current top-tab requests for the current document identity', async () => {

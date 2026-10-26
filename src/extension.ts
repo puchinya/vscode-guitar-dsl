@@ -182,10 +182,11 @@ export function activate(context: vscode.ExtensionContext) {
     referenceChoice?: { name: string; line: number; startCol: number; endCol: number }): Promise<void> => {
     const uri = document.uri.toString();
     let identity = visualEditingHost.current('variables');
+    const sameDocument = identity?.uri === uri;
     if (!identity || identity.uri !== uri || identity.documentVersion !== document.version) {
       visualEditingHost.cancel('variables');
       identity = visualEditingHost.begin('variables', uri, document.version, 0);
-      variableSelectionName = undefined;
+      if (!sameDocument) variableSelectionName = undefined;
       variableDraftRevision = 0;
       variableDraftState = { name: '', value: '', operation: 'add', reference: '' };
       variableDraftSessionGeneration = identity?.sessionGeneration ?? 0;

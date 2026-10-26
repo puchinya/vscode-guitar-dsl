@@ -231,9 +231,14 @@ export class GuitarDslInspectorController implements vscode.Disposable {
   }
 
   updateVariables(context: InspectorVariablesContext): void {
-    if (this.disposed || !isValidVariablesContext(context) || this.context.kind !== 'variables'
-      || this.context.uri !== context.uri || this.context.sessionGeneration !== context.sessionGeneration
-      || context.revision < this.context.revision) return;
+    const current = this.context;
+    const sameVariablesDocument = current.kind === 'variables' && current.uri === context.uri;
+    const currentOrNewerVersion = current.kind === 'variables' && context.version >= current.version;
+    const newerSession = current.kind === 'variables' && context.sessionGeneration > current.sessionGeneration;
+    const currentSessionRevision = current.kind === 'variables'
+      && context.sessionGeneration === current.sessionGeneration && context.revision >= current.revision;
+    if (this.disposed || !isValidVariablesContext(context) || !sameVariablesDocument || !currentOrNewerVersion
+      || (!newerSession && !currentSessionRevision)) return;
     this.setContext(context);
   }
 
