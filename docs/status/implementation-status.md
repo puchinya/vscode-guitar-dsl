@@ -3,20 +3,20 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-26
+- **最終更新日**: 2026-10-28
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #158 / PR #159 はレビュー待ち。
 
 ---
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
-- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿って、Previewを通常/編集/練習の排他3モードへ統合し、既存コマンド互換、Inspector変数タブ初期表示、ドラフト破棄確認を実装。レビュー `6404783623` の同一URI変数更新、全幅アイコン再生操作、Inspector実画面証拠、音声/lease受入れ指摘を反映済み。検証結果と未実施環境はPR #159の最新Completion Reportを参照。ブランチは feature/158-preview-bidirectional-editing、PR #159はレビュー待ちで未マージ。
+- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿ってPreviewを通常/編集/練習の排他3モードへ統合し、過去レビューを反映済み。今回のレビューではPractice Guideの421px幾何同期（D1）と狭幅Inspectorタブ（D2）を修正。D1の初回計測ではWorkbench幅477px指定がPreview webview内幅419pxになっていたため、webview実幅421pxを直接指定するよう校正した。さらに必須E2EでNormal時の既定下余白36pxがD158-04（0px）に反することを確認し、既定値を0pxに修正した。PR #159はレビュー待ちで未マージ。
 - **契約**: Issue本文の最新 approved contract comment `6398128339` を正本とし、ローカルコピーは **38,687 bytes / SHA-256 `f0396b27751bd79f8dfff646c415fe23846ee635f7fba55d4b77785f6579abcf`** と完全一致することを確認。PR追補 `6398576705` は独立Edit/Practice切替を排他3モードへ置き換える決定で、契約本文/SHAは変更せず、旧追補との優先関係を記録する。
 - **Milestone**: profile version 0.1.0 を割当済み。
 - **設計**: 承認済みの2枚の提案SVGを追加。Previewの通常/編集/練習モード、600px未満のネイティブselect、モード別の編集ドック/Practice Guide排他を反映した実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
-- **検証**: 実装検証HEAD `b9d3d59d35d616c2310e626eb3bcb8dc2a74ccb6` で `npm run compile` PASS、`npm test` **exit 0**（check:help/check:ai PASS、unit **1,220件 PASS**、E2E **123件 PASS / 6件 pending**）。通常suiteでpendingとなる音声/leaseのED-08、S135-11の3ケース、ED-09、ED-10は同HEADの絞り込み実行で**6件 PASS / exit 0**。実Inspector証拠E2Eはja/enで各**1件 PASS**し、設定サブタブのキーボード操作、ARIA/overflow/focus、実localeラベルを検査した。`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,607 entries、必須ファイル含有・development files除外）、`validate-docs --issue 158`、`verify-implementation-contract 158`、self-review、`agent-required-check`、`delivery-check` はPASS。approved contract SHA-256は上記のとおり。VoiceOver/NVDAとWindows/Linuxの手動確認は未実施。各結果はPR #159のCompletion Reportに記録。
-- **受入状態**: BV-04、BV-09、BV-10 PASS。self-reviewは19 PASS / 1 UNTESTED / 0 FAIL。C010/C011/C018/C019/C020は検証済み。C012のVoiceOver/NVDAとWindows/LinuxはNOT RUNで、PASS扱いにしない。
-- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[Preview三モード実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)、[Inspector上位タブ・設定サブタブ・変数欄の最新実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6417995938)。Preview編集状態は英語/日本語 × light/dark × 421/600/840/1100px の16状態。InspectorはExtension Development Hostから英語/日本語 × light/dark × 狭幅で撮影し、`docs/status/evidence/issue-158/inspector-settings-*-narrow.png` に設定サブタブ、`inspector-variables-*-narrow.png` に変数欄を保存する。日本語はLanguage Packを有効にした実Workbenchで確認。
+- **検証**: D1 focused E2Eは**1件 PASS**。幾何安定条件を81回確認し、全回で連続2 RAF後に収束、body paddingとpanel高の最大差は約0.0004 CSS px。421px実幅、折畳み、表示切替、短いviewport、縦スクロール末尾を確認した。D2の画面証拠E2Eは日本語・英語それぞれ**1件 PASS**し、293/360/480px、ARIA、focus、overflowを検査。設定サブタブと変数タブの日英 × light/dark 8枚を `docs/status/evidence/issue-158/inspector-{settings,variables}-{ja,en}-{light,dark}-narrow.png` に保存した。`compile`、unit **1,220 PASS**、Help/AI同期、`validate-docs`、契約SHA検証、`vscode:prepublish`、`vsce ls`（1,614 entries、必須項目あり/開発ファイルなし）、`git diff --check` はPASS。最終 `npm test` は**exit 1**（122 E2E PASS / 6 pending / 1 FAIL）。失敗はIssue #137のWorkbench snapshot復元時にactive tabが初期状態と異なり、bounded traceでwindow focusがfalseだったもの。該当1件の単独診断は**1 PASS**。D158-04の初回失敗（Normal padding 36px）は既定値を0pxに修正して解消し、現在残るC020ゲート失敗とは区別してPR Completion Reportに記録する。
+- **受入状態**: C012はユーザー了承により `NOT RUN — user accepted`（VoiceOver/NVDAとWindows/Linux手動確認）とし、PASSにしない。D1/D2はfocused E2Eと最終suiteで通過。C020は現行 `npm test` がIssue #137のWorkbench復元assertionで失敗したため未達。Issue/PRはこの結果を明示してレビュー待ちのままとする。
+- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[Preview三モード実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)、Inspector証拠はPR #159の最新Completion Reportにリンクする。Preview編集状態は英語/日本語 × light/dark × 421/600/840/1100px。Inspector上位タブ・設定サブタブ・変数欄は英語/日本語 × light/darkの8枚を現在の実Workbenchから保存した。
 - **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新の自己レビュー、検証ゲート、未実施の手動/OS範囲はPR本文および現HEADに紐付くCompletion Report/Required Checkを正本として追跡する。
 
 ## Issue #132: GUI再設計の統合受入れ

@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity, withPreviewReducedMotion } from './screenshotCapture';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizeAuxiliarySidebarToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity, withPreviewReducedMotion } from './screenshotCapture';
 import { ensureWorkbenchTestHostWindowFocused, getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
@@ -223,6 +223,76 @@ async function setPreviewPracticeEnabled(enabled: boolean): Promise<void> {
   assert.fail(`Preview did not enter ${targetMode} mode`);
 }
 
+async function waitForPreviewBottomPanelsStable(
+  operation: string,
+  expectedMode: 'normal' | 'edit' | 'practice',
+  expectedGuideVisible: boolean,
+  expectedWidth?: number
+): Promise<void> {
+  const diagnostics = JSON.parse(await evaluatePreviewWebview<string>(`(async () => {
+    const startedAt = performance.now();
+    let previous = null;
+    let stableFrameCount = 0;
+    let frameCount = 0;
+    const trace = [];
+    const expectedMode = ${JSON.stringify(expectedMode)};
+    const expectedGuideVisible = ${String(expectedGuideVisible)};
+    const expectedWidth = ${expectedWidth === undefined ? 'null' : String(expectedWidth)};
+    const sample = () => {
+      const body = document.body;
+      const guide = document.getElementById('practice-guide-panel');
+      const dock = document.getElementById('preview-edit-row');
+      const guideRect = guide?.getBoundingClientRect() ?? { height: 0 };
+      const dockRect = dock?.getBoundingClientRect() ?? { height: 0 };
+      const guideVisible = !!guide && body.classList.contains('has-practice-guide')
+        && getComputedStyle(guide).display !== 'none' && guideRect.height > 0;
+      const guideHeight = guideVisible ? guideRect.height : 0;
+      const dockHeight = !!dock && !dock.hidden ? dockRect.height : 0;
+      return {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        mode: body.dataset.previewUiMode,
+        guideVisible,
+        guideHeight,
+        dockVisible: dockHeight > 0,
+        dockHeight,
+        cssGuideHeight: body.style.getPropertyValue('--practice-guide-panel-height').trim(),
+        cssDockHeight: body.style.getPropertyValue('--preview-edit-dock-height').trim(),
+        bodyPaddingBottom: parseFloat(getComputedStyle(body).paddingBottom) || 0,
+        combinedHeight: guideHeight + dockHeight
+      };
+    };
+    while (performance.now() - startedAt < 2000) {
+      await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      frameCount++;
+      const current = sample();
+      const paddingDelta = Math.abs(current.bodyPaddingBottom - current.combinedHeight);
+      const bodyPaddingFrameDelta = previous
+        ? Math.abs(current.bodyPaddingBottom - previous.bodyPaddingBottom) : Infinity;
+      const guideDelta = previous ? Math.abs(current.guideHeight - previous.guideHeight) : Infinity;
+      const dockDelta = previous ? Math.abs(current.dockHeight - previous.dockHeight) : Infinity;
+      const stateMatches = current.mode === expectedMode
+        && current.guideVisible === expectedGuideVisible
+        && (expectedWidth === null || Math.abs(current.width - expectedWidth) <= 0.5);
+      const frameStable = !!previous && stateMatches
+        && previous.mode === current.mode
+        && previous.guideVisible === current.guideVisible
+        && Math.abs(current.width - previous.width) <= 0.5
+        && guideDelta <= 0.5 && dockDelta <= 0.5
+        && bodyPaddingFrameDelta <= 0.5 && paddingDelta <= 0.5;
+      const entry = { ...current, guideDelta, dockDelta, bodyPaddingFrameDelta, paddingDelta };
+      trace.push(entry);
+      if (trace.length > 4) trace.shift();
+      stableFrameCount = frameStable ? stableFrameCount + 1 : 0;
+      if (stableFrameCount >= 2) return JSON.stringify({ stable: true, frameCount, trace, final: current });
+      previous = current;
+    }
+    return JSON.stringify({ stable: false, frameCount, trace, final: previous, expectedMode, expectedGuideVisible, expectedWidth });
+  })()`));
+  assert.strictEqual(diagnostics.stable, true,
+    `[D1] ${operation} did not converge within 2000ms: ${JSON.stringify(diagnostics)}`);
+}
+
 /** Runs `undo` in `doc` (focused first) and waits until its text has changed. */
 async function undoIn(doc: vscode.TextDocument): Promise<void> {
   const before = doc.getText();
@@ -355,7 +425,93 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await showAndFocus(doc);
       await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
       await waitForPreviewDocument();
+      const waitForPracticeGuideGeometryStable = async (
+        operation: string,
+        expectedViewportWidth?: number,
+        expectedCollapsed?: boolean
+      ): Promise<void> => {
+        const diagnostics = JSON.parse(await evaluatePreviewWebview<string>(`(async () => {
+          const startedAt = performance.now();
+          const firstFrames = [];
+          const lastFrames = [];
+          let previous = null;
+          let stableFrameCount = 0;
+          let frameCount = 0;
+          const sample = () => {
+            const panel = document.getElementById('practice-guide-panel');
+            const rect = panel?.getBoundingClientRect() ?? { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 };
+            const body = document.body;
+            const bodyStyle = getComputedStyle(body);
+            const panelStyle = panel ? getComputedStyle(panel) : null;
+            const guideVisible = !!panel
+              && body.classList.contains('has-practice-guide')
+              && panelStyle?.display !== 'none'
+              && rect.height > 0;
+            return {
+              viewportWidth: window.innerWidth,
+              viewportHeight: window.innerHeight,
+              mode: body.dataset.previewUiMode || (body.dataset.previewEditMode === 'true' ? 'edit' : 'normal'),
+              guideVisible,
+              collapsed: body.classList.contains('guide-collapsed'),
+              rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left },
+              scrollHeight: panel?.scrollHeight ?? 0,
+              clientHeight: panel?.clientHeight ?? 0,
+              cssPanelHeight: body.style.getPropertyValue('--practice-guide-panel-height').trim(),
+              bodyPaddingBottom: parseFloat(bodyStyle.paddingBottom) || 0
+            };
+          };
+          const expectedWidth = ${expectedViewportWidth === undefined ? 'null' : String(expectedViewportWidth)};
+          const expectedCollapsed = ${expectedCollapsed === undefined ? 'null' : String(expectedCollapsed)};
+          const traceFrame = (frame, heightDelta, paddingDelta) => ({ ...frame, heightDelta, paddingDelta });
+          while (performance.now() - startedAt < 2000) {
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            frameCount++;
+            const current = sample();
+            const heightDelta = previous ? Math.abs(current.rect.height - previous.rect.height) : Infinity;
+            const paddingDelta = Math.abs(current.bodyPaddingBottom - current.rect.height);
+            const widthMatches = expectedWidth === null || Math.abs(current.viewportWidth - expectedWidth) <= 0.5;
+            const collapsedMatches = expectedCollapsed === null || current.collapsed === expectedCollapsed;
+            const stateMatches = current.mode === 'practice' && current.guideVisible && widthMatches && collapsedMatches;
+            const frameStable = !!previous
+              && stateMatches
+              && previous.mode === current.mode
+              && previous.guideVisible === current.guideVisible
+              && Math.abs(current.viewportWidth - previous.viewportWidth) <= 0.5
+              && heightDelta <= 0.5
+              && paddingDelta <= 0.5;
+            const traced = traceFrame(current, heightDelta, paddingDelta);
+            if (firstFrames.length < 4) firstFrames.push(traced);
+            lastFrames.push(traced);
+            if (lastFrames.length > 4) lastFrames.shift();
+            stableFrameCount = frameStable ? stableFrameCount + 1 : 0;
+            if (stableFrameCount >= 2) {
+              return JSON.stringify({ stable: true, frameCount, initial: firstFrames[0], firstFrames, lastFrames, final: current });
+            }
+            previous = current;
+          }
+          return JSON.stringify({
+            stable: false,
+            frameCount,
+            expectedWidth,
+            expectedCollapsed,
+            initial: firstFrames[0],
+            firstFrames,
+            lastFrames,
+            final: previous,
+            operation: ${JSON.stringify(operation)}
+          });
+        })()`));
+        assert.strictEqual(diagnostics.stable, true,
+          `[D1] ${operation} did not converge within 2000ms: ${JSON.stringify(diagnostics)}`);
+        console.log(`[D1] ${operation}: ${JSON.stringify({
+          frameCount: diagnostics.frameCount,
+          initial: diagnostics.initial,
+          firstFrames: diagnostics.firstFrames,
+          final: diagnostics.final
+        })}`);
+      };
       await setPreviewPracticeEnabled(true);
+      await waitForPracticeGuideGeometryStable('enter practice mode');
       assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-guide-view').value`), 'compact',
         'compact SVG practice guide is the default view');
       await evaluatePreviewWebview<void>(`(() => {
@@ -368,7 +524,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (collapse.getAttribute('aria-expanded') !== 'true') collapse.click();
         grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(150);
+      await waitForPracticeGuideGeometryStable('lane visibility, collapse, and grid mode changes');
 
       const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
@@ -415,7 +571,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const button = document.getElementById('practice-guide-melody-toggle');
           if ((button.getAttribute('aria-pressed') === 'true') !== ${melodyVisible}) button.click();
         })()`);
-        await settle(100);
+        await waitForPracticeGuideGeometryStable(`melody lane ${melodyVisible ? 'on' : 'off'}`);
       };
       const setGuideViewMode = async (mode: 'detailed' | 'compact'): Promise<void> => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -435,19 +591,19 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         input.value = '2';
         input.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('detailed guide mode and seek');
       for (const width of compactAcceptanceWidths) {
         await resetPreviewWebviewViewport();
         let actualPreviewWidth = 0;
         if (width < 421) {
           await setPreviewWebviewViewportWidth(width);
-          await settle(150);
+          await waitForPracticeGuideGeometryStable(`Preview viewport width ${width}`, width);
           actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
         } else {
           let workbenchWidth = width + 56;
           for (let attempt = 0; attempt < 3; attempt++) {
             await setWorkbenchViewportWidth(workbenchWidth);
-            await settle(150);
+            await waitForPracticeGuideGeometryStable(`Workbench viewport width ${width}`);
             actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
             if (Math.abs(actualPreviewWidth - width) <= 1) break;
             workbenchWidth = Math.max(320, workbenchWidth + width - actualPreviewWidth);
@@ -455,7 +611,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         }
         if (Math.abs(actualPreviewWidth - width) > 1) {
           await setPreviewWebviewViewportWidth(width);
-          await settle(250);
+          await waitForPracticeGuideGeometryStable(`calibrated Preview viewport width ${width}`, width);
           actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
         }
         assert.ok(Math.abs(actualPreviewWidth - width) <= 1,
@@ -464,7 +620,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           if (width >= 421) {
           await setGuideVisibility(melodyVisible);
           await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-scroll').scrollLeft = 0`);
-          await settle(120);
           const guide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
             const panel = document.getElementById('practice-guide-panel');
             const header = document.querySelector('.practice-guide-header');
@@ -780,9 +935,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           }
         if (compactAcceptanceWidths.includes(width)) {
           await setGuideViewMode('compact');
+          await waitForPracticeGuideGeometryStable(`compact guide mode at ${width}px`, width);
           for (const melodyVisible of [true, false]) {
             await setGuideVisibility(melodyVisible);
-            await settle(150);
             const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
               const panel = document.getElementById('practice-guide-panel');
               const layout = document.getElementById('practice-guide-scroll');
@@ -910,7 +1065,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               width);
           }
           await setGuideViewMode('detailed');
-          await settle(100);
+          await waitForPracticeGuideGeometryStable(`detailed guide mode at ${width}px`, width);
         }
       }
       }
@@ -957,7 +1112,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const button = document.getElementById('practice-guide-diagrams-toggle');
         if (button.getAttribute('aria-pressed') !== 'true') button.click();
       })()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('enable diagrams after viewport reset');
       const fullPanelGeometry = await readPanelGeometry();
 
       const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
@@ -978,7 +1133,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         previewGeneration: previewLifecycle.generation
       });
       await waitForPreviewDocument();
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('Preview HTML rebuild');
       const rebuiltPanelGeometry = await readPanelGeometry();
       assert.ok(Math.abs(rebuiltPanelGeometry.bodyPadding - rebuiltPanelGeometry.height) <= 0.5,
         'a rebuilt Webview starts with a spacer measured from its own panel border box');
@@ -991,27 +1146,25 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         loop: document.getElementById('practice-loop').value
       })`));
       await setGuideVisibility(false);
-      await settle(120);
       const melodyHiddenGeometry = await readPanelGeometry();
       assert.strictEqual(melodyHiddenGeometry.melodyLaneDisplay, 'none',
         'melody OFF hides the detailed melody lane even when the fixed next-chord rail determines panel height');
       assert.ok(Math.abs(melodyHiddenGeometry.bodyPadding - melodyHiddenGeometry.height) <= 0.5,
         'melody OFF updates the body spacer to the measured panel height');
       await setGuideVisibility(true);
-      await settle(120);
       const melodyRestoredGeometry = await readPanelGeometry();
       assert.ok(Math.abs(melodyRestoredGeometry.height - rebuiltPanelGeometry.height) <= 1,
         'melody ON restores the content-fit panel height');
 
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('disable diagrams');
       const diagramsHiddenGeometry = await readPanelGeometry();
       assert.ok(diagramsHiddenGeometry.layoutScrollHeight < melodyRestoredGeometry.layoutScrollHeight - 100,
         'diagrams OFF removes the main diagram lane and the next-chord diagram from the natural content height');
       assert.ok(Math.abs(diagramsHiddenGeometry.bodyPadding - diagramsHiddenGeometry.height) <= 0.5,
         'diagrams OFF updates the body spacer to the measured panel height');
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('restore diagrams');
       const diagramsRestoredGeometry = await readPanelGeometry();
       assert.ok(Math.abs(diagramsRestoredGeometry.height - melodyRestoredGeometry.height) <= 1,
         'diagrams ON restores the content-fit panel height');
@@ -1023,9 +1176,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(transportAfterLayoutToggles, transportBeforeLayoutToggles,
         'lane visibility changes do not alter seek, speed, or loop state');
 
-      await setWorkbenchViewportWidth(477);
+      await setPreviewWebviewViewportWidth(421);
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-collapse').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('collapse at 421px', 421, true);
       const collapsedPanelGeometry = await readPanelGeometry();
       assert.strictEqual(collapsedPanelGeometry.height, 42, 'collapse leaves an exact 42px panel');
       assert.ok(Math.abs(collapsedPanelGeometry.bodyPadding - 42) <= 0.5, 'collapsed spacer matches the 42px panel');
@@ -1033,14 +1186,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.strictEqual(collapsedPanelGeometry.titleVisible, true, 'the collapsed title remains visible');
       assert.strictEqual(collapsedPanelGeometry.collapseVisible, true, 'the expand control remains visible');
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-collapse').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('expand at 421px', 421, false);
       const expandedNarrowGeometry = await readPanelGeometry();
       assert.ok(expandedNarrowGeometry.height > 42, 'the 421px panel expands back to its content-fit height');
       assert.ok(Math.abs(expandedNarrowGeometry.bodyPadding - expandedNarrowGeometry.height) <= 0.5,
         'the expanded narrow viewport spacer follows the panel border box');
 
       await setWorkbenchViewportSize(1156, 500);
-      await settle(250);
+      await waitForPracticeGuideGeometryStable('short viewport at current Preview width');
       const shortViewportGeometry = await readPanelGeometry();
       assert.ok(shortViewportGeometry.viewportHeight < 700, 'the short-viewport case uses a viewport below 700px');
       const shortReserve = Math.max(80, shortViewportGeometry.viewportHeight * 0.2);
@@ -1058,8 +1211,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(shortViewportGeometry.layoutScrollHeight > shortViewportGeometry.layoutClientHeight,
           `a panel body that exceeds its short-viewport cap scrolls vertically: ${JSON.stringify(shortViewportGeometry)}`);
       }
-      await setWorkbenchViewportWidth(477);
-      await settle(200);
+      const scrollEnd = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const layout = document.querySelector('.practice-guide-layout');
+        layout.scrollTop = layout.scrollHeight;
+        return { scrollTop: layout.scrollTop, scrollHeight: layout.scrollHeight, clientHeight: layout.clientHeight };
+      })())`));
+      assert.ok(scrollEnd.scrollTop + scrollEnd.clientHeight >= scrollEnd.scrollHeight - 1,
+        `the short-viewport guide can scroll to its vertical end: ${JSON.stringify(scrollEnd)}`);
+      await setPreviewWebviewViewportWidth(421);
+      await waitForPracticeGuideGeometryStable('restore Preview width after short viewport', 421);
 
       const currentTechniqueLabelAt = async (seconds: number): Promise<string> => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -1083,21 +1243,21 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = '8'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('set eight-grid view');
       assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 3,
         'the eighth-note override recalculates continuation slots on the shared axis');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = '4'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('set four-grid view');
       assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 0,
         'the quarter-note override does not fill smaller slots');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('restore automatic grid view');
 
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
@@ -1197,7 +1357,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await evaluatePreviewWebview<void>(`(() => {
         document.getElementById('practice-guide-diagrams-toggle').click();
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('disable diagrams and collapse guide');
       const compactNextChord = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         name: getComputedStyle(document.getElementById('practice-guide-next-chord-name')).display !== 'none',
         diagram: getComputedStyle(document.getElementById('practice-guide-next-chord-diagram')).display !== 'none'
@@ -1213,7 +1373,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         diagrams.click(); collapse.click();
         grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('enable diagrams, expand guide, and set sixteen-grid view');
       const controls = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         melodyHidden: document.body.classList.contains('guide-melody-hidden'),
         diagramsHidden: document.body.classList.contains('guide-diagrams-hidden'),
@@ -6426,8 +6586,10 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         if (captureScreenshots) await resetPreviewWebviewViewport();
       }
       await setPreviewPracticeEnabled(true);
+      await waitForPreviewBottomPanelsStable('enter Practice mode', 'practice', true);
       for (const width of [421, 600, 840, 1100]) {
         await setPreviewWebviewViewportWidth(width);
+        await waitForPreviewBottomPanelsStable(`Practice width ${width}px`, 'practice', true, width);
         const editDockGeometry = await readEditDockGeometry();
         assert.strictEqual(editDockGeometry.mode, 'practice', `${width}px selects Practice mode`);
         assert.strictEqual(editDockGeometry.editChoicePressed, 'false', `${width}px does not leave Edit selected in Practice`);
@@ -6443,6 +6605,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
           `the fixed Practice guide remains within the viewport at ${width}px`);
       }
       await setPreviewWebviewViewportWidth(421, 420);
+      await waitForPreviewBottomPanelsStable('short-height Practice geometry', 'practice', true, 421);
       const shortEditDockGeometry = await readEditDockGeometry();
       assert.strictEqual(shortEditDockGeometry.viewportHeight, 420, 'the short-height case uses a 420px Preview viewport');
       assert.strictEqual(shortEditDockGeometry.mode, 'practice');
@@ -6452,6 +6615,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
       assert.ok(shortEditDockGeometry.guideTop < shortEditDockGeometry.viewportHeight,
         'the guide stays reachable within the short viewport');
       await setPreviewPracticeEnabled(false);
+      await waitForPreviewBottomPanelsStable('leave Practice for Normal', 'normal', false, 421);
       await resetPreviewWebviewViewport();
       await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
       await waitForPreviewDocument();
@@ -6459,6 +6623,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'edit'; attempt++) await settle(20);
       assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'edit',
         'leaving Practice returns to Normal before the legacy Edit command re-enters Edit');
+      await waitForPreviewBottomPanelsStable('enter Edit after Practice', 'edit', false);
       if (restoreSidebarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
       if (restoreAuxiliaryBarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
       if (captureScreenshots) {
@@ -6763,36 +6928,116 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         assert.strictEqual(inspector.resolvedView?.visible, true, 'Edit reveals the existing Inspector view');
         assert.strictEqual(inspector.getContext?.().uri, doc.uri.toString(), 'the Inspector follows the Preview document');
 
-        await resizePrimarySidebarToWidth(320);
         await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+        const resizeInspectorViewportToWidth = async (expectedWidth: number): Promise<void> => {
+          let targetSidebarWidth = expectedWidth + 2;
+          let actualWidth = await evaluateInspectorWebview<number>('window.innerWidth');
+          for (let resizeAttempt = 0; resizeAttempt < 4; resizeAttempt++) {
+            await resizeAuxiliarySidebarToWidth(targetSidebarWidth);
+            for (let waitAttempt = 0; waitAttempt < 100; waitAttempt++) {
+              actualWidth = await evaluateInspectorWebview<number>('window.innerWidth');
+              if (Math.abs(actualWidth - expectedWidth) <= 0.5) return;
+              await settle(20);
+            }
+            targetSidebarWidth += Math.round(expectedWidth - actualWidth);
+          }
+          assert.ok(Math.abs(actualWidth - expectedWidth) <= 0.5,
+            `Inspector viewport settles at ${expectedWidth}px after sash calibration (actual=${actualWidth})`);
+        };
+        const readTopTabLayout = async () => JSON.parse(await evaluateInspectorWebview<string>(`(() => {
+          const tablist = document.getElementById('inspector-context-tabs');
+          const listRect = tablist.getBoundingClientRect();
+          const rect = element => {
+            const bounds = element.getBoundingClientRect();
+            return { left: bounds.left, right: bounds.right, width: bounds.width };
+          };
+          return JSON.stringify({
+            viewportWidth: window.innerWidth,
+            role: tablist.getAttribute('role'),
+            overflowX: getComputedStyle(tablist).overflowX,
+            scrollWidth: tablist.scrollWidth,
+            clientWidth: tablist.clientWidth,
+            scrollLeft: tablist.scrollLeft,
+            focus: document.activeElement.id,
+            focusVisible: document.activeElement.matches(':focus-visible'),
+            tabs: Array.from(tablist.querySelectorAll('[role="tab"]')).map(tab => {
+              const full = tab.querySelector('.inspector-tab-label-full');
+              const compact = tab.querySelector('.inspector-tab-label-compact');
+              const fullVisible = getComputedStyle(full).display !== 'none';
+              const compactVisible = getComputedStyle(compact).display !== 'none';
+              return {
+                id: tab.id,
+                label: tab.getAttribute('aria-label'),
+                title: tab.title,
+                fullLabel: full.textContent.trim(),
+                compactLabel: compact.textContent.trim(),
+                fullVisible,
+                compactVisible,
+                visibleLabel: (compactVisible ? compact : full).textContent.trim(),
+                bounds: rect(tab),
+                selected: tab.getAttribute('aria-selected'),
+                disabled: tab.disabled
+              };
+            }),
+            listBounds: rect(tablist)
+          });
+        })()`));
+        const expectedFullLabels = locale === 'ja'
+          ? ['文書', '変数', '楽譜設定', 'コード進行']
+          : ['Document', 'Variables', 'Score settings', 'Progression'];
+        const expectedCompactLabels = locale === 'ja'
+          ? ['文書', '変数', '楽譜', '進行']
+          : ['Doc', 'Vars', 'Score', 'Chords'];
+        const assertTopTabLayout = (layout: any, expectedWidth: number, compact: boolean): void => {
+          assert.ok(Math.abs(layout.viewportWidth - expectedWidth) <= 0.5,
+            `Inspector is rendered at ${expectedWidth}px (actual=${layout.viewportWidth})`);
+          assert.strictEqual(layout.role, 'tablist');
+          assert.strictEqual(layout.tabs.length, 4);
+          assert.strictEqual(layout.scrollWidth <= layout.clientWidth, true,
+            'all Inspector tabs fit without horizontal scrolling');
+          assert.strictEqual(layout.scrollLeft, 0, 'the tab row does not require horizontal scrolling');
+          if (compact) assert.strictEqual(layout.overflowX, 'visible', 'the compact grid has no horizontal overflow area');
+          assert.ok(layout.tabs.every((tab: any, index: number) => tab.id === [
+            'inspector-tab-document', 'inspector-tab-variables', 'inspector-tab-settings', 'inspector-tab-progression'
+          ][index] && tab.label === expectedFullLabels[index] && tab.title === expectedFullLabels[index]),
+          'the same four tab buttons retain their formal accessible names and titles');
+          assert.deepStrictEqual(layout.tabs.map((tab: any) => tab.visibleLabel),
+            compact ? expectedCompactLabels : expectedFullLabels,
+            compact ? 'short visual labels are visible at 360px and below' : 'full visual labels are visible above 360px');
+          assert.ok(layout.tabs.every((tab: any) => tab.compactVisible === compact && tab.fullVisible === !compact),
+            'CSS switches only the visual label at the 360px breakpoint');
+          assert.ok(layout.tabs.every((tab: any) => tab.bounds.left >= layout.listBounds.left - 0.5
+            && tab.bounds.right <= layout.listBounds.right + 0.5), 'every tab button stays inside the tab row');
+          if (compact) {
+            const widths = layout.tabs.map((tab: any) => tab.bounds.width);
+            assert.ok(Math.max(...widths) - Math.min(...widths) <= 0.5, 'the four narrow tabs have equal widths');
+          }
+        };
+        await resizeInspectorViewportToWidth(293);
         for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
           await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
           await settle(200);
           const themeName = theme.includes('Light') ? 'light' : 'dark';
-          const topTabs = JSON.parse(await evaluateInspectorWebview<string>(`(() => {
-            const tablist = document.getElementById('inspector-context-tabs');
+          await evaluateInspectorWebview<void>(`(() => {
             const documentTab = document.getElementById('inspector-tab-document');
             documentTab.focus();
-            tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
-            return JSON.stringify({
-              role: tablist.getAttribute('role'), overflowX: getComputedStyle(tablist).overflowX,
-              focus: document.activeElement.id,
-              tabs: Array.from(tablist.querySelectorAll('[role="tab"]')).map(tab => ({
-                label: tab.getAttribute('aria-label') || tab.textContent.trim(),
-                selected: tab.getAttribute('aria-selected'), disabled: tab.disabled
-              }))
-            });
-          })()`));
-          assert.strictEqual(topTabs.role, 'tablist');
-          assert.strictEqual(topTabs.overflowX, 'auto', 'narrow Inspector tabs retain horizontal overflow');
+          })()`);
+          await dispatchWorkbenchKey('ArrowRight');
+          const topTabs = await readTopTabLayout();
+          assertTopTabLayout(topTabs, 293, true);
           assert.strictEqual(topTabs.focus, 'inspector-tab-variables', 'ArrowRight moves focus without losing the selected Variables tab');
-          assert.strictEqual(topTabs.tabs.length, 4, 'the Inspector keeps Document, Variables, Score Settings, and Progression tabs');
-          assert.ok(topTabs.tabs.every((tab: { label: string }) => tab.label.length > 0), 'each top-level tab has an accessible name');
-          const expectedVariablesTabLabel = locale === 'ja' ? '変数' : 'Variables';
-          assert.ok(topTabs.tabs.some((tab: { label: string }) => tab.label === expectedVariablesTabLabel),
-            `the real Extension Development Host Inspector uses the requested ${locale} locale`);
+          assert.strictEqual(topTabs.focusVisible, true, 'keyboard focus remains visibly indicated on the active tab');
           assert.strictEqual(topTabs.tabs.filter((tab: { selected: string }) => tab.selected === 'true').length, 1,
             'exactly one top-level tab is selected');
+          for (const width of [360, 480, 293]) {
+            await resizeInspectorViewportToWidth(width);
+            const resizedTabs = await readTopTabLayout();
+            assertTopTabLayout(resizedTabs, width, width <= 360);
+            assert.strictEqual(resizedTabs.focus, 'inspector-tab-variables',
+              `resize to ${width}px preserves the focused Inspector tab`);
+            assert.strictEqual(resizedTabs.tabs.filter((tab: { selected: string }) => tab.selected === 'true').length, 1,
+              `resize to ${width}px preserves exactly one selected tab`);
+          }
 
           await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
           for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'settings'; attempt++) await settle(20);
@@ -6813,7 +7058,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
           assert.strictEqual(inspector.getContext?.().section, 'beginner');
           const settingsScreenshotLayout = JSON.parse(await evaluateInspectorWebview<string>(`(() => {
             const tablist = document.getElementById('inspector-context-tabs');
-            tablist.scrollLeft = tablist.scrollWidth;
+            tablist.scrollLeft = 0;
             document.scrollingElement?.scrollTo({ top: 0 });
             const topTabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
             const settingsTabs = document.getElementById('settings-tabs');
@@ -6829,7 +7074,8 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
                 const bounds = tab.getBoundingClientRect();
                 const clip = tablist.getBoundingClientRect();
                 return bounds.left >= clip.left && bounds.right <= clip.right;
-              }).map(tab => tab.textContent.trim())
+              }).map(tab => [...tab.querySelectorAll('.inspector-tab-label-full, .inspector-tab-label-compact')]
+                .find(label => getComputedStyle(label).display !== 'none')?.textContent.trim())
             });
           })()`));
           assert.ok(settingsScreenshotLayout.topTablist.top >= 0
@@ -6838,9 +7084,9 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
           assert.ok(settingsScreenshotLayout.settingsTabs.top >= 0
             && settingsScreenshotLayout.settingsTabs.bottom <= settingsScreenshotLayout.viewportHeight,
           'the narrow screenshot keeps the Score Settings subtabs in view');
-          assert.ok(settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Score settings|楽譜設定/i.test(label))
-            && settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Progression|進行/i.test(label)),
-          'the scrolled primary tab strip visibly covers Score Settings and Progression');
+          assert.ok(settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Score|楽譜/i.test(label))
+            && settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Chords|進行/i.test(label)),
+          'the narrow four-column tab row visibly includes Score Settings and Progression');
           await captureWorkbenchScreenshot(`inspector-settings-${locale}-${themeName}-narrow.png`, 158, 800);
 
           await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');

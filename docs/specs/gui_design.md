@@ -160,6 +160,8 @@ Preview は既存の単一 WebviewPanel を使い、既定の「通常」、双�
 
 Inspector は対象文書がない状態と、文書に応じた設定画面を同じ領域に表示する。設定画面はタブ、説明または入力、結果、確定操作の順に構成する。
 
+単一 Inspector の上位タブは「文書 / 変数 / 楽譜設定 / コード進行」の4ボタンを維持する。コンテンツ幅が360 CSS px以下では等幅4列にし、視覚ラベルを日本語「文書 / 変数 / 楽譜 / 進行」、英語「Doc / Vars / Score / Chords」として1行に収める。360 CSS pxを超える幅では従来の正式ラベルを表示する。狭幅でも各ボタンの `aria-label` と `title` は正式名称（日本語「文書 / 変数 / 楽譜設定 / コード進行」、英語「Document / Variables / Score settings / Progression」）を保持し、同じtab ID、ARIA状態、キーボード操作、focus表示を使う。横スクロールや省略記号でタブを隠さない。
+
 #### 3.1 対象文書なし
 
 ![対象文書なしの Inspector](gui_design/inspector-empty.svg)

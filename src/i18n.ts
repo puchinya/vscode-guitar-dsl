@@ -272,6 +272,10 @@ export interface Messages {
   inspectorTabVariables: string;
   inspectorTabSettings: string;
   inspectorTabProgression: string;
+  inspectorTabDocumentCompact: string;
+  inspectorTabVariablesCompact: string;
+  inspectorTabSettingsCompact: string;
+  inspectorTabProgressionCompact: string;
   inspectorDiscardDraftPrompt: string;
   inspectorDiscardDraft: string;
   inspectorKeepDraft: string;
@@ -634,6 +638,10 @@ export const MESSAGES_JA: Messages = {
   inspectorTabVariables: '変数',
   inspectorTabSettings: '楽譜設定',
   inspectorTabProgression: 'コード進行',
+  inspectorTabDocumentCompact: '文書',
+  inspectorTabVariablesCompact: '変数',
+  inspectorTabSettingsCompact: '楽譜',
+  inspectorTabProgressionCompact: '進行',
   inspectorDiscardDraftPrompt: '未適用のInspector変更を破棄して切り替えますか？',
   inspectorDiscardDraft: '破棄して切替',
   inspectorKeepDraft: 'キャンセル',
@@ -1039,6 +1047,10 @@ export const MESSAGES_EN: Messages = {
   inspectorTabVariables: 'Variables',
   inspectorTabSettings: 'Score settings',
   inspectorTabProgression: 'Progression',
+  inspectorTabDocumentCompact: 'Doc',
+  inspectorTabVariablesCompact: 'Vars',
+  inspectorTabSettingsCompact: 'Score',
+  inspectorTabProgressionCompact: 'Chords',
   inspectorDiscardDraftPrompt: 'Discard unapplied Inspector changes and switch views?',
   inspectorDiscardDraft: 'Discard and switch',
   inspectorKeepDraft: 'Cancel',

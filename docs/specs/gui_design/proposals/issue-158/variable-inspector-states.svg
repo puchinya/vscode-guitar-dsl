@@ -9,14 +9,14 @@
 <text x="50" y="139" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="21" font-weight="700" fill="#e6edf8" text-anchor="start">1  変数一覧</text>
 <text x="50" y="159" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#92a4ba" text-anchor="start">既存のInspectorに追加。文書に紐づく let のみを表示。</text>
 <text x="49" y="206" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="17" font-weight="700" fill="#e6edf8" text-anchor="start">GuitarDSL Inspector</text>
-<rect x="48" y="225" width="80" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
-<text x="88" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">文書</text>
-<rect x="132" y="225" width="92" height="38" rx="6" fill="#1d4775" stroke="#51a5ff" stroke-width="1"/>
-<text x="178" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="700" fill="#e6edf8" text-anchor="middle">変数</text>
-<rect x="228" y="225" width="108" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
-<text x="282" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">楽譜設定</text>
-<rect x="340" y="225" width="154" height="38" rx="6" fill="#202a36" stroke="#354154" stroke-width="1"/>
-<text x="417" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#8795a6" text-anchor="middle">コード進行 · 無効</text>
+<rect x="48" y="225" width="107.75" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
+<text x="101.875" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">文書</text>
+<rect x="159.75" y="225" width="107.75" height="38" rx="6" fill="#1d4775" stroke="#51a5ff" stroke-width="1"/>
+<text x="213.625" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="700" fill="#e6edf8" text-anchor="middle">変数</text>
+<rect x="271.5" y="225" width="107.75" height="38" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
+<text x="325.375" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#e6edf8" text-anchor="middle">楽譜</text>
+<rect x="383.25" y="225" width="107.75" height="38" rx="6" fill="#202a36" stroke="#354154" stroke-width="1"/>
+<text x="437.125" y="248.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="12" font-weight="400" fill="#8795a6" text-anchor="middle">進行 · 無効</text>
 <text x="50" y="301" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="20" font-weight="700" fill="#e6edf8" text-anchor="start">定義された変数</text>
 <rect x="383" y="274" width="105" height="40" rx="6" fill="#27384b" stroke="#43566e" stroke-width="1"/>
 <text x="435.5" y="298.0" font-family="'Noto Sans CJK JP', 'Yu Gothic', Arial, sans-serif" font-size="13" font-weight="400" fill="#e6edf8" text-anchor="middle">＋ 新規</text>

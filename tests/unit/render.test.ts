@@ -367,7 +367,7 @@ describe('render - Preview playback and score-settings rows', () => {
     assert.match(css, /\.score-settings-details-toggle\[hidden\],\s*\.score-settings-details-close\[hidden\]\s*\{\s*display:\s*none !important;/);
     assert.match(css, /\.practice-toolbar\s*\{[^}]*top:\s*92px;[^}]*height:\s*42px;/s);
     assert.match(css, /body\.has-practice-row\s*\{\s*padding-top:\s*152px !important;/);
-    assert.match(css, /padding:\s*110px 16px 36px 16px;/);
+    assert.match(css, /padding:\s*110px 16px 0 16px;/);
   });
 
   it('preserves localized, accessible Help and PDF actions', () => {

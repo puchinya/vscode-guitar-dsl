@@ -1032,10 +1032,11 @@ export async function inspectWorkbenchSidebarItems(): Promise<{ label: string; i
   });
 }
 
-type WorkbenchKey = 'Tab' | 'Enter' | 'Escape' | 'Space';
+type WorkbenchKey = 'ArrowRight' | 'Tab' | 'Enter' | 'Escape' | 'Space';
 
 async function dispatchKey(send: SendDevToolsCommand, key: WorkbenchKey, shift = false): Promise<void> {
   const definitions: Record<WorkbenchKey, { key: string; code: string; virtualKeyCode: number }> = {
+    ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', virtualKeyCode: 39 },
     Tab: { key: 'Tab', code: 'Tab', virtualKeyCode: 9 },
     Enter: { key: 'Enter', code: 'Enter', virtualKeyCode: 13 },
     Escape: { key: 'Escape', code: 'Escape', virtualKeyCode: 27 },
@@ -1098,6 +1099,60 @@ export async function resizePrimarySidebarToWidth(targetWidth: number): Promise<
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     return (await readLayout()).width;
+  });
+}
+
+/** Resizes the visible Auxiliary Bar through the vertical sash beside that real workbench part. */
+export async function resizeAuxiliarySidebarToWidth(targetWidth: number): Promise<number> {
+  if (!Number.isFinite(targetWidth) || targetWidth < 200) throw new Error(`Invalid Auxiliary Bar width: ${targetWidth}`);
+  return withWorkbenchDevTools(async send => {
+    const readLayout = async (): Promise<{ width: number; x: number; y: number; side: 'left' | 'right' }> => {
+      const result = await send('Runtime.evaluate', {
+        expression: `JSON.stringify((() => {
+          const sidebar = document.querySelector('.part.auxiliarybar');
+          if (!sidebar) return { error: 'Auxiliary Bar is missing' };
+          const sidebarRect = sidebar.getBoundingClientRect();
+          const candidates = [...document.querySelectorAll('.monaco-sash.vertical')].map(sash => {
+            const rect = sash.getBoundingClientRect();
+            return { rect, centerX: rect.left + rect.width / 2 };
+          });
+          const adjacent = candidates.find(({ rect }) =>
+            Math.abs(rect.right - sidebarRect.left) <= 2 || Math.abs(rect.left - sidebarRect.right) <= 2);
+          if (!adjacent) return { error: 'Auxiliary Bar sash is missing', width: sidebarRect.width };
+          return {
+            width: Math.round(sidebarRect.width),
+            x: adjacent.centerX,
+            y: Math.min(sidebarRect.bottom - 40, sidebarRect.top + 160),
+            side: sidebarRect.left > window.innerWidth / 2 ? 'right' : 'left'
+          };
+        })())`,
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      if (typeof value !== 'string') throw new Error('Could not inspect the Auxiliary Bar sash');
+      const layout = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; side?: 'left' | 'right' };
+      if (layout.error || layout.width === undefined || layout.x === undefined || layout.y === undefined || !layout.side) {
+        throw new Error(layout.error ?? 'Auxiliary Bar layout is incomplete');
+      }
+      return { width: layout.width, x: layout.x, y: layout.y, side: layout.side };
+    };
+    const initial = await readLayout();
+    if (initial.width !== targetWidth) {
+      const delta = targetWidth - initial.width;
+      const targetX = initial.x + (initial.side === 'right' ? -delta : delta);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: initial.x, y: initial.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: initial.x, y: initial.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: targetX, y: initial.y, button: 'left', buttons: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetX, y: initial.y, button: 'left', clickCount: 1 });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const current = await readLayout();
+        if (current.width === targetWidth) return current.width;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    const final = await readLayout();
+    if (final.width !== targetWidth) throw new Error(`Auxiliary Bar width settled at ${final.width}px; expected ${targetWidth}px`);
+    return final.width;
   });
 }
 

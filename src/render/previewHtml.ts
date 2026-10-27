@@ -322,7 +322,7 @@ ${cspMeta}
     font-family: ${FONT_FAMILY_SANS};
     color: #111;
     margin: 0;
-    padding: 110px 16px 36px 16px;
+    padding: 110px 16px 0 16px;
     background: #e9ecef;
     min-height: 100vh;
   }
@@ -1746,22 +1746,35 @@ ${cspMeta}
         const guideHeight = guideVisible && practiceGuidePanel
           ? Math.max(0, practiceGuidePanel.getBoundingClientRect().height) : 0;
         body.classList.toggle('has-preview-edit-dock', dockVisible);
-        body.style.setProperty('--preview-edit-dock-height', dockHeight + 'px');
-        body.style.setProperty('--practice-guide-panel-height', guideHeight + 'px');
+        const editDockHeight = dockHeight + 'px';
+        const practiceGuideHeight = guideHeight + 'px';
+        const currentEditDockHeight = typeof body.style.getPropertyValue === 'function'
+          ? body.style.getPropertyValue('--preview-edit-dock-height') : undefined;
+        const currentPracticeGuideHeight = typeof body.style.getPropertyValue === 'function'
+          ? body.style.getPropertyValue('--practice-guide-panel-height') : undefined;
+        if (currentEditDockHeight !== editDockHeight) {
+          body.style.setProperty('--preview-edit-dock-height', editDockHeight);
+        }
+        if (currentPracticeGuideHeight !== practiceGuideHeight) {
+          body.style.setProperty('--practice-guide-panel-height', practiceGuideHeight);
+        }
       }
       function syncPracticeGuidePanelGeometry() {
         if (!practiceGuidePanel) return;
         const viewportHeight = Math.max(0, window.innerHeight || 0);
         const reservedScoreHeight = viewportHeight >= 700 ? 160 : Math.max(80, viewportHeight * 0.2);
         const dockHeight = previewEditRow && !previewEditRow.hidden ? previewEditRow.getBoundingClientRect().height : 0;
-        practiceGuidePanel.style.maxHeight = Math.max(42, viewportHeight - 152 - reservedScoreHeight - dockHeight) + 'px';
-        if (practiceGuideLayoutFrame) window.cancelAnimationFrame(practiceGuideLayoutFrame);
+        const maxHeight = Math.max(42, viewportHeight - 152 - reservedScoreHeight - dockHeight) + 'px';
+        if (practiceGuidePanel.style.maxHeight !== maxHeight) practiceGuidePanel.style.maxHeight = maxHeight;
+        // ResizeObserver, resize, and UI events can arrive before this frame.
+        // Keep one pending measurement so it reads the final DOM state for that frame.
+        if (practiceGuideLayoutFrame) return;
         practiceGuideLayoutFrame = window.requestAnimationFrame(() => {
           practiceGuideLayoutFrame = 0;
           if (body.classList.contains('guide-collapsed')) {
-            practiceGuidePanel.style.height = '42px';
+            if (practiceGuidePanel.style.height !== '42px') practiceGuidePanel.style.height = '42px';
           } else if (!body.classList.contains('has-practice-guide')) {
-            practiceGuidePanel.style.height = 'auto';
+            if (practiceGuidePanel.style.height !== 'auto') practiceGuidePanel.style.height = 'auto';
           } else {
             const layout = practiceGuidePanel.querySelector?.('.practice-guide-layout');
             const header = practiceGuidePanel.querySelector?.('.practice-guide-header');
@@ -1801,13 +1814,8 @@ ${cspMeta}
               ? header.getBoundingClientRect().bottom
               : panelTop + headerHeight;
             const contentBottom = Math.max(headerBottom, ...contentBottoms);
-            practiceGuidePanel.style.height = Math.max(42, contentBottom - panelTop + borderTop) + 'px';
-          }
-          const panelHeight = body.classList.contains('has-practice-guide')
-            ? practiceGuidePanel.getBoundingClientRect().height
-            : 0;
-          if (body.style && typeof body.style.setProperty === 'function') {
-            body.style.setProperty('--practice-guide-panel-height', panelHeight + 'px');
+            const panelHeight = Math.max(42, contentBottom - panelTop + borderTop) + 'px';
+            if (practiceGuidePanel.style.height !== panelHeight) practiceGuidePanel.style.height = panelHeight;
           }
           syncPreviewBottomPanelsGeometry();
         });

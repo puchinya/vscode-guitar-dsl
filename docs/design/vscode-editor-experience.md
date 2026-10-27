@@ -146,6 +146,10 @@ Canceling a file picker or source Quick Pick performs no command. A selected uns
 
 This change does not alter public `package.json` command or menu contributions, parser behavior, import/export semantics, Preview playback, Inspector context ownership, Audio MIR, or the transcription pipeline. The Tree View is retained instead of adding a Webview sidebar, and wrappers are used instead of attaching a document URI to a tree row so action targets cannot become stale.
 
+#### Narrow Inspector tabs (Issue #158 review)
+
+The existing top-level tablist switches to a four-column equal-width grid at 360 CSS px and below. Only the visual labels shorten; button IDs, Host controller, selected state, roving tabindex, and full `aria-label` / `title` remain. Above 360 CSS px, the full labels return. At 293 CSS px, all four buttons and their focus ring fit without horizontal scrolling.
+
 ### Verification strategy
 
 Unit coverage exercises the five groups, their localized labels and stable IDs, a commandless target row, active-file identity, empty-state document-independent actions, and wrapper behavior for cancellation, unsupported files, active-document changes, and dispatch. Existing sidebar and command contribution tests protect the public command surface. Transcription coverage checks disclosure visibility and tab order, key field clearing and non-disclosure, unchanged option values/message shape, Start eligibility, duplicate-start suppression, and retry after errors. Fixture-backed Webview E2E also drops the success notification to verify result recovery from a newer state snapshot, then drives the actual Copy button through Host clipboard handling for success and failure. SVG XML validity, rendered dimensions, help synchronization, VSIX contents, and the configured final verification hooks are checked before delivery.

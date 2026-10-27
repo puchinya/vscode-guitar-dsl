@@ -50,6 +50,28 @@ describe('renderInspectorHtml', () => {
       assert.match(html, new RegExp(`id="inspector-tab-${tab}"[^>]*role="tab"[^>]*aria-controls="${tab}-state"`));
     }
     assert.match(html, /id="inspector-tab-variables"[^>]*aria-selected="true"/);
+    for (const [tab, label, compact] of [
+      ['document', 'Document', 'Doc'],
+      ['variables', 'Variables', 'Vars'],
+      ['settings', 'Score settings', 'Score'],
+      ['progression', 'Progression', 'Chords']
+    ]) {
+      assert.match(html, new RegExp(`id="inspector-tab-${tab}"[^>]*aria-label="${label}"[^>]*title="${label}"`));
+      assert.match(html, new RegExp(`class="inspector-tab-label-full">${label}</span><span class="inspector-tab-label-compact" aria-hidden="true">${compact}</span>`));
+    }
+    assert.match(html, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/,
+      'the narrow Inspector fits four equal tabs without horizontal scrolling');
+    assert.match(html, /@media \(max-width: 360px\)/);
+    const japaneseHtml = renderInspectorHtml('ja', context, 'vscode-webview://unit', 'top-tabs-ja', 7);
+    for (const [tab, full, compact] of [
+      ['document', '文書', '文書'],
+      ['variables', '変数', '変数'],
+      ['settings', '楽譜設定', '楽譜'],
+      ['progression', 'コード進行', '進行']
+    ]) {
+      assert.match(japaneseHtml, new RegExp(`id="inspector-tab-${tab}"[^>]*aria-label="${full}"[^>]*title="${full}"`));
+      assert.match(japaneseHtml, new RegExp(`class="inspector-tab-label-compact" aria-hidden="true">${compact}</span>`));
+    }
     assert.match(html, /id="inspector-tab-progression"[^>]* disabled/,
       'progression stays disabled unless the host has a valid suggestion session');
     assert.match(html, /data-document-uri="file:\/\/\/song\.guitardsl" data-document-version="12" data-session-generation="4"/);
