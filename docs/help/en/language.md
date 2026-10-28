@@ -257,3 +257,5 @@ mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4~ [c4,e4,g4]/4 r/2 |
 <!-- help-sources: syntax:11 -->
 
 Each row has a treble clef, and the first row shows the time signature. Chord names sit above the staff, stroke marks above the slashes, and lyrics below. A key or time-signature change starts a new row. The complete rules are in the GuitarDSL syntax specification (`docs/specs/guitardsl-syntax.md` in the source repository).
+
+When a row contains at least two of melody, visible rhythm, and TAB staves, it has one music brace at the left and connected barlines only across the gaps between staves. A hidden implicit rhythm staff under TAB does not count.

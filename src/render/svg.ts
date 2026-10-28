@@ -26,6 +26,10 @@ import {
   PageOrientation,
   PageSize,
   RUNNING_HEADER_HEIGHT,
+  MELODY_STAVE_BOTTOM,
+  MELODY_STAVE_TOP,
+  STAFF_LEFT_EDGE,
+  STAFF_LINE_OFFSETS,
   SYSTEM_UNIT_GAP,
   SYSTEM_UNIT_WIDTH,
   ScoreLayout,
@@ -214,6 +218,7 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   const lanes = renderRowLanes(row, ctx, spans);
   const shift = geometry.annotationTop - geometry.lift;
   const body = shift !== 0 ? `<g transform="translate(0, ${fmt(shift)})">${content}</g>` : content;
+  const staffGroupConnector = renderStaffGroupConnector(row, ctx);
   const includeRhythmColumns = geometry.kind === 'rhythm' || geometry.kind === 'melody' || geometry.rhythmRendered;
   const measureAnchors = row.measures.map((measure, index) => {
     const { bx, width } = measureBounds(ctx, row.measures.length, index);
@@ -225,7 +230,65 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
       .join(';');
     return `<rect class="playback-measure-anchor" data-measure-index="${measure.measureIndex}" data-playback-duration-beats="${fmt(fnum(measure.expectedBeats), 8)}" data-playback-columns="${playbackColumns}" x="${fmt(bx)}" y="0" width="${fmt(width)}" height="${fmt(geometry.unitHeight)}" fill="none" pointer-events="none"/>`;
   }).join('');
-  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${body}</g>\n`;
+  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${staffGroupConnector}${body}</g>\n`;
+}
+
+const STAFF_BRACE_PATH = 'M 24,5 L 21,8 L 20,8 L 12,17 L 8,25 L 8,27 L 7,28 L 7,33 L 6,34 L 6,42 L 7,43 L 7,48 L 8,49 L 9,56 L 10,57 L 11,62 L 13,65 L 14,70 L 16,73 L 16,76 L 18,80 L 18,83 L 19,84 L 19,88 L 20,89 L 20,98 L 19,99 L 19,102 L 18,103 L 18,105 L 16,109 L 14,111 L 14,112 L 8,118 L 6,119 L 6,120 L 12,125 L 12,126 L 17,132 L 18,134 L 18,136 L 19,137 L 19,141 L 20,142 L 20,150 L 19,151 L 18,160 L 17,161 L 17,163 L 16,164 L 16,166 L 15,167 L 14,172 L 10,180 L 10,183 L 9,184 L 9,186 L 8,187 L 8,190 L 7,191 L 7,196 L 6,197 L 6,205 L 7,206 L 7,211 L 8,212 L 8,214 L 9,215 L 9,217 L 11,221 L 14,224 L 14,225 L 22,233 L 25,234 L 17,226 L 13,218 L 13,215 L 12,214 L 12,202 L 13,201 L 13,198 L 14,197 L 14,193 L 15,192 L 15,190 L 16,189 L 16,187 L 17,186 L 17,184 L 18,183 L 18,181 L 19,180 L 19,178 L 20,177 L 20,175 L 21,174 L 21,172 L 23,168 L 23,164 L 24,163 L 24,158 L 25,157 L 25,150 L 24,149 L 24,144 L 23,143 L 23,141 L 22,140 L 22,138 L 21,136 L 19,134 L 17,130 L 9,122 L 7,121 L 7,119 L 10,116 L 11,116 L 19,107 L 23,99 L 23,96 L 24,95 L 24,91 L 25,90 L 25,82 L 24,81 L 24,76 L 23,75 L 22,68 L 21,67 L 21,65 L 20,64 L 20,62 L 19,61 L 18,56 L 16,53 L 16,50 L 15,49 L 15,47 L 14,46 L 14,43 L 13,42 L 13,39 L 12,38 L 12,25 L 13,24 L 14,19 L 16,15 L 19,12 L 19,11 L 21,10 L 25,6 L 25,5 Z';
+const STAFF_BRACE_PATH_TOP = 5;
+const STAFF_BRACE_PATH_BOTTOM = 234;
+const STAFF_BRACE_PATH_RIGHT = 25;
+const STAFF_BRACE_X_GAP = 3;
+
+function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
+  const { geometry, measures } = row;
+  const bodyShift = geometry.annotationTop - geometry.lift;
+  const intervals: { top: number; bottom: number }[] = [];
+  const addFiveLineStaff = (offset: number): void => {
+    intervals.push({
+      top: MELODY_STAVE_TOP + offset + bodyShift,
+      bottom: MELODY_STAVE_BOTTOM + offset + bodyShift
+    });
+  };
+
+  if (measures.some(measure => measure.melody !== undefined)) addFiveLineStaff(0);
+  if (geometry.rhythmRendered) {
+    addFiveLineStaff(geometry.containsTab ? geometry.finalRhythmOffset : geometry.rhythmOffset);
+  }
+  if (geometry.containsTab) {
+    intervals.push({
+      top: geometry.tabOffset + bodyShift,
+      bottom: geometry.tabOffset + geometry.tabStaffHeight + bodyShift
+    });
+  }
+
+  intervals.sort((a, b) => a.top - b.top);
+  if (intervals.length < 2) return '';
+
+  const top = intervals[0].top;
+  const bottom = intervals[intervals.length - 1].bottom;
+  const height = bottom - top;
+  if (height <= 0) return '';
+
+  const braceScaleY = height / (STAFF_BRACE_PATH_BOTTOM - STAFF_BRACE_PATH_TOP);
+  const braceTranslateX = STAFF_LEFT_EDGE - STAFF_BRACE_PATH_RIGHT - STAFF_BRACE_X_GAP;
+  const braceTranslateY = top - STAFF_BRACE_PATH_TOP * braceScaleY;
+  const boundaryXs = new Set<number>();
+  measures.forEach((measure, index) => {
+    const { bx, width } = measureBounds(ctx, measures.length, index);
+    boundaryXs.add(bx + width);
+    if (index === 0 && measure.repeatStart) boundaryXs.add(bx);
+  });
+
+  const gapConnectors = [...boundaryXs].sort((a, b) => a - b).map(x =>
+    intervals.slice(0, -1).map((staff, index) => {
+      const next = intervals[index + 1];
+      return next.top > staff.bottom
+        ? `<line class="staff-group-barline-connector" x1="${fmt(x)}" y1="${fmt(staff.bottom)}" x2="${fmt(x)}" y2="${fmt(next.top)}" stroke="#000" stroke-width="1.2"/>`
+        : '';
+    }).join('')
+  ).join('');
+
+  return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/><path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>${gapConnectors}</g>`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {
@@ -348,21 +411,20 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
   const sectionSize = style?.sectionSize ?? 9.5;
   const lyricSize = style?.lyricSize ?? 10;
 
-  const staveY = 70;
-  const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
+  const staveLines = STAFF_LINE_OFFSETS.map(dy => MELODY_STAVE_TOP + dy);
 
   let staveSvg = '';
   if (opts.drawStaff !== false) {
     staveLines.forEach(y => {
-      staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
+      staveSvg += `<line x1="${fmt(STAFF_LEFT_EDGE)}" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
     });
-    staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+    staveSvg += `<line x1="${fmt(STAFF_LEFT_EDGE)}" y1="${staveLines[0]}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
   }
 
   // Treble clef appears at the start of every system row (standard musical notation convention)
   let clefSvg = opts.drawStaff === false ? '' : `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
   if (opts.drawStaff !== false && opts.drawTimeSignature) {
-    clefSvg += renderTimeSignature(opts.prefix, staveY);
+    clefSvg += renderTimeSignature(opts.prefix, MELODY_STAVE_TOP);
   }
 
   let barsSvg = '';

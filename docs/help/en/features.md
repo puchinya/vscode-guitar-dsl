@@ -77,6 +77,8 @@ Measures wrap onto rows automatically (4 per row by default, set with `measures_
 
 Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any melody and melody lyrics, with a stacked `T` / `A` / `B` clef, broken string lines behind centered fret numbers, and rhythm marks above the staff. TAB carries its own rhythm, so an implicit slash-rhythm staff is omitted; explicitly authored rhythm is shown when `show_rhythm: true`. TAB and PDF use the same page SVG rendering path.
 
+When a row has at least two of melody, visible rhythm, and TAB staves, a single music brace appears on the left and barlines connect across the gaps between staves. A TAB-only row does not count its hidden implicit rhythm staff.
+
 ### PDF Export
 <!-- help-sources: extension:3 extension:4 -->
 

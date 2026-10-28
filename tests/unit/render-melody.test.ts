@@ -2,7 +2,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGuitarDsl } from '../../src/compiler';
-import { SYSTEM_UNIT_HEIGHT, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
+import { MELODY_STAVE_BOTTOM, MELODY_STAVE_TOP, STAFF_LEFT_EDGE, SYSTEM_UNIT_HEIGHT, getSystemGeometry, layoutScore, splitIntoRows } from '../../src/render/layout';
+import { fmt, getRenderContext, measureBounds } from '../../src/render/notation';
 import { renderContinuousSvg, renderScoreSheets } from '../../src/render/svg';
 
 // Unique fragments of the vector accidental glyphs (src/render/notation.ts).
@@ -16,6 +17,11 @@ function count(text: string, needle: string): number {
 
 function svgOf(dsl: string): string {
   return renderContinuousSvg(parseGuitarDsl(dsl));
+}
+
+function staffGroupConnectors(svg: string): string[] {
+  return [...svg.matchAll(/<g class="staff-group-connector" pointer-events="none">([\s\S]*?)<\/g>/g)]
+    .map(match => match[1]);
 }
 
 describe('render - melody systems', () => {
@@ -39,6 +45,71 @@ describe('render - melody systems', () => {
     const score = parseGuitarDsl('| C | 4.d 4.d 4.d 4.d |');
     assert.strictEqual(getSystemGeometry(score.measures, score).unitHeight, SYSTEM_UNIT_HEIGHT);
     assert.strictEqual(getSystemGeometry(score.measures, score).kind, 'rhythm');
+  });
+
+  it('draws one reference-matched brace and aligned gap connector per melody/rhythm system', () => {
+    const score = parseGuitarDsl([
+      'measures_per_row: 1',
+      '| C | D |',
+      'mel: | c4/1 | d4/1 |'
+    ].join('\n'));
+    const continuous = renderContinuousSvg(score);
+    const groups = staffGroupConnectors(continuous);
+    const rows = splitIntoRows(score).flat();
+    assert.strictEqual(groups.length, rows.length);
+
+    const reference = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'specs', 'gui_design', 'proposals', 'issue-160', 'standard-brace-reference.svg'), 'utf8');
+    const referencePath = reference.match(/<path class="staff-brace" d="([^"]+)"/)?.[1];
+    assert.ok(referencePath, 'reference SVG contains the approved brace path');
+    const context = getRenderContext(score);
+
+    groups.forEach((group, index) => {
+      const geometry = rows[index].geometry;
+      const bodyShift = geometry.annotationTop - geometry.lift;
+      assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 1);
+      assert.strictEqual((group.match(/class="staff-group-left-connector"/g) ?? []).length, 1);
+      assert.strictEqual((group.match(/class="staff-group-barline-connector"/g) ?? []).length, 1);
+      assert.ok(group.includes(`d="${referencePath}"`), 'uses the exact filled brace silhouette from the reference');
+      const brace = group.match(/<path class="staff-brace"[^>]*\/>/)?.[0];
+      assert.ok(brace?.includes('fill="#000"') && !brace.includes('stroke='), 'brace is a black filled path');
+      assert.ok(brace?.includes('transform="translate(-3 '), 'brace stays inside the left margin with clearance from the staff edge');
+
+      const left = group.match(/<line class="staff-group-left-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/);
+      assert.ok(left);
+      assert.deepStrictEqual(left.slice(1).map(Number), [
+        STAFF_LEFT_EDGE,
+        Number(fmt(bodyShift + MELODY_STAVE_TOP)),
+        STAFF_LEFT_EDGE,
+        Number(fmt(bodyShift + geometry.rhythmOffset + MELODY_STAVE_BOTTOM))
+      ]);
+
+      const connector = group.match(/<line class="staff-group-barline-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/);
+      assert.ok(connector);
+      const { bx, width } = measureBounds(context, 1, 0);
+      assert.deepStrictEqual([Number(connector[1]), Number(connector[3])], [Number(fmt(bx + width)), Number(fmt(bx + width))]);
+    });
+
+    const pages = renderScoreSheets(score, 'A4', 'portrait').join('');
+    assert.strictEqual(staffGroupConnectors(pages).length, rows.length);
+    assert.strictEqual((pages.match(/class="playback-measure-anchor"/g) ?? []).length, score.measures.length);
+  });
+
+  it('keeps one staff-group connector on each page-broken melody/rhythm system', () => {
+    const score = parseGuitarDsl([
+      'measures_per_row: 1',
+      '|: C | D :|',
+      'mel: | c4/1 | d4/1 |',
+      'pagebreak',
+      '| E | F |',
+      'mel: | e4/1 | f4/1 |'
+    ].join('\n'));
+    const rows = splitIntoRows(score).flat();
+    const pages = renderScoreSheets(score, 'A4', 'portrait');
+    assert.strictEqual(pages.length, 2, 'manual pagebreak starts a second page');
+    assert.strictEqual(pages.reduce((count, page) => count + staffGroupConnectors(page).length, 0), rows.length);
+    assert.ok(pages.every(page => staffGroupConnectors(page).every(group =>
+      (group.match(/class="staff-brace"/g) ?? []).length === 1
+    )));
   });
 
   it('grows melody systems with the number of verses', () => {

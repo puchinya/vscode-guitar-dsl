@@ -11,6 +11,7 @@
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
+- Related Issue: [Issue #160](https://github.com/puchinya/vscode-guitar-dsl/issues/160)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -30,6 +31,7 @@
 | コード進行の melody-aware audition と A/B | Issue #129、拡張機能仕様 §3.17、§4.8 |
 | Inspector の設定比較、Preview state restore、進行との排他 | Issue #135、拡張機能仕様 §4B、§4D |
 | Preview toolbar の transport / disclosure、Practice 行、layout focus restore | Issue #136、拡張機能仕様 §4.2、§4.6 |
+| 複数譜表のブレースと譜表間小節線 | Issue #160、言語構文仕様 §11、拡張機能仕様 §4.3、§4.7 |
 
 ## Architecture
 
@@ -39,6 +41,7 @@
 - `src/pdf.ts` はページ SVG を `pdfkit` / `svg-to-pdfkit` でベクター PDF にする。Noto Sans JP の同梱フォントを登録し、書き出し時は一時ファイルを経て確定する設計が記録されている。
 - `src/playOrder.ts::resolvePlayOrder()` は唯一の演奏順 authority、`src/playbackTimeline.ts::buildPlaybackTimeline()` は唯一の score-time authority とする。再生タイムラインは元スコアを書き換えず、別の repeat resolver や timing engine を追加しない。
 - リズム符タイ（Issue #142）の接続関係は Compiler が検証する。`src/render/svg.ts` はその関係を既存の `rhythmHeads()` / `renderTieArc()` で描き、小節間の連桁は作らない。段・ページをまたぐ弧は各 system の端で分割し、Preview と PDF が同じ SVG を使う境界を保つ。
+- 複数譜表グループ（Issue #160）は `renderSystem()` の既存描画分岐と `SystemGeometry` から、実際に描かれる五線・TAB 譜表の縦区間を求める純粋な SVG 装飾である。小節 x 座標は既存の `measureBounds()` を使う。新しいスコアイベント、別座標系、レイアウト寸法の変更を導入しない。
 - Extension Host はシングルトン Preview panel とコマンド転送だけを所有する。Playback / Practice の状態は Webview に置き、ホストは再生・seek・loop 状態を保持しない。
 
 ### レイアウトと出力の同一性
@@ -46,6 +49,14 @@
 `layout.ts` は用紙座標を pt（1/72 inch）で扱い、シート SVG の `viewBox` と PDF ページを一致させる。現行レイアウトでは上下 10 mm・左右 12 mm の余白、横向きの2カラムと12 mmガターを持つ。段は既定4小節を基準幅780で組み、用紙カラムへ scale する。段ごとの高さはメロディ譜表や歌詞段数を含めて見積もる。手動 pagebreak と段高からの自動改ページを併用し、空ページでも最低1段を受け入れて無限ループを避ける。縦向きは1シートに1ページ、横向きは2ページを配置する。
 
 ページプレビューとPDFは `renderScoreSheets()` の同一ページ SVG を共有する。Web 用 continuous モードはページを分割せず縦長 SVG を生成する。メロディ付き段では、リズムとメロディの発音位置の union を共通 x 座標列にし、両段を整列する。
+
+#### Staff-group brace and inter-staff barlines (Issue #160)
+
+Each system with at least two rendered five-line or six-line staves has one filled music brace to the left of the existing staff start and one vertical left connector spanning the outer staff lines. The renderer counts only the melody, explicitly rendered rhythm, and TAB staves selected by the existing `renderSystem()` branches. An implicit rhythm staff hidden by TAB does not count; lyrics, chord names, diagrams, and annotation lanes are not staves.
+
+For each measure boundary, the renderer uses `measureBounds()` and draws a thin segment only through the gaps between adjacent staves. Existing barlines inside each staff keep their original type and width, including repeat, double, final, volta, tie, and TAB technique marks. Single-staff systems receive no added brace or connector.
+
+The ornament group is inside the existing system transform and uses the same local coordinates as the notation body after `annotationTop - lift`. It has no pointer events, does not alter measure or anchor geometry, and is generated once per system by the shared SVG renderer used by continuous Preview, page Preview, and PDF.
 
 ### Preview 更新と PDF 出力
 

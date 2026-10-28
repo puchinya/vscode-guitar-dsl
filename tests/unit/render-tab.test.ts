@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { parseGuitarDsl } from '../../src/compiler';
 import { getSystemGeometry, splitIntoRows } from '../../src/render/layout';
 import { renderContinuousSvg, renderScoreSheets } from '../../src/render/svg';
-import { getRenderContext, renderTimeSignature, systemPrefix } from '../../src/render/notation';
+import { fmt, getRenderContext, measureBounds, renderTimeSignature, systemPrefix } from '../../src/render/notation';
 
 function tabRestGlyph(svg: string, base: number): string {
   const marker = `<g class="tab-rest-glyph" data-base="${base}">`;
@@ -16,6 +16,11 @@ function tabRestGlyph(svg: string, base: number): string {
     if (depth === 0) return svg.slice(start, groupTag.lastIndex);
   }
   assert.fail(`unterminated TAB rest glyph for base ${base}`);
+}
+
+function staffGroupConnectors(svg: string): string[] {
+  return [...svg.matchAll(/<g class="staff-group-connector" pointer-events="none">([\s\S]*?)<\/g>/g)]
+    .map(match => match[1]);
 }
 
 describe('TAB rendering and layout', () => {
@@ -42,6 +47,61 @@ describe('TAB rendering and layout', () => {
     const svg = renderContinuousSvg(score);
     assert.ok(svg.includes('class="tab-staff"'));
     assert.strictEqual((svg.match(/class="tab-string-line"/g) ?? []).length, 6);
+  });
+
+  it('groups only the rendered melody, explicit rhythm, and TAB staves', () => {
+    const cases = [
+      { name: 'melody and rhythm', dsl: '| C |\nmel: | c4/1 |', gaps: 1 },
+      { name: 'melody and TAB', dsl: 'show_rhythm: false\n| C |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 1 },
+      { name: 'TAB and explicit rhythm', dsl: 'show_rhythm: true\n| C 4 4 4 4 |\ntab: | 6f0/1 |', gaps: 1 },
+      { name: 'melody, rhythm, and TAB', dsl: '| C 4 4 4 4 |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 2 }
+    ];
+    for (const testCase of cases) {
+      const svg = renderContinuousSvg(parseGuitarDsl(testCase.dsl));
+      const [group] = staffGroupConnectors(svg);
+      assert.ok(group, testCase.name);
+      assert.strictEqual(staffGroupConnectors(svg).length, 1, testCase.name);
+      assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 1, testCase.name);
+      assert.strictEqual((group.match(/class="staff-group-left-connector"/g) ?? []).length, 1, testCase.name);
+      assert.strictEqual((group.match(/class="staff-group-barline-connector"/g) ?? []).length, testCase.gaps, testCase.name);
+    }
+
+    const singleStaffCases = [
+      '| C | 4 4 4 4 |',
+      'show_rhythm: false\n| C |\nmel: | c4/1 |\nlyr: あ',
+      '| C |\ntab: | 6f0/1 |'
+    ];
+    for (const dsl of singleStaffCases) {
+      assert.strictEqual(staffGroupConnectors(renderContinuousSvg(parseGuitarDsl(dsl))).length, 0, dsl);
+    }
+  });
+
+  it('connects only measureBounds x positions across both gaps in a three-staff system', () => {
+    const score = parseGuitarDsl([
+      'measures_per_row: 2',
+      '|: C 4 4 4 4 | D 4 4 4 4 :|',
+      'mel: | c4/1 | d4/1 |',
+      'tab: | 6f0/1 | 6f1/1 |'
+    ].join('\n'));
+    const svg = renderContinuousSvg(score);
+    const [group] = staffGroupConnectors(svg);
+    assert.ok(group);
+    assert.ok(svg.includes('class="tab-repeat-start-thick"'));
+    assert.ok(svg.includes('class="tab-repeat-end-thick"'));
+
+    const context = getRenderContext(score);
+    const expectedXs: number[] = [];
+    if (score.measures[0].repeatStart) {
+      expectedXs.push(Number(fmt(measureBounds(context, 2, 0).bx)), Number(fmt(measureBounds(context, 2, 0).bx)));
+    }
+    expectedXs.push(...[0, 1].flatMap(index => {
+      const { bx, width } = measureBounds(context, 2, index);
+      return [Number(fmt(bx + width)), Number(fmt(bx + width))];
+    }));
+    const connectors = [...group.matchAll(/<line class="staff-group-barline-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"[^>]*\/>/g)];
+    assert.deepStrictEqual(connectors.map(match => Number(match[1])), expectedXs);
+    assert.ok(connectors.every(match => match[1] === match[3]), 'each inter-staff connector is vertical');
+    assert.ok(connectors.every(match => Number(match[2]) < Number(match[4])), 'connectors span only downward staff gaps');
   });
 
   it('uses local coordinates, a 50-unit equal-weight staff, and lines through the prefix', () => {
