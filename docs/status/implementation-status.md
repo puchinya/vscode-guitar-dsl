@@ -3,10 +3,21 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-25
-- **全体ステータス**: Issue #129（PR #131）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #132 は統合受入れを記録した [PR #157](https://github.com/puchinya/vscode-guitar-dsl/pull/157) のレビュー待ちでopen。
+- **最終更新日**: 2026-10-28
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #158 / PR #159 はレビュー待ち。
 
 ---
+
+## Issue #158: Preview 双方向楽譜編集と変数 Inspector
+
+- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿ってPreviewを通常/編集/練習の排他3モードへ統合し、過去レビューを反映済み。Practice Guideの421px幾何同期（D1）と狭幅Inspectorタブ（D2）を修正した。Workbench snapshot復元でHost windowが非前景の場合にactive tab復元が失敗し得たため、復元直前にHost前景フォーカスを確保するようE2E helperを修正。Practice切替E2Eもmode・aria-pressed・Practice行が一致するまで待つ。最新の全体 `npm test` はPASS。PR #159はレビュー待ちで未マージ。
+- **契約**: Issue本文の最新 approved contract comment `6398128339` を正本とし、ローカルコピーは **38,687 bytes / SHA-256 `f0396b27751bd79f8dfff646c415fe23846ee635f7fba55d4b77785f6579abcf`** と完全一致することを確認。PR追補 `6398576705` は独立Edit/Practice切替を排他3モードへ置き換える決定で、契約本文/SHAは変更せず、旧追補との優先関係を記録する。
+- **Milestone**: profile version 0.1.0 を割当済み。
+- **設計**: 承認済みの2枚の提案SVGを追加。Previewの通常/編集/練習モード、600px未満のネイティブselect、モード別の編集ドック/Practice Guide排他を反映した実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
+- **検証**: D1 focused E2Eは**1件 PASS**。幾何安定条件を81回確認し、全回で連続2 RAF後に収束、body paddingとpanel高の最大差は約0.0004 CSS px。421px実幅、折畳み、表示切替、短いviewport、縦スクロール末尾を確認した。D2の画面証拠E2Eは日本語・英語それぞれ**1件 PASS**し、293/360/480px、ARIA、focus、overflowを検査。設定サブタブと変数タブの日英 × light/dark 8枚を `docs/status/evidence/issue-158/inspector-{settings,variables}-{ja,en}-{light,dark}-narrow.png` に保存した。Host snapshot復元前景化とPractice切替状態同期のfocused E2Eは各**1 PASS**。最新 `npm test` は **PASS**（unit 1,220 PASS、E2E 123 PASS / 6 pending）。`check:help`、`check:ai`、`compile:all`、`vscode:prepublish` もPASS（wasm-bindgenはcargo install fallback）。`validate-docs` valid、契約SHA verified。`vsce ls` は **1,607 entries**、必須項目あり・開発パスなし。4件の古いignored診断ログはVSIX候補から除去した。`git diff --check` PASS。
+- **受入状態**: C012はユーザー了承により `NOT RUN — user accepted`（VoiceOver/NVDAとWindows/Linux手動確認）とし、PASSにしない。D1/D2およびHost snapshot復元の修正は最終suiteで通過。C014はconfigured verify_finalの各コマンドと追加検証がPASS、C020は最終 `npm test` PASSにより達成。現HEAD self-reviewを更新し、PR #159はマージせずレビュー待ちとする。
+- **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[Preview三モード実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)、Inspector証拠はPR #159の最新Completion Reportにリンクする。Preview編集状態は英語/日本語 × light/dark × 421/600/840/1100px。Inspector上位タブ・設定サブタブ・変数欄は英語/日本語 × light/darkの8枚を現在の実Workbenchから保存した。
+- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新の自己レビュー、検証ゲート、未実施の手動/OS範囲はPR本文および現HEADに紐付くCompletion Report/Required Checkを正本として追跡する。
 
 ## Issue #132: GUI再設計の統合受入れ
 

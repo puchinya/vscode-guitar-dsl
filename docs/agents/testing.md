@@ -19,6 +19,12 @@ All automated tests must be placed in designated directories based on their scop
 - Any test command that launches VS Code/Electron must always run outside the command sandbox. This applies to both `npm run test:e2e` and `npm test` (which includes E2E tests). An isolated VS Code test profile does not remove this requirement.
 - If VS Code exits during startup when an E2E command is run inside a sandbox (for example, with `SIGABRT`), treat that as an invalid test run and rerun the command outside the sandbox.
 
+### E2E Run Frequency
+- Use a focused E2E to answer a specific integration question; use unit tests or compile checks for changes that do not need a Workbench run. Avoid repeating the same E2E after each small edit.
+- For delivery, run the configured final gate once against the final code. If code changes afterward, rerun only affected diagnostics and then refresh the final gate because its earlier result is stale.
+- When a Workbench or host-activation failure stops a run, inspect its bounded trace and use at most one focused diagnostic run when needed to distinguish setup failure from product behavior. Do not loop full-suite or screenshot-only runs to turn an environmental failure green; report the exact failure and mark tests not reached as `NOT RUN`.
+- Screenshot capture with `GUITARDSL_E2E_CAPTURE_SCREENSHOTS=1` uses a separate isolated profile. Treat capture failures separately from the normal E2E result. If setup fails before the owning Issue's screenshots are written, report the evidence as `NOT RUN` or `BLOCKED`; do not loop full capture runs or keep screenshots generated for unrelated Issues.
+
 ---
 
 ## Verification Commands

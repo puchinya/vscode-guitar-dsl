@@ -88,6 +88,7 @@ function selectedPitchEventIndexes(
     const owner = owners[0];
     const range = owner.eventRange!;
     if (!Number.isInteger(owner.measureIndex) || range.start < 0 || range.end <= range.start) return undefined;
+    if (range.collection === 'tab') return undefined;
     const indexes = selected[range.collection].get(owner.measureIndex!) ?? new Set<number>();
     for (let index = range.start; index < range.end; index++) indexes.add(index);
     selected[range.collection].set(owner.measureIndex!, indexes);

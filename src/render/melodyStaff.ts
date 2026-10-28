@@ -2,7 +2,7 @@
 // and syllable lyrics (docs/specs/guitardsl-syntax.md §12–§16). Drawn in system unit coordinates above the
 // rhythm staff.
 
-import { MeasureData, Pitch, eventPitches } from '../compiler';
+import { MeasureData, ParsedScore, Pitch, eventPitches } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, ZERO, fadd, fnum, tupletGroups } from '../duration';
 import { MelodyNote, isGrace } from '../melody';
 import { beamGroupIndex } from '../scoreEvents';
@@ -40,6 +40,7 @@ import {
   staffPosition,
   writtenStaffPosition
 } from './notation';
+import { visualBindingAttribute, visualBindingForEvent, visualBindingForOrdinal } from './visualBindings';
 import {
   renderBend,
   renderBreath,
@@ -77,7 +78,10 @@ interface GroupMember {
 
 interface Head {
   measureIdx: number;
+  measureIndex: number;
+  eventIndex: number;
   note: MelodyNote;
+  visualBindingId?: string;
   part: NoteValuePart;
   beats: Fraction;
   offset: number;
@@ -161,7 +165,8 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       let chordX = bx + 8;
       if (chIdx > 0 || ch.beat > 0) chordX = chordXAt(columns, bx, width, ch.beat, barBeats(m));
       chordX = Math.max(lastChordRight + 6, chordX);
-      const chordName = renderChordName(ch, chordX, chordSize);
+      const chordName = renderChordName(ch, chordX, chordSize,
+        visualBindingAttribute(visualBindingForOrdinal(ctx.score, 'chord', m.measureIndex, chIdx)));
       lastChordRight = chordX + chordName.width;
       header += chordName.svg;
     });
@@ -220,7 +225,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
       });
       pendingGraces.length = 0;
     };
-    m.melody.forEach(note => {
+    m.melody.forEach((note, eventIndex) => {
       if (isGrace(note)) {
         pendingGraces.push(note);
         return;
@@ -244,7 +249,11 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
         const stemLength = STEM_LENGTH + (h.part.base >= 16 ? FLAG_16_STEM_EXTENSION : 0);
         heads.push({
           measureIdx: idx,
+          measureIndex: m.measureIndex,
+          eventIndex,
           note,
+          visualBindingId: visualBindingForEvent(ctx.score, ['melodyNote', 'melodyGroup', 'melodyRest', 'letReference'],
+            m.measureIndex, 'melody', eventIndex),
           part: h.part,
           beats: h.beats,
           offset: fnum(h.offset),
@@ -281,7 +290,7 @@ export function renderMelodyStaff(measures: MeasureData[], ctx: RenderContext, o
   out += renderArticulations(heads);
   out += renderConnections(heads, graces, ctx);
   collectSpans(heads, measures, ctx, opts.spans);
-  out += renderSyllables(heads, opts.geometry, lyricSize);
+  out += renderSyllables(heads, opts.geometry, lyricSize, ctx.score);
   return out;
 }
 
@@ -399,12 +408,12 @@ function renderHeads(heads: Head[]): string {
     }
 
     if (h.note.isRest) {
-      out += renderRestGlyph(h.part.base, h.x, MID_Y, STAVE_LINES);
+      out += renderRestGlyph(h.part.base, h.x, MID_Y, STAVE_LINES, visualBindingAttribute(h.visualBindingId));
       if (h.part.dotted) out += `<circle cx="${fmt(h.x + 8)}" cy="${MID_Y - 4}" r="1.6" fill="#000"/>`;
       continue;
     }
     if (h.members) {
-      out += renderGroupHead(h, h.members, state);
+      out += renderGroupHead(h, h.members, state, visualBindingAttribute(h.visualBindingId));
       continue;
     }
 
@@ -423,7 +432,7 @@ function renderHeads(heads: Head[]): string {
     }
 
     // Notehead
-    out += renderNotehead(h.part.base, h.x, h.y);
+    out += renderNotehead(h.part.base, h.x, h.y, visualBindingAttribute(h.visualBindingId));
 
     if (h.part.dotted) {
       const dotY = h.pos % 2 === 0 ? h.y - 4 : h.y;
@@ -443,7 +452,7 @@ function renderHeads(heads: Head[]): string {
 }
 
 /** A note group head: ledger lines once, accidental columns, displaced seconds, dots and one shared stem. */
-function renderGroupHead(h: Head, members: GroupMember[], state: Map<string, number>): string {
+function renderGroupHead(h: Head, members: GroupMember[], state: Map<string, number>, visualAttrs = ''): string {
   let out = '';
   const xs = members.map(m => h.x + m.dx);
   const left = Math.min(...xs);
@@ -467,7 +476,7 @@ function renderGroupHead(h: Head, members: GroupMember[], state: Map<string, num
     });
   }
 
-  members.forEach((m, i) => (out += renderNotehead(h.part.base, xs[i], m.y)));
+  members.forEach((m, i) => (out += renderNotehead(h.part.base, xs[i], m.y, visualAttrs)));
 
   if (h.part.dotted) {
     const dotYs = new Set(members.map(m => (m.pos % 2 === 0 ? m.y - 4 : m.y)));
@@ -682,7 +691,7 @@ function collectSpans(heads: Head[], measures: MeasureData[], ctx: RenderContext
   });
 }
 
-function renderSyllables(heads: Head[], geometry: SystemGeometry, lyricSize: number): string {
+function renderSyllables(heads: Head[], geometry: SystemGeometry, lyricSize: number, score: ParsedScore): string {
   let out = '';
   const sung = heads.filter(h => h.isFirstPart && !h.note.isRest);
   for (let verse = 0; verse < geometry.verseCount; verse++) {
@@ -707,7 +716,8 @@ function renderSyllables(heads: Head[], geometry: SystemGeometry, lyricSize: num
         out += `<text x="${fmt(hx)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">-</text>`;
         pendingHyphenFrom = null;
       }
-      out += `<text x="${fmt(h.x)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(syl.text)}</text>`;
+      const bindingId = visualBindingForEvent(score, ['lyric'], h.measureIndex, 'melody', h.eventIndex, verse);
+      out += `<text${visualBindingAttribute(bindingId)} x="${fmt(h.x)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(syl.text)}</text>`;
       lastEnd = h.x + halfWidth;
       if (syl.hyphenToNext) pendingHyphenFrom = lastEnd;
     }

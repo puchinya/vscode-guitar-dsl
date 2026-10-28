@@ -1,6 +1,8 @@
 {
   "command.showPreview.title": "GuitarDSL: Open Preview to the Side",
   "command.openInspector.title": "GuitarDSL: Open Inspector",
+  "command.togglePreviewEditMode.title": "GuitarDSL: Toggle Preview Editing",
+  "command.showVariables.title": "GuitarDSL: Manage let Variables",
   "command.exportPdf.title": "GuitarDSL: Export PDF / Print",
   "command.importGuitarPro.title": "GuitarDSL: Import Guitar Pro 7/8",
   "command.exportGuitarPro.title": "GuitarDSL: Export Guitar Pro 7",

@@ -68,9 +68,42 @@ async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
     // Preview, while Inspector views retain purpose=webviewView metadata.
     const previewTargets = lastTargets.filter(item => item.type === 'iframe'
       && item.url.startsWith('vscode-webview://')
-      && !(item.url.includes('purpose=webviewView')
-        && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')));
-    if (previewTargets.length === 1) return previewTargets[0];
+      && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')
+      && !item.url.includes('purpose=webviewView'));
+    for (const candidate of previewTargets) {
+      try {
+        const containsPreviewDom = await withDevToolsTarget(candidate, async send => {
+          await send('Runtime.enable');
+          const tree = await send('Page.getFrameTree');
+          const frameTree = tree.frameTree as Record<string, unknown> | undefined;
+          let frameId: string | undefined;
+          const visit = (node: Record<string, unknown>): void => {
+            const frame = node.frame as { id?: string; name?: string } | undefined;
+            if (frame?.name === 'active-frame') frameId = frame.id;
+            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+          };
+          if (frameTree) {
+            visit(frameTree);
+            if (!frameId) {
+              const root = frameTree.frame as { id?: string; url?: string } | undefined;
+              if (root?.url?.startsWith('vscode-webview://')) frameId = root.id;
+            }
+          }
+          if (!frameId) return false;
+          const isolated = await send('Page.createIsolatedWorld', { frameId, worldName: 'guitardsl-preview-target-check' });
+          if (typeof isolated.executionContextId !== 'number') return false;
+          const result = await send('Runtime.evaluate', {
+            contextId: isolated.executionContextId,
+            expression: `!!document.querySelector('.toolbar-container') && !!document.getElementById('preview-edit-row')`,
+            returnByValue: true
+          });
+          return (result.result as { value?: unknown } | undefined)?.value === true;
+        });
+        if (containsPreviewDom) return candidate;
+      } catch {
+        // A webview may be shutting down while a different Preview target is opening.
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
@@ -155,6 +188,7 @@ export async function captureWorkbenchScreenshot(filename: string, issueNumber =
 
 /** Captures only the active Preview Webview at its real CSS viewport size. */
 let previewViewportWasOverridden = false;
+let previewWorkbenchMetricsWereOverridden = false;
 
 export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145, previewViewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
@@ -255,61 +289,132 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
 }
 
 /** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
-export async function setPreviewWebviewViewportWidth(width: number): Promise<void> {
+export async function setPreviewWebviewViewportWidth(width: number, height?: number): Promise<void> {
   if (!Number.isFinite(width) || width < 280) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  if (height !== undefined && (!Number.isFinite(height) || height < 240)) {
+    throw new Error(`Invalid Preview Webview viewport height: ${height}`);
+  }
+  const previewTarget = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  const previewTargetId = new URL(previewTarget.url).searchParams.get('id');
+  if (!previewTargetId) throw new Error('The GuitarDSL Preview target has no Webview id');
+  let targetHeight = height === undefined ? 0 : Math.round(height);
+  let deviceScaleFactor = 1;
   await withWorkbenchDevTools(async send => {
     const result = await send('Runtime.evaluate', {
       expression: `JSON.stringify((() => {
+        const previewTargetId = ${JSON.stringify(previewTargetId)};
         const frame = [...document.querySelectorAll('iframe')].find(item => {
           const rect = item.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && (item.getAttribute('src') || '').startsWith('vscode-webview://');
+          const src = item.getAttribute('src') || '';
+          if (rect.width <= 0 || rect.height <= 0 || !src.startsWith('vscode-webview://')) return false;
+          try { return new URL(src, location.href).searchParams.get('id') === previewTargetId; }
+          catch { return false; }
         });
         if (!frame) return { error: 'Preview Webview frame not found' };
         if (!window.__guitardslPreviewViewportState) {
           window.__guitardslPreviewViewportState = {
             frame,
+            previewTargetId,
             width: frame.style.width,
             minWidth: frame.style.minWidth,
             maxWidth: frame.style.maxWidth,
-            flex: frame.style.flex
+            flex: frame.style.flex,
+            height: frame.style.height,
+            minHeight: frame.style.minHeight,
+            maxHeight: frame.style.maxHeight
           };
         }
         frame.style.width = '${Math.round(width)}px';
         frame.style.minWidth = '${Math.round(width)}px';
         frame.style.maxWidth = 'none';
         frame.style.flex = '0 0 ${Math.round(width)}px';
+        ${height === undefined ? '' : `frame.style.height = '${Math.round(height)}px';
+        frame.style.minHeight = '${Math.round(height)}px';
+        frame.style.maxHeight = 'none';`}
         const rect = frame.getBoundingClientRect();
-        return { width: rect.width, parentWidth: frame.parentElement?.getBoundingClientRect().width };
+        return { width: rect.width, height: rect.height, parentWidth: frame.parentElement?.getBoundingClientRect().width };
       })())`,
       returnByValue: true
     });
     const value = (result.result as { value?: unknown } | undefined)?.value;
     if (typeof value !== 'string') throw new Error('Could not resize the Preview Webview frame');
-    const dimensions = JSON.parse(value) as { error?: string; width?: number };
+    const dimensions = JSON.parse(value) as { error?: string; width?: number; height?: number };
     if (dimensions.error) throw new Error(dimensions.error);
     if (Math.abs((dimensions.width ?? 0) - width) > 1) {
       throw new Error(`The Preview Webview frame could not reach ${width}px (actual=${dimensions.width})`);
     }
+    if (height !== undefined && Math.abs((dimensions.height ?? 0) - height) > 1) {
+      throw new Error(`The Preview Webview frame could not reach ${height}px tall (actual=${dimensions.height})`);
+    }
     previewViewportWasOverridden = true;
-    await new Promise(resolve => setTimeout(resolve, 200));
   });
+  await withWorkbenchDevTools(async send => {
+    const before = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio })',
+      returnByValue: true
+    });
+    const beforeValue = (before.result as { value?: unknown } | undefined)?.value;
+    if (typeof beforeValue !== 'string') throw new Error('Could not read the workbench viewport before Preview emulation');
+    const viewport = JSON.parse(beforeValue) as { width?: unknown; height?: unknown; deviceScaleFactor?: unknown };
+    if (typeof viewport.height !== 'number' || typeof viewport.deviceScaleFactor !== 'number') {
+      throw new Error('The workbench returned invalid viewport metrics before Preview emulation');
+    }
+    targetHeight = height === undefined ? Math.round(viewport.height) : Math.round(height);
+    deviceScaleFactor = viewport.deviceScaleFactor as number;
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: Math.round(width),
+      height: targetHeight,
+      deviceScaleFactor,
+      mobile: false,
+      screenWidth: Math.round(width),
+      screenHeight: targetHeight
+    });
+    previewWorkbenchMetricsWereOverridden = true;
+  });
+  await withDevToolsTarget(previewTarget, async send => {
+    const after = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight })',
+      returnByValue: true
+    });
+    const afterValue = (after.result as { value?: unknown } | undefined)?.value;
+    if (typeof afterValue !== 'string') throw new Error('Could not verify the Preview Webview viewport emulation');
+    const measured = JSON.parse(afterValue) as { width?: unknown; height?: unknown };
+    if (Math.abs(Number(measured.width) - width) > 1 || (height !== undefined && Math.abs(Number(measured.height) - height) > 1)) {
+      throw new Error(`Preview viewport emulation did not apply (actual=${measured.width}x${measured.height}, expected=${width}x${height ?? 'current'})`);
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 200));
 }
 
 /** Clears the Preview Webview viewport override after exact-width acceptance. */
 export async function resetPreviewWebviewViewport(): Promise<void> {
+  if (!previewViewportWasOverridden && !previewWorkbenchMetricsWereOverridden) return;
+  if (previewWorkbenchMetricsWereOverridden) {
+    await withWorkbenchDevTools(async send => {
+      await send('Emulation.clearDeviceMetricsOverride');
+    });
+    previewWorkbenchMetricsWereOverridden = false;
+  }
   if (!previewViewportWasOverridden) return;
   await withWorkbenchDevTools(async send => {
     await send('Runtime.evaluate', {
       expression: `(() => {
         const state = window.__guitardslPreviewViewportState;
         if (!state) return;
-        const frame = state.frame?.isConnected ? state.frame : [...document.querySelectorAll('iframe')].find(item =>
-          (item.getAttribute('src') || '').startsWith('vscode-webview://'));
+        const frame = state.frame?.isConnected ? state.frame : [...document.querySelectorAll('iframe')].find(item => {
+          const src = item.getAttribute('src') || '';
+          if (!src.startsWith('vscode-webview://')) return false;
+          try { return new URL(src, location.href).searchParams.get('id') === state.previewTargetId; }
+          catch { return false; }
+        });
         if (frame) {
           frame.style.width = state.width;
           frame.style.minWidth = state.minWidth;
           frame.style.maxWidth = state.maxWidth;
           frame.style.flex = state.flex;
+          frame.style.height = state.height;
+          frame.style.minHeight = state.minHeight;
+          frame.style.maxHeight = state.maxHeight;
         }
         delete window.__guitardslPreviewViewportState;
       })()`,
@@ -381,29 +486,74 @@ export async function scrollInspectorToControls(): Promise<void> {
 /** Evaluates a test expression in the selected GuitarDSL Inspector renderer. */
 export async function evaluateInspectorWebview<T>(expression: string): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  const targets = await getTargets(port);
-  const inspectorTargets = targets.filter(item => item.type === 'iframe'
-    && item.url.includes('purpose=webviewView')
-    && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
+  let inspectorTargets: Awaited<ReturnType<typeof getTargets>> = [];
+  let lastTargetSummary: string[] = [];
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const targets = await getTargets(port);
+    lastTargetSummary = targets.map(item => `${item.type}:${item.title}:${item.url.slice(0, 180)}`);
+    inspectorTargets = targets.filter(item => item.type === 'iframe'
+      && item.url.includes('purpose=webviewView')
+      && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
+    if (inspectorTargets.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   if (inspectorTargets.length !== 1) {
-    throw new Error(`Expected one GuitarDSL Inspector webview target, found ${inspectorTargets.length}`);
+    throw new Error(`Expected one GuitarDSL Inspector webview target, found ${inspectorTargets.length}; DevTools targets: ${lastTargetSummary.join(' | ') || '(none)'}`);
   }
   return withDevToolsTarget(inspectorTargets[0], async send => {
     await send('Runtime.enable');
-    const tree = await send('Page.getFrameTree');
     let activeFrameId: string | undefined;
-    const visit = (node: Record<string, unknown>): void => {
-      const frame = node.frame as { id?: string; name?: string } | undefined;
-      if (frame?.name === 'active-frame') activeFrameId = frame.id;
-      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-    };
-    if (tree.frameTree) visit(tree.frameTree as Record<string, unknown>);
-    if (!activeFrameId) throw new Error('Could not find the active Inspector webview frame');
-    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-e2e-evaluation' });
+    let contentFrameId: string | undefined;
+    let lastFrames: string[] = [];
+    for (let attempt = 0; attempt < 40 && !activeFrameId && !contentFrameId; attempt++) {
+      const tree = await send('Page.getFrameTree');
+      lastFrames = [];
+      const visit = (node: Record<string, unknown>, depth: number): void => {
+        const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+        if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+        if (frame?.name === 'active-frame') activeFrameId = frame.id;
+        if (depth > 0 && frame?.id && frame.url?.startsWith('vscode-webview://')) contentFrameId = frame.id;
+        if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>, depth + 1));
+      };
+      if (tree.frameTree) {
+        const frameTree = tree.frameTree as Record<string, unknown>;
+        visit(frameTree, 0);
+        if (!activeFrameId && !contentFrameId) {
+          const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+          if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+        }
+      }
+      if (!activeFrameId) await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    const inspectorFrameId = activeFrameId ?? contentFrameId;
+    if (!inspectorFrameId) throw new Error(`Could not find the active Inspector webview frame: ${lastFrames.join(' | ')}`);
+    const isolated = await send('Page.createIsolatedWorld', { frameId: inspectorFrameId, worldName: 'guitardsl-e2e-evaluation' });
     const contextId = isolated.executionContextId;
     if (typeof contextId !== 'number') throw new Error('Could not create an Inspector evaluation context');
+    let inspectorDomReady = false;
+    for (let attempt = 0; attempt < 40 && !inspectorDomReady; attempt++) {
+      const ready = await send('Runtime.evaluate', {
+        contextId,
+        expression: "document.readyState === 'complete' && !!document.getElementById('inspector-context-tabs')",
+        returnByValue: true
+      });
+      inspectorDomReady = (ready.result as { value?: unknown } | undefined)?.value === true;
+      if (!inspectorDomReady) await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!inspectorDomReady) {
+      const state = await send('Runtime.evaluate', {
+        contextId,
+        expression: "JSON.stringify({ readyState: document.readyState, href: location.href, html: document.documentElement?.innerHTML.slice(0, 240) })",
+        returnByValue: true
+      });
+      const description = (state.result as { value?: unknown } | undefined)?.value;
+      throw new Error(`Inspector Webview document did not finish rendering its top-level tabs (${String(description)}; ${inspectorTargets[0].url}; frames=${lastFrames.join(' | ')})`);
+    }
     const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-    if (response.exceptionDetails) throw new Error('Inspector Webview evaluation raised an exception');
+    if (response.exceptionDetails) {
+      const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
+      throw new Error(`Inspector Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'})`);
+    }
     const value = (response.result as { value?: unknown } | undefined)?.value;
     return value as T;
   });
@@ -449,7 +599,10 @@ export async function evaluatePreviewWebview<T>(expression: string): Promise<T> 
         }
         if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
         const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-        if (response.exceptionDetails) throw new Error('Preview Webview evaluation raised an exception');
+        if (response.exceptionDetails) {
+          const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
+          throw new Error(`Preview Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'})`);
+        }
         const value = (response.result as { value?: unknown } | undefined)?.value;
         return value as T;
       });
@@ -609,10 +762,14 @@ export async function waitForPreviewIdentity(identity: {
   throw new Error(`Preview did not load the expected document identity ${JSON.stringify(identity)}; current=${lastState}`);
 }
 
-export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter' | 'ArrowDown'): Promise<void> {
+export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'Home' | 'End'): Promise<void> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const target = await waitForPreviewTarget(port);
-  const code = key === 'Tab' ? 9 : key === 'Escape' ? 27 : key === 'ArrowDown' ? 40 : 13;
+  const virtualKeyCodes: Record<typeof key, number> = {
+    Tab: 9, Escape: 27, Enter: 13, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39,
+    ArrowUp: 38, Home: 36, End: 35
+  };
+  const code = virtualKeyCodes[key];
   await withDevToolsTarget(target, async send => {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
@@ -875,10 +1032,11 @@ export async function inspectWorkbenchSidebarItems(): Promise<{ label: string; i
   });
 }
 
-type WorkbenchKey = 'Tab' | 'Enter' | 'Escape' | 'Space';
+type WorkbenchKey = 'ArrowRight' | 'Tab' | 'Enter' | 'Escape' | 'Space';
 
 async function dispatchKey(send: SendDevToolsCommand, key: WorkbenchKey, shift = false): Promise<void> {
   const definitions: Record<WorkbenchKey, { key: string; code: string; virtualKeyCode: number }> = {
+    ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', virtualKeyCode: 39 },
     Tab: { key: 'Tab', code: 'Tab', virtualKeyCode: 9 },
     Enter: { key: 'Enter', code: 'Enter', virtualKeyCode: 13 },
     Escape: { key: 'Escape', code: 'Escape', virtualKeyCode: 27 },
@@ -941,6 +1099,60 @@ export async function resizePrimarySidebarToWidth(targetWidth: number): Promise<
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     return (await readLayout()).width;
+  });
+}
+
+/** Resizes the visible Auxiliary Bar through the vertical sash beside that real workbench part. */
+export async function resizeAuxiliarySidebarToWidth(targetWidth: number): Promise<number> {
+  if (!Number.isFinite(targetWidth) || targetWidth < 200) throw new Error(`Invalid Auxiliary Bar width: ${targetWidth}`);
+  return withWorkbenchDevTools(async send => {
+    const readLayout = async (): Promise<{ width: number; x: number; y: number; side: 'left' | 'right' }> => {
+      const result = await send('Runtime.evaluate', {
+        expression: `JSON.stringify((() => {
+          const sidebar = document.querySelector('.part.auxiliarybar');
+          if (!sidebar) return { error: 'Auxiliary Bar is missing' };
+          const sidebarRect = sidebar.getBoundingClientRect();
+          const candidates = [...document.querySelectorAll('.monaco-sash.vertical')].map(sash => {
+            const rect = sash.getBoundingClientRect();
+            return { rect, centerX: rect.left + rect.width / 2 };
+          });
+          const adjacent = candidates.find(({ rect }) =>
+            Math.abs(rect.right - sidebarRect.left) <= 2 || Math.abs(rect.left - sidebarRect.right) <= 2);
+          if (!adjacent) return { error: 'Auxiliary Bar sash is missing', width: sidebarRect.width };
+          return {
+            width: Math.round(sidebarRect.width),
+            x: adjacent.centerX,
+            y: Math.min(sidebarRect.bottom - 40, sidebarRect.top + 160),
+            side: sidebarRect.left > window.innerWidth / 2 ? 'right' : 'left'
+          };
+        })())`,
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      if (typeof value !== 'string') throw new Error('Could not inspect the Auxiliary Bar sash');
+      const layout = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; side?: 'left' | 'right' };
+      if (layout.error || layout.width === undefined || layout.x === undefined || layout.y === undefined || !layout.side) {
+        throw new Error(layout.error ?? 'Auxiliary Bar layout is incomplete');
+      }
+      return { width: layout.width, x: layout.x, y: layout.y, side: layout.side };
+    };
+    const initial = await readLayout();
+    if (initial.width !== targetWidth) {
+      const delta = targetWidth - initial.width;
+      const targetX = initial.x + (initial.side === 'right' ? -delta : delta);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: initial.x, y: initial.y });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: initial.x, y: initial.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: targetX, y: initial.y, button: 'left', buttons: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetX, y: initial.y, button: 'left', clickCount: 1 });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const current = await readLayout();
+        if (current.width === targetWidth) return current.width;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    const final = await readLayout();
+    if (final.width !== targetWidth) throw new Error(`Auxiliary Bar width settled at ${final.width}px; expected ${targetWidth}px`);
+    return final.width;
   });
 }
 

@@ -12,6 +12,7 @@
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -145,6 +146,10 @@ Canceling a file picker or source Quick Pick performs no command. A selected uns
 
 This change does not alter public `package.json` command or menu contributions, parser behavior, import/export semantics, Preview playback, Inspector context ownership, Audio MIR, or the transcription pipeline. The Tree View is retained instead of adding a Webview sidebar, and wrappers are used instead of attaching a document URI to a tree row so action targets cannot become stale.
 
+#### Narrow Inspector tabs (Issue #158 review)
+
+The existing top-level tablist switches to a four-column equal-width grid at 360 CSS px and below. Only the visual labels shorten; button IDs, Host controller, selected state, roving tabindex, and full `aria-label` / `title` remain. Above 360 CSS px, the full labels return. At 293 CSS px, all four buttons and their focus ring fit without horizontal scrolling.
+
 ### Verification strategy
 
 Unit coverage exercises the five groups, their localized labels and stable IDs, a commandless target row, active-file identity, empty-state document-independent actions, and wrapper behavior for cancellation, unsupported files, active-document changes, and dispatch. Existing sidebar and command contribution tests protect the public command surface. Transcription coverage checks disclosure visibility and tab order, key field clearing and non-disclosure, unchanged option values/message shape, Start eligibility, duplicate-start suppression, and retry after errors. Fixture-backed Webview E2E also drops the success notification to verify result recovery from a newer state snapshot, then drives the actual Copy button through Host clipboard handling for success and failure. SVG XML validity, rendered dimensions, help synchronization, VSIX contents, and the configured final verification hooks are checked before delivery.
@@ -152,3 +157,21 @@ Unit coverage exercises the five groups, their localized labels and stable IDs, 
 ### Verification strategy
 
 Issue #135 E2E coverage verifies both legacy commands, Preview editCapo routing, URI selection before reveal, one View across repeated operations, settings/progression replacement, ready/replay after relocation, keyboard focus retention, and absence of a duplicate settings WebviewPanel. Visual evidence is captured from the actual Extension Development Host; automated accessibility-tree results and manual VoiceOver evidence are reported separately.
+
+## Issue #158 implementation design
+
+Preview editing extends the existing singleton Panel. The extension captures the active panel URI, current TextDocument version, and render generation when it renders; Preview messages carry that identity and an operation intent, never offsets or replacement source. The Host verifies the captured document is still the panel target, retrieves fresh parser bindings, plans a source-preserving edit, checks post-parse semantics, stops existing audio owners when required, and applies one WorkspaceEdit.
+
+The common Inspector gains a variables context alongside empty, document, settings, and progression. The controller owns a URI/version/session-generation/revision snapshot and a draft distinct from source text. Apply validates the current document and candidate again; Cancel and all context changes discard drafts. Existing Settings and Progression dispatch remain isolated and retain their current context ownership and audio lease.
+
+Issue #158 adds one top-level Inspector tablist for document, variables, score settings, and progression. Tabs dispatch an identity-bearing intent into the existing owner; `InspectorContext` remains exclusive. A variables/settings draft prompts before it is discarded, and a progression tab is enabled only for a current session. Leaving active audition first waits for the current Stop acknowledgement and lease release; switching back reuses the same candidates without autoplay. Preview edit-mode entry resolves these same gates before revealing the Inspector for the Preview-held TextDocument. A panel rerender does not reveal the view or reset its chosen tab.
+
+The existing 48 px playback row owns an exclusive Normal / Edit / Practice selector. It uses a native labeled select below 600 px and a segmented control at and above 600 px; legacy Edit and Practice commands route through the same Host transition. Normal shows only the playback and settings rows, Edit adds the fixed bottom editing dock, and Practice shows its existing controls and guide. The dock and Practice row/guide never coexist. Same-URI HTML rebuilds preserve the transient mode, while document changes and Preview disposal reset it to Normal. After a rebuild the score scroll position and selected source binding are restored only for the current URI/version/generation. PDF rendering and Web Audio ownership stay in their existing paths. If temporary Capo or Beginner rendering changes the source projection, the Host rejects entry into Edit before changing Preview, settings, or Inspector state.
+
+### Failure handling and boundaries
+
+No editor switch, Preview reveal, alternate document fallback, or source write is caused by selection alone. Invalid or stale URI/version/generation/revision, missing source bindings, ambiguous occurrences, unsafe local detach, parse/semantic failure, rejected edits, cancellation, and failed audio Stop acknowledgement do not write text. A canceled draft-discard confirmation or failed progression Stop keeps the previous Inspector context and Preview edit mode. A read-only target remains keyboard-navigable to the source editor with a localized reason. Inspector and Preview disposal releases session state without changing existing progression playback ownership.
+
+### Verification strategy
+
+Tests exercise current-document identity, Preview and Inspector context replacement, one-Undo edits, stale and duplicate messages, no-op selection, shared command/Webview toggles, draft discard cancellation, progression Stop/lease behavior, and separation from the existing Settings and Progression flows. Real Extension Development Host captures cover Japanese/English, light/dark, Preview widths 421 / 600 / 840 / 1100 CSS px and short heights, Inspector variable states, visible focus, scroll preservation, and comparison with the approved proposal SVGs. Manual screen-reader and non-macOS results are recorded separately.

@@ -1,4 +1,4 @@
-import { MeasureData } from '../compiler';
+import { MeasureData, ParsedScore } from '../compiler';
 import { Fraction, NoteBase, NoteValuePart, fadd, fcmp, fnum, formatNoteValuePart, partBeats, tupletGroups } from '../duration';
 import { TabBeat, TabEffectCall, TabNote, TabVoiceMeasure, resolveTabLinkTarget } from '../tab';
 import { beamGroupIndex } from '../scoreEvents';
@@ -16,6 +16,7 @@ import {
   renderTimeSignature
 } from './notation';
 import { renderBend, renderGliss, renderHammerPull, renderSlide, renderSpan, renderVibrato } from './technique';
+import { visualBindingAttribute, visualBindingForEvent } from './visualBindings';
 
 const TAB_LINE_COUNT = 6;
 const NUMBER_SIZE = 10;
@@ -150,8 +151,9 @@ export function renderTabStaff(
   }
 
   for (const position of rowEntries) {
+    const bindingId = visualBindingForEvent(ctx.score, ['tab', 'letReference'], position.measureIndex, 'tab', position.beatIndex);
     if (position.beat.isRest) {
-      out += `<g class="tab-rest-glyph" data-base="${position.part.base}">${renderRestGlyph(position.part.base, position.x, restMidY, restStaffLines)}${position.part.dotted ? `<circle class="tab-rest-dot" cx="${fmt(position.x + 9)}" cy="${fmt(restMidY)}" r="1.25" fill="#000"/>` : ''}</g>`;
+      out += `<g class="tab-rest-glyph" data-base="${position.part.base}"${visualBindingAttribute(bindingId)}>${renderRestGlyph(position.part.base, position.x, restMidY, restStaffLines)}${position.part.dotted ? `<circle class="tab-rest-dot" cx="${fmt(position.x + 9)}" cy="${fmt(restMidY)}" r="1.25" fill="#000"/>` : ''}</g>`;
       continue;
     }
     for (const note of position.beat.notes) {
@@ -159,14 +161,14 @@ export function renderTabStaff(
       const label = note.dead ? 'x' : String(note.fret ?? 0);
       const labelWidth = estimateTextWidth(label, NUMBER_SIZE, true);
       out += `<rect class="tab-fret-mask" data-string="${note.string}" data-mark-width="${fmt(labelWidth)}" x="${fmt(position.x - (labelWidth + 3) / 2)}" y="${fmt(y - 1.8)}" width="${fmt(labelWidth + 3)}" height="3.6" fill="#fff"/>`;
-      out += `<text class="tab-fret" data-string="${note.string}" x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="600" text-anchor="middle">${escapeXml(label)}</text>`;
+      out += `<text class="tab-fret" data-string="${note.string}"${visualBindingAttribute(bindingId)} x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="600" text-anchor="middle">${escapeXml(label)}</text>`;
       out += renderNoteEffects(note.effects, position, y, labelWidth);
     }
   }
 
   out += renderBeatEffectSpans(rowEntries, allEntries, rowPositionByBeat, staffLeftX, xEnd, tabBottom + 6);
   out += renderTabConnections(ctx, measures, rowPositionByBeat, allEntries, lineYs, contentStartX, xEnd);
-  out += renderTabLyrics(rowEntries, geometry);
+  out += renderTabLyrics(rowEntries, geometry, ctx.score);
   return `<g class="tab-staff">${out}</g>`;
 }
 
@@ -413,7 +415,7 @@ function renderTabConnections(
   return out;
 }
 
-function renderTabLyrics(entries: BeatPosition[], geometry: SystemGeometry): string {
+function renderTabLyrics(entries: BeatPosition[], geometry: SystemGeometry, score: ParsedScore): string {
   let out = '';
   const verseCount = Math.max(0, ...entries.map(position => position.beat.syllables.length));
   const lyricSize = 10;
@@ -439,7 +441,8 @@ function renderTabLyrics(entries: BeatPosition[], geometry: SystemGeometry): str
         out += `<text class="tab-lyric-hyphen" x="${fmt(hyphenX)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">-</text>`;
         pendingHyphenFrom = null;
       }
-      out += `<text class="tab-lyric" x="${fmt(position.x)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(syllable.text)}</text>`;
+      const bindingId = visualBindingForEvent(score, ['lyric'], position.measureIndex, 'tab', position.beatIndex, verse);
+      out += `<text class="tab-lyric"${visualBindingAttribute(bindingId)} x="${fmt(position.x)}" y="${fmt(baseline)}" font-size="${lyricSize}" text-anchor="middle" fill="#222">${escapeXml(syllable.text)}</text>`;
       lastEnd = position.x + halfWidth;
       if (syllable.hyphenToNext) pendingHyphenFrom = lastEnd;
     }

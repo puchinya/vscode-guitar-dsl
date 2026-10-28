@@ -3,7 +3,8 @@ import {
   GuitarDslInspectorController,
   type InspectorActiveDocument,
   type InspectorContext,
-  type InspectorPresentation
+  type InspectorPresentation,
+  type InspectorVariablesContext
 } from '../../src/inspector/inspectorController';
 
 class FakePresentation implements InspectorPresentation {
@@ -42,7 +43,7 @@ describe('GuitarDslInspectorController', () => {
     await controller.openForActiveEditor();
 
     assert.deepStrictEqual(controller.currentContext, { kind: 'empty' });
-    assert.deepStrictEqual(presentation.shown, [false]);
+    assert.deepStrictEqual(presentation.shown, [false, false]);
     assert.strictEqual(focusCalls, 1, 'an unresolved view is activated through its focus command');
   });
 
@@ -60,6 +61,103 @@ describe('GuitarDslInspectorController', () => {
       version: activeDocument.version
     });
     assert.deepStrictEqual(presentation.shown, [true], 'resolved views can preserve editor focus on explicit reveal');
+  });
+
+  it('forces the resolved Inspector view to reveal for an explicit Variables context', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    let focusCalls = 0;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => {
+      focusCalls++;
+      return Promise.resolve();
+    });
+
+    await controller.showVariables({
+      kind: 'variables', uri: 'file:///active.guitardsl', version: 3, sessionGeneration: 1,
+      revision: 1, draftRevision: 1, definitions: []
+    }, true);
+
+    assert.strictEqual(focusCalls, 1, 'explicit Variables mode focuses the registered view even when already resolved');
+    assert.deepStrictEqual(presentation.shown, [false, false], 'the view is refreshed after the focus command');
+  });
+
+  it('accepts a newer Variables session for the same document and rejects stale identities', async () => {
+    const presentation = new FakePresentation();
+    presentation.resolved = true;
+    const controller = new GuitarDslInspectorController(presentation, () => undefined, () => Promise.resolve());
+    const initial: InspectorVariablesContext = {
+      kind: 'variables', uri: 'file:///song.guitardsl', version: 3, sessionGeneration: 4,
+      revision: 2, draftRevision: 7, definitions: [], selectedName: 'riff'
+    };
+    await controller.showVariables(initial);
+
+    const refreshed: InspectorVariablesContext = {
+      kind: 'variables', uri: initial.uri, version: 4, sessionGeneration: 5,
+      revision: 0, draftRevision: 0, definitions: [], selectedName: 'riff'
+    };
+    controller.updateVariables(refreshed);
+    assert.deepStrictEqual(controller.currentContext, refreshed,
+      'a source-version change may start a fresh guarded session without revealing or focusing the Inspector');
+    assert.deepStrictEqual(presentation.shown, [false], 'background context refresh preserves the current Webview focus');
+
+    controller.updateVariables({ ...initial, revision: 3 });
+    controller.updateVariables({ ...refreshed, sessionGeneration: 4, revision: 9 });
+    controller.updateVariables({ ...refreshed, uri: 'file:///other.guitardsl', version: 5, sessionGeneration: 6 });
+    assert.deepStrictEqual(controller.currentContext, refreshed,
+      'older version/session identities and an unrelated URI cannot replace the refreshed context');
+  });
+
+  it('routes only current top-tab requests for the current document identity', async () => {
+    const presentation = new FakePresentation();
+    const activeDocument: InspectorActiveDocument = { uri: 'file:///active.guitardsl', version: 8 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => Promise.resolve());
+    const received: string[] = [];
+    controller.setTopTabHandler(request => { received.push(request.tab); });
+    controller.showDocument(activeDocument.uri, activeDocument.version);
+    const generation = controller.currentGeneration;
+
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'variables', generation,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version });
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'settings', generation: generation - 1,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version });
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'settings', generation,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version - 1 });
+
+    assert.deepStrictEqual(received, ['variables'], 'stale generation and document-version messages do not reach feature owners');
+  });
+
+  it('enables the progression tab only while a valid Inspector session is active', async () => {
+    const presentation = new FakePresentation();
+    const activeDocument: InspectorActiveDocument = { uri: 'file:///active.guitardsl', version: 3 };
+    const controller = new GuitarDslInspectorController(presentation, () => activeDocument, () => Promise.resolve());
+    const received: string[] = [];
+    controller.setTopTabHandler(request => { received.push(request.tab); });
+    controller.showDocument(activeDocument.uri, activeDocument.version);
+    const documentGeneration = controller.currentGeneration;
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'progression', generation: documentGeneration,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version });
+    assert.strictEqual(controller.isProgressionTabAvailable, false);
+
+    await controller.showProgression({
+      kind: 'progression', uri: activeDocument.uri, version: activeDocument.version, sessionGeneration: 2,
+      target: { startMeasure: 0, bars: 4, operation: 'replace' }, availableBars: [4], availableOperations: ['replace'],
+      candidates: [], selectedCandidateId: '', side: 'B', auditionMode: 'melody', auditionSpeed: 100, loading: false
+    });
+    assert.strictEqual(controller.isProgressionTabAvailable, true);
+    controller.showDocument(activeDocument.uri, activeDocument.version);
+    assert.strictEqual(controller.currentContext.kind, 'progression', 'passive document refresh preserves the active progression context');
+    controller.showDocument(activeDocument.uri, activeDocument.version, true);
+    assert.deepStrictEqual(controller.currentContext, { kind: 'document', uri: activeDocument.uri, version: activeDocument.version });
+
+    const nextGeneration = controller.currentGeneration;
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'progression', generation: nextGeneration,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version });
+    assert.deepStrictEqual(received, ['progression'], 'a valid existing session can be selected without creating candidates');
+    controller.restoreDocumentAfterProgression(activeDocument.uri);
+    assert.strictEqual(controller.isProgressionTabAvailable, false);
+    await controller.handleWebviewMessage({ command: 'inspectorSelectTab', tab: 'progression', generation: nextGeneration,
+      documentUri: activeDocument.uri, documentVersion: activeDocument.version });
+    assert.deepStrictEqual(received, ['progression'], 'disabled progression navigation never starts a candidate session');
   });
 
   it('starts a new intent for an explicit same-document open while same-context refresh stays passive', async () => {

@@ -58,6 +58,10 @@ class FakeElement {
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, String(value));
+    if (name.startsWith('data-')) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      this.dataset[key] = String(value);
+    }
   }
 
   getAttribute(name: string): string | null {
@@ -75,6 +79,15 @@ class FakeElement {
       current = current.parentNode;
     }
     return null;
+  }
+
+  contains(element: unknown): boolean {
+    let current = element instanceof FakeElement ? element : null;
+    while (current) {
+      if (current === this) return true;
+      current = current.parentNode;
+    }
+    return false;
   }
 
   get firstChild(): FakeElement | null {
@@ -198,6 +211,7 @@ interface FakeInterval {
 }
 
 export interface FakePlaybackWebview {
+  readonly body: FakeElement;
   readonly playbackData: Record<string, any>;
   readonly progressionData: Record<string, any> | undefined;
   readonly postedMessages: Record<string, unknown>[];
@@ -298,8 +312,12 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   }
 
   const body = new FakeElement();
-  body.setAttribute('data-page-size', 'A4');
-  body.setAttribute('data-orientation', 'portrait');
+  const bodyAttributes = /<body\b([^>]*)>/i.exec(html)?.[1] ?? '';
+  for (const attribute of bodyAttributes.matchAll(/([\w:-]+)=["']([^"']*)["']/g)) {
+    body.setAttribute(attribute[1], attribute[2]);
+  }
+  body.setAttribute('data-page-size', body.getAttribute('data-page-size') ?? 'A4');
+  body.setAttribute('data-orientation', body.getAttribute('data-orientation') ?? 'portrait');
   const displayMode = /<body\b[^>]*\bdata-display-mode=["']([^"']+)["']/i.exec(html)?.[1] ?? 'single';
   body.setAttribute('data-display-mode', displayMode);
   const modeButtons: FakeElement[] = [];
@@ -313,6 +331,29 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     }
     modeButtons.push(button);
   }
+  const previewUiModeButtons: FakeElement[] = [];
+  for (const match of html.matchAll(/<button\b([^>]*\bclass=["'][^"']*\bpreview-mode-choice\b[^"']*["'][^>]*)>/gi)) {
+    const button = new FakeElement('button');
+    for (const attribute of match[1].matchAll(/([\w:-]+)=["']([^"']*)["']/g)) {
+      button.setAttribute(attribute[1], attribute[2]);
+      if (attribute[1] === 'class') {
+        for (const name of attribute[2].split(/\s+/)) if (name) button.classList.add(name);
+      }
+      if (attribute[1] === 'disabled') button.disabled = true;
+      if (attribute[1] === 'id') elements.set(attribute[2], button);
+    }
+    previewUiModeButtons.push(button);
+  }
+  const modeSelect = new FakeElement('select');
+  const modeSelectMatch = /<select\b([^>]*\bid=["']preview-mode-select["'][^>]*)>/i.exec(html);
+  if (modeSelectMatch) {
+    for (const attribute of modeSelectMatch[1].matchAll(/([\w:-]+)=["']([^"']*)["']/g)) {
+      modeSelect.setAttribute(attribute[1], attribute[2]);
+      if (attribute[1] === 'id') elements.set(attribute[2], modeSelect);
+    }
+  }
+  const selectedMode = /<option\b[^>]*value=["'](normal|edit|practice)["'][^>]*selected[^>]*>/i.exec(html)?.[1];
+  if (selectedMode) modeSelect.value = selectedMode;
   const anchors: FakeElement[] = [];
   const pageAnchors: FakeElement[] = [];
   const webAnchors: FakeElement[] = [];
@@ -351,6 +392,10 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       }
       if (selector.includes('[data-mode]')) return modeButtons;
       return [];
+    },
+    querySelector(selector: string): FakeElement | null {
+      if (selector === 'label[for="preview-edit-target"]') return new FakeElement('label');
+      return null;
     },
     createElementNS(_namespace: string, tagName: string): FakeElement {
       return new FakeElement(tagName);
@@ -410,12 +455,28 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
 
   const allOscillators = () => contexts.flatMap((context) => context.oscillators);
   const getElement = (id: string) => document.getElementById(id);
+  const applyModeRequestsSince = async (start: number): Promise<void> => {
+    for (const message of postedMessages.slice(start)) {
+      if (message.command !== 'previewUiModeRequest') continue;
+      const response = {
+        command: 'previewUiModeResult', success: true, mode: message.mode,
+        documentUri: message.documentUri, documentVersion: message.documentVersion,
+        previewGeneration: message.previewGeneration
+      };
+      for (const listener of windowListeners.get('message') ?? []) await listener({ data: response });
+    }
+  };
 
   return {
+    body,
     playbackData,
     progressionData,
     postedMessages,
-    click: async (id) => { await getElement(id).dispatch('click'); },
+    click: async (id) => {
+      const start = postedMessages.length;
+      await getElement(id).dispatch('click');
+      await applyModeRequestsSince(start);
+    },
     setRange: (id, value) => { getElement(id).value = String(value); },
     setChecked: (id, value) => { getElement(id).checked = value; },
     change: async (id) => { await getElement(id).dispatch('change'); },
@@ -429,7 +490,9 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
       for (const listener of windowListeners.get(name) ?? []) await listener(event);
     },
     sendPlaybackAction: async (action) => {
+      const start = postedMessages.length;
       for (const listener of windowListeners.get('message') ?? []) await listener({ data: { command: 'playbackAction', action } });
+      await applyModeRequestsSince(start);
     },
     clickDisplayMode: async (mode) => {
       const button = modeButtons.find(candidate => candidate.getAttribute('data-mode') === mode);

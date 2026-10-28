@@ -30,7 +30,9 @@ export const previewLifecycleProbe = {
   generation: 0,
   currentDocumentUri: undefined as string | undefined,
   disposedGeneration: undefined as number | undefined,
-  lastPlaybackAction: undefined as string | undefined
+  lastPlaybackAction: undefined as string | undefined,
+  /** Test-only one-shot interception after a valid Stop ACK arrives from the real Preview Webview. */
+  nextStopAcknowledgementForTests: undefined as ((stopped: boolean) => Promise<boolean>) | undefined
 };
 
 export class PreviewCapoController {

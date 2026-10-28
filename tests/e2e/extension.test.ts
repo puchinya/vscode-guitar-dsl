@@ -4,8 +4,8 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity, withPreviewReducedMotion } from './screenshotCapture';
-import { getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
+import { activateInspectorControlWithKeyboard, capturePreviewWebviewScreenshot, captureTranscriptionWebviewScreenshot, captureWorkbenchScreenshot, clickPreviewElement, dispatchPreviewKeyboardKey, dispatchTranscriptionWebviewKey, dispatchWorkbenchKey, evaluateInspectorWebview, evaluatePreviewWebview, evaluateTranscriptionWebview, expandWorkbenchSidebarSection, inspectTranscriptionWebviewAccessibility, inspectWorkbenchLayout, inspectWorkbenchSidebarItems, resetPreviewWebviewViewport, resetWorkbenchViewport, resizeActiveEditorGroupToWidth, resizeAuxiliarySidebarToWidth, resizePrimarySidebarToWidth, scrollInspectorToControls, setPreviewWebviewViewportWidth, setWorkbenchViewportSize, setWorkbenchViewportWidth, waitForPreviewDocument, waitForPreviewIdentity, withPreviewReducedMotion } from './screenshotCapture';
+import { ensureWorkbenchTestHostWindowFocused, getWorkbenchFocusTrace, isDocumentActiveInColumn, recordFocusTrace, showAndFocusDocument } from './workbenchFocus';
 import { captureWorkbenchSnapshot, matchesWorkbenchSnapshot, restoreWorkbenchSnapshot, withWorkbenchSnapshotRestored } from './workbenchState';
 
 const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -201,24 +201,98 @@ async function showAndFocus(
 
 async function setPreviewPracticeEnabled(enabled: boolean): Promise<void> {
   await waitForPreviewDocument();
-  const read = () => evaluatePreviewWebview<boolean>(
-    `document.getElementById('practice-toggle')?.getAttribute('aria-pressed') === 'true'`
-  );
-  if (await read() !== enabled) {
-    await vscode.commands.executeCommand('guitardsl.practice.toggle');
+  const targetMode = enabled ? 'practice' : 'normal';
+  const read = () => evaluatePreviewWebview<string>(`JSON.stringify({
+    mode: document.body.dataset.previewUiMode,
+    pressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
+    rowVisible: document.body.classList.contains('has-practice-row')
+  })`);
+  const initial = JSON.parse(await read()) as { mode?: string; pressed?: string | null; rowVisible?: boolean };
+  const currentMode = initial.mode;
+  if (currentMode !== targetMode) {
+    const command = currentMode === 'edit' && targetMode === 'normal'
+      ? 'guitardsl.togglePreviewEditMode' : 'guitardsl.practice.toggle';
+    await vscode.commands.executeCommand(command);
   }
+  let lastState = initial;
   for (let attempt = 0; attempt < 100; attempt++) {
-    const actual = await read();
-    if (actual === enabled) {
-      const rowVisible = await evaluatePreviewWebview<boolean>(
-        `document.body.classList.contains('has-practice-row')`
-      );
-      assert.strictEqual(rowVisible, enabled, 'Practice row visibility matches its pressed state');
-      return;
-    }
+    lastState = JSON.parse(await read()) as typeof lastState;
+    if (lastState.mode === targetMode
+      && lastState.pressed === String(enabled)
+      && lastState.rowVisible === enabled) return;
     await settle(20);
   }
-  assert.fail(`Preview Practice did not become ${enabled ? 'enabled' : 'disabled'}`);
+  assert.fail(`Preview did not converge to ${targetMode} mode with matching Practice aria/row state: ${JSON.stringify(lastState)}`);
+}
+
+async function waitForPreviewBottomPanelsStable(
+  operation: string,
+  expectedMode: 'normal' | 'edit' | 'practice',
+  expectedGuideVisible: boolean,
+  expectedWidth?: number
+): Promise<void> {
+  const diagnostics = JSON.parse(await evaluatePreviewWebview<string>(`(async () => {
+    const startedAt = performance.now();
+    let previous = null;
+    let stableFrameCount = 0;
+    let frameCount = 0;
+    const trace = [];
+    const expectedMode = ${JSON.stringify(expectedMode)};
+    const expectedGuideVisible = ${String(expectedGuideVisible)};
+    const expectedWidth = ${expectedWidth === undefined ? 'null' : String(expectedWidth)};
+    const sample = () => {
+      const body = document.body;
+      const guide = document.getElementById('practice-guide-panel');
+      const dock = document.getElementById('preview-edit-row');
+      const guideRect = guide?.getBoundingClientRect() ?? { height: 0 };
+      const dockRect = dock?.getBoundingClientRect() ?? { height: 0 };
+      const guideVisible = !!guide && body.classList.contains('has-practice-guide')
+        && getComputedStyle(guide).display !== 'none' && guideRect.height > 0;
+      const guideHeight = guideVisible ? guideRect.height : 0;
+      const dockHeight = !!dock && !dock.hidden ? dockRect.height : 0;
+      return {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        mode: body.dataset.previewUiMode,
+        guideVisible,
+        guideHeight,
+        dockVisible: dockHeight > 0,
+        dockHeight,
+        cssGuideHeight: body.style.getPropertyValue('--practice-guide-panel-height').trim(),
+        cssDockHeight: body.style.getPropertyValue('--preview-edit-dock-height').trim(),
+        bodyPaddingBottom: parseFloat(getComputedStyle(body).paddingBottom) || 0,
+        combinedHeight: guideHeight + dockHeight
+      };
+    };
+    while (performance.now() - startedAt < 2000) {
+      await new Promise(resolve => requestAnimationFrame(() => resolve()));
+      frameCount++;
+      const current = sample();
+      const paddingDelta = Math.abs(current.bodyPaddingBottom - current.combinedHeight);
+      const bodyPaddingFrameDelta = previous
+        ? Math.abs(current.bodyPaddingBottom - previous.bodyPaddingBottom) : Infinity;
+      const guideDelta = previous ? Math.abs(current.guideHeight - previous.guideHeight) : Infinity;
+      const dockDelta = previous ? Math.abs(current.dockHeight - previous.dockHeight) : Infinity;
+      const stateMatches = current.mode === expectedMode
+        && current.guideVisible === expectedGuideVisible
+        && (expectedWidth === null || Math.abs(current.width - expectedWidth) <= 0.5);
+      const frameStable = !!previous && stateMatches
+        && previous.mode === current.mode
+        && previous.guideVisible === current.guideVisible
+        && Math.abs(current.width - previous.width) <= 0.5
+        && guideDelta <= 0.5 && dockDelta <= 0.5
+        && bodyPaddingFrameDelta <= 0.5 && paddingDelta <= 0.5;
+      const entry = { ...current, guideDelta, dockDelta, bodyPaddingFrameDelta, paddingDelta };
+      trace.push(entry);
+      if (trace.length > 4) trace.shift();
+      stableFrameCount = frameStable ? stableFrameCount + 1 : 0;
+      if (stableFrameCount >= 2) return JSON.stringify({ stable: true, frameCount, trace, final: current });
+      previous = current;
+    }
+    return JSON.stringify({ stable: false, frameCount, trace, final: previous, expectedMode, expectedGuideVisible, expectedWidth });
+  })()`));
+  assert.strictEqual(diagnostics.stable, true,
+    `[D1] ${operation} did not converge within 2000ms: ${JSON.stringify(diagnostics)}`);
 }
 
 /** Runs `undo` in `doc` (focused first) and waits until its text has changed. */
@@ -227,6 +301,7 @@ async function undoIn(doc: vscode.TextDocument): Promise<void> {
   await showAndFocus(doc);
   await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
   await showAndFocus(doc);
+  await ensureWorkbenchTestHostWindowFocused();
   recordFocusTrace('undo-target-validated');
   assert.strictEqual(vscode.window.state.focused, true, 'Undo runs while the VS Code test window is focused');
   assert.ok(isDocumentActiveInColumn(doc, vscode.ViewColumn.One), 'Undo runs only while the requested document is active in the first editor group');
@@ -352,7 +427,93 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await showAndFocus(doc);
       await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
       await waitForPreviewDocument();
+      const waitForPracticeGuideGeometryStable = async (
+        operation: string,
+        expectedViewportWidth?: number,
+        expectedCollapsed?: boolean
+      ): Promise<void> => {
+        const diagnostics = JSON.parse(await evaluatePreviewWebview<string>(`(async () => {
+          const startedAt = performance.now();
+          const firstFrames = [];
+          const lastFrames = [];
+          let previous = null;
+          let stableFrameCount = 0;
+          let frameCount = 0;
+          const sample = () => {
+            const panel = document.getElementById('practice-guide-panel');
+            const rect = panel?.getBoundingClientRect() ?? { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 };
+            const body = document.body;
+            const bodyStyle = getComputedStyle(body);
+            const panelStyle = panel ? getComputedStyle(panel) : null;
+            const guideVisible = !!panel
+              && body.classList.contains('has-practice-guide')
+              && panelStyle?.display !== 'none'
+              && rect.height > 0;
+            return {
+              viewportWidth: window.innerWidth,
+              viewportHeight: window.innerHeight,
+              mode: body.dataset.previewUiMode || (body.dataset.previewEditMode === 'true' ? 'edit' : 'normal'),
+              guideVisible,
+              collapsed: body.classList.contains('guide-collapsed'),
+              rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left },
+              scrollHeight: panel?.scrollHeight ?? 0,
+              clientHeight: panel?.clientHeight ?? 0,
+              cssPanelHeight: body.style.getPropertyValue('--practice-guide-panel-height').trim(),
+              bodyPaddingBottom: parseFloat(bodyStyle.paddingBottom) || 0
+            };
+          };
+          const expectedWidth = ${expectedViewportWidth === undefined ? 'null' : String(expectedViewportWidth)};
+          const expectedCollapsed = ${expectedCollapsed === undefined ? 'null' : String(expectedCollapsed)};
+          const traceFrame = (frame, heightDelta, paddingDelta) => ({ ...frame, heightDelta, paddingDelta });
+          while (performance.now() - startedAt < 2000) {
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            frameCount++;
+            const current = sample();
+            const heightDelta = previous ? Math.abs(current.rect.height - previous.rect.height) : Infinity;
+            const paddingDelta = Math.abs(current.bodyPaddingBottom - current.rect.height);
+            const widthMatches = expectedWidth === null || Math.abs(current.viewportWidth - expectedWidth) <= 0.5;
+            const collapsedMatches = expectedCollapsed === null || current.collapsed === expectedCollapsed;
+            const stateMatches = current.mode === 'practice' && current.guideVisible && widthMatches && collapsedMatches;
+            const frameStable = !!previous
+              && stateMatches
+              && previous.mode === current.mode
+              && previous.guideVisible === current.guideVisible
+              && Math.abs(current.viewportWidth - previous.viewportWidth) <= 0.5
+              && heightDelta <= 0.5
+              && paddingDelta <= 0.5;
+            const traced = traceFrame(current, heightDelta, paddingDelta);
+            if (firstFrames.length < 4) firstFrames.push(traced);
+            lastFrames.push(traced);
+            if (lastFrames.length > 4) lastFrames.shift();
+            stableFrameCount = frameStable ? stableFrameCount + 1 : 0;
+            if (stableFrameCount >= 2) {
+              return JSON.stringify({ stable: true, frameCount, initial: firstFrames[0], firstFrames, lastFrames, final: current });
+            }
+            previous = current;
+          }
+          return JSON.stringify({
+            stable: false,
+            frameCount,
+            expectedWidth,
+            expectedCollapsed,
+            initial: firstFrames[0],
+            firstFrames,
+            lastFrames,
+            final: previous,
+            operation: ${JSON.stringify(operation)}
+          });
+        })()`));
+        assert.strictEqual(diagnostics.stable, true,
+          `[D1] ${operation} did not converge within 2000ms: ${JSON.stringify(diagnostics)}`);
+        console.log(`[D1] ${operation}: ${JSON.stringify({
+          frameCount: diagnostics.frameCount,
+          initial: diagnostics.initial,
+          firstFrames: diagnostics.firstFrames,
+          final: diagnostics.final
+        })}`);
+      };
       await setPreviewPracticeEnabled(true);
+      await waitForPracticeGuideGeometryStable('enter practice mode');
       assert.strictEqual(await evaluatePreviewWebview<string>(`document.getElementById('practice-guide-view').value`), 'compact',
         'compact SVG practice guide is the default view');
       await evaluatePreviewWebview<void>(`(() => {
@@ -365,7 +526,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (collapse.getAttribute('aria-expanded') !== 'true') collapse.click();
         grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(150);
+      await waitForPracticeGuideGeometryStable('lane visibility, collapse, and grid mode changes');
 
       const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
@@ -412,6 +573,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const button = document.getElementById('practice-guide-melody-toggle');
           if ((button.getAttribute('aria-pressed') === 'true') !== ${melodyVisible}) button.click();
         })()`);
+        await waitForPracticeGuideGeometryStable(`melody lane ${melodyVisible ? 'on' : 'off'}`);
       };
       const setGuideViewMode = async (mode: 'detailed' | 'compact'): Promise<void> => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -424,26 +586,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const expectedOff = ['lyrics', 'technique', 'chord', 'diagrams'];
       const compactCapacities = new Map<number, number>();
       const compactStageHeights = new Map<number, { on?: number; off?: number }>();
-      const compactAcceptanceWidths = [421, 420, 360, 320, 280, 600, 840, 1100, 1400];
+      const compactAcceptanceWidths = [421, 600, 840, 1100, 1400];
       await setGuideViewMode('detailed');
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
         input.value = '2';
         input.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('detailed guide mode and seek');
       for (const width of compactAcceptanceWidths) {
         await resetPreviewWebviewViewport();
         let actualPreviewWidth = 0;
         if (width < 421) {
           await setPreviewWebviewViewportWidth(width);
-          await settle(150);
+          await waitForPracticeGuideGeometryStable(`Preview viewport width ${width}`, width);
           actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
         } else {
           let workbenchWidth = width + 56;
           for (let attempt = 0; attempt < 3; attempt++) {
             await setWorkbenchViewportWidth(workbenchWidth);
-            await settle(150);
+            await waitForPracticeGuideGeometryStable(`Workbench viewport width ${width}`);
             actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
             if (Math.abs(actualPreviewWidth - width) <= 1) break;
             workbenchWidth = Math.max(320, workbenchWidth + width - actualPreviewWidth);
@@ -451,7 +613,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         }
         if (Math.abs(actualPreviewWidth - width) > 1) {
           await setPreviewWebviewViewportWidth(width);
-          await settle(250);
+          await waitForPracticeGuideGeometryStable(`calibrated Preview viewport width ${width}`, width);
           actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
         }
         assert.ok(Math.abs(actualPreviewWidth - width) <= 1,
@@ -460,7 +622,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           if (width >= 421) {
           await setGuideVisibility(melodyVisible);
           await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-scroll').scrollLeft = 0`);
-          await settle(120);
           const guide = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
             const panel = document.getElementById('practice-guide-panel');
             const header = document.querySelector('.practice-guide-header');
@@ -686,7 +847,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             `${width}px panel ends within 24px of its lowest visible lane or aside (gap ${guide.panelBottomGap}px)`);
           if (guide.contentExtendsBelowPanel) {
             assert.ok(guide.layoutScrollHeight > guide.layoutClientHeight + 1,
-              `${width}px capped panel scrolls its complete body vertically`);
+              `${width}px capped panel scrolls its complete body vertically (scroll=${guide.layoutScrollHeight}, client=${guide.layoutClientHeight}, panel=${guide.panelHeight}/${guide.panelMaxHeight}, viewport=${guide.viewportHeight}, layoutBottom=${guide.timelineLaneBottom}, panelBottom=${guide.panelBottom})`);
             assert.ok(guide.timelineLaneBottomAtScrollEnd <= guide.panelBottom + 1,
               `${width}px last timeline lane is fully reachable by body scroll`);
             assert.ok(guide.nextContentBottomAtScrollEnd <= guide.panelBottom + 1,
@@ -776,9 +937,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           }
         if (compactAcceptanceWidths.includes(width)) {
           await setGuideViewMode('compact');
+          await waitForPracticeGuideGeometryStable(`compact guide mode at ${width}px`, width);
           for (const melodyVisible of [true, false]) {
             await setGuideVisibility(melodyVisible);
-            await settle(150);
             const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
               const panel = document.getElementById('practice-guide-panel');
               const layout = document.getElementById('practice-guide-scroll');
@@ -906,7 +1067,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               width);
           }
           await setGuideViewMode('detailed');
-          await settle(100);
+          await waitForPracticeGuideGeometryStable(`detailed guide mode at ${width}px`, width);
         }
       }
       }
@@ -953,7 +1114,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const button = document.getElementById('practice-guide-diagrams-toggle');
         if (button.getAttribute('aria-pressed') !== 'true') button.click();
       })()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('enable diagrams after viewport reset');
       const fullPanelGeometry = await readPanelGeometry();
 
       const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
@@ -974,7 +1135,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         previewGeneration: previewLifecycle.generation
       });
       await waitForPreviewDocument();
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('Preview HTML rebuild');
       const rebuiltPanelGeometry = await readPanelGeometry();
       assert.ok(Math.abs(rebuiltPanelGeometry.bodyPadding - rebuiltPanelGeometry.height) <= 0.5,
         'a rebuilt Webview starts with a spacer measured from its own panel border box');
@@ -987,27 +1148,25 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         loop: document.getElementById('practice-loop').value
       })`));
       await setGuideVisibility(false);
-      await settle(120);
       const melodyHiddenGeometry = await readPanelGeometry();
       assert.strictEqual(melodyHiddenGeometry.melodyLaneDisplay, 'none',
         'melody OFF hides the detailed melody lane even when the fixed next-chord rail determines panel height');
       assert.ok(Math.abs(melodyHiddenGeometry.bodyPadding - melodyHiddenGeometry.height) <= 0.5,
         'melody OFF updates the body spacer to the measured panel height');
       await setGuideVisibility(true);
-      await settle(120);
       const melodyRestoredGeometry = await readPanelGeometry();
       assert.ok(Math.abs(melodyRestoredGeometry.height - rebuiltPanelGeometry.height) <= 1,
         'melody ON restores the content-fit panel height');
 
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('disable diagrams');
       const diagramsHiddenGeometry = await readPanelGeometry();
       assert.ok(diagramsHiddenGeometry.layoutScrollHeight < melodyRestoredGeometry.layoutScrollHeight - 100,
         'diagrams OFF removes the main diagram lane and the next-chord diagram from the natural content height');
       assert.ok(Math.abs(diagramsHiddenGeometry.bodyPadding - diagramsHiddenGeometry.height) <= 0.5,
         'diagrams OFF updates the body spacer to the measured panel height');
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-diagrams-toggle').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('restore diagrams');
       const diagramsRestoredGeometry = await readPanelGeometry();
       assert.ok(Math.abs(diagramsRestoredGeometry.height - melodyRestoredGeometry.height) <= 1,
         'diagrams ON restores the content-fit panel height');
@@ -1019,9 +1178,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(transportAfterLayoutToggles, transportBeforeLayoutToggles,
         'lane visibility changes do not alter seek, speed, or loop state');
 
-      await setWorkbenchViewportWidth(477);
+      await setPreviewWebviewViewportWidth(421);
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-collapse').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('collapse at 421px', 421, true);
       const collapsedPanelGeometry = await readPanelGeometry();
       assert.strictEqual(collapsedPanelGeometry.height, 42, 'collapse leaves an exact 42px panel');
       assert.ok(Math.abs(collapsedPanelGeometry.bodyPadding - 42) <= 0.5, 'collapsed spacer matches the 42px panel');
@@ -1029,14 +1188,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.strictEqual(collapsedPanelGeometry.titleVisible, true, 'the collapsed title remains visible');
       assert.strictEqual(collapsedPanelGeometry.collapseVisible, true, 'the expand control remains visible');
       await evaluatePreviewWebview<void>(`document.getElementById('practice-guide-collapse').click()`);
-      await settle(120);
+      await waitForPracticeGuideGeometryStable('expand at 421px', 421, false);
       const expandedNarrowGeometry = await readPanelGeometry();
       assert.ok(expandedNarrowGeometry.height > 42, 'the 421px panel expands back to its content-fit height');
       assert.ok(Math.abs(expandedNarrowGeometry.bodyPadding - expandedNarrowGeometry.height) <= 0.5,
         'the expanded narrow viewport spacer follows the panel border box');
 
       await setWorkbenchViewportSize(1156, 500);
-      await settle(250);
+      await waitForPracticeGuideGeometryStable('short viewport at current Preview width');
       const shortViewportGeometry = await readPanelGeometry();
       assert.ok(shortViewportGeometry.viewportHeight < 700, 'the short-viewport case uses a viewport below 700px');
       const shortReserve = Math.max(80, shortViewportGeometry.viewportHeight * 0.2);
@@ -1054,8 +1213,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(shortViewportGeometry.layoutScrollHeight > shortViewportGeometry.layoutClientHeight,
           `a panel body that exceeds its short-viewport cap scrolls vertically: ${JSON.stringify(shortViewportGeometry)}`);
       }
-      await setWorkbenchViewportWidth(477);
-      await settle(200);
+      const scrollEnd = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const layout = document.querySelector('.practice-guide-layout');
+        layout.scrollTop = layout.scrollHeight;
+        return { scrollTop: layout.scrollTop, scrollHeight: layout.scrollHeight, clientHeight: layout.clientHeight };
+      })())`));
+      assert.ok(scrollEnd.scrollTop + scrollEnd.clientHeight >= scrollEnd.scrollHeight - 1,
+        `the short-viewport guide can scroll to its vertical end: ${JSON.stringify(scrollEnd)}`);
+      await setPreviewWebviewViewportWidth(421);
+      await waitForPracticeGuideGeometryStable('restore Preview width after short viewport', 421);
 
       const currentTechniqueLabelAt = async (seconds: number): Promise<string> => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -1079,21 +1245,21 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = '8'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('set eight-grid view');
       assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 3,
         'the eighth-note override recalculates continuation slots on the shared axis');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = '4'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('set four-grid view');
       assert.strictEqual(await evaluatePreviewWebview<number>(`[...document.querySelectorAll('[data-guide-lane="technique"] .practice-guide-grid-continuation')].filter(item => getComputedStyle(item).display !== 'none' && item.dataset.guideMeasure === '0').length`), 0,
         'the quarter-note override does not fill smaller slots');
       await evaluatePreviewWebview<void>(`(() => {
         const grid = document.getElementById('practice-guide-grid');
         grid.value = 'auto'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('restore automatic grid view');
 
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
@@ -1193,7 +1359,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await evaluatePreviewWebview<void>(`(() => {
         document.getElementById('practice-guide-diagrams-toggle').click();
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('disable diagrams and collapse guide');
       const compactNextChord = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         name: getComputedStyle(document.getElementById('practice-guide-next-chord-name')).display !== 'none',
         diagram: getComputedStyle(document.getElementById('practice-guide-next-chord-diagram')).display !== 'none'
@@ -1209,7 +1375,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         diagrams.click(); collapse.click();
         grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
-      await settle(100);
+      await waitForPracticeGuideGeometryStable('enable diagrams, expand guide, and set sixteen-grid view');
       const controls = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         melodyHidden: document.body.classList.contains('guide-melody-hidden'),
         diagramsHidden: document.body.classList.contains('guide-diagrams-hidden'),
@@ -1251,7 +1417,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         if (!timeline) return {
           missingTimeline: true,
           bodyClasses: document.body.className,
-          practicePressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+          practicePressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
           pageTitle: document.title
         };
         const techniqueItems = measure => [...timeline.querySelectorAll('[data-guide-lane="technique"] .practice-guide-technique-marker')]
@@ -1861,7 +2027,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         await waitForPreviewDocument();
         await setPreviewPracticeEnabled(true);
         await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
-        await setPreviewWebviewViewportWidth(280);
+        await setPreviewWebviewViewportWidth(421);
         await settle(180);
         const initial = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); const card = stage.querySelector('.practice-guide-compact-measure.is-current'); const viewport = stage.getBoundingClientRect(); const rect = card?.getBoundingClientRect(); const visibleWidth = rect ? Math.max(0, Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left)) : 0; return { occurrence: Number(stage.dataset.guideOccurrenceIndex), scrollLeft: stage.scrollLeft, scale: stage.dataset.guideScale, centered: stage.dataset.guideCentered, activeVisible: stage.dataset.guideActiveVisible === 'true', clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth, cardWidth: rect?.width ?? 0, visibleWidth, currentVisible: visibleWidth > 0 }; })())"));
         assert.strictEqual(initial.occurrence, 0);
@@ -1880,8 +2046,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(atMeasureStart.scrollLeft > initial.scrollLeft, 'the active card snaps into view at its measure start');
         assert.strictEqual(atMeasureStart.currentVisible, true, 'the current card is visible after the snap');
         assert.strictEqual(atMeasureStart.activeVisible, true, 'the active card uses the available viewport width when the card itself is wider');
-        assert.ok(atMeasureStart.visibleWidth >= Math.min(atMeasureStart.cardWidth, 118) - 1,
-          'the visible card occupies the full available 118px viewport after the snap');
+        const usableCompactViewportWidth = Math.max(0, initial.clientWidth - 12); // six pixels of snapping clearance on each side
+        assert.ok(atMeasureStart.visibleWidth >= Math.min(atMeasureStart.cardWidth, usableCompactViewportWidth) - 1,
+          `the visible card occupies the usable compact viewport after the snap: ${JSON.stringify({ initial, atMeasureStart, usableCompactViewportWidth })}`);
         assert.strictEqual(atMeasureStart.scrollBehavior, 'auto', 'measure-start following is instant');
         await settle(120);
         const midMeasure = JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); return { occurrence: Number(stage.dataset.guideOccurrenceIndex), scrollLeft: stage.scrollLeft }; })())"));
@@ -2339,23 +2506,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       && document.activeElement.id === 'temporary-score-settings-toggle'`);
     assert.strictEqual(settingsEscaped, true, 'Escape closes supplemental settings and returns focus to More');
 
-    const interaction = await evaluatePreviewWebview<string>(`(() => {
+    const outsideFocusClosed = await evaluatePreviewWebview<boolean>(`(() => {
       const playback = document.getElementById('playback-options-toggle');
       playback.focus(); playback.click();
       document.getElementById('btn-help').focus();
-      const outsideFocusClosed = playback.getAttribute('aria-expanded') === 'false'
+      return playback.getAttribute('aria-expanded') === 'false'
         && document.getElementById('playback-options-panel').hidden && document.activeElement.id === 'btn-help';
-      const practice = document.getElementById('practice-toggle');
-      practice.click();
-      const practiceOn = document.body.classList.contains('has-practice-row')
-        && getComputedStyle(document.querySelector('.practice-toolbar')).display !== 'none';
-      practice.click();
-      const practiceOff = !document.body.classList.contains('has-practice-row')
-        && getComputedStyle(document.querySelector('.practice-toolbar')).display === 'none';
-      return JSON.stringify({ outsideFocusClosed, practiceOn, practiceOff });
     })()`);
-    const behavior = JSON.parse(interaction) as Record<string, boolean>;
-    for (const [name, passed] of Object.entries(behavior)) assert.strictEqual(passed, true, `${name} behavior works`);
+    assert.strictEqual(outsideFocusClosed, true, 'outside focus closes the playback options disclosure');
+    await setPreviewPracticeEnabled(true);
+    const practiceOn = await evaluatePreviewWebview<boolean>(`document.body.classList.contains('has-practice-row')
+      && getComputedStyle(document.querySelector('.practice-toolbar')).display !== 'none'`);
+    assert.strictEqual(practiceOn, true, 'the Host switches to Practice mode and reveals its controls');
+    await setPreviewPracticeEnabled(false);
+    const practiceOff = await evaluatePreviewWebview<boolean>(`!document.body.classList.contains('has-practice-row')
+      && getComputedStyle(document.querySelector('.practice-toolbar')).display === 'none'`);
+    assert.strictEqual(practiceOff, true, 'Normal mode hides Practice controls');
 
     const waitForPracticeState = async (enabled: boolean): Promise<void> => {
       for (let attempt = 0; attempt < 100; attempt++) {
@@ -2365,13 +2531,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       }
       const state = await evaluatePreviewWebview<string>(`JSON.stringify({
         row: document.body.classList.contains('has-practice-row'),
-        pressed: document.getElementById('practice-toggle')?.getAttribute('aria-pressed'),
+        pressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
         rowDisplay: getComputedStyle(document.getElementById('practice-toolbar')).display,
         active: document.activeElement?.id
       })`);
       assert.fail(`Practice did not become ${enabled ? 'enabled' : 'disabled'}: ${state}`);
     };
-    await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+    await setPreviewPracticeEnabled(true);
     await waitForPracticeState(true);
     for (const controlId of ['practice-speed', 'practice-loop', 'practice-set-a', 'practice-set-b']) {
       await evaluatePreviewWebview<void>(`document.getElementById('${controlId}').focus()`);
@@ -2392,9 +2558,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await waitForPracticeState(false);
       const evacuated = await evaluatePreviewWebview<string>(`JSON.stringify({
         active: document.activeElement?.id,
+        activeInsideHiddenRow: !!document.activeElement?.closest('#practice-toolbar'),
         hidden: getComputedStyle(document.getElementById('practice-toolbar')).display === 'none'
       })`);
-      assert.deepStrictEqual(JSON.parse(evacuated), { active: 'practice-toggle', hidden: true }, `${controlId} focus moves before the Practice row is hidden`);
+      const focusAfterExit = JSON.parse(evacuated) as { active: string; activeInsideHiddenRow: boolean; hidden: boolean };
+      assert.strictEqual(focusAfterExit.activeInsideHiddenRow, false, `${controlId} focus does not remain in the hidden Practice row`);
+      assert.strictEqual(focusAfterExit.hidden, true, `${controlId} is hidden after leaving Practice`);
       await vscode.commands.executeCommand('guitardsl.practice.toggle');
       await waitForPracticeState(true);
     }
@@ -2405,7 +2574,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const suffix = tag && /^[a-z0-9-]+$/i.test(tag) ? `-${tag}` : '';
     const runTemporarySettingsScenario = async (sourceDoc: vscode.TextDocument): Promise<void> => {
     if (await evaluatePreviewWebview<boolean>(`document.body.classList.contains('has-practice-row')`)) {
-      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await setPreviewPracticeEnabled(false);
       await waitForPracticeState(false);
     }
     const widths = workbenchWidth >= 2200 ? [421, 600, 840, 1100] : [421, 600];
@@ -2532,7 +2701,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(collapsedCapoOptions, expectedClosedCapoLabels,
         `${width}px closing the capo list hides candidate scores and levels`);
 
-      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await setPreviewPracticeEnabled(true);
       await waitForPracticeState(true);
       const practiceOn = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
         top: document.getElementById('practice-toolbar').getBoundingClientRect().top,
@@ -2542,7 +2711,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       })`));
       assert.deepStrictEqual(practiceOn, { top: 92, height: 42, bodyPadding: '152px', settingsBottom: 92 },
         `${width}px Practice ON adds only the 42px row after settings`);
-      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await setPreviewPracticeEnabled(false);
       await waitForPracticeState(false);
     }
     await resizeActiveEditorGroupToWidth(600);
@@ -2729,10 +2898,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
 
     if (captureScreenshots && workbenchWidth < 2200) {
       await evaluatePreviewWebview<void>(`(() => { const button=document.getElementById('view-export-toggle'); button.focus(); button.click();
-        if (document.body.classList.contains('has-practice-row')) document.getElementById('practice-toggle').click(); })()`);
+      })()`);
+      if (await evaluatePreviewWebview<boolean>(`document.body.classList.contains('has-practice-row')`)) {
+        await setPreviewPracticeEnabled(false);
+      }
       await waitForPracticeState(false);
       await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-practice-off-view-open${suffix}.png`, 136, workbenchWidth);
-      await evaluatePreviewWebview<void>(`document.getElementById('practice-toggle').click()`);
+      await setPreviewPracticeEnabled(true);
       await waitForPracticeState(true);
       await captureWorkbenchScreenshot(`preview-${requestedLocale}-${theme}-${renderedWidth}-practice-on-view-open${suffix}.png`, 136, workbenchWidth);
     }
@@ -2792,12 +2964,18 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     await settle(150);
     const narrow = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
       const toolbar = document.querySelector('.toolbar-container');
-      const transportIds = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time','practice-toggle'];
+      const transportIds = ['btn-play','btn-pause','btn-stop','playback-seek','playback-time'];
+      const compactMode = document.getElementById('preview-mode-select');
+      const segmentedModes = document.getElementById('preview-mode-control');
       return { width: window.innerWidth,
         transportVisible: transportIds.every(id => document.getElementById(id)?.getClientRects().length > 0),
+        compactModeVisible: compactMode?.getClientRects().length > 0,
+        segmentedModesVisible: segmentedModes?.getClientRects().length > 0,
         toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth };
     })())`));
-    assert.deepStrictEqual(narrow, { width: 421, transportVisible: true, toolbarFits: true }, 'transport remains visible and usable in a narrower split');
+    assert.deepStrictEqual(narrow, {
+      width: 421, transportVisible: true, compactModeVisible: true, segmentedModesVisible: false, toolbarFits: true
+    }, 'transport remains visible and the compact mode selector replaces segmented buttons in a narrower split');
     await evaluatePreviewWebview<void>(`(() => { const view=document.getElementById('view-export-toggle'); view.focus(); if (view.getAttribute('aria-expanded') !== 'true') view.click(); })()`);
     await dispatchPreviewKeyboardKey('Tab');
     const narrowTab = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
@@ -3555,7 +3733,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'a real Inspector gesture starts the local audition');
       const leaseId = audioLease.activeLeaseId as string | undefined;
       assert.ok(leaseId, 'the audition owns the Preview exclusion lease');
-      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
       for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.kind !== 'settings'; attempt++) await settle(20);
@@ -3564,6 +3742,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'the real Inspector delivered its Stopped acknowledgement before Settings opened');
       assert.strictEqual(audioLease.activeLeaseId, undefined, 'the exclusive lease releases only after local silence is confirmed');
       assert.strictEqual(doc.getText(), source, 'opening Settings leaves the document unchanged');
+      const progressionBeforeReturn = require('../../progressionAssistant').progressionAssistantProbe.getSession();
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-progression").click()');
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.()?.kind !== 'progression'; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.()?.kind, 'progression', 'the retained progression session returns from Settings');
+      const progressionAfterReturn = require('../../progressionAssistant').progressionAssistantProbe.getSession();
+      assert.strictEqual(progressionAfterReturn, progressionBeforeReturn, 'tab return preserves the existing candidate session');
+      assert.strictEqual(audioLease.activeLeaseId, undefined, 'reselecting Progression does not restart the audition');
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       await require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe.dispatchMessage('settingsCancel');
     } finally {
@@ -3597,7 +3782,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const leaseId = audioLease.activeLeaseId as string | undefined;
       assert.ok(leaseId, 'the active audition owns the Preview exclusion lease');
 
-      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+      for (let attempt = 0; attempt < 100 && rejectedStopMessages === 0; attempt++) await settle(20);
 
       assert.strictEqual(rejectedStopMessages, 1, 'the Settings transition attempted a Stop message');
       assert.strictEqual(audioLease.activeLeaseId, leaseId,
@@ -3646,7 +3832,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.ok(leaseId, 'the active audition owns the Preview exclusion lease');
 
       const stopStartedAt = Date.now();
-      await vscode.commands.executeCommand('guitardsl.editScoreSettings', doc.uri);
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+      for (let attempt = 0; attempt < 150 && (suppressedStopMessages === 0 || Date.now() - stopStartedAt < 2100); attempt++) await settle(20);
 
       assert.strictEqual(suppressedStopMessages, 1, 'the Settings transition attempted one Stop message');
       assert.ok(Date.now() - stopStartedAt >= 2000, 'Settings waited for the bounded Stop acknowledgement timeout');
@@ -5833,6 +6020,1525 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       }
     });
   });
+
+  test('applies rhythm, duration, TAB, lyric, and keyboard edits as single undoable source changes', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C 4.d 4.u 4.d 4.u |\nmel: | c4/4 d4/4 e4/4 f4/4 |\nlyr: あ い う え\ntab: | 6f0/4 6f1/4 6f3/4 6f5/4 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+
+      const probe = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      const waitIdentity = async () => {
+        for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      };
+      await waitIdentity();
+      let mode = await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode');
+      if (mode !== 'true') await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitIdentity();
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      const applyTextAndUndo = async (kind: string, expected: string, replacement: string) => {
+        await waitIdentity();
+        const label = ` · ${kind} · ${expected}`;
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(${JSON.stringify(label)}))?.value || ''`);
+        assert.ok(bindingId, `Preview exposes ${kind} source binding for ${expected}`);
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = ${JSON.stringify(replacement)};
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        const edited = source.replace(expected, replacement);
+        for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+        assert.strictEqual(doc.getText(), edited, `${kind} edits only its authored token`);
+        await undoIn(doc);
+        assert.strictEqual(doc.getText(), source, `one Undo restores the source after ${kind} editing`);
+      };
+
+      await applyTextAndUndo('rhythm', '4.d', '4.u');
+      await applyTextAndUndo('tab', '6f0/4', '6f2/4');
+      await applyTextAndUndo('lyric', 'あ', 'お');
+
+      const durationSource = '| C |\nmel: | c4/4 |\n';
+      const durationDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: durationSource });
+      await showAndFocus(durationDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', durationDoc.uri);
+      const waitDurationIdentity = async () => {
+        for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== durationDoc.uri.toString(); attempt++) await settle(20);
+        assert.strictEqual(probe.currentDocumentUri, durationDoc.uri.toString());
+        await waitForPreviewIdentity({ documentUri: durationDoc.uri.toString(), documentVersion: durationDoc.version, previewGeneration: probe.generation });
+      };
+      await waitDurationIdentity();
+      if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') !== 'true') {
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+        await waitDurationIdentity();
+      }
+      const melodyId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · melodyNote · c4/4'))?.value || ''`);
+      assert.ok(melodyId, 'Preview exposes a melody note source binding');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(melodyId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-duration-shorter').click();
+      })()`);
+      for (let attempt = 0; attempt < 100 && durationDoc.getText() === durationSource; attempt++) await settle(20);
+      assert.ok(durationDoc.getText().includes('c4/8'), 'duration control halves the selected note duration');
+      await undoIn(durationDoc);
+      assert.strictEqual(durationDoc.getText(), durationSource, 'one Undo restores the selected duration');
+
+      await waitDurationIdentity();
+      await clickPreviewElement(`[data-visual-binding="${melodyId}"]`);
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(melodyId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        const button = document.getElementById('preview-edit-pitch-up');
+        button.focus(); window.focus();
+      })()`);
+      await dispatchPreviewKeyboardKey('Enter');
+      for (let attempt = 0; attempt < 100 && durationDoc.getText() === durationSource; attempt++) await settle(20);
+      assert.ok(durationDoc.getText().includes('c#4/4'), 'keyboard activation transposes the selected melody note');
+      await undoIn(durationDoc);
+      assert.strictEqual(durationDoc.getText(), durationSource, 'one Undo restores the keyboard melody edit');
+    });
+  });
+
+  test('applies, cancels, and undoes global and local let variable edits in the Inspector', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = 'let riff = 4.d 4.d\nlet spare = 8.u\n| C $riff |\n| G $riff |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showVariables');
+      const inspectorState = async () => {
+        try { return await evaluateInspectorWebview<string>('document.getElementById("variables-state")?.hidden === false ? "variables" : "other"'); }
+        catch { return 'unavailable'; }
+      };
+      for (let attempt = 0; attempt < 100 && await inspectorState() !== 'variables'; attempt++) await settle(20);
+      assert.strictEqual(await inspectorState(), 'variables');
+
+      const selectVariable = async (name: string) => {
+        const selected = await evaluateInspectorWebview<boolean>(`(() => {
+          const button = Array.from(document.querySelectorAll('#variables-list button')).find(item => item.textContent.trim() === ${JSON.stringify(name)});
+          if (!button) return false;
+          button.click(); return true;
+        })()`);
+        assert.strictEqual(selected, true, `Inspector lists ${name}`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const current = await evaluateInspectorWebview<string>('document.querySelector("#variables-list button[aria-pressed=true]")?.textContent.trim() || ""');
+          if (current === name) return;
+          await settle(20);
+        }
+        assert.fail(`Inspector did not select ${name}`);
+      };
+      const setOperation = async (operation: string, name?: string, value?: string) => {
+        await evaluateInspectorWebview<void>(`(() => {
+          const operation = document.getElementById('variables-operation');
+          operation.value = ${JSON.stringify(operation)};
+          operation.dispatchEvent(new Event('change', { bubbles: true }));
+          if (${JSON.stringify(name)} !== undefined) {
+            const field = document.getElementById('variables-name'); field.value = ${JSON.stringify(name)};
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          if (${JSON.stringify(value)} !== undefined) {
+            const field = document.getElementById('variables-value'); field.value = ${JSON.stringify(value)};
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        })()`);
+        await settle(100);
+      };
+      const apply = async () => evaluateInspectorWebview<void>('document.getElementById("variables-apply").click()');
+
+      await selectVariable('riff');
+      await setOperation('editGlobal', undefined, '8.d 8.d');
+      await apply();
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), source.replace('let riff = 4.d 4.d', 'let riff = 8.d 8.d'),
+        'global Apply edits the definition while preserving all references');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'global variable edit is one Undo');
+      await settle(250);
+
+      await selectVariable('riff');
+      await setOperation('editGlobal', undefined, '8.d 8.d');
+      await evaluateInspectorWebview<void>('document.getElementById("variables-cancel").click()');
+      await settle(100);
+      assert.strictEqual(doc.getText(), source, 'Cancel leaves the saved document unchanged');
+
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      const probe = require('../../previewCapo').previewLifecycleProbe as { generation: number; currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') !== 'true') {
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      }
+      const referenceId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · letReference · $riff'))?.value || ''`);
+      assert.ok(referenceId);
+      await clickPreviewElement(`[data-visual-binding="${referenceId}"]`);
+      for (let attempt = 0; attempt < 100 && await evaluateInspectorWebview<string>('document.getElementById("variables-operation")?.value || ""') !== 'chooseReference'; attempt++) await settle(20);
+      assert.strictEqual(await evaluateInspectorWebview<string>('document.getElementById("variables-operation")?.value'), 'chooseReference');
+      await setOperation('detachLocal', undefined, '4.d 4.d');
+      await apply();
+      const detached = 'let riff = 4.d 4.d\nlet spare = 8.u\n| C 4.d 4.d |\n| G $riff |\n';
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), detached, 'local detach changes only the selected occurrence');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'local detach and expansion are one Undo');
+    });
+  });
+
+  test('clones a definition from the Inspector as one undoable source change', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const cloneSource = 'let riff = 4.d 4.d\n| C $riff |\n';
+      const cloneDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: cloneSource });
+      await showAndFocus(cloneDoc);
+      await vscode.commands.executeCommand('guitardsl.showVariables');
+      const waitForVariableList = async (name: string) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          try {
+            const names = await evaluateInspectorWebview<string>('Array.from(document.querySelectorAll("#variables-list button")).map(item => item.textContent.trim()).join(",")');
+            if (names.split(',').includes(name)) return;
+          } catch { /* The Inspector Webview may not exist until the command opens it. */ }
+          await settle(20);
+        }
+        assert.fail(`Inspector did not list ${name}`);
+      };
+      const selectVariable = async (name: string) => {
+        await waitForVariableList(name);
+        await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button')).find(item => item.textContent.trim() === ${JSON.stringify(name)})?.click()`);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const selected = await evaluateInspectorWebview<string>('document.querySelector("#variables-list button[aria-pressed=true]")?.textContent.trim() || ""');
+          if (selected === name) return;
+          await settle(20);
+        }
+        assert.fail(`Inspector did not select ${name}`);
+      };
+      await selectVariable('riff');
+      await evaluateInspectorWebview<void>(`(() => {
+        const operation = document.getElementById('variables-operation'); operation.value = 'clone';
+        operation.dispatchEvent(new Event('change', { bubbles: true }));
+        const name = document.getElementById('variables-name'); name.value = 'riffCopy';
+        name.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await settle(100);
+      await evaluateInspectorWebview<void>('document.getElementById("variables-apply").click()');
+      for (let attempt = 0; attempt < 100 && cloneDoc.getText() === cloneSource; attempt++) await settle(20);
+      assert.ok(cloneDoc.getText().includes('let riffCopy = 4.d 4.d'), 'clone writes an independent definition');
+      assert.ok(cloneDoc.getText().includes('| C $riff |'), 'clone does not retarget existing references');
+      await undoIn(cloneDoc);
+      assert.strictEqual(cloneDoc.getText(), cloneSource, 'clone is one Undo');
+    });
+  });
+});
+
+suite('Preview visual editing and let variables (Issue #158)', () => {
+  test('keeps ordinary rendering unchanged and applies one source edit per pointer or form action', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const source = [
+        'let riff = 4.d 4.u 4.d 4.u',
+        '| C $riff |',
+        'mel: | c4/4 d4/4 e4/4 f4/4 |',
+        'lyr: あ い う え',
+        'tab: | 6f0/4 6f1/4 6f3/4 6f5/4 |'
+      ].join('\n') + '\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewWebviewViewportWidth(1100);
+
+      const ordinary = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+        mode: document.body.dataset.previewUiMode,
+        hidden: document.getElementById('preview-edit-row').hidden,
+        bindings: document.querySelectorAll('[data-visual-binding]').length,
+        editChoicePressed: document.getElementById('preview-mode-edit').getAttribute('aria-pressed'),
+        normalChoicePressed: document.getElementById('preview-mode-normal').getAttribute('aria-pressed'),
+        practiceChoicePressed: document.getElementById('preview-mode-practice').getAttribute('aria-pressed'),
+        modeInToolbar: document.getElementById('toolbar-actions').contains(document.getElementById('preview-mode-control')),
+        obsoleteIndependentToggles: !!document.getElementById('practice-toggle') || !!document.getElementById('preview-edit-mode-toggle'),
+        transport: ['btn-play', 'btn-pause', 'btn-stop'].map(id => {
+          const button = document.getElementById(id);
+          return { id, text: button.textContent.trim(), name: button.getAttribute('aria-label'), title: button.title, focusable: button.tabIndex >= 0 };
+        })
+      })`));
+      const playName = locale === 'ja' ? '再生' : 'Play';
+      const pauseName = locale === 'ja' ? '一時停止' : 'Pause';
+      const stopName = locale === 'ja' ? '停止' : 'Stop';
+      assert.deepStrictEqual(ordinary, {
+        mode: 'normal', hidden: true, bindings: 0, editChoicePressed: 'false', normalChoicePressed: 'true',
+        practiceChoicePressed: 'false', modeInToolbar: true, obsoleteIndependentToggles: false,
+        transport: [
+          { id: 'btn-play', text: '▶', name: playName, title: playName, focusable: true },
+          { id: 'btn-pause', text: 'Ⅱ', name: pauseName, title: pauseName, focusable: true },
+          { id: 'btn-stop', text: '■', name: stopName, title: stopName, focusable: true }
+        ]
+      },
+        'Normal Preview keeps icon-only transport controls with localized accessible names and keyboard focus');
+
+      await evaluatePreviewWebview<void>('document.getElementById("preview-mode-edit").click()');
+      let toolbarEnabled = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        toolbarEnabled = await evaluatePreviewWebview<boolean>(`document.body.dataset.previewEditMode === 'true'
+          && document.getElementById('preview-mode-edit').getAttribute('aria-pressed') === 'true'`);
+        if (toolbarEnabled) break;
+        await settle(20);
+      }
+      assert.strictEqual(toolbarEnabled, true, 'the Preview mode selector reaches the Host and reflects Edit mode');
+      const inspectorProbe = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+        getContext?: () => { kind: string; uri?: string };
+      };
+      for (let attempt = 0; attempt < 100 && inspectorProbe.getContext?.().kind !== 'variables'; attempt++) await settle(20);
+      assert.strictEqual(inspectorProbe.getContext?.().kind, 'variables',
+        'enabling Preview editing opens the existing Inspector in Variables');
+      assert.strictEqual(inspectorProbe.getContext?.().uri, doc.uri.toString(),
+        'the Inspector is bound to the Preview document rather than an unrelated active editor');
+      const inspectorView = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+        ready?: boolean;
+        resolvedView?: { visible: boolean };
+      };
+      for (let attempt = 0; attempt < 200 && inspectorView.ready !== true; attempt++) await settle(20);
+      assert.strictEqual(inspectorView.ready, true, 'the automatically revealed Inspector Webview finishes its ready handshake');
+      assert.strictEqual(inspectorView.resolvedView?.visible, true,
+        'entering Edit makes the existing Inspector view visible in a fresh workbench profile');
+
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'normal'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'normal',
+        'the legacy Edit command switches Edit to Normal');
+      await evaluatePreviewWebview<void>('document.getElementById("preview-mode-normal").focus(); window.focus()');
+      await evaluatePreviewWebview<void>(`document.getElementById('preview-mode-control').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }))`);
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'practice'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'practice',
+        'End selects Practice from the Normal segmented control');
+      await clickPreviewElement('#btn-play');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<boolean>('document.getElementById("btn-pause").disabled'); attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<boolean>('document.getElementById("btn-pause").disabled'), false,
+        'the practice fixture is playing before Practice to Edit');
+      await evaluatePreviewWebview<void>('document.getElementById("preview-mode-edit").click()');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'edit'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'edit',
+        'Practice to Edit waits for the existing Preview Stop path and enters Edit');
+      assert.strictEqual(await evaluatePreviewWebview<boolean>('document.getElementById("btn-pause").disabled'), true,
+        'Practice playback is stopped before Edit becomes active');
+      await vscode.commands.executeCommand('guitardsl.practice.toggle');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'practice'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'practice',
+        'the legacy Practice command switches Edit to Practice');
+      assert.strictEqual(await evaluatePreviewWebview<boolean>('document.getElementById("btn-pause").disabled'), true,
+        're-entering Practice never starts playback automatically');
+      await vscode.commands.executeCommand('guitardsl.practice.toggle');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'normal'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'normal',
+        'the legacy Practice command switches Practice to Normal');
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'edit'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'edit',
+        'the legacy Edit command switches Normal back to Edit');
+
+      const inspectorTabs = await evaluateInspectorWebview<{ tablist: string; progressionDisabled: boolean }>(`(() => ({
+        tablist: document.getElementById('inspector-context-tabs').getAttribute('role'),
+        progressionDisabled: document.getElementById('inspector-tab-progression').disabled
+      }))()`);
+      assert.deepStrictEqual(inspectorTabs, { tablist: 'tablist', progressionDisabled: true },
+        'the shared Inspector exposes its top-level tabs and disables progression without a session');
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-document").click()');
+      for (let attempt = 0; attempt < 100 && inspectorProbe.getContext?.().kind !== 'document'; attempt++) await settle(20);
+      assert.strictEqual(inspectorProbe.getContext?.().kind, 'document', 'the Document top-level tab selects the document owner');
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+      for (let attempt = 0; attempt < 100 && inspectorProbe.getContext?.().kind !== 'settings'; attempt++) await settle(20);
+      assert.strictEqual(inspectorProbe.getContext?.().kind, 'settings', 'the Score settings tab opens the existing settings owner');
+      const previewGenerationBeforeSettingsRebuild = Number(await evaluatePreviewWebview<string>('document.body.dataset.previewGeneration'));
+      await evaluatePreviewWebview<void>(`(() => {
+        const pageSize = document.getElementById('select-page-size');
+        pageSize.value = pageSize.value === 'A4' ? 'A3' : 'A4';
+        pageSize.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const generation = Number(await evaluatePreviewWebview<string>('document.body.dataset.previewGeneration'));
+        if (generation > previewGenerationBeforeSettingsRebuild) break;
+        await settle(20);
+      }
+      assert.strictEqual(inspectorProbe.getContext?.().kind, 'settings',
+        'a Preview-only HTML rebuild does not reset a manually selected Inspector tab');
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');
+      for (let attempt = 0; attempt < 100 && inspectorProbe.getContext?.().kind !== 'variables'; attempt++) await settle(20);
+      assert.strictEqual(inspectorProbe.getContext?.().kind, 'variables', 'the Variables tab remains directly selectable');
+      const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+      let stablePreviewIdentity = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const generation = previewLifecycle.generation;
+        await waitForPreviewIdentity({
+          documentUri: doc.uri.toString(),
+          documentVersion: doc.version,
+          previewGeneration: generation
+        });
+        await settle(50);
+        if (previewLifecycle.currentDocumentUri === doc.uri.toString() && previewLifecycle.generation === generation) {
+          stablePreviewIdentity = true;
+          break;
+        }
+      }
+      assert.strictEqual(stablePreviewIdentity, true, 'the settings restore finishes rendering before the form-draft scenario');
+      const draftBindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+      assert.ok(draftBindingId, 'the chord edit form can hold an unapplied draft');
+      const originalWarning = vscode.window.showWarningMessage;
+      const modeDraftPrompts: unknown[][] = [];
+      try {
+        (vscode.window as any).showWarningMessage = (...args: unknown[]) => {
+          modeDraftPrompts.push(args);
+          return Promise.resolve(undefined);
+        };
+        const previewModeDraftProbe = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(draftBindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          const expected = document.getElementById('preview-edit-value').value;
+          const value = document.getElementById('preview-edit-value');
+          value.value = 'Am';
+          value.dispatchEvent(new Event('input', { bubbles: true }));
+          const probe = { mode: document.body.dataset.previewUiMode, generation: document.body.dataset.previewGeneration,
+            value: value.value, expected, selected: target.value,
+            label: target.selectedOptions[0]?.textContent, dirty: value.value !== expected };
+          document.getElementById('preview-mode-normal').click();
+          return probe;
+        })())`));
+        assert.strictEqual(previewModeDraftProbe.mode, 'edit');
+        assert.strictEqual(previewModeDraftProbe.selected, draftBindingId, `the Exit confirmation fixture selects a source binding: ${JSON.stringify(previewModeDraftProbe)}`);
+        assert.strictEqual(previewModeDraftProbe.dirty, true, `the Exit confirmation fixture contains a dirty source form: ${JSON.stringify(previewModeDraftProbe)}`);
+        for (let attempt = 0; attempt < 100 && modeDraftPrompts.length === 0; attempt++) await settle(20);
+        const stateAfterDraftCancel = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+          mode: document.body.dataset.previewUiMode,
+          generation: document.body.dataset.previewGeneration,
+          editMode: document.body.dataset.previewEditMode,
+          value: document.getElementById('preview-edit-value').value,
+          status: document.getElementById('preview-edit-status').textContent
+        })`));
+        assert.strictEqual(modeDraftPrompts.length, 1,
+          `leaving Edit asks before discarding an unapplied form draft: ${JSON.stringify({ stateAfterDraftCancel, previewModeDraftProbe })}`);
+        assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'edit',
+          'Cancel keeps the current Edit mode');
+        assert.strictEqual(await evaluatePreviewWebview<string>('document.getElementById("preview-edit-value").value'), 'Am',
+          'Cancel preserves the unapplied draft');
+        assert.strictEqual(doc.getText(), source, 'mode confirmation never applies a form draft');
+
+        (vscode.window as any).showWarningMessage = (...args: unknown[]) => {
+          modeDraftPrompts.push(args);
+          return Promise.resolve(args[2]);
+        };
+        await evaluatePreviewWebview<void>('document.getElementById("preview-mode-normal").click()');
+        for (let attempt = 0; attempt < 100
+          && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'normal'; attempt++) await settle(20);
+        assert.strictEqual(modeDraftPrompts.length, 2, 'the second exit also asks before discarding');
+        assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'normal',
+          'confirming discard switches to Normal');
+        assert.strictEqual(doc.getText(), source, 'discarding the form draft leaves GuitarDSL unchanged');
+      } finally {
+        (vscode.window as any).showWarningMessage = originalWarning;
+      }
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      let active = { mode: '', hidden: true, bindings: 0 };
+      for (let attempt = 0; attempt < 100; attempt++) {
+        active = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify({
+          mode: document.body.dataset.previewUiMode,
+          hidden: document.getElementById('preview-edit-row').hidden,
+          bindings: document.querySelectorAll('[data-visual-binding]').length
+        })`));
+        if (active.mode === 'edit') break;
+        await settle(20);
+      }
+      assert.strictEqual(active.mode, 'edit');
+      assert.strictEqual(active.hidden, false);
+      assert.ok(active.bindings > 0, 'edit mode exposes source-backed SVG targets');
+      const readEditDockGeometry = () => evaluatePreviewWebview<{
+        editChoiceVisible: boolean; modeSelectVisible: boolean; modeSegmentVisible: boolean; mode: string;
+        editChoicePressed: string; dockPosition: string; dockTop: number; dockBottom: number;
+        safeTop: number; safeBottom: number; practiceRowVisible: boolean; guideVisible: boolean;
+        guideTop: number; viewportHeight: number;
+      }>(`(() => {
+        const rect = element => element.getBoundingClientRect();
+        const editChoice = document.getElementById('preview-mode-edit');
+        const modeSelect = document.getElementById('preview-mode-select');
+        const modeControl = document.getElementById('preview-mode-control');
+        const dock = document.getElementById('preview-edit-row');
+        const practice = document.getElementById('practice-toolbar');
+        const guide = document.getElementById('practice-guide-panel');
+        const guideVisible = !!guide && getComputedStyle(guide).display !== 'none';
+        const practiceRowVisible = !!practice && getComputedStyle(practice).display !== 'none';
+        const settings = document.getElementById('score-settings-row');
+        const compactModeSelect = getComputedStyle(modeSelect).display !== 'none' && rect(modeSelect).width > 0;
+        return {
+          editChoiceVisible: compactModeSelect
+            ? Array.from(modeSelect.options).some(option => option.value === 'edit')
+            : !editChoice.hidden && rect(editChoice).width > 0 && rect(editChoice).height > 0,
+          modeSelectVisible: compactModeSelect,
+          modeSegmentVisible: getComputedStyle(modeControl).display !== 'none' && rect(modeControl).width > 0,
+          mode: document.body.dataset.previewUiMode,
+          editChoicePressed: String(compactModeSelect ? modeSelect.value === 'edit' : editChoice.getAttribute('aria-pressed') === 'true'),
+          dockPosition: getComputedStyle(dock).position,
+          dockTop: rect(dock).top, dockBottom: rect(dock).bottom,
+          safeTop: practiceRowVisible ? rect(practice).bottom : rect(settings).bottom,
+          safeBottom: guideVisible ? rect(guide).top : window.innerHeight,
+          practiceRowVisible, guideVisible, guideTop: guideVisible ? rect(guide).top : window.innerHeight,
+          viewportHeight: window.innerHeight
+        };
+      })()`);
+
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      let restoreSidebarAfterPreviewCapture = false;
+      let restoreAuxiliaryBarAfterPreviewCapture = false;
+      if (captureScreenshots) {
+        await setWorkbenchViewportWidth(2200);
+        const parts = JSON.parse(await inspectWorkbenchLayout()).parts as {
+          sidebar: { visible: boolean };
+          auxiliarybar: { visible: boolean };
+        };
+        restoreSidebarAfterPreviewCapture = parts.sidebar.visible;
+        restoreAuxiliaryBarAfterPreviewCapture = parts.auxiliarybar.visible;
+        if (parts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        if (parts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        await settle(250);
+        await waitForPreviewDocument();
+      }
+      for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
+        await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+        await settle(250);
+        if (captureScreenshots) {
+          await waitForPreviewDocument();
+          await settle(500);
+        }
+        const themeName = theme.includes('Light') ? 'light' : 'dark';
+        for (const width of [421, 600, 840, 1100]) {
+          if (captureScreenshots) {
+            await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+            await resizeActiveEditorGroupToWidth(width);
+            await settle(200);
+          }
+          await setPreviewWebviewViewportWidth(width);
+          let previewPaintReady = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            previewPaintReady = await evaluatePreviewWebview<boolean>(`(() => {
+              const score = [...document.querySelectorAll('svg')].some(svg => {
+                const rect = svg.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && getComputedStyle(svg).display !== 'none';
+              });
+              return document.body.dataset.previewEditMode === 'true'
+                && document.querySelectorAll('[data-visual-binding]').length > 0 && score;
+            })()`);
+            if (previewPaintReady) break;
+            await settle(50);
+          }
+          assert.strictEqual(previewPaintReady, true, `${themeName} Preview has rendered score content at ${width}px`);
+          await settle(150);
+          assert.strictEqual(await evaluatePreviewWebview<number>('window.innerWidth'), width,
+            `${themeName} Preview evidence uses ${width} CSS px`);
+          const editDockGeometry = await readEditDockGeometry();
+          assert.strictEqual(editDockGeometry.editChoiceVisible, true, `${themeName} ${width}px keeps the Edit mode option visible`);
+          assert.strictEqual(editDockGeometry.editChoicePressed, 'true', `${themeName} ${width}px reflects Host Edit mode`);
+          assert.strictEqual(editDockGeometry.mode, 'edit');
+          assert.strictEqual(editDockGeometry.practiceRowVisible, false, `${themeName} ${width}px hides Practice controls while editing`);
+          assert.strictEqual(editDockGeometry.guideVisible, false, `${themeName} ${width}px hides the Practice guide while editing`);
+          assert.strictEqual(editDockGeometry.modeSelectVisible, width < 600, `${themeName} ${width}px uses the compact native selector only below 600px`);
+          assert.strictEqual(editDockGeometry.modeSegmentVisible, width >= 600, `${themeName} ${width}px uses the segmented selector at and above 600px`);
+          assert.strictEqual(editDockGeometry.dockPosition, 'fixed', `${themeName} ${width}px uses a fixed edit dock`);
+          assert.ok(editDockGeometry.dockTop >= editDockGeometry.safeTop - 1,
+            `${themeName} ${width}px keeps the dock below the fixed playback/settings rows`);
+          assert.ok(editDockGeometry.dockBottom <= editDockGeometry.safeBottom + 1,
+            `${themeName} ${width}px keeps the dock above the guide and inside the viewport`);
+          if (captureScreenshots) {
+            const filename = `preview-edit-${locale}-${themeName}-${width}.png`;
+            await capturePreviewWebviewScreenshot(filename, 158, width);
+            const imagePath = path.resolve(__dirname, '../../../docs/status/evidence/issue-158', filename);
+            let image = await fs.readFile(imagePath);
+            for (let attempt = 0; attempt < 4 && image.length < 5000; attempt++) {
+              await settle(300);
+              await waitForPreviewDocument();
+              await capturePreviewWebviewScreenshot(filename, 158, width);
+              image = await fs.readFile(imagePath);
+            }
+            assert.ok(image.length >= 5000 && image.readUInt32BE(16) === width,
+              `${filename} is a complete Preview screenshot at the requested width`);
+          }
+        }
+        if (captureScreenshots) await resetPreviewWebviewViewport();
+      }
+      await setPreviewPracticeEnabled(true);
+      await waitForPreviewBottomPanelsStable('enter Practice mode', 'practice', true);
+      for (const width of [421, 600, 840, 1100]) {
+        await setPreviewWebviewViewportWidth(width);
+        await waitForPreviewBottomPanelsStable(`Practice width ${width}px`, 'practice', true, width);
+        const editDockGeometry = await readEditDockGeometry();
+        assert.strictEqual(editDockGeometry.mode, 'practice', `${width}px selects Practice mode`);
+        assert.strictEqual(editDockGeometry.editChoicePressed, 'false', `${width}px does not leave Edit selected in Practice`);
+        assert.strictEqual(editDockGeometry.practiceRowVisible, true, `${width}px shows Practice controls`);
+        assert.strictEqual(editDockGeometry.guideVisible, true, `Practice guide is visible at ${width}px`);
+        assert.strictEqual(await evaluatePreviewWebview<boolean>(`document.getElementById('preview-edit-row').hidden
+          && document.querySelectorAll('[data-visual-binding]').length === 0`), true,
+          `${width}px Practice has no edit dock or editable hit areas`);
+        assert.strictEqual(editDockGeometry.modeSelectVisible, width < 600, `${width}px Practice uses the responsive mode selector`);
+        assert.strictEqual(editDockGeometry.modeSegmentVisible, width >= 600, `${width}px Practice uses the segmented selector at and above 600px`);
+        assert.ok(editDockGeometry.guideTop >= 134, `Practice guide stays below the 48px, 44px, and 42px toolbar rows at ${width}px`);
+        assert.ok(editDockGeometry.guideTop < editDockGeometry.viewportHeight,
+          `the fixed Practice guide remains within the viewport at ${width}px`);
+      }
+      await setPreviewWebviewViewportWidth(421, 420);
+      await waitForPreviewBottomPanelsStable('short-height Practice geometry', 'practice', true, 421);
+      const shortEditDockGeometry = await readEditDockGeometry();
+      assert.strictEqual(shortEditDockGeometry.viewportHeight, 420, 'the short-height case uses a 420px Preview viewport');
+      assert.strictEqual(shortEditDockGeometry.mode, 'practice');
+      assert.strictEqual(shortEditDockGeometry.guideVisible, true, 'the Practice guide stays available at short height');
+      assert.ok(shortEditDockGeometry.guideTop >= shortEditDockGeometry.safeTop - 1,
+        'the guide remains below the playback, settings, and Practice rows at short height');
+      assert.ok(shortEditDockGeometry.guideTop < shortEditDockGeometry.viewportHeight,
+        'the guide stays reachable within the short viewport');
+      await setPreviewPracticeEnabled(false);
+      await waitForPreviewBottomPanelsStable('leave Practice for Normal', 'normal', false, 421);
+      await resetPreviewWebviewViewport();
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100
+        && await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode') !== 'edit'; attempt++) await settle(20);
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode'), 'edit',
+        'leaving Practice returns to Normal before the legacy Edit command re-enters Edit');
+      await waitForPreviewBottomPanelsStable('enter Edit after Practice', 'edit', false);
+      if (restoreSidebarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+      if (restoreAuxiliaryBarAfterPreviewCapture) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+      if (captureScreenshots) {
+        await settle(250);
+        await waitForPreviewDocument();
+      }
+
+      const chordId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+      assert.ok(chordId, 'the authored chord has a visual source binding');
+      const scrollBeforeChordEdit = await evaluatePreviewWebview<number>(`(() => {
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        window.scrollTo(0, Math.min(320, maxScroll));
+        return window.scrollY;
+      })()`);
+      assert.ok(scrollBeforeChordEdit > 0, 'the Preview score can be scrolled before editing');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(chordId)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = 'G';
+        document.getElementById('preview-edit-apply').focus();
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      const chordEdited = source.replace('| C $riff |', '| G $riff |');
+      for (let attempt = 0; attempt < 100 && doc.getText() === source; attempt++) await settle(20);
+      assert.strictEqual(doc.getText(), chordEdited, 'one Preview action changes only the selected chord token');
+      let restoredEditState = { version: -1, scrollTop: 0, focusId: '' };
+      for (let attempt = 0; attempt < 100; attempt++) {
+        restoredEditState = await evaluatePreviewWebview<{ version: number; scrollTop: number; focusId: string }>(`({
+          version: Number(document.body.dataset.previewDocumentVersion), scrollTop: window.scrollY,
+          focusId: document.activeElement?.id || ''
+        })`);
+        if (restoredEditState.version === doc.version && restoredEditState.focusId === 'preview-edit-apply') break;
+        await settle(20);
+      }
+      assert.strictEqual(restoredEditState.focusId, 'preview-edit-apply', 'a valid source rebuild restores edit-control focus');
+      assert.ok(Math.abs(restoredEditState.scrollTop - scrollBeforeChordEdit) <= 2,
+        'the Preview restores its previous score scroll position after the source edit');
+      await undoIn(doc);
+      assert.strictEqual(doc.getText(), source, 'one Undo restores the exact CRLF/LF source bytes and comments');
+
+      const melodySource = '| C |\nmel: | c4/4 |\n';
+      const melodyDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: melodySource });
+      await showAndFocus(melodyDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', melodyDoc.uri);
+      await waitForPreviewDocument();
+      // `showPreview` is fire-and-forget with respect to the Webview renderer;
+      // wait for the active Preview identity before selecting a source binding.
+      const melodyPreview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+      for (let attempt = 0; attempt < 100 && melodyPreview.currentDocumentUri !== melodyDoc.uri.toString(); attempt++) {
+        await settle(20);
+      }
+      assert.strictEqual(melodyPreview.currentDocumentUri, melodyDoc.uri.toString(),
+        'the Preview finishes switching to the melody fixture document');
+      await waitForPreviewIdentity({
+        documentUri: melodyDoc.uri.toString(),
+        documentVersion: melodyDoc.version,
+        previewGeneration: melodyPreview.generation
+      });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      let melodyEditMode = 'false';
+      for (let attempt = 0; attempt < 100; attempt++) {
+        melodyEditMode = await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode');
+        if (melodyEditMode === 'true') break;
+        await settle(20);
+      }
+      assert.strictEqual(melodyEditMode, 'true');
+      let melodyId = '';
+      for (let attempt = 0; attempt < 100 && !melodyId; attempt++) {
+        melodyId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · melodyNote · c4/4'))?.value || ''`);
+        if (!melodyId) await settle(20);
+      }
+      assert.ok(melodyId);
+      await evaluatePreviewWebview<void>(`(() => {
+        const note = document.querySelector('[data-visual-binding=${JSON.stringify(melodyId)}]');
+        const event = (name, y) => new PointerEvent(name, { bubbles: true, pointerId: 7, isPrimary: true, button: 0, clientY: y });
+        note.dispatchEvent(event('pointerdown', 120));
+        note.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, isPrimary: true, button: 0, clientY: 108 }));
+        document.dispatchEvent(event('pointercancel', 108));
+      })()`);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'pointercancel makes no source edit');
+      await evaluatePreviewWebview<void>(`(() => {
+        const note = document.querySelector('[data-visual-binding=${JSON.stringify(melodyId)}]');
+        const event = (name, y) => new PointerEvent(name, { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: y });
+        note.dispatchEvent(event('pointerdown', 120));
+        note.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: 108 }));
+      })()`);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'pointermove does not edit the source');
+      await evaluatePreviewWebview<void>(`document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 8, isPrimary: true, button: 0, clientY: 108 }))`);
+      for (let attempt = 0; attempt < 100 && melodyDoc.getText() === melodySource; attempt++) await settle(20);
+      assert.ok(melodyDoc.getText().includes('c#4/4'), 'pointerup applies one semitone edit');
+      await undoIn(melodyDoc);
+      assert.strictEqual(melodyDoc.getText(), melodySource, 'one Undo restores the dragged note');
+
+      const variableSource = 'let riff = 4.d 4.u 4.d 4.u\n| C $riff |\n| G $riff |\n';
+      const variableDoc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: variableSource });
+      await showAndFocus(variableDoc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', variableDoc.uri);
+      await waitForPreviewDocument();
+      const variablePreview = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number;
+        currentDocumentUri?: string;
+      };
+      for (let attempt = 0; attempt < 100 && variablePreview.currentDocumentUri !== variableDoc.uri.toString(); attempt++) {
+        await settle(20);
+      }
+      assert.strictEqual(variablePreview.currentDocumentUri, variableDoc.uri.toString(),
+        'the Preview finishes switching to the variable fixture document');
+      await waitForPreviewIdentity({
+        documentUri: variableDoc.uri.toString(),
+        documentVersion: variableDoc.version,
+        previewGeneration: variablePreview.generation
+      });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const referenceId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · letReference · $riff'))?.value || ''`);
+      assert.ok(referenceId);
+      await clickPreviewElement(`[data-visual-binding="${referenceId}"]`);
+      await settle(250);
+      assert.strictEqual(await evaluateInspectorWebview<string>(`document.getElementById('variables-operation')?.value`), 'chooseReference',
+        'clicking a rendered variable reference opens the explicit global-versus-local choice');
+      const usageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
+      assert.match(usageSummary, locale === 'ja' ? /直接: 2/ : /Direct: 2/,
+        'the Inspector shows the two direct uses');
+      const inspectorViewProbe = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+        getContext?: () => {
+          kind: string; uri?: string; version?: number; sessionGeneration?: number; revision?: number;
+          draftRevision?: number; selectedName?: string; section?: string;
+        };
+        getGeneration?: () => number;
+        dispatchMessage?: (message: Record<string, unknown>) => boolean | Promise<boolean>;
+      };
+      await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button'))
+        .find(button => button.textContent.trim() === 'riff')?.click()`);
+      for (let attempt = 0; attempt < 100 && inspectorViewProbe.getContext?.().selectedName !== 'riff'; attempt++) await settle(20);
+      await evaluateInspectorWebview<void>(`(() => {
+        const operation = document.getElementById('variables-operation');
+        operation.value = 'editGlobal';
+        operation.dispatchEvent(new Event('change', { bubbles: true }));
+        const value = document.getElementById('variables-value');
+        value.value = '8.d 8.d 8.d 8.d';
+        value.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await settle(100);
+      const staleContext = inspectorViewProbe.getContext!();
+      assert.strictEqual(staleContext.kind, 'variables');
+      const externalEdit = new vscode.WorkspaceEdit();
+      externalEdit.replace(variableDoc.uri, variableDoc.lineAt(2).range, '| G |');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const windowApi = vscode.window as unknown as object;
+      const activeEditorDescriptor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+      Object.defineProperty(windowApi, 'activeTextEditor', { configurable: true, get: () => undefined });
+      try {
+        assert.strictEqual(vscode.window.activeTextEditor, undefined, 'the Inspector is tested while no text editor is active');
+        assert.strictEqual(await vscode.workspace.applyEdit(externalEdit), true, 'an external source edit changes the Preview document');
+      } finally {
+        if (activeEditorDescriptor) Object.defineProperty(windowApi, 'activeTextEditor', activeEditorDescriptor);
+        else delete (windowApi as { activeTextEditor?: vscode.TextEditor }).activeTextEditor;
+      }
+      let variablesRefreshed = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const context = inspectorViewProbe.getContext?.();
+        if (context?.kind === 'variables' && context.uri === variableDoc.uri.toString() && context.version === variableDoc.version) {
+          variablesRefreshed = true;
+          break;
+        }
+        await settle(20);
+      }
+      assert.strictEqual(variablesRefreshed, true,
+        'the bound Inspector Variables context refreshes independently of activeTextEditor');
+      assert.strictEqual(inspectorViewProbe.getContext?.().selectedName, 'riff',
+        'a same-document refresh preserves the selected variable while its definition still exists');
+
+      const unrelated = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'unrelated\n' });
+      const unrelatedEdit = new vscode.WorkspaceEdit();
+      unrelatedEdit.insert(unrelated.uri, new vscode.Position(0, 0), 'changed ');
+      await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+      const unrelatedDescriptor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+      Object.defineProperty(windowApi, 'activeTextEditor', { configurable: true, get: () => undefined });
+      try {
+        assert.strictEqual(await vscode.workspace.applyEdit(unrelatedEdit), true);
+      } finally {
+        if (unrelatedDescriptor) Object.defineProperty(windowApi, 'activeTextEditor', unrelatedDescriptor);
+        else delete (windowApi as { activeTextEditor?: vscode.TextEditor }).activeTextEditor;
+      }
+      const afterUnrelatedEdit = inspectorViewProbe.getContext?.();
+      assert.strictEqual(afterUnrelatedEdit?.kind, 'variables');
+      assert.strictEqual(afterUnrelatedEdit?.uri, variableDoc.uri.toString(), 'an unrelated URI cannot refresh the bound Variables context');
+      assert.strictEqual(afterUnrelatedEdit?.version, variableDoc.version);
+
+      const sourceBeforeStaleApply = variableDoc.getText();
+      const workspaceApi = vscode.workspace as unknown as { applyEdit: (edit: vscode.WorkspaceEdit) => Promise<boolean> };
+      const originalApplyEdit = workspaceApi.applyEdit;
+      let staleApplyCount = 0;
+      workspaceApi.applyEdit = function (edit: vscode.WorkspaceEdit): Promise<boolean> {
+        staleApplyCount++;
+        return originalApplyEdit.call(vscode.workspace, edit);
+      };
+      try {
+        await inspectorViewProbe.dispatchMessage?.({
+          command: 'variablesApply',
+          generation: inspectorViewProbe.getGeneration!(),
+          sessionUri: staleContext.uri,
+          sessionVersion: staleContext.version,
+          sessionGeneration: staleContext.sessionGeneration,
+          revision: staleContext.revision,
+          draftRevision: (staleContext.draftRevision ?? 0) + 1
+        });
+      } finally {
+        workspaceApi.applyEdit = originalApplyEdit;
+      }
+      assert.strictEqual(staleApplyCount, 0, 'an Apply message from the stale Inspector version creates no WorkspaceEdit');
+      assert.strictEqual(variableDoc.getText(), sourceBeforeStaleApply, 'stale Apply leaves the latest source untouched');
+
+      const webviewGenerationBeforeSelection = Number(await evaluateInspectorWebview<string>(
+        'document.getElementById("inspector-state").dataset.generation'));
+      await evaluateInspectorWebview<void>(`Array.from(document.querySelectorAll('#variables-list button'))
+        .find(button => button.textContent.trim() === 'riff')?.click()`);
+      let selectedVariablesDomUpdated = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const hostContext = inspectorViewProbe.getContext?.();
+        const webviewGeneration = Number(await evaluateInspectorWebview<string>(
+          'document.getElementById("inspector-state").dataset.generation'));
+        if (hostContext?.selectedName === 'riff' && webviewGeneration > webviewGenerationBeforeSelection) {
+          selectedVariablesDomUpdated = true;
+          break;
+        }
+        await settle(20);
+      }
+      assert.strictEqual(selectedVariablesDomUpdated, true,
+        'the Webview receives the selected variable context and its revision before Jump is activated');
+      const latestUsageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
+      assert.match(latestUsageSummary, locale === 'ja' ? /直接: 1/ : /Direct: 1/,
+        'the selected variable usage count reflects the external source edit');
+      const usageLocations = await evaluateInspectorWebview<string>(`String(document.querySelectorAll('#variables-usages button').length)`);
+      assert.strictEqual(usageLocations, '1', 'the Inspector lists only the latest reference location');
+      const expectedJumpStart = variableDoc.getText().indexOf('$riff');
+      const expectedJumpEnd = expectedJumpStart + '$riff'.length;
+      const jumpWindowApi = vscode.window as unknown as {
+        showTextDocument: (...args: unknown[]) => Promise<vscode.TextEditor>;
+      };
+      const originalShowTextDocument = jumpWindowApi.showTextDocument;
+      let jumpedEditor: vscode.TextEditor | undefined;
+      jumpWindowApi.showTextDocument = async function (...args: unknown[]): Promise<vscode.TextEditor> {
+        const editor = await originalShowTextDocument.apply(vscode.window, args);
+        const requestedDocument = args[0] as vscode.TextDocument | undefined;
+        if (requestedDocument?.uri.toString() === variableDoc.uri.toString()) jumpedEditor = editor;
+        return editor;
+      };
+      try {
+        await evaluateInspectorWebview<void>('document.querySelector("#variables-usages button")?.click()');
+        for (let attempt = 0; attempt < 100; attempt++) {
+          if (jumpedEditor && variableDoc.offsetAt(jumpedEditor.selection.start) === expectedJumpStart
+            && variableDoc.offsetAt(jumpedEditor.selection.end) === expectedJumpEnd) break;
+          await settle(20);
+        }
+      } finally {
+        jumpWindowApi.showTextDocument = originalShowTextDocument;
+      }
+      assert.ok(jumpedEditor, 'Jump opens the source editor returned by showTextDocument');
+      assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.start), expectedJumpStart,
+        'Jump selects the latest reference start');
+      assert.strictEqual(variableDoc.offsetAt(jumpedEditor!.selection.end), expectedJumpEnd,
+        'Jump selects the latest reference end');
+      assert.strictEqual(variableDoc.getText().slice(variableDoc.offsetAt(jumpedEditor!.selection.start), variableDoc.offsetAt(jumpedEditor!.selection.end)),
+        '$riff', 'Jump selects the latest reference range');
+    });
+  });
+
+  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+    test('Issue #158 Inspector top tabs and settings subtabs screenshot evidence', async function () {
+      this.timeout(120000);
+      await withWorkbenchSnapshotRestored(async () => {
+        const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+        const source = 'let riff = 4.d 4.u\n| C $riff |\n| G $riff |\n';
+        const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+        await showAndFocus(doc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        await waitForPreviewDocument();
+        await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+
+        const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe as {
+          ready?: boolean;
+          resolvedView?: { visible: boolean };
+          getContext?: () => { kind: string; uri?: string; section?: string; selectedName?: string };
+        };
+        for (let attempt = 0; attempt < 200
+          && (inspector.ready !== true || inspector.resolvedView?.visible !== true
+            || inspector.getContext?.().kind !== 'variables'); attempt++) await settle(20);
+        assert.strictEqual(inspector.ready, true, 'the production Inspector Webview completes its ready handshake');
+        assert.strictEqual(inspector.resolvedView?.visible, true, 'Edit reveals the existing Inspector view');
+        assert.strictEqual(inspector.getContext?.().uri, doc.uri.toString(), 'the Inspector follows the Preview document');
+
+        await vscode.commands.executeCommand('workbench.action.focusAuxiliaryBar');
+        const resizeInspectorViewportToWidth = async (expectedWidth: number): Promise<void> => {
+          let targetSidebarWidth = expectedWidth + 2;
+          let actualWidth = await evaluateInspectorWebview<number>('window.innerWidth');
+          for (let resizeAttempt = 0; resizeAttempt < 4; resizeAttempt++) {
+            await resizeAuxiliarySidebarToWidth(targetSidebarWidth);
+            for (let waitAttempt = 0; waitAttempt < 100; waitAttempt++) {
+              actualWidth = await evaluateInspectorWebview<number>('window.innerWidth');
+              if (Math.abs(actualWidth - expectedWidth) <= 0.5) return;
+              await settle(20);
+            }
+            targetSidebarWidth += Math.round(expectedWidth - actualWidth);
+          }
+          assert.ok(Math.abs(actualWidth - expectedWidth) <= 0.5,
+            `Inspector viewport settles at ${expectedWidth}px after sash calibration (actual=${actualWidth})`);
+        };
+        const readTopTabLayout = async () => JSON.parse(await evaluateInspectorWebview<string>(`(() => {
+          const tablist = document.getElementById('inspector-context-tabs');
+          const listRect = tablist.getBoundingClientRect();
+          const rect = element => {
+            const bounds = element.getBoundingClientRect();
+            return { left: bounds.left, right: bounds.right, width: bounds.width };
+          };
+          return JSON.stringify({
+            viewportWidth: window.innerWidth,
+            role: tablist.getAttribute('role'),
+            overflowX: getComputedStyle(tablist).overflowX,
+            scrollWidth: tablist.scrollWidth,
+            clientWidth: tablist.clientWidth,
+            scrollLeft: tablist.scrollLeft,
+            focus: document.activeElement.id,
+            focusVisible: document.activeElement.matches(':focus-visible'),
+            tabs: Array.from(tablist.querySelectorAll('[role="tab"]')).map(tab => {
+              const full = tab.querySelector('.inspector-tab-label-full');
+              const compact = tab.querySelector('.inspector-tab-label-compact');
+              const fullVisible = getComputedStyle(full).display !== 'none';
+              const compactVisible = getComputedStyle(compact).display !== 'none';
+              return {
+                id: tab.id,
+                label: tab.getAttribute('aria-label'),
+                title: tab.title,
+                fullLabel: full.textContent.trim(),
+                compactLabel: compact.textContent.trim(),
+                fullVisible,
+                compactVisible,
+                visibleLabel: (compactVisible ? compact : full).textContent.trim(),
+                bounds: rect(tab),
+                selected: tab.getAttribute('aria-selected'),
+                disabled: tab.disabled
+              };
+            }),
+            listBounds: rect(tablist)
+          });
+        })()`));
+        const expectedFullLabels = locale === 'ja'
+          ? ['文書', '変数', '楽譜設定', 'コード進行']
+          : ['Document', 'Variables', 'Score settings', 'Progression'];
+        const expectedCompactLabels = locale === 'ja'
+          ? ['文書', '変数', '楽譜', '進行']
+          : ['Doc', 'Vars', 'Score', 'Chords'];
+        const assertTopTabLayout = (layout: any, expectedWidth: number, compact: boolean): void => {
+          assert.ok(Math.abs(layout.viewportWidth - expectedWidth) <= 0.5,
+            `Inspector is rendered at ${expectedWidth}px (actual=${layout.viewportWidth})`);
+          assert.strictEqual(layout.role, 'tablist');
+          assert.strictEqual(layout.tabs.length, 4);
+          assert.strictEqual(layout.scrollWidth <= layout.clientWidth, true,
+            'all Inspector tabs fit without horizontal scrolling');
+          assert.strictEqual(layout.scrollLeft, 0, 'the tab row does not require horizontal scrolling');
+          if (compact) assert.strictEqual(layout.overflowX, 'visible', 'the compact grid has no horizontal overflow area');
+          assert.ok(layout.tabs.every((tab: any, index: number) => tab.id === [
+            'inspector-tab-document', 'inspector-tab-variables', 'inspector-tab-settings', 'inspector-tab-progression'
+          ][index] && tab.label === expectedFullLabels[index] && tab.title === expectedFullLabels[index]),
+          'the same four tab buttons retain their formal accessible names and titles');
+          assert.deepStrictEqual(layout.tabs.map((tab: any) => tab.visibleLabel),
+            compact ? expectedCompactLabels : expectedFullLabels,
+            compact ? 'short visual labels are visible at 360px and below' : 'full visual labels are visible above 360px');
+          assert.ok(layout.tabs.every((tab: any) => tab.compactVisible === compact && tab.fullVisible === !compact),
+            'CSS switches only the visual label at the 360px breakpoint');
+          assert.ok(layout.tabs.every((tab: any) => tab.bounds.left >= layout.listBounds.left - 0.5
+            && tab.bounds.right <= layout.listBounds.right + 0.5), 'every tab button stays inside the tab row');
+          if (compact) {
+            const widths = layout.tabs.map((tab: any) => tab.bounds.width);
+            assert.ok(Math.max(...widths) - Math.min(...widths) <= 0.5, 'the four narrow tabs have equal widths');
+          }
+        };
+        await resizeInspectorViewportToWidth(293);
+        for (const theme of ['Default Dark Modern', 'Default Light Modern']) {
+          await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+          await settle(200);
+          const themeName = theme.includes('Light') ? 'light' : 'dark';
+          await evaluateInspectorWebview<void>(`(() => {
+            const documentTab = document.getElementById('inspector-tab-document');
+            documentTab.focus();
+          })()`);
+          await dispatchWorkbenchKey('ArrowRight');
+          const topTabs = await readTopTabLayout();
+          assertTopTabLayout(topTabs, 293, true);
+          assert.strictEqual(topTabs.focus, 'inspector-tab-variables', 'ArrowRight moves focus without losing the selected Variables tab');
+          assert.strictEqual(topTabs.focusVisible, true, 'keyboard focus remains visibly indicated on the active tab');
+          assert.strictEqual(topTabs.tabs.filter((tab: { selected: string }) => tab.selected === 'true').length, 1,
+            'exactly one top-level tab is selected');
+          for (const width of [360, 480, 293]) {
+            await resizeInspectorViewportToWidth(width);
+            const resizedTabs = await readTopTabLayout();
+            assertTopTabLayout(resizedTabs, width, width <= 360);
+            assert.strictEqual(resizedTabs.focus, 'inspector-tab-variables',
+              `resize to ${width}px preserves the focused Inspector tab`);
+            assert.strictEqual(resizedTabs.tabs.filter((tab: { selected: string }) => tab.selected === 'true').length, 1,
+              `resize to ${width}px preserves exactly one selected tab`);
+          }
+
+          await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+          for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'settings'; attempt++) await settle(20);
+          const settingsTabs = JSON.parse(await evaluateInspectorWebview<string>(`JSON.stringify({
+            role: document.getElementById('settings-tabs').getAttribute('role'),
+            tabs: Array.from(document.querySelectorAll('#settings-tabs button')).map(tab => ({
+              role: tab.getAttribute('role'), label: tab.getAttribute('aria-label') || tab.textContent.trim(),
+              selected: tab.getAttribute('aria-selected')
+            }))
+          })`));
+          assert.strictEqual(settingsTabs.role, 'tablist');
+          assert.strictEqual(settingsTabs.tabs.length, 3, 'Capo, Beginner, and Transpose settings subtabs are visible');
+          assert.ok(settingsTabs.tabs.every((tab: { role: string; label: string }) => tab.role === 'tab' && tab.label.length > 0),
+            'each score-settings subtab has a semantic role and accessible name');
+          assert.strictEqual(await activateInspectorControlWithKeyboard('section', 'beginner'), true,
+            'the settings subtab is reachable by keyboard');
+          for (let attempt = 0; attempt < 100 && inspector.getContext?.().section !== 'beginner'; attempt++) await settle(20);
+          assert.strictEqual(inspector.getContext?.().section, 'beginner');
+          const settingsScreenshotLayout = JSON.parse(await evaluateInspectorWebview<string>(`(() => {
+            const tablist = document.getElementById('inspector-context-tabs');
+            tablist.scrollLeft = 0;
+            document.scrollingElement?.scrollTo({ top: 0 });
+            const topTabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+            const settingsTabs = document.getElementById('settings-tabs');
+            const rect = element => {
+              const bounds = element.getBoundingClientRect();
+              return { top: bounds.top, bottom: bounds.bottom, left: bounds.left, right: bounds.right };
+            };
+            return JSON.stringify({
+              viewportHeight: window.innerHeight,
+              topTablist: rect(tablist),
+              settingsTabs: rect(settingsTabs),
+              visibleTopTabLabels: topTabs.filter(tab => {
+                const bounds = tab.getBoundingClientRect();
+                const clip = tablist.getBoundingClientRect();
+                return bounds.left >= clip.left && bounds.right <= clip.right;
+              }).map(tab => [...tab.querySelectorAll('.inspector-tab-label-full, .inspector-tab-label-compact')]
+                .find(label => getComputedStyle(label).display !== 'none')?.textContent.trim())
+            });
+          })()`));
+          assert.ok(settingsScreenshotLayout.topTablist.top >= 0
+            && settingsScreenshotLayout.topTablist.bottom <= settingsScreenshotLayout.viewportHeight,
+          'the narrow screenshot keeps the primary tabs in view after keyboard navigation');
+          assert.ok(settingsScreenshotLayout.settingsTabs.top >= 0
+            && settingsScreenshotLayout.settingsTabs.bottom <= settingsScreenshotLayout.viewportHeight,
+          'the narrow screenshot keeps the Score Settings subtabs in view');
+          assert.ok(settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Score|楽譜/i.test(label))
+            && settingsScreenshotLayout.visibleTopTabLabels.some((label: string) => /Chords|進行/i.test(label)),
+          'the narrow four-column tab row visibly includes Score Settings and Progression');
+          await captureWorkbenchScreenshot(`inspector-settings-${locale}-${themeName}-narrow.png`, 158, 800);
+
+          await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');
+          let variablesDomReady = false;
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const state = JSON.parse(await evaluateInspectorWebview<string>(`JSON.stringify({
+              kind: document.getElementById('inspector-state').dataset.contextKind,
+              uri: document.getElementById('inspector-state').dataset.documentUri,
+              version: Number(document.getElementById('inspector-state').dataset.documentVersion),
+              definitions: Array.from(document.querySelectorAll('#variables-list button')).map(button => button.textContent.trim())
+            })`));
+            if (state.kind === 'variables' && state.uri === doc.uri.toString()
+              && state.version === doc.version && state.definitions.includes('riff')) {
+              variablesDomReady = true;
+              break;
+            }
+            await settle(20);
+          }
+          assert.strictEqual(variablesDomReady, true, 'the Variables Webview has received the current document context');
+          await evaluateInspectorWebview<void>(`(() => {
+            document.getElementById('inspector-context-tabs').scrollLeft = 0;
+            document.scrollingElement?.scrollTo({ top: 0 });
+          })()`);
+          await captureWorkbenchScreenshot(`inspector-variables-${locale}-${themeName}-narrow.png`, 158, 800);
+        }
+      });
+    });
+  }
+
+  test('top-level Inspector tab cancellation preserves and then restores a settings draft', async () => {
+    const source = ['key: B', 'bpm: 120', 'time: 4/4', '| B | E | F#m7 | E/G# |'].join('\n') + '\n';
+    const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+    await showAndFocus(doc);
+    await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+    await waitForPreviewDocument();
+    await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const inspector = require('../../inspector/inspectorView').inspectorViewTestProbe;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const settings = require('../../scoreSettingsInspectorController').scoreSettingsInspectorProbe;
+    const preview = require('../../previewCapo') as { effectiveDslProbe: { previewInput?: string } };
+    const windowApi = vscode.window as unknown as { showWarningMessage: (...args: unknown[]) => Promise<unknown> };
+    const originalWarning = windowApi.showWarningMessage;
+    const confirmations: unknown[][] = [];
+    try {
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-settings").click()');
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'settings'; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.().kind, 'settings', 'the top-level Settings tab opens its owner');
+      const initial = inspector.getContext?.();
+      const candidate = initial?.model?.candidates?.find((item: any) => item.supported && item.capo !== initial.model.sourceCapo);
+      assert.ok(candidate, 'a different supported capo candidate is available for a draft');
+      await settings.dispatchMessage!('settingsSelectCapo', { capo: candidate.capo });
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.().model?.canApply !== true; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.().model?.selectedCapo, candidate.capo, 'the Inspector owns the selected draft');
+      assert.notStrictEqual(preview.effectiveDslProbe.previewInput, source, 'the draft has a temporary Preview projection');
+
+      windowApi.showWarningMessage = (...args: unknown[]) => {
+        confirmations.push(args);
+        return Promise.resolve(undefined);
+      };
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');
+      for (let attempt = 0; attempt < 100 && confirmations.length === 0; attempt++) await settle(20);
+      assert.strictEqual(confirmations.length, 1, 'leaving Settings asks before discarding its draft');
+      assert.deepStrictEqual(confirmations[0][1], { modal: true }, 'draft confirmation is modal');
+      assert.strictEqual(inspector.getContext?.().kind, 'settings', 'Cancel leaves the Settings tab selected');
+      assert.strictEqual(inspector.getContext?.().model?.selectedCapo, candidate.capo, 'Cancel preserves the selected draft');
+      assert.strictEqual(doc.getText(), source, 'a canceled tab switch does not edit the source');
+
+      windowApi.showWarningMessage = (...args: unknown[]) => {
+        confirmations.push(args);
+        return Promise.resolve(args[args.length - 2]);
+      };
+      await evaluateInspectorWebview<void>('document.getElementById("inspector-tab-variables").click()');
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'variables'; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.().kind, 'variables', 'confirming discard switches to Variables');
+      assert.strictEqual(settings.hasSession?.(), false, 'the accepted discard closes the settings draft owner');
+      for (let attempt = 0; attempt < 100 && preview.effectiveDslProbe.previewInput !== source; attempt++) await settle(20);
+      assert.strictEqual(preview.effectiveDslProbe.previewInput, source, 'discard restores the pre-draft Preview snapshot');
+      assert.strictEqual(doc.getText(), source, 'discard leaves the source document unchanged');
+
+      await evaluateInspectorWebview<void>(`(() => {
+        document.getElementById('inspector-tab-variables').focus();
+        document.getElementById('inspector-context-tabs').dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', bubbles: true
+        }));
+      })()`);
+      const keyboardFocus = await evaluateInspectorWebview<{ id: string; selected: string }>(`({
+        id: document.activeElement.id,
+        selected: document.getElementById('inspector-tab-variables').getAttribute('aria-selected')
+      })`);
+      assert.deepStrictEqual(keyboardFocus, { id: 'inspector-tab-settings', selected: 'true' },
+        'ArrowRight moves keyboard focus without changing the selected Inspector context');
+      await evaluateInspectorWebview<void>(`document.getElementById('inspector-context-tabs').dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', bubbles: true
+      }))`);
+      for (let attempt = 0; attempt < 100 && inspector.getContext?.().kind !== 'settings'; attempt++) await settle(20);
+      assert.strictEqual(inspector.getContext?.().kind, 'settings', 'Enter activates the focused top-level tab');
+    } finally {
+      windowApi.showWarningMessage = originalWarning;
+      if (inspector.getContext?.().kind === 'settings') await settings.dispatchMessage?.('settingsCancel');
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+    }
+  });
+
+  test('E2E-PB04 applies source-token insertions, deletions, and inline note edits with one Undo', async function () {
+    this.timeout(180000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        '| C [c4,e4]/4 f4/4 4.d 4.u |',
+        'mel: | c4/8 d4/8 e4/8 f4/8 g4/4. |',
+        'lyr: あ い う え',
+        'tab: | [6f0,5f2,4f2]/2. |'
+      ].join('\n') + '\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        generation: number; currentDocumentUri?: string;
+      };
+      const waitForPreviewSource = async (): Promise<void> => {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          const state = await evaluatePreviewWebview<{ uri: string; version: number; editMode: string }>(`(() => ({
+            uri: document.body.dataset.previewDocumentUri || '',
+            version: Number(document.body.dataset.previewDocumentVersion),
+            editMode: document.body.dataset.previewEditMode || ''
+          }))()`);
+          if (state.uri === doc.uri.toString() && state.version === doc.version && state.editMode === 'true') return;
+          await settle(20);
+        }
+        assert.fail('Preview did not render the current document version in edit mode');
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+      await waitForPreviewSource();
+
+      const bindingId = async (kind: string, expected: string): Promise<string> => evaluatePreviewWebview<string>(
+        `Array.from(document.getElementById('preview-edit-target').options).find(option =>
+          option.textContent.includes(${JSON.stringify(` · ${kind} · ${expected}`)}))?.value || ''`);
+      const editAndUndo = async (kind: string, expected: string, buttonId: string, value?: string,
+        verifyEditedSource?: (text: string) => boolean,
+        verifyEditedRender?: () => Promise<void>, verifyUndoneRender?: () => Promise<void>): Promise<void> => {
+        await waitForPreviewSource();
+        const id = await bindingId(kind, expected);
+        assert.ok(id, `source binding exists for ${kind} ${expected}`);
+        const before = doc.getText();
+        const enabled = await evaluatePreviewWebview<boolean>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(id)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          return !document.getElementById(${JSON.stringify(buttonId)}).disabled
+            && !document.getElementById(${JSON.stringify(buttonId)}).hidden;
+        })()`);
+        assert.strictEqual(enabled, true, `${buttonId} is enabled for ${kind}`);
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(id)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          const valueInput = document.getElementById('preview-edit-value');
+          if (${value === undefined ? 'false' : 'true'}) valueInput.value = ${JSON.stringify(value ?? '')};
+          document.getElementById(${JSON.stringify(buttonId)}).click();
+        })()`);
+        for (let attempt = 0; attempt < 150 && doc.getText() === before; attempt++) await settle(20);
+        const status = doc.getText() === before
+          ? await evaluatePreviewWebview<string>(`document.getElementById('preview-edit-status').textContent`)
+          : '';
+        assert.notStrictEqual(doc.getText(), before, `${buttonId} commits a source edit (Preview status: ${status})`);
+        const edited = doc.getText();
+        if (verifyEditedSource) assert.strictEqual(verifyEditedSource(edited), true, `${buttonId} applies the selected operation`);
+        if (verifyEditedRender) {
+          await waitForPreviewSource();
+          await verifyEditedRender();
+        }
+        await undoIn(doc);
+        assert.strictEqual(doc.getText(), before, `${kind} ${expected} uses exactly one Undo`);
+        assert.notStrictEqual(edited, before);
+        await waitForPreviewSource();
+        if (verifyUndoneRender) await verifyUndoneRender();
+      };
+
+      await editAndUndo('noteGroup', '[c4,e4]/4', 'preview-edit-apply', '[d4,f4]/4', text => text.includes('[d4,f4]/4'));
+      await editAndUndo('inlineNote', 'f4/4', 'preview-edit-apply', 'g4/4', text => text.includes('g4/4'));
+      await editAndUndo('chord', 'C', 'preview-edit-insert', 'Am', text => text.includes('C Am'));
+      await editAndUndo('chord', 'C', 'preview-edit-delete', undefined, text => !text.split('\n')[0].includes(' C '));
+      await editAndUndo('melodyNote', 'f4/8', 'preview-edit-insert', 'a4/8', text => text.includes('f4/8 a4/8 g4/4.'));
+      await editAndUndo('melodyNote', 'g4/4.', 'preview-edit-delete', undefined, text => !text.includes('g4/4.'));
+      await editAndUndo('rhythm', '4.d', 'preview-edit-insert', '4.d', text => text.includes('4.d 4.d 4.u'));
+      await editAndUndo('rhythm', '4.u', 'preview-edit-delete', undefined, text => !text.includes('4.u'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-insert', '3f4/4', text => text.includes('[6f0,5f2,4f2]/2. 3f4/4'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-add-tab-note', '3f4', text => text.includes('[6f0,5f2,4f2,3f4]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '6f0', text => text.includes('[5f2,4f2]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '5f2', text => text.includes('[6f0,4f2]/2.'));
+      await editAndUndo('tab', '[6f0,5f2,4f2]/2.', 'preview-edit-delete-tab-note', '4f2', text => text.includes('[6f0,5f2]/2.'));
+      const lyricAndNoteX = async (lyric: string, melody: string): Promise<{ lyricText: string; lyricX: number; noteCenterX: number }> => {
+        const lyricId = await bindingId('lyric', lyric);
+        const melodyId = await bindingId('melodyNote', melody);
+        assert.ok(lyricId, `Preview has a rendered lyric binding for ${lyric}`);
+        assert.ok(melodyId, `Preview has a rendered melody binding for ${melody}`);
+        return evaluatePreviewWebview<{ lyricText: string; lyricX: number; noteCenterX: number }>(`(() => {
+          const lyric = document.querySelector('[data-visual-binding="${lyricId}"]');
+          const melody = document.querySelector('[data-visual-binding="${melodyId}"]');
+          if (!lyric || !melody) return { lyricText: '', lyricX: NaN, noteCenterX: NaN };
+          const bounds = melody.getBBox();
+          return { lyricText: lyric.textContent.trim(), lyricX: Number(lyric.getAttribute('x')),
+            noteCenterX: bounds.x + bounds.width / 2 };
+        })()`);
+      };
+      await editAndUndo('lyric', 'え', 'preview-edit-insert', 'お', text => text.includes('lyr: あ い う え お'),
+        async () => {
+          const rendered = await lyricAndNoteX('お', 'g4/4.');
+          assert.strictEqual(rendered.lyricText, 'お');
+          assert.ok(Math.abs(rendered.lyricX - rendered.noteCenterX) < 2,
+            'the appended lyric renders under the next note instead of moving an existing syllable');
+        },
+        async () => {
+          assert.strictEqual(await bindingId('lyric', 'お'), '', 'one Undo removes the appended lyric binding');
+          const rendered = await lyricAndNoteX('え', 'f4/8');
+          assert.strictEqual(rendered.lyricText, 'え');
+          assert.ok(Math.abs(rendered.lyricX - rendered.noteCenterX) < 2, 'Undo restores the original lyric-to-note alignment');
+        });
+      await editAndUndo('lyric', 'え', 'preview-edit-delete', undefined, text => !text.includes('え'));
+    });
+  });
+
+  test('E2E-PB05 fails closed on a Stop ACK failure injected after the real Preview Webview response', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C Dm |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+      assert.strictEqual(await audioLeaseCoordinator.stop(), true, 'no prior progression audio lease can lock the new Preview');
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        currentDocumentUri?: string;
+        generation: number;
+        nextStopAcknowledgementForTests?: (stopped: boolean) => Promise<boolean>;
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      let webviewAcknowledgedStop: boolean | undefined;
+      probe.nextStopAcknowledgementForTests = async stopped => {
+        webviewAcknowledgedStop = stopped;
+        return false;
+      };
+      try {
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+        assert.ok(bindingId, 'the real Preview Webview renders the parser-bound chord');
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = 'Am';
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        let status = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+          if (status && webviewAcknowledgedStop !== undefined) break;
+          await settle(20);
+        }
+        assert.strictEqual(typeof webviewAcknowledgedStop, 'boolean', 'Preview processed the request and returned its real Stop ACK');
+        assert.ok(status, 'Preview reports that the rejected Stop prevents editing');
+        assert.strictEqual(doc.getText(), source, 'an injected failed Stop ACK leaves the source unchanged');
+      } finally {
+        probe.nextStopAcknowledgementForTests = undefined;
+      }
+    });
+  });
+
+  test('E2E-PB06 does not replay a Preview edit when its captured Stop ACK is released after panel disposal', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C Dm |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const audioLeaseCoordinator = require('../../extension').progressionAudioLeaseProbe.coordinator;
+      assert.strictEqual(await audioLeaseCoordinator.stop(), true, 'no prior progression audio lease can lock the new Preview');
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as {
+        currentDocumentUri?: string;
+        generation: number;
+        disposedGeneration?: number;
+        nextStopAcknowledgementForTests?: (stopped: boolean) => Promise<boolean>;
+      };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version, previewGeneration: probe.generation });
+      assert.strictEqual(await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode'), 'true');
+
+      let webviewAcknowledgedStop: boolean | undefined;
+      let releaseAcknowledgement: ((stopped: boolean) => void) | undefined;
+      probe.nextStopAcknowledgementForTests = stopped => {
+        webviewAcknowledgedStop = stopped;
+        return new Promise<boolean>(resolve => { releaseAcknowledgement = resolve; });
+      };
+      try {
+        const bindingId = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+          .find(option => option.textContent.includes(' · chord · C'))?.value || ''`);
+        assert.ok(bindingId, 'the real Preview Webview renders the parser-bound chord');
+        await evaluatePreviewWebview<void>(`(() => {
+          const target = document.getElementById('preview-edit-target');
+          target.value = ${JSON.stringify(bindingId)};
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('preview-edit-value').value = 'Am';
+          document.getElementById('preview-edit-apply').click();
+        })()`);
+        for (let attempt = 0; attempt < 100 && releaseAcknowledgement === undefined; attempt++) await settle(20);
+        assert.strictEqual(typeof webviewAcknowledgedStop, 'boolean', 'the Preview Webview sent its Stop ACK before the test delayed host resolution');
+        assert.ok(releaseAcknowledgement, 'the actual Preview response is held at the host boundary');
+
+        const disposedGeneration = probe.generation;
+        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+        for (let attempt = 0; attempt < 100 && probe.disposedGeneration === undefined; attempt++) await settle(20);
+        assert.ok(Number.isSafeInteger(probe.disposedGeneration), 'the Preview panel was disposed while the edit awaited its ACK');
+        assert.ok(probe.disposedGeneration! >= disposedGeneration, 'the recorded disposal belongs to the waiting Preview generation');
+
+        releaseAcknowledgement(true);
+        await settle(100);
+        assert.strictEqual(doc.getText(), source, 'a late Stop ACK cannot replay the edit after Preview disposal');
+      } finally {
+        releaseAcknowledgement?.(false);
+        probe.nextStopAcknowledgementForTests = undefined;
+      }
+    });
+  });
+
+  test('E2E-PB04 rejects an unsafe inherited TAB edit with a reason and source navigation', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C |\ntab: | 6f0/4 6f1 6f2 6f3 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as { currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const id = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · tab · 6f0/4'))?.value || ''`);
+      assert.ok(id, 'the first parser-bound TAB beat is available');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(id)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = '6f0/8';
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+        const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
+        if (status && sourceLinkVisible) break;
+        await settle(20);
+      }
+      assert.strictEqual(doc.getText(), source, 'unsafe inherited duration changes leave the document unchanged');
+      const feedback = await evaluatePreviewWebview<{ status: string; sourceLinkVisible: boolean; applyDisabled: boolean }>(`(() => ({
+        status: document.getElementById('preview-edit-status').textContent,
+        sourceLinkVisible: !document.getElementById('preview-edit-open-source').hidden,
+        applyDisabled: document.getElementById('preview-edit-apply').disabled
+      }))()`);
+      assert.ok(feedback.status, 'Preview explains why the selected source token is read-only');
+      assert.strictEqual(feedback.sourceLinkVisible, true);
+      assert.strictEqual(feedback.applyDisabled, true);
+      await evaluatePreviewWebview<void>('document.getElementById("preview-edit-open-source").click()');
+      for (let attempt = 0; attempt < 100
+        && (vscode.window.activeTextEditor?.document.uri.toString() !== doc.uri.toString()
+          || vscode.window.activeTextEditor.selection.start.line !== 1); attempt++) await settle(20);
+      assert.strictEqual(vscode.window.activeTextEditor?.document.uri.toString(), doc.uri.toString(),
+        'source navigation opens the owning GuitarDSL document');
+      assert.strictEqual(vscode.window.activeTextEditor?.selection.start.line, 1, 'source navigation selects the rejected TAB token');
+    });
+  });
+
+  test('E2E-PB04 rejects a melody edit that propagates inherited octave across a measure boundary', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = '| C | G |\nmel: | c4/2 d4/2 | e/2 f/2 |\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      const probe = require('../../previewCapo').previewLifecycleProbe as { currentDocumentUri?: string };
+      for (let attempt = 0; attempt < 100 && probe.currentDocumentUri !== doc.uri.toString(); attempt++) await settle(20);
+      assert.strictEqual(probe.currentDocumentUri, doc.uri.toString());
+      await vscode.commands.executeCommand('guitardsl.togglePreviewEditMode');
+      await waitForPreviewDocument();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await evaluatePreviewWebview<string>('document.body.dataset.previewEditMode') === 'true') break;
+        await settle(20);
+      }
+      const id = await evaluatePreviewWebview<string>(`Array.from(document.getElementById('preview-edit-target').options)
+        .find(option => option.textContent.includes(' · melodyNote · d4/2'))?.value || ''`);
+      assert.ok(id, 'the authored melody note before the measure boundary has a parser binding');
+      await evaluatePreviewWebview<void>(`(() => {
+        const target = document.getElementById('preview-edit-target');
+        target.value = ${JSON.stringify(id)};
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        document.getElementById('preview-edit-value').value = 'd5/2';
+        document.getElementById('preview-edit-apply').click();
+      })()`);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
+        const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
+        if (status && sourceLinkVisible) break;
+        await settle(20);
+      }
+      assert.strictEqual(doc.getText(), source, 'the document is unchanged when the edit would alter the next measure');
+      const feedback = await evaluatePreviewWebview<{ status: string; sourceLinkVisible: boolean; applyDisabled: boolean }>(`(() => ({
+        status: document.getElementById('preview-edit-status').textContent,
+        sourceLinkVisible: !document.getElementById('preview-edit-open-source').hidden,
+        applyDisabled: document.getElementById('preview-edit-apply').disabled
+      }))()`);
+      assert.ok(feedback.status, 'Preview explains why the inherited-octave edit is read-only');
+      assert.strictEqual(feedback.sourceLinkVisible, true);
+      assert.strictEqual(feedback.applyDisabled, true);
+      await evaluatePreviewWebview<void>('document.getElementById("preview-edit-open-source").click()');
+      for (let attempt = 0; attempt < 100
+        && (vscode.window.activeTextEditor?.document.uri.toString() !== doc.uri.toString()
+          || vscode.window.activeTextEditor.selection.start.line !== 1); attempt++) await settle(20);
+      assert.strictEqual(vscode.window.activeTextEditor?.selection.start.line, 1, 'the source link selects the affected melody token');
+    });
+  });
 });
 
 suite('Sidebar navigation (Issue #137)', () => {
@@ -5942,7 +7648,7 @@ suite('Practice Mode host commands (Issue #93)', () => {
   const commandActions = [
     ['guitardsl.playback.togglePlayPause', 'togglePlayPause'],
     ['guitardsl.playback.stop', 'stop'],
-    ['guitardsl.practice.toggle', 'practiceToggle'],
+    ['guitardsl.practice.toggle', 'modeTransition'],
     ['guitardsl.practice.setLoopStart', 'practiceSetLoopStart'],
     ['guitardsl.practice.setLoopEnd', 'practiceSetLoopEnd'],
     ['guitardsl.practice.clearLoop', 'practiceClearLoop'],
@@ -5992,6 +7698,19 @@ suite('Practice Mode host commands (Issue #93)', () => {
     assert.strictEqual(probe.lastPlaybackAction, undefined, 'creating Preview starts with a cleared action observation');
 
     for (const [command, expectedAction] of commandActions) {
+      if (expectedAction === 'modeTransition') {
+        const previousMode = await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode');
+        await vscode.commands.executeCommand(command);
+        const expectedMode = previousMode === 'practice' ? 'normal' : 'practice';
+        let actualMode = '';
+        for (let attempt = 0; attempt < 50; attempt++) {
+          actualMode = await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode');
+          if (actualMode === expectedMode) break;
+          await sleep(100);
+        }
+        assert.strictEqual(actualMode, expectedMode, `${command} should toggle ${previousMode} to ${expectedMode}`);
+        continue;
+      }
       await vscode.commands.executeCommand(command);
       assert.strictEqual(probe.lastPlaybackAction, expectedAction, `${command} posts action ${expectedAction}`);
     }

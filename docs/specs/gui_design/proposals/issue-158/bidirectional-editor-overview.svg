@@ -1,0 +1,670 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1950" height="1110" viewBox="0 0 1950 1110" role="img" aria-labelledby="artTitle artDesc">
+<title id="artTitle">Issue #158 GuitarDSL 双方向編集・変数 GUI 画面仕様提案</title>
+<desc id="artDesc">Issue #158。48px再生行に常設する通常・編集・練習の排他的セレクター、編集モードのPreview下端固定ドック、4つのInspector上位タブを示す新規UI提案図。Practice行と4小節ガイドは編集モードでは非表示。実際のVS Codeスクリーンショットではない。</desc>
+<rect x="0" y="0" width="1950" height="1110" rx="0" fill="#0e1520" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="0" y="0" width="1950" height="56" rx="0" fill="#151d28" stroke="none" stroke-width="1" opacity="1"/>
+<line x1="0" y1="56" x2="1950" y2="56" stroke="#2c3a4d" stroke-width="1" stroke-opacity="1" />
+<circle cx="29" cy="28" r="7" fill="#ff6a6a" stroke="none" stroke-width="1"/>
+<circle cx="52" cy="28" r="7" fill="#ffca62" stroke="none" stroke-width="1"/>
+<circle cx="75" cy="28" r="7" fill="#38cc87" stroke="none" stroke-width="1"/>
+<text x="112" y="35" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="19" font-weight="650" fill="#e6edf8" opacity="1" text-anchor="start">GuitarDSL  /  双方向編集 UX コンセプト</text>
+<text x="1883" y="34" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="end">Issue #158 · Design Proposal</text>
+<rect x="18" y="70" width="592" height="1019" rx="12" fill="#1b2533" stroke="#354154" stroke-width="1.3" opacity="1"/>
+<rect x="623" y="70" width="884" height="1019" rx="12" fill="#1b2533" stroke="#354154" stroke-width="1.3" opacity="1"/>
+<rect x="1520" y="70" width="412" height="1019" rx="12" fill="#1b2533" stroke="#354154" stroke-width="1.3" opacity="1"/>
+<rect x="20" y="72" width="588" height="69" rx="11" fill="#202d3d" stroke="none" stroke-width="1" opacity="1"/>
+<text x="42" y="108" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="23" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">GuitarDSL コード</text>
+<text x="42" y="131" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="500" fill="#3bd2b4" opacity="1" text-anchor="start">song.guitardsl    •    双方向同期 ON</text>
+<rect x="34" y="156" width="560" height="850" rx="9" fill="#151e2a" stroke="#334256" stroke-width="1" opacity="1"/>
+<rect x="35" y="157" width="46" height="848" rx="6" fill="#131b25" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="80" y="376" width="511" height="31" rx="4" fill="#1f3957" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="80" y="610" width="511" height="31" rx="4" fill="#213446" stroke="none" stroke-width="1" opacity="1"/>
+<text x="57" y="195" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">01</text>
+<text x="96" y="195" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">title:</text>
+<text x="149.7" y="195" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> 風のコンパス</text>
+<text x="57" y="229" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">02</text>
+<text x="96" y="229" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">key:</text>
+<text x="131.8" y="229" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> </text>
+<text x="140.75" y="229" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#ffc77a" opacity="1" text-anchor="start">C</text>
+<text x="57" y="263" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">03</text>
+<text x="96" y="263" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">bpm:</text>
+<text x="131.8" y="263" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> 120</text>
+<text x="57" y="297" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">04</text>
+<text x="96" y="297" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">time:</text>
+<text x="140.75" y="297" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> 4/4</text>
+<text x="57" y="331" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">05</text>
+<text x="57" y="365" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">06</text>
+<text x="96" y="365" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.3" font-weight="400" fill="#7cbb92" opacity="1" text-anchor="start"># 再利用フラグメント</text>
+<text x="57" y="399" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">07</text>
+<text x="96" y="399" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">let</text>
+<text x="122.85" y="399" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> riff = e4/8 a a g f e d c</text>
+<line x1="231" y1="379" x2="231" y2="403" stroke="#51a5ff" stroke-width="1.6" stroke-opacity="1" />
+<text x="57" y="433" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">08</text>
+<text x="96" y="433" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">let</text>
+<text x="122.85" y="433" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> strum8 = 4.d 8.u 4.d 8.u 4.d</text>
+<text x="57" y="467" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">09</text>
+<text x="96" y="467" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">let</text>
+<text x="122.85" y="467" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> picking = 6f0/4 5f2 4f0 5f2</text>
+<text x="57" y="501" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">10</text>
+<text x="96" y="501" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">let</text>
+<text x="122.85" y="501" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> chordHit = </text>
+<text x="230.25" y="501" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#e4c6ff" opacity="1" text-anchor="start">[c4,e4,g4]</text>
+<text x="319.75" y="501" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start">/4</text>
+<text x="57" y="535" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">11</text>
+<text x="57" y="569" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">12</text>
+<text x="96" y="569" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#e4c6ff" opacity="1" text-anchor="start">[Verse]</text>
+<text x="57" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">13</text>
+<text x="96" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start">| </text>
+<text x="113.9" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#ffc77a" opacity="1" text-anchor="start">C</text>
+<text x="122.85000000000001" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> </text>
+<text x="131.8" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$strum8</text>
+<text x="194.45" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="221.29999999999998" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#ffc77a" opacity="1" text-anchor="start">G</text>
+<text x="230.24999999999997" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> </text>
+<text x="239.19999999999996" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$strum8</text>
+<text x="301.84999999999997" y="603" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">14</text>
+<text x="96" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">mel:</text>
+<text x="131.8" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="158.65" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$riff</text>
+<text x="203.4" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="230.25" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$riff</text>
+<text x="275.0" y="637" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="671" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">15</text>
+<text x="96" y="671" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">lyr:</text>
+<text x="131.8" y="671" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | き み と あ る く よ ね | う た を き か せ て ね |</text>
+<text x="57" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">16</text>
+<text x="96" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">tab:</text>
+<text x="131.8" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="158.65" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$picking</text>
+<text x="230.25" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="257.1" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$picking</text>
+<text x="328.70000000000005" y="705" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="739" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">17</text>
+<text x="57" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">18</text>
+<text x="96" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start">| </text>
+<text x="113.9" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#ffc77a" opacity="1" text-anchor="start">Am</text>
+<text x="131.8" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> </text>
+<text x="140.75" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$strum8</text>
+<text x="203.39999999999998" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="230.24999999999997" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#ffc77a" opacity="1" text-anchor="start">F</text>
+<text x="239.19999999999996" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> </text>
+<text x="248.14999999999995" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$strum8</text>
+<text x="310.79999999999995" y="773" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">19</text>
+<text x="96" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">mel:</text>
+<text x="131.8" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="158.65" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$riff</text>
+<text x="203.4" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="230.25" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$riff</text>
+<text x="275.0" y="807" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="841" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">20</text>
+<text x="96" y="841" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">lyr:</text>
+<text x="131.8" y="841" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | き み と あ る く よ ね | う た を き か せ て ね |</text>
+<text x="57" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">21</text>
+<text x="96" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#c09bff" opacity="1" text-anchor="start">tab:</text>
+<text x="131.8" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="158.65" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$picking</text>
+<text x="230.25" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> | </text>
+<text x="257.1" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#7cceee" opacity="1" text-anchor="start">$picking</text>
+<text x="328.70000000000005" y="875" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.1" font-weight="510" fill="#d7e6f7" opacity="1" text-anchor="start"> |</text>
+<text x="57" y="909" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">22</text>
+<text x="57" y="943" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="450" fill="#5c718b" opacity="1" text-anchor="middle">23</text>
+<text x="96" y="943" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="15.3" font-weight="400" fill="#7cbb92" opacity="1" text-anchor="start"># 選択中: riff の変更は4参照に反映</text>
+<rect x="37" y="1019" width="555" height="55" rx="8" fill="#202f3f" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="54" cy="1046" r="5" fill="#3bd2b4" stroke="none" stroke-width="1"/>
+<text x="70" y="1051" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#d1e5f6" opacity="1" text-anchor="start">変更は TextDocument に反映 · 元に戻す: 1 回</text>
+<rect x="625" y="72" width="880" height="69" rx="11" fill="#202d3d" stroke="none" stroke-width="1" opacity="1"/>
+<text x="650" y="108" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="23" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">楽譜 Preview</text>
+<text x="826" y="107" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="700" fill="#c7efff" opacity="1" text-anchor="start">編集モード</text>
+<text x="650" y="131" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">譜面を直接操作。音高・音価・コード・歌詞・TAB に対応（追加案）</text>
+<rect x="646" y="153" width="838" height="47" rx="8" fill="#1a2a3b" stroke="#40536a" stroke-width="1" opacity="1"/>
+<rect x="657" y="159" width="61" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="687.5" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">▶ 再生</text>
+<rect x="725" y="159" width="59" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="754.5" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">■ 停止</text>
+<line x1="802" y1="167" x2="802" y2="187" stroke="#4d6178" stroke-width="1" stroke-opacity="1" />
+<text x="820" y="181" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#d2deef" opacity="1" text-anchor="start">00:04 / 00:16</text>
+<line x1="938" y1="177" x2="984" y2="177" stroke="#607188" stroke-width="3" stroke-opacity="1" />
+<circle cx="958" cy="177" r="6" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<rect x="990" y="159" width="200" height="35" rx="7" fill="#172334" stroke="#52677e" stroke-width="1" opacity="1" aria-label="Preview モード: 通常、編集、練習"><title>Preview モード</title></rect>
+<rect x="1056" y="160" width="66" height="33" rx="5" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1023" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="middle">通常</text>
+<text x="1089" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="700" fill="#f4f9ff" opacity="1" text-anchor="middle">編集</text>
+<text x="1156" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="middle">練習</text>
+<rect x="1198" y="159" width="115" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1255.5" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">再生設定 ▾</text>
+<rect x="1320" y="159" width="148" height="35" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1394.0" y="180.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">表示・書出し ▾</text>
+<rect x="646" y="208" width="838" height="44" rx="8" fill="#1a2a3b" stroke="#40536a" stroke-width="1" opacity="1"/>
+<text x="659" y="236" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#dbe7f5" opacity="1" text-anchor="start">カポ</text>
+<rect x="709" y="214" width="54" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="736.0" y="233.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">0 ▾</text>
+<text x="788" y="236" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#dbe7f5" opacity="1" text-anchor="start">弾きやすさ</text>
+<rect x="881" y="215" width="128" height="30" rx="7" fill="#24834f" stroke="none" stroke-width="1" opacity="1"/>
+<text x="945.0" y="234.44" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#f7fbff" opacity="1" text-anchor="middle">71/100  簡単</text>
+<rect x="1030" y="220" width="16" height="16" rx="3" fill="#162536" stroke="#667c95" stroke-width="1" opacity="1"/>
+<text x="1054" y="235" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="400" fill="#dbe7f5" opacity="1" text-anchor="start">初心者モード</text>
+<text x="1302" y="235" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">Preview の一時設定</text>
+<rect x="646" y="260" width="838" height="40" rx="8" fill="#1a2a3b" stroke="#40536a" stroke-width="1" opacity="1"/>
+<text x="659" y="285" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#dbe7f5" opacity="1" text-anchor="start">練習速度</text>
+<rect x="731" y="265" width="68" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="765.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">100% ▾</text>
+<text x="815" y="285" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#dbe7f5" opacity="1" text-anchor="start">Loop</text>
+<rect x="863" y="265" width="74" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="900.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">オフ ▾</text>
+<rect x="949" y="265" width="78" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="988.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">A / B</text>
+<text x="1048" y="285" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#dbe7f5" opacity="1" text-anchor="start">ガイド</text>
+<rect x="1105" y="265" width="92" height="29" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1151.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">コンパクト</text>
+<rect x="1204" y="265" width="116" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1262.0" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">4 / 8 / 16分</text>
+<rect x="1327" y="265" width="143" height="29" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1398.5" y="283.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">メロディ表示 ✓</text>
+<rect x="646" y="308" width="838" height="43" rx="8" fill="#1a2a3b" stroke="#40536a" stroke-width="1" opacity="1"/>
+<circle cx="670" cy="329.5" r="5" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<text x="686" y="334" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#d9e6f5" opacity="1" text-anchor="start">譜面を選ぶと、操作欄が画面下端の固定ドックに表示されます</text>
+<rect x="646" y="359" width="838" height="449" rx="8" fill="#fffdf8" stroke="#b5c4d3" stroke-width="1" opacity="1"/>
+<text x="669" y="389" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="20" font-weight="700" fill="#19232f" opacity="1" text-anchor="start">風のコンパス</text>
+<text x="671" y="410" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#6a7b86" opacity="1" text-anchor="start">Key: C     BPM: 120     Time: 4/4      Capo: 0</text>
+<line x1="668" y1="421" x2="1463" y2="421" stroke="#d2d8df" stroke-width="1" stroke-opacity="1" />
+<rect x="675" y="430" width="112" height="25" rx="5" fill="#e8eff9" stroke="none" stroke-width="1" opacity="1"/>
+<text x="731" y="448" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#315d96" opacity="1" text-anchor="middle">[Verse]  1–4</text>
+<rect x="773" y="454" width="48" height="29" rx="6" fill="#ddedff" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="797" y="475" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#234264" opacity="1" text-anchor="middle">C</text>
+<text x="978" y="475" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#234264" opacity="1" text-anchor="middle">G</text>
+<text x="1159" y="475" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#234264" opacity="1" text-anchor="middle">Am</text>
+<text x="1340" y="475" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#234264" opacity="1" text-anchor="middle">F</text>
+<rect x="1084" y="368" width="328" height="34" rx="7" fill="#e6f2ff" stroke="#6a9ee7" stroke-width="1" opacity="1"/>
+<text x="1100" y="390" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#285798" opacity="1" text-anchor="start">編集結果: G4 → A4 · DSL反映済み</text>
+<line x1="707" y1="508" x2="1461" y2="508" stroke="#647180" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="519" x2="1461" y2="519" stroke="#647180" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="530" x2="1461" y2="530" stroke="#647180" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="541" x2="1461" y2="541" stroke="#647180" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="552" x2="1461" y2="552" stroke="#647180" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="710" y1="505" x2="710" y2="554" stroke="#475569" stroke-width="1" stroke-opacity="1" />
+<line x1="891" y1="505" x2="891" y2="554" stroke="#475569" stroke-width="1" stroke-opacity="1" />
+<line x1="1072" y1="505" x2="1072" y2="554" stroke="#475569" stroke-width="1" stroke-opacity="1" />
+<line x1="1253" y1="505" x2="1253" y2="554" stroke="#475569" stroke-width="1" stroke-opacity="1" />
+<line x1="1459" y1="505" x2="1459" y2="554" stroke="#475569" stroke-width="1" stroke-opacity="1" />
+<g transform="translate(752 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<rect x="758" y="513" width="28" height="36" rx="4" fill="#d8ebff" stroke="#51a5ff" stroke-width="1.4" opacity="1"/>
+<g transform="translate(772 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#2d67d0" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#2d67d0"/>
+</g>
+<g transform="translate(792 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(812 536) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(832 542) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(852 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(872 558) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(884 563) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<path d="M752 535 L772 513" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M792 513 L812 519" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M832 525 L852 535" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M872 541 L884 546" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="translate(933 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(953 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(973 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(993 536) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1013 542) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1033 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1053 558) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1065 563) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<path d="M933 535 L953 513" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M973 513 L993 519" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1013 525 L1033 535" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1053 541 L1065 546" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="translate(1114 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1134 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1154 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1174 536) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1194 542) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1214 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1234 558) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1246 563) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<path d="M1114 535 L1134 513" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1154 513 L1174 519" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1194 525 L1214 535" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1234 541 L1246 546" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="translate(1295 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1315 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1335 530) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1355 536) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1375 542) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1395 552) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1415 558) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<g transform="translate(1427 563) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#19232f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#19232f"/>
+</g>
+<path d="M1295 535 L1315 513" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1335 513 L1355 519" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1375 525 L1395 535" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1415 541 L1427 546" fill="none" stroke="#243448" stroke-width="2.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="772" cy="513" r="4" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<circle cx="772" cy="548" r="4" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<text x="752" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">き</text>
+<text x="770" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">み</text>
+<text x="788" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">と</text>
+<text x="806" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">あ</text>
+<text x="824" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">る</text>
+<text x="842" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">く</text>
+<text x="860" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">よ</text>
+<text x="878" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">ね</text>
+<text x="933" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">う</text>
+<text x="951" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">た</text>
+<text x="969" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">を</text>
+<text x="987" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">き</text>
+<text x="1005" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">か</text>
+<text x="1023" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">せ</text>
+<text x="1041" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">て</text>
+<text x="1059" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">ね</text>
+<text x="1114" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">き</text>
+<text x="1132" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">み</text>
+<text x="1150" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">と</text>
+<text x="1168" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">あ</text>
+<text x="1186" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">る</text>
+<text x="1204" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">く</text>
+<text x="1222" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">よ</text>
+<text x="1240" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">ね</text>
+<text x="1295" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">う</text>
+<text x="1313" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">た</text>
+<text x="1331" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">を</text>
+<text x="1349" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">き</text>
+<text x="1367" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">か</text>
+<text x="1385" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">せ</text>
+<text x="1403" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">て</text>
+<text x="1421" y="601" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#293646" opacity="1" text-anchor="middle">ね</text>
+<line x1="672" y1="616" x2="1459" y2="616" stroke="#dce1e8" stroke-width="1" stroke-opacity="1" />
+<text x="680" y="637" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="400" fill="#697a8d" opacity="1" text-anchor="start">Rhythm</text>
+<path d="M752.28 631.6 L755 639.08 L757.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M783.28 639.08 L786 631.6 L788.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M814.28 631.6 L817 639.08 L819.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M845.28 639.08 L848 631.6 L850.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M876.28 631.6 L879 639.08 L881.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M933.28 631.6 L936 639.08 L938.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M964.28 639.08 L967 631.6 L969.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M995.28 631.6 L998 639.08 L1000.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1006" cy="630" r="2.5" fill="#dd9b4f" stroke="none" stroke-width="1"/>
+<path d="M1026.28 639.08 L1029 631.6 L1031.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1057.28 631.6 L1060 639.08 L1062.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1114.28 631.6 L1117 639.08 L1119.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1145.28 639.08 L1148 631.6 L1150.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1176.28 631.6 L1179 639.08 L1181.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1207.28 639.08 L1210 631.6 L1212.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1238.28 631.6 L1241 639.08 L1243.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1295.28 631.6 L1298 639.08 L1300.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1326.28 639.08 L1329 631.6 L1331.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1357.28 631.6 L1360 639.08 L1362.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1388.28 639.08 L1391 631.6 L1393.72 639.08" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1419.28 631.6 L1422 639.08 L1424.72 631.6" fill="none" stroke="#536982" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="707" y1="667" x2="1459" y2="667" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="682" x2="1459" y2="682" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="697" x2="1459" y2="697" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="712" x2="1459" y2="712" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="727" x2="1459" y2="727" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="707" y1="742" x2="1459" y2="742" stroke="#788796" stroke-width="0.8" stroke-opacity="0.6" />
+<text x="679" y="706" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#344457" opacity="1" text-anchor="start">T</text>
+<text x="679" y="721" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#344457" opacity="1" text-anchor="start">A</text>
+<text x="679" y="736" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#344457" opacity="1" text-anchor="start">B</text>
+<text x="763" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="802" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="841" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="880" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="944" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="983" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="1022" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="1061" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="1125" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="1164" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="1203" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="1242" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="1306" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="1345" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<text x="1384" y="696" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">0</text>
+<text x="1423" y="712" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="14" font-weight="650" fill="#253c5b" opacity="1" text-anchor="middle">2</text>
+<line x1="710" y1="666" x2="710" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
+<line x1="891" y1="666" x2="891" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
+<line x1="1072" y1="666" x2="1072" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
+<line x1="1253" y1="666" x2="1253" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
+<line x1="1459" y1="666" x2="1459" y2="744" stroke="#788796" stroke-width="1" stroke-opacity="1" />
+<rect x="646" y="751" width="838" height="58" rx="8" fill="#e9f5f3" stroke="#54a99a" stroke-width="1" opacity="1"/>
+<text x="661" y="773" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#287568" opacity="1" text-anchor="start">固定編集ドック · 選択: mel c4/4</text>
+<rect x="661" y="780" width="112" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="717" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">音高 − / ＋</text>
+<rect x="781" y="780" width="112" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="837" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">音価 長く / 短く</text>
+<rect x="901" y="780" width="115" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="958.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">値を編集</text>
+<rect x="1024" y="780" width="105" height="22" rx="5" fill="#1d7a60" stroke="#288d70" stroke-width="1"/><text x="1076.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="650" fill="#f7fbff" text-anchor="middle">適用</text>
+<rect x="1137" y="780" width="105" height="22" rx="5" fill="#d4e8e4" stroke="#9bbdb7" stroke-width="1"/><text x="1189.5" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#24594f" text-anchor="middle">挿入 / 削除</text>
+<text x="1254" y="795" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#287568" text-anchor="start">ソース位置を維持 · 1 Undo</text>
+<rect x="646" y="817" width="838" height="254" rx="9" fill="#172535" stroke="#3b4d64" stroke-width="1" opacity="1"/>
+<text x="667" y="844" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="17" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">4小節 Practice ガイド</text>
+<text x="952" y="844" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">コンパクト  ·  4小節固定  ·  詳細グリッドに切替可</text>
+<text x="655" y="888" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="start">メロディ</text>
+<text x="655" y="925" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="start">歌詞</text>
+<text x="655" y="958" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="start">奏法</text>
+<text x="655" y="987" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="start">コード</text>
+<text x="655" y="1030" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="start">コード図</text>
+<rect x="730" y="862" width="143" height="192" rx="7" fill="#1e3043" stroke="#4b5c70" stroke-width="0.8" opacity="1"/>
+<text x="739" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#f5fafc" opacity="1" text-anchor="start">01</text>
+<rect x="748" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="776" y="901" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="804" y="896" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="832" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<text x="801" y="930" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#e7edf5" opacity="1" text-anchor="middle">き み と</text>
+<path d="M746.4 946.75 L749 953.9 L751.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M772.4 953.9 L775 946.75 L777.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M798.4 946.75 L801 953.9 L803.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M824.4 953.9 L827 946.75 L829.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M850.4 946.75 L853 953.9 L855.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="801" y="988" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#d8ecff" opacity="1" text-anchor="middle">C</text>
+<rect x="774" y="995" width="54" height="48" rx="4" fill="#fffefa" stroke="#b2bdc9" stroke-width="0.7" opacity="1"/>
+<line x1="779" y1="1000.0" x2="823" y2="1000.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="779" y1="1007.6" x2="823" y2="1007.6" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="779" y1="1015.2" x2="823" y2="1015.2" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="779" y1="1022.8" x2="823" y2="1022.8" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="779" y1="1030.4" x2="823" y2="1030.4" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="779" y1="1038.0" x2="823" y2="1038.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="786.0" y1="1000" x2="786.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="793.5" y1="1000" x2="793.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="801.0" y1="1000" x2="801.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="808.5" y1="1000" x2="808.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="816.0" y1="1000" x2="816.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<circle cx="804.75" cy="1011.86" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<circle cx="797.25" cy="1018.66" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<rect x="882" y="862" width="143" height="192" rx="7" fill="#243f61" stroke="#51a5ff" stroke-width="1.4" opacity="1"/>
+<text x="891" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#f5fafc" opacity="1" text-anchor="start">02</text>
+<rect x="900" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="928" y="901" width="20" height="8" rx="3" fill="#67b7f5" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="956" y="896" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="984" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<text x="953" y="930" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#e7edf5" opacity="1" text-anchor="middle">う た を</text>
+<path d="M898.4 946.75 L901 953.9 L903.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M924.4 953.9 L927 946.75 L929.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M950.4 946.75 L953 953.9 L955.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M976.4 953.9 L979 946.75 L981.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1002.4 946.75 L1005 953.9 L1007.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="953" y="988" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#d8ecff" opacity="1" text-anchor="middle">G</text>
+<rect x="926" y="995" width="54" height="48" rx="4" fill="#fffefa" stroke="#b2bdc9" stroke-width="0.7" opacity="1"/>
+<line x1="931" y1="1000.0" x2="975" y2="1000.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="931" y1="1007.6" x2="975" y2="1007.6" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="931" y1="1015.2" x2="975" y2="1015.2" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="931" y1="1022.8" x2="975" y2="1022.8" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="931" y1="1030.4" x2="975" y2="1030.4" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="931" y1="1038.0" x2="975" y2="1038.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="938.0" y1="1000" x2="938.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="945.5" y1="1000" x2="945.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="953.0" y1="1000" x2="953.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="960.5" y1="1000" x2="960.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="968.0" y1="1000" x2="968.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<circle cx="956.75" cy="1011.86" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<circle cx="949.25" cy="1018.66" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<rect x="1034" y="862" width="143" height="192" rx="7" fill="#1e3043" stroke="#4b5c70" stroke-width="0.8" opacity="1"/>
+<text x="1043" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#f5fafc" opacity="1" text-anchor="start">03</text>
+<rect x="1052" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1080" y="901" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1108" y="896" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1136" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1105" y="930" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#e7edf5" opacity="1" text-anchor="middle">き み と</text>
+<path d="M1050.4 946.75 L1053 953.9 L1055.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1076.4 953.9 L1079 946.75 L1081.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1102.4 946.75 L1105 953.9 L1107.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1128.4 953.9 L1131 946.75 L1133.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1154.4 946.75 L1157 953.9 L1159.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1105" y="988" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#d8ecff" opacity="1" text-anchor="middle">Am</text>
+<rect x="1078" y="995" width="54" height="48" rx="4" fill="#fffefa" stroke="#b2bdc9" stroke-width="0.7" opacity="1"/>
+<line x1="1083" y1="1000.0" x2="1127" y2="1000.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1083" y1="1007.6" x2="1127" y2="1007.6" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1083" y1="1015.2" x2="1127" y2="1015.2" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1083" y1="1022.8" x2="1127" y2="1022.8" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1083" y1="1030.4" x2="1127" y2="1030.4" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1083" y1="1038.0" x2="1127" y2="1038.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1090.0" y1="1000" x2="1090.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1097.5" y1="1000" x2="1097.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1105.0" y1="1000" x2="1105.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1112.5" y1="1000" x2="1112.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1120.0" y1="1000" x2="1120.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<circle cx="1108.75" cy="1011.86" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<circle cx="1101.25" cy="1018.66" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<rect x="1186" y="862" width="143" height="192" rx="7" fill="#1e3043" stroke="#4b5c70" stroke-width="0.8" opacity="1"/>
+<text x="1195" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#f5fafc" opacity="1" text-anchor="start">04</text>
+<rect x="1204" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1232" y="901" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1260" y="896" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="1288" y="906" width="20" height="8" rx="3" fill="#8ca5c2" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1257" y="930" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="550" fill="#e7edf5" opacity="1" text-anchor="middle">う た を</text>
+<path d="M1202.4 946.75 L1205 953.9 L1207.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1228.4 953.9 L1231 946.75 L1233.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1254.4 946.75 L1257 953.9 L1259.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1280.4 953.9 L1283 946.75 L1285.6 953.9" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1306.4 946.75 L1309 953.9 L1311.6 946.75" fill="none" stroke="#d6e8ef" stroke-width="2" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1257" y="988" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="700" fill="#d8ecff" opacity="1" text-anchor="middle">F</text>
+<rect x="1230" y="995" width="54" height="48" rx="4" fill="#fffefa" stroke="#b2bdc9" stroke-width="0.7" opacity="1"/>
+<line x1="1235" y1="1000.0" x2="1279" y2="1000.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1235" y1="1007.6" x2="1279" y2="1007.6" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1235" y1="1015.2" x2="1279" y2="1015.2" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1235" y1="1022.8" x2="1279" y2="1022.8" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1235" y1="1030.4" x2="1279" y2="1030.4" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1235" y1="1038.0" x2="1279" y2="1038.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1242.0" y1="1000" x2="1242.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1249.5" y1="1000" x2="1249.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1257.0" y1="1000" x2="1257.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1264.5" y1="1000" x2="1264.5" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1272.0" y1="1000" x2="1272.0" y2="1038" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<circle cx="1260.75" cy="1011.86" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<circle cx="1253.25" cy="1018.66" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<rect x="1340" y="862" width="130" height="192" rx="7" fill="#2b3448" stroke="#567087" stroke-width="1" opacity="1"/>
+<text x="1405" y="884" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#d6e6f7" opacity="1" text-anchor="middle">次コード</text>
+<text x="1405" y="924" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="22" font-weight="700" fill="#d6e6f7" opacity="1" text-anchor="middle">G</text>
+<rect x="1372" y="941" width="69" height="64" rx="4" fill="#fffefa" stroke="#b2bdc9" stroke-width="0.7" opacity="1"/>
+<line x1="1377" y1="946.0" x2="1436" y2="946.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1377" y1="956.8" x2="1436" y2="956.8" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1377" y1="967.6" x2="1436" y2="967.6" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1377" y1="978.4" x2="1436" y2="978.4" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1377" y1="989.2" x2="1436" y2="989.2" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1377" y1="1000.0" x2="1436" y2="1000.0" stroke="#526075" stroke-width="0.75" stroke-opacity="1" />
+<line x1="1384.0" y1="946" x2="1384.0" y2="1000" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1395.25" y1="946" x2="1395.25" y2="1000" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1406.5" y1="946" x2="1406.5" y2="1000" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1417.75" y1="946" x2="1417.75" y2="1000" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<line x1="1429.0" y1="946" x2="1429.0" y2="1000" stroke="#526075" stroke-width="0.65" stroke-opacity="1" />
+<circle cx="1412.125" cy="962.5" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<circle cx="1400.875" cy="972.5" r="2.4" fill="#1c304c" stroke="none" stroke-width="1"/>
+<text x="1405" y="1034" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#91a3ba" opacity="1" text-anchor="middle">進行順を追従</text>
+<rect x="1522" y="72" width="408" height="69" rx="11" fill="#202d3d" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1544" y="108" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="21" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">GuitarDSL Inspector</text>
+<text x="1544" y="131" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">設定・候補・変数を共通サイドバーに統合</text>
+<rect x="1541" y="153" width="82" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1582" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">文書</text>
+<rect x="1627" y="153" width="82" height="37" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1668" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="700" fill="#f4f9ff" opacity="1" text-anchor="middle">変数</text>
+<rect x="1713" y="153" width="96" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1761" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">楽譜設定</text>
+<rect x="1813" y="153" width="100" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1863" y="176.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">コード進行</text>
+<text x="1544" y="227" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">変数一覧</text>
+<rect x="1838" y="204" width="76" height="31" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1876.0" y="223.82" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">＋ 新規</text>
+<text x="1545" y="253" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">定義名</text>
+<text x="1775" y="253" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">文脈</text>
+<text x="1904" y="253" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="end">参照</text>
+<rect x="1542" y="267" width="373" height="59" rx="7" fill="#1b496f" stroke="#51a5ff" stroke-width="1.2" opacity="1"/>
+<text x="1555" y="292" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="650" fill="#f0f7ff" opacity="1" text-anchor="start">riff</text>
+<text x="1555" y="311" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#3bd2b4" opacity="1" text-anchor="start">定義 OK</text>
+<text x="1775" y="299" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#cad8e9" opacity="1" text-anchor="start">メロディ</text>
+<text x="1905" y="299" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#c9dff3" opacity="1" text-anchor="end">4件</text>
+<rect x="1542" y="333" width="373" height="59" rx="7" fill="#243143" stroke="#3b4b60" stroke-width="0.8" opacity="1"/>
+<text x="1555" y="358" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="650" fill="#f0f7ff" opacity="1" text-anchor="start">strum8</text>
+<text x="1555" y="377" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#3bd2b4" opacity="1" text-anchor="start">定義 OK</text>
+<text x="1775" y="365" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#cad8e9" opacity="1" text-anchor="start">リズム</text>
+<text x="1905" y="365" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#c9dff3" opacity="1" text-anchor="end">4件</text>
+<rect x="1542" y="399" width="373" height="59" rx="7" fill="#243143" stroke="#3b4b60" stroke-width="0.8" opacity="1"/>
+<text x="1555" y="424" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="650" fill="#f0f7ff" opacity="1" text-anchor="start">picking</text>
+<text x="1555" y="443" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#3bd2b4" opacity="1" text-anchor="start">定義 OK</text>
+<text x="1775" y="431" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#cad8e9" opacity="1" text-anchor="start">TAB</text>
+<text x="1905" y="431" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#c9dff3" opacity="1" text-anchor="end">4件</text>
+<rect x="1542" y="465" width="373" height="59" rx="7" fill="#243143" stroke="#3b4b60" stroke-width="0.8" opacity="1"/>
+<text x="1555" y="490" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="650" fill="#f0f7ff" opacity="1" text-anchor="start">chordHit</text>
+<text x="1555" y="509" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#c9a87e" opacity="1" text-anchor="start">未使用</text>
+<text x="1775" y="497" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#cad8e9" opacity="1" text-anchor="start">和音</text>
+<text x="1905" y="497" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="550" fill="#c9dff3" opacity="1" text-anchor="end">0件</text>
+<line x1="1542" y1="536" x2="1915" y2="536" stroke="#42536a" stroke-width="1" stroke-opacity="1" />
+<text x="1545" y="564" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">変数編集：riff</text>
+<text x="1546" y="588" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">種類: メロディ   •   参照: 4箇所</text>
+<rect x="1542" y="606" width="373" height="141" rx="7" fill="#f7f9fc" stroke="#9caebd" stroke-width="1" opacity="1"/>
+<text x="1556" y="627" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="650" fill="#3b516c" opacity="1" text-anchor="start">定義の音符プレビュー</text>
+<line x1="1562" y1="645" x2="1890" y2="645" stroke="#8b9bad" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="1562" y1="657" x2="1890" y2="657" stroke="#8b9bad" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="1562" y1="669" x2="1890" y2="669" stroke="#8b9bad" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="1562" y1="681" x2="1890" y2="681" stroke="#8b9bad" stroke-width="0.8" stroke-opacity="0.6" />
+<line x1="1562" y1="693" x2="1890" y2="693" stroke="#8b9bad" stroke-width="0.8" stroke-opacity="0.6" />
+<g transform="translate(1580 691) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1622 667) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1664 667) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1706 679) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1748 685) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1790 691) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1832 697) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<g transform="translate(1874 703) scale(0.7)">
+<path d="M0 0 L0 -24" fill="none" stroke="#264b7f" stroke-width="1.5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="-5" cy="1" rx="6" ry="4.5" transform="rotate(-18 -5 1)" fill="#264b7f"/>
+</g>
+<rect x="1574" y="655" width="28" height="52" rx="5" fill="#d6eaff" stroke="#71a6ff" stroke-width="1" opacity="1"/>
+<text x="1555" y="768" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="550" fill="#91a3ba" opacity="1" text-anchor="start">定義（編集対象）</text>
+<rect x="1542" y="777" width="373" height="46" rx="7" fill="#132334" stroke="#4b7eb0" stroke-width="1" opacity="1"/>
+<text x="1554" y="805" font-family="'Noto Sans Mono CJK JP', 'SFMono-Regular', monospace" font-size="13" font-weight="500" fill="#c4e0ff" opacity="1" text-anchor="start">let riff = e4/8 a a g f e d c</text>
+<rect x="1542" y="834" width="176" height="37" rx="7" fill="#1d4775" stroke="#51a5ff" stroke-width="1" opacity="1"/>
+<text x="1630.0" y="857.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#f4f9ff" opacity="1" text-anchor="middle">定義を編集</text>
+<rect x="1729" y="834" width="186" height="37" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1822.0" y="857.18" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">名前変更 / 複製</text>
+<text x="1543" y="901" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="600" fill="#e6edf8" opacity="1" text-anchor="start">譜面上の $riff を直接編集する場合</text>
+<rect x="1541" y="913" width="373" height="116" rx="7" fill="#1e3146" stroke="#4a6480" stroke-width="1" opacity="1"/>
+<circle cx="1565" cy="940" r="8" fill="#51a5ff" stroke="none" stroke-width="1"/>
+<circle cx="1565" cy="982" r="8" fill="#15283c" stroke="#7995b4" stroke-width="1.5"/>
+<text x="1582" y="945" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#e6edf8" opacity="1" text-anchor="start">定義を編集（4箇所すべてに反映）</text>
+<text x="1582" y="987" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="500" fill="#e6edf8" opacity="1" text-anchor="start">この箇所だけ展開して編集</text>
+<text x="1555" y="1015" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="11" font-weight="400" fill="#91a3ba" opacity="1" text-anchor="start">いずれも URI / version 検証後に反映</text>
+<rect x="1542" y="1040" width="180" height="34" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1632.0" y="1061.32" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">参照箇所を表示</text>
+<rect x="1733" y="1040" width="182" height="34" rx="7" fill="#283647" stroke="#46566b" stroke-width="1" opacity="1"/>
+<text x="1824.0" y="1061.32" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="12" font-weight="600" fill="#d9e6f5" opacity="1" text-anchor="middle">削除（未使用時）</text>
+<rect x="646" y="254" width="838" height="61" rx="4" fill="#151e2a" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="646" y="834" width="838" height="247" rx="8" fill="#151e2a" stroke="#334256" stroke-width="1" opacity="1"/>
+<text x="686" y="882" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#e6edf8" opacity="1" text-anchor="start">編集モードではPractice操作行とガイドを表示しない</text>
+<text x="686" y="914" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="450" fill="#b4c6da" opacity="1" text-anchor="start">練習へ切り替えると、編集ドックとhit-areaを閉じ、42 px操作行と4小節ガイドを表示します。</text>
+<text x="686" y="944" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="13" font-weight="450" fill="#91a3ba" opacity="1" text-anchor="start">通常 / 編集 / 練習は同時に1つだけ選択されます。</text>
+<rect x="0" y="1090" width="1950" height="20" rx="0" fill="#0d141d" stroke="none" stroke-width="1" opacity="1"/>
+<text x="27" y="1104" font-family="'Noto Sans CJK JP', 'Yu Gothic', sans-serif" font-size="10" font-weight="500" fill="#9ab1c5" opacity="1" text-anchor="start">既存: Preview 再生・一時設定・Practiceガイド・Inspector 基盤   /   追加提案: 排他的なPreviewモード・GUI直接編集・変数一覧/編集</text>
+</svg>

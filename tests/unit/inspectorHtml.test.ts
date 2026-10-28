@@ -24,14 +24,89 @@ describe('renderInspectorHtml', () => {
     assert.doesNotMatch(html, /<script[^>]+src=|https?:\/\//i);
   });
 
-  it('renders document status without putting its URI or version into the Webview', () => {
+  it('keeps document identity machine-readable without showing it in document status', () => {
     const uri = 'file:///private/song.guitardsl';
     const html = renderInspectorHtml('en', { kind: 'document', uri, version: 9 }, 'vscode-webview://unit', 'nonce-9');
 
     assert.match(html, /data-context-kind="document"/);
+    assert.match(html, /data-document-uri="file:\/\/\/private\/song\.guitardsl"/);
+    assert.match(html, /data-document-version="9"/);
     assert.match(html, /Showing the active GuitarDSL document context/);
     assert.match(html, /This foundation is read-only/);
-    assert.doesNotMatch(html, /private\/song\.guitardsl|version.{0,10}9/i);
+    const documentPanel = html.match(/<div id="document-state"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+    assert.doesNotMatch(documentPanel, /private\/song\.guitardsl|version.{0,10}9/i);
+  });
+
+  it('renders the shared top-level tabs with session identity and keyboard activation', () => {
+    const context = {
+      kind: 'variables',
+      uri: 'file:///song.guitardsl', version: 12, sessionGeneration: 4, revision: 0, draftRevision: 0,
+      definitions: []
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'top-tabs', 7);
+
+    assert.match(html, /id="inspector-context-tabs" role="tablist"/);
+    for (const tab of ['document', 'variables', 'settings', 'progression']) {
+      assert.match(html, new RegExp(`id="inspector-tab-${tab}"[^>]*role="tab"[^>]*aria-controls="${tab}-state"`));
+    }
+    assert.match(html, /id="inspector-tab-variables"[^>]*aria-selected="true"/);
+    for (const [tab, label, compact] of [
+      ['document', 'Document', 'Doc'],
+      ['variables', 'Variables', 'Vars'],
+      ['settings', 'Score settings', 'Score'],
+      ['progression', 'Progression', 'Chords']
+    ]) {
+      assert.match(html, new RegExp(`id="inspector-tab-${tab}"[^>]*aria-label="${label}"[^>]*title="${label}"`));
+      assert.match(html, new RegExp(`class="inspector-tab-label-full">${label}</span><span class="inspector-tab-label-compact" aria-hidden="true">${compact}</span>`));
+    }
+    assert.match(html, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/,
+      'the narrow Inspector fits four equal tabs without horizontal scrolling');
+    assert.match(html, /@media \(max-width: 360px\)/);
+    const japaneseHtml = renderInspectorHtml('ja', context, 'vscode-webview://unit', 'top-tabs-ja', 7);
+    for (const [tab, full, compact] of [
+      ['document', '文書', '文書'],
+      ['variables', '変数', '変数'],
+      ['settings', '楽譜設定', '楽譜'],
+      ['progression', 'コード進行', '進行']
+    ]) {
+      assert.match(japaneseHtml, new RegExp(`id="inspector-tab-${tab}"[^>]*aria-label="${full}"[^>]*title="${full}"`));
+      assert.match(japaneseHtml, new RegExp(`class="inspector-tab-label-compact" aria-hidden="true">${compact}</span>`));
+    }
+    assert.match(html, /id="inspector-tab-progression"[^>]* disabled/,
+      'progression stays disabled unless the host has a valid suggestion session');
+    assert.match(html, /data-document-uri="file:\/\/\/song\.guitardsl" data-document-version="12" data-session-generation="4"/);
+    assert.match(html, /command: "inspectorSelectTab", tab, generation: lastGeneration, documentUri: uri, documentVersion: version/);
+    assert.match(html, /event\.key === "ArrowRight"/);
+    assert.match(html, /event\.key === "Home"/);
+    assert.match(html, /event\.key === "End"/);
+    assert.match(html, /event\.key === "Enter" \|\| event\.key === " "/);
+  });
+
+  it('shows direct and indirect let references and disables invalid definition edits', () => {
+    const context = {
+      kind: 'variables',
+      uri: 'file:///song.guitardsl',
+      version: 4,
+      sessionGeneration: 1,
+      revision: 0,
+      draftRevision: 0,
+      selectedName: 'riff',
+      definitions: [{
+        name: 'riff', valid: false, duplicate: true, line: 0, nameStartCol: 4, nameEndCol: 8,
+        valueStartCol: 11, valueEndCol: 14, value: '4.d', allowedContexts: ['measure'],
+        directReferences: [{ name: 'riff', line: 2, startCol: 8, endCol: 13, kind: 'score' }],
+        usageLocations: [
+          { name: 'riff', line: 2, startCol: 8, endCol: 13, kind: 'score' },
+          { name: 'riff', line: 1, startCol: 10, endCol: 15, kind: 'definition', ownerName: 'groove', via: 'groove' }
+        ]
+      }]
+    } as const;
+    const html = renderInspectorHtml('en', context, 'vscode-webview://unit', 'variables-nonce');
+    assert.match(html, /id="variables-usages"/);
+    assert.match(html, /labels\.variablesDirect \+ ": " \+ directCount/);
+    assert.match(html, /deleteOption\.disabled = !valid \|\| !unused/);
+    assert.match(html, /labels\.variablesInvalid/);
+    assert.match(html, /postVariables\("variablesJump", \{ name: selected\.name, line: item\.line/);
   });
 
   it('renders the settings state inside the shared Inspector and loads its nonce-authorized renderer', () => {
@@ -165,7 +240,8 @@ describe('renderInspectorHtml', () => {
         getElementById: (id: string) => {
           if (!elements.has(id)) elements.set(id, makeElement());
           return elements.get(id);
-        }
+        },
+        querySelectorAll: () => []
       },
       window: {
         addEventListener: (type: string, listener: (event: { data: unknown }) => void) => {

@@ -1,6 +1,8 @@
 {
   "command.showPreview.title": "GuitarDSL: プレビューを横に開く",
   "command.openInspector.title": "GuitarDSL: Inspectorを開く",
+  "command.togglePreviewEditMode.title": "GuitarDSL: プレビュー編集モード切替",
+  "command.showVariables.title": "GuitarDSL: let 変数を管理",
   "command.exportPdf.title": "GuitarDSL: PDF出力 / 印刷",
   "command.importGuitarPro.title": "GuitarDSL: Guitar Pro 7/8をインポート",
   "command.exportGuitarPro.title": "GuitarDSL: Guitar Pro 7へエクスポート",

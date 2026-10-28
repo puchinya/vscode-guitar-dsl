@@ -41,6 +41,7 @@ import {
 } from './layout';
 import { renderMelodyStaff } from './melodyStaff';
 import { renderTabStaff } from './tabStaff';
+import { visualBindingAttribute, visualBindingForEvent, visualBindingForOrdinal } from './visualBindings';
 import {
   FETA_TREBLE_CLEF_PATH,
   RenderContext,
@@ -82,49 +83,51 @@ export const FONT_FAMILY_SANS = "'GuitarDSL Noto Sans JP', 'Noto Sans JP', sans-
 const MIN_TITLE_SIZE = 8;
 
 /** One SVG per physical sheet (1 page in portrait, 2 pages side by side in landscape). */
-export function renderScoreSheets(score: ParsedScore, pageSize: PageSize, orientation: PageOrientation): string[] {
-  const layout = layoutScore(score, pageSize, orientation);
+export function renderScoreSheets(score: ParsedScore, pageSize: PageSize, orientation: PageOrientation, includeVisualBindings = false): string[] {
+  const renderScore = includeVisualBindings ? score : { ...score, visualSourceBindings: undefined };
+  const layout = layoutScore(renderScore, pageSize, orientation);
   const totalPages = layout.pages.length;
 
   return layout.sheets.map(sheet => {
     let body = '';
     sheet.pages.forEach((page, col) => {
       const x = MARGIN_SIDE + col * (layout.columnWidth + COLUMN_GUTTER);
-      body += `<g transform="translate(${fmt(x)}, ${fmt(MARGIN_TOP)})">${renderPage(score, layout, page, totalPages)}</g>\n`;
+      body += `<g transform="translate(${fmt(x)}, ${fmt(MARGIN_TOP)})">${renderPage(renderScore, layout, page, totalPages)}</g>\n`;
     });
     return wrapSvg(layout.sheetWidth, layout.sheetHeight, body, 'sheet-svg', `data-pages="${sheet.pages.map(p => p.pageNumber).join(',')}"`);
   });
 }
 
 /** Unpaginated score (continuous / web mode): header, diagrams and all systems in one tall SVG. */
-export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4'): string {
+export function renderContinuousSvg(score: ParsedScore, pageSize: PageSize = 'A4', includeVisualBindings = false): string {
+  const renderScore = includeVisualBindings ? score : { ...score, visualSourceBindings: undefined };
   const { width } = getSheetSize(pageSize, 'portrait');
   const contentWidth = width - 2 * MARGIN_SIDE;
   const scale = contentWidth / SYSTEM_UNIT_WIDTH;
   const systemGap = SYSTEM_UNIT_GAP * scale;
-  const ctx = getRenderContext(score);
-  const header = getHeaderMetrics(score.style.titleSize ?? DEFAULT_TITLE_SIZE);
-  const diagrams = resolveScoreDiagrams(score);
+  const ctx = getRenderContext(renderScore);
+  const header = getHeaderMetrics(renderScore.style.titleSize ?? DEFAULT_TITLE_SIZE);
+  const diagrams = resolveScoreDiagrams(renderScore);
   const grid = getDiagramGrid(diagrams, contentWidth);
 
-  let body = renderScoreHeader(score, contentWidth, header);
+  let body = renderScoreHeader(renderScore, contentWidth, header);
   let y = header.height;
   body += `<g transform="translate(0, ${fmt(y)})">${renderDiagramGrid(diagrams, contentWidth, grid)}</g>`;
   y += grid.height;
 
-  splitIntoRows(score).forEach((rows, pIdx) => {
+  splitIntoRows(renderScore).forEach((rows, pIdx) => {
     if (pIdx > 0) {
-      body += renderPageBreakSeparator(score.pages[pIdx].pageNumber, contentWidth, y);
+      body += renderPageBreakSeparator(renderScore.pages[pIdx].pageNumber, contentWidth, y);
       y += PAGE_BREAK_SEPARATOR_HEIGHT;
-      if (score.expandPageBreakRepeats !== false && rows.length > 0 && rows[0].measures.length > 0 && rows[0].measures[0].isMeasureRepeat) {
+      if (renderScore.expandPageBreakRepeats !== false && rows.length > 0 && rows[0].measures.length > 0 && rows[0].measures[0].isMeasureRepeat) {
         rows[0] = {
           ...rows[0],
           measures: [
-            expandMeasureRepeat(rows[0].measures[0], score.measures),
+            expandMeasureRepeat(rows[0].measures[0], renderScore.measures),
             ...rows[0].measures.slice(1)
           ]
         };
-        rows[0].geometry = getSystemGeometry(rows[0].measures, score);
+        rows[0].geometry = getSystemGeometry(rows[0].measures, renderScore);
       }
     }
     for (const row of rows) {
@@ -454,7 +457,8 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
             chordX = Math.max(bx + 8, bx + padLeft + (ch.beat / barBeats(m)) * usableW);
           }
           chordX = Math.max(lastChordRight + 6, chordX);
-          const chordName = renderChordName(ch, chordX, chordSize);
+          const chordName = renderChordName(ch, chordX, chordSize,
+            visualBindingAttribute(visualBindingForOrdinal(ctx.score, 'chord', m.measureIndex, chIdx)));
           lastChordRight = chordX + chordName.width;
           barsSvg += chordName.svg;
         });
@@ -614,7 +618,8 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
           chordX = chordXAt(columns, bx, actualBarWidth, ch.beat, barBeats(m));
         }
         chordX = Math.max(lastChordRight + 6, chordX);
-        const chordName = renderChordName(ch, chordX, chordSize);
+        const chordName = renderChordName(ch, chordX, chordSize,
+          visualBindingAttribute(visualBindingForOrdinal(ctx.score, 'chord', m.measureIndex, chIdx)));
         lastChordRight = chordX + chordName.width;
         barsSvg += chordName.svg;
       });
@@ -705,6 +710,10 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       const stemX = rd.stemX;
       const opacity = r.ghost ? '0.35' : '1.0';
       const tech = r.techniques;
+      const eventIndex = m.rhythms.indexOf(r);
+      const bindingId = eventIndex < 0 ? undefined : visualBindingForEvent(ctx.score,
+        ['rhythm', 'noteGroup', 'inlineNote', 'letReference'], m.measureIndex, 'rhythm', eventIndex);
+      const bindingAttrs = visualBindingAttribute(bindingId);
       if (rd.isFirstPart) {
         if (!r.isRest) spanEntries.push({ x: rx, palmMute: isPalmMute(r), letRing: isLetRing(r), item: r });
         if (hasRhythmLaneMark(r)) opts.spans.laneMarks.push({ x: rx, fermata: tech?.fermata === true, vibrato: tech?.vibrato === true });
@@ -727,9 +736,9 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
       }
 
       if (r.isRest) {
-        barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines);
+        barsSvg += renderRestGlyph(rd.part.base, rx, midY, staveLines, bindingAttrs);
       } else if (rd.members) {
-        barsSvg += renderInlineGroup(rd, rd.members, rIdx);
+        barsSvg += renderInlineGroup(rd, rd.members, rIdx, bindingAttrs);
       } else if (r.pitch && rd.noteY !== undefined && rd.pos !== undefined) {
         // Inline pitch note (arpeggio / melody note in rhythm staff)
         const noteY = rd.noteY;
@@ -749,7 +758,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
         }
 
         // Notehead (oval, hollow for 1 & 2, filled for quarter/shorter)
-        barsSvg += renderNotehead(rd.part.base, rx, noteY);
+        barsSvg += renderNotehead(rd.part.base, rx, noteY, bindingAttrs);
 
         if (rd.part.dotted) {
           const dotY = pos % 2 === 0 ? noteY - 4 : noteY;
@@ -773,16 +782,16 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
         if (rd.isWhole) {
           // Whole note: wide white slash, no stem
           barsSvg += `<polygon points="${rx - 12},${midY + 7} ${rx},${midY + 7} ${rx + 12},${midY - 7} ${rx},${midY - 7}" fill="#fff"/>`;
-          barsSvg += `<path d="M ${rx - 12},${midY + 7} L ${rx},${midY + 7} L ${rx + 12},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 8.5},${midY + 5.2} L ${rx - 1.5},${midY + 5.2} L ${rx + 8.5},${midY - 5.2} L ${rx + 1.5},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
+          barsSvg += `<path${bindingAttrs} d="M ${rx - 12},${midY + 7} L ${rx},${midY + 7} L ${rx + 12},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 8.5},${midY + 5.2} L ${rx - 1.5},${midY + 5.2} L ${rx + 8.5},${midY - 5.2} L ${rx + 1.5},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
         } else if (rd.isHalf) {
           // Half note: white slash with stem cleanly attached at top-right corner
           barsSvg += `<line x1="${stemX}" y1="${stemTopY}" x2="${stemX}" y2="${midY - 7}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
           barsSvg += `<polygon points="${rx - 6.5},${midY + 7} ${rx + 0.5},${midY + 7} ${rx + 7},${midY - 7} ${rx},${midY - 7}" fill="#fff"/>`;
-          barsSvg += `<path d="M ${rx - 6.5},${midY + 7} L ${rx + 0.5},${midY + 7} L ${rx + 7},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 3.8},${midY + 5.2} L ${rx - 0.8},${midY + 5.2} L ${rx + 4.2},${midY - 5.2} L ${rx + 1.2},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
+          barsSvg += `<path${bindingAttrs} d="M ${rx - 6.5},${midY + 7} L ${rx + 0.5},${midY + 7} L ${rx + 7},${midY - 7} L ${rx},${midY - 7} Z M ${rx - 3.8},${midY + 5.2} L ${rx - 0.8},${midY + 5.2} L ${rx + 4.2},${midY - 5.2} L ${rx + 1.2},${midY - 5.2} Z" fill="#000" fill-rule="evenodd" opacity="${opacity}"/>`;
         } else {
           // Quarter or shorter: solid black slash with stem
           barsSvg += `<line x1="${stemX}" y1="${stemTopY}" x2="${stemX}" y2="${midY - 7}" stroke="#000" stroke-width="1.35" stroke-linecap="square" opacity="${opacity}"/>`;
-          barsSvg += `<polygon points="${rx - 5.5},${midY + 7} ${rx},${midY + 7} ${rx + 6.5},${midY - 7} ${rx + 1},${midY - 7}" fill="#000" opacity="${opacity}"/>`;
+          barsSvg += `<polygon${bindingAttrs} points="${rx - 5.5},${midY + 7} ${rx},${midY + 7} ${rx + 6.5},${midY - 7} ${rx + 1},${midY - 7}" fill="#000" opacity="${opacity}"/>`;
 
           // If not beamed, draw flag for eighth / sixteenth notes
           if (!beamedIndices.has(rIdx)) {
@@ -822,7 +831,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
     });
 
     /** Inline note group: ledger lines once, accidental columns, displaced seconds, shared stem, member ties. */
-    function renderInlineGroup(rd: RenderedRhythm, members: NonNullable<RenderedRhythm['members']>, rIdx: number): string {
+    function renderInlineGroup(rd: RenderedRhythm, members: NonNullable<RenderedRhythm['members']>, rIdx: number, visualAttrs = ''): string {
       const opacity = rd.item.ghost ? '0.35' : '1.0';
       const rx = rd.rx;
       const top = members[members.length - 1].y;
@@ -840,7 +849,7 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
         const cols = accidentalColumns(accidentals);
         accidentals.forEach((a, k) => (out += renderAccidental(a.alter, left - 11 - cols[k] * ACCIDENTAL_COLUMN_WIDTH, a.y)));
       }
-      members.forEach((mb, k) => (out += renderNotehead(rd.part.base, xs[k], mb.y)));
+      members.forEach((mb, k) => (out += renderNotehead(rd.part.base, xs[k], mb.y, visualAttrs)));
       if (rd.part.dotted) {
         const dotYs = new Set(members.map(mb => (mb.pos % 2 === 0 ? mb.y - 4 : mb.y)));
         dotYs.forEach(dotY => (out += `<circle cx="${fmt(right + 8.5)}" cy="${fmt(dotY)}" r="1.6" fill="#000"/>`));

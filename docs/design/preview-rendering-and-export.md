@@ -10,6 +10,7 @@
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
 - Related Issue: [Issue #136](https://github.com/puchinya/vscode-guitar-dsl/issues/136)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
+- Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 - System context: [Architecture](architecture.md)
 
@@ -52,7 +53,7 @@
 
 ### Preview toolbar composition (Issue #136)
 
-`previewHtml.ts` keeps a fixed 48 px playback row followed immediately by a fixed 44 px score-settings row. Play, Pause, Stop, seek, and elapsed/total time stay in the playback row even when playback is unavailable; localized status text is in normal document flow before the score and has no reserved height while empty. Practice is a separate fixed 42 px row at `top: 92px`, rendered only while enabled. Keeping the existing 18 px content gap yields body top padding of 110 px with Practice off and 152 px with it on.
+`previewHtml.ts` keeps a fixed 48 px playback row followed immediately by a fixed 44 px score-settings row. Play, Pause, and Stop remain icon-only at every width; their localized `title` and `aria-label` stay available and the Play name changes to Resume while paused. Seek and elapsed/total time also stay in the playback row even when playback is unavailable; localized status text is in normal document flow before the score and has no reserved height while empty. Practice is a separate fixed 42 px row at `top: 92px`, rendered only while enabled. Keeping the existing 18 px content gap yields body top padding of 110 px with Practice off and 152 px with it on.
 
 Count-in and Metronome live in the nonmodal Playback settings disclosure. Display mode, paper size, orientation, and PDF save live in View & Export. The score-settings row keeps Capo, colored Playability, and Beginner controls directly operable at every supported width. At 840 CSS px and above it also exposes barre policy, automatic/fixed capo selection, and Inspector detail links. Below 840 px these supplemental actions live in an accessible overflow group. The row never displays the text “Temporary Score Settings.” Playability uses the host's authoritative score and level plus text and color: veryEasy/easy are green `#2e7d32`, moderate is ochre `#8d6e00`, hard/veryHard are red `#b71c1c`, and unavailable is neutral. Color never carries meaning by itself. Playback and View & Export disclosures each use `button[aria-expanded][aria-controls]` controlling a hidden labelled group, never a menu. Only one disclosure can be open; Escape closes and returns focus to its active trigger, while outside pointer/focus closes without moving focus. Closed controls are excluded from tab order and the accessibility tree. Disclosure state does not trigger an HTML rebuild or alter the playback timeline. PDF uses the existing exporter and effective DSL.
 
@@ -150,6 +151,12 @@ Compact technique width comes from the same `practiceGuideStrokeVisualWidth()` f
 
 For Preview widths below 421 CSS px, the left label rail and the complete four-slot strip use the same `max(0.8, width / 421)` scale; the next-chord rail and controls retain their size. `#practice-guide-pair-page.clientWidth` is the fit reference. When the scaled stable strip fits, one common inset centers both banks and their gap; when it overflows, inset is zero. Resize and visibility use transformed DOMRects. If the strip overflows, only an occurrence change at a measure start may instantly adjust `scrollLeft` to show the active occurrence; a mid-measure playhead update never scrolls. When all four slots fit, no auto-scroll occurs. English narrow labels use short visual text without splitting words, while full accessible names and lane order remain unchanged. Hiding melody removes its row height from the compact stage and fixed panel.
 
+### Practice Guide panel geometry synchronization (Issue #158 review)
+
+`syncPracticeGuidePanelGeometry` は既存の `requestAnimationFrame` を1つだけ保留し、同じframe内のResizeObserver、resize、UI変更をまとめる。最新DOMをframe内で測定し、collapsed時は42px、表示時は内容に必要な高さを決めてから、`syncPreviewBottomPanelsGeometry` が表示中のbottom panel合計とbodyの `padding-bottom` を同期する。Normalでbottom panelがないときのbody下余白は0px。CSSの `height`、`max-height`、`--practice-guide-panel-height`、`--preview-edit-dock-height` は値が変わる場合だけ書き込む。新しいschedulerやgeometry ownerを追加しない。
+
+E2Eは固定sleepを使わず、2秒以内に連続する2 animation frameでpanel高さの変化が各0.5 CSS px以下、かつcomputed `body.padding-bottom` とpanel border-box高さの差が各0.5 CSS px以下であることを確認する。mode、viewport幅、guide visibilityも同じ測定に含める。timeout診断は直前操作、mode、幅/高さ、collapsed、panel rect/scrollHeight、CSS変数、computed paddingと直近frameを示す。縦スクロール末尾到達は別assertとする。
+
 ### TAB geometry and SVG (Issue #89)
 
 `layoutScore()` remains the sole owner of row and vertical placement. `SystemGeometry` explicitly reports TAB presence, block offset and staff height; TAB lyric baseline, line height and verse count; whether an explicit rhythm staff is rendered and its final offset; and total `unitHeight`. A TAB row orders its blocks as header/section/chord labels, optional melody plus melody lyrics, TAB plus TAB lyrics, optional explicit rhythm, then dynamics/lower lanes. The six evenly spaced lines use a prominent clef-like `TAB` label and enough vertical room to keep fret digits on adjacent strings legible. The rhythm staff appears only when `show_rhythm` is true and the row contains explicitly authored rhythm. TAB's own/default duration does not create a redundant slash staff. Systems without TAB retain current geometry and rendering behavior.
@@ -192,6 +199,20 @@ Compiler 診断、レイアウト・SVG 生成、フォント初期化、PDF 書
 source/effective DSL 再構築時は occurrence index を古い loop point とともに破棄し、推測で再解決しない。再生不可、無名 Section、`B <= A` は部分状態を適用せず、既存有効状態を保持して localized status を返す。
 
 Practice bank transition の Seek、loop wrap、resize、再構築、再入、Dispose は generation を進め、古い transitionend/rAF/fallback callback を無効化して旧 node を確実に除去する。transitionend が background throttle 等で届かない場合も fallback で cleanup し、reduced motion では旧層を残さない。存在しない後続 occurrence は空の小節として捏造せず、現在ページだけを表示する。
+
+## Issue #158 implementation design
+
+The score renderer keeps a single notation source for Preview and PDF. Parser-owned bindings are added as non-visible identity metadata or a Preview-only adapter projection; selection borders, handles, and interaction targets are composed only into Preview HTML. PDF generation receives the same existing score SVG without edit metadata rendered as visible content or controls.
+
+Preview rebuilds retain the 48 px playback row and 44 px score-settings row, with an exclusive Normal / Edit / Practice selector in `.toolbar-actions`. Below 600 px the selector is a labeled native select; at and above 600 px it is a segmented control. Normal shows only the two existing rows, Edit adds the fixed bottom edit dock, and Practice shows the 42 px Practice row and fixed guide. The edit dock and Practice row/guide are mutually exclusive, and bottom padding accounts only for the active mode's dock or guide. The Preview renderer uses captured source bindings to associate hit areas with visual elements and emits only escaped stable IDs, not source ranges or replacement text.
+
+Selection and draft state are disposable UI state. Rebuilds preserve score scroll position and rebind a selected stable key only when URI, version, render generation, and parser source binding match; otherwise they clear it. Restoration metadata is consumed once and removed on stale document, selection removal, or disposal. Temporary Capo or Beginner output that differs from source suspends visual editing until the user explicitly restores the original DSL. Rendering and PDF export never serialize edited objects; the Host applies source splices and then the ordinary parse/render cycle projects the document again.
+
+The playback-row toggle and `guitardsl.togglePreviewEditMode` share one Host transition. The Host validates the panel-held URI/version/generation, refuses non-identity temporary transforms before touching settings or Inspector drafts, and commits the mode only after any draft decision and existing progression Stop/lease handshake succeeds. On a successful OFF→ON it explicitly reveals the existing Inspector for the panel-held document with variables context selected; later Preview renders only update the Preview and do not reset the Inspector tab. Manual hiding does not trigger a reveal loop.
+
+### Verification strategy
+
+Render tests compare the existing display-mode and PDF SVG output with the Preview interaction-enabled output while ignoring only non-visible Preview metadata. Tests also verify that edit controls and overlays are absent from PDF, disabled-mode row heights remain stable, Practice and dock height variables combine without overlap, source bindings are escaped, and SVG contains no script, event handler, or external URL. Webview E2E covers width 421 / 600 / 840 / 1100 CSS px, short heights, scroll restoration, selection rebinding, the shared toggle command/message transition, and Inspector reveal. Real Extension Development Host screenshots are compared with the approved vector proposals and remain separate evidence.
 
 ## Alternatives considered
 

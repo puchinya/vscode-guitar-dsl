@@ -1,3 +1,5 @@
+import { execFile } from 'child_process';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 const MAX_FOCUS_TRACE_ENTRIES = 128;
@@ -18,6 +20,27 @@ type FocusTraceState = {
 };
 
 let currentTrace: FocusTraceState | undefined;
+
+export async function ensureWorkbenchTestHostWindowFocused(): Promise<void> {
+  if (process.platform !== 'darwin' || vscode.window.state.focused) return;
+
+  const appBundle = path.resolve(vscode.env.appRoot, '../../../');
+  console.info('[E2E host focus] requesting foreground activation for the isolated VS Code test app');
+  await new Promise<void>((resolve, reject) => {
+    execFile('/usr/bin/open', ['-a', appBundle, '--args', '--reuse-window'], error => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (vscode.window.state.focused) return;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  recordFocusTrace('test-host-window-focus-timeout');
+  throw new Error('The VS Code Extension Development Host window did not become focused within 2000ms');
+}
 
 function columnName(column: vscode.ViewColumn | undefined): string | undefined {
   if (column === undefined) return undefined;

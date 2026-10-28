@@ -40,6 +40,7 @@ interface SettingsSession {
   revision: number;
   section: InspectorSettingsSection;
   applying: boolean;
+  dirty: boolean;
 }
 
 /** Host-side E2E access to the same validated message path used by Inspector Webview messages. */
@@ -108,7 +109,8 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
       ...(previewSnapshot ? { previewSnapshot } : {}),
       revision: 0,
       section: sectionId,
-      applying: false
+      applying: false,
+      dirty: false
     };
     this.session = session;
     await this.inspector.showSettings(this.context(session));
@@ -134,6 +136,17 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     if (!session || session.applying || session.uri !== doc.uri.toString() || !this.isFresh(session)) return;
     this.capturePreviewSnapshot(session);
     this.previewSelectedSettings(session);
+  }
+
+  hasPendingDraft(uri: string, version: number): boolean {
+    return this.session?.uri === uri && this.session.version === version && this.session.dirty;
+  }
+
+  cancelForTabSwitch(uri: string, version: number): boolean {
+    const session = this.session;
+    if (!session || session.uri !== uri || session.version !== version || !this.isFresh(session)) return !session;
+    this.finish(session, true);
+    return true;
   }
 
   dispose(): void {
@@ -221,6 +234,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
     }
     if (!changed) return;
     session.applying = false;
+    session.dirty = true;
     session.revision++;
     this.publish(session);
   }
