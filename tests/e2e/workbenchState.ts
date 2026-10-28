@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import * as vscode from 'vscode';
 import { evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, waitForPreviewDocument } from './screenshotCapture';
-import { focusEditorGroup, recordFocusTrace } from './workbenchFocus';
+import { ensureWorkbenchTestHostWindowFocused, focusEditorGroup, recordFocusTrace } from './workbenchFocus';
 
 type TabState = {
   key: string;
@@ -262,6 +262,9 @@ async function restorePreview(snapshot: WorkbenchSnapshot): Promise<void> {
 }
 
 async function restoreActiveEditor(snapshot: WorkbenchSnapshot): Promise<void> {
+  recordFocusTrace('workbench-snapshot-active-editor-restore-started');
+  await ensureWorkbenchTestHostWindowFocused();
+  recordFocusTrace('workbench-snapshot-active-editor-restore-host-focused');
   if (snapshot.activeTextEditor) {
     const uri = vscode.Uri.parse(snapshot.activeTextEditor.uri);
     const document = vscode.workspace.textDocuments.find(item => item.uri.toString() === snapshot.activeTextEditor!.uri)

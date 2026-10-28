@@ -202,25 +202,27 @@ async function showAndFocus(
 async function setPreviewPracticeEnabled(enabled: boolean): Promise<void> {
   await waitForPreviewDocument();
   const targetMode = enabled ? 'practice' : 'normal';
-  const read = () => evaluatePreviewWebview<string>('document.body.dataset.previewUiMode');
-  const currentMode = await read();
+  const read = () => evaluatePreviewWebview<string>(`JSON.stringify({
+    mode: document.body.dataset.previewUiMode,
+    pressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
+    rowVisible: document.body.classList.contains('has-practice-row')
+  })`);
+  const initial = JSON.parse(await read()) as { mode?: string; pressed?: string | null; rowVisible?: boolean };
+  const currentMode = initial.mode;
   if (currentMode !== targetMode) {
     const command = currentMode === 'edit' && targetMode === 'normal'
       ? 'guitardsl.togglePreviewEditMode' : 'guitardsl.practice.toggle';
     await vscode.commands.executeCommand(command);
   }
+  let lastState = initial;
   for (let attempt = 0; attempt < 100; attempt++) {
-    const actual = await read();
-    if (actual === targetMode) {
-      const rowVisible = await evaluatePreviewWebview<boolean>(
-        `document.body.classList.contains('has-practice-row')`
-      );
-      assert.strictEqual(rowVisible, enabled, 'Practice row visibility matches its pressed state');
-      return;
-    }
+    lastState = JSON.parse(await read()) as typeof lastState;
+    if (lastState.mode === targetMode
+      && lastState.pressed === String(enabled)
+      && lastState.rowVisible === enabled) return;
     await settle(20);
   }
-  assert.fail(`Preview did not enter ${targetMode} mode`);
+  assert.fail(`Preview did not converge to ${targetMode} mode with matching Practice aria/row state: ${JSON.stringify(lastState)}`);
 }
 
 async function waitForPreviewBottomPanelsStable(
