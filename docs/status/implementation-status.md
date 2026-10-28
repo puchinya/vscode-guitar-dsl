@@ -4,18 +4,18 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-29
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 に対応中。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。
 
 ---
 
 ## Issue #160: 標準ブレースで譜表をグループ化
 
-- **状態**: メロディ・表示中のリズム・TABの実譜表を段単位でグループ化し、2譜表以上に音楽用ブレースと左端線を表示する。小節線は既存境界を使って譜表間の隙間だけを接続する。単一譜表、TABの非表示な暗黙リズムは対象外。Issue #160 は実装・検証中。
+- **状態**: メロディ・表示中のリズム・TABの実譜表を段単位でグループ化し、2譜表以上に音楽用ブレースと左端線を表示する。小節線は既存境界を使って譜表間の隙間だけを接続する。単一譜表、TABの非表示な暗黙リズムは対象外。実装・検証を終え、PR #161を作成してレビュー待ち。
 - **契約 / Milestone**: 承認済みImplementation Contract comment `6471944486` と **12,382 bytes / SHA-256 `a053d34536f6432969676a7f64b450fc4405ae96bc7d2d0b174382e986cf6d52`** が一致することを確認。profile version `0.1.0` のMilestoneを割当済み。
 - **仕様 / 設計 / Help**: syntax §11、extension §4、Preview描画・PDF設計を更新。英語・日本語のfeatures/languageヘルプとreviewed source digestを更新し、生成HelpおよびAI参照資産を同期した。
 - **実装 / 画面証拠**: 既存のSystemGeometry・measureBoundsと共通SVG描画経路を使用し、レイアウト・DSL・操作アンカーは変更しない。参考SVGのfilled brace pathを用い、pointer-eventsを無効化。2譜表、TABを含む3譜表、拡大図は[画像証拠](evidence/issue-160/README.md)に保存。
 - **検証**: `npm run compile`、`check:help`、`check:ai`、`compile:tests`、全unit **1,224件 PASS**、`npm test` **PASS**（E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、契約SHA検証、`validate-docs`、`git diff --check` がPASS。E2EはVS Code 1.143.1。最初のフルsuite再実行で出たUndo編集とWorkbench復元の2件は、個別再実行と次のフルsuiteでPASSした。未実施の手動確認範囲はCompletion Reportに記録する。
-- **PR / Completion Report**: PR作成後にURL、現HEAD self-review、Required Check、未検証範囲を更新する。
+- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draftで `Closes #160`。Issueは `phase:review`。2譜表・3譜表と拡大画像を添付した[Issue証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/160#issuecomment-6472775199)を参照。現HEAD self-review、Required Check、6件のpending E2EはPR #161に紐付けて追跡する。
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
