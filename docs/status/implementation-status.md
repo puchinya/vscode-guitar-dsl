@@ -10,12 +10,12 @@
 
 ## Issue #160: 標準ブレースで譜表をグループ化
 
-- **状態**: メロディ・表示中のリズム・TABの実譜表を段単位でグループ化し、2譜表以上に音楽用ブレースと左端線を表示する。小節線は既存境界を使って譜表間の隙間だけを接続する。単一譜表、TABの非表示な暗黙リズムは対象外。実装・検証を終え、PR #161を作成してレビュー待ち。
+- **状態**: メロディ・表示中のリズム・TABの実譜表を段単位でグループ化し、2譜表以上に滑らかな閉じたベジェ曲線の音楽用ブレースと左端線を表示する。小節線は既存境界を使って譜表間の隙間だけを接続する。単一譜表、TABの非表示な暗黙リズムは対象外。実装・検証を終え、PR #161 のレビュー指摘 A/B/D に対応中。
 - **契約 / Milestone**: 承認済みImplementation Contract comment `6471944486` と **12,382 bytes / SHA-256 `a053d34536f6432969676a7f64b450fc4405ae96bc7d2d0b174382e986cf6d52`** が一致することを確認。profile version `0.1.0` のMilestoneを割当済み。
 - **仕様 / 設計 / Help**: syntax §11、extension §4、Preview描画・PDF設計を更新。英語・日本語のfeatures/languageヘルプとreviewed source digestを更新し、生成HelpおよびAI参照資産を同期した。
-- **実装 / 画面証拠**: 既存のSystemGeometry・measureBoundsと共通SVG描画経路を使用し、レイアウト・DSL・操作アンカーは変更しない。参考SVGのfilled brace pathを用い、pointer-eventsを無効化。2譜表、TABを含む3譜表、拡大図は[画像証拠](evidence/issue-160/README.md)に保存。
-- **検証**: `npm run compile`、`check:help`、`check:ai`、`compile:tests`、全unit **1,224件 PASS**、`npm test` **PASS**（E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、契約SHA検証、`validate-docs`、`git diff --check` がPASS。E2EはVS Code 1.143.1。最初のフルsuite再実行で出たUndo編集とWorkbench復元の2件は、個別再実行と次のフルsuiteでPASSした。未実施の手動確認範囲はCompletion Reportに記録する。
-- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draftで `Closes #160`。Issueは `phase:review`。2譜表・3譜表と拡大画像を添付した[Issue証拠コメント](https://github.com/puchinya/vscode-guitar-dsl/issues/160#issuecomment-6472775199)を参照。現HEAD self-review、Required Check、6件のpending E2EはPR #161に紐付けて追跡する。
+- **実装 / 画面証拠**: 既存のSystemGeometry・measureBoundsと共通SVG描画経路を使用し、レイアウト・DSL・操作アンカーは変更しない。正本SVGと実装に滑らかな閉曲線の filled brace path を採用し、pointer-eventsを無効化。2譜表とTABを含む3譜表を100%/200%で保存し、拡大図を追加した。[画像証拠](evidence/issue-160/README.md)には独立した正本画像も掲載。ページSVGとPDFも200%で同じ輪郭を確認した。
+- **検証**: `npm run compile`、`check:help`、`check:ai`、unit **1,224件 PASS**、`npm test` **PASS**（E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、`git diff --check` がPASS。E2EはVS Code 1.143.1。最初の全体実行では既存E2E 4件が失敗したが、4件を個別に再実行してPASSし、その後の全体実行もPASSした。GitHub認証失効のため、Implementation Contract と `validate-docs` の GitHub API 検証、現HEAD self-review、Required Check は再取得待ち。
+- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draftで `Closes #160`。Issueは `phase:review`。100%/200%の2譜表・3譜表画像を添付した新しいIssue証拠コメントはGitHub認証回復後に追記する。6件のpending E2EはPR #161に紐付けて追跡する。
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 

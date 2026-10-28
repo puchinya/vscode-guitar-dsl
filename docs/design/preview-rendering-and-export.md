@@ -54,6 +54,8 @@
 
 Each system with at least two rendered five-line or six-line staves has one filled music brace to the left of the existing staff start and one vertical left connector spanning the outer staff lines. The renderer counts only the melody, explicitly rendered rhythm, and TAB staves selected by the existing `renderSystem()` branches. An implicit rhythm staff hidden by TAB does not count; lyrics, chord names, diagrams, and annotation lanes are not staves.
 
+The canonical shape in [`standard-brace-reference.svg`](../specs/gui_design/proposals/issue-160/standard-brace-reference.svg) is a closed filled contour built from cubic Bézier segments, not a polygonal line approximation. Runtime scales it vertically to the outer staff lines while keeping its horizontal width fixed.
+
 For each measure boundary, the renderer uses `measureBounds()` and draws a thin segment only through the gaps between adjacent staves. Existing barlines inside each staff keep their original type and width, including repeat, double, final, volta, tie, and TAB technique marks. Single-staff systems receive no added brace or connector.
 
 The ornament group is inside the existing system transform and uses the same local coordinates as the notation body after `annotationTop - lift`. It has no pointer events, does not alter measure or anchor geometry, and is generated once per system by the shared SVG renderer used by continuous Preview, page Preview, and PDF.

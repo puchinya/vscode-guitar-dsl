@@ -61,6 +61,8 @@ describe('render - melody systems', () => {
     const reference = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'specs', 'gui_design', 'proposals', 'issue-160', 'standard-brace-reference.svg'), 'utf8');
     const referencePath = reference.match(/<path class="staff-brace" d="([^"]+)"/)?.[1];
     assert.ok(referencePath, 'reference SVG contains the approved brace path');
+    assert.ok((referencePath.match(/\bC\b/g) ?? []).length >= 10, 'brace contour uses smooth cubic Bézier curves');
+    assert.strictEqual((referencePath.match(/\bL\b/g) ?? []).length, 0, 'brace contour avoids polygonal line segments');
     const context = getRenderContext(score);
 
     groups.forEach((group, index) => {
@@ -72,7 +74,7 @@ describe('render - melody systems', () => {
       assert.ok(group.includes(`d="${referencePath}"`), 'uses the exact filled brace silhouette from the reference');
       const brace = group.match(/<path class="staff-brace"[^>]*\/>/)?.[0];
       assert.ok(brace?.includes('fill="#000"') && !brace.includes('stroke='), 'brace is a black filled path');
-      assert.ok(brace?.includes('transform="translate(-3 '), 'brace stays inside the left margin with clearance from the staff edge');
+      assert.ok(brace?.includes('transform="translate(0 '), 'brace stays inside the left margin with clearance from the staff edge');
 
       const left = group.match(/<line class="staff-group-left-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/);
       assert.ok(left);
