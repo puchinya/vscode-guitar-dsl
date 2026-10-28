@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="350" viewBox="0 0 500 350" role="img" aria-labelledby="title desc">
+<title id="title">Issue #160 brace cubic review candidate</title>
+<desc id="desc">A review-only vector example of a smooth two-staff engraving brace made from cubic Bezier curves. Not a verified score preview or approved implementation baseline.</desc>
+<rect width="500" height="350" fill="#fff"/>
+<g transform="translate(50 40)">
+<path class="staff-brace" fill="#111" d="M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 8 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z"/>
+<line x1="25" y1="0" x2="25" y2="200" stroke="#222" stroke-width=".7"/>
+<g fill="none" stroke="#222" stroke-width=".7">
+<path d="M25 0 H430 M25 10 H430 M25 20 H430 M25 30 H430 M25 40 H430 M25 160 H430 M25 170 H430 M25 180 H430 M25 190 H430 M25 200 H430"/>
+</g>
+</g>
+</svg>
