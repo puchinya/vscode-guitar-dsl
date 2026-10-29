@@ -51,11 +51,11 @@ describe('TAB rendering and layout', () => {
 
   it('uses brackets for vocal groups and braces only for guitar TAB/rhythm groups', () => {
     const cases = [
-      { name: 'vocal and rhythm', dsl: '| C |\nmel: | c4/1 |', gaps: 1, brackets: 1, braces: 0, bracketX: 11 },
-      { name: 'vocal and TAB with hidden rhythm', dsl: 'show_rhythm: false\n| C |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 1, brackets: 1, braces: 0, bracketX: 11 },
+      { name: 'vocal and rhythm', dsl: '| C |\nmel: | c4/1 |', gaps: 1, brackets: 1, braces: 0, bracketX: 6 },
+      { name: 'vocal and TAB with hidden rhythm', dsl: 'show_rhythm: false\n| C |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 1, brackets: 1, braces: 0, bracketX: 6 },
       { name: 'TAB and explicit rhythm', dsl: 'show_rhythm: true\n| C 4 4 4 4 |\ntab: | 6f0/1 |', gaps: 1, brackets: 0, braces: 1, bracketX: null },
       { name: 'TAB lyrics do not create a vocal group', dsl: 'show_rhythm: true\n| C 4 4 4 4 |\ntab: | 6f0/1 |\nlyr: あ', gaps: 1, brackets: 0, braces: 1, bracketX: null },
-      { name: 'nested vocal, TAB, and rhythm', dsl: '| C 4 4 4 4 |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 2, brackets: 1, braces: 1, bracketX: -12 }
+      { name: 'nested vocal, TAB, and rhythm', dsl: '| C 4 4 4 4 |\nmel: | c4/1 |\ntab: | 6f0/1 |', gaps: 2, brackets: 1, braces: 1, bracketX: -23 }
     ];
     for (const testCase of cases) {
       const score = parseGuitarDsl(testCase.dsl);
@@ -71,6 +71,11 @@ describe('TAB rendering and layout', () => {
         const bracket = group.match(/<path class="staff-bracket"[^>]*\/>/)?.[0];
         assert.ok(bracket?.includes('fill="#000"') && !bracket.includes('stroke='), testCase.name + ': bracket is a filled path');
         assert.ok(bracket?.includes('transform="translate(' + testCase.bracketX + ' '), testCase.name + ': bracket stays in its assigned lane');
+        const bottom = group.match(/<path class="staff-bracket-bottom"[^>]*\/>/)?.[0];
+        const stem = group.match(/<rect class="staff-bracket-stem"[^>]*\/>/)?.[0];
+        assert.ok(bottom?.includes('transform="translate(' + testCase.bracketX + ' '), testCase.name + ': mirrored bottom terminal stays in the same lane');
+        assert.ok(bracket?.includes('scale(0.032 -0.032)') && bottom.includes('scale(0.032 0.032)'), testCase.name + ': terminals keep fixed Bravura shape');
+        assert.ok(stem?.includes('width="4"'), testCase.name + ': stem retains Bravura thickness');
       }
 
       const [page] = renderScoreSheets(score, 'A4', 'portrait');
