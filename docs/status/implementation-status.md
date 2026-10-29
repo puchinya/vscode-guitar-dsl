@@ -10,6 +10,8 @@
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 
+- **追加変更（標準形状、再検証待ち）**: ユーザー指定により、簡易一体型ブラケットをBravura/SMuFL U+E003/U+E004の上下端輪郭（固定倍率）＋幅4の可変長の幹に変更。単独x=6、3段外側x=-23。既存ブレース・小節境界・譜表配置は維持。`src/render/svg.ts`、単体テスト、参照SVGとOFL表記を更新。新HEADのRequired CI・全検証・実画面証拠・契約改訂承認は、確認できるまでPASS扱いしない。
+
 - **状態**: 2026-10-29 にIssue本文をImplementation Contract v2へ差し替えた。`mel:` は歌唱、TABと表示中リズムはギターとして扱う。歌唱＋ギターには外側ブラケット、TAB＋リズムには内側ブレース、三譜表ではネストし、単一譜表にはグループ記号を出さない。従来の一律ブレース契約・レビュー・Self-Reviewはv2の適合証拠に流用しない。v2対応を同じPR #161へ実装し、更新後のHEADでレビューを受ける。
 - **契約 / Milestone**: Issue本文を正本とし、末尾の空行だけを除いたbyte-exact Implementation Contract v2 revision comment `6497102770` の **16,928 bytes / SHA-256 `f9ce75a533e2133572d234848d031f80b8ea97228c530bef0ce562b78e0acad7`** とローカルコピーが一致することを再検証した。旧comment `6483413234` は履歴として保持。profile version `0.1.0` のMilestoneを割当済み。
 - **仕様 / 設計 / Help**: syntax §11、extension §4.3/§4.7、Preview描画・PDF設計をv2のパート分類とネストに同期した。英語・日本語Helpとreviewed source digestを更新し、生成Help・AI参照を同期した。
