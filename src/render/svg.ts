@@ -238,10 +238,15 @@ const STAFF_BRACE_PATH_TOP = 0;
 const STAFF_BRACE_PATH_BOTTOM = 200;
 const STAFF_BRACE_PATH_RIGHT = 22;
 const STAFF_BRACE_X_GAP = 3;
-const STAFF_BRACKET_PATH = 'M 6 0 C 4.6 0.9, 3.1 1.4, 0 1.6 L 0 198.4 C 3.1 198.6, 4.6 199.1, 6 200 C 5 198.3, 4.4 196.4, 4.4 194.4 L 1.6 194.4 L 1.6 5.6 L 4.4 5.6 C 4.4 3.6, 5 1.7, 6 0 Z';
-const STAFF_BRACKET_PATH_BOTTOM = 200;
-const STAFF_BRACKET_SINGLE_X = 11;
-const STAFF_BRACKET_NESTED_X = -12;
+// Bravura bracketTop (SMuFL U+E003), outlined from the Bravura UFO glyph; bracketBottom
+// (U+E004) mirrors this contour vertically. Copyright Steinberg Media Technologies GmbH,
+// licensed SIL OFL 1.1; see docs/specs/gui_design/proposals/issue-160/BRAVURA-OFL.txt.
+// The source glyph is in 1000 UPM units (4 staff spaces); 8 unit staff spaces => 0.032.
+const STAFF_BRACKET_TERMINAL_PATH = 'M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z';
+const STAFF_BRACKET_TERMINAL_SCALE = 0.032;
+const STAFF_BRACKET_STEM_WIDTH = 125 * STAFF_BRACKET_TERMINAL_SCALE;
+const STAFF_BRACKET_SINGLE_X = 6;
+const STAFF_BRACKET_NESTED_X = -23;
 
 type StaffGroupRole = 'vocal' | 'guitar-tab' | 'guitar-rhythm';
 
@@ -290,8 +295,7 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   const braceTranslateX = STAFF_LEFT_EDGE - STAFF_BRACE_PATH_RIGHT - STAFF_BRACE_X_GAP;
   const braceTranslateY = braceTop - STAFF_BRACE_PATH_TOP * braceScaleY;
   const bracketX = drawsBrace ? STAFF_BRACKET_NESTED_X : STAFF_BRACKET_SINGLE_X;
-  const bracketScaleY = height / STAFF_BRACKET_PATH_BOTTOM;
-  const bracketTranslateY = top;
+
   const boundaryXs = new Set<number>();
   measures.forEach((measure, index) => {
     const { bx, width } = measureBounds(ctx, measures.length, index);
@@ -311,8 +315,12 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   const brace = drawsBrace
     ? `<path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>`
     : '';
+  // SMuFL variable-height bracket: fixed-size terminals + an independent filled stem.
+  // Keep the original Bravura terminal aspect ratio regardless of the staff-group height.
   const bracket = drawsBracket
-    ? `<path class="staff-bracket" d="${STAFF_BRACKET_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bracketTranslateY)}) scale(1 ${fmt(bracketScaleY, 5)})" fill="#000"/>`
+    ? `<rect class="staff-bracket-stem" x="${fmt(bracketX)}" y="${fmt(top)}" width="${fmt(STAFF_BRACKET_STEM_WIDTH)}" height="${fmt(height)}" fill="#000"/>`
+      + `<path class="staff-bracket" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE)} -${fmt(STAFF_BRACKET_TERMINAL_SCALE)})" fill="#000"/>`
+      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE)} ${fmt(STAFF_BRACKET_TERMINAL_SCALE)})" fill="#000"/>`
     : '';
   return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/>${bracket}${brace}${gapConnectors}</g>`;
 }
