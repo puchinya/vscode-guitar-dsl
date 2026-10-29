@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="400" viewBox="0 0 1080 400" role="img" aria-labelledby="title desc">
   <title id="title">歌唱とギター2譜表のネストされたグループ記号</title>
-  <desc id="desc">3段譜では外側ブラケットが歌唱とギター全体を囲み、内側ブレースはTABとリズムのギター譜表だけを結ぶ。 Bravura bracketTop/Bottom (SMuFL U+E003/U+E004), SIL OFL 1.1.</desc>
+  <desc id="desc">3段譜では外側ブラケットが歌唱とギター全体を囲み、内側ブレースはTABとリズムのギター譜表だけを結ぶ。 独自設計の楽譜用ブラケット形状をSVGのベジェ曲線で構成。</desc>
   <rect width="1080" height="400" fill="#fff"/>
   <text x="65" y="42" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111">歌唱＋TAB＋リズム（3段譜）</text>
   <text x="65" y="68" font-family="Arial, sans-serif" font-size="15" fill="#555">外側ブラケットは全3段、内側ブレースはギターの下2段だけを結ぶ</text>
@@ -30,9 +30,9 @@
     <path d="M 706 292 l 12 -18 M 758 292 l 12 -18 M 810 292 l 12 -18 M 862 292 l 12 -18"/>
     <path d="M 916 292 l 12 -18 M 968 292 l 12 -18"/>
   </g>
-  <rect class="staff-bracket-stem" x="124" y="104" width="4" height="192" fill="#000"/>
-  <path class="staff-bracket" d="M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z" transform="translate(124 104) scale(0.032 -0.032)" fill="#000"/>
-  <path class="staff-bracket-bottom" d="M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z" transform="translate(124 296) scale(0.032 0.032)" fill="#000"/>
+  <rect class="staff-bracket-stem" x="124" y="104" width="3.5" height="192" fill="#000"/>
+  <path class="staff-bracket" d="M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z" transform="translate(124 104)" fill="#000"/>
+  <path class="staff-bracket-bottom" d="M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z" transform="translate(124 296) scale(1 -1)" fill="#000"/>
   <path class="staff-brace" d="M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3.5 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 4.5 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z" transform="translate(147 180) scale(1 0.58)" fill="#000"/>
   <line class="staff-group-left-connector" x1="172" y1="104" x2="172" y2="296" stroke="#111" stroke-width="1.5"/>
   <g stroke="#111" stroke-width="1.5">
