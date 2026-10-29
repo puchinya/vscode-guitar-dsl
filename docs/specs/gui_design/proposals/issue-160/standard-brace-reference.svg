@@ -1,72 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="400" viewBox="0 0 1080 400" role="img" aria-labelledby="t d">
-<title id="t">GuitarDSL 複数譜表のブレースと共通小節線の参考デザイン</title>
-<desc id="d">左端に伝統的な音楽用ブレースを1個描き、メロディ譜とコード・ストローク譜の小節境界を接続した設計参考図。実装画面の証拠画像ではない。</desc>
-<rect width="1080" height="400" fill="white"/>
-<text x="64" y="52" fill="#222" font-family="sans-serif" font-weight="700" font-size="24">メロディ＋ギター伴奏（2段譜）</text>
-<text x="64" y="78" fill="#555" font-family="sans-serif" font-size="14">ブレースは段の左に1個／小節線は上下の譜表間を連結</text>
-<path class="staff-brace" d="M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 8 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z" transform="translate(147 118) scale(1 1.03)" fill="#111"/>
-<line x1="172" x2="1012" y1="118" y2="118" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="128" y2="128" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="138" y2="138" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="148" y2="148" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="158" y2="158" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="284" y2="284" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="294" y2="294" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="304" y2="304" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="314" y2="314" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" x2="1012" y1="324" y2="324" stroke="#202020" stroke-width="1.25"/>
-<line x1="172" y1="118" x2="172" y2="324" stroke="#202020" stroke-width="1.7"/>
-<line x1="478" y1="118" x2="478" y2="324" stroke="#202020" stroke-width="1.3"/>
-<line x1="656" y1="118" x2="656" y2="324" stroke="#202020" stroke-width="1.3"/>
-<line x1="834" y1="118" x2="834" y2="324" stroke="#202020" stroke-width="1.3"/>
-<line x1="1012" y1="118" x2="1012" y2="324" stroke="#202020" stroke-width="1.3"/>
-<ellipse cx="317" cy="138" rx="7.7" ry="4.9" transform="rotate(-20 317 138)" fill="#111"/>
-<line x1="324" x2="324" y1="136" y2="103" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="368" cy="128" rx="7.7" ry="4.9" transform="rotate(-20 368 128)" fill="#111"/>
-<line x1="375" x2="375" y1="126" y2="93" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="419" cy="133" rx="7.7" ry="4.9" transform="rotate(-20 419 133)" fill="#111"/>
-<line x1="426" x2="426" y1="131" y2="98" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="455" cy="148" rx="7.7" ry="4.9" transform="rotate(-20 455 148)" fill="#111"/>
-<line x1="462" x2="462" y1="146" y2="113" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="519" cy="143" rx="7.7" ry="4.9" transform="rotate(-20 519 143)" fill="#111"/>
-<line x1="526" x2="526" y1="141" y2="108" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="568" cy="133" rx="7.7" ry="4.9" transform="rotate(-20 568 133)" fill="#111"/>
-<line x1="575" x2="575" y1="131" y2="98" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="620" cy="128" rx="7.7" ry="4.9" transform="rotate(-20 620 128)" fill="#111"/>
-<line x1="627" x2="627" y1="126" y2="93" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="703" cy="148" rx="7.7" ry="4.9" transform="rotate(-20 703 148)" fill="#111"/>
-<line x1="710" x2="710" y1="146" y2="113" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="753" cy="138" rx="7.7" ry="4.9" transform="rotate(-20 753 138)" fill="#111"/>
-<line x1="760" x2="760" y1="136" y2="103" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="802" cy="133" rx="7.7" ry="4.9" transform="rotate(-20 802 133)" fill="#111"/>
-<line x1="809" x2="809" y1="131" y2="98" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="870" cy="128" rx="7.7" ry="4.9" transform="rotate(-20 870 128)" fill="#111"/>
-<line x1="877" x2="877" y1="126" y2="93" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="921" cy="143" rx="7.7" ry="4.9" transform="rotate(-20 921 143)" fill="#111"/>
-<line x1="928" x2="928" y1="141" y2="108" stroke="#111" stroke-width="1.8"/>
-<ellipse cx="972" cy="138" rx="7.7" ry="4.9" transform="rotate(-20 972 138)" fill="#111"/>
-<line x1="979" x2="979" y1="136" y2="103" stroke="#111" stroke-width="1.8"/>
-<text x="316" y="261" font-family="sans-serif" font-size="22" font-weight="700" fill="#111">C</text>
-<text x="491" y="261" font-family="sans-serif" font-size="22" font-weight="700" fill="#111">G</text>
-<text x="669" y="261" font-family="sans-serif" font-size="22" font-weight="700" fill="#111">Am</text>
-<text x="847" y="261" font-family="sans-serif" font-size="22" font-weight="700" fill="#111">F</text>
-<path d="M315 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M352 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M390 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M429 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M494 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M530 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M568 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M607 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M672 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M708 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M745 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M784 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M850 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M886 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M924 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<path d="M963 314 l14 -19" stroke="#111" stroke-width="3.7"/>
-<text x="177" y="110" font-family="sans-serif" font-size="13" fill="#555">Melody</text>
-<text x="177" y="272" font-family="sans-serif" font-size="13" fill="#555">Chord / Strum</text>
-<text x="62" y="364" font-family="sans-serif" font-size="14" fill="#333">設計参考図：ブレース形状・左端接続・譜表間小節線の配置を示す（コードや音符はダミー）。</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="400" viewBox="0 0 1080 400" role="img" aria-labelledby="title desc">
+  <title id="title">ギターTAB譜とリズム譜を結ぶ音楽用ブレース</title>
+  <desc id="desc">歌唱譜表を含まないギター用2段譜。TAB譜とリズム譜の左に閉じたベジェ曲線のブレースを1つ置く。</desc>
+  <rect width="1080" height="400" fill="#fff"/>
+  <text x="65" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111">ギターTAB＋リズム（2段譜）</text>
+  <text x="65" y="76" font-family="Arial, sans-serif" font-size="15" fill="#555">ブレースは同じギターのTAB譜表とリズム譜表だけを結ぶ</text>
+  <text x="172" y="108" font-family="Arial, sans-serif" font-size="14" fill="#555">Guitar TAB</text>
+  <text x="172" y="232" font-family="Arial, sans-serif" font-size="14" fill="#555">Chord / Strum</text>
+  <g stroke="#222" stroke-width="1.25" fill="none">
+    <path d="M 172 118 H 1012 M 172 126 H 1012 M 172 134 H 1012 M 172 142 H 1012 M 172 150 H 1012 M 172 158 H 1012"/>
+    <path d="M 172 242 H 1012 M 172 252 H 1012 M 172 262 H 1012 M 172 272 H 1012 M 172 282 H 1012"/>
+    <path d="M 172 118 V 158 M 382 118 V 158 M 592 118 V 158 M 802 118 V 158 M 1012 118 V 158"/>
+    <path d="M 172 242 V 282 M 382 242 V 282 M 592 242 V 282 M 802 242 V 282 M 1012 242 V 282"/>
+  </g>
+  <g font-family="Arial, sans-serif" fill="#111">
+    <text x="310" y="138" font-size="15" text-anchor="middle">0</text>
+    <text x="520" y="138" font-size="15" text-anchor="middle">2</text>
+    <text x="730" y="138" font-size="15" text-anchor="middle">3</text>
+    <text x="940" y="138" font-size="15" text-anchor="middle">5</text>
+    <text x="310" y="230" font-size="18" font-weight="700" text-anchor="middle">C</text>
+    <text x="520" y="230" font-size="18" font-weight="700" text-anchor="middle">G</text>
+    <text x="730" y="230" font-size="18" font-weight="700" text-anchor="middle">Am</text>
+    <text x="940" y="230" font-size="18" font-weight="700" text-anchor="middle">F</text>
+  </g>
+  <g stroke="#111" stroke-width="4" stroke-linecap="square">
+    <path d="M 286 278 l 12 -18 M 338 278 l 12 -18 M 390 278 l 12 -18 M 442 278 l 12 -18"/>
+    <path d="M 496 278 l 12 -18 M 548 278 l 12 -18 M 600 278 l 12 -18 M 652 278 l 12 -18"/>
+    <path d="M 706 278 l 12 -18 M 758 278 l 12 -18 M 810 278 l 12 -18 M 862 278 l 12 -18"/>
+    <path d="M 916 278 l 12 -18 M 968 278 l 12 -18"/>
+  </g>
+  <path class="staff-brace" d="M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3.5 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 4.5 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z" transform="translate(147 118) scale(1 0.82)" fill="#000"/>
+  <line class="staff-group-left-connector" x1="172" y1="118" x2="172" y2="282" stroke="#111" stroke-width="1.5"/>
+  <g stroke="#111" stroke-width="1.5">
+    <path d="M 382 158 V 242 M 592 158 V 242 M 802 158 V 242"/>
+  </g>
+  <text x="65" y="352" font-family="Arial, sans-serif" font-size="14" fill="#555">形状参考：中央のくびれは細く、上下の曲線を保つ。横幅は固定し、譜表間隔に合わせて縦だけを拡縮する。</text>
 </svg>

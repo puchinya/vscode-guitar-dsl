@@ -24,6 +24,135 @@ function staffGroupConnectors(svg: string): string[] {
     .map(match => match[1]);
 }
 
+type Point = [number, number];
+type CubicSegment = { start: Point; control1: Point; control2: Point; end: Point };
+
+function parseCubicPath(pathData: string): { start: Point; segments: CubicSegment[] } {
+  const tokens = pathData.match(/[MCZ]|-?(?:\d+(?:\.\d*)?|\.\d+)/g) ?? [];
+  let index = 0;
+  let current: Point | undefined;
+  let start: Point | undefined;
+  const segments: CubicSegment[] = [];
+
+  while (index < tokens.length) {
+    const command = tokens[index++];
+    if (command === 'M') {
+      current = [Number(tokens[index++]), Number(tokens[index++])];
+      start = current;
+    } else if (command === 'C' && current) {
+      const control1: Point = [Number(tokens[index++]), Number(tokens[index++])];
+      const control2: Point = [Number(tokens[index++]), Number(tokens[index++])];
+      const end: Point = [Number(tokens[index++]), Number(tokens[index++])];
+      segments.push({ start: current, control1, control2, end });
+      current = end;
+    } else if (command === 'Z') {
+      break;
+    } else {
+      throw new Error(`Unsupported brace path command: ${command}`);
+    }
+  }
+
+  assert.ok(start, 'brace path has a move-to point');
+  assert.ok(segments.length > 0, 'brace path has cubic segments');
+  assert.deepStrictEqual(segments[segments.length - 1].end, start, 'cubic contour closes at its start point');
+  return { start, segments };
+}
+
+function cubicPoint(segment: CubicSegment, t: number): Point {
+  const u = 1 - t;
+  return [
+    u ** 3 * segment.start[0] + 3 * u ** 2 * t * segment.control1[0] + 3 * u * t ** 2 * segment.control2[0] + t ** 3 * segment.end[0],
+    u ** 3 * segment.start[1] + 3 * u ** 2 * t * segment.control1[1] + 3 * u * t ** 2 * segment.control2[1] + t ** 3 * segment.end[1]
+  ];
+}
+
+function horizontalContourIntersections(segments: CubicSegment[], y: number): number[] {
+  const xs: number[] = [];
+  for (const segment of segments) {
+    const samples = 64;
+    let previousT = 0;
+    let previous = cubicPoint(segment, previousT);
+    if (Math.abs(previous[1] - y) < 1e-7) xs.push(previous[0]);
+
+    for (let step = 1; step <= samples; step++) {
+      const currentT = step / samples;
+      const current = cubicPoint(segment, currentT);
+      const crosses = (previous[1] < y && current[1] > y) || (previous[1] > y && current[1] < y);
+      if (crosses) {
+        let low = previousT;
+        let high = currentT;
+        for (let iteration = 0; iteration < 32; iteration++) {
+          const middle = (low + high) / 2;
+          const middleY = cubicPoint(segment, middle)[1];
+          if ((previous[1] < y && middleY < y) || (previous[1] > y && middleY > y)) low = middle;
+          else high = middle;
+        }
+        xs.push(cubicPoint(segment, (low + high) / 2)[0]);
+      }
+      if (Math.abs(current[1] - y) < 1e-7) xs.push(current[0]);
+      previousT = currentT;
+      previous = current;
+    }
+  }
+
+  return xs
+    .sort((a, b) => a - b)
+    .filter((x, index, sorted) => index === 0 || Math.abs(x - sorted[index - 1]) > 1e-3);
+}
+
+function braceSmoothJoinAngles(segments: CubicSegment[]): number[] {
+  const angles: number[] = [];
+  for (let index = 0; index < segments.length; index++) {
+    const previous = segments[index];
+    const next = segments[(index + 1) % segments.length];
+    const [x, y] = previous.end;
+    // The tips and center waist are intentionally pointed; test continuity on the remaining joins.
+    if ([0, 100, 200].some(pointY => Math.abs(y - pointY) < 1e-7)) continue;
+
+    const outgoing: Point = [x - previous.control2[0], y - previous.control2[1]];
+    const incoming: Point = [next.control1[0] - next.start[0], next.control1[1] - next.start[1]];
+    const dot = outgoing[0] * incoming[0] + outgoing[1] * incoming[1];
+    const magnitude = Math.hypot(...outgoing) * Math.hypot(...incoming);
+    assert.ok(magnitude > 0, `non-cusp join at (${x}, ${y}) has non-zero tangents`);
+    angles.push(Math.acos(Math.max(-1, Math.min(1, dot / magnitude))) * 180 / Math.PI);
+  }
+  return angles;
+}
+
+function lineSegmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {
+  const orientation = (p: Point, q: Point, r: Point): number =>
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const onSegment = (p: Point, q: Point, r: Point): boolean =>
+    q[0] >= Math.min(p[0], r[0]) - 1e-7 && q[0] <= Math.max(p[0], r[0]) + 1e-7 &&
+    q[1] >= Math.min(p[1], r[1]) - 1e-7 && q[1] <= Math.max(p[1], r[1]) + 1e-7;
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+  if (((o1 > 1e-7 && o2 < -1e-7) || (o1 < -1e-7 && o2 > 1e-7)) &&
+      ((o3 > 1e-7 && o4 < -1e-7) || (o3 < -1e-7 && o4 > 1e-7))) return true;
+  return (Math.abs(o1) <= 1e-7 && onSegment(a, c, b)) ||
+    (Math.abs(o2) <= 1e-7 && onSegment(a, d, b)) ||
+    (Math.abs(o3) <= 1e-7 && onSegment(c, a, d)) ||
+    (Math.abs(o4) <= 1e-7 && onSegment(c, b, d));
+}
+
+function bracePathHasSelfIntersection(start: Point, segments: CubicSegment[]): boolean {
+  const points: Point[] = [start];
+  const subdivisions = 48;
+  for (const segment of segments) {
+    for (let step = 1; step <= subdivisions; step++) points.push(cubicPoint(segment, step / subdivisions));
+  }
+  const lines = points.slice(1).map((point, index) => [points[index], point] as const);
+  for (let first = 0; first < lines.length; first++) {
+    for (let second = first + 2; second < lines.length; second++) {
+      if (first === 0 && second === lines.length - 1) continue;
+      if (lineSegmentsIntersect(lines[first][0], lines[first][1], lines[second][0], lines[second][1])) return true;
+    }
+  }
+  return false;
+}
+
 describe('render - melody systems', () => {
   it('renders spaced and space-free variants of the exact #76 lyrics identically', () => {
     const spaced = [
@@ -47,11 +176,12 @@ describe('render - melody systems', () => {
     assert.strictEqual(getSystemGeometry(score.measures, score).kind, 'rhythm');
   });
 
-  it('draws one reference-matched brace and aligned gap connector per melody/rhythm system', () => {
+  it('draws a smooth geometric reference brace only around guitar TAB/rhythm staves', () => {
     const score = parseGuitarDsl([
       'measures_per_row: 1',
-      '| C | D |',
-      'mel: | c4/1 | d4/1 |'
+      'show_rhythm: true',
+      '| C 4 4 4 4 | D 4 4 4 4 |',
+      'tab: | 6f0/1 | 6f1/1 |'
     ].join('\n'));
     const continuous = renderContinuousSvg(score);
     const groups = staffGroupConnectors(continuous);
@@ -63,26 +193,35 @@ describe('render - melody systems', () => {
     assert.ok(referencePath, 'reference SVG contains the approved brace path');
     assert.ok((referencePath.match(/\bC\b/g) ?? []).length >= 10, 'brace contour uses smooth cubic Bézier curves');
     assert.strictEqual((referencePath.match(/\bL\b/g) ?? []).length, 0, 'brace contour avoids polygonal line segments');
+    const braceGeometry = parseCubicPath(referencePath);
+    const waistXs = horizontalContourIntersections(braceGeometry.segments, 100);
+    assert.ok(waistXs.length >= 2, 'brace contour intersects the waist on both sides');
+    assert.ok(waistXs[waistXs.length - 1] - waistXs[0] <= 1.5, 'center pinch is at most 1.5 units wide at 200-unit reference height');
+    const tangentAngles = braceSmoothJoinAngles(braceGeometry.segments);
+    assert.ok(Math.max(...tangentAngles) <= 15, 'non-pointed cubic joins preserve tangent continuity within 15 degrees');
+    assert.strictEqual(bracePathHasSelfIntersection(braceGeometry.start, braceGeometry.segments), false, 'flattened cubic contour does not cross or touch itself');
     const context = getRenderContext(score);
 
     groups.forEach((group, index) => {
       const geometry = rows[index].geometry;
       const bodyShift = geometry.annotationTop - geometry.lift;
       assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 1);
+      assert.strictEqual((group.match(/class="staff-bracket"/g) ?? []).length, 0);
       assert.strictEqual((group.match(/class="staff-group-left-connector"/g) ?? []).length, 1);
       assert.strictEqual((group.match(/class="staff-group-barline-connector"/g) ?? []).length, 1);
       assert.ok(group.includes(`d="${referencePath}"`), 'uses the exact filled brace silhouette from the reference');
       const brace = group.match(/<path class="staff-brace"[^>]*\/>/)?.[0];
       assert.ok(brace?.includes('fill="#000"') && !brace.includes('stroke='), 'brace is a black filled path');
-      assert.ok(brace?.includes('transform="translate(0 '), 'brace stays inside the left margin with clearance from the staff edge');
+      assert.ok(brace?.includes('transform="translate(0 ' + fmt(bodyShift + geometry.tabOffset)), 'brace starts at the TAB staff and stays inside the left margin');
 
       const left = group.match(/<line class="staff-group-left-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/);
       assert.ok(left);
+      const rhythmOffset = geometry.finalRhythmOffset;
       assert.deepStrictEqual(left.slice(1).map(Number), [
         STAFF_LEFT_EDGE,
-        Number(fmt(bodyShift + MELODY_STAVE_TOP)),
+        Number(fmt(bodyShift + geometry.tabOffset)),
         STAFF_LEFT_EDGE,
-        Number(fmt(bodyShift + geometry.rhythmOffset + MELODY_STAVE_BOTTOM))
+        Number(fmt(bodyShift + rhythmOffset + MELODY_STAVE_BOTTOM))
       ]);
 
       const connector = group.match(/<line class="staff-group-barline-connector" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/);
@@ -96,7 +235,24 @@ describe('render - melody systems', () => {
     assert.strictEqual((pages.match(/class="playback-measure-anchor"/g) ?? []).length, score.measures.length);
   });
 
-  it('keeps one staff-group connector on each page-broken melody/rhythm system', () => {
+  it('uses a standalone reference bracket for vocal-plus-guitar systems', () => {
+    const reference = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'specs', 'gui_design', 'proposals', 'issue-160', 'staff-bracket-reference.svg'), 'utf8');
+    const referencePath = reference.match(/<path class="staff-bracket" d="([^"]+)"/)?.[1];
+    assert.ok(referencePath, 'bracket reference contains a filled path');
+    assert.ok(referencePath.startsWith('M 6 0 C '), 'bracket hook extends at most 6 units to the right');
+    assert.ok(referencePath.includes('L 0 198.4') && referencePath.includes('L 1.6 194.4 L 1.6 5.6'), 'bracket shaft is 1.6 units wide');
+
+    const score = parseGuitarDsl('| C |\nmel: | c4/1 |');
+    const [group] = staffGroupConnectors(renderContinuousSvg(score));
+    assert.ok(group);
+    const bracket = group.match(/<path class="staff-bracket"[^>]*\/>/)?.[0];
+    assert.ok(bracket?.includes(`d="${referencePath}"`), 'renderer uses the exact bracket reference shape');
+    assert.ok(bracket?.includes('transform="translate(11 '), 'standalone bracket uses the contracted x position');
+    assert.ok(bracket?.includes('fill="#000"') && !bracket.includes('stroke='), 'bracket is a black filled path');
+    assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 0);
+  });
+
+  it('keeps one vocal bracket on each page-broken vocal-plus-guitar system', () => {
     const score = parseGuitarDsl([
       'measures_per_row: 1',
       '|: C | D :|',
@@ -110,7 +266,8 @@ describe('render - melody systems', () => {
     assert.strictEqual(pages.length, 2, 'manual pagebreak starts a second page');
     assert.strictEqual(pages.reduce((count, page) => count + staffGroupConnectors(page).length, 0), rows.length);
     assert.ok(pages.every(page => staffGroupConnectors(page).every(group =>
-      (group.match(/class="staff-brace"/g) ?? []).length === 1
+      (group.match(/class="staff-bracket"/g) ?? []).length === 1 &&
+      (group.match(/class="staff-brace"/g) ?? []).length === 0
     )));
   });
 

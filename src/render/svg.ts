@@ -233,29 +233,37 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${staffGroupConnector}${body}</g>\n`;
 }
 
-const STAFF_BRACE_PATH = 'M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 8 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z';
+const STAFF_BRACE_PATH = 'M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3.5 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 4.5 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z';
 const STAFF_BRACE_PATH_TOP = 0;
 const STAFF_BRACE_PATH_BOTTOM = 200;
 const STAFF_BRACE_PATH_RIGHT = 22;
 const STAFF_BRACE_X_GAP = 3;
+const STAFF_BRACKET_PATH = 'M 6 0 C 4.6 0.9, 3.1 1.4, 0 1.6 L 0 198.4 C 3.1 198.6, 4.6 199.1, 6 200 C 5 198.3, 4.4 196.4, 4.4 194.4 L 1.6 194.4 L 1.6 5.6 L 4.4 5.6 C 4.4 3.6, 5 1.7, 6 0 Z';
+const STAFF_BRACKET_PATH_BOTTOM = 200;
+const STAFF_BRACKET_SINGLE_X = 11;
+const STAFF_BRACKET_NESTED_X = -12;
+
+type StaffGroupRole = 'vocal' | 'guitar-tab' | 'guitar-rhythm';
 
 function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   const { geometry, measures } = row;
   const bodyShift = geometry.annotationTop - geometry.lift;
-  const intervals: { top: number; bottom: number }[] = [];
-  const addFiveLineStaff = (offset: number): void => {
+  const intervals: { role: StaffGroupRole; top: number; bottom: number }[] = [];
+  const addFiveLineStaff = (role: StaffGroupRole, offset: number): void => {
     intervals.push({
+      role,
       top: MELODY_STAVE_TOP + offset + bodyShift,
       bottom: MELODY_STAVE_BOTTOM + offset + bodyShift
     });
   };
 
-  if (measures.some(measure => measure.melody !== undefined)) addFiveLineStaff(0);
+  if (measures.some(measure => measure.melody !== undefined)) addFiveLineStaff('vocal', 0);
   if (geometry.rhythmRendered) {
-    addFiveLineStaff(geometry.containsTab ? geometry.finalRhythmOffset : geometry.rhythmOffset);
+    addFiveLineStaff('guitar-rhythm', geometry.containsTab ? geometry.finalRhythmOffset : geometry.rhythmOffset);
   }
   if (geometry.containsTab) {
     intervals.push({
+      role: 'guitar-tab',
       top: geometry.tabOffset + bodyShift,
       bottom: geometry.tabOffset + geometry.tabStaffHeight + bodyShift
     });
@@ -269,9 +277,21 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   const height = bottom - top;
   if (height <= 0) return '';
 
-  const braceScaleY = height / (STAFF_BRACE_PATH_BOTTOM - STAFF_BRACE_PATH_TOP);
+  const guitarIntervals = intervals.filter(interval => interval.role !== 'vocal');
+  const hasVocal = intervals.some(interval => interval.role === 'vocal');
+  const drawsBrace = guitarIntervals.length === 2;
+  const drawsBracket = hasVocal;
+  if (!drawsBrace && !drawsBracket) return '';
+
+  const braceTop = guitarIntervals[0]?.top ?? top;
+  const braceBottom = guitarIntervals[guitarIntervals.length - 1]?.bottom ?? bottom;
+  const braceHeight = braceBottom - braceTop;
+  const braceScaleY = braceHeight / (STAFF_BRACE_PATH_BOTTOM - STAFF_BRACE_PATH_TOP);
   const braceTranslateX = STAFF_LEFT_EDGE - STAFF_BRACE_PATH_RIGHT - STAFF_BRACE_X_GAP;
-  const braceTranslateY = top - STAFF_BRACE_PATH_TOP * braceScaleY;
+  const braceTranslateY = braceTop - STAFF_BRACE_PATH_TOP * braceScaleY;
+  const bracketX = drawsBrace ? STAFF_BRACKET_NESTED_X : STAFF_BRACKET_SINGLE_X;
+  const bracketScaleY = height / STAFF_BRACKET_PATH_BOTTOM;
+  const bracketTranslateY = top;
   const boundaryXs = new Set<number>();
   measures.forEach((measure, index) => {
     const { bx, width } = measureBounds(ctx, measures.length, index);
@@ -288,7 +308,13 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
     }).join('')
   ).join('');
 
-  return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/><path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>${gapConnectors}</g>`;
+  const brace = drawsBrace
+    ? `<path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>`
+    : '';
+  const bracket = drawsBracket
+    ? `<path class="staff-bracket" d="${STAFF_BRACKET_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bracketTranslateY)}) scale(1 ${fmt(bracketScaleY, 5)})" fill="#000"/>`
+    : '';
+  return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/>${bracket}${brace}${gapConnectors}</g>`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {

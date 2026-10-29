@@ -41,7 +41,7 @@
 - `src/pdf.ts` はページ SVG を `pdfkit` / `svg-to-pdfkit` でベクター PDF にする。Noto Sans JP の同梱フォントを登録し、書き出し時は一時ファイルを経て確定する設計が記録されている。
 - `src/playOrder.ts::resolvePlayOrder()` は唯一の演奏順 authority、`src/playbackTimeline.ts::buildPlaybackTimeline()` は唯一の score-time authority とする。再生タイムラインは元スコアを書き換えず、別の repeat resolver や timing engine を追加しない。
 - リズム符タイ（Issue #142）の接続関係は Compiler が検証する。`src/render/svg.ts` はその関係を既存の `rhythmHeads()` / `renderTieArc()` で描き、小節間の連桁は作らない。段・ページをまたぐ弧は各 system の端で分割し、Preview と PDF が同じ SVG を使う境界を保つ。
-- 複数譜表グループ（Issue #160）は `renderSystem()` の既存描画分岐と `SystemGeometry` から、実際に描かれる五線・TAB 譜表の縦区間を求める純粋な SVG 装飾である。小節 x 座標は既存の `measureBounds()` を使う。新しいスコアイベント、別座標系、レイアウト寸法の変更を導入しない。
+- 複数譜表グループ（Issue #160）は `renderSystem()` の既存描画分岐と `SystemGeometry` から、実際に描かれる五線・TAB 譜表の役割と縦区間を求める純粋な SVG 装飾である。melody は vocal、TAB と明示 rhythm は guitar の譜表として扱う。小節 x 座標は既存の `measureBounds()` を使う。新しいスコアイベント、別座標系、レイアウト寸法の変更を導入しない。
 - Extension Host はシングルトン Preview panel とコマンド転送だけを所有する。Playback / Practice の状態は Webview に置き、ホストは再生・seek・loop 状態を保持しない。
 
 ### レイアウトと出力の同一性
@@ -50,13 +50,23 @@
 
 ページプレビューとPDFは `renderScoreSheets()` の同一ページ SVG を共有する。Web 用 continuous モードはページを分割せず縦長 SVG を生成する。メロディ付き段では、リズムとメロディの発音位置の union を共通 x 座標列にし、両段を整列する。
 
-#### Staff-group brace and inter-staff barlines (Issue #160)
+#### Staff-group brackets, braces, and inter-staff barlines (Issue #160)
 
-Each system with at least two rendered five-line or six-line staves has one filled music brace to the left of the existing staff start and one vertical left connector spanning the outer staff lines. The renderer counts only the melody, explicitly rendered rhythm, and TAB staves selected by the existing `renderSystem()` branches. An implicit rhythm staff hidden by TAB does not count; lyrics, chord names, diagrams, and annotation lanes are not staves.
+The renderer assigns a role to each rendered interval: melody is vocal, TAB is guitar-TAB, and a visible rhythm staff is guitar-rhythm. Lyrics, chord names, diagrams, and annotation lanes do not create staves; lyrics attached to TAB remain part of that guitar staff. A hidden rhythm staff under TAB does not count.
 
-The canonical shape in [`standard-brace-reference.svg`](../specs/gui_design/proposals/issue-160/standard-brace-reference.svg) is a closed filled contour built from cubic Bézier segments, not a polygonal line approximation. Runtime scales it vertically to the outer staff lines while keeping its horizontal width fixed.
+The symbol matrix is:
 
-For each measure boundary, the renderer uses `measureBounds()` and draws a thin segment only through the gaps between adjacent staves. Existing barlines inside each staff keep their original type and width, including repeat, double, final, volta, tie, and TAB technique marks. Single-staff systems receive no added brace or connector.
+| Rendered staves | Outer bracket | Inner guitar brace |
+|---|---:|---:|
+| Vocal + rhythm | Both staves | None |
+| Vocal + TAB | Both staves | None |
+| TAB + explicit rhythm, without vocal | None | Both guitar staves |
+| Vocal + TAB + rhythm | All three staves | TAB and rhythm only |
+| One staff | None | None |
+
+The bracket path in [`staff-bracket-reference.svg`](../specs/gui_design/proposals/issue-160/staff-bracket-reference.svg) has a 1.6-unit vertical shaft and hooks extending at most 6 units to the right. A standalone bracket is placed at x=11; in a three-staff nested group its shaft is at x=-12, separated from the inner brace. The closed Bézier brace in [`standard-brace-reference.svg`](../specs/gui_design/proposals/issue-160/standard-brace-reference.svg) spans x=0..22 with a 3-unit gap to the existing staff start at x=25. Runtime scales each symbol only vertically to its assigned staff interval. [`nested-staff-group-reference.svg`](../specs/gui_design/proposals/issue-160/nested-staff-group-reference.svg) shows the three-staff arrangement.
+
+When two or more staves are rendered, one x=25 left connector spans the outer staff lines. For each measure boundary, the renderer uses `measureBounds()` and draws a thin segment only through the gaps between adjacent staves. Existing barlines inside each staff keep their original type and width, including repeat, double, final, volta, tie, and TAB technique marks. Single-staff systems receive no group symbol or added connector.
 
 The ornament group is inside the existing system transform and uses the same local coordinates as the notation body after `annotationTop - lift`. It has no pointer events, does not alter measure or anchor geometry, and is generated once per system by the shared SVG renderer used by continuous Preview, page Preview, and PDF.
 

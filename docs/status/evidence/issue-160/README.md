@@ -1,23 +1,31 @@
 # Issue #160 visual evidence
 
-The two-staff and three-staff examples were generated from the compiled renderer and rasterized from its continuous Preview SVG at 100% and 200%. The close-up is a crop from the two-staff 200% render. The reference image was rasterized independently from the [Issue #160 brace reference SVG](../../../specs/gui_design/proposals/issue-160/standard-brace-reference.svg), so the implemented render and canonical shape can be compared side by side. Page SVG and PDF renders were also visually checked at 200%; both preserve the same smooth filled contour. The brace keeps a fixed horizontal width while scaling vertically for each staff group.
+These images cover the approved Implementation Contract v2 role matrix. The files named `single` and `web` are screenshots from the VS Code Extension Development Host Preview: `single` is page mode and `web` is continuous mode. Light and dark files were captured with the matching VS Code themes. `1x` and `2x` are native and double-output-scale captures of the same Preview viewport.
 
-## Two-staff system
+## VS Code Preview captures
 
-![Two-staff melody and rhythm system](brace-two-staff.png)
+Each case has page and continuous Preview screenshots in both themes at 1x and 2x:
 
-![Two-staff melody and rhythm system at 200%](brace-two-staff-200.png)
+- `vocal-rhythm-*`: vocal melody plus rhythm; one outer staff bracket and no guitar brace.
+- `guitar-brace-*`: TAB plus explicitly shown rhythm, without a vocal staff; one guitar brace and no outer bracket.
+- `nested-*`: vocal melody, TAB, and rhythm; one outer bracket and an inner brace over the two guitar staves.
 
-## Three-staff system
+For example, [nested page mode, dark theme, 1x](nested-single-dark-1x.png) and [nested continuous mode, light theme, 2x](nested-web-light-2x.png). The captures retain the surrounding Preview controls and score. The 2x files are captured at twice the output pixel scale; they do not change the Preview's CSS layout.
 
-![Three-staff melody, TAB, and rhythm system](brace-three-staff.png)
+## Continuous, page, and PDF renderer output
 
-![Three-staff melody, TAB, and rhythm system at 200%](brace-three-staff-200.png)
+The renderer outputs below are rasterized from the compiled SVG renderer at native and double pixel scale. The same roles are shown in each mode:
 
-## Magnified brace
+| Case | Continuous Preview SVG | Page Preview SVG | PDF page |
+|---|---|---|---|
+| Vocal + rhythm | [1x](brace-two-staff.png), [2x](brace-two-staff-200.png) | [1x](vocal-rhythm-page-1x.png), [2x](vocal-rhythm-page-2x.png) | [1x](vocal-rhythm-pdf-1x.png), [2x](vocal-rhythm-pdf-2x.png) |
+| TAB + rhythm | [1x](guitar-brace-two-staff.png), [2x](guitar-brace-two-staff-200.png) | [1x](guitar-brace-page-1x.png), [2x](guitar-brace-page-2x.png) | [1x](guitar-brace-pdf-1x.png), [2x](guitar-brace-pdf-2x.png) |
+| Vocal + TAB + rhythm | [1x](brace-three-staff.png), [2x](brace-three-staff-200.png) | [1x](nested-page-1x.png), [2x](nested-page-2x.png) | [1x](nested-pdf-1x.png), [2x](nested-pdf-2x.png) |
 
-![Magnified filled brace beside the staff edge](brace-detail.png)
+PDF uses the same black-on-white SVG output regardless of the VS Code theme. The nested group was also rendered to narrow A5 pages to check the left margin and clipping: [A5 page SVG](nested-a5-page-1x.png) / [A5 PDF](nested-a5-pdf-1x.png), with [2x page SVG](nested-a5-page-2x.png) / [2x PDF](nested-a5-pdf-2x.png).
 
-## Reference shape
+## Shape references and close-up
 
-![Issue #160 reference brace](reference-brace.png)
+- [Guitar brace reference SVG raster](reference-brace.png) and [original Issue #160 image](brace-original-issue-reference.png) are preserved on the same canvas for shape comparison.
+- [Standalone staff bracket reference](bracket-reference.png) and [nested bracket + brace reference](nested-reference.png) document the v2 group roles.
+- [Magnified brace detail](brace-detail.png) shows the filled contour. Unit geometry checks constrain the waist, tangent joins, and self-intersection.
