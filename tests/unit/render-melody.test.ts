@@ -235,14 +235,15 @@ describe('render - melody systems', () => {
     assert.strictEqual((pages.match(/class="playback-measure-anchor"/g) ?? []).length, score.measures.length);
   });
 
-  it('composes the official Bravura bracket terminals with a variable-height stem', () => {
+  it('uses a font-free, original SVG bracket with mirrored fixed-shape terminals', () => {
     const reference = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'specs', 'gui_design', 'proposals', 'issue-160', 'staff-bracket-reference.svg'), 'utf8');
-    const topGlyph = reference.match(/<path class="staff-bracket" d="([^"]+)"/)?.[1];
-    const bottomGlyph = reference.match(/<path class="staff-bracket-bottom" d="([^"]+)"/)?.[1];
-    assert.ok(topGlyph && bottomGlyph, 'reference contains both original Bravura terminal outlines');
-    assert.strictEqual(topGlyph, bottomGlyph, 'Bravura bracketBottom is the mirrored bracketTop');
-    assert.ok(topGlyph.startsWith('M 0 0 L 125 0 C 285 30'), 'terminal follows the Bravura SMuFL U+E003 outline');
-    assert.ok(reference.includes('class="staff-bracket-stem"'), 'reference has an independent stem');
+    const cap = reference.match(/<path class="staff-bracket" d="([^"]+)"/)?.[1];
+    const mirroredCap = reference.match(/<path class="staff-bracket-bottom" d="([^"]+)"/)?.[1];
+    assert.ok(cap && mirroredCap, 'design reference defines two inline Bézier caps');
+    assert.strictEqual(cap, mirroredCap, 'bottom cap mirrors the exact same authored SVG path');
+    assert.ok(cap.startsWith('M 0 0 L 3.5 0 C 7.2 -0.2'), 'new bracket has the authored gentle curved flare');
+    assert.ok(!cap.includes('125 0 C 285 30'), 'do not reuse an extracted music font glyph');
+    assert.ok(reference.includes('class="staff-bracket-stem"'), 'design reference has an independent stem');
 
     const score = parseGuitarDsl('| C |\nmel: | c4/1 |');
     const [group] = staffGroupConnectors(renderContinuousSvg(score));
@@ -250,14 +251,13 @@ describe('render - melody systems', () => {
     const top = group.match(/<path class="staff-bracket"[^>]*\/>/)?.[0];
     const bottom = group.match(/<path class="staff-bracket-bottom"[^>]*\/>/)?.[0];
     const stem = group.match(/<rect class="staff-bracket-stem"[^>]*\/>/)?.[0];
-    assert.ok(top && bottom && stem, 'variable-length bracket has exactly two terminals and one stem');
-    assert.doesNotMatch(group, /<text\\b|<use\\b|<font\\b|<foreignObject\\b|font-family|@font-face|\\bhref=|\\bsrc=/i,
-      'staff grouping must render only inline SVG geometry: no text glyphs, embedded fonts, or external resources');
-    assert.ok(top.includes(`d="${topGlyph}"`) && bottom.includes(`d="${bottomGlyph}"`));
-    assert.ok(top.includes('translate(6 ') && bottom.includes('translate(6 '), 'standalone bracket maintains left clearance');
-    assert.ok(top.includes('scale(0.032 -0.032)'), 'top keeps its native aspect ratio');
-    assert.ok(bottom.includes('scale(0.032 0.032)'), 'bottom mirrors top without vertical stretching');
-    assert.ok(stem.includes('x="6"') && stem.includes('width="4"') && stem.includes('fill="#000"'), 'stem uses the 125-unit native Bravura thickness');
+    assert.ok(top && bottom && stem, 'bracket has exactly two original SVG caps and one stem');
+    assert.doesNotMatch(group, /<text\b|<use\b|<font\b|<foreignObject\b|font-family|@font-face|\bhref=|\bsrc=/i,
+      'bracket must have no font, glyph, symbol reference or external resource dependency');
+    assert.ok(top.includes('d="' + cap + '"') && bottom.includes('d="' + mirroredCap + '"'));
+    assert.ok(top.includes('transform="translate(6 ') && !top.includes('scale('), 'top cap has no distortive scale');
+    assert.ok(bottom.includes('scale(1 -1)'), 'bottom cap is reflected without stretching');
+    assert.ok(stem.includes('x="6"') && stem.includes('width="3.5"') && stem.includes('fill="#000"'), 'original slim stem geometry is fixed');
     assert.strictEqual((group.match(/class="staff-bracket-bottom"/g) ?? []).length, 1);
     assert.strictEqual((group.match(/class="staff-bracket-stem"/g) ?? []).length, 1);
     assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 0);
