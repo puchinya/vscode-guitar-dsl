@@ -190,8 +190,14 @@ export async function captureWorkbenchScreenshot(filename: string, issueNumber =
 let previewViewportWasOverridden = false;
 let previewWorkbenchMetricsWereOverridden = false;
 
-export async function capturePreviewWebviewScreenshot(filename: string, issueNumber = 145, previewViewportWidth?: number): Promise<void> {
+export async function capturePreviewWebviewScreenshot(
+  filename: string,
+  issueNumber = 145,
+  previewViewportWidth?: number,
+  outputScale: 1 | 2 = 1
+): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
+  if (outputScale !== 1 && outputScale !== 2) throw new Error(`Invalid Preview screenshot output scale: ${outputScale}`);
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
   if (previewViewportWidth !== undefined) await setPreviewWebviewViewportWidth(previewViewportWidth);
@@ -213,7 +219,11 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
     if (previewViewportWidth !== undefined && Math.abs(viewport.width - previewViewportWidth) > 1) {
       throw new Error(`The Preview Webview screenshot viewport is ${viewport.width}px; expected ${previewViewportWidth}px`);
     }
-    return { width: viewport.width, height: viewport.height, screenshotScale: 1 / viewport.devicePixelRatio };
+    return {
+      width: viewport.width,
+      height: viewport.height,
+      screenshotScale: outputScale / viewport.devicePixelRatio
+    };
   });
 
   const inspectVisiblePreviewFrame = async (): Promise<{
@@ -281,8 +291,10 @@ export async function capturePreviewWebviewScreenshot(filename: string, issueNum
     const image = Buffer.from(data, 'base64');
     const screenshotWidth = image.readUInt32BE(16);
     const screenshotHeight = image.readUInt32BE(20);
-    if (screenshotWidth !== Math.round(viewport.width) || screenshotHeight !== Math.round(viewport.height)) {
-      throw new Error(`The Preview screenshot is clipped to ${screenshotWidth}x${screenshotHeight}px; expected ${Math.round(viewport.width)}x${Math.round(viewport.height)}px`);
+    const expectedWidth = Math.round(viewport.width * outputScale);
+    const expectedHeight = Math.round(viewport.height * outputScale);
+    if (screenshotWidth !== expectedWidth || screenshotHeight !== expectedHeight) {
+      throw new Error(`The Preview screenshot is clipped to ${screenshotWidth}x${screenshotHeight}px; expected ${expectedWidth}x${expectedHeight}px`);
     }
     await fs.writeFile(outputPath, image);
   });

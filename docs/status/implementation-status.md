@@ -3,21 +3,21 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-29
+- **最終更新日**: 2026-10-30
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。
 
 ---
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 
-- **追加変更（独自SVG設計、受入検証待ち）**: 既存のBravuraグリフ転写案はユーザー指示により撤回。ブラケットは新規設計のSVG cubic Bézier先端（上端を下端で上下反転）＋幅3.5の独立した可変長縦幹を使用する。単独x=6、3段外側x=-23、先端は段の高さで引き伸ばさない。フォント依存・コピーした輪郭は持たず、不要になったOFL資料・旧追補契約を撤去。参照SVG・レンダラ・テスト・仕様・Help/AI同期・影響のあるSVGハッシュを本形状へ更新。CIおよび実画面証拠、契約再承認は現HEADで再検証する。
+- **追加変更（独自SVG設計）**: v2-AのBravura輪郭転写はユーザー指示により撤回。v2-Bは独自SVG cubic Bézier先端を上下反転し、幅3.5の独立した可変長縦幹を使う。単独x=6、3段外側x=-23。音楽フォント由来の輪郭・依存は追加しない。不要なOFL資料を削除し、参照SVG・レンダラ・テスト・仕様・Help/AI・影響するSVGハッシュを更新。現HEAD `37c74f42e958ec41f207d59635bc1a0e957ac605` のRequired CI run `40918515140` はcompile/Help/AI/unit 1,225件PASS。
 
-- **状態**: 2026-10-29 にIssue本文をImplementation Contract v2へ差し替えた。`mel:` は歌唱、TABと表示中リズムはギターとして扱う。歌唱＋ギターには外側ブラケット、TAB＋リズムには内側ブレース、三譜表ではネストし、単一譜表にはグループ記号を出さない。従来の一律ブレース契約・レビュー・Self-Reviewはv2の適合証拠に流用しない。v2対応を同じPR #161へ実装し、更新後のHEADでレビューを受ける。
-- **契約 / Milestone**: Issue本文を正本とし、末尾の空行だけを除いたbyte-exact Implementation Contract v2 revision comment `6497102770` の **16,928 bytes / SHA-256 `f9ce75a533e2133572d234848d031f80b8ea97228c530bef0ce562b78e0acad7`** とローカルコピーが一致することを再検証した。旧comment `6483413234` は履歴として保持。profile version `0.1.0` のMilestoneを割当済み。
+- **状態**: 2026-10-29のImplementation Contract v2で定義した役割分類・ネスト・小節線・操作不変の条件は継続。2026-10-30のv2-Bがブラケット形状を独自SVG案へ置換し、v2-AのBravura案は撤回された。実装は同じPR #161で継続し、過去のv2/v2-A画像とSelf-Reviewをv2-Bの適合証拠に流用しない。
+- **契約 / Milestone**: Issueのcanonical pointerはImplementation Contract v2-B comment `6503430267`。完全版は **25,403 bytes / SHA-256 `469644dddb05d2d1c1eea503b61f354356f7a3897a839859942a02e0aeb7db9f`**。ローカルmirrorは公式workflowで再検証する。v2 comment `6497102770` と撤回済みv2-A comment `6503071295` は履歴。profile version `0.1.0` を維持。
 - **仕様 / 設計 / Help**: syntax §11、extension §4.3/§4.7、Preview描画・PDF設計をv2のパート分類とネストに同期した。英語・日本語Helpとreviewed source digestを更新し、生成Help・AI参照を同期した。
-- **実装 / 画面証拠**: `SystemGeometry`・`measureBounds()` と連続Preview／ページPreview／PDFの共通SVG経路を維持。役割付き譜表区間から記号を投影し、ブレース・ブラケット・ギャップ線は `pointer-events="none"`。実Extension Development HostのPreview画像は `docs/status/evidence/issue-160/` にあり、歌唱＋リズム、TAB＋リズム、三譜表ネストをページ／連続モードとLight／Darkで1x／2x出力。コンパイル済みSVGを使った連続／ページ／PDF画像と、狭いA5ページ／PDF、各参照SVG、ブレース拡大図も保存した。[画像一覧と条件](evidence/issue-160/README.md)。
-- **検証**: `npm run compile`、`check:help`、`check:ai`、unit **1,225件 PASS**、`npm test` **PASS**（VS Code 1.144.0、E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、契約SHA検証、`validate-docs` はPASS。VSIXの必須Help/AIファイルが存在し、開発用パスは含まれない。WASM prepublishはwasm-bindgenの事前ビルド非対応後にcargo installへfallbackして成功。厳密な `git diff --check` は、承認バインディング更新後にミラーの末尾LFを正規化してPASSした。
-- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draft、base `main`、`Closes #160`。Issueは `phase:review`。今回のv2画像証拠はIssueコメントとPR本文に掲載し、旧証拠コメント `6475727863` と旧HEADのSelf-Reviewは履歴として扱う。現在のHEADに紐付いたSelf-ReviewとRequired CheckはPR #161で確認できる。6件のpending E2Eは未実行として維持する。
+- **実装 / 画面証拠**: `SystemGeometry`・`measureBounds()` と連続Preview／ページPreview／PDFの共通SVG経路を維持。役割付き譜表区間から記号を投影し、コネクタ群は `pointer-events="none"`。既存画像はv2-B以前のブラケット形状を含むため履歴証拠とし、v2-Bの実Extension Development Host Preview・PDF 1x/2xおよびA5画像を `docs/status/evidence/issue-160/` に新規保存してIssueへリンクする。[画像一覧](evidence/issue-160/README.md)。
+- **検証**: v2-BのRequired CI run `40918515140` はcompile・Help/AI sync・unit 1,225件PASS。今回の `npm test` はHelp/AI、unit 1,225件PASS後、E2E 118件PASS・6件pending・5件FAILで終了。失敗はIssue #158のPB05復元状態、PB04の読取専用説明と復元状態、Issue #137のstale target、Issue #93のPreview action mapping。PB05単独の診断はPASS。`npm run vscode:prepublish` PASS（wasm-bindgenは文書化済みのcargo install fallback）、`vsce ls` 1,607 entries（必須Help/AIあり、開発用パスなし）、契約binding/SHA、`validate-docs --issue 160`、`git diff --check origin/main...HEAD` と作業差分の `git diff --check` はPASS。全体E2E失敗が残るため、必須テストゲートはFAILのまま記録する。
+- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draft、base `main`、`Closes #160`。Issueは `phase:review`。v2-B Preview/PDF証拠を同Issueへ追加し、Self-ReviewとRequired Checkはpush後の最終HEADで更新する。全体E2Eの5件FAILが解消・切り分けされるまでIssueは完了扱いにしない。Windows/Linuxとアクセシビリティ検証はNOT RUN。
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
