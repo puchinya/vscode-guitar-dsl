@@ -2,7 +2,7 @@
 
 ## Current Implementation Contract v2-C evidence
 
-These Preview screenshots and PDFs use the same exact DSL fixtures and four-measure titles. The Extension Development Host was VS Code 1.144.0. Preview captures use a 500 CSS-pixel webview viewport and retain the real Preview controls and score; 1x and 2x use the same layout at native and double output-pixel scales. Themes are `Light 2026` and `Dark 2026`.
+These Preview screenshots and PDFs use the same exact DSL fixtures and four-measure titles. The Preview capture E2E ran against PR #161 code commit `6f9f297dc1955a844a625c7a4dcb3ae5c51be52a` on 2026-10-30. The Extension Development Host was VS Code 1.144.0. Preview captures use a 500 CSS-pixel webview viewport and retain the real Preview controls and score; 1x and 2x use the same layout at native and double output-pixel scales. Themes are `Light 2026` and `Dark 2026`.
 
 | Role sample | Page Preview | Continuous Preview |
 |---|---|---|
