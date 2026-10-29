@@ -251,6 +251,8 @@ describe('render - melody systems', () => {
     const bottom = group.match(/<path class="staff-bracket-bottom"[^>]*\/>/)?.[0];
     const stem = group.match(/<rect class="staff-bracket-stem"[^>]*\/>/)?.[0];
     assert.ok(top && bottom && stem, 'variable-length bracket has exactly two terminals and one stem');
+    assert.doesNotMatch(group, /<text\\b|<use\\b|<font\\b|<foreignObject\\b|font-family|@font-face|\\bhref=|\\bsrc=/i,
+      'staff grouping must render only inline SVG geometry: no text glyphs, embedded fonts, or external resources');
     assert.ok(top.includes(`d="${topGlyph}"`) && bottom.includes(`d="${bottomGlyph}"`));
     assert.ok(top.includes('translate(6 ') && bottom.includes('translate(6 '), 'standalone bracket maintains left clearance');
     assert.ok(top.includes('scale(0.032 -0.032)'), 'top keeps its native aspect ratio');
