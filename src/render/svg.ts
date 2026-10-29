@@ -319,8 +319,8 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   // Keep the original Bravura terminal aspect ratio regardless of the staff-group height.
   const bracket = drawsBracket
     ? `<rect class="staff-bracket-stem" x="${fmt(bracketX)}" y="${fmt(top)}" width="${fmt(STAFF_BRACKET_STEM_WIDTH)}" height="${fmt(height)}" fill="#000"/>`
-      + `<path class="staff-bracket" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE)} -${fmt(STAFF_BRACKET_TERMINAL_SCALE)})" fill="#000"/>`
-      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE)} ${fmt(STAFF_BRACKET_TERMINAL_SCALE)})" fill="#000"/>`
+      + `<path class="staff-bracket" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)} -${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)})" fill="#000"/>`
+      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)} ${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)})" fill="#000"/>`
     : '';
   return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/>${bracket}${brace}${gapConnectors}</g>`;
 }
