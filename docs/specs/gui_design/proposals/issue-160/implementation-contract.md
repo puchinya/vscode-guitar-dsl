@@ -106,4 +106,3 @@
 
 ### Workflow note
 旧契約のapproval/comment/shaは履歴として残すが、この改訂を承認済みの契約と誤認させてはならない。repoのphase/approval手順で新しい契約revisionを再登録・検証してから実装/受入を進める。#161のHEAD self-review・CIは新HEADで再発行する。
-

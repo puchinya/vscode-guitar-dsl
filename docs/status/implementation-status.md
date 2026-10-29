@@ -11,10 +11,10 @@
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 
 - **状態**: 2026-10-29 にIssue本文をImplementation Contract v2へ差し替えた。`mel:` は歌唱、TABと表示中リズムはギターとして扱う。歌唱＋ギターには外側ブラケット、TAB＋リズムには内側ブレース、三譜表ではネストし、単一譜表にはグループ記号を出さない。従来の一律ブレース契約・レビュー・Self-Reviewはv2の適合証拠に流用しない。v2対応を同じPR #161へ実装し、更新後のHEADでレビューを受ける。
-- **契約 / Milestone**: Issue本文を正本とし、Implementation Contract v2 comment `6483413234` の **16,929 bytes / SHA-256 `8c1572b09a745c745a74a21d3b0a508822d7add292de9932d760e58fdc626cad`** とローカルコピーが一致することを再検証した。profile version `0.1.0` のMilestoneを割当済み。
+- **契約 / Milestone**: Issue本文を正本とし、末尾の空行だけを除いたbyte-exact Implementation Contract v2 revision comment `6497102770` の **16,928 bytes / SHA-256 `f9ce75a533e2133572d234848d031f80b8ea97228c530bef0ce562b78e0acad7`** とローカルコピーが一致することを再検証した。旧comment `6483413234` は履歴として保持。profile version `0.1.0` のMilestoneを割当済み。
 - **仕様 / 設計 / Help**: syntax §11、extension §4.3/§4.7、Preview描画・PDF設計をv2のパート分類とネストに同期した。英語・日本語Helpとreviewed source digestを更新し、生成Help・AI参照を同期した。
 - **実装 / 画面証拠**: `SystemGeometry`・`measureBounds()` と連続Preview／ページPreview／PDFの共通SVG経路を維持。役割付き譜表区間から記号を投影し、ブレース・ブラケット・ギャップ線は `pointer-events="none"`。実Extension Development HostのPreview画像は `docs/status/evidence/issue-160/` にあり、歌唱＋リズム、TAB＋リズム、三譜表ネストをページ／連続モードとLight／Darkで1x／2x出力。コンパイル済みSVGを使った連続／ページ／PDF画像と、狭いA5ページ／PDF、各参照SVG、ブレース拡大図も保存した。[画像一覧と条件](evidence/issue-160/README.md)。
-- **検証**: `npm run compile`、`check:help`、`check:ai`、unit **1,225件 PASS**、`npm test` **PASS**（VS Code 1.144.0、E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、契約v2 SHA検証、`validate-docs` はPASS。VSIXの必須Help/AIファイルが存在し、開発用パスは含まれない。WASM prepublishはwasm-bindgenの事前ビルド非対応後にcargo installへfallbackして成功。標準 `git diff --check` は契約v2の正確なミラーにあるEOF空行1件を報告するため、そのチェックだけ `core.whitespace=-blank-at-eof` で再実行し、ほかの差分に警告がないことを確認した。
+- **検証**: `npm run compile`、`check:help`、`check:ai`、unit **1,225件 PASS**、`npm test` **PASS**（VS Code 1.144.0、E2E 123件 PASS / 6件 pending）、`npm run vscode:prepublish`、`vsce ls` **1,607 entries**、契約SHA検証、`validate-docs` はPASS。VSIXの必須Help/AIファイルが存在し、開発用パスは含まれない。WASM prepublishはwasm-bindgenの事前ビルド非対応後にcargo installへfallbackして成功。厳密な `git diff --check` は、承認バインディング更新後にミラーの末尾LFを正規化してPASSした。
 - **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draft、base `main`、`Closes #160`。Issueは `phase:review`。今回のv2画像証拠はIssueコメントとPR本文に掲載し、旧証拠コメント `6475727863` と旧HEADのSelf-Reviewは履歴として扱う。現在のHEADに紐付いたSelf-ReviewとRequired CheckはPR #161で確認できる。6件のpending E2Eは未実行として維持する。
 
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
