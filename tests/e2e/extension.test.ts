@@ -7465,10 +7465,11 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         document.getElementById('preview-edit-value').value = '6f0/8';
         document.getElementById('preview-edit-apply').click();
       })()`);
-      for (let attempt = 0; attempt < 150; attempt++) {
+      for (let attempt = 0; attempt < 500; attempt++) {
         const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
         const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
-        if (status && sourceLinkVisible) break;
+        const applyDisabled = await evaluatePreviewWebview<boolean>('document.getElementById("preview-edit-apply").disabled');
+        if (status && sourceLinkVisible && applyDisabled) break;
         await settle(20);
       }
       assert.strictEqual(doc.getText(), source, 'unsafe inherited duration changes leave the document unchanged');
@@ -7517,10 +7518,11 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         document.getElementById('preview-edit-value').value = 'd5/2';
         document.getElementById('preview-edit-apply').click();
       })()`);
-      for (let attempt = 0; attempt < 150; attempt++) {
+      for (let attempt = 0; attempt < 500; attempt++) {
         const status = await evaluatePreviewWebview<string>('document.getElementById("preview-edit-status").textContent');
         const sourceLinkVisible = await evaluatePreviewWebview<boolean>('!document.getElementById("preview-edit-open-source").hidden');
-        if (status && sourceLinkVisible) break;
+        const applyDisabled = await evaluatePreviewWebview<boolean>('document.getElementById("preview-edit-apply").disabled');
+        if (status && sourceLinkVisible && applyDisabled) break;
         await settle(20);
       }
       assert.strictEqual(doc.getText(), source, 'the document is unchanged when the edit would alter the next measure');
@@ -7542,7 +7544,8 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
 });
 
 suite('Sidebar navigation (Issue #137)', () => {
-  test('active-only Preview action ignores a stale target and plaintext never falls back', async () => {
+  test('active-only Preview action ignores a stale target and plaintext never falls back', async function () {
+    this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
       const docA = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: A\n| C | G |\n' });
       const docB = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: 'title: B\n| Am | F |\n' });
@@ -7665,8 +7668,35 @@ suite('Practice Mode host commands (Issue #93)', () => {
   }
   const previewTabs = () => vscode.window.tabGroups.all.flatMap(group => group.tabs)
     .filter(tab => tab.input instanceof vscode.TabInputWebview && tab.label.includes('GuitarDSL'));
+  async function waitForPreviewModeState(expectedMode: string): Promise<void> {
+    const expectedPractice = expectedMode === 'practice';
+    let lastState = '';
+    for (let attempt = 0; attempt < 100; attempt++) {
+      lastState = await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const row = document.querySelector('.practice-toolbar');
+        const practiceVisible = document.body.classList.contains('has-practice-row')
+          && !!row && getComputedStyle(row).display !== 'none' && row.getClientRects().length > 0;
+        return {
+          mode: document.body.dataset.previewUiMode,
+          practicePressed: document.getElementById('preview-mode-practice')?.getAttribute('aria-pressed'),
+          hasPracticeRow: document.body.classList.contains('has-practice-row'),
+          practiceVisible
+        };
+      })())`);
+      const state = JSON.parse(lastState) as {
+        mode?: string; practicePressed?: string | null; hasPracticeRow?: boolean; practiceVisible?: boolean;
+      };
+      if (state.mode === expectedMode
+        && state.practicePressed === String(expectedPractice)
+        && state.hasPracticeRow === expectedPractice
+        && state.practiceVisible === expectedPractice) return;
+      await sleep(100);
+    }
+    assert.fail(`Preview mode UI did not reach ${expectedMode}: ${lastState}`);
+  }
 
-  test('E2E-PM01 no-Preview warning and all eight command-to-action mappings', async () => {
+  test('E2E-PM01 no-Preview warning and all eight command-to-action mappings', async function () {
+    this.timeout(60000);
     await closeAllEditors();
     const probe = previewCapo().previewLifecycleProbe;
     const previousGeneration = probe.generation;
@@ -7702,13 +7732,7 @@ suite('Practice Mode host commands (Issue #93)', () => {
         const previousMode = await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode');
         await vscode.commands.executeCommand(command);
         const expectedMode = previousMode === 'practice' ? 'normal' : 'practice';
-        let actualMode = '';
-        for (let attempt = 0; attempt < 50; attempt++) {
-          actualMode = await evaluatePreviewWebview<string>('document.body.dataset.previewUiMode');
-          if (actualMode === expectedMode) break;
-          await sleep(100);
-        }
-        assert.strictEqual(actualMode, expectedMode, `${command} should toggle ${previousMode} to ${expectedMode}`);
+        await waitForPreviewModeState(expectedMode);
         continue;
       }
       await vscode.commands.executeCommand(command);

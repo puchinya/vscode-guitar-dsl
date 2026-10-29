@@ -1,6 +1,38 @@
-# Issue #160 — Implementation Contract v2-B: original font-free bracket
+# Issue #160 — Implementation Contract v2-C: v2-B plus regression remediation
 
-**Approval source:** The user-updated Issue #160 instructions and the direct instruction to follow the revised Issue contract. **Revision rule:** This complete contract retains all approved v2 requirements except the bracket-shape and associated reference/test clauses explicitly replaced by v2-B. The Bravura-derived v2-A proposal is rejected and has no authority. This v2-B revision replaces the previous approval binding for final acceptance.
+**Approval source:** The user-updated Issue #160 instructions, the direct instruction to follow the revised Issue contract, and the user's explicit authorization to amend the contract and include the five identified E2E failures in PR #161. **Revision rule:** v2-C retains the approved v2-B score-rendering design and adds only the five named regression fixes and correction of the already-required three-staff visual evidence. The Bravura-derived v2-A proposal remains rejected. This v2-C revision replaces the previous approval binding for final acceptance.
+
+## v2-C amendment — regression suite and three-staff evidence
+
+> 2026-10-30 user decision: amend Issue #160's contract and include the five failing tests reported on PR #161. Keep the existing v2-B rendering decisions unchanged. Fix only the defects needed to satisfy the existing Issue #158, #137, and #93 behavior contracts and make their E2E coverage deterministic. The v2-B visual-evidence requirement also remains binding; the submitted nested Preview captures must show the same actual three-staff score as the PDF evidence.
+
+### Added scope
+- Fix the five failures recorded by the full `npm test` run at PR #161 HEAD `052a066e0020719f79a73731eda0d9d668a670ae`: the two PB04 E2E cases and PB05 Workbench restoration under Issue #158, the active-only Preview stale-target case under Issue #137, and the PM01 eight-command mapping case under Issue #93.
+- Correct the nested evidence fixture so it contains explicit rhythm events that render the third staff. Capture new Extension Development Host page and continuous Preview evidence at 1x/2x in Light/Dark, and regenerate PDF evidence from that exact fixture, title, and measures. Assertions must confirm three rendered staves, one outer bracket, one inner guitar brace, and both guitar rhythm and TAB ownership before capture.
+- These are compatibility fixes against existing approved behavior contracts. Do not change the GuitarDSL syntax, Preview/Practice product behavior, the score-renderer architecture, or the Issue #158/#137/#93 closed contracts. If a root cause requires a material product behavior change outside those contracts, stop that change and record the exact conflict.
+
+### Added acceptance criteria
+- **C11 — PB04 inherited TAB rejection:** the `6f0/4` to `6f0/8` edit remains unapplied when the selected TAB token is read-only; Preview shows a non-empty explanation and source link, Apply stays disabled, the source text is unchanged, and the source link opens the owning document at the rejected token.
+- **C12 — PB04 inherited-octave boundary rejection:** the melody edit that would propagate inherited octave across a measure boundary is rejected without modifying source; the E2E completes its assertions and restores the original Workbench editor groups and width.
+- **C13 — PB05 Stop ACK failure recovery:** after injecting Stop ACK failure following the real Preview response, the expected command failure is reported and `withWorkbenchSnapshotRestored` returns editor groups, active editor, and second-group width to the captured state. The assertion must pass in the full suite, not only in an isolated run.
+- **C14 — Issue #137 active-only targeting:** active-only Preview resolves the runtime-captured active GuitarDSL URI even when passed a stale URI; plaintext has no Preview/export fallback and produces its warning without reusing another active document.
+- **C15 — Issue #93 command mapping:** all eight host playback/practice commands invoke their established Webview action; the toggle reaches Practice and reports a synchronized `data-preview-ui-mode`, `aria-pressed`, and visible `.has-practice-row`. With Preview absent, each command warns and does not open a Preview.
+- **C16 — baseline classification and full gate:** record the five failures on the original PR HEAD and run the same E2E suite on the then-current `origin/main` under the same VS Code/Electron environment to classify existing baseline failures. Fix the five authorized cases on PR #161 and rerun the complete `npm test`; zero failing tests is required (existing explicitly pending tests may remain pending and must be listed).
+- **C17 — corrected nested evidence:** the exact captured `.guitardsl` fixture must produce three staves in both Preview and PDF. Store its source and verification of actual Preview DOM role counts / explicit rhythm presence alongside the new captures; replace misleading two-staff images in the evidence README, Issue evidence comment, and PR body.
+
+### Added implementation and delivery rules
+- For E2E cleanup, preserve the existing host-focus boundary before restoring the active editor. Wait for all observable Practice-mode invariants, not the mode dataset alone. Do not weaken assertions or skip tests to obtain a pass.
+- Preserve the public behavior of the closed Issue contracts. Fix an incorrect test fixture or harness assumption where that is the demonstrated cause; fix product code only where a current contract is violated.
+- Rebind the Issue contract, status evidence, PR body, and exact-HEAD self-review after the amended work. The focused PB05 pass and the earlier v2-B CI/self-review do not substitute for the final full-suite result.
+
+### Added reviewer checklist
+- [ ] C11 PB04 TAB inherited edit is rejected with explanation/source link, disabled Apply, unchanged source, and correct source navigation.
+- [ ] C12 PB04 inherited-octave rejection leaves source unchanged and restores the original editor groups and width.
+- [ ] C13 PB05 Stop ACK failure restores the captured Workbench state under the full E2E suite.
+- [ ] C14 Issue #137 active-only Preview uses the runtime-captured active URI; plaintext never falls back.
+- [ ] C15 Issue #93 all eight command mappings and synchronized Practice UI states pass; absent Preview only warns.
+- [ ] C16 same-environment `origin/main` baseline classification and final full `npm test` are recorded accurately.
+- [ ] C17 nested Preview and PDF evidence use the same explicit-rhythm three-staff fixture and assert expected bracket/brace roles.
 
 ## v2-B amendment
 

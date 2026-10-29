@@ -1,25 +1,27 @@
 # Issue #160 visual evidence
 
-## Current Implementation Contract v2-B evidence
+## Current Implementation Contract v2-C evidence
 
-These files record the font-free SVG bracket implementation at PR #161 HEAD `37c74f42e958ec41f207d59635bc1a0e957ac605`, captured on 2026-10-30. The Extension Development Host was VS Code 1.144.0. Preview screenshots use a 500 CSS-pixel webview viewport and retain the real Preview controls and score. The 1x and 2x files capture the same layout at native and double output-pixel scales. Themes are `Light 2026` and `Dark 2026`.
+These Preview screenshots and PDFs use the same exact DSL fixtures and four-measure titles. The Extension Development Host was VS Code 1.144.0. Preview captures use a 500 CSS-pixel webview viewport and retain the real Preview controls and score; 1x and 2x use the same layout at native and double output-pixel scales. Themes are `Light 2026` and `Dark 2026`.
 
 | Role sample | Page Preview | Continuous Preview |
 |---|---|---|
-| Vocal + rhythm | [Light 1x](v2-b-head-37c74f4/vocal-rhythm-page-light-1x.png), [Light 2x](v2-b-head-37c74f4/vocal-rhythm-page-light-2x.png), [Dark 1x](v2-b-head-37c74f4/vocal-rhythm-page-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/vocal-rhythm-page-dark-2x.png) | [Light 1x](v2-b-head-37c74f4/vocal-rhythm-web-light-1x.png), [Light 2x](v2-b-head-37c74f4/vocal-rhythm-web-light-2x.png), [Dark 1x](v2-b-head-37c74f4/vocal-rhythm-web-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/vocal-rhythm-web-dark-2x.png) |
-| TAB + shown rhythm | [Light 1x](v2-b-head-37c74f4/guitar-brace-page-light-1x.png), [Light 2x](v2-b-head-37c74f4/guitar-brace-page-light-2x.png), [Dark 1x](v2-b-head-37c74f4/guitar-brace-page-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/guitar-brace-page-dark-2x.png) | [Light 1x](v2-b-head-37c74f4/guitar-brace-web-light-1x.png), [Light 2x](v2-b-head-37c74f4/guitar-brace-web-light-2x.png), [Dark 1x](v2-b-head-37c74f4/guitar-brace-web-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/guitar-brace-web-dark-2x.png) |
-| Vocal + TAB + rhythm | [Light 1x](v2-b-head-37c74f4/nested-page-light-1x.png), [Light 2x](v2-b-head-37c74f4/nested-page-light-2x.png), [Dark 1x](v2-b-head-37c74f4/nested-page-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/nested-page-dark-2x.png) | [Light 1x](v2-b-head-37c74f4/nested-web-light-1x.png), [Light 2x](v2-b-head-37c74f4/nested-web-light-2x.png), [Dark 1x](v2-b-head-37c74f4/nested-web-dark-1x.png), [Dark 2x](v2-b-head-37c74f4/nested-web-dark-2x.png) |
+| Vocal + rhythm | [Light 1x](v2-c-preview-captures/vocal-rhythm-page-light-1x.png), [Light 2x](v2-c-preview-captures/vocal-rhythm-page-light-2x.png), [Dark 1x](v2-c-preview-captures/vocal-rhythm-page-dark-1x.png), [Dark 2x](v2-c-preview-captures/vocal-rhythm-page-dark-2x.png) | [Light 1x](v2-c-preview-captures/vocal-rhythm-web-light-1x.png), [Light 2x](v2-c-preview-captures/vocal-rhythm-web-light-2x.png), [Dark 1x](v2-c-preview-captures/vocal-rhythm-web-dark-1x.png), [Dark 2x](v2-c-preview-captures/vocal-rhythm-web-dark-2x.png) |
+| TAB + shown rhythm | [Light 1x](v2-c-preview-captures/guitar-brace-page-light-1x.png), [Light 2x](v2-c-preview-captures/guitar-brace-page-light-2x.png), [Dark 1x](v2-c-preview-captures/guitar-brace-page-dark-1x.png), [Dark 2x](v2-c-preview-captures/guitar-brace-page-dark-2x.png) | [Light 1x](v2-c-preview-captures/guitar-brace-web-light-1x.png), [Light 2x](v2-c-preview-captures/guitar-brace-web-light-2x.png), [Dark 1x](v2-c-preview-captures/guitar-brace-web-dark-1x.png), [Dark 2x](v2-c-preview-captures/guitar-brace-web-dark-2x.png) |
+| Vocal + TAB + rhythm | [Light 1x](v2-c-preview-captures/nested-page-light-1x.png), [Light 2x](v2-c-preview-captures/nested-page-light-2x.png), [Dark 1x](v2-c-preview-captures/nested-page-dark-1x.png), [Dark 2x](v2-c-preview-captures/nested-page-dark-2x.png) | [Light 1x](v2-c-preview-captures/nested-web-light-1x.png), [Light 2x](v2-c-preview-captures/nested-web-light-2x.png), [Dark 1x](v2-c-preview-captures/nested-web-dark-1x.png), [Dark 2x](v2-c-preview-captures/nested-web-dark-2x.png) |
 
-The exact source files used for the three Preview captures are [vocal + rhythm](v2-b-head-37c74f4/samples/vocal-rhythm.guitardsl), [TAB + rhythm](v2-b-head-37c74f4/samples/guitar-brace.guitardsl), and [nested vocal + TAB + rhythm](v2-b-head-37c74f4/samples/nested.guitardsl). The PDF evidence below is generated through the compiled product `renderScorePdf` path by `.agent-state/issues/160/generate-review-renders.js`, then rasterized with `pdftoppm`.
+The exact source files used for both Preview and PDF are [vocal + rhythm](v2-c-samples/vocal-rhythm.guitardsl), [TAB + rhythm](v2-c-samples/guitar-brace.guitardsl), and [nested vocal + TAB + rhythm](v2-c-samples/nested.guitardsl). The Preview E2E verified explicit rhythm in every measure and checked the visible score DOM: vocal + rhythm has 10 standard staff lines, one outer bracket and no TAB strings; TAB + rhythm has five standard staff lines, six TAB strings and one guitar brace; nested has 10 standard staff lines, six TAB strings, one outer bracket and one guitar brace. Each sample also has one left group connector and the required visible inter-staff gap connectors. The capture run passed all assertions (1 passing).
+
+PDFs were generated from those same source files through the compiled product `renderScorePdf` path by [generate-v2-c-pdfs.cjs](generate-v2-c-pdfs.cjs), then rasterized with `pdftoppm`.
 
 | Role sample | PDF and raster evidence |
 |---|---|
-| Vocal + rhythm, A4 | [PDF](v2-b-head-37c74f4/pdf/vocal-rhythm-a4.pdf), [72 dpi](v2-b-head-37c74f4/pdf/vocal-rhythm-a4-72dpi.png), [144 dpi](v2-b-head-37c74f4/pdf/vocal-rhythm-a4-144dpi.png) |
-| TAB + shown rhythm, A4 | [PDF](v2-b-head-37c74f4/pdf/guitar-brace-a4.pdf), [72 dpi](v2-b-head-37c74f4/pdf/guitar-brace-a4-72dpi.png), [144 dpi](v2-b-head-37c74f4/pdf/guitar-brace-a4-144dpi.png) |
-| Vocal + TAB + rhythm, A4 | [PDF](v2-b-head-37c74f4/pdf/nested-a4.pdf), [72 dpi](v2-b-head-37c74f4/pdf/nested-a4-72dpi.png), [144 dpi](v2-b-head-37c74f4/pdf/nested-a4-144dpi.png) |
-| Vocal + TAB + rhythm, narrow A5 | [PDF](v2-b-head-37c74f4/pdf/nested-a5.pdf), [72 dpi](v2-b-head-37c74f4/pdf/nested-a5-72dpi.png), [144 dpi](v2-b-head-37c74f4/pdf/nested-a5-144dpi.png) |
+| Vocal + rhythm, A4 | [PDF](v2-c-pdf/vocal-rhythm-a4.pdf), [72 dpi](v2-c-pdf/vocal-rhythm-a4-72dpi.png), [144 dpi](v2-c-pdf/vocal-rhythm-a4-144dpi.png) |
+| TAB + shown rhythm, A4 | [PDF](v2-c-pdf/guitar-brace-a4.pdf), [72 dpi](v2-c-pdf/guitar-brace-a4-72dpi.png), [144 dpi](v2-c-pdf/guitar-brace-a4-144dpi.png) |
+| Vocal + TAB + rhythm, A4 | [PDF](v2-c-pdf/nested-a4.pdf), [72 dpi](v2-c-pdf/nested-a4-72dpi.png), [144 dpi](v2-c-pdf/nested-a4-144dpi.png) |
+| Vocal + TAB + rhythm, narrow A5 | [PDF](v2-c-pdf/nested-a5.pdf), [72 dpi](v2-c-pdf/nested-a5-72dpi.png), [144 dpi](v2-c-pdf/nested-a5-144dpi.png) |
 
-All four PDFs contain one page. `pdfinfo` reports A4 for the three A4 samples and A5 for the narrow nested sample. Raster dimensions are 596×842 and 1191×1684 pixels for A4 at 72/144 dpi, and 420×596 and 840×1191 pixels for A5. The 72/144 dpi renderings were visually checked for left-margin clipping and connector placement.
+All four PDFs contain one page. `pdfinfo` reports A4 for the first three and A5 for the narrow nested sample. Raster dimensions are 596×842 and 1191×1684 pixels for A4 at 72/144 dpi, and 420×596 and 840×1191 pixels for A5. The 72/144 dpi renderings were visually checked for left-margin clipping and connector placement.
 
 ## Historical evidence
 

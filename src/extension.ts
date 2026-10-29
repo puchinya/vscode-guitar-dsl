@@ -805,10 +805,12 @@ export function activate(context: vscode.ExtensionContext) {
       currentPanel.reveal(vscode.ViewColumn.Beside);
     } else {
       previewLifecycleProbe.lastPlaybackAction = undefined;
+      const previewColumn = previewLifecycleProbe.nextPanelViewColumnForTests ?? vscode.ViewColumn.Beside;
+      previewLifecycleProbe.nextPanelViewColumnForTests = undefined;
       currentPanel = vscode.window.createWebviewPanel(
         'guitardslPreview',
         msgs.previewTitle,
-        vscode.ViewColumn.Beside,
+        previewColumn,
         {
           enableScripts: true,
           retainContextWhenHidden: true,
@@ -1128,18 +1130,20 @@ export function activate(context: vscode.ExtensionContext) {
       );
 
       currentPanel.onDidDispose(() => {
+        const disposedPreviewUri = previewLifecycleProbe.currentDocumentUri;
         pendingPreviewFocusRestore = undefined;
         pendingPreviewEditRestore = undefined;
         previewLifecycleProbe.disposedGeneration = previewLifecycleProbe.generation;
         previewLifecycleProbe.lastPlaybackAction = undefined;
         audioLeaseCoordinator.previewDisposed();
-        if (previewLifecycleProbe.currentDocumentUri) settingsController?.externalPreviewChanged(previewLifecycleProbe.currentDocumentUri);
+        if (disposedPreviewUri) settingsController?.externalPreviewChanged(disposedPreviewUri);
         progressionAssistantController?.invalidateActive();
         previewUiMode = 'normal';
         previewUiModeUri = undefined;
         for (const pending of pendingPreviewModeDraftChecks.values()) pending.resolve(undefined);
         pendingPreviewModeDraftChecks.clear();
         visualEditingHost.cancel('preview');
+        previewLifecycleProbe.currentDocumentUri = undefined;
         currentPanel = undefined;
         previewCapo.clear();
         previewBeginner.clear();
