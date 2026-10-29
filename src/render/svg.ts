@@ -238,13 +238,11 @@ const STAFF_BRACE_PATH_TOP = 0;
 const STAFF_BRACE_PATH_BOTTOM = 200;
 const STAFF_BRACE_PATH_RIGHT = 22;
 const STAFF_BRACE_X_GAP = 3;
-// Bravura bracketTop (SMuFL U+E003), outlined from the Bravura UFO glyph; bracketBottom
-// (U+E004) mirrors this contour vertically. Copyright Steinberg Media Technologies GmbH,
-// licensed SIL OFL 1.1; see docs/specs/gui_design/proposals/issue-160/BRAVURA-OFL.txt.
-// The source glyph is in 1000 UPM units (4 staff spaces); 8 unit staff spaces => 0.032.
-const STAFF_BRACKET_TERMINAL_PATH = 'M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z';
-const STAFF_BRACKET_TERMINAL_SCALE = 0.032;
-const STAFF_BRACKET_STEM_WIDTH = 125 * STAFF_BRACKET_TERMINAL_SCALE;
+// Independently designed conventional engraved bracket: smooth flared terminals and a
+// rectangular stem. All coordinates are SVG system units, not font units or glyph outlines.
+// The two caps retain their native 1:1 geometry regardless of the distance between staves.
+const STAFF_BRACKET_CAP_PATH = 'M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z';
+const STAFF_BRACKET_STEM_WIDTH = 3.5;
 const STAFF_BRACKET_SINGLE_X = 6;
 const STAFF_BRACKET_NESTED_X = -23;
 
@@ -315,12 +313,12 @@ function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
   const brace = drawsBrace
     ? `<path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>`
     : '';
-  // SMuFL variable-height bracket: fixed-size terminals + an independent filled stem.
-  // Keep the original Bravura terminal aspect ratio regardless of the staff-group height.
+  // Draw original SVG Bézier caps at their authored size; mirror only the bottom cap.
+  // The stem alone grows with the combined staff-group height.
   const bracket = drawsBracket
     ? `<rect class="staff-bracket-stem" x="${fmt(bracketX)}" y="${fmt(top)}" width="${fmt(STAFF_BRACKET_STEM_WIDTH)}" height="${fmt(height)}" fill="#000"/>`
-      + `<path class="staff-bracket" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)} -${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)})" fill="#000"/>`
-      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_TERMINAL_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)} ${fmt(STAFF_BRACKET_TERMINAL_SCALE, 5)})" fill="#000"/>`
+      + `<path class="staff-bracket" d="${STAFF_BRACKET_CAP_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)})" fill="#000"/>`
+      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_CAP_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(1 -1)" fill="#000"/>`
     : '';
   return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/>${bracket}${brace}${gapConnectors}</g>`;
 }
