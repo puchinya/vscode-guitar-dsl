@@ -74,8 +74,8 @@ describe('TAB rendering and layout', () => {
         const bottom = group.match(/<path class="staff-bracket-bottom"[^>]*\/>/)?.[0];
         const stem = group.match(/<rect class="staff-bracket-stem"[^>]*\/>/)?.[0];
         assert.ok(bottom?.includes('transform="translate(' + testCase.bracketX + ' '), testCase.name + ': mirrored bottom terminal stays in the same lane');
-        assert.ok(bracket?.includes('scale(0.032 -0.032)') && bottom.includes('scale(0.032 0.032)'), testCase.name + ': terminals keep fixed Bravura shape');
-        assert.ok(stem?.includes('width="4"'), testCase.name + ': stem retains Bravura thickness');
+        assert.ok(!bracket?.includes('scale(') && bottom.includes('scale(1 -1)'), testCase.name + ': original caps are not stretched and bottom is mirrored');
+        assert.ok(stem?.includes('width="3.5"'), testCase.name + ': original stem width is fixed');
       }
 
       const [page] = renderScoreSheets(score, 'A4', 'portrait');
