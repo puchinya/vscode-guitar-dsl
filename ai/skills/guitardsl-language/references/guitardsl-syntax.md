@@ -720,7 +720,7 @@ TAB を含む段は §19.9 の明示的なブロック順を使う。TAB 専用�
    | 歌唱メロディ＋TAB＋明示リズム | 1（全3段） | 1（TAB＋リズムのみ） | 1 |
    | メロディだけ／リズムだけ／TABだけ／単一リードシート | 0 | 0 | 0（既存譜表内線は維持） |
 
-   - ブラケットは歌唱とギターの別パートを囲む。単独の2段では幹の基準 x=11、幅1.6、端のフックは右向き6単位以内とする。3段ネストでは全3段を囲み、幹 x=-12..-10.4、端を x=-6 以内に収める。形状は [staff-bracket-reference.svg](gui_design/proposals/issue-160/staff-bracket-reference.svg) と [nested-staff-group-reference.svg](gui_design/proposals/issue-160/nested-staff-group-reference.svg) に示す滑らかな閉じた SVG path とする。
+   - ブラケットは歌唱とギターの別パートを囲む。上下先端は音楽フォント Bravura の SMuFL `bracketTop`（U+E003）と `bracketBottom`（U+E004）に一致する輪郭とし、先端の x/y 比率は固定する（字形1000単位に対し 0.032 倍）。縦幹は別の矩形で描画し、幅4単位・高さは実譜表の範囲とする。単独2段では幹の左端 x=6（先端右端≈21）、3段ネストでは外側の左端 x=-23（先端右端≈-8）に配置し、内側ブレース x=0..22 と重ねない。ブラケット全体の縦方向ストレッチは禁止。輪郭の正本は [staff-bracket-reference.svg](gui_design/proposals/issue-160/staff-bracket-reference.svg) と [nested-staff-group-reference.svg](gui_design/proposals/issue-160/nested-staff-group-reference.svg)。グリフは [Bravura SIL OFL 1.1](gui_design/proposals/issue-160/BRAVURA-OFL.txt) に基づく。
    - ギターブレースは TAB とリズムの2譜表だけを結ぶ。形状の正本は [standard-brace-reference.svg](gui_design/proposals/issue-160/standard-brace-reference.svg) とし、中央のくびれを細く保つ。x=0..22 の横幅を保って縦だけを譜表範囲に合わせる。3段ネスト時も横方向に縮めない。
    - 2譜表以上がある場合、x=25 の既存譜表左端を最上線から最下線まで一度だけ細線で結ぶ。各小節境界では隣り合う譜表の間の隙間だけを細線で結び、各譜表内の小節線と同じ x 座標を使う。通常線、反復線、複縦線、終止線、volta、タイ、TAB 奏法記号は既存どおり描画する。
    - 表示される TAB が伴う場合、非表示の暗黙リズム譜表は数えない。コード名、歌詞、コード図、注釈欄も譜表に数えない。実際に描画される譜表が1つだけならグループ記号と新しい接続線を追加しない。
