@@ -3,21 +3,32 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-28
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #158 / PR #159 はレビュー待ち。
+- **最終更新日**: 2026-10-30
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。
 
 ---
 
+## Issue #160: 歌唱ブラケットとギター譜表ブレース
+
+- **追加変更（独自SVG設計）**: v2-AのBravura輪郭転写はユーザー指示により撤回。v2-Bは独自SVG cubic Bézier先端を上下反転し、幅3.5の独立した可変長縦幹を使う。単独x=6、3段外側x=-23。音楽フォント由来の輪郭・依存は追加しない。不要なOFL資料を削除し、参照SVG・レンダラ・テスト・仕様・Help/AI・影響するSVGハッシュを更新。実装コミット `37c74f42e958ec41f207d59635bc1a0e957ac605` のRequired CI run `40918515140` はcompile/Help/AI/unit 1,225件PASS。画面・PDF証拠は別の記録コミットに追加した。
+
+- **状態**: v2-Bの役割分類・ネスト・小節線・操作不変の条件を保ち、ユーザー承認のv2-CでIssue #158/#137/#93由来の5件のE2E回帰を追加対応した。過去のv2/v2-A画像とSelf-Reviewはv2-Cの適合証拠に流用しない。
+- **契約 / Milestone**: Issueのcanonical pointerはImplementation Contract v2-C comment `6510725367`。完全版は **31,834 bytes / SHA-256 `64a1e9eb97e37e6a6fd35183cf56c785e03d53868014c4f2fca9f1ec4a288f73`**。公式workflowで検証済み。v2-C旧comment `6510246201`、v2-B comment `6503430267`、v2 comment `6497102770`、撤回済みv2-A comment `6503071295` は履歴。profile version `0.1.0` を維持。
+- **仕様 / 設計 / Help**: syntax §11、extension §4.3/§4.7、Preview描画・PDF設計をv2のパート分類とネストに同期した。英語・日本語Helpとreviewed source digestを更新し、生成Help・AI参照を同期した。
+- **実装 / 画面証拠**: `SystemGeometry`・`measureBounds()` と連続Preview／ページPreview／PDFの共通SVG経路を維持。役割付き譜表区間から記号を投影し、コネクタ群は `pointer-events="none"`。v2-Cの実Preview 24枚は同じ明示リズムfixtureで3役・ページ/連続・Light/Dark・1x/2xを採取し、DOMの譜表線/TAB弦線/bracket/brace数を検査した。A4 3件とA5 nested PDFは同じ各fixtureから生成し、全4 PDFは1ページ。画像と再生成手順は[証拠一覧](evidence/issue-160/README.md)に掲載する。
+- **検証**: `origin/main` 同環境baselineは123 passing / 6 pending。修正後の対象5 E2Eは5/5 PASS、画面証拠E2Eは1/1 PASS。最終 `npm test` はHelp/AI同期、unit 1,225件、E2E 123件PASS / 6件pending / 0件FAIL。`npm run compile:all`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,607 entries、Help/AI必須ファイルあり、repoのtests/evidence/agent-stateなし）、契約binding/SHA、`validate-docs --issue 160`、`git diff --check` はPASS。Required Check、Self-Review、`delivery-check` の最終状態は[PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161)を参照する。
+- **PR / Completion Report**: [PR #161](https://github.com/puchinya/vscode-guitar-dsl/pull/161) はopen / non-draft、base `main`、`Closes #160`。Issueは `phase:review`。v2-CのPreview/PDF証拠は本ディレクトリに保存済み。Issue/PRの最終状態、Required Check、current-HEAD Self-ReviewはPR #161 delivery recordを参照する。レビュー完了・マージ前のためIssueは未完了、マージ保留。Windows/Linuxとアクセシビリティ検証はNOT RUN。
+
 ## Issue #158: Preview 双方向楽譜編集と変数 Inspector
 
-- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿ってPreviewを通常/編集/練習の排他3モードへ統合し、過去レビューを反映済み。Practice Guideの421px幾何同期（D1）と狭幅Inspectorタブ（D2）を修正した。Workbench snapshot復元でHost windowが非前景の場合にactive tab復元が失敗し得たため、復元直前にHost前景フォーカスを確保するようE2E helperを修正。Practice切替E2Eもmode・aria-pressed・Practice行が一致するまで待つ。最新の全体 `npm test` はPASS。PR #159はレビュー待ちで未マージ。
+- **状態**: PR #159の最新UX追補（コメント `6398576705`）に沿ってPreviewを通常/編集/練習の排他3モードへ統合し、過去レビューを反映済み。Practice Guideの421px幾何同期（D1）と狭幅Inspectorタブ（D2）を修正した。Workbench snapshot復元でHost windowが非前景の場合にactive tab復元が失敗し得たため、復元直前にHost前景フォーカスを確保するようE2E helperを修正。Practice切替E2Eもmode・aria-pressed・Practice行が一致するまで待つ。`npm test` はPASS。PR #159 は 2026-10-28 にマージされ、Issue #158 はclosed。
 - **契約**: Issue本文の最新 approved contract comment `6398128339` を正本とし、ローカルコピーは **38,687 bytes / SHA-256 `f0396b27751bd79f8dfff646c415fe23846ee635f7fba55d4b77785f6579abcf`** と完全一致することを確認。PR追補 `6398576705` は独立Edit/Practice切替を排他3モードへ置き換える決定で、契約本文/SHAは変更せず、旧追補との優先関係を記録する。
 - **Milestone**: profile version 0.1.0 を割当済み。
 - **設計**: 承認済みの2枚の提案SVGを追加。Previewの通常/編集/練習モード、600px未満のネイティブselect、モード別の編集ドック/Practice Guide排他を反映した実画面 capture は `docs/status/evidence/issue-158/` に保存し、提案図とは区別する。
 - **検証**: D1 focused E2Eは**1件 PASS**。幾何安定条件を81回確認し、全回で連続2 RAF後に収束、body paddingとpanel高の最大差は約0.0004 CSS px。421px実幅、折畳み、表示切替、短いviewport、縦スクロール末尾を確認した。D2の画面証拠E2Eは日本語・英語それぞれ**1件 PASS**し、293/360/480px、ARIA、focus、overflowを検査。設定サブタブと変数タブの日英 × light/dark 8枚を `docs/status/evidence/issue-158/inspector-{settings,variables}-{ja,en}-{light,dark}-narrow.png` に保存した。Host snapshot復元前景化とPractice切替状態同期のfocused E2Eは各**1 PASS**。最新 `npm test` は **PASS**（unit 1,220 PASS、E2E 123 PASS / 6 pending）。`check:help`、`check:ai`、`compile:all`、`vscode:prepublish` もPASS（wasm-bindgenはcargo install fallback）。`validate-docs` valid、契約SHA verified。`vsce ls` は **1,607 entries**、必須項目あり・開発パスなし。4件の古いignored診断ログはVSIX候補から除去した。`git diff --check` PASS。
-- **受入状態**: C012はユーザー了承により `NOT RUN — user accepted`（VoiceOver/NVDAとWindows/Linux手動確認）とし、PASSにしない。D1/D2およびHost snapshot復元の修正は最終suiteで通過。C014はconfigured verify_finalの各コマンドと追加検証がPASS、C020は最終 `npm test` PASSにより達成。現HEAD self-reviewを更新し、PR #159はマージせずレビュー待ちとする。
+- **受入状態**: C012はユーザー了承により `NOT RUN — user accepted`（VoiceOver/NVDAとWindows/Linux手動確認）とし、PASSにしない。D1/D2およびHost snapshot復元の修正は最終suiteで通過。C014はconfigured verify_finalの各コマンドと追加検証がPASS、C020は最終 `npm test` PASSにより達成。PR #159 はマージ済み、Issue #158 はclosed。
 - **実画面差分**: [提案SVGとの差分理由](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6393926098)、[Preview三モード実画面証拠](https://github.com/puchinya/vscode-guitar-dsl/issues/158#issuecomment-6399665786)、Inspector証拠はPR #159の最新Completion Reportにリンクする。Preview編集状態は英語/日本語 × light/dark × 421/600/840/1100px。Inspector上位タブ・設定サブタブ・変数欄は英語/日本語 × light/darkの8枚を現在の実Workbenchから保存した。
-- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は open / non-draft。最新の自己レビュー、検証ゲート、未実施の手動/OS範囲はPR本文および現HEADに紐付くCompletion Report/Required Checkを正本として追跡する。
+- **PR / Completion Report**: [PR #159](https://github.com/puchinya/vscode-guitar-dsl/pull/159) は merged。最新の自己レビュー、検証ゲート、未実施の手動/OS範囲はPR本文およびマージ前のCompletion Report/Required Checkを正本として追跡する。
 
 ## Issue #132: GUI再設計の統合受入れ
 

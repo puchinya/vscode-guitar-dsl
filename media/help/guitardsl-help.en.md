@@ -117,6 +117,8 @@ Measures wrap onto rows automatically (4 per row by default, set with `measures_
 
 Rows with `tab:` or `tab[1]:` show a conventional six-string TAB staff below any melody and melody lyrics, with a stacked `T` / `A` / `B` clef, broken string lines behind centered fret numbers, and rhythm marks above the staff. TAB carries its own rhythm, so an implicit slash-rhythm staff is omitted; explicitly authored rhythm is shown when `show_rhythm: true`. TAB and PDF use the same page SVG rendering path.
 
+Treat mel: as vocal and TAB plus visible rhythm as guitar staves. A group with vocal uses an outer bracket; TAB with rhythm and no vocal uses a guitar brace. In a three-staff system the bracket spans all staves while the brace joins only TAB and rhythm. Lyrics attached to TAB do not create a vocal staff. Barlines connect only the gaps, and a hidden implicit rhythm staff under TAB is not counted.
+
 ### PDF Export
 
 **📄 Save PDF**, or **GuitarDSL: Export PDF / Print**, writes a vector PDF of exactly what the preview shows, using the selected paper size and orientation. No browser is needed, and fonts are bundled, so output does not depend on your installed fonts. Printing is done from the saved PDF.
@@ -456,6 +458,8 @@ mel: | [c4,e4,g4]/2 [d4,f4,a4]/2 | [c4,e4,g4]/4~ [c4,e4,g4]/4 r/2 |
 ### Rendering and Layout
 
 Each row has a treble clef, and the first row shows the time signature. Chord names sit above the staff, stroke marks above the slashes, and lyrics below. A key or time-signature change starts a new row. The complete rules are in the GuitarDSL syntax specification (`docs/specs/guitardsl-syntax.md` in the source repository).
+
+Treat mel: as vocal and TAB plus visible rhythm as guitar staves. A vocal group has an outer bracket; TAB plus rhythm without vocal has a guitar brace. In a three-staff system, the outer bracket spans all staves and the inner brace joins only TAB and rhythm. TAB lyrics do not change a staff's role. Barlines connect only the gaps between staves, and a hidden implicit rhythm staff under TAB does not count.
 
 ## Troubleshooting
 

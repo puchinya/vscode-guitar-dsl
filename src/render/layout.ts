@@ -46,8 +46,10 @@ export const SYSTEM_UNIT_GAP = 8;
 // Melody staff geometry (system unit coordinates). The melody staff sits where the rhythm staff
 // sits in a rhythm-only system (lines y = 70..102); the rhythm staff of a melody system is drawn
 // below the lyrics by translating the rhythm drawing down by `rhythmOffset`.
+export const STAFF_LEFT_EDGE = 25;
+export const STAFF_LINE_OFFSETS = [0, 8, 16, 24, 32] as const;
 export const MELODY_STAVE_TOP = 70;
-export const MELODY_STAVE_BOTTOM = MELODY_STAVE_TOP + 32;
+export const MELODY_STAVE_BOTTOM = MELODY_STAVE_TOP + STAFF_LINE_OFFSETS[4];
 const MELODY_LYRIC_FIRST_BASELINE_GAP = 26; // below the bottom staff line (leaves room for 2 ledger lines)
 const MELODY_BLOCK_BOTTOM_PADDING = 8;
 const MELODY_NO_LYRIC_BOTTOM = MELODY_STAVE_BOTTOM + 22;

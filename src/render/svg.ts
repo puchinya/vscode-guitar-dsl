@@ -26,6 +26,10 @@ import {
   PageOrientation,
   PageSize,
   RUNNING_HEADER_HEIGHT,
+  MELODY_STAVE_BOTTOM,
+  MELODY_STAVE_TOP,
+  STAFF_LEFT_EDGE,
+  STAFF_LINE_OFFSETS,
   SYSTEM_UNIT_GAP,
   SYSTEM_UNIT_WIDTH,
   ScoreLayout,
@@ -214,6 +218,7 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
   const lanes = renderRowLanes(row, ctx, spans);
   const shift = geometry.annotationTop - geometry.lift;
   const body = shift !== 0 ? `<g transform="translate(0, ${fmt(shift)})">${content}</g>` : content;
+  const staffGroupConnector = renderStaffGroupConnector(row, ctx);
   const includeRhythmColumns = geometry.kind === 'rhythm' || geometry.kind === 'melody' || geometry.rhythmRendered;
   const measureAnchors = row.measures.map((measure, index) => {
     const { bx, width } = measureBounds(ctx, row.measures.length, index);
@@ -225,7 +230,97 @@ function renderSystem(row: SystemRow, scale: number, y: number, ctx: RenderConte
       .join(';');
     return `<rect class="playback-measure-anchor" data-measure-index="${measure.measureIndex}" data-playback-duration-beats="${fmt(fnum(measure.expectedBeats), 8)}" data-playback-columns="${playbackColumns}" x="${fmt(bx)}" y="0" width="${fmt(width)}" height="${fmt(geometry.unitHeight)}" fill="none" pointer-events="none"/>`;
   }).join('');
-  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${body}</g>\n`;
+  return `<g class="system" transform="translate(0, ${fmt(y)}) scale(${fmt(scale, 5)})">${lanes}${measureAnchors}${staffGroupConnector}${body}</g>\n`;
+}
+
+const STAFF_BRACE_PATH = 'M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3.5 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 4.5 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z';
+const STAFF_BRACE_PATH_TOP = 0;
+const STAFF_BRACE_PATH_BOTTOM = 200;
+const STAFF_BRACE_PATH_RIGHT = 22;
+const STAFF_BRACE_X_GAP = 3;
+// Independently designed conventional engraved bracket: smooth flared terminals and a
+// rectangular stem. All coordinates are SVG system units, not font units or glyph outlines.
+// The two caps retain their native 1:1 geometry regardless of the distance between staves.
+const STAFF_BRACKET_CAP_PATH = 'M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z';
+const STAFF_BRACKET_STEM_WIDTH = 3.5;
+const STAFF_BRACKET_SINGLE_X = 6;
+const STAFF_BRACKET_NESTED_X = -23;
+
+type StaffGroupRole = 'vocal' | 'guitar-tab' | 'guitar-rhythm';
+
+function renderStaffGroupConnector(row: SystemRow, ctx: RenderContext): string {
+  const { geometry, measures } = row;
+  const bodyShift = geometry.annotationTop - geometry.lift;
+  const intervals: { role: StaffGroupRole; top: number; bottom: number }[] = [];
+  const addFiveLineStaff = (role: StaffGroupRole, offset: number): void => {
+    intervals.push({
+      role,
+      top: MELODY_STAVE_TOP + offset + bodyShift,
+      bottom: MELODY_STAVE_BOTTOM + offset + bodyShift
+    });
+  };
+
+  if (measures.some(measure => measure.melody !== undefined)) addFiveLineStaff('vocal', 0);
+  if (geometry.rhythmRendered) {
+    addFiveLineStaff('guitar-rhythm', geometry.containsTab ? geometry.finalRhythmOffset : geometry.rhythmOffset);
+  }
+  if (geometry.containsTab) {
+    intervals.push({
+      role: 'guitar-tab',
+      top: geometry.tabOffset + bodyShift,
+      bottom: geometry.tabOffset + geometry.tabStaffHeight + bodyShift
+    });
+  }
+
+  intervals.sort((a, b) => a.top - b.top);
+  if (intervals.length < 2) return '';
+
+  const top = intervals[0].top;
+  const bottom = intervals[intervals.length - 1].bottom;
+  const height = bottom - top;
+  if (height <= 0) return '';
+
+  const guitarIntervals = intervals.filter(interval => interval.role !== 'vocal');
+  const hasVocal = intervals.some(interval => interval.role === 'vocal');
+  const drawsBrace = guitarIntervals.length === 2;
+  const drawsBracket = hasVocal;
+  if (!drawsBrace && !drawsBracket) return '';
+
+  const braceTop = guitarIntervals[0]?.top ?? top;
+  const braceBottom = guitarIntervals[guitarIntervals.length - 1]?.bottom ?? bottom;
+  const braceHeight = braceBottom - braceTop;
+  const braceScaleY = braceHeight / (STAFF_BRACE_PATH_BOTTOM - STAFF_BRACE_PATH_TOP);
+  const braceTranslateX = STAFF_LEFT_EDGE - STAFF_BRACE_PATH_RIGHT - STAFF_BRACE_X_GAP;
+  const braceTranslateY = braceTop - STAFF_BRACE_PATH_TOP * braceScaleY;
+  const bracketX = drawsBrace ? STAFF_BRACKET_NESTED_X : STAFF_BRACKET_SINGLE_X;
+
+  const boundaryXs = new Set<number>();
+  measures.forEach((measure, index) => {
+    const { bx, width } = measureBounds(ctx, measures.length, index);
+    boundaryXs.add(bx + width);
+    if (index === 0 && measure.repeatStart) boundaryXs.add(bx);
+  });
+
+  const gapConnectors = [...boundaryXs].sort((a, b) => a - b).map(x =>
+    intervals.slice(0, -1).map((staff, index) => {
+      const next = intervals[index + 1];
+      return next.top > staff.bottom
+        ? `<line class="staff-group-barline-connector" x1="${fmt(x)}" y1="${fmt(staff.bottom)}" x2="${fmt(x)}" y2="${fmt(next.top)}" stroke="#000" stroke-width="1.2"/>`
+        : '';
+    }).join('')
+  ).join('');
+
+  const brace = drawsBrace
+    ? `<path class="staff-brace" d="${STAFF_BRACE_PATH}" transform="translate(${fmt(braceTranslateX)} ${fmt(braceTranslateY)}) scale(1 ${fmt(braceScaleY, 5)})" fill="#000"/>`
+    : '';
+  // Draw original SVG Bézier caps at their authored size; mirror only the bottom cap.
+  // The stem alone grows with the combined staff-group height.
+  const bracket = drawsBracket
+    ? `<rect class="staff-bracket-stem" x="${fmt(bracketX)}" y="${fmt(top)}" width="${fmt(STAFF_BRACKET_STEM_WIDTH)}" height="${fmt(height)}" fill="#000"/>`
+      + `<path class="staff-bracket" d="${STAFF_BRACKET_CAP_PATH}" transform="translate(${fmt(bracketX)} ${fmt(top)})" fill="#000"/>`
+      + `<path class="staff-bracket-bottom" d="${STAFF_BRACKET_CAP_PATH}" transform="translate(${fmt(bracketX)} ${fmt(bottom)}) scale(1 -1)" fill="#000"/>`
+    : '';
+  return `<g class="staff-group-connector" pointer-events="none"><line class="staff-group-left-connector" x1="${fmt(STAFF_LEFT_EDGE)}" y1="${fmt(top)}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${fmt(bottom)}" stroke="#000" stroke-width="1.2"/>${bracket}${brace}${gapConnectors}</g>`;
 }
 
 function renderScoreHeader(score: ParsedScore, width: number, m: HeaderMetrics): string {
@@ -348,21 +443,20 @@ function renderSystemSvgContent(measures: MeasureData[], ctx: RenderContext, opt
   const sectionSize = style?.sectionSize ?? 9.5;
   const lyricSize = style?.lyricSize ?? 10;
 
-  const staveY = 70;
-  const staveLines = [0, 8, 16, 24, 32].map(dy => staveY + dy);
+  const staveLines = STAFF_LINE_OFFSETS.map(dy => MELODY_STAVE_TOP + dy);
 
   let staveSvg = '';
   if (opts.drawStaff !== false) {
     staveLines.forEach(y => {
-      staveSvg += `<line x1="25" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
+      staveSvg += `<line x1="${fmt(STAFF_LEFT_EDGE)}" y1="${y}" x2="${totalWidth - 5}" y2="${y}" stroke="#000" stroke-width="1"/>`;
     });
-    staveSvg += `<line x1="25" y1="${staveLines[0]}" x2="${25}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
+    staveSvg += `<line x1="${fmt(STAFF_LEFT_EDGE)}" y1="${staveLines[0]}" x2="${fmt(STAFF_LEFT_EDGE)}" y2="${staveLines[4]}" stroke="#000" stroke-width="2"/>`;
   }
 
   // Treble clef appears at the start of every system row (standard musical notation convention)
   let clefSvg = opts.drawStaff === false ? '' : `<g transform="translate(28, 53.36) scale(1.6)"><path d="${FETA_TREBLE_CLEF_PATH}" fill="#000"/></g>`;
   if (opts.drawStaff !== false && opts.drawTimeSignature) {
-    clefSvg += renderTimeSignature(opts.prefix, staveY);
+    clefSvg += renderTimeSignature(opts.prefix, MELODY_STAVE_TOP);
   }
 
   let barsSvg = '';

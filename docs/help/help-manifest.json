@@ -82,7 +82,7 @@
       "source": "syntax",
       "section": "11",
       "helpPage": "language",
-      "reviewedSourceSha256": "e40d4b0bec5d8cdd852de40c2cbd80214df4e62999ba63366a2518a9d8b133ce"
+      "reviewedSourceSha256": "f8d2747eaae9f8e949552f4b18d1f07d0f2b0f646822cb0fb5b84e14891b2ae6"
     },
     {
       "source": "syntax",
@@ -154,7 +154,7 @@
       "source": "extension",
       "section": "4",
       "helpPage": "features",
-      "reviewedSourceSha256": "9ec076fe587eadfae4ca564e689517c7fb768b2dfc05a3c61eb98325f84580c3"
+      "reviewedSourceSha256": "56c4aca862bc932767f48c37cb28c07f73922792b821c0082d8896ae9dabccc8"
     },
     {
       "source": "extension",

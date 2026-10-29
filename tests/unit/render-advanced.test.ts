@@ -275,9 +275,9 @@ describe('render - advanced sample (T048)', () => {
   });
 });
 
-describe('render - legacy regression (T002)', () => {
-  // Ignore renderer-only metadata anchors used by the Webview overlay. Visible score serialization stays
-  // byte-identical apart from the existing time-signature and tuplet-number class attributes.
+describe('render - SVG regression baseline (T002)', () => {
+  // The approved Issue #160 brace and connectors are part of the visible baseline. Ignore only
+  // renderer-only metadata anchors and the existing time-signature / tuplet-number class attributes.
   const normalize = (svg: string) => svg
     .replace(/<rect\b(?=[^>]*\bclass="playback-measure-anchor")[^>]*\/>/g, '')
     .replace(/ class="(time-signature|tuplet-number)"/g, '');
@@ -285,7 +285,7 @@ describe('render - legacy regression (T002)', () => {
   const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/legacy-render-hashes.json'), 'utf8')).hashes as Record<string, string>;
 
   for (const [name, hash] of Object.entries(fixture)) {
-    it(`renders ${name} exactly as before`, () => {
+    it(`matches the approved SVG baseline for ${name}`, () => {
       const [file, mode] = name.replace(/\.svg$/, '').split(/\.(?=cont$|a4$|land$)/);
       const score = parseGuitarDsl(fs.readFileSync(path.join(__dirname, '../../samples', file), 'utf8'));
       const svg = mode === 'cont'

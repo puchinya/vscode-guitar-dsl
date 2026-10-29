@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="400" viewBox="0 0 1080 400" role="img" aria-labelledby="title desc">
+  <title id="title">歌唱とギター2譜表のネストされたグループ記号</title>
+  <desc id="desc">3段譜では外側ブラケットが歌唱とギター全体を囲み、内側ブレースはTABとリズムのギター譜表だけを結ぶ。 独自設計の楽譜用ブラケット形状をSVGのベジェ曲線で構成。</desc>
+  <rect width="1080" height="400" fill="#fff"/>
+  <text x="65" y="42" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111">歌唱＋TAB＋リズム（3段譜）</text>
+  <text x="65" y="68" font-family="Arial, sans-serif" font-size="15" fill="#555">外側ブラケットは全3段、内側ブレースはギターの下2段だけを結ぶ</text>
+  <text x="172" y="96" font-family="Arial, sans-serif" font-size="14" fill="#555">Vocal melody</text>
+  <text x="172" y="172" font-family="Arial, sans-serif" font-size="14" fill="#555">Guitar TAB</text>
+  <text x="172" y="248" font-family="Arial, sans-serif" font-size="14" fill="#555">Guitar rhythm</text>
+  <g stroke="#222" stroke-width="1.25" fill="none">
+    <path d="M 172 104 H 1012 M 172 114 H 1012 M 172 124 H 1012 M 172 134 H 1012 M 172 144 H 1012"/>
+    <path d="M 172 180 H 1012 M 172 188 H 1012 M 172 196 H 1012 M 172 204 H 1012 M 172 212 H 1012 M 172 220 H 1012"/>
+    <path d="M 172 256 H 1012 M 172 266 H 1012 M 172 276 H 1012 M 172 286 H 1012 M 172 296 H 1012"/>
+    <path d="M 172 104 V 144 M 382 104 V 144 M 592 104 V 144 M 802 104 V 144 M 1012 104 V 144"/>
+    <path d="M 172 180 V 220 M 382 180 V 220 M 592 180 V 220 M 802 180 V 220 M 1012 180 V 220"/>
+    <path d="M 172 256 V 296 M 382 256 V 296 M 592 256 V 296 M 802 256 V 296 M 1012 256 V 296"/>
+  </g>
+  <g fill="#111" font-family="Arial, sans-serif">
+    <text x="310" y="128" font-size="17" text-anchor="middle">●</text>
+    <text x="520" y="118" font-size="17" text-anchor="middle">●</text>
+    <text x="730" y="138" font-size="17" text-anchor="middle">●</text>
+    <text x="310" y="200" font-size="15" text-anchor="middle">0</text>
+    <text x="520" y="200" font-size="15" text-anchor="middle">2</text>
+    <text x="730" y="200" font-size="15" text-anchor="middle">3</text>
+    <text x="940" y="200" font-size="15" text-anchor="middle">5</text>
+  </g>
+  <g stroke="#111" stroke-width="4" stroke-linecap="square">
+    <path d="M 286 292 l 12 -18 M 338 292 l 12 -18 M 390 292 l 12 -18 M 442 292 l 12 -18"/>
+    <path d="M 496 292 l 12 -18 M 548 292 l 12 -18 M 600 292 l 12 -18 M 652 292 l 12 -18"/>
+    <path d="M 706 292 l 12 -18 M 758 292 l 12 -18 M 810 292 l 12 -18 M 862 292 l 12 -18"/>
+    <path d="M 916 292 l 12 -18 M 968 292 l 12 -18"/>
+  </g>
+  <rect class="staff-bracket-stem" x="124" y="104" width="3.5" height="192" fill="#000"/>
+  <path class="staff-bracket" d="M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z" transform="translate(124 104)" fill="#000"/>
+  <path class="staff-bracket-bottom" d="M 0 0 L 3.5 0 C 7.2 -0.2 10.9 -1.8 13.4 -4.8 C 14.8 -6.5 15.5 -8.3 15.7 -10 C 15.75 -10.7 16.35 -10.7 16.4 -10 C 16.7 -6.1 14.8 -2.4 11.2 0.15 C 8.9 1.8 6.4 3 3.5 3.7 L 0 3.7 Z" transform="translate(124 296) scale(1 -1)" fill="#000"/>
+  <path class="staff-brace" d="M 22 0 C 6 5, 1 18, 2 31 C 2 43, 10 52, 15 59 C 20 66, 20 80, 10 90 C 8 93, 5 97, 3.5 100 C 5 103, 8 107, 10 110 C 20 120, 20 134, 15 141 C 10 148, 2 157, 2 169 C 1 182, 6 195, 22 200 C 11 193, 8 180, 9 169 C 10 156, 17 146, 21 136 C 24 124, 18 111, 4.5 100 C 18 89, 24 76, 21 64 C 17 54, 10 44, 9 31 C 8 20, 11 7, 22 0 Z" transform="translate(147 180) scale(1 0.58)" fill="#000"/>
+  <line class="staff-group-left-connector" x1="172" y1="104" x2="172" y2="296" stroke="#111" stroke-width="1.5"/>
+  <g stroke="#111" stroke-width="1.5">
+    <path d="M 382 144 V 180 M 382 220 V 256 M 592 144 V 180 M 592 220 V 256 M 802 144 V 180 M 802 220 V 256"/>
+  </g>
+  <text x="65" y="354" font-family="Arial, sans-serif" font-size="14" fill="#555">外側ブラケット x=−23..−8、ギターブレース x=0..22。先端の比率を保ち、段幅と譜表位置は不変。</text>
+</svg>

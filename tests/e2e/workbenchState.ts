@@ -28,7 +28,10 @@ export type WorkbenchSnapshot = {
   previewPracticeEnabled?: boolean;
 };
 
-type PreviewProbe = { currentDocumentUri?: string };
+type PreviewProbe = {
+  currentDocumentUri?: string;
+  nextPanelViewColumnForTests?: vscode.ViewColumn;
+};
 type WorkbenchLayout = {
   groups?: Array<{ width?: number }>;
   parts?: {
@@ -254,10 +257,43 @@ async function restoreColorTheme(snapshot: WorkbenchSnapshot): Promise<void> {
 }
 
 async function restorePreview(snapshot: WorkbenchSnapshot): Promise<void> {
-  if (!snapshot.previewUri) return;
+  if (!snapshot.previewUri || snapshot.previewColumn === undefined) return;
   const probe = getPreviewProbe();
-  if (probe.currentDocumentUri !== snapshot.previewUri) {
+  const findPreviewTabs = () => vscode.window.tabGroups.all.flatMap(group => group.tabs
+    .filter(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.includes('guitardslPreview'))
+    .map(tab => ({ tab, column: group.viewColumn })));
+  const currentTabs = findPreviewTabs();
+  if (probe.currentDocumentUri === snapshot.previewUri
+    && currentTabs.some(item => item.column === snapshot.previewColumn)) return;
+
+  if (currentTabs.length > 0) {
+    const closed = await vscode.window.tabGroups.close(currentTabs.map(item => item.tab), true);
+    if (!closed) throw new Error('Could not close the misplaced Preview while restoring P136');
+    for (let attempt = 0; attempt < 100
+      && (probe.currentDocumentUri !== undefined || findPreviewTabs().length > 0); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    if (probe.currentDocumentUri !== undefined || findPreviewTabs().length > 0) {
+      throw new Error('The Preview did not dispose before restoring its captured editor group');
+    }
+  }
+
+  recordFocusTrace('workbench-snapshot-preview-restore-requested');
+  probe.nextPanelViewColumnForTests = snapshot.previewColumn;
+  try {
     await vscode.commands.executeCommand('guitardsl.showPreview', vscode.Uri.parse(snapshot.previewUri));
+  } finally {
+    probe.nextPanelViewColumnForTests = undefined;
+  }
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (probe.currentDocumentUri === snapshot.previewUri
+      && findPreviewTabs().some(item => item.column === snapshot.previewColumn)) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  const restoredTabs = findPreviewTabs();
+  if (probe.currentDocumentUri !== snapshot.previewUri
+    || !restoredTabs.some(item => item.column === snapshot.previewColumn)) {
+    throw new Error(`Could not restore the Preview to its captured editor group ${snapshot.previewColumn}`);
   }
 }
 
