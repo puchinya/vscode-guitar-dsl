@@ -25,7 +25,17 @@
 - Preserve the public behavior of the closed Issue contracts. Fix an incorrect test fixture or harness assumption where that is the demonstrated cause; fix product code only where a current contract is violated.
 - Rebind the Issue contract, status evidence, PR body, and exact-HEAD self-review after the amended work. The focused PB05 pass and the earlier v2-B CI/self-review do not substitute for the final full-suite result.
 
-### Added reviewer checklist
+### Reviewer Checklist
+- [ ] R01 Original SVG Bézier shape, conventional engraved silhouette, no font-derived outline
+- [ ] R02 Exactly 2 mirrored fixed-shape caps, 3.5-wide stem and fixed x values
+- [ ] R03 No new font assets, loaders, `<text>`, `<use>` or external dependencies
+- [ ] R04 Voice/guitar role matrix, inner guitar brace and nesting correct
+- [ ] R05 Shared x=25 left connector and measure barlines, no overlaps/clipping
+- [ ] R06 Real Preview/PDF evidence for 2-/3-staff, 1x/2x, A5
+- [ ] R07 Unit/E2E/snapshot tests, source-reference parity and negative tests pass
+- [ ] R08 Spec/design/status/Help/AI/fixtures consistent; superseded artifacts removed
+- [ ] R09 Revised contract formally reapproved/rebound; exact-HEAD self-review
+- [ ] R10 Same PR #161 pushed with `Closes #160`, review state and PR URL
 - [ ] C11 PB04 TAB inherited edit is rejected with explanation/source link, disabled Apply, unchanged source, and correct source navigation.
 - [ ] C12 PB04 inherited-octave rejection leaves source unchanged and restores the original editor groups and width.
 - [ ] C13 PB05 Stop ACK failure restores the captured Workbench state under the full E2E suite.
