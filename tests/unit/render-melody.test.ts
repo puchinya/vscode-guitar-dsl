@@ -235,20 +235,29 @@ describe('render - melody systems', () => {
     assert.strictEqual((pages.match(/class="playback-measure-anchor"/g) ?? []).length, score.measures.length);
   });
 
-  it('uses a standalone reference bracket for vocal-plus-guitar systems', () => {
+  it('composes the official Bravura bracket terminals with a variable-height stem', () => {
     const reference = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'specs', 'gui_design', 'proposals', 'issue-160', 'staff-bracket-reference.svg'), 'utf8');
-    const referencePath = reference.match(/<path class="staff-bracket" d="([^"]+)"/)?.[1];
-    assert.ok(referencePath, 'bracket reference contains a filled path');
-    assert.ok(referencePath.startsWith('M 6 0 C '), 'bracket hook extends at most 6 units to the right');
-    assert.ok(referencePath.includes('L 0 198.4') && referencePath.includes('L 1.6 194.4 L 1.6 5.6'), 'bracket shaft is 1.6 units wide');
+    const topGlyph = reference.match(/<path class="staff-bracket" d="([^"]+)"/)?.[1];
+    const bottomGlyph = reference.match(/<path class="staff-bracket-bottom" d="([^"]+)"/)?.[1];
+    assert.ok(topGlyph && bottomGlyph, 'reference contains both original Bravura terminal outlines');
+    assert.strictEqual(topGlyph, bottomGlyph, 'Bravura bracketBottom is the mirrored bracketTop');
+    assert.ok(topGlyph.startsWith('M 0 0 L 125 0 C 285 30'), 'terminal follows the Bravura SMuFL U+E003 outline');
+    assert.ok(reference.includes('class="staff-bracket-stem"'), 'reference has an independent stem');
 
     const score = parseGuitarDsl('| C |\nmel: | c4/1 |');
     const [group] = staffGroupConnectors(renderContinuousSvg(score));
     assert.ok(group);
-    const bracket = group.match(/<path class="staff-bracket"[^>]*\/>/)?.[0];
-    assert.ok(bracket?.includes(`d="${referencePath}"`), 'renderer uses the exact bracket reference shape');
-    assert.ok(bracket?.includes('transform="translate(11 '), 'standalone bracket uses the contracted x position');
-    assert.ok(bracket?.includes('fill="#000"') && !bracket.includes('stroke='), 'bracket is a black filled path');
+    const top = group.match(/<path class="staff-bracket"[^>]*\/>/)?.[0];
+    const bottom = group.match(/<path class="staff-bracket-bottom"[^>]*\/>/)?.[0];
+    const stem = group.match(/<rect class="staff-bracket-stem"[^>]*\/>/)?.[0];
+    assert.ok(top && bottom && stem, 'variable-length bracket has exactly two terminals and one stem');
+    assert.ok(top.includes(`d="${topGlyph}"`) && bottom.includes(`d="${bottomGlyph}"`));
+    assert.ok(top.includes('translate(6 ') && bottom.includes('translate(6 '), 'standalone bracket maintains left clearance');
+    assert.ok(top.includes('scale(0.032 -0.032)'), 'top keeps its native aspect ratio');
+    assert.ok(bottom.includes('scale(0.032 0.032)'), 'bottom mirrors top without vertical stretching');
+    assert.ok(stem.includes('x="6"') && stem.includes('width="4"') && stem.includes('fill="#000"'), 'stem uses the 125-unit native Bravura thickness');
+    assert.strictEqual((group.match(/class="staff-bracket-bottom"/g) ?? []).length, 1);
+    assert.strictEqual((group.match(/class="staff-bracket-stem"/g) ?? []).length, 1);
     assert.strictEqual((group.match(/class="staff-brace"/g) ?? []).length, 0);
   });
 
