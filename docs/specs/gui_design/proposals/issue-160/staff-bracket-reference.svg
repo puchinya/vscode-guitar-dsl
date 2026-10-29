@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="400" viewBox="0 0 1080 400" role="img" aria-labelledby="title desc">
   <title id="title">歌唱譜表とギター譜表をまとめる外側ブラケット</title>
-  <desc id="desc">歌唱メロディとギター伴奏の2段譜。左端線は両段を結び、ブラケットだけがグループを示す。</desc>
+  <desc id="desc">歌唱メロディとギター伴奏の2段譜。左端線は両段を結び、ブラケットだけがグループを示す。 Bravura bracketTop/Bottom (SMuFL U+E003/U+E004), SIL OFL 1.1.</desc>
   <rect width="1080" height="400" fill="#fff"/>
   <text x="65" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111">歌唱＋ギター伴奏（2段譜）</text>
   <text x="65" y="76" font-family="Arial, sans-serif" font-size="15" fill="#555">別パートのまとまりは細い外側ブラケットで示す。内側ブレースは使わない。</text>
@@ -24,10 +24,12 @@
     <path d="M 706 278 l 12 -18 M 758 278 l 12 -18 M 810 278 l 12 -18 M 862 278 l 12 -18"/>
     <path d="M 916 278 l 12 -18 M 968 278 l 12 -18"/>
   </g>
-  <path class="staff-bracket" d="M 6 0 C 4.6 0.9, 3.1 1.4, 0 1.6 L 0 198.4 C 3.1 198.6, 4.6 199.1, 6 200 C 5 198.3, 4.4 196.4, 4.4 194.4 L 1.6 194.4 L 1.6 5.6 L 4.4 5.6 C 4.4 3.6, 5 1.7, 6 0 Z" transform="translate(158 118) scale(1 0.82)" fill="#000"/>
+  <rect class="staff-bracket-stem" x="153" y="118" width="4" height="164" fill="#000"/>
+  <path class="staff-bracket" d="M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z" transform="translate(153 118) scale(0.032 -0.032)" fill="#000"/>
+  <path class="staff-bracket-bottom" d="M 0 0 L 125 0 C 285 30 428 104 468 271 C 469 275 469 278 469 281 C 469 289 466 293 461 295 C 452 295 441 288 436 281 C 426 270 300 138 109 124 L 8 124 C 2 124 0 123 0 117 L 0 0 Z" transform="translate(153 282) scale(0.032 0.032)" fill="#000"/>
   <line class="staff-group-left-connector" x1="172" y1="118" x2="172" y2="282" stroke="#111" stroke-width="1.5"/>
   <g stroke="#111" stroke-width="1.5">
     <path d="M 382 158 V 242 M 592 158 V 242 M 802 158 V 242"/>
   </g>
-  <text x="65" y="352" font-family="Arial, sans-serif" font-size="14" fill="#555">ブラケットの縦幹は1.6単位幅、端のフックは右向き6単位以内。五線・調号・小節xは移動しない。</text>
+  <text x="65" y="352" font-family="Arial, sans-serif" font-size="14" fill="#555">Bravuraの上下端グリフを固定倍率で描画し、縦幹（幅4）だけを伸ばす。五線・小節xは不変。</text>
 </svg>
