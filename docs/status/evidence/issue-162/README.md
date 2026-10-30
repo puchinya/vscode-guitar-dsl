@@ -26,7 +26,8 @@ The screenshots capture the visual implementation at source commit `c7d1f9d2f992
 
 ## PR #163 review evidence
 
-The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-measure page at an exact 400 CSS px Preview width. The E2E checks each chord name against its diagram pack key and transform center, reads both name and diagram DOM bounds against the card, confirms finger dots, and verifies that each interval occupies its own packed row.
+The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-measure page at an exact 400 CSS px Preview width. Chord diagrams stay in one horizontal row in playback order; each pair scales to its available interval spacing. The E2E checks the name/diagram pair and center, reads both DOM bounds against the card, confirms finger dots, and verifies that neighboring diagrams do not overlap.
 
 - [EN Dark, 400 px, short chord spans and compact diagrams](practice-guide-compact-chord-bounds-issue162-en-dark-400.png)
+- [EN Dark, 400 px, `sample_gozen0jino_page` with horizontal chord diagrams](practice-guide-horizontal-sample-issue162-en-dark-400.png)
 - The EN Dark 400 px continuation-grid captures for grids 4, 8, and 16 were refreshed while running the same current-HEAD review E2E.

@@ -1032,8 +1032,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 panelBackground: getComputedStyle(panel).backgroundColor,
                 diagramCount: diagrams.length,
                 diagramsSquare: diagramGeometry.length > 0 && diagramGeometry.every(item => item.viewBox === '0 0 144 144'
-                  && parseFloat(item.computedWidth) <= 144.5
-                  && Math.abs(parseFloat(item.computedWidth) - item.expectedWidth) <= 1
+                  && parseFloat(item.computedWidth) > 0
+                  && parseFloat(item.computedWidth) <= Math.min(144.5, item.expectedWidth + 1)
                   && Math.abs(parseFloat(item.computedHeight) - parseFloat(item.computedWidth)) <= 1),
                 diagramGeometry,
                 techniqueMarkCount: technique?.querySelectorAll('[data-guide-stroke]').length ?? 0,
@@ -1074,7 +1074,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.strictEqual(compact.panelBackground, 'rgb(255, 255, 255)', 'compact mode keeps the approved white background');
             assert.ok(compact.diagramCount > 0, 'the active bank shows generated chord diagrams');
             assert.strictEqual(compact.diagramsSquare, true,
-              `${width}px diagrams keep their 144x144 viewBox and fit their card: ${JSON.stringify(compact.diagramGeometry)}`);
+              `${width}px diagrams keep their 144x144 viewBox, scale to available intervals, and fit their card: ${JSON.stringify(compact.diagramGeometry)}`);
             assert.ok(compact.compactDiagramCenterOffsetMax <= 2,
               `${width}px compact diagrams use the shared beat-to-x mapping: ${compact.compactDiagramCenterOffsetMax}px`);
             assert.ok(compact.compactChordLabelCenterOffsetMax <= 2,
@@ -1842,14 +1842,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           cardCount: cards.length,
           counts: cards.map(card => card.querySelectorAll('.practice-guide-compact-diagram-event').length),
           rows: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-chord-name')].map(item => Number(item.dataset.guideRow))),
+          diagramRows: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-diagram-event')].map(item => Number(item.dataset.guideRow))),
+          diagramBounds: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-diagram-event svg.practice-guide-diagram')]
+            .map(diagram => { const rect = diagram.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top }; })),
           pairs
         };
       })())`));
       assert.strictEqual(geometry.viewportWidth, 400, 'the compact guide is rendered at the reviewed 400px viewport');
       assert.strictEqual(geometry.cardCount, 4, 'all four measure cards are visible');
       assert.deepStrictEqual(geometry.counts, [2, 3, 4, 2], 'the fixture covers measures with two, three, and four chords');
-      assert.ok(geometry.rows.every((rows: number[], index: number) => new Set(rows).size === geometry.counts[index]),
-        `short edge spans are packed into separate visual rows: ${JSON.stringify(geometry.rows)}`);
+      assert.ok(geometry.rows.every((rows: number[]) => rows.every(row => row === 0)),
+        `chord names remain on one horizontal row: ${JSON.stringify(geometry.rows)}`);
+      assert.ok(geometry.diagramRows.every((rows: number[]) => rows.every(row => row === 0)),
+        `chord diagrams remain on one horizontal row: ${JSON.stringify(geometry.diagramRows)}`);
+      assert.ok(geometry.diagramBounds.every((bounds: { left: number; right: number; top: number }[]) =>
+        bounds.every((item, index) => index === 0 || (item.left >= bounds[index - 1].right - 1 && Math.abs(item.top - bounds[0].top) <= 3))),
+      `horizontal chord diagrams do not overlap and share one baseline: ${JSON.stringify(geometry.diagramBounds)}`);
       assert.strictEqual(geometry.pairs.length, 11, 'all chord events have a generated diagram');
       assert.ok(geometry.pairs.every((pair: { samePack: boolean; nameChord: string | null; chord: string; aligned: boolean; domCenterOffset: number; diagramInside: boolean; nameInside: boolean; diagramWidth: number; fingerDots: number }) =>
         pair.samePack && pair.nameChord === pair.chord && pair.aligned && pair.diagramInside && pair.nameInside
@@ -1866,6 +1874,74 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
         assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
           'compact chord bounds evidence is captured at the exact 400px viewport');
+      }
+      await resetPreviewWebviewViewport();
+    });
+  });
+
+  test('Issue #162 sample_gozen0jino_page chord diagrams stay in horizontal playback order', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const samplePath = path.resolve(__dirname, '../../../samples/sample_gozen0jino_page.guitardsl');
+      const source = await fs.readFile(samplePath, 'utf8');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await setPreviewWebviewViewportWidth(400);
+      await settle(250);
+      for (let page = 0; page < 2; page++) {
+        await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+        await settle(120);
+      }
+      const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const cards = [...document.querySelectorAll('#practice-guide-pair-page .practice-guide-compact-measure')];
+        return {
+          viewportWidth: window.innerWidth,
+          measures: cards.map(card => Number(card.dataset.guideMeasureIndex)),
+          cards: cards.map(card => {
+            const cardRect = card.getBoundingClientRect();
+            const diagrams = [...card.querySelectorAll('.practice-guide-compact-diagram-event')].map(diagramEvent => {
+              const diagram = diagramEvent.querySelector('svg.practice-guide-diagram');
+              const rect = diagram.getBoundingClientRect();
+              const name = [...card.querySelectorAll('.practice-guide-compact-chord-name')]
+                .find(item => item.dataset.guidePackKey === diagramEvent.dataset.guidePackKey);
+              return { chord: diagramEvent.dataset.guideChord, nameChord: name?.dataset.guideChord ?? null,
+                row: Number(diagramEvent.dataset.guideRow), left: rect.left, right: rect.right, top: rect.top,
+                inside: rect.left >= cardRect.left - 1 && rect.right <= cardRect.right + 1,
+                fingerDots: diagram.querySelectorAll('circle[fill="#121e2b"]').length };
+            });
+            return { chords: diagrams.map(item => item.chord), diagrams };
+          })
+        };
+      })())`));
+      assert.strictEqual(geometry.viewportWidth, 400, 'the named sample is checked at 400 CSS px');
+      assert.deepStrictEqual(geometry.measures, [4, 5, 6, 7], 'the sample page includes both measures with multiple chords');
+      assert.deepStrictEqual(geometry.cards.map((card: { chords: string[] }) => card.chords.length), [1, 1, 2, 2],
+        'the sample page contains two measures with two simultaneous chord changes');
+      for (const card of geometry.cards) {
+        assert.ok(card.diagrams.every((diagram: { row: number }) => diagram.row === 0),
+          `sample measure diagrams use one horizontal row: ${JSON.stringify(card.diagrams)}`);
+        assert.ok(card.diagrams.every((diagram: { inside: boolean; fingerDots: number; nameChord: string | null; chord: string }) =>
+          diagram.inside && diagram.fingerDots > 0 && diagram.nameChord === diagram.chord),
+        `sample chord names, diagrams, and finger dots remain visible: ${JSON.stringify(card.diagrams)}`);
+        assert.ok(card.diagrams.every((diagram: { left: number; right: number; top: number }, index: number) =>
+          index === 0 || (diagram.left >= card.diagrams[index - 1].right - 1 && Math.abs(diagram.top - card.diagrams[0].top) <= 3)),
+        `sample chord diagrams stay side by side without overlap: ${JSON.stringify(card.diagrams)}`);
+      }
+
+      if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+        const locale = vscode.env.language.toLowerCase().split('-')[0];
+        const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light') ? 'light' : 'dark';
+        const filename = `practice-guide-horizontal-sample-issue162-${locale}-${theme}-400.png`;
+        await evaluatePreviewWebview<void>("(() => { const layout = document.querySelector('.practice-guide-layout'); const chordLane = document.querySelector('.practice-guide-compact-measure [data-guide-lane=\"chord\"]'); layout.scrollTop += chordLane.getBoundingClientRect().top - layout.getBoundingClientRect().top - 8; })()");
+        await settle(200);
+        await capturePreviewWebviewScreenshot(filename, 162, 400);
+        const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+        assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
+          'the original sample receives exact-width compact chord evidence');
       }
       await resetPreviewWebviewViewport();
     });

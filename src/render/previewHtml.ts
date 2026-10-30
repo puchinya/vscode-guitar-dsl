@@ -2136,11 +2136,38 @@ ${cspMeta}
         const key = [slotWidth.toFixed(3), grid, melodyVisible, diagramsVisible].join(':');
         if (guideCompactLayoutKey === key) return guideCompactLayout;
         const maxRows = { lyrics: 0, technique: 0, chord: 0 };
+        let diagramSize = 0;
         const measureLayouts = [];
         const inset = 5;
         const pack = (items, measureBeats, lane) => {
           const rowRights = [];
           const ordered = [...items].sort((a, b) => a.beat - b.beat || a.event - b.event || a.order - b.order);
+          if (lane === 'chord') {
+            const centers = ordered.map(item => inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2));
+            for (let index = 0; index < ordered.length; index++) {
+              const item = ordered[index];
+              const centerX = centers[index];
+              const halfRoom = Math.min(
+                centerX - inset,
+                slotWidth - inset - centerX,
+                index > 0 ? (centerX - centers[index - 1]) / 2 : Number.POSITIVE_INFINITY,
+                index + 1 < centers.length ? (centers[index + 1] - centerX) / 2 : Number.POSITIVE_INFINITY
+              );
+              item.width = Math.max(1, Math.min(item.width, halfRoom * 2 - 2));
+              for (const node of item.nodes) {
+                node.dataset.guideRow = '0';
+                node.dataset.guideLayoutX = String(centerX);
+                node.dataset.guideLayoutWidth = String(Math.min(
+                  Math.max(1, Number(node.dataset.guideLayoutWidth) || item.width), item.width
+                ));
+                if (node.classList.contains('practice-guide-compact-diagram-event')) {
+                  diagramSize = Math.max(diagramSize, Number(node.dataset.guideLayoutWidth) || 0);
+                }
+              }
+            }
+            maxRows.chord = Math.max(maxRows.chord, ordered.length > 0 ? 1 : 0);
+            return;
+          }
           for (const item of ordered) {
             const x = inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2);
             const centerX = Math.max(inset + item.width / 2, Math.min(slotWidth - inset - item.width / 2, x));
@@ -2211,7 +2238,6 @@ ${cspMeta}
           pack([...laneItems.chord.values()], measureBeats, 'chord');
           measureLayouts.push({ occurrenceIndex, svg });
         }
-        const diagramSize = Math.max(0, Math.min(144, slotWidth - 10));
         const laneHeights = {
           ruler: 24,
           melody: melodyVisible ? 64 : 0,
@@ -2333,9 +2359,9 @@ ${cspMeta}
             const text = item.querySelector('text');
             const y = rowY + 16;
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + y.toFixed(3) + ')');
-            fitCompactSvgText(text, Math.max(0, slotWidth - 10));
+            fitCompactSvgText(text, Number(item.dataset.guideLayoutWidth) || Math.max(0, slotWidth - 10));
           } else if (lane === 'chord-pair' && item.classList.contains('practice-guide-compact-diagram-event')) {
-            const size = layout.diagramSize;
+            const size = Number(item.dataset.guideLayoutWidth) || layout.diagramSize;
             const y = rowY;
             item.setAttribute('transform', 'translate(' + (x - size / 2).toFixed(3) + ' ' + y.toFixed(3) + ')');
             const nested = item.querySelector('svg');
