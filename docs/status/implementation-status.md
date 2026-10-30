@@ -10,12 +10,12 @@
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: 承認済みImplementation Contract v2を実装し、PR #163の最新レビュー指摘3件を修正した。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。
+- **状態**: 承認済みImplementation Contract v2を実装し、PR #163のレビュー指摘に加えて、コードダイアグラムと奏法記号を横一列にするユーザー指示を反映した。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。
 - **契約**: Issue comment `6521133304` がcanonical Implementation Contract。**33,666 bytes / SHA-256 `22ba2000015320575081faeec0dcdd7cc25daeec36f46f55ade2e5c1fe7e094f`** を公式workflowで検証した。基準HEADは `998c27b7197c0ed0f12864676aee7fccac02c48f`、対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
 - **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
-  - **実装**: コンパクト表示を単一SVG座標系へ統一し、実測幅で等幅4スロットを配置する。コードダイアグラムは必ず小節内の横一列に置き、コード区間と隣接ダイアグラムの間隔に合わせて幅を調整してカード境界内に収める。コード名も同じ時間位置に合わせる。コード省略時は再生出現ごとに直前コードと図を引き継ぎ、明示的な `N.C.` で解除する。継続波は選択グリッドと現在Fractionの1マークだけをcurrent表示する。細いviewportでの奏法記号折返しとカード内縮小、次コード領域の維持、TAB/リズムtie記号とFraction波線、実効BPMに応じた450–900ms fade、fade timer cleanupとreduced-motionも実装した。
-- **画面証拠**: [60枚の実Previewキャプチャと検査条件](evidence/issue-162/README.md)に加えて、レビュー指摘用に400pxの短いコード区間と実サンプル `sample_gozen0jino_page` を撮影した。E2Eは2/3/4コードの名前・図ペア、図と文字の実DOM境界、指押さえ点、横並び、隣接図の非重複を検査する。
-- **検証**: macOS arm64 / VS Code 1.144.0。`check:help` / `check:ai` PASS、unit **1,229件PASS**。現行テストでのIssue #162 focused E2Eは **10件PASS**。全体 `npm test` の最新実行はE2E **9件PASS / 6件pending / 3件FAIL** で、Extension Development Hostの前面化timeoutが発生して完走しなかった。320–1600px、グリッド4/8/16、密集奏法、rhythm/TAB tie、継続波の16分位置とexclusive end、400pxコード図横並び・境界・repeat/volta再生順コード継承、実効テンポfade、速度変更、Pause/Resume、seek、resize、compact/detail切替、AB loop、pagehide disposal、fallback timer、reduced-motionを確認した。全体E2Eの未解決結果はPASSとは扱わない。
+  - **実装**: コンパクト表示を単一SVG座標系へ統一し、実測幅で等幅4スロットを配置する。コードダイアグラムは必ず小節内の横一列に置き、コード区間と隣接ダイアグラムの間隔に合わせて幅を調整してカード境界内に収める。コード名も同じ時間位置に合わせる。奏法記号は密度やグリッドにかかわらず一段の時間順に並べ、同時刻記号はその時間セル内で横に配分する。記号幅は次の時刻までの空きに合わせて調整する。コード省略時は再生出現ごとに直前コードと図を引き継ぎ、明示的な `N.C.` で解除する。継続波は選択グリッドと現在Fractionの1マークだけをcurrent表示する。次コード領域の維持、TAB/リズムtie記号とFraction波線、実効BPMに応じた450–900ms fade、fade timer cleanupとreduced-motionも実装した。
+- **画面証拠**: [60枚の実Previewキャプチャと検査条件](evidence/issue-162/README.md)に加えて、レビュー指摘用の400px短コード区間と実サンプル `sample_gozen0jino_page` を撮影した。実サンプル画像ではコード図とストローク記号の両方が横並びになっている。E2Eは2/3/4コードの名前・図ペア、図と文字の実DOM境界、指押さえ点、横並び、隣接図の非重複を検査する。
+- **検証**: macOS arm64 / VS Code 1.144.0。最終 `npm test` は `check:help` / `check:ai` PASS、unit **1,229件PASS**、VS Code E2E **126件PASS・6件pending・0件FAIL**。コンパクト奏法のfocused E2Eも **1件PASS**。320–1600px、グリッド4/8/16、メロディON/OFFで、密集奏法の一段配置、同じY座標、横重なりなし、全記号のカード内配置と36px固定レーンを確認した。rhythm/TAB tie、継続波の16分位置とexclusive end、400pxコード図横並び・境界・repeat/volta再生順コード継承、実効テンポfade、速度変更、Pause/Resume、seek、resize、compact/detail切替、AB loop、pagehide disposal、fallback timer、reduced-motionも確認した。6件は既存pending。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CIの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース

@@ -2168,6 +2168,34 @@ ${cspMeta}
             maxRows.chord = Math.max(maxRows.chord, ordered.length > 0 ? 1 : 0);
             return;
           }
+          if (lane === 'technique') {
+            const starts = ordered.map(item => inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2));
+            for (let index = 0; index < ordered.length;) {
+              let groupEnd = index + 1;
+              while (groupEnd < ordered.length && Math.abs(ordered[groupEnd].beat - ordered[index].beat) < 0.000001) {
+                groupEnd++;
+              }
+              const startX = starts[index];
+              const nextLeft = groupEnd < starts.length ? starts[groupEnd] : slotWidth - inset;
+              const groupCount = groupEnd - index;
+              const stepWidth = Math.max(0.001, (nextLeft - startX) / groupCount);
+              const gap = stepWidth >= 3 ? 2 : 0;
+              const packedWidth = Math.max(0.001, stepWidth - gap);
+              for (let groupIndex = index; groupIndex < groupEnd; groupIndex++) {
+                const item = ordered[groupIndex];
+                const itemX = startX + (groupIndex - index) * stepWidth;
+                const itemWidth = Math.min(item.width, packedWidth);
+                for (const node of item.nodes) {
+                  node.dataset.guideRow = '0';
+                  node.dataset.guideLayoutX = String(itemX);
+                  node.dataset.guideLayoutPackedWidth = String(itemWidth);
+                }
+              }
+              index = groupEnd;
+            }
+            maxRows.technique = Math.max(maxRows.technique, ordered.length > 0 ? 1 : 0);
+            return;
+          }
           for (const item of ordered) {
             const x = inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2);
             const centerX = Math.max(inset + item.width / 2, Math.min(slotWidth - inset - item.width / 2, x));
@@ -2291,6 +2319,8 @@ ${cspMeta}
             else live.dataset.guideRow = source.dataset.guideRow;
             if (source.dataset.guideLayoutX === undefined) delete live.dataset.guideLayoutX;
             else live.dataset.guideLayoutX = source.dataset.guideLayoutX;
+            if (source.dataset.guideLayoutPackedWidth === undefined) delete live.dataset.guideLayoutPackedWidth;
+            else live.dataset.guideLayoutPackedWidth = source.dataset.guideLayoutPackedWidth;
             if (source.dataset.guideLayoutWidth !== undefined) {
               live.dataset.guideLayoutWidth = source.dataset.guideLayoutWidth;
             }
@@ -2351,7 +2381,10 @@ ${cspMeta}
             fitCompactSvgText(text || item, Math.max(0, slotWidth - x - 5));
           } else if (lane === 'technique') {
             const markWidth = Math.max(1, Number(item.dataset.guideLayoutWidth) || 12);
-            const availableWidth = Math.max(0.001, slotWidth - x - 5);
+            const availableWidth = Math.max(0.001, Math.min(
+              Number(item.dataset.guideLayoutPackedWidth) || markWidth,
+              slotWidth - x - 5
+            ));
             const scaleX = Math.min(1, availableWidth / markWidth);
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + (rowY + 3).toFixed(3)
               + ') scale(' + scaleX.toFixed(4) + ' 1)');

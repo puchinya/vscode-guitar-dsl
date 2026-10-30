@@ -31,3 +31,5 @@ The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-m
 - [EN Dark, 400 px, short chord spans and compact diagrams](practice-guide-compact-chord-bounds-issue162-en-dark-400.png)
 - [EN Dark, 400 px, `sample_gozen0jino_page` with horizontal chord diagrams](practice-guide-horizontal-sample-issue162-en-dark-400.png)
 - The EN Dark 400 px continuation-grid captures for grids 4, 8, and 16 were refreshed while running the same current-HEAD review E2E.
+
+The `sample_gozen0jino_page` capture also verifies that dense stroke symbols remain in one horizontal row in the compact guide. A focused E2E checks the same invariant at 320–1600 CSS px, grids 4 / 8 / 16, and melody on/off, including symbol Y alignment, non-overlap, and containment within each measure card.

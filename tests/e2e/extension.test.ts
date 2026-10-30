@@ -2051,7 +2051,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('Issue #162 compact technique SVG grows shared rows for dense events', async function () {
+  test('Issue #162 compact technique SVG keeps dense events in one horizontal row', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
       const denseRhythm = Array.from({ length: 16 }, (_, index) => `16.${index % 2 === 0 ? 'd' : 'u'}`).join(' ');
@@ -2104,14 +2104,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 const symbols = [...lane.querySelectorAll('.practice-guide-compact-symbol')]
                   .filter(symbol => getComputedStyle(symbol).display !== 'none')
                   .map(symbol => {
-                  const match = (symbol.getAttribute('transform') || '').match(/translate\(([-\d.]+)\s+([-\d.]+)\)/);
-                  return { row: Number(symbol.dataset.guideRow) || 0, x: Number(match?.[1]), width: Number(symbol.dataset.guideLayoutWidth) };
+                   const translate = (symbol.getAttribute('transform') || '').split(')')[0].split('(')[1] || '';
+                   const [x, y] = translate.trim().split(' ').map(Number);
+                   const width = Number(symbol.dataset.guideLayoutWidth);
+                   const packedWidth = Number(symbol.dataset.guideLayoutPackedWidth);
+                   return {
+                     row: Number(symbol.dataset.guideRow),
+                      x,
+                      y,
+                     width: Math.min(width, packedWidth),
+                     hasPackedWidth: Number.isFinite(packedWidth) && packedWidth > 0
+                   };
                 });
                 const rowCount = symbols.length ? Math.max(...symbols.map(symbol => symbol.row)) + 1 : 0;
-                const collisions = symbols.reduce((count, item, index) => count + symbols.slice(index + 1)
-                  .filter(next => item.row === next.row
-                    && item.x < next.x + next.width + 2 && next.x < item.x + item.width + 2).length, 0);
-                return { height: Number(lane.dataset.guideLaneHeight), rowCount, collisions, symbolCount: symbols.length };
+                 const orderedSymbols = [...symbols].sort((a, b) => a.x - b.x || a.y - b.y);
+                 const collisions = orderedSymbols.slice(0, -1).reduce((count, item, index) =>
+                   count + (item.row === orderedSymbols[index + 1].row
+                     && item.x + item.width > orderedSymbols[index + 1].x + 0.05 ? 1 : 0), 0);
+                 const sameY = symbols.every(symbol => Math.abs(symbol.y - symbols[0]?.y) <= 0.001);
+                 const fits = symbols.every(symbol => symbol.x >= 4.999 && symbol.x + symbol.width <= Number(card.style.width.replace('px', '')) - 4.999);
+                 return {
+                   height: Number(lane.dataset.guideLaneHeight), rowCount, collisions,
+                   symbolCount: symbols.length, sameY, fits,
+                   packed: symbols.every(symbol => symbol.hasPackedWidth)
+                 };
               });
               const techniqueLabel = document.querySelector('.practice-guide-label[data-guide-lane="technique"]');
               const techniqueLabelHeight = techniqueLabel && getComputedStyle(techniqueLabel).display !== 'none'
@@ -2122,16 +2138,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} retains four measures`);
             assert.deepStrictEqual(geometry.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'],
               `${width}px keeps the compact lane order in every measure SVG`);
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number }) =>
-              lane.symbolCount > 0 && lane.height >= lane.rowCount * 32 + 4 && lane.collisions === 0),
-            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} allocates non-overlapping technique rows: ${JSON.stringify(geometry.techniqueLanes)}`);
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean }) =>
+              lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 36
+                && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed),
+            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps every technique symbol on one horizontal, non-overlapping row inside its card: ${JSON.stringify(geometry.techniqueLanes)}`);
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
               index === 0 || Math.abs(lane.height - geometry.techniqueLanes[0].height) <= 0.5),
             `${width}px / ${grid}-grid shares the tallest technique lane across all four measure SVGs`);
             assert.ok(Math.abs(geometry.techniqueLabelHeight - geometry.techniqueLanes[0].height) <= 1,
               `${width}px / ${grid}-grid aligns the technique label row with the shared SVG lane height`);
-            if (width <= 600) assert.ok(geometry.techniqueLanes[0].rowCount > 1,
-              `${width}px / ${grid}-grid stacks dense 16th-note events vertically`);
             }
           }
         }
