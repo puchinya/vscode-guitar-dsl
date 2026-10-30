@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { practiceGuideStrokeVisualWidth, renderPracticeGuideStrokeSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
+import { practiceGuideStrokeVisualWidth, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
 
 describe('practice guide stroke SVG', () => {
   it('renders down and up attacks as vector geometry with descriptive labels', () => {
@@ -34,11 +34,30 @@ describe('practice guide stroke SVG', () => {
     assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'brush', palmMute: true, label: 'PM brush' }), 34);
   });
 
-  it('draws one stretchable duration wave with the specified Bezier path', () => {
+  it('keeps the detailed-grid wave renderer compatible with its existing SVG box', () => {
     const wave = renderPracticeGuideWaveSvg('Duration', 56);
     assert.match(wave, /viewBox="0 0 20 16"/);
     assert.match(wave, /d="M2 9Q6 3 10 9T18 9"/);
     assert.match(wave, /width="56"/);
     assert.doesNotMatch(wave, /<text/);
+  });
+
+  it('renders compact continuation waves as independent short vector paths', () => {
+    const standard = renderPracticeGuideWavePathSvg('Continuation', 12);
+    const narrow = renderPracticeGuideWavePathSvg('Continuation', 6);
+    assert.match(standard, /data-guide-stroke="wave"/);
+    assert.match(standard, /d="M0 9Q3\.00 3 6\.00 9T12\.00 9"/);
+    assert.match(narrow, /d="M0 9Q1\.50 3 3\.00 9T6\.00 9"/);
+    assert.match(narrow, /data-guide-wave-width="6\.00"/);
+    assert.doesNotMatch(`${standard}${narrow}`, /<text[^>]*>[↓↑〜]/u);
+  });
+
+  it('embeds attack and PM strokes as valid SVG children', () => {
+    const attack = renderPracticeGuideStrokeSvgElement({ kind: 'attack', direction: 'down', label: 'Down stroke' });
+    const palmMute = renderPracticeGuideStrokeSvgElement({ kind: 'attack', direction: 'up', palmMute: true, label: 'Palm mute' });
+    assert.match(attack, /<g class="practice-guide-stroke-icon"/);
+    assert.match(attack, /<path/);
+    assert.match(palmMute, /<text[^>]*>PM<\/text>/);
+    assert.doesNotMatch(`${attack}${palmMute}`, /<span/);
   });
 });

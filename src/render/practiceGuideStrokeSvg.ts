@@ -55,6 +55,48 @@ export function renderPracticeGuideStrokeSvg(spec: PracticeGuideStrokeSpec): str
   return `<svg class="practice-guide-stroke-icon" data-guide-stroke="${spec.kind}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 34" role="img" aria-label="${label}" width="${width}" height="28"><title>${label}</title>${marks}</svg>`;
 }
 
+/** Renders the same stroke geometry as an SVG child for compact measure roots. */
+export function renderPracticeGuideStrokeSvgElement(spec: PracticeGuideStrokeSpec, x = 0, y = 0): string {
+  const label = escapeAttribute(spec.label);
+  if (spec.palmMute) {
+    const icon = renderPracticeGuideStrokeSvgElement({ ...spec, palmMute: false }, x + PALM_MUTE_LABEL_WIDTH + 2, y);
+    return `<g class="practice-guide-pm-stroke" role="img" aria-label="${label}"><title>${label}</title><text class="practice-guide-pm-label" x="${x}" y="${y + 18}" text-anchor="start" font-family="sans-serif" font-size="8" font-weight="700" fill="currentColor">PM</text>${icon}</g>`;
+  }
+  if (spec.kind === 'tie') {
+    return `<g class="practice-guide-stroke-icon practice-guide-wave" data-guide-stroke="tie" role="img" aria-label="${label}"><title>${label}</title><path d="M${x} ${y + 9}Q${x + 3} ${y + 3} ${x + 6} ${y + 9}T${x + 12} ${y + 9}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></g>`;
+  }
+  let marks = '';
+  if (spec.kind === 'mute') {
+    marks = `<circle cx="${x + 10}" cy="${y + 17}" r="3.5" fill="currentColor"/>`;
+  } else if (spec.kind === 'string') {
+    const number = Math.max(1, Math.min(6, Math.floor(spec.stringNumber ?? 1)));
+    marks = `<text x="${x + 10}" y="${y + 21}" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="700" fill="currentColor">${number}</text>`;
+  } else {
+    const direction = spec.direction ?? (spec.kind === 'brush' ? 'down' : 'neutral');
+    if (spec.kind === 'brush') {
+      marks += `<path d="M${x + 1} ${y + 9}l6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`;
+      marks += direction === 'up'
+        ? `<path d="M${x + 14} ${y + 31}V${y + 6}m-5 6 5-7 5 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`
+        : `<path d="M${x + 14} ${y + 3}v25m-5-6 5 7 5-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    } else {
+      if (direction === 'down' || direction === 'both') marks += `<path d="M${x + 10} ${y + 3}v25m-6-6 6 7 6-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+      if (direction === 'up' || direction === 'both') marks += `<path d="M${x + 10} ${y + 31}V${y + 6}m-6 6 6-7 6 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+      if (direction === 'neutral') marks += `<circle cx="${x + 10}" cy="${y + 17}" r="3" fill="currentColor"/>`;
+    }
+  }
+  return `<g class="practice-guide-stroke-icon" data-guide-stroke="${spec.kind}" role="img" aria-label="${label}"><title>${label}</title>${marks}</g>`;
+}
+
+/** One compact continuation marker; callers place each Fraction at its own x coordinate. */
+export function renderPracticeGuideWavePathSvg(label: string, width = 12): string {
+  const safeWidth = Math.max(5, Math.min(12, width));
+  const safeLabel = escapeAttribute(label);
+  const quarter = safeWidth / 4;
+  const half = safeWidth / 2;
+  const stroke = Math.max(1, Math.min(1.6, safeWidth / 8));
+  return `<path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${safeWidth.toFixed(2)}" d="M0 9Q${quarter.toFixed(2)} 3 ${half.toFixed(2)} 9T${safeWidth.toFixed(2)} 9" fill="none" stroke="currentColor" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" role="img" aria-label="${safeLabel}"><title>${safeLabel}</title></path>`;
+}
+
 /** One stretched duration wave; callers add at most one per written onset. */
 export function renderPracticeGuideWaveSvg(label: string, width: number): string {
   const safeWidth = Math.max(18, Math.min(88, Math.round(width)));

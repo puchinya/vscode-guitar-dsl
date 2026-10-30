@@ -4,9 +4,19 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-10-30
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 は実装・ローカル検証済みで、PR作成前。
 
 ---
+
+## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
+
+- **状態**: 承認済みImplementation Contract v2を実装し、ローカル検証を完了した。PR作成・レビュー待ちへの遷移は未完了。
+- **契約**: Issue comment `6521133304` がcanonical Implementation Contract。**33,666 bytes / SHA-256 `22ba2000015320575081faeec0dcdd7cc25daeec36f46f55ade2e5c1fe7e094f`** を公式workflowで検証した。基準HEADは `998c27b7197c0ed0f12864676aee7fccac02c48f`、対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
+- **実装**: コンパクト表示を単一SVG座標系へ統一し、実測幅で等幅4スロットを配置する。細いviewportでの奏法記号折返しとカード内縮小、次コード領域の維持、TAB/リズムtie記号とFraction波線、実効BPMに応じた450–900ms fade、fade timer cleanupとreduced-motionを実装した。詳細グリッドと通常譜面の描画経路は維持する。
+- **画面証拠**: [60枚の実Previewキャプチャと検査条件](evidence/issue-162/README.md)。400/421/600/1100 CSS px × JA/EN × Light/Dark × Melody on/offを32枚、400pxのgrid 4/8/16を12枚、1600pxの基準画面と0/250/500ms fadeを16枚採取した。全画像のPNG・実幅を検査し、日英・Light/Darkの代表画像を目視確認した。
+- **検証**: macOS arm64 / VS Code 1.144.0。`npm test` はHelp/AI同期PASS、unit **1,228件PASS**、E2E **123件PASS / 6件pending / 0件FAIL**。Issue #162の主要E2Eは実幅320–1600px、グリッド4/8/16、密集奏法、rhythm/TAB tie、実効テンポfade、速度変更、Pause/Resume、fallback timer、reduced-motionを通過。`npm run vscode:prepublish`、`npm run check:help`、`npm run check:ai`、`validate-docs --issue 162`、`verify-implementation-contract 162`、`git diff --check` はPASS。`npx @vscode/vsce ls` は1,607項目で、英日Help・AI資産を含み、repoのtests/evidence/agent-stateは含まない。wasm-packはこの環境向けprebuilt `wasm-bindgen` がないためcargo installへfallbackし、buildはPASS。
+- **PR / Completion Report**: PR番号とURLは作成後に追記する。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 
@@ -158,10 +168,10 @@
 
 - **文書オーナー**: `docs/specs/guitardsl-syntax.md`、`extension.md`、`gui_design.md`、`docs/design/language-and-score-processing.md`、`preview-rendering-and-export.md`、`score-editing.md`、EN/JA Helpとmanifest、生成済み `media/help/`、AI syntax reference、本書。
 
-## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード
+## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード（当時の実装記録）
 
 - **状態**: [Issue #155](https://github.com/puchinya/vscode-guitar-dsl/issues/155) の更新済みImplementation Contract（SHA-256 `81b60f006aa6f1350884bb522d3e7c7b84a94f5d0868662688cf624c2767e0c1`）を承認済み。[PR #156](https://github.com/puchinya/vscode-guitar-dsl/pull/156) は 2026-10-24 に `main` へマージ済み、Issue #155 はclosed。handoff時のself-reviewとdelivery-checkは常にPRの現HEADに対して実行する。
-- **表示仕様**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。前後ボタンで停止中にページを手動で閲覧できる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。
+- **表示仕様（PR #156時点）**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。前後ボタンで停止中にページを手動で閲覧できる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。この狭幅・横スクロール・図サイズ・fade期間の記述はIssue #162の新しいコンパクト仕様で置き換えられた。
 - **検証**: 最新修正後の `npm test` はHelp/AI同期PASS、単体 **1,192件PASS**、VS Code E2E **112件PASS・6件pending**。コンパクト奏法の高さ共有E2Eは幅280/320/360/400/420/421/600/1400/1600px × Melody ON/OFF × 4/8/16分グリッドの54状態で4小節、レーンと固定ラベルの境界差1px以内、奏法SVGの同一小節内非衝突・レーン内包含を確認した。別のレンダラー単体テストは内部同時イベントから2行割当と67px共通高さを算出し、4小節出力を検証する。公開DSLのTAB声部制約は維持する。メロディバーE2Eは承認幅280/320/360/420/421/600/840/1100/1400pxと1600pxで各小節4音の実DOMRect、Fraction拍位置、音高Y座標、寸法、レーン内包含、Melody ON/OFFを検査する。Help/AI同期、`verify-implementation-contract 155`、`validate-docs --issue 155`、`vscode:prepublish`、VSIX収録1,602項目、`git diff --check`もPASS。pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
 - **画面証拠**: メロディバーCSS修正後の現行Previewを、幅280/320/360/420/421/600/840/1100/1400px × JA/EN × Light/Dark × Melody ON/OFFの72状態で撮影し、全画像を目視確認した。72枚すべてPNG実幅が指定CSS幅と一致し、音程バー、5レーン、歌詞・奏法・コード図、固定次コード、Melody OFF時の高さ、横スクロール可能な小節内容を確認した。画像は `docs/status/evidence/issue-155/` に `-melody-matrix.png` 付きで保存。代表画像: [JA Light・421px](evidence/issue-155/practice-guide-compact-issue155-ja-light-421-melody-on-melody-matrix.png)、[EN Dark・1400px](evidence/issue-155/practice-guide-compact-issue155-en-dark-1400-melody-on-melody-matrix.png)、[EN Dark・1600pxの4小節参照](evidence/issue-155/practice-guide-reference-4-measures-issue155-en-dark-melody-bars.png)、[110msクロスフェード](evidence/issue-155/practice-guide-crossfade-issue155-en-dark-110ms-melody-bars.png)。従来の72枚は旧HEADの履歴として保持する。
 - **文書オーナー**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。

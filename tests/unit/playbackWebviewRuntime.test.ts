@@ -250,16 +250,26 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual((html.match(/class="practice-guide-compact-diagram-event"/g) ?? []).length, 4);
   });
 
-  it('Issue #155 keeps one vector wave per sustained event and selects its duration grid', async () => {
+  it('Issue #162 keeps each Fraction continuation as a separate vector wave and selects its duration grid', async () => {
     const html = compileGuitarDslToHtml('| C | 4.d 4.d 4.d 16.d 16.d 16.d 16.d |');
     const runtime = createFakePlaybackWebview(html);
     assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 16);
-    const compact = html.match(/<article class="practice-guide-compact-measure"[\s\S]*?<\/article>/)?.[0] ?? '';
-    const markers = [...compact.matchAll(/<span class="practice-guide-compact-symbol"[^>]*data-guide-event="(\d+)"[^>]*>([\s\S]*?)<\/span>/g)];
-    const waveCounts = markers.map(marker => (marker[2].match(/data-guide-wave-grid=/g) ?? []).length);
-    assert.ok(waveCounts.some(count => count > 0), 'long attacks have a duration wave');
-    assert.ok(waveCounts.every(count => count <= 2), 'a sustained event stores only its available grid-specific single wave');
-    assert.ok(compact.includes('d="M2 9Q6 3 10 9T18 9"'), 'waves use the specified SVG path');
+    const compactStart = html.indexOf('<template data-guide-template-measure="0">');
+    const compactEnd = html.indexOf('</template>', compactStart);
+    const compact = html.slice(compactStart, compactEnd);
+    const waves = [...compact.matchAll(/<path\b[^>]*data-guide-stroke="wave"[^>]*>/g)].map(match => match[0]);
+    const byEventAndGrid = new Map<string, number>();
+    for (const wave of waves) {
+      const event = wave.match(/data-guide-event="(\d+)"/)?.[1] ?? '';
+      const grid = wave.match(/data-guide-wave-grid="(\d+)"/)?.[1] ?? '';
+      const key = `${event}:${grid}`;
+      byEventAndGrid.set(key, (byEventAndGrid.get(key) ?? 0) + 1);
+      assert.match(wave, /data-guide-at-beat=/);
+      assert.match(wave, /data-guide-at-fraction=/);
+    }
+    assert.deepStrictEqual([...byEventAndGrid.entries()].sort(), [
+      ['0:16', 3], ['0:8', 1], ['1:16', 3], ['1:8', 1], ['2:16', 3], ['2:8', 1]
+    ], 'quarter attacks contain every valid grid continuation and sixteenth attacks contain none');
     assert.doesNotMatch(compact, /<text[^>]*>[↓↑〜]/, 'compact direction and wave marks do not use visible Unicode glyphs');
 
     for (const grid of ['4', '8', '16']) {

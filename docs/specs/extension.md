@@ -556,19 +556,19 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 `.m` は同じ Preview のギター伴奏バスで発音中の voice と短い release tail を即時停止し、新しい attack を作らない。メロディ、メトロノーム、他セッションには作用しない。休符 `rN` は伴奏を停止しない。`.m` と同時刻のイベントは消音を先に処理し、その後に他の新規攻撃を予約する。Seek、Loop、速度変更、Pause、Stop、再構築と破棄では現在の Webview generation が予約音を cancel または短く fade し、voice を解放する。
 
-#### Practice guide pages and SVG strokes (Issue #155)
+#### Practice guide pages and SVG strokes (Issues #155, #162)
 
-Practice ON では既存 Preview の下端固定ガイドを使い、メロディ、歌詞、奏法、コード名、コード図をこの順に置き、次コード欄は右端に固定する。幅421 CSS pxでも次コード名を見える状態にする。表示選択肢は「コンパクト」（既定）/「詳細グリッド」と「ペア更新」（既定）/「連続スクロール」で、既存 Practice 設定 UI に置く。Issue #153 の詳細グリッドは Fraction 配置と表示互換を保つ。
+Practice ON では既存 Preview の下端固定ガイドを使い、メロディ、歌詞、奏法、コード名、コード図の順に置く。コンパクト表示は常に4小節容量で、実在する演奏出現だけを表示する。480 CSS px以下では次コード名と図をガイド上段帯へ移し、481 px以上では右欄に置く。詳細グリッド、設定UI、文書別の一時状態は維持し、音源、`PlaybackTimeline`、通常譜面 SVG、PDF を変更しない。
 
-コンパクト表示は常に4小節を表示し、2小節・1小節容量へ切り替えない。幅や譜面密度により全てが可視領域へ収まらない場合は、横スクロールで残りの小節へ到達できるようにする。文字や図は判読できない大きさへ縮小しない。4小節は `[01, 02] [03, 04]` から開始し、`floor(occurrenceIndex / 2)` の偶奇で現在ペアの左右を交互にする。バンクID A/B は内部だけで使い、画面には小節番号だけを表示する。repeat、volta、編曲、loop は書面番号でなく `PlaybackOccurrence` の連続ペアで解決し、lyric verse を保持して存在しない小節を作らない。
+コンパクト4小節の音楽情報は1小節1枚のSVGに置き、外側の操作 UI と次コード帯はHTML/CSSに残す。各SVGの拍座標は `x = 5 + beat / measureBeats * (slotWidth - 10)` とし、viewBox幅と実測CSS幅を合わせる。実ページ幅 `W` に対して4slotを等分し、内部の小節間隔4 px×2とbank間隔8 pxを差し引いた `slotWidth = max(0, (W - 16) / 4)` を使い、端数は最後のslotに配分する。文字や図の内容でカード幅を増やさず、横overflowを1 CSS px以下にする。320 / 360 / 400 / 421 / 480 / 600 / 840 / 1100 / 1600 CSS pxで4小節を同時に可視にする。幅不足はレーンの縦行で解消し、長い文字列だけを省略記号で表示して全文を `title` とARIAに残す。音符、奏法、wave、コード図は省略しない。
 
-421 CSS px未満では、Preview幅 `W` に対し `s = max(0.8, W / 421)` で左レーン見出しと4小節ストリップ全体を縮小する。次コード欄と操作UIは縮小しない。4小節全体がスクロール領域に収まる場合は左右バンクと隙間に共通insetを設定して中央寄せし、溢れる場合は左端からスクロールする。オーバーフロー時だけ現在の `PlaybackOccurrence` を小節開始で即時可視化し、小節途中ではスクロールしない。英語の狭幅レーン名は `Melody` / `Strum` とし、アクセシブルな正式名と5レーン順を保つ。メロディOFFは不要なレーン高を除く。
+幅480 px以下では次コード欄を上段にし、下段は44 pxのレーン名と4小節領域にする。コード図は共有voicingを使った144×144 viewBoxのネストSVGで、カード内は `min(144px, slotWidth - 10px)` の正方形、次コード図は44～52 pxの正方形にする。コード名と図は各コード区間の中点で揃える。幅、grid、表示切替、文書変更時の再計測と高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFで行う。
 
-コード名とコード図は小節境界に置かず、各コードが有効な区間の中央に揃える。区間は小節内のコード開始位置から次のコード開始位置まで、最後のコードは小節末までとする。コードが小節をまたぐときも、表示する小節の範囲内へ配置する。
+奏法waveは選択gridに一致する継続Fractionごとに独立したSVG pathを1個ずつ描く。attackのイベント開始位置ではなく各継続拍に配置し、`data-guide-wave-grid`、拍、Fraction、eventを保持する。同じ小節・event・grid・Fractionを重複させない。休符、mute、ghost/brush等の打音、staccatoは継続なし。tie開始は再attackを描かずwaveを1つ描き、後続grid位置にもwaveを描く。通常の持続音は記譜音価の有効な後続grid位置ごとに1つとし、grid4 / 8 / 16でそれぞれ再評価する。TAB tieとrhythm tieに適用し、音源の再attack意味論は変えない。矢印と波線の可視形状はSVG geometryで描き、Unicode glyph、CSS `content`、フォント依存表示を使わない。
 
-通常順の03、05、07…小節へ入ったとき、次のバンクのメロディ、歌詞、奏法 SVG、コード名、正方形コード図、小節番号を一体として同じ位置に構築し、旧/新の opacity を同時に220 ms `ease-in-out` で交差させる。現在演奏中のバンク、playhead、ハイライト、右固定次コード欄は位置と DOM を保つ。Seek、loop wrap、Stop→Play、ソース/文書更新、容量変更では即時再投影し、Pause/Resume と速度変更だけでは切り替えない。`prefers-reduced-motion: reduce` では0 msとする。旧 DOM は隠して非対話にし、完了時に削除する。generation token と idempotent cleanup で再入、rAF、transition listener、fallback timer、Dispose/unload を管理する。
+4小節は `[01, 02] [03, 04]` から開始する。演奏順、repeat、volta、arrangement、lyricVerseは `PlaybackTimeline.occurrences` の既存projectionを使い、存在しない小節を補わない。交替時は更新対象bankだけをフェードする。遷移開始時の `fadeMs` は遷移先 `tempoBpm × effectiveSpeed()` から `clamp(round(60000 / effectiveBpm), 450, 900)`、不正時600 msとし、そのfade中は速度変更でdurationを変えない。opacityは更新対象bankの旧新二層で同じdurationとし、fallback cleanupは `fadeMs + 80 ms`。seek、loop、resize、mode切替、disposeは古いgenerationを無効化して即時再投影する。初回表示、手動ページ移動、reduced motionは0 ms。Pause/Resumeは交替を起こさず、音声時間やvolumeにも影響しない。
 
-可視の `↓` / `↑` / `〜` は SVG の path 等から描画し、Unicode glyph、CSS `content`、フォント依存の表示を使わない。`title` / `aria-label` / tooltip は説明に使える。`〜` は記譜音価または有効な tie の継続だけであり空振りではない。quarter attack の `4.d` は4/8/16分グリッドでattackとwaveを各1個、`8.d` は16分グリッドのみ各1個、`16.d` は16分グリッドでattackだけとし、`8.d` は8分グリッドでattackだけとする。TAB / rhythm tie はタイSVGを一つだけ描き、グリッド由来waveを重ねない。`.m`、`.b` / `.g`、`.pm`、`.sN`、休符はそれぞれ消音、方向付きの打音、PM+方向、弦番号、音価別記号を区別する。Practice のコード図は144×144 CSS pxの正方形にし、弦を横、フレットを縦に描く。これらは表示専用で、音源、音量、再生時刻、通常譜面 SVG、PDF を変更しない。
+実画面の受入は400 CSS pxの実測DOM幅を含む上記幅系列、日英、Light/Dark、メロディ/図の表示切替、grid4/8/16、BPM/練習速度別fadeを確認する。通常のPreview SVG、PDF、詳細グリッド、DSL、Playbackへの変更を認めない。
 
 ### 4.7 TAB プレビュー、レイアウト、PDF
 
