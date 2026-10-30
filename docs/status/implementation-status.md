@@ -3,19 +3,19 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-30
+- **最終更新日**: 2026-10-31
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は実装・ローカル検証済みでopen。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: 承認済みImplementation Contract v2を実装し、ローカル検証を完了した。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・CIの最新状態はPR記録を参照。
+- **状態**: 承認済みImplementation Contract v2を実装し、PR #163の最新レビュー指摘3件を修正した。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。
 - **契約**: Issue comment `6521133304` がcanonical Implementation Contract。**33,666 bytes / SHA-256 `22ba2000015320575081faeec0dcdd7cc25daeec36f46f55ade2e5c1fe7e094f`** を公式workflowで検証した。基準HEADは `998c27b7197c0ed0f12864676aee7fccac02c48f`、対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
 - **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
-- **実装**: コンパクト表示を単一SVG座標系へ統一し、実測幅で等幅4スロットを配置する。細いviewportでの奏法記号折返しとカード内縮小、次コード領域の維持、TAB/リズムtie記号とFraction波線、実効BPMに応じた450–900ms fade、fade timer cleanupとreduced-motionを実装した。詳細グリッドと通常譜面の描画経路は維持する。
-- **画面証拠**: [60枚の実Previewキャプチャと検査条件](evidence/issue-162/README.md)。400/421/600/1100 CSS px × JA/EN × Light/Dark × Melody on/offを32枚、400pxのgrid 4/8/16を12枚、1600pxの基準画面と0/250/500ms fadeを16枚採取した。全画像のPNG・実幅を検査し、日英・Light/Darkの代表画像を目視確認した。
-- **検証**: macOS arm64 / VS Code 1.144.0。`npm test` はHelp/AI同期PASS、unit **1,228件PASS**、E2E **123件PASS / 6件pending / 0件FAIL**。Issue #162の主要E2Eは実幅320–1600px、グリッド4/8/16、密集奏法、rhythm/TAB tie、実効テンポfade、速度変更、Pause/Resume、seek、resize、compact/detail切替、AB loop、pagehide disposal、fallback timer、reduced-motionを通過。`npm run vscode:prepublish`、`npm run check:help`、`npm run check:ai`、`validate-docs --issue 162`、`verify-implementation-contract 162`、`git diff --check` はPASS。`npx @vscode/vsce ls` は1,607項目で、英日Help・AI資産を含み、repoのtests/evidence/agent-stateは含まない。wasm-packはこの環境向けprebuilt `wasm-bindgen` がないためcargo installへfallbackし、buildはPASS。
+- **実装**: コンパクト表示を単一SVG座標系へ統一し、実測幅で等幅4スロットを配置する。コード名と図をカード境界内にクランプし、その可視矩形で行を割り当てる。コード省略時は再生出現ごとに直前コードと図を引き継ぎ、明示的な `N.C.` で解除する。継続波は選択グリッドと現在Fractionの1マークだけをcurrent表示する。細いviewportでの奏法記号折返しとカード内縮小、次コード領域の維持、TAB/リズムtie記号とFraction波線、実効BPMに応じた450–900ms fade、fade timer cleanupとreduced-motionも実装した。
+- **画面証拠**: [60枚の実Previewキャプチャと検査条件](evidence/issue-162/README.md)に加えて、レビュー指摘用に400pxの短いコード区間と図を撮影した。E2Eは2/3/4コードの名前・図ペア、図と文字の実DOM境界、指押さえ点、行パックを検査する。
+- **検証**: macOS arm64 / VS Code 1.144.0。修正後の `npm test` はHelp/AI同期PASS、unit **1,229件PASS**、E2E **125件PASS / 6件pending / 0件FAIL**。320–1600px、グリッド4/8/16、密集奏法、rhythm/TAB tie、継続波の16分位置とexclusive end、短区間コード図境界、repeat/volta再生順コード継承、実効テンポfade、速度変更、Pause/Resume、seek、resize、compact/detail切替、AB loop、pagehide disposal、fallback timer、reduced-motionを確認した。`npm test` 内のcompile:all、`check:help`、`check:ai`もPASS。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CIの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース

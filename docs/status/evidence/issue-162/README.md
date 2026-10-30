@@ -23,3 +23,10 @@ Every PNG was checked for a valid header, nonzero dimensions, minimum image size
 - [JA Dark, 500 ms fade](practice-guide-crossfade-issue162-ja-dark-500ms-current-head.png)
 
 The screenshots capture the visual implementation at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`. The later fade-lifecycle change adds cancellation coverage for resize, view changes, AB loops, and disposal without changing these captured layouts. E2E reruns and the final delivery HEAD are recorded in [`implementation-status.md`](../../implementation-status.md).
+
+## PR #163 review evidence
+
+The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-measure page at an exact 400 CSS px Preview width. The E2E checks each chord name against its diagram pack key and transform center, reads both name and diagram DOM bounds against the card, confirms finger dots, and verifies that each interval occupies its own packed row.
+
+- [EN Dark, 400 px, short chord spans and compact diagrams](practice-guide-compact-chord-bounds-issue162-en-dark-400.png)
+- The EN Dark 400 px continuation-grid captures for grids 4, 8, and 16 were refreshed while running the same current-HEAD review E2E.

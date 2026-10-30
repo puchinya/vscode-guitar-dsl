@@ -254,7 +254,7 @@ describe('Preview production Webview runtime', () => {
     const html = compileGuitarDslToHtml('| C | 4.d 4.d 4.d 16.d 16.d 16.d 16.d |');
     const runtime = createFakePlaybackWebview(html);
     assert.strictEqual(runtime.playbackData.practiceGuide.automaticGrid, 16);
-    const compactStart = html.indexOf('<template data-guide-template-measure="0">');
+    const compactStart = html.indexOf('<template data-guide-template-measure="0"');
     const compactEnd = html.indexOf('</template>', compactStart);
     const compact = html.slice(compactStart, compactEnd);
     const waves = [...compact.matchAll(/<path\b[^>]*data-guide-stroke="wave"[^>]*>/g)].map(match => match[0]);

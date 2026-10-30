@@ -170,6 +170,7 @@ interface PracticeGuideMeasure {
   startBeat: ReturnType<typeof frac>;
   beats: ReturnType<typeof frac>;
   chords: PracticeGuideDiagram[];
+  noChordMarker?: boolean;
   melody: PracticeGuideMelodyNote[];
   lyrics: PracticeGuideLyric[];
   techniques: PracticeGuideItem[];
@@ -1722,8 +1723,8 @@ ${cspMeta}
       const guideProjections = (() => { try { return JSON.parse(practiceGuideCompact?.dataset.guideProjections || '{}'); } catch { return {}; } })();
       const guideMeasureWidths = (() => { try { return JSON.parse(practiceGuideCompact?.dataset.guideMeasureWidths || '[]'); } catch { return []; } })();
       const guideBankWidths = (() => { try { return JSON.parse(practiceGuideCompact?.dataset.guideBankWidths || '{}'); } catch { return {}; } })();
-      const guideMeasureTemplates = new Map([...(practiceGuideCompact?.querySelectorAll?.('template[data-guide-template-measure]') ?? [])]
-        .map(template => [Number(template.dataset.guideTemplateMeasure), template]));
+      const guideOccurrenceTemplates = new Map([...(practiceGuideCompact?.querySelectorAll?.('template[data-guide-template-occurrence]') ?? [])]
+        .map(template => [Number(template.dataset.guideTemplateOccurrence), template]));
       let guideCompactSlotWidths = [0, 0, 0, 0];
       let guideCompactLayoutKey = '';
       let guideCompactLayout = { laneHeights: { ruler: 24, melody: 64, lyrics: 24, technique: 28, chord: 24, diagrams: 0 }, laneTops: {}, totalHeight: 164, diagramSize: 0, grid: 4 };
@@ -2142,16 +2143,22 @@ ${cspMeta}
           const ordered = [...items].sort((a, b) => a.beat - b.beat || a.event - b.event || a.order - b.order);
           for (const item of ordered) {
             const x = inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2);
-            const left = item.anchor === 'center' ? x - item.width / 2 : x;
+            const centerX = Math.max(inset + item.width / 2, Math.min(slotWidth - inset - item.width / 2, x));
+            const left = item.anchor === 'center'
+              ? centerX - item.width / 2
+              : Math.max(inset, Math.min(slotWidth - inset - item.width, x));
             const right = left + item.width;
             let row = rowRights.findIndex(edge => edge + 2 <= left + 0.001);
             if (row < 0) row = rowRights.length;
             rowRights[row] = right;
-            for (const node of item.nodes) node.dataset.guideRow = String(row);
+            for (const node of item.nodes) {
+              node.dataset.guideRow = String(row);
+              node.dataset.guideLayoutX = String(item.anchor === 'center' ? left + item.width / 2 : left);
+            }
           }
           maxRows[lane] = Math.max(maxRows[lane], rowRights.length);
         };
-        for (const [measureIndex, template] of guideMeasureTemplates) {
+        for (const [occurrenceIndex, template] of guideOccurrenceTemplates) {
           const svg = template.content?.querySelector?.('.practice-guide-compact-svg');
           if (!svg) continue;
           const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
@@ -2185,7 +2192,7 @@ ${cspMeta}
             if (lane === 'lyrics' || lane === 'technique') {
               laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, anchor });
             } else if (lane === 'chord-pair') {
-              const packKey = node.dataset.guidePackKey || String(measureIndex) + ':' + String(order);
+              const packKey = node.dataset.guidePackKey || String(occurrenceIndex) + ':' + String(order);
               const existing = laneItems.chord.get(packKey);
               const nodeWidth = node.classList.contains('practice-guide-compact-diagram-event')
                 ? Math.max(0, Math.min(144, slotWidth - 10))
@@ -2202,7 +2209,7 @@ ${cspMeta}
           pack(laneItems.lyrics, measureBeats, 'lyrics');
           pack(laneItems.technique, measureBeats, 'technique');
           pack([...laneItems.chord.values()], measureBeats, 'chord');
-          measureLayouts.push({ measureIndex, svg });
+          measureLayouts.push({ occurrenceIndex, svg });
         }
         const diagramSize = Math.max(0, Math.min(144, slotWidth - 10));
         const laneHeights = {
@@ -2246,7 +2253,7 @@ ${cspMeta}
       function layoutPracticeGuideCompactSvg(card, slotWidth, layout) {
         const svg = card?.querySelector?.('.practice-guide-compact-svg');
         if (!svg) return;
-        const template = guideMeasureTemplates.get(Number(card.dataset.guideMeasureIndex));
+        const template = guideOccurrenceTemplates.get(Number(card.dataset.guideOccurrenceIndex));
         const templateSvg = template?.content?.querySelector?.('.practice-guide-compact-svg');
         if (templateSvg) {
           const sourceItems = [...templateSvg.querySelectorAll('[data-guide-layout-item="true"]')];
@@ -2256,6 +2263,8 @@ ${cspMeta}
             const live = liveItems[index];
             if (source.dataset.guideRow === undefined) delete live.dataset.guideRow;
             else live.dataset.guideRow = source.dataset.guideRow;
+            if (source.dataset.guideLayoutX === undefined) delete live.dataset.guideLayoutX;
+            else live.dataset.guideLayoutX = source.dataset.guideLayoutX;
             if (source.dataset.guideLayoutWidth !== undefined) {
               live.dataset.guideLayoutWidth = source.dataset.guideLayoutWidth;
             }
@@ -2293,7 +2302,9 @@ ${cspMeta}
         for (const item of svg.querySelectorAll('[data-guide-layout-item="true"]')) {
           const lane = item.dataset.guideLayoutLane;
           const at = Number(item.dataset.guideAtBeat) || 0;
-          const x = compactGuideX(at, measureBeats, slotWidth);
+          const x = item.dataset.guideLayoutX !== undefined
+            ? Number(item.dataset.guideLayoutX)
+            : compactGuideX(at, measureBeats, slotWidth);
           const row = Number(item.dataset.guideRow) || 0;
           const rowY = row * (lane === 'lyrics' ? 24
             : lane === 'chord-pair' && item.classList.contains('practice-guide-compact-diagram-event')
@@ -2353,7 +2364,7 @@ ${cspMeta}
           const occurrenceId = occurrenceIds[slot];
           const occurrence = playbackOccurrences.find(item => item.occurrenceIndex === occurrenceId);
           if (!occurrence) continue;
-          const template = guideMeasureTemplates.get(occurrence.measureIndex);
+          const template = guideOccurrenceTemplates.get(occurrence.occurrenceIndex);
           const card = template?.content?.firstElementChild?.cloneNode(true);
           if (!card) continue;
           const playbackPosition = playbackOccurrences.findIndex(item => item.occurrenceIndex === occurrence.occurrenceIndex);
@@ -2788,19 +2799,30 @@ ${cspMeta}
           if (!item.classList.contains('practice-guide-compact-symbol')) return false;
           const start = Number(item.dataset.guideEventStart);
           const end = Number(item.dataset.guideEventEnd);
-          return matchesCompactOccurrence(item) && measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
+          return matchesCompactOccurrence(item) && measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex
+            && !(Number(item.dataset.guideWaveGrid) && item.dataset.guideKind === 'continuation')
+            && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
         });
         const activeCompactEventKey = activeCompactEvent?.dataset.guideTechniqueEventKey;
-        const activeCompactContinuation = activeCompactEvent && activeCompactEventKey
-          && currentBeat > Number(activeCompactEvent.dataset.guideEventStart) + 0.000001
-          ? visibleTechniqueMarkers.find(item => item.classList.contains('practice-guide-compact-symbol')
-            && item.dataset.guideTechniqueEventKey === activeCompactEventKey
-            && item.dataset.guideKind === 'continuation')
+        const activeCompactContinuation = activeCompactEventKey
+          ? visibleTechniqueMarkers.find(item => {
+            if (!item.classList.contains('practice-guide-compact-symbol')
+              || item.dataset.guideTechniqueEventKey !== activeCompactEventKey
+              || item.dataset.guideKind !== 'continuation'
+              || Number(item.dataset.guideWaveGrid) !== selectedGrid
+              || !matchesCompactOccurrence(item)
+              || measureIndex === null
+              || Number(item.dataset.guideMeasure) !== measureIndex) return false;
+            const start = Number(item.dataset.guideAtBeat);
+            const end = Math.min(Number(item.dataset.guideEventEnd), start + techniqueSlotBeats);
+            return currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
+          })
           : undefined;
-        const currentCompactTechnique = activeCompactContinuation ?? activeCompactEvent;
+        const currentCompactTechnique = activeCompactContinuation ?? (activeCompactEvent
+          && currentBeat < Number(activeCompactEvent.dataset.guideEventStart) + techniqueSlotBeats - 0.000001
+          ? activeCompactEvent
+          : undefined);
         const currentTechniqueKey = currentDetailedTechnique?.dataset.guideTechniqueKey;
-        const currentTechniqueEventKey = currentCompactTechnique?.dataset.guideTechniqueEventKey;
-        const currentTechniqueEventKind = currentCompactTechnique?.dataset.guideKind;
         for (const item of techniqueMarkers) {
           const start = Number(item.dataset.guideSlotStart);
           const slotEnd = Math.min(Number(item.dataset.guideEventEnd), start + techniqueSlotBeats);
@@ -2811,7 +2833,7 @@ ${cspMeta}
             : measureIndex !== null && (itemMeasure < measureIndex || (itemMeasure === measureIndex && slotEnd <= currentBeat + 0.000001));
           item.classList.toggle('is-past', past);
           const current = isCompactTechnique
-            ? matchesCompactOccurrence(item) && Boolean(currentTechniqueEventKey) && item.dataset.guideTechniqueEventKey === currentTechniqueEventKey && item.dataset.guideKind === currentTechniqueEventKind
+            ? item === currentCompactTechnique
             : Boolean(currentTechniqueKey) && item.dataset.guideTechniqueKey === currentTechniqueKey;
           item.classList.toggle('is-current', current);
           item.classList.toggle('is-next', !past && !current);
@@ -2826,12 +2848,16 @@ ${cspMeta}
           const current = measureIndex !== null && Number(item.dataset.guideMeasure) === measureIndex && item.dataset.guideChord === currentChord?.name;
           item.classList.toggle('is-current', current);
         }
-        for (const item of practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-chord-name, .practice-guide-compact-diagram-event') ?? []) {
-          const start = Number(item.dataset.guideStartBeat);
-          const end = Number(item.dataset.guideEndBeat);
-          const current = matchesCompactOccurrence(item) && measureIndex !== null
-            && Number(item.dataset.guideMeasure) === measureIndex && item.dataset.guideChord === currentChord?.name
+        const currentCompactChord = [...practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-chord-name') ?? []].find(chord => {
+          const start = Number(chord.dataset.guideStartBeat);
+          const end = Number(chord.dataset.guideEndBeat);
+          return Boolean(chord.closest('.practice-guide-bank-content')) && matchesCompactOccurrence(chord) && measureIndex !== null
+            && Number(chord.dataset.guideMeasure) === measureIndex
             && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
+        });
+        for (const item of practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-chord-name, .practice-guide-compact-diagram-event') ?? []) {
+          const current = Boolean(item.closest('.practice-guide-bank-content'))
+            && item.dataset.guidePackKey === currentCompactChord?.dataset.guidePackKey;
           item.classList.toggle('is-current', current);
         }
         for (const item of practiceGuideTimeline?.querySelectorAll?.('.practice-guide-measure-boundary') ?? []) {
@@ -4270,7 +4296,7 @@ function buildPracticeGuideData(score: ParsedScore): PracticeGuideData {
       lyrics.push({ at: frac(0), durationBeats: beats, text: measure.lyric.trim(), verse: 0, eventIndex: -1, hyphenToNext: false });
     }
     totalBeats = fadd(totalBeats, beats);
-    return { number: index + 1, startBeat, beats, chords, melody, lyrics, techniques };
+    return { number: index + 1, startBeat, beats, chords, ...(sourceMeasure.noChordMarker ? { noChordMarker: true } : {}), melody, lyrics, techniques };
   });
   const lyricRows = Math.max(1, maxLyricVerses);
   const lyricsHeight = Math.max(38, lyricRows * 18 + 8);
@@ -4454,7 +4480,38 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
   };
   const compactTemplates: string[] = [];
   const compactMeasureWidths = data.measures.map(() => 0);
-  for (const measure of data.measures) {
+  const compactOccurrences = (occurrences.length > 0
+    ? [...occurrences]
+    : data.measures.map((measure, measureIndex) => ({ occurrenceIndex: measureIndex, measureIndex, lyricVerse: 1 })))
+    .sort((a, b) => a.occurrenceIndex - b.occurrenceIndex);
+  const occurrenceChordSpans = new Map<number, { chord: PracticeGuideDiagram; start: number; end: number; index: number }[]>();
+  let carriedCompactChord: PracticeGuideDiagram | undefined;
+  for (const occurrence of compactOccurrences) {
+    const measure = data.measures[occurrence.measureIndex];
+    if (!measure) continue;
+    const beatCount = Math.max(0.000001, fnum(measure.beats));
+    if (measure.noChordMarker) {
+      carriedCompactChord = undefined;
+      occurrenceChordSpans.set(occurrence.occurrenceIndex, []);
+      continue;
+    }
+    const chords = [...measure.chords].sort((a, b) => a.beat - b.beat);
+    const spans: { chord: PracticeGuideDiagram; start: number; end: number; index: number }[] = [];
+    if (chords.length === 0) {
+      if (carriedCompactChord) spans.push({ chord: carriedCompactChord, start: 0, end: beatCount, index: -1 });
+    } else {
+      if (carriedCompactChord && chords[0].beat > 0.000001) {
+        spans.push({ chord: carriedCompactChord, start: 0, end: chords[0].beat, index: -1 });
+      }
+      spans.push(...chords.map((chord, index) => ({ chord, start: chord.beat, end: chords[index + 1]?.beat ?? beatCount, index })));
+      carriedCompactChord = chords[chords.length - 1];
+    }
+    occurrenceChordSpans.set(occurrence.occurrenceIndex, spans);
+  }
+  for (const occurrence of compactOccurrences) {
+    const measure = data.measures[occurrence.measureIndex];
+    if (!measure) continue;
+    const occurrenceIndex = occurrence.occurrenceIndex;
     const beatCount = Math.max(0.000001, fnum(measure.beats));
     const fractions = (value: ReturnType<typeof frac>): string => `${value.n}/${value.d}`;
     const melody = measure.melody.flatMap(item => {
@@ -4501,21 +4558,18 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
           : renderPracticeGuideStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
       return `<g class="practice-guide-compact-symbol" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(techniqueKey)}" data-guide-technique-event-key="${escapeXml(eventKey)}" data-guide-kind="${item.kind ?? 'attack'}" data-guide-event="${eventIndex}" data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${at}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}" data-guide-slot-start="${at}" data-guide-layout-item="true" data-guide-layout-lane="technique" data-guide-layout-width="${width}" data-guide-layout-anchor="start"${grid} role="img" aria-label="${escapeXml(ariaLabel)}"><title>${escapeXml(item.duration || ariaLabel)}</title>${mark}</g>`;
     }).join('');
-    const chordSpans = ((): { chord: PracticeGuideDiagram; start: number; end: number; index: number }[] => {
-      const chords = [...measure.chords].sort((a, b) => a.beat - b.beat);
-      return chords.map((chord, index) => ({ chord, start: chord.beat, end: chords[index + 1]?.beat ?? beatCount, index }));
-    })();
+    const chordSpans = occurrenceChordSpans.get(occurrenceIndex) ?? [];
     const chordNames = chordSpans.map(({ chord, start, end, index }) => {
       const centerBeat = (start + end) / 2;
       const label = chord.label ? `${chord.name}@${chord.label}` : chord.name;
-      const key = `${measure.number - 1}:${index}:${fractions(frac(Math.round(centerBeat * 1000000), 1000000))}`;
+      const key = `${occurrenceIndex}:${measure.number - 1}:${index}:${fractions(frac(Math.round(centerBeat * 1000000), 1000000))}`;
       const width = Math.max(20, practiceGuideTextWidth(label, 13));
       return `<g class="practice-guide-compact-chord-name" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-center-beat="${centerBeat}" data-guide-pack-key="${escapeXml(key)}" data-guide-layout-item="true" data-guide-layout-lane="chord-pair" data-guide-layout-width="${Math.max(width, chord.svg ? 144 : 0)}" data-guide-layout-anchor="center" data-guide-at-beat="${centerBeat}" data-guide-event="${index}" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title><text data-guide-full-text="${escapeXml(label)}" text-anchor="middle" x="0" y="0" font-size="13" font-weight="700" fill="currentColor">${escapeXml(label)}</text></g>`;
     }).join('');
     const diagrams = chordSpans.filter(span => span.chord.svg).map(({ chord, start, end, index }) => {
       const centerBeat = (start + end) / 2;
       const label = chord.label ? `${chord.name}@${chord.label}` : chord.name;
-      const key = `${measure.number - 1}:${index}:${fractions(frac(Math.round(centerBeat * 1000000), 1000000))}`;
+      const key = `${occurrenceIndex}:${measure.number - 1}:${index}:${fractions(frac(Math.round(centerBeat * 1000000), 1000000))}`;
       const svg = chord.svg!.replace('viewBox="0 0 144 144" width="144" height="144"', 'viewBox="0 0 144 144" x="0" y="0" width="144" height="144"');
       return `<g class="practice-guide-compact-diagram-event" data-guide-measure="${measure.number - 1}" data-guide-chord="${escapeXml(chord.name)}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-center-beat="${centerBeat}" data-guide-pack-key="${escapeXml(key)}" data-guide-layout-item="true" data-guide-layout-lane="chord-pair" data-guide-layout-width="144" data-guide-layout-anchor="center" data-guide-at-beat="${centerBeat}" data-guide-event="${index}" title="${escapeXml(label)}">${svg}</g>`;
     }).join('');
@@ -4532,7 +4586,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       <g class="practice-guide-compact-diagrams" data-guide-lane="diagrams">${diagrams}</g>
       ${boundaryStart}${boundaryEnd}${playhead}
     </svg>`;
-    compactTemplates.push(`<template data-guide-template-measure="${measure.number - 1}"><article class="practice-guide-compact-measure" data-guide-compact-measure="${measure.number - 1}" data-guide-measure-beats="${beatCount}" aria-label="${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}">${svgRoot}</article></template>`);
+    compactTemplates.push(`<template data-guide-template-measure="${measure.number - 1}" data-guide-template-occurrence="${occurrenceIndex}"><article class="practice-guide-compact-measure" data-guide-compact-measure="${measure.number - 1}" data-guide-measure-beats="${beatCount}" aria-label="${escapeXml(msgs.uiPracticeMeasure)} ${measure.number}" data-guide-occurrence-index="${occurrenceIndex}">${svgRoot}</article></template>`);
   }
   const projections = Object.fromEntries(([4] as const).map(capacity => [capacity, occurrences.map(occurrence => {
     const projection = projectPracticeGuidePage(occurrences, occurrence.occurrenceIndex, capacity);
