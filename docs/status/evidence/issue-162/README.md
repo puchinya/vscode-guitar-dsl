@@ -22,4 +22,4 @@ Every PNG was checked for a valid header, nonzero dimensions, minimum image size
 - [EN Dark, 250 ms fade](practice-guide-crossfade-issue162-en-dark-250ms-current-head.png)
 - [JA Dark, 500 ms fade](practice-guide-crossfade-issue162-ja-dark-500ms-current-head.png)
 
-The screenshots were captured from the Issue #162 implementation working tree and are committed with the corresponding source and documentation changes. E2E reruns and the final delivery HEAD are recorded in [`implementation-status.md`](../../implementation-status.md).
+The screenshots capture the visual implementation at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`. The later fade-lifecycle change adds cancellation coverage for resize, view changes, AB loops, and disposal without changing these captured layouts. E2E reruns and the final delivery HEAD are recorded in [`implementation-status.md`](../../implementation-status.md).

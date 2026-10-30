@@ -2143,7 +2143,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
   });
 
   test('Issue #162 crossfades the previous bank for effective-tempo duration and cleans up its layer', async function () {
-    this.timeout(60000);
+    this.timeout(120000);
     try {
       await withWorkbenchSnapshotRestored(async () => {
         const bars = ['F', 'C', 'Dm7', 'E7', 'F', 'C', 'Dm7', 'E7'];
@@ -2528,6 +2528,117 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(reducedMotion.opacity, 1, 'reduced-motion content is immediately fully visible');
           await clickPreviewElement('#btn-stop');
         });
+
+        const setSeekAndSpeed = async (seconds: number): Promise<void> => evaluatePreviewWebview<void>(`(() => {
+          const speed = document.getElementById('practice-speed');
+          speed.value = '200'; speed.dispatchEvent(new Event('change', { bubbles: true }));
+          const seek = document.getElementById('playback-seek');
+          seek.value = ${JSON.stringify(String(seconds))}; seek.dispatchEvent(new Event('change', { bubbles: true }));
+          const view = document.getElementById('practice-guide-view');
+          if (view.value !== 'compact') { view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); }
+        })()`);
+        const waitForLifecycleFade = async (): Promise<void> => {
+          await clickPreviewElement('#btn-play');
+          let active = false;
+          for (let attempt = 0; attempt < 400; attempt++) {
+            active = await evaluatePreviewWebview<boolean>(`(() => {
+              const stage = document.getElementById('practice-guide-pair-page');
+              return Number(stage.dataset.guideOccurrenceIndex) === 2
+                && document.getElementById('practice-guide-bank-left').querySelectorAll('.practice-guide-bank-content').length === 2;
+            })()`);
+            if (active) break;
+            await settle(20);
+          }
+          assert.strictEqual(active, true, 'the lifecycle fixture reaches the active outgoing-bank fade');
+        };
+        const readFadeLifecycle = async (): Promise<{ occurrence: number; banks: number[]; outgoingLayers: number }> =>
+          evaluatePreviewWebview<{ occurrence: number; banks: number[]; outgoingLayers: number }>(`(() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const banks = ['left', 'right'].map(side => {
+              const bank = document.getElementById('practice-guide-bank-' + side);
+              return bank.querySelectorAll('.practice-guide-bank-content').length;
+            });
+            const outgoingLayers = [...document.querySelectorAll('.practice-guide-bank-content')]
+              .filter(layer => layer.style.opacity === '0').length;
+            return { occurrence: Number(stage.dataset.guideOccurrenceIndex), banks, outgoingLayers };
+          })()`);
+
+        await clickPreviewElement('#btn-stop');
+        await setSeekAndSpeed(0);
+        await waitForLifecycleFade();
+        await setPreviewWebviewViewportWidth(400);
+        await settle(180);
+        const afterResize = await readFadeLifecycle();
+        assert.ok(afterResize.banks.every(count => count <= 1) && afterResize.outgoingLayers === 0,
+          `resizing during a fade removes its outgoing layer: ${JSON.stringify(afterResize)}`);
+        await settle(550);
+        const afterResizeTimer = await readFadeLifecycle();
+        assert.ok(afterResizeTimer.banks.every(count => count <= 1) && afterResizeTimer.outgoingLayers === 0,
+          `the canceled resize fade leaves no stale timer layer: ${JSON.stringify(afterResizeTimer)}`);
+        await setPreviewWebviewViewportWidth(1600);
+        await settle(120);
+
+        await clickPreviewElement('#btn-stop');
+        await setSeekAndSpeed(0);
+        await waitForLifecycleFade();
+        await evaluatePreviewWebview<void>(`(() => {
+          const view = document.getElementById('practice-guide-view');
+          view.value = 'detailed'; view.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await settle(120);
+        const afterModeChange = await readFadeLifecycle();
+        assert.ok(afterModeChange.banks.every(count => count <= 1) && afterModeChange.outgoingLayers === 0,
+          `switching to detailed view cancels the compact fade: ${JSON.stringify(afterModeChange)}`);
+        await settle(550);
+        const afterModeTimer = await readFadeLifecycle();
+        assert.ok(afterModeTimer.banks.every(count => count <= 1) && afterModeTimer.outgoingLayers === 0,
+          `the canceled mode fade leaves no stale timer layer: ${JSON.stringify(afterModeTimer)}`);
+
+        await clickPreviewElement('#btn-stop');
+        await setSeekAndSpeed(3.9);
+        await evaluatePreviewWebview<void>(`document.getElementById('practice-set-a').click()`);
+        await waitForLifecycleFade();
+        await evaluatePreviewWebview<void>(`document.getElementById('practice-set-b').click()`);
+        let loopedBack = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const state = await readFadeLifecycle();
+          if (state.occurrence === 1) {
+            loopedBack = true;
+            assert.ok(state.banks.every(count => count <= 1) && state.outgoingLayers === 0,
+              `the loop boundary cancels the stale fade even within the same four-measure page: ${JSON.stringify(state)}`);
+            break;
+          }
+          await settle(10);
+        }
+        assert.strictEqual(loopedBack, true, 'the AB loop returns to its start during the pending fade');
+        await clickPreviewElement('#btn-stop');
+        await settle(550);
+        const afterLoopTimer = await readFadeLifecycle();
+        assert.ok(afterLoopTimer.banks.every(count => count <= 1) && afterLoopTimer.outgoingLayers === 0,
+          `the loop-canceled fade leaves no stale timer layer: ${JSON.stringify(afterLoopTimer)}`);
+
+        await clickPreviewElement('#btn-stop');
+        await evaluatePreviewWebview<void>(`document.getElementById('practice-clear-loop').click()`);
+        await setSeekAndSpeed(0);
+        await waitForLifecycleFade();
+        await evaluatePreviewWebview<void>(`window.dispatchEvent(new Event('pagehide'))`);
+        const afterDispose = await readFadeLifecycle();
+        assert.ok(afterDispose.banks.every(count => count === 0) && afterDispose.outgoingLayers === 0,
+          `pagehide disposal clears both active fade banks: ${JSON.stringify(afterDispose)}`);
+        await settle(550);
+        const afterDisposeTimer = await readFadeLifecycle();
+        assert.ok(afterDisposeTimer.banks.every(count => count === 0) && afterDisposeTimer.outgoingLayers === 0,
+          `disposed fade callbacks do not restore stale bank layers: ${JSON.stringify(afterDisposeTimer)}`);
+        const disposedPreviewGeneration = previewLifecycle.generation;
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        for (let attempt = 0; attempt < 100 && previewLifecycle.generation <= disposedPreviewGeneration; attempt++) await settle(20);
+        assert.ok(previewLifecycle.generation > disposedPreviewGeneration,
+          'the next Preview generation replaces the pagehide-disposed runtime before other E2E cases');
+        await waitForPreviewIdentity({
+          documentUri: doc.uri.toString(), documentVersion: doc.version,
+          previewGeneration: previewLifecycle.generation
+        });
+        await waitForPreviewDocument();
       });
     } finally {
       await resetPreviewWebviewViewport();

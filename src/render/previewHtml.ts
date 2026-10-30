@@ -2608,7 +2608,7 @@ ${cspMeta}
         practiceGuidePairPage.dataset.guidePageIndex = String(frame.pageIndex);
         practiceGuidePairPage.dataset.guideOccurrenceIndex = String(projectedOccurrenceId ?? '');
         if (guideFadeRunning && !guideInstantReprojectPending) {
-          if (frame.pageIndex === lastGuidePageIndex) {
+          if (frame.pageIndex === lastGuidePageIndex && frame.currentBank === lastGuideCurrentBank) {
             if (guideViewMode === 'compact' && (snapRequested || occurrenceChanged)) {
               ensureActiveCompactOccurrenceVisible(projectionPosition);
               lastGuideSnappedOccurrenceIndex = projectedOccurrenceId;
