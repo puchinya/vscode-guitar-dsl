@@ -2096,6 +2096,125 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('Issue #162 compact attacks keep portrait geometry, all-state contrast, and blank melody rests', async function () {
+    this.timeout(90000);
+    await withWorkbenchSnapshotRestored(async () => {
+      try {
+        const dense = '2.d 4.u 8.d.pm 8.u';
+        const source = [
+          'title: Compact v4 portrait attacks and melody rests',
+          'time: 4/4',
+          `| C | ${dense} |`,
+          '| G | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+          '| D | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+          '| A | 8.d 8.u 8.d 8.u 8.d 8.u 8.d 8.u |',
+          'mel: | c4/4 r/4 d4/2 | g4/2 r/2 | e4/4 r/4 f4/2 | c5/2 r/2 |'
+        ].join('\n');
+        const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+        await showAndFocus(doc);
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        await waitForPreviewDocument();
+        await setPreviewPracticeEnabled(true);
+        await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await setPreviewWebviewViewportWidth(400);
+        await evaluatePreviewWebview<void>("(() => { const grid = document.getElementById('practice-guide-grid'); grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await settle(180);
+
+        const visual = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const melody = stage.querySelector('.practice-guide-compact-svg [data-guide-lane="melody"]');
+          const restNodes = melody.querySelectorAll('.practice-guide-compact-melody-rest, .practice-guide-rest-symbol, [data-guide-rest="true"]').length;
+          const firstMeasureBars = [...melody.querySelectorAll('.practice-guide-compact-pitch-bar')]
+            .filter(bar => Number(bar.dataset.guideMeasure) === 0)
+            .sort((left, right) => Number(left.dataset.guideStartBeat) - Number(right.dataset.guideStartBeat))
+            .map(bar => ({ beat: Number(bar.dataset.guideStartBeat), duration: Number(bar.dataset.guideDurationBeats) }));
+          const attack = stage.querySelector('.practice-guide-compact-symbol[data-guide-kind="attack"]');
+          const icon = attack?.querySelector('.practice-guide-compact-stroke-icon[data-guide-stroke="attack"]');
+          const shaft = icon?.querySelector('[data-guide-compact-part="shaft"]');
+          const head = icon?.querySelector('[data-guide-compact-part="head"]');
+          const shaftBox = shaft?.getBBox();
+          const headBox = head?.getBBox();
+          const matrix = attack?.transform.baseVal.consolidate()?.matrix;
+          const originalStates = ['is-past', 'is-next', 'is-current'].filter(name => attack?.classList.contains(name));
+          const colors = {};
+          const opacity = {};
+          const strokeWidths = {};
+          for (const [state, className] of [['normal', ''], ['past', 'is-past'], ['next', 'is-next'], ['current', 'is-current']]) {
+            attack.classList.remove('is-past', 'is-next', 'is-current');
+            if (className) attack.classList.add(className);
+            colors[state] = getComputedStyle(attack).color;
+            opacity[state] = getComputedStyle(attack).opacity;
+            strokeWidths[state] = parseFloat(getComputedStyle(shaft).strokeWidth);
+          }
+          attack.classList.remove('is-past', 'is-next', 'is-current');
+          for (const className of originalStates) attack.classList.add(className);
+          const technique = stage.querySelector('[data-guide-lane="technique"]');
+          const hasContinuationWave = technique.querySelector('path[data-guide-stroke="wave"]') !== null;
+          const hasPalmMute = technique.querySelector('.practice-guide-pm-label') !== null;
+          return {
+            measureCount: stage.querySelectorAll('.practice-guide-compact-measure').length,
+            restNodes, firstMeasureBars,
+            viewBox: icon?.getAttribute('viewBox'),
+            shaftBox: shaftBox ? { width: shaftBox.width, height: shaftBox.height } : null,
+            headBox: headBox ? { width: headBox.width, height: headBox.height } : null,
+            scaleX: matrix?.a ?? null,
+            scaleY: matrix?.d ?? null,
+            colors, opacity, strokeWidths,
+            hasContinuationWave, hasPalmMute
+          };
+        })())`));
+        assert.strictEqual(visual.measureCount, 4, 'the v4 guide keeps four measure slots at 400px');
+        assert.strictEqual(visual.restNodes, 0, 'compact melody rests emit no glyph or DOM/SVG node');
+        assert.deepStrictEqual(visual.firstMeasureBars, [{ beat: 0, duration: 1 }, { beat: 2, duration: 2 }],
+          'the rest keeps its blank span and leaves following pitch onset/duration unchanged');
+        assert.strictEqual(visual.viewBox, '0 0 10 36', 'compact down/up use the narrow portrait master artboard');
+        assert.ok(Math.abs(visual.shaftBox.width) <= 0.01 && visual.shaftBox.height >= 27,
+          `the compact shaft spans at least 75% of master height: ${JSON.stringify(visual.shaftBox)}`);
+        assert.ok(Math.abs(visual.headBox.width - 5) <= 0.01 && Math.abs(visual.headBox.height - 5) <= 0.01,
+          `the compact arrowhead is 5 by 5 local units: ${JSON.stringify(visual.headBox)}`);
+        assert.ok(Math.abs(visual.scaleX - visual.scaleY) <= 0.0001, 'the compact SVG master is never squashed on X');
+        assert.strictEqual(visual.hasContinuationWave, true, 'the dense sample includes continuation waves');
+        assert.strictEqual(visual.hasPalmMute, true, 'the dense sample includes a PM mark');
+        assert.deepStrictEqual(visual.colors, {
+          normal: 'rgb(31, 41, 55)', past: 'rgb(71, 85, 105)', next: 'rgb(55, 70, 94)', current: 'rgb(0, 95, 133)'
+        }, 'computed colors match the fixed high-contrast palette in every technique state');
+        assert.deepStrictEqual(visual.opacity, { normal: '1', past: '1', next: '1', current: '1' },
+          'compact technique states do not reduce opacity');
+        assert.ok(Object.values(visual.strokeWidths as Record<string, number>).every(width => width >= 1.7 && width <= 2.0),
+          `all technique states retain a local SVG stroke width from 1.7 to 2.0: ${JSON.stringify(visual.strokeWidths)}`);
+
+        await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'detailed'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await settle(100);
+        const detailed = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const timeline = document.getElementById('practice-guide-timeline');
+          return { visible: getComputedStyle(document.getElementById('practice-guide-scroll')).display !== 'none',
+            rests: [...timeline.querySelectorAll('.practice-guide-melody-rest')].filter(item => item.querySelector('.practice-guide-rest-symbol')).length };
+        })())`));
+        assert.strictEqual(detailed.visible, true, 'the detailed grid remains visible when selected');
+        assert.ok(detailed.rests >= 4, `the detailed grid continues to render melody rests: ${JSON.stringify(detailed)}`);
+
+        const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+        if (captureScreenshots) {
+          const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+          const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+          const themeName = requestedTheme.toLowerCase().includes('light') ? 'light' : 'dark';
+          assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
+          await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+          await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+          await settle(180);
+          const filename = `practice-guide-v4-compact-400-${requestedLocale}-${themeName}.png`;
+          await capturePreviewWebviewScreenshot(filename, 162, 400);
+          const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+          assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
+            'the current-HEAD v4 portrait geometry screenshot uses the real 400px preview width');
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+
   test('Issue #162 compact technique SVG preserves canonical wave paths and scales uniformly from exact beat anchors', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
@@ -2181,6 +2300,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     const y = matrix?.f ?? NaN;
                     const scaleX = matrix?.a ?? NaN;
                     const scaleY = matrix?.d ?? NaN;
+                    const symbolRect = symbol.getBoundingClientRect();
                     const beat = Number(symbol.dataset.guideAtBeat);
                     const measureBeats = Number(card.querySelector('.practice-guide-compact-svg').dataset.guideMeasureBeats) || 4;
                     const expectedAnchorX = 5 + beat / measureBeats * (card.getBoundingClientRect().width - 10);
@@ -2190,6 +2310,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                      row: Number(symbol.dataset.guideRow),
                       x,
                       y,
+                      visualCenterY: symbolRect.top + symbolRect.height / 2,
                       fraction: symbol.dataset.guideAtFraction,
                       anchorX: Number(symbol.dataset.guideLayoutAnchorX),
                       anchorCorrect: Math.abs(Number(symbol.dataset.guideLayoutAnchorX) - expectedAnchorX) <= 0.01,
@@ -2206,7 +2327,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                  const collisions = orderedSymbols.slice(0, -1).reduce((count, item, index) =>
                    count + (item.row === orderedSymbols[index + 1].row
                       && item.x + item.renderedWidth > orderedSymbols[index + 1].x + 0.05 ? 1 : 0), 0);
-                 const sameY = symbols.every(symbol => Math.abs(symbol.y - symbols[0]?.y) <= 0.001);
+                 const sameY = symbols.every(symbol => Math.abs(symbol.visualCenterY - symbols[0]?.visualCenterY) <= 0.5);
                   const fits = symbols.every(symbol => symbol.x >= 4.999 && symbol.x + symbol.renderedWidth <= Number(card.style.width.replace('px', '')) - 4.999);
                   const wavePaths = [...lane.querySelectorAll('path[data-guide-stroke="wave"]')];
                   const visibleWavePaths = wavePaths

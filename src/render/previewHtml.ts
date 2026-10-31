@@ -16,7 +16,7 @@ import type { PlaybackEvent } from '../playbackTimeline';
 import { beamGroupStarts, measureBeats } from '../scoreEvents';
 import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
-import { practiceGuideStrokeVisualWidth, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
+import { practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
 import type { PracticeGuideStrokeSpec } from './practiceGuideStrokeSvg';
 import type { VisualSourceBinding } from '../compiler';
 
@@ -852,14 +852,13 @@ ${cspMeta}
   .practice-guide-compact-pitch-bar { fill: #55d4ef; stroke: #50c8ff; stroke-width: 1; }
   .practice-guide-compact-pitch-bar.is-current { fill: var(--guide-playhead); stroke: var(--guide-playhead); }
   .practice-guide-compact-pitch-bar.is-past { fill: #7f95aa; stroke: #7f95aa; }
-  .practice-guide-compact-melody-rest { color: #a0b4c8; }
   .practice-guide-compact-lyric { fill: #233449; font-size: 13px; dominant-baseline: alphabetic; }
   .practice-guide-compact-lyric.is-current { fill: #006b4f; font-weight: 700; }
   .practice-guide-compact-lyric.is-past { fill: #52606d; }
-  .practice-guide-compact-symbol { color: #244158; fill: currentColor; stroke: currentColor; }
-  .practice-guide-compact-symbol.is-past { color: #7f95aa; }
-  .practice-guide-compact-symbol.is-next { color: #94a5b7; }
-  .practice-guide-compact-symbol.is-current { color: #087fac; }
+  .practice-guide-compact-symbol { color: #1f2937; fill: currentColor; stroke: currentColor; opacity: 1; }
+  .practice-guide-compact-symbol.is-past { color: #475569; }
+  .practice-guide-compact-symbol.is-next { color: #37465e; }
+  .practice-guide-compact-symbol.is-current { color: #005f85; }
   .practice-guide-compact-svg [data-guide-wave-grid] { display: none; }
   #practice-guide-panel[data-guide-grid="4"] .practice-guide-compact-svg [data-guide-wave-grid="4"],
   #practice-guide-panel[data-guide-grid="8"] .practice-guide-compact-svg [data-guide-wave-grid="8"],
@@ -2367,7 +2366,10 @@ ${cspMeta}
               slotWidth - x - 5
             ));
             const scale = Math.min(1, availableWidth / markWidth);
-            item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + (rowY + 3).toFixed(3)
+            const visualBounds = item.getBBox();
+            const visualCenterY = visualBounds.y + visualBounds.height / 2;
+            const translateY = rowY + 18 - visualCenterY * scale;
+            item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + translateY.toFixed(3)
               + ') scale(' + scale.toFixed(4) + ' ' + scale.toFixed(4) + ')');
           } else if (lane === 'chord-pair' && item.classList.contains('practice-guide-compact-chord-name')) {
             const text = item.querySelector('text');
@@ -2793,7 +2795,7 @@ ${cspMeta}
           item.dataset.guideCurrentBeat = currentBeat.toFixed(3);
           item.toggleAttribute('hidden', !practiceEnabled || !occurrenceMatches || !overlayVisible || guideViewMode !== 'compact');
         }
-        for (const item of practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-pitch-bar, .practice-guide-compact-melody-rest') ?? []) {
+        for (const item of practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-pitch-bar') ?? []) {
           const start = Number(item.dataset.guideStartBeat);
           const end = Number(item.dataset.guideEndBeat);
           const occurrenceMatches = matchesCompactOccurrence(item);
@@ -4559,8 +4561,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const end = fnum(fadd(item.at, item.durationBeats));
       const common = `data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-layout-item="true" data-guide-layout-lane="melody" data-guide-at-beat="${start}"`;
       if (item.isRest) {
-        const label = `${msgs.uiPracticeGuideRest} ${item.duration}`;
-        return [`<g class="practice-guide-compact-melody-rest" ${common} data-guide-layout-width="24" data-guide-layout-anchor="start" data-guide-rest="true" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title>${renderPracticeGuideRestSvg(item.restBase, label)}</g>`];
+        return [];
       }
       const range = Math.max(1, data.pitchMaxMidi - data.pitchMinMidi);
       return item.pitches.map(pitch => {
@@ -4587,15 +4588,19 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const isGridContinuation = item.kind === 'continuation' && item.grid !== undefined;
       const isTieContinuation = item.kind === 'continuation' && item.stroke?.kind === 'tie';
       const ariaLabel = item.kind === 'rest' ? `${msgs.uiPracticeGuideRest} ${item.duration}` : item.stroke?.label ?? item.label;
-      const width = isGridContinuation || isTieContinuation ? 12 : item.stroke ? practiceGuideStrokeVisualWidth(item.stroke)
-        : practiceGuideStrokeVisualWidth({ kind: 'attack', direction: 'neutral', label: item.label });
+      const width = isGridContinuation || isTieContinuation ? 12
+        : item.kind === 'rest' ? practiceGuideStrokeVisualWidth({ kind: 'attack', direction: 'neutral', label: ariaLabel })
+          : practiceGuideCompactStrokeVisualWidth(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
       const grid = item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}" data-guide-grid="${item.grid}"`;
       const fraction = fractions(item.at);
-      const mark = isGridContinuation
+      const wavePath = isGridContinuation
         ? renderPracticeGuideWavePathSvg(ariaLabel).replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
+        : '';
+      const mark = isGridContinuation
+        ? `<g transform="translate(0 12)">${wavePath}</g>`
         : item.kind === 'rest'
-          ? renderPracticeGuideRestSvg(item.restBase, ariaLabel)
-          : renderPracticeGuideStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
+          ? `<g transform="translate(0 4)">${renderPracticeGuideRestSvg(item.restBase, ariaLabel)}</g>`
+          : renderPracticeGuideCompactStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
       return `<g class="practice-guide-compact-symbol" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(techniqueKey)}" data-guide-technique-event-key="${escapeXml(eventKey)}" data-guide-kind="${item.kind ?? 'attack'}" data-guide-event="${eventIndex}" data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${at}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}" data-guide-slot-start="${at}" data-guide-layout-item="true" data-guide-layout-lane="technique" data-guide-layout-width="${width}" data-guide-layout-anchor="start"${grid} role="img" aria-label="${escapeXml(ariaLabel)}"><title>${escapeXml(item.duration || ariaLabel)}</title>${mark}</g>`;
     }).join('');
     const chordSpans = occurrenceChordSpans.get(occurrenceIndex) ?? [];

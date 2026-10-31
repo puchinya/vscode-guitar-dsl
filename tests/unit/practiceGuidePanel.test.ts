@@ -4,7 +4,10 @@ import { getMessages } from '../../src/i18n';
 import { renderPracticeGuidePanel } from '../../src/render/previewHtml';
 
 describe('Practice guide panel renderer', () => {
-  const render = (techniques: Parameters<typeof renderPracticeGuidePanel>[0]['measures'][number]['techniques'] = []) => {
+  const render = (
+    techniques: Parameters<typeof renderPracticeGuidePanel>[0]['measures'][number]['techniques'] = [],
+    melody: Parameters<typeof renderPracticeGuidePanel>[0]['measures'][number]['melody'] = []
+  ) => {
     const data: Parameters<typeof renderPracticeGuidePanel>[0] = {
       automaticGrid: 16,
       automaticFill: false,
@@ -17,7 +20,7 @@ describe('Practice guide panel renderer', () => {
         startBeat: frac(index * 4),
         beats: frac(4),
         chords: [],
-        melody: [],
+        melody: index === 0 ? melody : [],
         lyrics: [],
         techniques: index === 0 ? techniques : []
       }))
@@ -36,6 +39,20 @@ describe('Practice guide panel renderer', () => {
     assert.match(first, /viewBox="0 0 100 100"/);
     assert.match(html, /data-guide-projections=/);
     assert.doesNotMatch(html, /practice-guide-compact-wave/);
+  });
+
+  it('omits compact melody-rest nodes while preserving later pitch timing and detailed rests', () => {
+    const html = render([], [
+      { at: frac(0), durationBeats: frac(1), duration: '4', label: 'Rest', pitches: [], isRest: true, eventIndex: 0, restBase: 4 },
+      { at: frac(1), durationBeats: frac(2), duration: '2', label: 'C4', pitches: [{ label: 'C4', midi: 60 }], isRest: false, eventIndex: 1 }
+    ]);
+    const compactStart = html.indexOf('<template data-guide-template-measure="0"');
+    const compactEnd = html.indexOf('</div>', compactStart);
+    const compactHtml = html.slice(compactStart, compactEnd);
+    assert.doesNotMatch(compactHtml, /practice-guide-compact-melody-rest|data-guide-rest="true"/);
+    assert.match(compactHtml, /class="practice-guide-compact-pitch-bar"[^>]*data-guide-start-beat="1"/);
+    assert.match(compactHtml, /class="practice-guide-compact-pitch-bar"[^>]*data-guide-duration-beats="2"/);
+    assert.match(html, /class="practice-guide-rest-symbol"/, 'the detailed guide still renders melody rests');
   });
 
   it('renders each continuation Fraction as its own wave path at the matching grid and event', () => {
