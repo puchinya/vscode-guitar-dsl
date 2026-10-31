@@ -853,9 +853,9 @@ ${cspMeta}
   .practice-guide-compact-pitch-bar.is-current { fill: var(--guide-playhead); stroke: var(--guide-playhead); }
   .practice-guide-compact-pitch-bar.is-past { fill: #7f95aa; stroke: #7f95aa; }
   .practice-guide-compact-melody-rest { color: #a0b4c8; }
-  .practice-guide-compact-lyric { fill: #f4f5fe; font-size: 13px; dominant-baseline: alphabetic; }
-  .practice-guide-compact-lyric.is-current { fill: #ffe788; font-weight: 700; }
-  .practice-guide-compact-lyric.is-past { fill: #57d8fb; }
+  .practice-guide-compact-lyric { fill: #233449; font-size: 13px; dominant-baseline: alphabetic; }
+  .practice-guide-compact-lyric.is-current { fill: #006b4f; font-weight: 700; }
+  .practice-guide-compact-lyric.is-past { fill: #52606d; }
   .practice-guide-compact-symbol { color: #244158; fill: currentColor; stroke: currentColor; }
   .practice-guide-compact-symbol.is-past { color: #7f95aa; }
   .practice-guide-compact-symbol.is-next { color: #94a5b7; }
@@ -2187,6 +2187,7 @@ ${cspMeta}
                 const itemWidth = Math.min(item.width, packedWidth);
                 for (const node of item.nodes) {
                   node.dataset.guideRow = '0';
+                  node.dataset.guideLayoutAnchorX = String(startX);
                   node.dataset.guideLayoutX = String(itemX);
                   node.dataset.guideLayoutPackedWidth = String(itemWidth);
                 }
@@ -2319,6 +2320,8 @@ ${cspMeta}
             else live.dataset.guideRow = source.dataset.guideRow;
             if (source.dataset.guideLayoutX === undefined) delete live.dataset.guideLayoutX;
             else live.dataset.guideLayoutX = source.dataset.guideLayoutX;
+            if (source.dataset.guideLayoutAnchorX === undefined) delete live.dataset.guideLayoutAnchorX;
+            else live.dataset.guideLayoutAnchorX = source.dataset.guideLayoutAnchorX;
             if (source.dataset.guideLayoutPackedWidth === undefined) delete live.dataset.guideLayoutPackedWidth;
             else live.dataset.guideLayoutPackedWidth = source.dataset.guideLayoutPackedWidth;
             if (source.dataset.guideLayoutWidth !== undefined) {
@@ -2380,14 +2383,14 @@ ${cspMeta}
             item.setAttribute('y', y.toFixed(3));
             fitCompactSvgText(text || item, Math.max(0, slotWidth - x - 5));
           } else if (lane === 'technique') {
-            const markWidth = Math.max(1, Number(item.dataset.guideLayoutWidth) || 12);
+            const markWidth = Math.max(12, Number(item.dataset.guideLayoutWidth) || 12);
             const availableWidth = Math.max(0.001, Math.min(
               Number(item.dataset.guideLayoutPackedWidth) || markWidth,
               slotWidth - x - 5
             ));
-            const scaleX = Math.min(1, availableWidth / markWidth);
+            const scale = Math.min(1, availableWidth / markWidth);
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + (rowY + 3).toFixed(3)
-              + ') scale(' + scaleX.toFixed(4) + ' 1)');
+              + ') scale(' + scale.toFixed(4) + ' ' + scale.toFixed(4) + ')');
           } else if (lane === 'chord-pair' && item.classList.contains('practice-guide-compact-chord-name')) {
             const text = item.querySelector('text');
             const y = rowY + 16;

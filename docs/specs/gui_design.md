@@ -122,7 +122,7 @@ Practice が有効なときは既存の再生行、楽譜設定行、42 px Pract
 
 コンパクト表示は常に4小節容量を保ち、実際にある演奏出現だけを表示する。各カードの幅はページ実幅 `W` から `slotWidth = max(0, (W - 16) / 4)` で均等配分し、余りは最後のslotに足す。カード間は4 px、bank間は8 pxとし、文字列長、奏法数、コード図で幅を増やさない。320 / 360 / 400 / 421 / 480 / 600 / 840 / 1100 / 1600 CSS pxの全幅で4slotを同じ可視範囲へ収め、横overflowは1 px以下とする。コンパクト表示に横スクロールを設けない。次コード帯の名前と正方形図を含め、400 pxでも番号と全5レーンの情報を視認可能にする。
 
-幅480 px以下は次コード帯をガイド内の上段に配置し、下段を `44px minmax(0, 1fr)` のレーン名と4小節にする。幅481 px以上は右欄を保つ。固定スケールでストリップ全体を縮小せず、カード内コード図は `min(144px, slotWidth - 10px)`、次コード図は44～52 pxの正方形にする。歌詞など重なりを避ける必要があるレーンは縦行を追加し、候補小節の最大行数を共有する。奏法記号は常に一段の時間順で横に並べ、同時刻の記号は入力順で配置する。各記号の幅は次の記号までの空きに収め、幅が狭いときは横方向に縮める。コード名と図は各コード区間の中央で横一列に対応させる。長い文字列だけを省略記号で切り、元の文字列は `title` とARIAから取得可能にする。音符、奏法、継続記号、コード図は省略しない。
+幅480 px以下は次コード帯をガイド内の上段に配置し、下段を `44px minmax(0, 1fr)` のレーン名と4小節にする。幅481 px以上は右欄を保つ。固定スケールでストリップ全体を縮小せず、カード内コード図は `min(144px, slotWidth - 10px)`、次コード図は44～52 pxの正方形にする。歌詞など重なりを避ける必要があるレーンは縦行を追加し、候補小節の最大行数を共有する。奏法記号は常に一段の時間順で横に並べ、同時刻の記号は入力順で視覚位置だけをずらす。正確な拍/Fractionとそのxアンカーを視覚位置から分離し、時刻情報は変更しない。奏法SVGは12 pxを標準の最小割当幅とし、利用区間がその幅または元SVG幅より狭いときは元形状を縦横比そのままで縮小する。12 px未満で記号を視覚判別できることは要求しないが、記号やアクセシブル名は省略しない。歌詞の通常/current/past色は白背景に対してそれぞれ4.5:1以上のコントラストを保ち、currentとpastは明度差だけでなく色相や太字でも区別する。コード名と図は各コード区間の中央で横一列に対応させる。長い文字列だけを省略記号で切り、元の文字列は `title` とARIAから取得可能にする。音符、奏法、継続記号、コード図は省略しない。
 
 各小節SVGは小節番号、メロディ、歌詞、奏法、コード名、コード図、小節線、playheadを拍のFractionと共通x変換で描く。コード名と図はコードの有効区間の中点に揃え、同じ共有voicingから作った144×144 viewBoxの図をネストSVGで縮小する。各要素は演奏UIが必要とする小節、event、beat、verse、chordの `data-*` を維持する。幅、grid、表示切替、文書更新後の計測・SVG配置・高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFへまとめる。
 
@@ -130,7 +130,7 @@ Practice が有効なときは既存の再生行、楽譜設定行、42 px Pract
 
 初期表示 `[01, 02] [03, 04]`、左右2bank、演奏順 `PlaybackTimeline.occurrences`、repeat / volta / arrangement / lyricVerse、手動previous/nextは維持する。bank交替時は再生済みbankのみを同座標でopacity交差させ、現在bankのDOMとhighlightは動かさない。遷移先 `tempoBpm × effectiveSpeed()` から `fadeMs = clamp(round(60000 / effectiveBpm), 450, 900)` を開始時に計算し、不正時600 msとする。旧220 ms固定を使わず、fallback cleanupは `fadeMs + 80 ms` とする。進行中のfadeは速度変更で変えず、seek / loop / resize / mode変更 / disposeではgeneration管理で即時再投影する。reduced motion、初回表示、手動ページ移動、seek、復元、resizeは0 msとする。音声時刻・再生には影響しない。
 
-奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保つ。実画面検収は400 pxを含む幅系列、日英、Light/Dark、メロディと図のON/OFFでDOMRect、横overflow、レーン位置、voicing、fade時刻を測定し、実Preview画像を添付する。通常譜面SVG、PDF、詳細grid、DSL、音源にはcompact変更を漏らさない。
+奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保ち、奏法SVGの縮小はX/Y同一倍率にする。実画面検収は最終HEADで400/421/600/1100 px × 日英 × Light/Dark × melody ON/OFF（32枚）と400 px × grid4/8/16 × 日英 × Light/Dark（12枚）を採取し、DOMRect、横overflow、拍アンカー/視覚位置、歌詞コントラスト、レーン位置、voicing、fade時刻を測定する。通常譜面SVG、PDF、詳細grid、DSL、音源にはcompact変更を漏らさない。
 
 #### 2.5 双方向編集モード（Issue #158）
 

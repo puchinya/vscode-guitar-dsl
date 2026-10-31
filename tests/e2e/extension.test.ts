@@ -946,6 +946,44 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           await waitForPracticeGuideGeometryStable(`compact guide mode at ${width}px`, width);
           for (const melodyVisible of [true, false]) {
             await setGuideVisibility(melodyVisible);
+            if (width === 400 && melodyVisible) {
+              const lyricPalette = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+                const lyric = document.querySelector('.practice-guide-compact-measure .practice-guide-compact-lyric');
+                if (!lyric) return null;
+                const card = lyric.closest('.practice-guide-compact-measure');
+                const originalCurrent = lyric.classList.contains('is-current');
+                const originalPast = lyric.classList.contains('is-past');
+                const read = state => {
+                  lyric.classList.remove('is-current', 'is-past');
+                  if (state !== 'normal') lyric.classList.add('is-' + state);
+                  const style = getComputedStyle(lyric);
+                  const rgb = style.fill.match(/[0-9.]+/g).map(Number);
+                  const linear = rgb.slice(0, 3).map(channel => {
+                    const value = channel / 255;
+                    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+                  });
+                  const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+                  return { fill: style.fill, channels: rgb, contrast: 1.05 / (luminance + 0.05), weight: Number(style.fontWeight) };
+                };
+                const states = { normal: read('normal'), current: read('current'), past: read('past') };
+                lyric.classList.toggle('is-current', originalCurrent);
+                lyric.classList.toggle('is-past', originalPast);
+                return { background: getComputedStyle(card).backgroundColor, states };
+              })())`));
+              const paletteStates = Object.values(lyricPalette.states) as { fill: string; contrast: number; channels: number[]; weight: number }[];
+              assert.strictEqual(lyricPalette.background, 'rgb(255, 255, 255)', 'compact lyric colors are evaluated against the white SVG card');
+              assert.ok(paletteStates.every(state => state.contrast >= 4.5),
+                `normal/current/past lyric fills exceed 4.5:1 contrast against white: ${JSON.stringify(lyricPalette.states)}`);
+              assert.strictEqual(new Set(paletteStates.map(state => state.fill)).size, 3,
+                `normal/current/past use three distinct colors: ${JSON.stringify(lyricPalette.states)}`);
+              const currentChannels = lyricPalette.states.current.channels;
+              const pastChannels = lyricPalette.states.past.channels;
+              assert.ok(currentChannels[1] > currentChannels[0] * 1.5 + 20 && currentChannels[1] > currentChannels[2] * 1.15,
+                `the current state uses a green hue in addition to bold weight: ${JSON.stringify(lyricPalette.states.current)}`);
+              assert.ok(pastChannels[2] > pastChannels[0] && pastChannels[1] > pastChannels[0]
+                && lyricPalette.states.current.weight >= 700,
+              `the past state uses a blue-gray hue while current is bold, so state is not encoded by luminance alone: ${JSON.stringify(lyricPalette.states)}`);
+            }
             const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
               const panel = document.getElementById('practice-guide-panel');
               const layout = document.getElementById('practice-guide-scroll');
@@ -2051,17 +2089,19 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('Issue #162 compact technique SVG keeps dense events in one horizontal row', async function () {
+  test('Issue #162 compact technique SVG keeps dense events horizontal and scales uniformly from exact beat anchors', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
-      const denseRhythm = Array.from({ length: 16 }, (_, index) => `16.${index % 2 === 0 ? 'd' : 'u'}`).join(' ');
+      const denseRhythm = Array.from({ length: 8 }, () => ['16.d.t', '16']).flat().join(' ');
+      const denseTab = Array.from({ length: 8 }, () => ['6f0~/16', '6f0/16']).flat().join(' ');
       const source = [
         'title: Shared compact technique lane',
         'time: 4/4',
         `| C | ${denseRhythm} |`,
-        '| G | 4.d 4.u 4.d 4.u |',
-        '| D | 4.d 4.u 4.d 4.u |',
-        '| A | 4.d 4.u 4.d 4.u |'
+        `| G | ${denseRhythm} |`,
+        `| D | ${denseRhythm} |`,
+        `| A | ${denseRhythm} |`,
+        `tab: | ${denseTab} | ${denseTab} | ${denseTab} | ${denseTab} |`
       ].join('\n');
       const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
       await showAndFocus(doc);
@@ -2086,6 +2126,31 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         await settle(60);
       };
 
+      await evaluatePreviewWebview<void>(`(() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        for (const card of stage.querySelectorAll('.practice-guide-compact-measure')) {
+          const lane = card.querySelector('[data-guide-lane="technique"]');
+          const original = lane?.querySelector('.practice-guide-compact-symbol[data-guide-kind="continuation"]');
+          const occurrence = card.dataset.guideOccurrenceIndex;
+          const template = document.querySelector('template[data-guide-template-occurrence="' + occurrence + '"]');
+          const templateLane = template?.content.querySelector('[data-guide-lane="technique"]');
+          if (!lane || !original || !original.querySelector('[data-guide-stroke="tie"]') || !templateLane) {
+            throw new Error('The dense fixture must expose a real tie continuation in every measure.');
+          }
+          if (templateLane.querySelector('[data-guide-test-simultaneous="true"]')) continue;
+          const clone = original.cloneNode(true);
+          clone.dataset.guideEvent = String(Number(original.dataset.guideEvent) + 1000);
+          clone.dataset.guideTechniqueEventKey = 'e2e-simultaneous-' + occurrence;
+          clone.setAttribute('data-guide-test-simultaneous', 'true');
+          clone.setAttribute('aria-label', 'E2E same-onset stroke event');
+          clone.querySelector('title').textContent = 'E2E same-onset stroke event';
+          templateLane.appendChild(clone.cloneNode(true));
+          lane.appendChild(clone);
+        }
+        window.dispatchEvent(new Event('resize'));
+      })()`);
+      await settle(120);
+
       try {
         for (const width of [320, 400, 421, 480, 600, 1100, 1600]) {
           await setPreviewWebviewViewportWidth(width);
@@ -2104,29 +2169,53 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 const symbols = [...lane.querySelectorAll('.practice-guide-compact-symbol')]
                   .filter(symbol => getComputedStyle(symbol).display !== 'none')
                   .map(symbol => {
-                   const translate = (symbol.getAttribute('transform') || '').split(')')[0].split('(')[1] || '';
-                   const [x, y] = translate.trim().split(' ').map(Number);
+                    const matrix = symbol.transform.baseVal.consolidate()?.matrix;
+                    const x = matrix?.e ?? NaN;
+                    const y = matrix?.f ?? NaN;
+                    const scaleX = matrix?.a ?? NaN;
+                    const scaleY = matrix?.d ?? NaN;
+                    const beat = Number(symbol.dataset.guideAtBeat);
+                    const measureBeats = Number(card.querySelector('.practice-guide-compact-svg').dataset.guideMeasureBeats) || 4;
+                    const expectedAnchorX = 5 + beat / measureBeats * (card.getBoundingClientRect().width - 10);
                    const width = Number(symbol.dataset.guideLayoutWidth);
                    const packedWidth = Number(symbol.dataset.guideLayoutPackedWidth);
                    return {
                      row: Number(symbol.dataset.guideRow),
                       x,
                       y,
-                     width: Math.min(width, packedWidth),
-                     hasPackedWidth: Number.isFinite(packedWidth) && packedWidth > 0
+                      fraction: symbol.dataset.guideAtFraction,
+                      anchorX: Number(symbol.dataset.guideLayoutAnchorX),
+                      anchorCorrect: Math.abs(Number(symbol.dataset.guideLayoutAnchorX) - expectedAnchorX) <= 0.01,
+                      renderedWidth: width * scaleX,
+                      scaleX,
+                      scaleY,
+                      hasPackedWidth: Number.isFinite(packedWidth) && packedWidth > 0,
+                      hasAccessibleName: Boolean(symbol.getAttribute('aria-label')?.trim())
+                        && Boolean(symbol.querySelector('title')?.textContent?.trim())
                    };
                 });
                 const rowCount = symbols.length ? Math.max(...symbols.map(symbol => symbol.row)) + 1 : 0;
                  const orderedSymbols = [...symbols].sort((a, b) => a.x - b.x || a.y - b.y);
                  const collisions = orderedSymbols.slice(0, -1).reduce((count, item, index) =>
                    count + (item.row === orderedSymbols[index + 1].row
-                     && item.x + item.width > orderedSymbols[index + 1].x + 0.05 ? 1 : 0), 0);
+                      && item.x + item.renderedWidth > orderedSymbols[index + 1].x + 0.05 ? 1 : 0), 0);
                  const sameY = symbols.every(symbol => Math.abs(symbol.y - symbols[0]?.y) <= 0.001);
-                 const fits = symbols.every(symbol => symbol.x >= 4.999 && symbol.x + symbol.width <= Number(card.style.width.replace('px', '')) - 4.999);
+                  const fits = symbols.every(symbol => symbol.x >= 4.999 && symbol.x + symbol.renderedWidth <= Number(card.style.width.replace('px', '')) - 4.999);
+                  const sameOnsetGroups = [...new Map(symbols.map(symbol => [symbol.fraction, symbols.filter(other => other.fraction === symbol.fraction)])).values()]
+                    .filter(group => group.length > 1);
+                  const simultaneousAnchorsMatch = sameOnsetGroups.every(group =>
+                    group.every(symbol => Math.abs(symbol.anchorX - group[0].anchorX) <= 0.001));
+                  const simultaneousVisualOffsets = sameOnsetGroups.every(group =>
+                    new Set(group.map(symbol => symbol.x.toFixed(3))).size === group.length);
                  return {
                    height: Number(lane.dataset.guideLaneHeight), rowCount, collisions,
-                   symbolCount: symbols.length, sameY, fits,
-                   packed: symbols.every(symbol => symbol.hasPackedWidth)
+                    symbolCount: symbols.length, sameY, fits, simultaneousCount: sameOnsetGroups.length,
+                    simultaneousAnchorsMatch, simultaneousVisualOffsets,
+                    anchorsMatchBeats: symbols.every(symbol => symbol.anchorCorrect),
+                    uniformScale: symbols.every(symbol => Math.abs(symbol.scaleX - symbol.scaleY) <= 0.0001),
+                    allAccessible: symbols.every(symbol => symbol.hasAccessibleName),
+                    scaledSymbolCount: symbols.filter(symbol => symbol.scaleX < 0.999).length,
+                    packed: symbols.every(symbol => symbol.hasPackedWidth)
                  };
               });
               const techniqueLabel = document.querySelector('.practice-guide-label[data-guide-lane="technique"]');
@@ -2138,10 +2227,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} retains four measures`);
             assert.deepStrictEqual(geometry.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'],
               `${width}px keeps the compact lane order in every measure SVG`);
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean }) =>
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; uniformScale: boolean; allAccessible: boolean; scaledSymbolCount: number }) =>
               lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 36
-                && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed),
-            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps every technique symbol on one horizontal, non-overlapping row inside its card: ${JSON.stringify(geometry.techniqueLanes)}`);
+                && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed
+                && lane.simultaneousCount > 0 && lane.simultaneousAnchorsMatch && lane.simultaneousVisualOffsets
+                && lane.anchorsMatchBeats && lane.uniformScale && lane.allAccessible && lane.scaledSymbolCount > 0),
+            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps exact beat anchors, same-onset voices, accessible labels, and proportional SVG scaling on one horizontal non-overlapping row: ${JSON.stringify(geometry.techniqueLanes)}`);
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
               index === 0 || Math.abs(lane.height - geometry.techniqueLanes[0].height) <= 0.5),
             `${width}px / ${grid}-grid shares the tallest technique lane across all four measure SVGs`);
