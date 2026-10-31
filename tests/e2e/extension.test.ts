@@ -1554,6 +1554,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
       await settle(150);
       const captureGridEvidence = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+      const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
       const evidenceLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
       const evidenceTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
       const evidenceThemeName = evidenceTheme.toLowerCase().includes('light') ? 'light' : 'dark';
@@ -1775,7 +1777,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.ok(compactGeometry.visibleWaveCount > 0,
               `${width}px / ${grid}-grid includes visible duration waves`);
             if (captureGridEvidence && width === 400) {
-              const filename = `practice-guide-grid-issue162-${evidenceLocale}-${evidenceThemeName}-400-grid-${grid}.png`;
+              const filename = `practice-guide-grid-issue162-${evidenceLocale}-${evidenceThemeName}-400-grid-${grid}${guideEvidenceSuffix}.png`;
+              await settle(500);
               await capturePreviewWebviewScreenshot(filename, 162, width);
               const imagePath = path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename);
               const image = await fs.readFile(imagePath);
@@ -1905,7 +1908,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
         const locale = vscode.env.language.toLowerCase().split('-')[0];
         const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light') ? 'light' : 'dark';
-        const filename = `practice-guide-compact-chord-bounds-issue162-${locale}-${theme}-400.png`;
+        const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+        const evidenceSuffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
+        const filename = `practice-guide-compact-chord-bounds-issue162-${locale}-${theme}-400${evidenceSuffix}.png`;
         await evaluatePreviewWebview<void>("(() => { const layout = document.querySelector('.practice-guide-layout'); const chordLane = document.querySelector('.practice-guide-compact-measure [data-guide-lane=\"chord\"]'); layout.scrollTop += chordLane.getBoundingClientRect().top - layout.getBoundingClientRect().top - 8; })()");
         await settle(200);
         await capturePreviewWebviewScreenshot(filename, 162, 400);
@@ -1973,7 +1978,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
         const locale = vscode.env.language.toLowerCase().split('-')[0];
         const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light') ? 'light' : 'dark';
-        const filename = `practice-guide-horizontal-sample-issue162-${locale}-${theme}-400.png`;
+        const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+        const evidenceSuffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
+        const filename = `practice-guide-horizontal-sample-issue162-${locale}-${theme}-400${evidenceSuffix}.png`;
         await evaluatePreviewWebview<void>("(() => { const layout = document.querySelector('.practice-guide-layout'); const chordLane = document.querySelector('.practice-guide-compact-measure [data-guide-lane=\"chord\"]'); layout.scrollTop += chordLane.getBoundingClientRect().top - layout.getBoundingClientRect().top - 8; })()");
         await settle(200);
         await capturePreviewWebviewScreenshot(filename, 162, 400);
@@ -2089,10 +2096,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('Issue #162 compact technique SVG keeps dense events horizontal and scales uniformly from exact beat anchors', async function () {
+  test('Issue #162 compact technique SVG preserves canonical wave paths and scales uniformly from exact beat anchors', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
-      const denseRhythm = Array.from({ length: 8 }, () => ['16.d.t', '16']).flat().join(' ');
+      const denseRhythm = ['4.d.t', '4.u', '4.d', '4.u'].join(' ');
       const denseTab = Array.from({ length: 8 }, () => ['6f0~/16', '6f0/16']).flat().join(' ');
       const source = [
         'title: Shared compact technique lane',
@@ -2130,12 +2137,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const stage = document.getElementById('practice-guide-pair-page');
         for (const card of stage.querySelectorAll('.practice-guide-compact-measure')) {
           const lane = card.querySelector('[data-guide-lane="technique"]');
-          const original = lane?.querySelector('.practice-guide-compact-symbol[data-guide-kind="continuation"]');
+          const original = lane?.querySelector('.practice-guide-compact-symbol[data-guide-kind="attack"]');
           const occurrence = card.dataset.guideOccurrenceIndex;
           const template = document.querySelector('template[data-guide-template-occurrence="' + occurrence + '"]');
           const templateLane = template?.content.querySelector('[data-guide-lane="technique"]');
-          if (!lane || !original || !original.querySelector('[data-guide-stroke="tie"]') || !templateLane) {
-            throw new Error('The dense fixture must expose a real tie continuation in every measure.');
+          if (!lane || !original || !templateLane) {
+            throw new Error('The dense fixture must expose a real stroke event in every measure.');
           }
           if (templateLane.querySelector('[data-guide-test-simultaneous="true"]')) continue;
           const clone = original.cloneNode(true);
@@ -2201,6 +2208,20 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                       && item.x + item.renderedWidth > orderedSymbols[index + 1].x + 0.05 ? 1 : 0), 0);
                  const sameY = symbols.every(symbol => Math.abs(symbol.y - symbols[0]?.y) <= 0.001);
                   const fits = symbols.every(symbol => symbol.x >= 4.999 && symbol.x + symbol.renderedWidth <= Number(card.style.width.replace('px', '')) - 4.999);
+                  const wavePaths = [...lane.querySelectorAll('path[data-guide-stroke="wave"]')];
+                  const visibleWavePaths = wavePaths
+                    .filter(path => getComputedStyle(path.closest('.practice-guide-compact-symbol')).display !== 'none');
+                  const waveCountForGrid = waveGrid => wavePaths.filter(path => path.dataset.guideWaveGrid === waveGrid).length;
+                  const waveFractionsForGrid = waveGrid => wavePaths
+                    .filter(path => path.dataset.guideWaveGrid === waveGrid)
+                    .sort((left, right) => Number(left.dataset.guideAtBeat) - Number(right.dataset.guideAtBeat))
+                    .map(path => path.dataset.guideAtFraction);
+                  const isCanonicalWaveShape = path =>
+                    path.getAttribute('data-guide-wave-width') === '12.00'
+                    && path.getAttribute('d') === 'M0 9Q3.00 3 6.00 9T12.00 9'
+                    && path.getAttribute('stroke-width') === '1.50';
+                  const canonicalWaveShape = wavePaths.length > 0 && wavePaths.every(isCanonicalWaveShape);
+                  const visibleCanonicalWaveShape = visibleWavePaths.length > 0 && visibleWavePaths.every(isCanonicalWaveShape);
                   const sameOnsetGroups = [...new Map(symbols.map(symbol => [symbol.fraction, symbols.filter(other => other.fraction === symbol.fraction)])).values()]
                     .filter(group => group.length > 1);
                   const simultaneousAnchorsMatch = sameOnsetGroups.every(group =>
@@ -2209,7 +2230,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     new Set(group.map(symbol => symbol.x.toFixed(3))).size === group.length);
                  return {
                    height: Number(lane.dataset.guideLaneHeight), rowCount, collisions,
-                    symbolCount: symbols.length, sameY, fits, simultaneousCount: sameOnsetGroups.length,
+                     symbolCount: symbols.length, sameY, fits, wavePathCount: wavePaths.length,
+                     visibleWavePathCount: visibleWavePaths.length, canonicalWaveShape, visibleCanonicalWaveShape,
+                     waveCountsByGrid: { four: waveCountForGrid('4'), eight: waveCountForGrid('8'), sixteen: waveCountForGrid('16') },
+                     waveFractionsByGrid: { eight: waveFractionsForGrid('8'), sixteen: waveFractionsForGrid('16') },
+                     simultaneousCount: sameOnsetGroups.length,
                     simultaneousAnchorsMatch, simultaneousVisualOffsets,
                     anchorsMatchBeats: symbols.every(symbol => symbol.anchorCorrect),
                     uniformScale: symbols.every(symbol => Math.abs(symbol.scaleX - symbol.scaleY) <= 0.0001),
@@ -2227,12 +2252,20 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} retains four measures`);
             assert.deepStrictEqual(geometry.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'],
               `${width}px keeps the compact lane order in every measure SVG`);
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; uniformScale: boolean; allAccessible: boolean; scaledSymbolCount: number }) =>
+            const expectedVisibleWaveCount = grid === '4' ? 0 : grid === '8' ? 4 : 12;
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; uniformScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
               lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 36
                 && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed
                 && lane.simultaneousCount > 0 && lane.simultaneousAnchorsMatch && lane.simultaneousVisualOffsets
-                && lane.anchorsMatchBeats && lane.uniformScale && lane.allAccessible && lane.scaledSymbolCount > 0),
-            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps exact beat anchors, same-onset voices, accessible labels, and proportional SVG scaling on one horizontal non-overlapping row: ${JSON.stringify(geometry.techniqueLanes)}`);
+                && lane.anchorsMatchBeats && lane.uniformScale && lane.allAccessible
+                && lane.wavePathCount === 16 && lane.canonicalWaveShape
+                && lane.visibleWavePathCount === expectedVisibleWaveCount
+                && (expectedVisibleWaveCount === 0 || lane.visibleCanonicalWaveShape)
+                && lane.waveCountsByGrid.four === 0 && lane.waveCountsByGrid.eight === 4 && lane.waveCountsByGrid.sixteen === 12
+                && lane.waveFractionsByGrid.eight.join(',') === '1/2,3/2,5/2,7/2'
+                && lane.waveFractionsByGrid.sixteen.join(',') === '1/4,1/2,3/4,5/4,3/2,7/4,9/4,5/2,11/4,13/4,7/2,15/4'
+                && (grid !== '16' || width > 600 || lane.scaledSymbolCount > 0)),
+            `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps canonical wave paths, exact beat anchors, same-onset voices, accessible labels, and proportional SVG scaling on one horizontal non-overlapping row: ${JSON.stringify(geometry.techniqueLanes)}`);
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
               index === 0 || Math.abs(lane.height - geometry.techniqueLanes[0].height) <= 0.5),
             `${width}px / ${grid}-grid shares the tallest technique lane across all four measure SVGs`);

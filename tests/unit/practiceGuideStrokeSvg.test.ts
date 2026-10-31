@@ -42,14 +42,13 @@ describe('practice guide stroke SVG', () => {
     assert.doesNotMatch(wave, /<text/);
   });
 
-  it('renders compact continuation waves as independent short vector paths', () => {
-    const standard = renderPracticeGuideWavePathSvg('Continuation', 12);
-    const narrow = renderPracticeGuideWavePathSvg('Continuation', 6);
-    assert.match(standard, /data-guide-stroke="wave"/);
-    assert.match(standard, /d="M0 9Q3\.00 3 6\.00 9T12\.00 9"/);
-    assert.match(narrow, /d="M0 9Q1\.50 3 3\.00 9T6\.00 9"/);
-    assert.match(narrow, /data-guide-wave-width="6\.00"/);
-    assert.doesNotMatch(`${standard}${narrow}`, /<text[^>]*>[↓↑〜]/u);
+  it('renders compact continuation waves in one canonical natural vector shape', () => {
+    const wave = renderPracticeGuideWavePathSvg('Continuation');
+    assert.match(wave, /data-guide-stroke="wave"/);
+    assert.match(wave, /data-guide-wave-width="12\.00"/);
+    assert.match(wave, /d="M0 9Q3\.00 3 6\.00 9T12\.00 9"/);
+    assert.match(wave, /stroke-width="1\.50"/);
+    assert.doesNotMatch(wave, /<text[^>]*>[↓↑〜]/u);
   });
 
   it('embeds attack and PM strokes as valid SVG children', () => {

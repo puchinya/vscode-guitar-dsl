@@ -2230,20 +2230,7 @@ ${cspMeta}
             if (lane === 'technique') node.removeAttribute('display');
             const beat = Number(node.dataset.guideAtBeat) || 0;
             const event = Number(node.dataset.guideEvent) || 0;
-            let width = Math.max(1, Number(node.dataset.guideLayoutWidth) || 12);
-            if (lane === 'technique' && waveGrid) {
-              const cellWidth = (slotWidth - inset * 2) / measureBeats * (4 / waveGrid);
-              width = Math.max(5, Math.min(12, cellWidth - 2));
-              node.dataset.guideLayoutWidth = String(width);
-              const path = node.querySelector('[data-guide-stroke="wave"]');
-              if (path) {
-                const quarter = width / 4;
-                const half = width / 2;
-                path.setAttribute('d', 'M0 9Q' + quarter.toFixed(2) + ' 3 ' + half.toFixed(2) + ' 9T' + width.toFixed(2) + ' 9');
-                path.setAttribute('stroke-width', String(Math.max(0.8, Math.min(1.6, width / 8))));
-                path.setAttribute('data-guide-wave-width', width.toFixed(2));
-              }
-            }
+            const width = Math.max(1, Number(node.dataset.guideLayoutWidth) || 12);
             const anchor = node.dataset.guideLayoutAnchor === 'center' ? 'center' : 'start';
             if (lane === 'lyrics' || lane === 'technique') {
               laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, anchor });
@@ -2329,15 +2316,6 @@ ${cspMeta}
             }
             if (source.hasAttribute('display')) live.setAttribute('display', source.getAttribute('display'));
             else live.removeAttribute('display');
-            const sourceWave = source.querySelector('[data-guide-stroke="wave"]');
-            const liveWave = live.querySelector('[data-guide-stroke="wave"]');
-            if (sourceWave && liveWave) {
-              for (const attribute of ['d', 'stroke-width', 'data-guide-wave-width']) {
-                const value = sourceWave.getAttribute(attribute);
-                if (value === null) liveWave.removeAttribute(attribute);
-                else liveWave.setAttribute(attribute, value);
-              }
-            }
           }
         }
         const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
@@ -4614,7 +4592,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const grid = item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}" data-guide-grid="${item.grid}"`;
       const fraction = fractions(item.at);
       const mark = isGridContinuation
-        ? renderPracticeGuideWavePathSvg(ariaLabel, 12).replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
+        ? renderPracticeGuideWavePathSvg(ariaLabel).replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
         : item.kind === 'rest'
           ? renderPracticeGuideRestSvg(item.restBase, ariaLabel)
           : renderPracticeGuideStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });

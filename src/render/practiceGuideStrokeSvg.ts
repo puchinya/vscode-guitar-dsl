@@ -87,14 +87,10 @@ export function renderPracticeGuideStrokeSvgElement(spec: PracticeGuideStrokeSpe
   return `<g class="practice-guide-stroke-icon" data-guide-stroke="${spec.kind}" role="img" aria-label="${label}"><title>${label}</title>${marks}</g>`;
 }
 
-/** One compact continuation marker; callers place each Fraction at its own x coordinate. */
-export function renderPracticeGuideWavePathSvg(label: string, width = 12): string {
-  const safeWidth = Math.max(5, Math.min(12, width));
+/** One canonical compact continuation marker; callers place and uniformly scale each Fraction independently. */
+export function renderPracticeGuideWavePathSvg(label: string): string {
   const safeLabel = escapeAttribute(label);
-  const quarter = safeWidth / 4;
-  const half = safeWidth / 2;
-  const stroke = Math.max(1, Math.min(1.6, safeWidth / 8));
-  return `<path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${safeWidth.toFixed(2)}" d="M0 9Q${quarter.toFixed(2)} 3 ${half.toFixed(2)} 9T${safeWidth.toFixed(2)} 9" fill="none" stroke="currentColor" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" role="img" aria-label="${safeLabel}"><title>${safeLabel}</title></path>`;
+  return `<path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="12.00" d="M0 9Q3.00 3 6.00 9T12.00 9" fill="none" stroke="currentColor" stroke-width="1.50" stroke-linecap="round" role="img" aria-label="${safeLabel}"><title>${safeLabel}</title></path>`;
 }
 
 /** One stretched duration wave; callers add at most one per written onset. */

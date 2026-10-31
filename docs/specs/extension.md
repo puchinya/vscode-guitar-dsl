@@ -564,7 +564,7 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 
 幅480 px以下では次コード欄を上段にし、下段は44 pxのレーン名と4小節領域にする。コード図は共有voicingを使った144×144 viewBoxのネストSVGで、カード内は `min(144px, slotWidth - 10px)` の正方形、次コード図は44～52 pxの正方形にする。コード名と図は各コード区間の中点で揃える。幅、grid、表示切替、文書変更時の再計測と高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFで行う。
 
-奏法waveは選択gridに一致する継続Fractionごとに独立したSVG pathを1個ずつ描く。attackのイベント開始位置ではなく各継続拍に配置し、`data-guide-wave-grid`、拍、Fraction、eventを保持する。同じ小節・event・grid・Fractionを重複させない。休符、mute、ghost/brush等の打音、staccatoは継続なし。tie開始は再attackを描かずwaveを1つ描き、後続grid位置にもwaveを描く。通常の持続音は記譜音価の有効な後続grid位置ごとに1つとし、grid4 / 8 / 16でそれぞれ再評価する。TAB tieとrhythm tieに適用し、音源の再attack意味論は変えない。奏法とwaveは同じ横一段に保持し、各SVG形状を縦横比のまま縮小する。矢印と波線の可視形状はSVG geometryで描き、Unicode glyph、CSS `content`、フォント依存表示を使わない。
+奏法waveは選択gridに一致する継続Fractionごとに独立したSVG pathを1個ずつ描く。attackのイベント開始位置ではなく各継続拍に配置し、`data-guide-wave-grid`、拍、Fraction、eventを保持する。同じ小節・event・grid・Fractionを重複させない。休符、mute、ghost/brush等の打音、staccatoは継続なし。tie開始は再attackを描かずwaveを1つ描き、後続grid位置にもwaveを描く。通常の持続音は記譜音価の有効な後続grid位置ごとに1つとし、grid4 / 8 / 16でそれぞれ再評価する。TAB tieとrhythm tieに適用し、音源の再attack意味論は変えない。奏法とwaveは同じ横一段に保持し、各SVG形状を縦横比のまま縮小する。コンパクト継続waveの標準 `d` と `stroke-width` はgridや区間幅ごとに変形せず、親要素の等倍率transformだけで縮小する。矢印と波線の可視形状はSVG geometryで描き、Unicode glyph、CSS `content`、フォント依存表示を使わない。
 
 4小節は `[01, 02] [03, 04]` から開始する。演奏順、repeat、volta、arrangement、lyricVerseは `PlaybackTimeline.occurrences` の既存projectionを使い、存在しない小節を補わない。交替時は更新対象bankだけをフェードする。遷移開始時の `fadeMs` は遷移先 `tempoBpm × effectiveSpeed()` から `clamp(round(60000 / effectiveBpm), 450, 900)`、不正時600 msとし、そのfade中は速度変更でdurationを変えない。opacityは更新対象bankの旧新二層で同じdurationとし、fallback cleanupは `fadeMs + 80 ms`。seek、loop、resize、mode切替、disposeは古いgenerationを無効化して即時再投影する。初回表示、手動ページ移動、reduced motionは0 ms。Pause/Resumeは交替を起こさず、音声時間やvolumeにも影響しない。
 

@@ -130,7 +130,7 @@ Practice が有効なときは既存の再生行、楽譜設定行、42 px Pract
 
 初期表示 `[01, 02] [03, 04]`、左右2bank、演奏順 `PlaybackTimeline.occurrences`、repeat / volta / arrangement / lyricVerse、手動previous/nextは維持する。bank交替時は再生済みbankのみを同座標でopacity交差させ、現在bankのDOMとhighlightは動かさない。遷移先 `tempoBpm × effectiveSpeed()` から `fadeMs = clamp(round(60000 / effectiveBpm), 450, 900)` を開始時に計算し、不正時600 msとする。旧220 ms固定を使わず、fallback cleanupは `fadeMs + 80 ms` とする。進行中のfadeは速度変更で変えず、seek / loop / resize / mode変更 / disposeではgeneration管理で即時再投影する。reduced motion、初回表示、手動ページ移動、seek、復元、resizeは0 msとする。音声時刻・再生には影響しない。
 
-奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保ち、奏法SVGの縮小はX/Y同一倍率にする。実画面検収は最終HEADで400/421/600/1100 px × 日英 × Light/Dark × melody ON/OFF（32枚）と400 px × grid4/8/16 × 日英 × Light/Dark（12枚）を採取し、DOMRect、横overflow、拍アンカー/視覚位置、歌詞コントラスト、レーン位置、voicing、fade時刻を測定する。通常譜面SVG、PDF、詳細grid、DSL、音源にはcompact変更を漏らさない。
+奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保ち、奏法SVGの縮小はX/Y同一倍率にする。コンパクト継続waveの標準 `d` と `stroke-width` はgridや区間幅ごとに変形せず、親要素の等倍率transformだけで縮小する。実画面検収は最終HEADで400/421/600/1100 px × 日英 × Light/Dark × melody ON/OFF（32枚）と400 px × grid4/8/16 × 日英 × Light/Dark（12枚）を採取し、DOMRect、横overflow、拍アンカー/視覚位置、歌詞コントラスト、レーン位置、voicing、fade時刻を測定する。通常譜面SVG、PDF、詳細grid、DSL、音源にはcompact変更を漏らさない。
 
 #### 2.5 双方向編集モード（Issue #158）
 
