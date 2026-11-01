@@ -82,7 +82,9 @@ describe('Practice guide panel renderer', () => {
     assert.ok(paths.every(path => /data-guide-wave-grid="16"/.test(path)));
     assert.ok(paths.every(path => /data-guide-event="7"/.test(path)));
     assert.ok(paths.every(path => /data-guide-at-beat="/.test(path)));
-    assert.doesNotMatch(compactHtml, /practice-guide-compact-wave/);
+    assert.ok(paths.every(path => /d="M0\.4 15\.2 C1\.2 13\.3 2 13\.3 2\.8 15\.2 S4\.4 17\.1 5\.2 15\.2"/.test(path)));
+    assert.ok(paths.every(path => /stroke-width="1\.15"[^>]*vector-effect="non-scaling-stroke"/.test(path)));
+    assert.match(compactHtml, /class="practice-guide-stroke-icon practice-guide-compact-wave-icon"/);
   });
 
   it('carries compact chord diagrams in playback order, while explicit N.C. clears the carry', () => {

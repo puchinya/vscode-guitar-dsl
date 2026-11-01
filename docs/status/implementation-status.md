@@ -3,18 +3,18 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-31
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は承認済みContract v4の実装・ローカル検証を完了し、最新レビューへの再提出待ち。
+- **最終更新日**: 2026-11-01
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は承認済みContract v5に基づくレビュー指摘の修正と現行HEAD検証を完了し、再レビュー待ち。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: 承認済みImplementation Contract v4に基づき、コンパクト奏法SVGの縦長形状・状態色、メロディ休符の空白表示を実装した。コードダイアグラム・奏法記号は横一列のまま維持する。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・Required CI・current-HEAD self-reviewの最新状態はPR記録を参照。
-- **契約**: Issue comment `6540557470` がcanonical Implementation Contract v4。**40,749 bytes / SHA-256 `a4b5ebad49327c47ba924b1c0a01dca14c0fb71a3c9aac5dc161ed7d4b7d0936`** を公式workflowで検証した。v3を supersede し、他の既承認決定を維持する。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
+- **状態**: 承認済みImplementation Contract v5に基づき、コンパクト奏法SVGに固定4×30 down/upパスと5.6×30継続波線を実装した。狭幅ではX軸だけを縮小し、縦寸法と1.15pxの非拡縮ストロークを保つ。コードダイアグラム・奏法記号は横一列のまま維持する。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。レビュー・Required CI・current-HEAD self-reviewの最新状態はPR記録を参照。
+- **契約**: Issue comment `6553934815` がcanonical Implementation Contract v5。**43,356 bytes / SHA-256 `bce68aaec8fa4f4e752fce5a29fc4b13bfbe408a51f70965900ef52afdf2c96b`** を公式workflowで検証した。v4を supersede し、他の既承認決定を維持する。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
 - **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
-- **画面証拠**: [Contract v4 current-HEAD compact/grid/chord/sample 52枚、portrait geometry/rest 4枚、prior review-v4 52枚、過去のfade 16枚](evidence/issue-162/README.md)に撮影条件と確認内容を記録した。新しい56枚は06c1d82のソースから撮影し、52枚のmatrix（compact 32 / grid 12 / 短コード4 / sample 4）と、400 × 699のportrait/rest 4枚を含む。選定済みPNGは計124枚。
-- **検証**: macOS arm64 / VS Code 1.144.0。`npm run compile:all` と `npm test` はPASS。`npm test` は `check:help` / `check:ai` PASS、unit **1,231件PASS**、VS Code E2E **127件PASS・6件pending・0件FAIL**。Contract v4検証、`validate-docs --issue 162`、`vscode:prepublish`、`vsce ls`（1,607項目）もPASS。v4 focused E2Eは400pxで縦長viewBox、shaft/head寸法、4状態のcomputed color・opacity・stroke幅、compact休符ノードなし、後続音の拍/長さ維持、detailed休符維持を確認した。4条件の画面capture runは各1件PASS。固定4色の白背景コントラストは順に **14.68:1 / 7.58:1 / 9.54:1 / 7.06:1**。さらに4条件それぞれでcompact/grid/chord/sampleの4 E2Eを実行し、計52 PNGを検査した。コンパクト奏法では320–1600px、グリッド4/8/16、メロディON/OFFで一段配置・同じ視覚中心・横重なりなし・カード内配置・exact Fraction anchor・X/Y同率縮小を確認した。waveの標準`d`/stroke-width、grid別count/Fraction、切替後の維持もDOMで検証した。rhythm/TAB tie、継続波の16分位置とexclusive end、400pxコード図横並び・境界・repeat/volta再生順コード継承、実効テンポfadeと各種cleanup/reduced-motionを確認した。6件は既存pending。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **画面証拠**: [契約v5 current-source 400px/16分グリッド4枚、契約v4 compact/grid/chord/sample 52枚、v4 portrait/rest 4枚、prior review-v4 52枚、fade 16枚](evidence/issue-162/README.md)に撮影条件と確認内容を記録した。v5画像はJA/EN × Light/Darkの4条件で実際のExtension Development Hostを使って撮影した。既存の選定済みPNGと合わせて計128枚。
+- **検証**: macOS arm64 / VS Code 1.144.0。`npm run compile:all` と最終 `npm test` はPASS。`npm test` は `check:help` / `check:ai` PASS、unit **1,233件PASS**、VS Code E2E **127件PASS・6件pending・0件FAIL**。Contract v5検証、`validate-docs --issue 162`、`vscode:prepublish`、`vsce ls` もPASS。v5 focused E2Eは400pxで固定4×30の攻撃パス、shaft/head寸法、16個のストローク、各shaft 26 CSS px以上、実効stroke 1.0–1.2 CSS px、Y=1のままのX軸縮小、重なりなし、4状態色/opacity、continuation/PM表示、compact休符ノードなし、後続pitch timingとdetailed休符の維持を確認した。4条件のcapture E2Eは各1件PASS、画像は各400 × 699px。従来のv4行列では320–1600px、グリッド4/8/16、メロディON/OFFの一段配置・Fraction anchor・カード内配置、継続波線切替、コード図横並び、sample表示を検証済み。rhythm/TAB tie、repeat/volta再生順コード継承、実効テンポfadeとcleanup/reduced-motionも最終 `npm test` で確認した。6件は既存pending。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CIの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース

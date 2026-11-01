@@ -16,7 +16,7 @@ import type { PlaybackEvent } from '../playbackTimeline';
 import { beamGroupStarts, measureBeats } from '../scoreEvents';
 import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
-import { practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
+import { practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
 import type { PracticeGuideStrokeSpec } from './practiceGuideStrokeSvg';
 import type { VisualSourceBinding } from '../compiler';
 
@@ -2178,7 +2178,7 @@ ${cspMeta}
               const nextLeft = groupEnd < starts.length ? starts[groupEnd] : slotWidth - inset;
               const groupCount = groupEnd - index;
               const stepWidth = Math.max(0.001, (nextLeft - startX) / groupCount);
-              const gap = stepWidth >= 3 ? 2 : 0;
+              const gap = Math.min(0.5, Math.max(0, stepWidth - 4));
               const packedWidth = Math.max(0.001, stepWidth - gap);
               for (let groupIndex = index; groupIndex < groupEnd; groupIndex++) {
                 const item = ordered[groupIndex];
@@ -2360,17 +2360,15 @@ ${cspMeta}
             item.setAttribute('y', y.toFixed(3));
             fitCompactSvgText(text || item, Math.max(0, slotWidth - x - 5));
           } else if (lane === 'technique') {
-            const markWidth = Math.max(12, Number(item.dataset.guideLayoutWidth) || 12);
-            const availableWidth = Math.max(0.001, Math.min(
-              Number(item.dataset.guideLayoutPackedWidth) || markWidth,
-              slotWidth - x - 5
-            ));
-            const scale = Math.min(1, availableWidth / markWidth);
+            const naturalWidth = Math.max(0.001, Number(item.dataset.guideLayoutWidth) || 4);
+            const packedWidth = Math.max(0, Number(item.dataset.guideLayoutPackedWidth) || naturalWidth);
+            const usableWidth = Math.max(0, Math.min(packedWidth, slotWidth - x - 5));
+            const scaleX = Math.min(1, usableWidth / naturalWidth);
             const visualBounds = item.getBBox();
             const visualCenterY = visualBounds.y + visualBounds.height / 2;
-            const translateY = rowY + 18 - visualCenterY * scale;
+            const translateY = rowY + 18 - visualCenterY;
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + translateY.toFixed(3)
-              + ') scale(' + scale.toFixed(4) + ' ' + scale.toFixed(4) + ')');
+              + ') scale(' + scaleX.toFixed(4) + ' 1)');
           } else if (lane === 'chord-pair' && item.classList.contains('practice-guide-compact-chord-name')) {
             const text = item.querySelector('text');
             const y = rowY + 16;
@@ -4587,17 +4585,21 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const techniqueKey = `${eventKey}:${fractions(item.at)}:${item.grid ?? 'tie-or-attack'}`;
       const isGridContinuation = item.kind === 'continuation' && item.grid !== undefined;
       const isTieContinuation = item.kind === 'continuation' && item.stroke?.kind === 'tie';
+      const isCompactWave = isGridContinuation || isTieContinuation;
       const ariaLabel = item.kind === 'rest' ? `${msgs.uiPracticeGuideRest} ${item.duration}` : item.stroke?.label ?? item.label;
-      const width = isGridContinuation || isTieContinuation ? 12
+      const width = isCompactWave ? practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: ariaLabel })
         : item.kind === 'rest' ? practiceGuideStrokeVisualWidth({ kind: 'attack', direction: 'neutral', label: ariaLabel })
           : practiceGuideCompactStrokeVisualWidth(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
       const grid = item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}" data-guide-grid="${item.grid}"`;
       const fraction = fractions(item.at);
-      const wavePath = isGridContinuation
-        ? renderPracticeGuideWavePathSvg(ariaLabel).replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
+      const waveSvg = isTieContinuation
+        ? renderPracticeGuideCompactWavePathSvg(ariaLabel).replace('data-guide-stroke="wave"', 'data-guide-stroke="tie"')
+        : renderPracticeGuideCompactWavePathSvg(ariaLabel);
+      const wavePath = isCompactWave
+        ? waveSvg.replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
         : '';
-      const mark = isGridContinuation
-        ? `<g transform="translate(0 12)">${wavePath}</g>`
+      const mark = isCompactWave
+        ? wavePath
         : item.kind === 'rest'
           ? `<g transform="translate(0 4)">${renderPracticeGuideRestSvg(item.restBase, ariaLabel)}</g>`
           : renderPracticeGuideCompactStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
