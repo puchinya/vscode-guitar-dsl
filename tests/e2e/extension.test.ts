@@ -626,6 +626,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             const panel = document.getElementById('practice-guide-panel');
             const header = document.querySelector('.practice-guide-header');
             const rail = document.querySelector('.practice-guide-label-rail');
+            const railShell = document.querySelector('.practice-guide-label-rail-shell');
             const scroll = document.getElementById('practice-guide-scroll');
             const timeline = document.getElementById('practice-guide-timeline');
             const next = document.getElementById('practice-guide-next-chord');
@@ -775,8 +776,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               automaticGrid: panel.dataset.automaticGrid,
               selectedGrid: panel.dataset.guideGrid,
               laneNames,
-              labelCount: [...rail.querySelectorAll('.practice-guide-label')]
+              labelCount: getComputedStyle(railShell).display === 'none' ? 0 : [...rail.querySelectorAll('.practice-guide-label')]
                 .filter(item => getComputedStyle(item).display !== 'none').length,
+              labelRailDisplay: getComputedStyle(railShell).display,
+              labelRailWidth: railShell.getBoundingClientRect().width,
+              layoutGridColumnCount: getComputedStyle(layout).gridTemplateColumns.split(' ').length,
               totalBeats: Number(timeline.dataset.guideTotalBeats),
               pixelsPerBeat: Number(timeline.dataset.guidePxPerBeat),
               timelineWidth: timeline.getBoundingClientRect().width,
@@ -787,7 +791,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               nextName: nextName.textContent.trim(),
               nextVisibleAtEnd,
               nextOutsideScroll: !scroll.contains(next),
-              fixedColumns: Math.abs(before.railLeft - after.railLeft) < 1 && Math.abs(before.nextLeft - after.nextLeft) < 1,
+              nextColumnFixed: Math.abs(before.nextLeft - after.nextLeft) < 1,
               boundaries,
               alignedStartX,
               melodyBarCount: bars.length,
@@ -839,7 +843,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                   arrow: item.querySelector('.practice-guide-pm-stroke svg.practice-guide-stroke-icon path')?.getAttribute('d') })),
               diagramCount: timeline.querySelectorAll('[data-guide-lane="diagrams"] .practice-guide-diagram-event svg').length,
               melodyHidden: getComputedStyle(timeline.querySelector('[data-guide-lane="melody"]')).display === 'none',
-              melodyLabelHidden: getComputedStyle(rail.querySelector('[data-guide-lane="melody"]')).display === 'none',
+              melodyLabelHidden: getComputedStyle(railShell).display === 'none',
               lyricsVisible: getComputedStyle(timeline.querySelector('[data-guide-lane="lyrics"]')).display !== 'none',
               techniqueVisible: getComputedStyle(techniqueLane).display !== 'none',
               chordDiagramsVisible: getComputedStyle(timeline.querySelector('[data-guide-lane="diagrams"]')).display !== 'none',
@@ -875,7 +879,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.automaticGrid, '16', 'the guide selects the sixteenth-note grid from the densest written score');
           assert.strictEqual(guide.selectedGrid, '16', 'automatic mode enables the matching continuation slots');
           assert.deepStrictEqual(guide.laneNames, melodyVisible ? expectedOn : expectedOff, `${width}px ${melodyVisible ? 'melody ON' : 'melody OFF'} keeps one aligned lane set`);
-          assert.strictEqual(guide.labelCount, melodyVisible ? 6 : 5, 'one fixed label set is shown for the ruler and visible lanes');
+          assert.strictEqual(guide.labelCount, 0, 'the detailed guide hides the left label rail');
+          assert.strictEqual(guide.labelRailDisplay, 'none', 'the detailed label rail has no layout box');
+          assert.strictEqual(guide.labelRailWidth, 0, 'the detailed label rail reserves zero width');
+          assert.strictEqual(guide.layoutGridColumnCount, 2, 'the detailed grid allocates columns only to the timeline and next-chord panel');
           assert.strictEqual(guide.totalBeats, 20, 'the single timeline spans all five written measures');
           assert.strictEqual(guide.pixelsPerBeat, 96, 'the 80px base axis expands only enough for a 24px lyric in a written 16th slot');
           assert.ok(guide.pixelsPerBeat / 4 >= 20, 'the effective axis preserves at least 20px per written 16th');
@@ -887,7 +894,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(guide.nextLabel, locale === 'ja' ? '次のコード' : 'Next chord');
           assert.strictEqual(guide.nextVisibleAtEnd, true, `${width}px next chord name stays visible after timeline scroll`);
           assert.strictEqual(guide.nextOutsideScroll, true, 'the next-chord panel is outside the axis scroller');
-          assert.strictEqual(guide.fixedColumns, true, 'the labels and next-chord panel stay fixed while the timeline scrolls');
+          assert.strictEqual(guide.nextColumnFixed, true, 'the next-chord panel stays fixed while the timeline scrolls');
           assert.ok(guide.boundaries.every((x: number) => Math.abs(x - guide.boundaries[0]) < 0.01), 'each lane shares the same measure-boundary x coordinates');
           assert.ok(guide.alignedStartX.every((x: number | null) => x !== null && Math.abs(x - guide.alignedStartX[0]) < 0.01), 'melody, lyric, and technique events share onset x coordinates');
           assert.strictEqual(guide.melodyBarCount, 20, 'each written melody note becomes a pitch bar');
@@ -933,7 +940,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             `palm mute text and its downstroke vector render as one mark: ${JSON.stringify(guide.palmMuteLabels)}`);
           assert.strictEqual(guide.diagramCount, 5, 'all five chord diagrams share the timeline');
           assert.strictEqual(guide.melodyHidden, !melodyVisible, 'melody visibility matches its control');
-          assert.strictEqual(guide.melodyLabelHidden, !melodyVisible, 'melody OFF removes only its fixed label');
+          assert.strictEqual(guide.melodyLabelHidden, true, 'the detailed mode keeps the entire left label rail hidden');
           assert.strictEqual(guide.lyricsVisible, true, 'lyrics stay visible with melody OFF');
           assert.strictEqual(guide.techniqueVisible, true, 'techniques stay visible with melody OFF');
           assert.strictEqual(guide.chordDiagramsVisible, true, 'the diagram lane remains visible');
@@ -989,7 +996,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               const layout = document.getElementById('practice-guide-scroll');
               const guide = document.getElementById('practice-guide-compact');
               const stage = document.getElementById('practice-guide-pair-page');
-              const rail = document.querySelector('.practice-guide-label-rail');
+              const railShell = document.querySelector('.practice-guide-label-rail-shell');
+              const layout = document.querySelector('.practice-guide-layout');
               const currentBank = stage.dataset.guideCurrentBank;
               const occurrenceIndex = stage.dataset.guideOccurrenceIndex;
               const bank = stage.querySelector('#practice-guide-bank-' + currentBank);
@@ -1082,8 +1090,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 noBankHeadings: stage.querySelectorAll('.practice-guide-bank-heading,.practice-guide-bank-label,[data-guide-bank-label]').length === 0,
                 currentTechniqueCount: stage.querySelectorAll('.practice-guide-compact-symbol.is-current').length,
                 nextChordVisible: getComputedStyle(document.getElementById('practice-guide-next-chord-name')).display !== 'none',
-                narrowLayout: document.querySelector('.practice-guide-layout').classList.contains('is-narrow-compact'),
-                labelRailWidth: rail.getBoundingClientRect().width
+                narrowLayout: layout.classList.contains('is-narrow-compact'),
+                labelRailDisplay: getComputedStyle(railShell).display,
+                labelRailWidth: railShell.getBoundingClientRect().width,
+                layoutGridColumnCount: getComputedStyle(layout).gridTemplateColumns.split(' ').length
               };
             })())`));
             const stageHeights = compactStageHeights.get(width) ?? {};
@@ -1126,7 +1136,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.ok(compact.currentTechniqueCount > 0, 'the active technique event follows the current occurrence');
             assert.strictEqual(compact.nextChordVisible, true, 'the next-chord name remains visible');
             assert.strictEqual(compact.narrowLayout, width <= 480, `${width}px applies the contracted narrow layout breakpoint`);
-            if (width <= 480) assert.strictEqual(compact.labelRailWidth, 44, `${width}px retains the 44px label rail`);
+            assert.strictEqual(compact.labelRailDisplay, 'none', `${width}px hides the left label rail in compact mode`);
+            assert.strictEqual(compact.labelRailWidth, 0, `${width}px compact layout reserves zero width for the label rail`);
+            assert.strictEqual(compact.layoutGridColumnCount, width <= 480 ? 1 : 2,
+              `${width}px allocates only the compact page and optional next-chord column`);
             assert.deepStrictEqual(compact.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'], 'each measure uses one SVG root with the contracted lane order');
             if (captureScreenshots && [400, 421, 600, 1100].includes(width)) await captureGuideEvidence(
               `practice-guide-compact-issue162-${locale}-${themeName}-${width}-melody-${melodyVisible ? 'on' : 'off'}${guideEvidenceSuffix}.png`,
@@ -1165,6 +1178,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           layoutScrollHeight: layout.scrollHeight,
           layoutClientHeight: layout.clientHeight,
           compactPageHeight: document.getElementById('practice-guide-pair-page').getBoundingClientRect().height,
+          labelRailDisplay: getComputedStyle(document.querySelector('.practice-guide-label-rail-shell')).display,
+          labelRailWidth: document.querySelector('.practice-guide-label-rail-shell').getBoundingClientRect().width,
+          layoutGridColumns: getComputedStyle(layout).gridTemplateColumns.split(' ').length,
           melodyLaneDisplay: getComputedStyle(document.querySelector('.practice-guide-lane[data-guide-lane="melody"]')).display,
           melodyLabelDisplay: getComputedStyle(document.querySelector('.practice-guide-label[data-guide-lane="melody"]')).display,
           headerTop: header.top,
@@ -1205,6 +1221,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const rebuiltPanelGeometry = await readPanelGeometry();
       assert.ok(Math.abs(rebuiltPanelGeometry.bodyPadding - rebuiltPanelGeometry.height) <= 0.5,
         'a rebuilt Webview starts with a spacer measured from its own panel border box');
+      assert.strictEqual(rebuiltPanelGeometry.labelRailDisplay, 'none', 'the detailed label rail remains hidden after a Preview rebuild');
+      assert.strictEqual(rebuiltPanelGeometry.labelRailWidth, 0, 'a Preview rebuild does not restore label-rail width');
+      assert.strictEqual(rebuiltPanelGeometry.layoutGridColumns, 2, 'the rebuilt detailed grid has only timeline and next-chord columns');
       assert.ok(Math.abs(rebuiltPanelGeometry.height - fullPanelGeometry.height) <= 1,
         'the document rebuild restores the content-fit panel height without stale geometry');
 
@@ -2427,10 +2446,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     packed: symbols.every(symbol => symbol.hasPackedWidth)
                  };
               });
-              const techniqueLabel = document.querySelector('.practice-guide-label[data-guide-lane="technique"]');
-              const techniqueLabelHeight = techniqueLabel && getComputedStyle(techniqueLabel).display !== 'none'
-                ? techniqueLabel.getBoundingClientRect().height : 0;
-              return { cardCount: cards.length, laneOrder, techniqueLanes, techniqueLabelHeight };
+              const labelRail = document.querySelector('.practice-guide-label-rail-shell');
+              return { cardCount: cards.length, laneOrder, techniqueLanes,
+                labelRailDisplay: getComputedStyle(labelRail).display, labelRailWidth: labelRail.getBoundingClientRect().width };
             })())`));
             assert.strictEqual(geometry.cardCount, 4,
               `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} retains four measures`);
@@ -2453,8 +2471,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
               index === 0 || Math.abs(lane.height - geometry.techniqueLanes[0].height) <= 0.5),
             `${width}px / ${grid}-grid shares the tallest technique lane across all four measure SVGs`);
-            assert.ok(Math.abs(geometry.techniqueLabelHeight - geometry.techniqueLanes[0].height) <= 1,
-              `${width}px / ${grid}-grid aligns the technique label row with the shared SVG lane height`);
+            assert.strictEqual(geometry.labelRailDisplay, 'none', `${width}px / ${grid}-grid keeps the label rail hidden`);
+            assert.strictEqual(geometry.labelRailWidth, 0, `${width}px / ${grid}-grid reserves no label-rail width`);
             }
           }
         }
@@ -2584,6 +2602,225 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(crossedVerses.cards.map((item: { verse: number }) => item.verse), [1, 1, 2, 2],
         'manual page projection carries the arrangement lyricVerse at the boundary between verses');
       assert.strictEqual(crossedVerses.seek, verseSeek, 'lyric verse browsing never seeks or changes playback time');
+    });
+  });
+
+  test('Issue #162 compact lyrics keep one full-text baseline across routes, resizing, and mode changes', async function () {
+    this.timeout(90000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const melodyMeasure = ['c4', 'd4', 'e4', 'f4', 'g4', 'a4', 'b4', 'c5',
+        'd5', 'e5', 'f5', 'g5', 'a5', 'b5', 'c6', 'd6'].map(note => `${note}/16`).join(' ');
+      const kana = ['あ', 'い', 'う', 'え', 'お', 'か', 'き', 'く'];
+      const japaneseLyrics = Array.from({ length: 64 }, (_, index) => kana[index % kana.length]);
+      const englishLyrics = Array.from({ length: 64 }, (_, index) => {
+        if (index % 16 === 0) return 'uninterruptedword';
+        if (index % 16 === 1) return 'cat';
+        return ['we', 'go', 'on', 'a'][index % 4];
+      });
+      const source = [
+        'title: Compact single-line lyric acceptance',
+        'time: 4/4',
+        'arrangement {',
+        '  Verse(lyr=1)',
+        '  Verse(lyr=2)',
+        '}',
+        '[Verse]',
+        '| C | G | Am | F ||',
+        `mel: | ${Array.from({ length: 4 }, () => melodyMeasure).join(' | ')} |`,
+        `lyr: ${japaneseLyrics.join(' ')}`,
+        `lyr: ${englishLyrics.join(' ')}`
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+
+      const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+      const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+      const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+      const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+      const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+      const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
+      if (captureScreenshots) await setWorkbenchViewportWidth(2200);
+      const captureLyrics = async (width: number, verseLabel: 'ja' | 'en'): Promise<void> => {
+        if (!captureScreenshots) return;
+        const filename = `practice-guide-compact-lyrics-issue162-${verseLabel}-${locale}-${themeName}-${width}${guideEvidenceSuffix}.png`;
+        await capturePreviewWebviewScreenshot(filename, 162, width);
+        const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+        assert.ok(image.length >= 20000 && image.readUInt32BE(16) === width,
+          `${filename} is a full-width Preview capture`);
+      };
+      const readCompactLyrics = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        const layout = document.querySelector('.practice-guide-layout');
+        const rail = document.querySelector('.practice-guide-label-rail-shell');
+        const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')]
+          .filter(card => card.getClientRects().length > 0)
+          .sort((a, b) => Number(a.dataset.guidePlaybackPosition) - Number(b.dataset.guidePlaybackPosition));
+        return {
+          mode: document.getElementById('practice-guide-view').value,
+          range: document.getElementById('practice-guide-compact-range').textContent.trim(),
+          seek: document.getElementById('playback-seek').value,
+          stageWidth: stage.clientWidth,
+          railDisplay: getComputedStyle(rail).display,
+          railWidth: rail.getBoundingClientRect().width,
+          gridColumnCount: getComputedStyle(layout).gridTemplateColumns.split(' ').length,
+          cards: cards.map(card => {
+            const rect = card.getBoundingClientRect();
+            const all = [...card.querySelectorAll('.practice-guide-compact-lyric')];
+            const items = all.map(item => {
+              const textNode = [...item.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+              const itemRect = item.getBoundingClientRect();
+              return {
+                verse: Number(item.dataset.guideVerse), event: Number(item.dataset.guideEvent),
+                fraction: item.dataset.guideAtFraction, beat: item.dataset.guideAtBeat,
+                row: item.dataset.guideRow, x: item.getAttribute('x'), y: item.getAttribute('y'),
+                full: item.dataset.guideFullText, text: textNode?.nodeValue ?? '',
+                aria: item.getAttribute('aria-label'), title: item.querySelector('title')?.textContent,
+                hidden: item.hidden, visible: item.getClientRects().length > 0,
+                fontSize: parseFloat(getComputedStyle(item).fontSize),
+                available: Number(item.dataset.guideLyricAvailableWidth),
+                textLength: item.getAttribute('textLength'),
+                lengthAdjust: item.getAttribute('lengthAdjust'),
+                computedTextWidth: item.getComputedTextLength(),
+                bboxTextWidth: item.getBBox().width,
+                renderedTextWidth: itemRect.width,
+                left: itemRect.left, right: itemRect.right,
+                cardLeft: rect.left, cardRight: rect.right
+              };
+            });
+            const visible = items.filter(item => item.visible && !item.hidden);
+            const ordered = [...visible].sort((a, b) => a.left - b.left || a.event - b.event);
+            return {
+              occurrence: Number(card.dataset.guidePlaybackPosition),
+              measure: Number(card.dataset.guideMeasureIndex),
+              verse: Number(card.dataset.guideLyricVerse),
+              width: rect.width,
+              selected: visible,
+              hiddenCount: items.filter(item => item.hidden || !item.visible).length,
+              rowCount: new Set(visible.map(item => item.row)).size,
+              baselines: [...new Set(visible.map(item => item.y))],
+              overflowCount: visible.filter(item => item.left < rect.left - 1 || item.right > rect.right + 1).length,
+              overlapCount: ordered.slice(1).filter((item, index) => ordered[index].right > item.left + 0.5).length,
+              allItems: items
+            };
+          })
+        };
+      })())`));
+      const assertSingleLineLayout = (layout: any, width: number, expectedVerses: number[]) => {
+        assert.strictEqual(layout.mode, 'compact');
+        assert.strictEqual(layout.railDisplay, 'none', `${width}px hides the label rail`);
+        assert.strictEqual(layout.railWidth, 0, `${width}px reserves no label-rail width`);
+        assert.strictEqual(layout.gridColumnCount, width <= 480 ? 1 : 2,
+          `${width}px allocates only the page and optional next-chord columns`);
+        assert.strictEqual(layout.cards.length, 4, `${width}px keeps four playback measures visible`);
+        assert.deepStrictEqual(layout.cards.map((card: any) => card.verse), expectedVerses,
+          `${width}px cards use the lyric verse selected by their playback occurrence`);
+        for (const card of layout.cards) {
+          assert.strictEqual(card.selected.length, 16, `${width}px measure ${card.measure + 1} keeps every selected lyric event`);
+          assert.strictEqual(card.hiddenCount, 16, `${width}px measure ${card.measure + 1} retains the other verse hidden in the DOM`);
+          assert.strictEqual(card.rowCount, 1, `${width}px measure ${card.measure + 1} has one lyric row`);
+          assert.deepStrictEqual(card.baselines, ['19'], `${width}px measure ${card.measure + 1} uses baseline y=19`);
+          assert.strictEqual(card.overflowCount, 0, `${width}px measure ${card.measure + 1} keeps all text inside its card`);
+          assert.strictEqual(card.overlapCount, 0,
+            `${width}px measure ${card.measure + 1} has no lyric overlap: ${JSON.stringify(card.selected.map((item: any) => ({
+              text: item.full, x: item.x, left: item.left, right: item.right,
+              available: item.available, textLength: item.textLength
+            })))}`);
+          for (const lyric of card.selected) {
+            assert.strictEqual(lyric.row, '0');
+            assert.strictEqual(lyric.text, lyric.full, 'the full lyric text node remains unchanged');
+            assert.strictEqual(lyric.aria, lyric.full, 'the accessible name retains the full lyric');
+            assert.strictEqual(lyric.title, lyric.full, 'the SVG title retains the full lyric');
+            assert.strictEqual(lyric.y, '19');
+            assert.ok(lyric.fontSize >= 7 && lyric.fontSize <= 13,
+              `${width}px lyric font size stays within the contracted 7–13px range`);
+            const measuredTextWidth = Number.isFinite(lyric.computedTextWidth) && lyric.computedTextWidth > 0
+              ? lyric.computedTextWidth : lyric.bboxTextWidth;
+            assert.ok(Number.isFinite(measuredTextWidth) && measuredTextWidth <= lyric.available + 0.1,
+              `${width}px SVG text width fits its slot: ${JSON.stringify(lyric)}`);
+            assert.ok(lyric.renderedTextWidth <= lyric.available + 0.5,
+              `${width}px screen rectangle fits its slot: ${JSON.stringify(lyric)}`);
+            if (lyric.textLength !== null) assert.strictEqual(lyric.lengthAdjust, 'spacingAndGlyphs');
+          }
+        }
+      };
+
+      await setPreviewWebviewViewportWidth(400);
+      await settle(260);
+      const firstVerse = await readCompactLyrics();
+      await captureLyrics(400, 'ja');
+      assert.strictEqual(firstVerse.range, '1–4/8');
+      assertSingleLineLayout(firstVerse, 400, [1, 1, 1, 1]);
+      assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) => kana.includes(item.full))),
+        'the first arrangement route shows Japanese lyrics only');
+      const firstFractions = firstVerse.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full]));
+
+      const initialSeek = firstVerse.seek;
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+      await settle(320);
+      const mixedVersePage = await readCompactLyrics();
+      assert.strictEqual(mixedVersePage.range, '3–6/8');
+      assertSingleLineLayout(mixedVersePage, 400, [1, 1, 2, 2]);
+      assert.strictEqual(mixedVersePage.seek, initialSeek, 'changing manual pages does not seek playback');
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+      await settle(320);
+      const englishPage400 = await readCompactLyrics();
+      assert.strictEqual(englishPage400.range, '5–8/8');
+      assertSingleLineLayout(englishPage400, 400, [2, 2, 2, 2]);
+      assert.ok(englishPage400.cards.every((card: any) => card.selected.some((item: any) => item.full === 'uninterruptedword')),
+        'long English tokens stay intact in the single-row layout');
+      assert.strictEqual(englishPage400.cards[0].selected.find((item: any) => item.full === 'cat').textLength !== null, true,
+        'the narrow 400px view uses textLength for a full token that cannot fit at the minimum font size');
+      await captureLyrics(400, 'en');
+
+      const widths = [320, 600, 1100];
+      let width1100: any;
+      for (const width of widths) {
+        await setPreviewWebviewViewportWidth(width);
+        await settle(260);
+        const resized = await readCompactLyrics();
+        assertSingleLineLayout(resized, width, [2, 2, 2, 2]);
+        assert.deepStrictEqual(resized.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
+          englishPage400.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
+          `${width}px resize preserves lyric event order, source text, beats, and Fractions`);
+        if (width === 600) await captureLyrics(width, 'en');
+        if (width === 1100) width1100 = resized;
+      }
+      const catAt400 = englishPage400.cards[0].selected.find((item: any) => item.full === 'cat');
+      const catAt1100 = width1100.cards[0].selected.find((item: any) => item.full === 'cat');
+      assert.strictEqual(catAt1100.textLength, null, 'wide layout clears stale textLength when the full word fits');
+      assert.ok(catAt1100.fontSize >= catAt400.fontSize, 'wide layout restores the original larger font size');
+
+      await setPreviewWebviewViewportWidth(600);
+      await settle(220);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'detailed'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(260);
+      const detailed = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const layout = document.querySelector('.practice-guide-layout');
+        const rail = document.querySelector('.practice-guide-label-rail-shell');
+        const scroll = document.getElementById('practice-guide-scroll');
+        return { mode: document.getElementById('practice-guide-view').value,
+          railDisplay: getComputedStyle(rail).display, railWidth: rail.getBoundingClientRect().width,
+          columns: getComputedStyle(layout).gridTemplateColumns.split(' ').length,
+          scrollColumn: getComputedStyle(scroll).gridColumnStart,
+          nextColumn: getComputedStyle(document.querySelector('.practice-guide-next-chord')).gridColumnStart,
+          timelineVisible: getComputedStyle(document.getElementById('practice-guide-timeline')).display !== 'none' };
+      })())`));
+      assert.deepStrictEqual(detailed, { mode: 'detailed', railDisplay: 'none', railWidth: 0,
+        columns: 2, scrollColumn: '1', nextColumn: '2', timelineVisible: true },
+      'detailed mode preserves its timeline/next-chord grid while hiding the label rail');
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(320);
+      const afterModeFlip = await readCompactLyrics();
+      assertSingleLineLayout(afterModeFlip, 600, [2, 2, 2, 2]);
+      assert.deepStrictEqual(afterModeFlip.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
+        width1100.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
+        'compact/detailed/compact restores the selected verse and original timing metadata');
+      assert.deepStrictEqual(firstVerse.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])), firstFractions,
+        'the original Japanese lyric sequence remains unchanged');
     });
   });
 
