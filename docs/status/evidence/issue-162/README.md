@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. The `review-v4` and `contract-v4` images are historical captures; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at the source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. The `contract-v7-final` images show the current single-row lyric behavior and both guide modes' hidden left rail. The `review-v4` and `contract-v4` images are historical captures; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at the source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -17,15 +17,18 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v5 current-HEAD compact layout | 400 / 421 / 600 / 1100 CSS px × JA / EN × Light / Dark × Melody on / off | 32 |
 | Contract v5 current-HEAD continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
 | Contract v5 current-HEAD short chord spans and sample | 400 CSS px × JA / EN × Light / Dark | 8 |
+| Contract v7 compact lyrics | 400 CSS px × selected JA / EN verse; 600 CSS px × selected EN verse; JA / EN locale × Light / Dark | 12 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **180** |
+| **Selected evidence files** |  | **192** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
 The v4 portrait-geometry/rest PNGs are each exactly 400 × 699 pixels and approximately 52 KB. Their E2E checked the 10 × 36 compact attack viewBox, 5 × 5 arrowhead, shaft height of at least 27 local units, uniform X/Y scaling, all four fixed technique colors, opacity 1, and 1.7–2.0 local stroke widths. The computed colors are normal `#1f2937`, past `#475569`, next `#37465e`, and current `#005f85`; their sRGB contrast ratios against white are 14.68:1, 7.58:1, 9.54:1, and 7.06:1. The E2E also verified zero compact melody-rest nodes, the unchanged following pitch-bar beat/duration, and retained rests in the detailed grid. These are retained as historical v4 images.
 
 The 52-image v5 matrix was captured from source HEAD `a8af44221e095132ab07cc542e044650d1f07349` in four locale/theme combinations: 32 compact-layout, 12 grid 4/8/16, four short-chord, and four `sample_gozen0jino_page` images. Every image has a valid PNG header, its expected width, nonzero height, and is larger than 20 KB. The dedicated four v5 exact-path images are each exactly 400 × 699 pixels. Each capture was made from the Extension Development Host with the compact guide visible, four measure cards, melody lane, and sixteen horizontal attacks per measure. The v5 E2E checked the 4 × 30 attack viewBox, exact shaft and arrowhead path bounds, at least 26 CSS px of visible shaft, a 1.0–1.2 CSS px non-scaling stroke, X-only compression, zero overlap, continuation waves, PM marks, fixed state colors/opacity, and blank compact melody rests while preserving the detailed-grid rests. A 48px abnormal-width case also confirms that sub-2px marks remain in the DOM with their event/Fraction/ARIA identity and fixed Y scale. I visually inspected all four dedicated images for the JA/EN and Light/Dark rendering and the four-measure horizontal layout.
+
+Contract v7 adds 12 current-source captures in four locale/theme combinations from implementation commit `94e49f69726c1e63204ba6cb91eb91d0a7f3b8e9`. Each dedicated capture E2E passed (1/1): 400 CSS px with the selected Japanese and English verses, plus a 600 CSS px selected English verse. Every PNG has the expected width, 799px height, valid screenshot content, and is larger than 20 KB. The focused E2E verifies the hidden rail has zero width in both compact and detailed modes; four measures remain visible; the routed verse is selected per playback occurrence; all 16 lyric events retain their complete source text, accessible name, title, beat, Fraction, and event order on one baseline; resizing clears stale `textLength`; and no lyric overlaps or escapes a card. I visually inspected the 600px English dark image and representative Japanese/English 400px images in the Extension Development Host. The capture host supports the 600px Preview frame; 1100px remains covered by layout assertions, while a full 1100px screenshot could not fit this host's 1920px workbench window after the second editor group was positioned.
 
 ## Representative images
 
@@ -45,6 +48,9 @@ The 52-image v5 matrix was captured from source HEAD `a8af44221e095132ab07cc542e
 - [JA Light, 400 px, v5 exact-path strokes](practice-guide-v5-compact-400-ja-light.png)
 - [EN Dark, 250 ms fade](practice-guide-crossfade-issue162-en-dark-250ms-current-head.png)
 - [JA Dark, 500 ms fade](practice-guide-crossfade-issue162-ja-dark-500ms-current-head.png)
+- [EN Dark, 600 px, compact selected lyrics (Contract v7)](practice-guide-compact-lyrics-issue162-en-en-dark-600-contract-v7-final.png)
+- [JA Light, 400 px, Japanese selected lyrics (Contract v7)](practice-guide-compact-lyrics-issue162-ja-ja-light-400-contract-v7-final.png)
+- [EN Dark, 400 px, English selected lyrics (Contract v7)](practice-guide-compact-lyrics-issue162-en-en-dark-400-contract-v7-final.png)
 
 The v5 exact-path images and the 52-image v5 matrix are current-source evidence from `a8af44221e095132ab07cc542e044650d1f07349`. The v4 matrix and portrait/rest images are retained as earlier contract evidence, and the earlier fade images are retained as references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
 
