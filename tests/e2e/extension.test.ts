@@ -993,7 +993,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             }
             const compact = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
               const panel = document.getElementById('practice-guide-panel');
-              const layout = document.getElementById('practice-guide-scroll');
+              const timelineScroll = document.getElementById('practice-guide-scroll');
               const guide = document.getElementById('practice-guide-compact');
               const stage = document.getElementById('practice-guide-pair-page');
               const railShell = document.querySelector('.practice-guide-label-rail-shell');
@@ -1054,7 +1054,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               return {
                 mode: document.getElementById('practice-guide-view').value,
                 selectorAccessible: document.getElementById('practice-guide-view').getAttribute('aria-label'),
-                detailedHidden: getComputedStyle(layout).display === 'none',
+                detailedHidden: getComputedStyle(timelineScroll).display === 'none',
                 compactVisible: getComputedStyle(guide).display !== 'none',
                 capacity: Number(stage.dataset.guideCapacity),
                 scale: Number(stage.dataset.guideScale) || 1,
