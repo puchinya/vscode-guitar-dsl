@@ -15,6 +15,7 @@
 - **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
 - **画面証拠**: [契約v5 current-source 400px/16分グリッド4枚、契約v4 compact/grid/chord/sample 52枚、v4 portrait/rest 4枚、prior review-v4 52枚、fade 16枚](evidence/issue-162/README.md)に撮影条件と確認内容を記録した。v5画像はJA/EN × Light/Darkの4条件で実際のExtension Development Hostを使って撮影した。既存の選定済みPNGと合わせて計128枚。
 - **検証**: macOS arm64 / VS Code 1.144.0。`npm run compile:all` と最終 `npm test` はPASS。`npm test` は `check:help` / `check:ai` PASS、unit **1,233件PASS**、VS Code E2E **127件PASS・6件pending・0件FAIL**。Contract v5検証、`validate-docs --issue 162`、`vscode:prepublish`、`vsce ls` もPASS。v5 focused E2Eは400pxで固定4×30の攻撃パス、shaft/head寸法、16個のストローク、各shaft 26 CSS px以上、実効stroke 1.0–1.2 CSS px、Y=1のままのX軸縮小、重なりなし、4状態色/opacity、continuation/PM表示、compact休符ノードなし、後続pitch timingとdetailed休符の維持を確認した。4条件のcapture E2Eは各1件PASS、画像は各400 × 699px。従来のv4行列では320–1600px、グリッド4/8/16、メロディON/OFFの一段配置・Fraction anchor・カード内配置、継続波線切替、コード図横並び、sample表示を検証済み。rhythm/TAB tie、repeat/volta再生順コード継承、実効テンポfadeとcleanup/reduced-motionも最終 `npm test` で確認した。6件は既存pending。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CIの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース

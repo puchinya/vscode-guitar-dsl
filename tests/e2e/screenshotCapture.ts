@@ -302,7 +302,7 @@ export async function capturePreviewWebviewScreenshot(
 
 /** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
 export async function setPreviewWebviewViewportWidth(width: number, height?: number): Promise<void> {
-  if (!Number.isFinite(width) || width < 280) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  if (!Number.isFinite(width) || width < 1) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
   if (height !== undefined && (!Number.isFinite(height) || height < 240)) {
     throw new Error(`Invalid Preview Webview viewport height: ${height}`);
   }

@@ -1787,6 +1787,37 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             }
           }
         }
+        await setGrid('16');
+        const regularIdentities = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(
+          [...document.querySelectorAll('#practice-guide-pair-page .practice-guide-compact-symbol')]
+            .map(symbol => [symbol.dataset.guideMeasure, symbol.dataset.guideEvent, symbol.dataset.guideAtFraction, symbol.dataset.guideKind])
+        )`));
+        await setPreviewWebviewViewportWidth(48);
+        await settle(160);
+        const narrowGeometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const symbols = [...stage.querySelectorAll('.practice-guide-compact-symbol')];
+          return {
+            cardCount: stage.querySelectorAll('.practice-guide-compact-measure').length,
+            identities: symbols.map(symbol => [symbol.dataset.guideMeasure, symbol.dataset.guideEvent, symbol.dataset.guideAtFraction, symbol.dataset.guideKind]),
+            accessible: symbols.every(symbol => Boolean(symbol.getAttribute('aria-label')?.trim())
+              && Boolean(symbol.querySelector('title')?.textContent?.trim())
+              && symbol.dataset.guideAtFraction !== undefined),
+            tinyVisibleMarks: symbols.filter(symbol => getComputedStyle(symbol).display !== 'none')
+              .map(symbol => {
+                const matrix = symbol.transform.baseVal.consolidate()?.matrix;
+                return { width: Number(symbol.dataset.guideLayoutWidth) * (matrix?.a ?? 1), scaleY: matrix?.d ?? NaN };
+              }).filter(mark => mark.width < 2)
+          };
+        })())`));
+        assert.strictEqual(narrowGeometry.cardCount, 4, 'an abnormal narrow viewport still keeps all four measure nodes');
+        assert.deepStrictEqual(narrowGeometry.identities, regularIdentities,
+          'sub-2px geometry does not drop event, measure, or Fraction identities');
+        assert.strictEqual(narrowGeometry.accessible, true,
+          'sub-2px geometry retains the accessible name, title, and Fraction for every technique node');
+        assert.ok(narrowGeometry.tinyVisibleMarks.length > 0
+          && narrowGeometry.tinyVisibleMarks.every((mark: { width: number; scaleY: number }) => mark.width < 2 && Math.abs(mark.scaleY - 1) <= 0.0001),
+        `physically sub-2px marks stay in the DOM while only X compresses: ${JSON.stringify(narrowGeometry.tinyVisibleMarks)}`);
       } finally {
         await resetPreviewWebviewViewport();
         await resetWorkbenchViewport();
