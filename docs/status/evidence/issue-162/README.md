@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v8 screenshots show the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, the compact layout matrix, and the hidden left rail. The 32-image compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v9 is the current visual evidence for gapless measure boundaries and the adjacent next-chord area; v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -23,9 +23,13 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v8 compact layout matrix | 400 / 421 / 600 / 1100 CSS px × JA / EN × Light / Dark × Melody on / off | 32 |
 | Contract v8 continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
 | Contract v8 current lyric and compact cells | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
+| Contract v9 gapless compact layout matrix | 400 / 421 / 600 / 1100 CSS px × JA / EN × Light / Dark × Melody on / off | 32 |
+| Contract v9 gapless continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
+| Contract v9 current lyric and compact cells | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
+| Contract v9 gapless grid16 fade | 400 CSS px × JA / EN × Light / Dark | 4 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **296** |
+| **Selected evidence files** |  | **360** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
@@ -67,7 +71,7 @@ Contract v7 adds 56 current-source images in four locale/theme combinations. The
 - [EN Dark, 600 px, Japanese verse (Contract v8)](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v8.png)
 - [JA Light, 600 px, English verse (Contract v8)](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v8.png)
 
-The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 is the current visual evidence for compact lyric overflow and grid16 path shape. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
+The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 remains historical visual evidence for compact lyric overflow and grid16 path shape; Contract v9 is current for gapless compact geometry. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
 
 
 ## Contract v8 evidence
@@ -151,3 +155,81 @@ Contract v8 review remediation removes non-uniform lyric compression, adds one c
 - The compact width/melody matrix, grid 4/8/16, short-chord, and sample images were refreshed for all four locale/theme combinations at the historical v5 source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 width/melody and grid matrices are recorded above.
 
 The refreshed `sample_gozen0jino_page` capture verifies that dense stroke symbols remain in one horizontal row in the compact guide. Contract v5 adds the exact 4 × 30 attack paths and short 5.6 × 30 continuation paths; only the X dimension compresses, while vertical geometry and the non-scaling stroke are preserved. A focused E2E checks exact beat anchors, visual offsets for simultaneous marks, canonical continuation-wave paths and stroke width through grid4/8/16 transitions, exact wave counts/Fractions, X-only scaling, accessible names, non-overlap, and card containment at 320–1600 CSS px and melody on/off.
+
+## Contract v9 evidence
+
+Contract v9 is canonical at Issue comment `6569401245` (14,459 bytes; SHA-256 `d4de9f23fab709df664671ab6375fd76fcf16dea330a03090899e6d2652284a6`). The 64 current evidence images comprise a 32-image gapless compact layout matrix, 12 grid 4/8/16 captures, 16 compact lyric captures, and four 400px grid16 screenshots taken during the fade. All four locale/theme capture runs were executed at implementation HEAD `3788d4bde2fc9ecc5b21bb79b7ab14cb62205cc8`; this HEAD contains the gapless renderer from `fb8d9a94cd39ab802cb42479aba2a39297480c29` plus the test-only viewport and screenshot-handling updates.
+
+Each of the four locale/theme capture runs verified the compact, grid, lyric, and gapless 400px fade cases. The compact matrix E2E also measures all 11 widths 320/360/400/421/480/481/600/601/840/1100/1600px. PNG headers, expected widths, nonzero heights, and the 20KB minimum passed for all 64 selected files. I visually inspected the 400px JA Light top next-chord layout, 600px EN Dark and 1100px JA Light right next-chord layouts, and the 400px grid16 fade images. Measure cards touch at all three boundaries; the next-chord boundary retains its 1px divider; there is no 8px top inset.
+
+### Compact layout matrix (32 images)
+- [EN Dark, 400px, melody on](practice-guide-compact-issue162-en-dark-400-melody-on-current-head-3788.png)
+- [EN Dark, 400px, melody off](practice-guide-compact-issue162-en-dark-400-melody-off-current-head-3788.png)
+- [EN Dark, 421px, melody on](practice-guide-compact-issue162-en-dark-421-melody-on-current-head-3788.png)
+- [EN Dark, 421px, melody off](practice-guide-compact-issue162-en-dark-421-melody-off-current-head-3788.png)
+- [EN Dark, 600px, melody on](practice-guide-compact-issue162-en-dark-600-melody-on-current-head-3788.png)
+- [EN Dark, 600px, melody off](practice-guide-compact-issue162-en-dark-600-melody-off-current-head-3788.png)
+- [EN Dark, 1100px, melody on](practice-guide-compact-issue162-en-dark-1100-melody-on-current-head-3788.png)
+- [EN Dark, 1100px, melody off](practice-guide-compact-issue162-en-dark-1100-melody-off-current-head-3788.png)
+- [EN Light, 400px, melody on](practice-guide-compact-issue162-en-light-400-melody-on-current-head-3788.png)
+- [EN Light, 400px, melody off](practice-guide-compact-issue162-en-light-400-melody-off-current-head-3788.png)
+- [EN Light, 421px, melody on](practice-guide-compact-issue162-en-light-421-melody-on-current-head-3788.png)
+- [EN Light, 421px, melody off](practice-guide-compact-issue162-en-light-421-melody-off-current-head-3788.png)
+- [EN Light, 600px, melody on](practice-guide-compact-issue162-en-light-600-melody-on-current-head-3788.png)
+- [EN Light, 600px, melody off](practice-guide-compact-issue162-en-light-600-melody-off-current-head-3788.png)
+- [EN Light, 1100px, melody on](practice-guide-compact-issue162-en-light-1100-melody-on-current-head-3788.png)
+- [EN Light, 1100px, melody off](practice-guide-compact-issue162-en-light-1100-melody-off-current-head-3788.png)
+- [JA Dark, 400px, melody on](practice-guide-compact-issue162-ja-dark-400-melody-on-current-head-3788.png)
+- [JA Dark, 400px, melody off](practice-guide-compact-issue162-ja-dark-400-melody-off-current-head-3788.png)
+- [JA Dark, 421px, melody on](practice-guide-compact-issue162-ja-dark-421-melody-on-current-head-3788.png)
+- [JA Dark, 421px, melody off](practice-guide-compact-issue162-ja-dark-421-melody-off-current-head-3788.png)
+- [JA Dark, 600px, melody on](practice-guide-compact-issue162-ja-dark-600-melody-on-current-head-3788.png)
+- [JA Dark, 600px, melody off](practice-guide-compact-issue162-ja-dark-600-melody-off-current-head-3788.png)
+- [JA Dark, 1100px, melody on](practice-guide-compact-issue162-ja-dark-1100-melody-on-current-head-3788.png)
+- [JA Dark, 1100px, melody off](practice-guide-compact-issue162-ja-dark-1100-melody-off-current-head-3788.png)
+- [JA Light, 400px, melody on](practice-guide-compact-issue162-ja-light-400-melody-on-current-head-3788.png)
+- [JA Light, 400px, melody off](practice-guide-compact-issue162-ja-light-400-melody-off-current-head-3788.png)
+- [JA Light, 421px, melody on](practice-guide-compact-issue162-ja-light-421-melody-on-current-head-3788.png)
+- [JA Light, 421px, melody off](practice-guide-compact-issue162-ja-light-421-melody-off-current-head-3788.png)
+- [JA Light, 600px, melody on](practice-guide-compact-issue162-ja-light-600-melody-on-current-head-3788.png)
+- [JA Light, 600px, melody off](practice-guide-compact-issue162-ja-light-600-melody-off-current-head-3788.png)
+- [JA Light, 1100px, melody on](practice-guide-compact-issue162-ja-light-1100-melody-on-current-head-3788.png)
+- [JA Light, 1100px, melody off](practice-guide-compact-issue162-ja-light-1100-melody-off-current-head-3788.png)
+
+### Grid continuation marks (12 images)
+- [EN Dark, 400px, grid 4](practice-guide-grid-issue162-en-dark-400-grid-4-current-head-3788.png)
+- [EN Dark, 400px, grid 8](practice-guide-grid-issue162-en-dark-400-grid-8-current-head-3788.png)
+- [EN Dark, 400px, grid 16](practice-guide-grid-issue162-en-dark-400-grid-16-current-head-3788.png)
+- [EN Light, 400px, grid 4](practice-guide-grid-issue162-en-light-400-grid-4-current-head-3788.png)
+- [EN Light, 400px, grid 8](practice-guide-grid-issue162-en-light-400-grid-8-current-head-3788.png)
+- [EN Light, 400px, grid 16](practice-guide-grid-issue162-en-light-400-grid-16-current-head-3788.png)
+- [JA Dark, 400px, grid 4](practice-guide-grid-issue162-ja-dark-400-grid-4-current-head-3788.png)
+- [JA Dark, 400px, grid 8](practice-guide-grid-issue162-ja-dark-400-grid-8-current-head-3788.png)
+- [JA Dark, 400px, grid 16](practice-guide-grid-issue162-ja-dark-400-grid-16-current-head-3788.png)
+- [JA Light, 400px, grid 4](practice-guide-grid-issue162-ja-light-400-grid-4-current-head-3788.png)
+- [JA Light, 400px, grid 8](practice-guide-grid-issue162-ja-light-400-grid-8-current-head-3788.png)
+- [JA Light, 400px, grid 16](practice-guide-grid-issue162-ja-light-400-grid-16-current-head-3788.png)
+
+### Compact lyric and current-header captures (16 images)
+- [JA verse, EN Dark, 400px](practice-guide-compact-lyrics-issue162-ja-en-dark-400-current-head-3788.png)
+- [JA verse, EN Dark, 600px](practice-guide-compact-lyrics-issue162-ja-en-dark-600-current-head-3788.png)
+- [EN verse, EN Dark, 400px](practice-guide-compact-lyrics-issue162-en-en-dark-400-current-head-3788.png)
+- [EN verse, EN Dark, 600px](practice-guide-compact-lyrics-issue162-en-en-dark-600-current-head-3788.png)
+- [JA verse, EN Light, 400px](practice-guide-compact-lyrics-issue162-ja-en-light-400-current-head-3788.png)
+- [JA verse, EN Light, 600px](practice-guide-compact-lyrics-issue162-ja-en-light-600-current-head-3788.png)
+- [EN verse, EN Light, 400px](practice-guide-compact-lyrics-issue162-en-en-light-400-current-head-3788.png)
+- [EN verse, EN Light, 600px](practice-guide-compact-lyrics-issue162-en-en-light-600-current-head-3788.png)
+- [JA verse, JA Dark, 400px](practice-guide-compact-lyrics-issue162-ja-ja-dark-400-current-head-3788.png)
+- [JA verse, JA Dark, 600px](practice-guide-compact-lyrics-issue162-ja-ja-dark-600-current-head-3788.png)
+- [EN verse, JA Dark, 400px](practice-guide-compact-lyrics-issue162-en-ja-dark-400-current-head-3788.png)
+- [EN verse, JA Dark, 600px](practice-guide-compact-lyrics-issue162-en-ja-dark-600-current-head-3788.png)
+- [JA verse, JA Light, 400px](practice-guide-compact-lyrics-issue162-ja-ja-light-400-current-head-3788.png)
+- [JA verse, JA Light, 600px](practice-guide-compact-lyrics-issue162-ja-ja-light-600-current-head-3788.png)
+- [EN verse, JA Light, 400px](practice-guide-compact-lyrics-issue162-en-ja-light-400-current-head-3788.png)
+- [EN verse, JA Light, 600px](practice-guide-compact-lyrics-issue162-en-ja-light-600-current-head-3788.png)
+
+### Gapless grid16 fade (4 images)
+- [EN Dark, 400px, grid16 during fade](practice-guide-crossfade-issue162-en-dark-250ms-contract-v9-grid16-400.png)
+- [EN Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-en-light-250ms-contract-v9-grid16-400.png)
+- [JA Dark, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-dark-250ms-contract-v9-grid16-400.png)
+- [JA Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-light-250ms-contract-v9-grid16-400.png)
