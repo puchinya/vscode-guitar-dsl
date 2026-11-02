@@ -586,7 +586,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const expectedOff = ['lyrics', 'technique', 'chord', 'diagrams'];
       const compactCapacities = new Map<number, number>();
       const compactStageHeights = new Map<number, { on?: number; off?: number }>();
-      const compactAcceptanceWidths = [320, 360, 400, 421, 480, 600, 840, 1100, 1600];
+      const compactAcceptanceWidths = [320, 360, 400, 421, 480, 481, 600, 601, 840, 1100, 1600];
       await setGuideViewMode('detailed');
       await evaluatePreviewWebview<void>(`(() => {
         const input = document.getElementById('playback-seek');
@@ -1035,9 +1035,26 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                   labelOffset: nameTransform ? Math.abs(nameTransform.e - expected) : Infinity,
                   inside: diagramWidth <= cardRect.width - 9 };
               });
-              const expectedSlot = Math.max(0, (stage.clientWidth - 16) / 4);
-              const slotWidthErrors = cardRects.map((rect, index) => Math.abs(rect.width
-                - (index === 3 ? expectedSlot + (stage.clientWidth - 16) - expectedSlot * 4 : expectedSlot)));
+              const expectedSlot = Math.max(0, stage.clientWidth / 4);
+              const expectedSlotWidths = [expectedSlot, expectedSlot, expectedSlot,
+                Math.max(0, stage.clientWidth - expectedSlot * 3)];
+              const slotWidthErrors = cardRects.map((rect, index) => Math.abs(rect.width - expectedSlotWidths[index]));
+              const orderedCardRects = [...cardRects].sort((left, right) => left.left - right.left);
+              const adjacentCardGaps = orderedCardRects.slice(1).map((rect, index) => rect.left - orderedCardRects[index].right);
+              const nextChord = document.getElementById('practice-guide-next-chord');
+              const nextChordRect = nextChord.getBoundingClientRect();
+              const narrowCompact = layout.classList.contains('is-narrow-compact');
+              const nextChordGap = narrowCompact
+                ? stageRect.top - nextChordRect.bottom
+                : nextChordRect.left - orderedCardRects[orderedCardRects.length - 1].right;
+              const layoutStyle = getComputedStyle(layout);
+              const nextChordStyle = getComputedStyle(nextChord);
+              const boundaryEdges = roots.map((root, index) => {
+                const start = root.querySelector('.practice-guide-measure-boundary[data-guide-boundary-edge="start"]');
+                const end = root.querySelector('.practice-guide-measure-boundary[data-guide-boundary-edge="end"]');
+                return { start: Number(start?.getAttribute('x1')), end: Number(end?.getAttribute('x1')), width: cardRects[index].width };
+              });
+              const scaleLayerTop = parseFloat(getComputedStyle(document.getElementById('practice-guide-scale-layer')).top);
               const technique = stage.querySelector('[data-guide-lane="technique"]');
               const visibleGlyphText = [...stage.querySelectorAll('.practice-guide-compact-symbol')]
                 .flatMap(item => [...item.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent)).join('');
@@ -1070,6 +1087,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 scrollOverflowX: getComputedStyle(stage).overflowX,
                 cardsAllVisible: cardRects.length === 4 && cardRects.every(rect => rect.left >= stageRect.left - 1 && rect.right <= stageRect.right + 1),
                 slotWidthErrorMax: Math.max(...slotWidthErrors),
+                adjacentCardGaps,
+                nextChordGap,
+                layoutColumnGap: layoutStyle.columnGap,
+                layoutRowGap: layoutStyle.rowGap,
+                nextChordBorderLeft: nextChordStyle.borderLeftWidth,
+                nextChordBorderBottom: nextChordStyle.borderBottomWidth,
+                scaleLayerTop,
+                boundaryEdges,
                 rootViewBoxesMatch,
                 rootGeometry,
                 compactDiagramCenterOffsetMax: Math.max(...pairs.map(pair => pair.centerOffset)),
@@ -1116,7 +1141,21 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.strictEqual(compact.scrollOverflowX, 'hidden', `${width}px compact page clips no scrollable strip`);
             assert.strictEqual(compact.cardsAllVisible, true, `${width}px keeps all four cards within the page`);
             assert.ok(compact.slotWidthErrorMax <= 1,
-              `${width}px divides the page into four slots with 16px total gaps: ${compact.slotWidthErrorMax}px`);
+              `${width}px divides the gapless page into four slots: ${compact.slotWidthErrorMax}px`);
+            assert.ok(compact.adjacentCardGaps.every((gap: number) => Math.abs(gap) <= 0.5),
+              `${width}px compact measure cards touch at all three boundaries: ${JSON.stringify(compact.adjacentCardGaps)}`);
+            assert.ok(Math.abs(compact.nextChordGap) <= 0.5,
+              `${width}px compact measures touch the next-chord area: ${compact.nextChordGap}px`);
+            assert.strictEqual(compact.layoutColumnGap, '0px', `${width}px compact grid has no column gap`);
+            assert.strictEqual(compact.layoutRowGap, '0px', `${width}px compact grid has no row gap`);
+            assert.strictEqual(compact.nextChordBorderLeft, compact.narrowLayout ? '0px' : '1px',
+              `${width}px next-chord divider stays on the adjoining side edge`);
+            assert.strictEqual(compact.nextChordBorderBottom, compact.narrowLayout ? '1px' : '0px',
+              `${width}px next-chord divider stays on the adjoining bottom edge`);
+            assert.strictEqual(compact.scaleLayerTop, 0, `${width}px compact page has no top inset`);
+            assert.ok(compact.boundaryEdges.every((edge: { start: number; end: number; width: number }) =>
+              Math.abs(edge.start) <= 0.01 && Math.abs(edge.end - edge.width) <= 0.01),
+            `${width}px measure boundary strokes align with card edges: ${JSON.stringify(compact.boundaryEdges)}`);
             assert.strictEqual(compact.rootViewBoxesMatch, true,
               `each measure SVG viewBox matches its CSS-pixel card width: ${JSON.stringify(compact.rootGeometry)}`);
             assert.strictEqual(compact.panelBackground, 'rgb(255, 255, 255)', 'compact mode keeps the approved white background');
@@ -1151,7 +1190,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       }
       }
       const capacitiesByWidth = [...compactCapacities.entries()].sort((a, b) => a[0] - b[0]).map(([, capacity]) => capacity);
-      assert.strictEqual(compactCapacities.size, compactAcceptanceWidths.length, 'the capacity matrix covers all nine contracted Preview widths');
+      assert.strictEqual(compactCapacities.size, compactAcceptanceWidths.length, 'the capacity matrix covers all eleven contracted Preview widths');
       assert.deepStrictEqual(capacitiesByWidth, Array(compactAcceptanceWidths.length).fill(4),
         `the compact guide always keeps four measures across all widths: ${capacitiesByWidth.join(',')}`);
       for (const [width, heights] of compactStageHeights) {
@@ -3114,8 +3153,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
           const stageRect = stage.getBoundingClientRect();
           const cardRects = cards.map(card => card.getBoundingClientRect());
-          const expectedSlotWidth = Math.max(0, (stage.clientWidth - 16) / 4);
-          const expectedFinalSlotWidth = Math.max(0, stage.clientWidth - 16 - expectedSlotWidth * 3);
+          const orderedCardRects = [...cardRects].sort((a, b) => a.left - b.left);
+          const measureGaps = orderedCardRects.slice(1).map((rect, index) => rect.left - orderedCardRects[index].right);
+          const leftBankRect = left.getBoundingClientRect();
+          const rightBankRect = right.getBoundingClientRect();
+          const expectedSlotWidth = Math.max(0, stage.clientWidth / 4);
+          const expectedFinalSlotWidth = Math.max(0, stage.clientWidth - expectedSlotWidth * 3);
           const diagramCenters = [...stage.querySelectorAll('.practice-guide-compact-diagram-event')].map(event => {
             const card = event.closest('.practice-guide-compact-measure');
             const laneRect = event.closest('[data-guide-lane="diagrams"]').getBoundingClientRect();
@@ -3137,6 +3180,12 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               const cardRect = card.getBoundingClientRect();
               return cardRect.left >= stageRect.left - 1 && cardRect.right <= stageRect.right + 1;
             }),
+            measureGaps,
+            bankGap: rightBankRect.left - leftBankRect.right,
+            nextChordGap: next.getBoundingClientRect().left - orderedCardRects[orderedCardRects.length - 1].right,
+            columnGap: getComputedStyle(document.querySelector('.practice-guide-layout')).columnGap,
+            rowGap: getComputedStyle(document.querySelector('.practice-guide-layout')).rowGap,
+            scaleLayerTop: parseFloat(getComputedStyle(document.getElementById('practice-guide-scale-layer')).top),
             nextChordVisible: (() => {
               const layoutRect = document.querySelector('.practice-guide-layout').getBoundingClientRect();
               const nextRect = next.getBoundingClientRect();
@@ -3167,6 +3216,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         `1600px assigns the measured page width to four equal slots: ${JSON.stringify({ actual: initial.cardWidths, expected: initial.expectedCardWidths })}`);
         assert.ok(initial.scrollWidth <= initial.clientWidth + 1, 'the four slots fit without horizontal overflow');
         assert.strictEqual(initial.nextChordVisible, true, 'the reference width keeps the next-chord area fully visible');
+        assert.ok(initial.measureGaps.every((gap: number) => Math.abs(gap) <= 0.5),
+          `1600px has no gap between any neighboring measures: ${JSON.stringify(initial.measureGaps)}`);
+        assert.ok(Math.abs(initial.bankGap) <= 0.5 && Math.abs(initial.nextChordGap) <= 0.5,
+          `1600px banks and next chord touch at their boundaries: ${JSON.stringify({ bank: initial.bankGap, next: initial.nextChordGap })}`);
+        assert.strictEqual(initial.columnGap, '0px');
+        assert.strictEqual(initial.rowGap, '0px');
+        assert.strictEqual(initial.scaleLayerTop, 0);
         assert.strictEqual(initial.nextDiagramSvgInsideCard, true,
           `1600px next-chord SVG stays inside its rail card (width ${initial.nextDiagramSvgWidth}px)`);
         assert.ok(initial.compactDiagramCenterOffsetMax <= 2, 'each compact chord diagram centers within its measure interval');
@@ -3224,6 +3280,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             window.__practiceGuideCrossfadeProbe.fadeStartedAt = performance.now();
           }
           const right = document.getElementById('practice-guide-bank-right');
+          const leftRect = bank.getBoundingClientRect();
+          const rightRect = right.getBoundingClientRect();
+          const activeCards = [...stage.querySelectorAll('.practice-guide-bank-content')]
+            .filter(layer => layer.getAttribute('aria-hidden') !== 'true')
+            .flatMap(layer => [...layer.querySelectorAll('.practice-guide-compact-measure')])
+            .map(card => card.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+          const measureGaps = activeCards.slice(1).map((rect, index) => rect.left - activeCards[index].right);
+          const nextRect = document.getElementById('practice-guide-next-chord').getBoundingClientRect();
           const activeMeasure = right.querySelector('.practice-guide-compact-measure[data-guide-occurrence-index="2"]');
           const activePitchBars = [...(activeMeasure?.querySelectorAll('.practice-guide-compact-pitch-bar') ?? [])]
             .filter(bar => bar.getClientRects().length > 0);
@@ -3238,6 +3302,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               opacity: opacity(item), transitionDuration: item.style.transitionDuration,
               ariaHidden: item.getAttribute('aria-hidden'), inert: Boolean(item.inert), pointerEvents: getComputedStyle(item).pointerEvents
             })),
+            measureGaps,
+            bankGap: rightRect.left - leftRect.right,
+            nextChordGap: nextRect.left - activeCards[activeCards.length - 1]?.right,
             rightSame: document.getElementById('practice-guide-bank-right').querySelector('.practice-guide-bank-content') === window.__practiceGuideCrossfadeProbe.activeBank,
             rightRectSame: (() => { const r = document.getElementById('practice-guide-bank-right').getBoundingClientRect(); const p = window.__practiceGuideCrossfadeProbe.activeRect; return Math.abs(r.left-p.left)<0.5 && Math.abs(r.top-p.top)<0.5 && Math.abs(r.width-p.width)<0.5 && Math.abs(r.height-p.height)<0.5; })(),
             rightOpacity: opacity(right.querySelector('.practice-guide-bank-content')),
@@ -3266,6 +3333,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           'only the previous-played left bank replaces 01–02 with 05–06');
         assert.deepStrictEqual(atStart.layers.map((item: { transitionDuration: string }) => item.transitionDuration), ['500ms', '500ms'],
           '120 effective BPM gives the incoming and outgoing layers a 500ms fade snapshot');
+        assert.ok(atStart.measureGaps.length === 3 && atStart.measureGaps.every((gap: number) => Math.abs(gap) <= 0.5)
+          && Math.abs(atStart.bankGap) <= 0.5 && Math.abs(atStart.nextChordGap) <= 0.5,
+        `all measure cards and the next-chord area stay adjacent when the fade starts: ${JSON.stringify({ gaps: atStart.measureGaps, bank: atStart.bankGap, next: atStart.nextChordGap })}`);
         assert.strictEqual(atStart.layers[0].ariaHidden, 'true', 'the outgoing bank layer is aria-hidden');
         assert.strictEqual(atStart.layers[0].inert, true, 'the outgoing bank layer is inert');
         assert.strictEqual(atStart.layers[0].pointerEvents, 'none', 'the outgoing bank layer cannot receive pointer input');
@@ -3322,6 +3392,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(midpoint.layers[1].opacity > 0 && midpoint.layers[1].opacity < 1, 'the new bank is partially visible at about 250ms');
         assert.deepStrictEqual(midpoint.layers.map((item: { transitionDuration: string }) => item.transitionDuration), ['500ms', '500ms'],
           'both layers preserve the same tempo-derived transition duration');
+        assert.ok(midpoint.measureGaps.length === 3 && midpoint.measureGaps.every((gap: number) => Math.abs(gap) <= 0.5)
+          && Math.abs(midpoint.bankGap) <= 0.5 && Math.abs(midpoint.nextChordGap) <= 0.5,
+        `measure cards and next-chord area stay adjacent at the fade midpoint: ${JSON.stringify({ gaps: midpoint.measureGaps, bank: midpoint.bankGap, next: midpoint.nextChordGap })}`);
         assert.strictEqual(midpoint.rightSame, true, 'the active bank DOM is unchanged at the midpoint');
         assert.strictEqual(midpoint.rightRectSame, true, 'the active bank position is unchanged at the midpoint');
         assert.strictEqual(midpoint.rightOpacity, 1, 'the active bank stays fully opaque during the crossfade');
@@ -3336,6 +3409,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(complete.layers.length, 1, 'the old DOM layer is removed after the 500ms transition');
         assert.deepStrictEqual(complete.layers[0].measures, [5, 6], 'the left bank retains only the new 05–06 content');
         assert.strictEqual(complete.layers[0].opacity, 1, 'the incoming bank is fully visible after cleanup');
+        assert.ok(complete.measureGaps.length === 3 && complete.measureGaps.every((gap: number) => Math.abs(gap) <= 0.5)
+          && Math.abs(complete.bankGap) <= 0.5 && Math.abs(complete.nextChordGap) <= 0.5,
+        `measure cards and next-chord area remain adjacent after fade cleanup: ${JSON.stringify({ gaps: complete.measureGaps, bank: complete.bankGap, next: complete.nextChordGap })}`);
         await captureCrossfade('500ms');
         await evaluatePreviewWebview<void>(`(() => {
           const style = document.createElement('style');
@@ -3538,6 +3614,59 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           previewGeneration: previewLifecycle.generation
         });
         await waitForPreviewDocument();
+        if (captureScreenshots) {
+          await setPreviewPracticeEnabled(true);
+          await setPreviewWebviewViewportWidth(400);
+          await settle(180);
+          await evaluatePreviewWebview<void>(`(() => {
+            const view = document.getElementById('practice-guide-view');
+            if (view.value !== 'compact') { view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); }
+            const grid = document.getElementById('practice-guide-grid');
+            grid.value = '16'; grid.dispatchEvent(new Event('change', { bubbles: true }));
+            const speed = document.getElementById('practice-speed');
+            speed.value = '200'; speed.dispatchEvent(new Event('change', { bubbles: true }));
+            const countIn = document.getElementById('count-in-toggle');
+            countIn.checked = false; countIn.dispatchEvent(new Event('change', { bubbles: true }));
+            const seek = document.getElementById('playback-seek');
+            seek.value = '0'; seek.dispatchEvent(new Event('change', { bubbles: true }));
+          })()`);
+          await settle(150);
+          await clickPreviewElement('#btn-stop');
+          await waitForLifecycleFade();
+          await settle(200);
+          const narrowFade = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const left = document.getElementById('practice-guide-bank-left');
+            const next = document.getElementById('practice-guide-next-chord');
+            const active = [...document.querySelectorAll('.practice-guide-bank-content')]
+              .filter(layer => layer.getAttribute('aria-hidden') !== 'true');
+            const cards = active.flatMap(layer => [...layer.querySelectorAll('.practice-guide-compact-measure')])
+              .map(card => card.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+            const gaps = cards.slice(1).map((rect, index) => rect.left - cards[index].right);
+            const layers = [...left.querySelectorAll('.practice-guide-bank-content')];
+            return { width: window.innerWidth, grid: document.getElementById('practice-guide-panel').dataset.guideGrid,
+              occurrence: Number(stage.dataset.guideOccurrenceIndex), gaps,
+              bankLayers: layers.length, opacity: layers.map(layer => Number.parseFloat(getComputedStyle(layer).opacity)),
+              nextGap: stage.classList.contains('is-narrow-compact')
+                ? cards[0].top - next.getBoundingClientRect().bottom
+                : next.getBoundingClientRect().left - cards[cards.length - 1]?.right,
+              top: parseFloat(getComputedStyle(document.getElementById('practice-guide-scale-layer')).top) };
+          })())`));
+          assert.strictEqual(narrowFade.width, 400, 'the gapless grid16 fade screenshot uses a 400px Preview');
+          assert.strictEqual(narrowFade.grid, '16', 'the narrow fade screenshot uses grid16');
+          assert.strictEqual(narrowFade.occurrence, 2, 'the capture is made during a bank replacement');
+          assert.ok(narrowFade.bankLayers === 2 && narrowFade.opacity.some((value: number) => value > 0 && value < 1),
+            `the screenshot captures an in-progress fade: ${JSON.stringify(narrowFade)}`);
+          assert.ok(narrowFade.gaps.length === 3 && narrowFade.gaps.every((gap: number) => Math.abs(gap) <= 0.5)
+            && Math.abs(narrowFade.nextGap) <= 0.5 && narrowFade.top === 0,
+          `the narrow grid16 fade keeps all measure and next-chord boundaries gapless: ${JSON.stringify(narrowFade)}`);
+          const filename = `practice-guide-crossfade-issue162-${locale}-${themeName}-250ms-contract-v9-grid16-400.png`;
+          await capturePreviewWebviewScreenshot(filename, 162, 400);
+          const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+          assert.ok(image.length >= 20000 && image.readUInt32BE(16) === 400 && image.readUInt32BE(20) > 0,
+            `${filename} is a full-width 400px Preview screenshot (${image.length} bytes)`);
+          await clickPreviewElement('#btn-stop');
+        }
       });
     } finally {
       await resetPreviewWebviewViewport();

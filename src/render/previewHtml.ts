@@ -764,6 +764,7 @@ ${cspMeta}
     .practice-guide-controls { flex: 1 1 100%; justify-content: flex-start; margin-left: 28px; }
   }
   .practice-guide-layout { display: grid; grid-template-columns: minmax(0, 1fr) 112px; flex: 0 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; align-content: start; background: var(--guide-panel-background); }
+  body.guide-compact-mode .practice-guide-layout { column-gap: 0; row-gap: 0; }
   .practice-guide-label-rail-shell { display: none; position: relative; min-width: 0; overflow: hidden; }
   .practice-guide-label-rail, .practice-guide-timeline { display: flex; flex-direction: column; padding-top: 8px; padding-bottom: 12px; }
   .practice-guide-label-rail { box-sizing: border-box; min-width: 0; padding-left: 12px; background: var(--guide-light-surface); }
@@ -842,12 +843,12 @@ ${cspMeta}
   .practice-guide-pair-page { position: relative; box-sizing: border-box; width: 100%; min-width: 0; min-height: 0; overflow: hidden; background: var(--guide-light-surface); }
   .practice-guide-pair-page:focus-visible { outline: 2px solid var(--guide-accent); outline-offset: -2px; }
   .practice-guide-scale-holder { position: relative; width: 100%; min-width: 0; height: 100%; }
-  .practice-guide-scale-layer { position: absolute; top: 8px; left: 0; transform-origin: top left; }
+  .practice-guide-scale-layer { position: absolute; top: 0; left: 0; transform-origin: top left; }
   .practice-guide-page-bank { position: absolute; top: 0; bottom: 0; opacity: 1; transition-property: opacity; transition-duration: 0ms; transition-timing-function: ease-in-out; }
   .practice-guide-page-bank[aria-hidden="true"] { pointer-events: none; }
   .practice-guide-page-bank.is-fading { will-change: opacity; }
   .practice-guide-page-bank[hidden], .practice-guide-page-bank[aria-hidden="true"].is-empty { display: none; }
-  .practice-guide-bank-content { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 4px; opacity: 1; transition-property: opacity; transition-duration: 0ms; transition-timing-function: ease-in-out; }
+  .practice-guide-bank-content { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 0; opacity: 1; transition-property: opacity; transition-duration: 0ms; transition-timing-function: ease-in-out; }
   .practice-guide-compact-measure { position: relative; display: block; flex: 0 0 auto; box-sizing: border-box; min-width: 0; overflow: hidden; padding: 0; background: var(--guide-light-surface); }
   .practice-guide-compact-svg { display: block; overflow: visible; background: var(--guide-light-surface); color: #21354b; }
   .practice-guide-compact-ruler { fill: var(--guide-muted); }
@@ -2567,7 +2568,7 @@ ${cspMeta}
           }
         }
         for (const boundary of svg.querySelectorAll('.practice-guide-measure-boundary')) {
-          const x = boundary.dataset.guideBoundaryEdge === 'start' ? 5 : Math.max(5, slotWidth - 5);
+          const x = boundary.dataset.guideBoundaryEdge === 'start' ? 0 : slotWidth;
           boundary.setAttribute('x1', String(x)); boundary.setAttribute('x2', String(x));
           boundary.setAttribute('y1', '0'); boundary.setAttribute('y2', String(height));
         }
@@ -2644,14 +2645,14 @@ ${cspMeta}
           ? 'minmax(0, 1fr)'
           : 'minmax(0, 1fr) ' + nextChordWidth + 'px';
         const viewportWidth = practiceGuidePairPage.clientWidth;
-        const baseSlotWidth = Math.max(0, (viewportWidth - 16) / 4);
-        const finalSlotWidth = Math.max(0, viewportWidth - 16 - baseSlotWidth * 3);
+        const baseSlotWidth = Math.max(0, viewportWidth / 4);
+        const finalSlotWidth = Math.max(0, viewportWidth - baseSlotWidth * 3);
         guideCompactSlotWidths = [baseSlotWidth, baseSlotWidth, baseSlotWidth, finalSlotWidth];
         const slotWidth = Math.min(...guideCompactSlotWidths);
         const layout = computePracticeGuideCompactLayout(slotWidth);
-        const outerHeight = 8 + layout.totalHeight + 12;
-        const leftWidth = guideCompactSlotWidths[0] + guideCompactSlotWidths[1] + 4;
-        const rightWidth = guideCompactSlotWidths[2] + guideCompactSlotWidths[3] + 4;
+        const outerHeight = layout.totalHeight + 12;
+        const leftWidth = guideCompactSlotWidths[0] + guideCompactSlotWidths[1];
+        const rightWidth = guideCompactSlotWidths[2] + guideCompactSlotWidths[3];
         practiceGuidePairPage.dataset.guideCapacity = String(capacity);
         practiceGuidePairPage.dataset.guideScale = '1';
         practiceGuidePairPage.dataset.guideSlotWidth = String(slotWidth);
@@ -2663,7 +2664,7 @@ ${cspMeta}
           practiceGuideScaleHolder.style.width = viewportWidth + 'px';
           practiceGuideScaleHolder.style.height = outerHeight + 'px';
           practiceGuideScaleLayer.style.left = '0px';
-          practiceGuideScaleLayer.style.top = '8px';
+          practiceGuideScaleLayer.style.top = '0px';
           practiceGuideScaleLayer.style.width = viewportWidth + 'px';
           practiceGuideScaleLayer.style.height = layout.totalHeight + 'px';
           practiceGuideScaleLayer.style.transform = 'none';
@@ -2672,7 +2673,7 @@ ${cspMeta}
         for (const bankId of ['left', 'right']) {
           const bank = practiceGuideBanks[bankId];
           if (!bank) continue;
-          bank.style.left = bankId === 'left' ? '0px' : (leftWidth + 8) + 'px';
+          bank.style.left = bankId === 'left' ? '0px' : leftWidth + 'px';
           bank.style.top = '0px';
           bank.style.width = (bankId === 'left' ? leftWidth : rightWidth) + 'px';
           for (const card of bank.querySelectorAll?.('.practice-guide-compact-measure') ?? []) {
