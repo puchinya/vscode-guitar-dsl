@@ -595,7 +595,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       })()`);
       await waitForPracticeGuideGeometryStable('detailed guide mode and seek');
       for (const width of compactAcceptanceWidths) {
-        if (width === compactAcceptanceWidths[0] || width === 421) await resetPreviewWebviewViewport();
+        if (width === compactAcceptanceWidths[0] || width >= 421) await resetPreviewWebviewViewport();
         let actualPreviewWidth = 0;
         if (width < 421) {
           await setPreviewWebviewViewportWidth(width);
@@ -611,7 +611,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             workbenchWidth = Math.max(320, workbenchWidth + width - actualPreviewWidth);
           }
         }
-        if (Math.abs(actualPreviewWidth - width) > 1) {
+        if (actualPreviewWidth !== width) {
           await setPreviewWebviewViewportWidth(width);
           await waitForPracticeGuideGeometryStable(`calibrated Preview viewport width ${width}`, width);
           actualPreviewWidth = await evaluatePreviewWebview<number>('window.innerWidth');
@@ -3232,11 +3232,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
         const theme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
         const themeName = theme.toLowerCase().includes('light') ? 'light' : 'dark';
+        const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
+        // Contract v9 uses the 400px grid16 in-fade image below; older 1600px phase captures stay opt-in.
+        const captureCrossfadePhases = process.env.GUITARDSL_E2E_CAPTURE_CROSSFADE_PHASES === '1';
         assert.ok(vscode.env.language.toLowerCase().startsWith(locale), 'the workbench locale matches the requested crossfade evidence locale');
-        if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+        if (captureScreenshots) {
           await vscode.workspace.getConfiguration('workbench').update('colorTheme', theme, vscode.ConfigurationTarget.Global);
         }
-        if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+        if (captureScreenshots && captureCrossfadePhases) {
           const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
           const suffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
           const filename = `practice-guide-reference-4-measures-issue162-${locale}-${themeName}${suffix}.png`;
@@ -3371,9 +3374,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           'pause/resume retains one prior bank and one replacement bank');
         assert.deepStrictEqual(resumedFade.layers.map((item: { transitionDuration: string }) => item.transitionDuration), ['500ms', '500ms'],
           'pause/resume preserves the captured fade duration');
-        const captureScreenshots = process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1';
         const captureCrossfade = async (phase: '0ms' | '250ms' | '500ms'): Promise<void> => {
-          if (!captureScreenshots) return;
+          if (!captureScreenshots || !captureCrossfadePhases) return;
           const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
           const suffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
           const filename = `practice-guide-crossfade-issue162-${locale}-${themeName}-${phase}${suffix}.png`;
@@ -3647,7 +3649,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             return { width: window.innerWidth, grid: document.getElementById('practice-guide-panel').dataset.guideGrid,
               occurrence: Number(stage.dataset.guideOccurrenceIndex), gaps,
               bankLayers: layers.length, opacity: layers.map(layer => Number.parseFloat(getComputedStyle(layer).opacity)),
-              nextGap: stage.classList.contains('is-narrow-compact')
+              nextGap: document.querySelector('.practice-guide-layout').classList.contains('is-narrow-compact')
                 ? cards[0].top - next.getBoundingClientRect().bottom
                 : next.getBoundingClientRect().left - cards[cards.length - 1]?.right,
               top: parseFloat(getComputedStyle(document.getElementById('practice-guide-scale-layer')).top) };
