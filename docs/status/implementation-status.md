@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-11-02
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は承認済みContract v8に基づくレビュー対応を実装・検証し、PR更新前の最終current-HEAD確認中。実装、画面証拠、self-reviewとRequired Checkの状態はPR記録を参照。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は承認済みContract v8に基づく実装・画面証拠をPRへ公開し、current-HEAD Self-ReviewとRequired Checkを再確認中。実装、画面証拠、self-reviewとRequired Checkの状態はPR記録を参照。
 
 ---
 
@@ -13,8 +13,8 @@
 - **状態**: 承認済みImplementation Contract v8に基づき、compact/detailed両モードで左ラベルレールを非表示にし、レール幅を割り当てない。compactは四小節と横並び奏法記号を維持する。歌詞字形の横圧縮をなくし、測定したセル幅に応じて表示文字列を省略しながら現在歌詞全文を単一ヘッダーに表示する。grid16は専用の2.4×30 SVG path、compactメロディバーは角形にした。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。
 - **契約**: Issue comment `6568327107` がcanonical Implementation Contract v8。**64,622 bytes / SHA-256 `7155bb26e82274bc0bd2ac16fd848abf75603cebc33178b36dfd034e40ca7d60`** を公式workflowで検証した。v8差分と優先関係は[証拠README](evidence/issue-162/README.md)に記録。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
 - **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` を更新。英語・日本語Helpとmanifestを同期し、生成済み `media/help/` も更新した。
-- **画面証拠**: [Contract v8のgrid 12枚・compact lyric/current-header 16枚、Contract v7/旧契約の履歴画像とfade evidence](evidence/issue-162/README.md)に撮影条件と検査内容を記録した。v8はJA/EN × Light/Dark、400pxのgrid4/8/16、および400/600pxの日本語/英語選択歌詞をExtension Development Hostから撮影し、全28枚を目視確認した。選定済みPNGは計264枚。
-- **検証**: macOS arm64 / VS Code 1.144.0。最新 `npm test` はHelp/AI同期PASS、unit **1,234件PASS**、VS Code E2E **128件PASS / 6件pending / 0件FAIL**。v8のfocused compact/grid/lyrics E2Eは全4件PASS、画面capture E2EはJA/EN × Light/Darkの4条件それぞれ2件PASS。`npm run compile:all`、`npm run vscode:prepublish`、`check:help`、`check:ai`、canonical `verify-implementation-contract 162` はPASS。`validate-docs --issue 162` は文書更新後にvalid、`git diff --check` もPASS。`npx @vscode/vsce ls` は1,607項目で必須ファイルを含み、`.vscode-test`、tests、docs、agent-state、src、scriptsは含まない。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **画面証拠**: [Contract v8のcompact layout 32枚・grid 12枚・compact lyric/current-header 16枚、Contract v7/旧契約の履歴画像とfade evidence](evidence/issue-162/README.md)に撮影条件と検査内容を記録した。v8はJA/EN × Light/Dark、400pxのgrid4/8/16、および400/600pxの日本語/英語選択歌詞をExtension Development Hostから撮影し、全60枚を目視確認した。compact layout画像は実装source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`から撮影。選定済みPNGは計296枚。
+- **検証**: macOS arm64 / VS Code 1.144.0。最新 `npm test` はHelp/AI同期PASS、unit **1,234件PASS**、VS Code E2E **128件PASS / 6件pending / 0件FAIL**。v8のfocused compact/grid/lyrics E2Eは全4件PASS、画面capture E2Eはcompact layout matrixがJA/EN × Light/Darkの4条件それぞれ1件PASS、grid/lyrics matrixが各条件2件PASS。`npm run compile:all`、`npm run vscode:prepublish`、`check:help`、`check:ai`、canonical `verify-implementation-contract 162` はPASS。`validate-docs --issue 162` は文書更新後にvalid、`git diff --check` もPASS。`npx @vscode/vsce ls` は1,607項目で必須ファイルを含み、`.vscode-test`、tests、docs、agent-state、src、scriptsは含まない。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN.
 
