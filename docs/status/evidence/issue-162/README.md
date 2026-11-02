@@ -242,6 +242,10 @@ Contract v10 is canonical at Issue comment `6574706499` (18,451 bytes; SHA-256 `
 
 All 20 PNGs have the expected exact width, nonzero height, and are larger than 20KB. The PM and lyric capture E2Es passed in all four locale/theme combinations. The first EN Dark lyric capture returned an all-black 600px image and failed the size assertion; the focused lyric E2E was rerun once, replaced that file with a rendered 600 × 799 image, and passed. I visually inspected the JA Dark PM image, JA Light 400px Japanese lyric image, EN Dark 400px English lyric image, and EN Dark 600px English lyric image. The PM image keeps arrows in one horizontal row and places the two separated PM runs below them; the lyric images show visible leading characters in the dense 400px cells and the selected full lyric in the header. At 600px, the English text fits more of the available cells. The very small dense-cell text is present but is not claimed to be comfortably readable.
 
+### Full-suite verification refresh
+
+After the earlier full-suite run reported one intermittent Issue #155 Practice-mode convergence failure, `npm test` was rerun from a clean temporary checkout at PR HEAD `caa4b173e853a0f0b5def027e2ccc458787a5022` on macOS arm64 with VS Code 1.144.0. It exited 0: 1,235 unit tests passed and the E2E suite reported 129 passing, 6 pending, and 0 failures. The earlier failure did not recur; its cause remains undetermined, and no implementation change was made for it. The following verification-record commit changes documentation only.
+
 ### Compact PM annotations (4 images)
 - [JA Light, 400px](practice-guide-compact-pm-issue162-ja-light-400-contract-v10.png)
 - [JA Dark, 400px](practice-guide-compact-pm-issue162-ja-dark-400-contract-v10.png)
