@@ -2187,20 +2187,6 @@ ${cspMeta}
           : [...fullText];
       }
 
-      function compactLyricFontSize(fullText, maxWidth, reference) {
-        let low = 4;
-        let high = 13;
-        let best = 0;
-        for (let attempt = 0; attempt < 18; attempt++) {
-          const size = (low + high) / 2;
-          if (measureCompactSvgText(fullText, size, reference) <= maxWidth + 0.05) {
-            best = size;
-            low = size;
-          } else high = size;
-        }
-        return best > 0 ? Math.min(13, Math.floor(best * 100) / 100) : 4;
-      }
-
       function compactLyricVisibleText(fullText, fontSize, maxWidth, reference) {
         if (measureCompactSvgText(fullText, fontSize, reference) <= maxWidth + 0.05) return fullText;
         const segments = compactLyricGraphemes(fullText);
@@ -2242,6 +2228,7 @@ ${cspMeta}
         let diagramSize = 0;
         const measureLayouts = [];
         const inset = 5;
+        let commonLyricFontSize = 13;
         const packSingleRowLyrics = (items, measureBeats) => {
           const ordered = [...items].sort((a, b) => compareGuideFractions(a.fraction, b.fraction)
             || a.event - b.event || a.order - b.order);
@@ -2269,8 +2256,7 @@ ${cspMeta}
                 itemX + eventWidth - itemX,
                 slotWidth - inset - itemX
               ) - 0.25);
-              const reference = item.node.querySelector?.('text') ?? item.node;
-              placements.push({ ...item, x: itemX, available, fontSize: compactLyricFontSize(item.text, available, reference) });
+              placements.push({ ...item, x: itemX, available, fontSize: commonLyricFontSize });
             }
             index = groupEnd;
           }
@@ -2386,6 +2372,39 @@ ${cspMeta}
           }
           maxRows[lane] = Math.max(maxRows[lane], rowRights.length);
         };
+        let shortestMelodyBarWidth = Number.POSITIVE_INFINITY;
+        let shortestLyricDurationWidth = Number.POSITIVE_INFINITY;
+        for (const [, template] of guideOccurrenceTemplates) {
+          const svg = template.content?.querySelector?.('.practice-guide-compact-svg');
+          if (!svg) continue;
+          const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
+          for (const bar of svg.querySelectorAll('[data-guide-layout-lane="melody"]')) {
+            if (bar.tagName?.toLowerCase() !== 'rect') continue;
+            const duration = Math.max(0, Number(bar.dataset.guideDurationBeats) || 0);
+            if (duration > 0) {
+              shortestMelodyBarWidth = Math.min(
+                shortestMelodyBarWidth,
+                duration / measureBeats * Math.max(0, slotWidth - 10)
+              );
+            }
+          }
+          for (const lyric of svg.querySelectorAll('[data-guide-layout-lane="lyrics"]')) {
+            const lyricDuration = Math.max(0, Number(lyric.dataset.guideDurationBeats) || 0);
+            const melodyDuration = Math.max(0, Number(lyric.dataset.guideMelodyDurationBeats) || 0);
+            const duration = Math.max(lyricDuration, melodyDuration);
+            if (duration > 0) {
+              shortestLyricDurationWidth = Math.min(
+                shortestLyricDurationWidth,
+                duration / measureBeats * Math.max(0, slotWidth - 10)
+              );
+            }
+          }
+        }
+        const shortestWidth = Number.isFinite(shortestMelodyBarWidth)
+          ? shortestMelodyBarWidth
+          : Number.isFinite(shortestLyricDurationWidth) ? shortestLyricDurationWidth : 13.25;
+        commonLyricFontSize = Math.min(13, Math.max(4, Math.floor(Math.max(0, shortestWidth - 0.25) * 100) / 100));
+
         for (const [occurrenceIndex, template] of guideOccurrenceTemplates) {
           const svg = template.content?.querySelector?.('.practice-guide-compact-svg');
           if (!svg) continue;
@@ -2407,6 +2426,13 @@ ${cspMeta}
             const width = Math.max(1, Number(node.dataset.guideLayoutWidth) || 12);
             const anchor = node.dataset.guideLayoutAnchor === 'center' ? 'center' : 'start';
             if (lane === 'lyrics') {
+              node.dataset.guideLyricFontSize = String(commonLyricFontSize);
+              const lyricText = node.querySelector?.('text');
+              if (lyricText) {
+                lyricText.dataset.guideLyricFontSize = String(commonLyricFontSize);
+                lyricText.setAttribute('font-size', String(commonLyricFontSize));
+                lyricText.style?.setProperty('font-size', commonLyricFontSize + 'px');
+              }
               if ((Number(node.dataset.guideVerse) || 1) !== selectedLyricVerse) continue;
               const text = node.dataset.guideFullText || node.textContent || '';
               laneItems.lyrics.push({
@@ -2466,7 +2492,7 @@ ${cspMeta}
           laneTops[lane] = top;
           top += laneHeights[lane];
         }
-        guideCompactLayout = { laneHeights, laneTops, totalHeight: top, diagramSize, grid };
+        guideCompactLayout = { laneHeights, laneTops, totalHeight: top, diagramSize, grid, lyricFontSize: commonLyricFontSize };
         guideCompactLayoutKey = key;
         return guideCompactLayout;
       }
@@ -2571,7 +2597,7 @@ ${cspMeta}
             const isSelectedVerse = (Number(item.dataset.guideVerse) || 1) === selectedVerse;
             item.toggleAttribute('hidden', !isSelectedVerse);
             if (!isSelectedVerse || !text) continue;
-            const fontSize = Math.max(4, Math.min(13, Number(item.dataset.guideLyricFontSize) || 13));
+            const fontSize = Math.max(4, Math.min(13, Number(layout.lyricFontSize) || 13));
             const availableWidth = Math.max(0, Number(item.dataset.guideLyricAvailableWidth) || 0);
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' 0)');
             text.setAttribute('x', '0');
@@ -2593,7 +2619,7 @@ ${cspMeta}
               const markerVisible = isSelectedVerse && visibleText === '';
               marker.toggleAttribute('hidden', !markerVisible);
               item.dataset.guideLyricMarkerVisible = String(markerVisible);
-              item.dataset.guideLyricMarkerReason = markerVisible ? 'first-grapheme-below-4px' : '';
+              item.dataset.guideLyricMarkerReason = markerVisible ? 'first-grapheme-does-not-fit-common-size-cell' : '';
             }
           } else if (lane === 'pm-annotation') {
             const row = Number(item.dataset.guidePmRow) || 0;

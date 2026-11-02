@@ -2883,6 +2883,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(layout.cards.length, 4, `${width}px keeps four playback measures visible`);
         assert.deepStrictEqual(layout.cards.map((card: any) => card.verse), expectedVerses,
           `${width}px cards use the lyric verse selected by their playback occurrence`);
+      const songFontSizes = layout.cards.flatMap((card: any) => card.selected.map((item: any) => item.fontSize));
+      assert.strictEqual(new Set(songFontSizes).size, 1,
+        `${width}px lyrics use one font size for the whole song: ${songFontSizes}`);
         for (const card of layout.cards) {
           assert.strictEqual(card.selected.length, 16, `${width}px measure ${card.measure + 1} keeps every selected lyric event`);
           assert.strictEqual(card.hiddenCount, 16, `${width}px measure ${card.measure + 1} retains the other verse hidden in the DOM`);
@@ -2898,8 +2901,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.strictEqual(lyric.row, '0');
             if (lyric.markerVisible) {
               assert.strictEqual(lyric.text, '', 'the exceptional time marker appears only when no grapheme fits');
-              assert.strictEqual(lyric.markerReason, 'first-grapheme-below-4px');
-              assert.strictEqual(lyric.fontSize, 4);
+              assert.strictEqual(lyric.markerReason, 'first-grapheme-does-not-fit-common-size-cell');
             } else {
               assert.ok(lyric.text.length > 0 && lyric.full.startsWith(lyric.text),
                 'dense lyric cells retain a real leading grapheme prefix without an ellipsis');
@@ -2936,8 +2938,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         Math.abs(item.available - Math.min(item.lyricDuration, item.melodyDuration) / 4 * (card.width - 10) + 0.25) < 0.1)),
       'each lyric cell follows its matching short melody bar width');
       const sixteenthFontSizes = firstVerse.cards.flatMap((card: any) => card.selected.map((item: any) => item.fontSize));
-      assert.ok(Math.min(...sixteenthFontSizes) >= 4 && Math.max(...sixteenthFontSizes) <= 6,
-        `sixteenth-note Japanese glyphs use their measured approximately 5px cell widths: ${sixteenthFontSizes}`);
+      assert.strictEqual(new Set(sixteenthFontSizes).size, 1,
+        `all lyrics in the song share one font size: ${sixteenthFontSizes}`);
+      assert.ok(Math.abs(sixteenthFontSizes[0] - 5.37) < 0.02,
+        `song-wide lyric size follows the shortest 5.625px melody bar minus the 0.25px cell inset: ${sixteenthFontSizes}`);
       assert.strictEqual(firstVerse.currentLyric, 'あ', 'the single header lyric follows the seeked Japanese event');
       assert.strictEqual(firstVerse.currentLyricAria, 'あ', 'the header exposes the complete Japanese lyric accessibly');
       assert.strictEqual(firstVerse.currentLyricTitle, 'あ', 'the header title retains the complete Japanese lyric');
@@ -3042,15 +3046,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
-  test('Issue #162 compact lyric size follows its matching melody duration without unrelated-note shrinkage', async function () {
+  test('Issue #162 compact lyrics use one song-wide size based on the shortest melody bar', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
       const source = [
-        'title: Compact lyric note-width pairing',
+        'title: Compact song-wide lyric size',
         'time: 4/4',
         '| C | G | Am | F ||',
         'mel: | c4/16 d4/16 e4/16 f4/16 g4/4 a4/2 | c4/4 d4/4 e4/4 f4/4 | c4/4 d4/4 e4/4 f4/4 | c4/4 d4/4 e4/4 f4/4 |',
-        'lyr: あ い う え お か あ い う え お か き く け こ さ し'
+        'lyr: あ い う え uninterruptedword extremelylongsyllable あ い う え お か き く け こ さ し'
       ].join('\n');
       const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
       await showAndFocus(doc);
@@ -3058,43 +3062,73 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await waitForPreviewDocument();
       await setPreviewPracticeEnabled(true);
       await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      const readLayout = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')]
+          .filter(card => card.getClientRects().length > 0);
+        return cards.map(card => {
+          const svg = card.querySelector('.practice-guide-compact-svg');
+          const bars = [...card.querySelectorAll('.practice-guide-compact-pitch-bar')];
+          const lyrics = [...card.querySelectorAll('.practice-guide-compact-lyric-event')]
+            .filter(item => !item.hidden && Number(item.dataset.guideVerse) === 1)
+            .sort((a, b) => Number(a.dataset.guideEvent) - Number(b.dataset.guideEvent));
+          return { measure: Number(card.dataset.guideMeasureIndex), cardWidth: card.getBoundingClientRect().width,
+            measureBeats: Number(svg.dataset.guideMeasureBeats),
+            durations: bars.map(bar => Number(bar.dataset.guideDurationBeats)),
+            lyrics: lyrics.map(item => {
+              const text = item.querySelector('.practice-guide-compact-lyric');
+              const rect = text.getBoundingClientRect();
+              return { event: Number(item.dataset.guideEvent), full: item.dataset.guideFullText,
+                text: [...text.childNodes].find(node => node.nodeType === Node.TEXT_NODE)?.nodeValue ?? '',
+                lyricDuration: Number(item.dataset.guideDurationBeats), melodyDuration: Number(item.dataset.guideMelodyDurationBeats),
+                available: Number(item.dataset.guideLyricAvailableWidth), size: parseFloat(getComputedStyle(text).fontSize),
+                left: rect.left, right: rect.right };
+            }) };
+        });
+      })())`));
+      const assertSongSize = (layout: any[], width: number): void => {
+        const firstMeasure = layout.find(card => card.measure === 0);
+        assert.ok(firstMeasure, `${width}px renders the first measure`);
+        assert.strictEqual(firstMeasure.lyrics.length, 6,
+          `${width}px retains all six short/long lyric events in the mixed-duration measure`);
+        assert.deepStrictEqual(firstMeasure.durations.slice(0, 4), [0.25, 0.25, 0.25, 0.25]);
+        assert.strictEqual(firstMeasure.lyrics[4].lyricDuration, 1);
+        assert.strictEqual(firstMeasure.lyrics[4].melodyDuration, 1);
+        assert.strictEqual(firstMeasure.lyrics[5].lyricDuration, 2);
+        assert.strictEqual(firstMeasure.lyrics[5].melodyDuration, 2);
+        const shortestBarWidth = Math.min(...firstMeasure.durations)
+          / firstMeasure.measureBeats * (firstMeasure.cardWidth - 10);
+        const expectedSize = Math.min(13, Math.max(4, Math.floor(Math.max(0, shortestBarWidth - 0.25) * 100) / 100));
+        const songSizes = layout.flatMap(card => card.lyrics.map((item: any) => item.size));
+        assert.ok(songSizes.length > firstMeasure.lyrics.length, 'the assertion includes short and long lyrics across the song');
+        assert.strictEqual(new Set(songSizes).size, 1,
+          `${width}px lyric sizes do not vary by event or note duration: ${songSizes}`);
+        assert.ok(Math.abs(songSizes[0] - expectedSize) < 0.01,
+          `${width}px uses the shortest melody bar width ${shortestBarWidth}: ${JSON.stringify(songSizes)}`);
+        assert.ok(firstMeasure.lyrics.slice(1).every((item: any, index: number) =>
+          firstMeasure.lyrics[index].right <= item.left + 0.5),
+        `${width}px visible lyric prefixes do not overlap: ${JSON.stringify(firstMeasure.lyrics)}`);
+      };
+
       await setPreviewWebviewViewportWidth(400);
       await settle(180);
-      const layout = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-        const card = [...document.querySelectorAll('.practice-guide-compact-measure')]
-          .find(item => item.getClientRects().length > 0 && Number(item.dataset.guideMeasureIndex) === 0);
-        const lyrics = [...card.querySelectorAll('.practice-guide-compact-lyric-event')]
-          .filter(item => !item.hidden && Number(item.dataset.guideVerse) === 1)
-          .sort((a, b) => Number(a.dataset.guideEvent) - Number(b.dataset.guideEvent));
-        return { cardWidth: card.getBoundingClientRect().width, lyrics: lyrics.map(item => {
-          const text = item.querySelector('.practice-guide-compact-lyric');
-          const rect = text.getBoundingClientRect();
-          return { event: Number(item.dataset.guideEvent), full: item.dataset.guideFullText,
-            text: [...text.childNodes].find(node => node.nodeType === Node.TEXT_NODE)?.nodeValue ?? '',
-            lyricDuration: Number(item.dataset.guideDurationBeats), melodyDuration: Number(item.dataset.guideMelodyDurationBeats),
-            available: Number(item.dataset.guideLyricAvailableWidth), size: parseFloat(getComputedStyle(text).fontSize),
-            left: rect.left, right: rect.right };
-        }) };
-      })())`));
-      assert.strictEqual(layout.cardWidth, 100);
-      assert.strictEqual(layout.lyrics.length, 6, 'all six lyric events in the mixed-duration measure remain visible');
-      for (let index = 0; index < 4; index++) {
-        const lyric = layout.lyrics[index];
-        assert.strictEqual(lyric.lyricDuration, 0.25);
-        assert.strictEqual(lyric.melodyDuration, 0.25);
-        assert.ok(lyric.size >= 4 && lyric.size <= 6,
-          `sixteenth-note event ${index} follows its short bar width: ${JSON.stringify(lyric)}`);
-        assert.strictEqual(lyric.text, lyric.full, 'each single-grapheme sixteenth lyric stays visible');
+      assertSongSize(await readLayout(), 400);
+      await setPreviewWebviewViewportWidth(600);
+      await settle(180);
+      assertSongSize(await readLayout(), 600);
+      if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+        const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+        const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light')
+          ? 'light' : 'dark';
+        const filename = `practice-guide-compact-uniform-lyrics-issue162-${locale}-${theme}-600-contract-v11.png`;
+        await capturePreviewWebviewScreenshot(filename, 162, 600);
+        const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+        assert.ok(image.length >= 20000 && image.readUInt32BE(16) === 600,
+          `${filename} is a full-width 600px Preview capture`);
       }
-      assert.strictEqual(layout.lyrics[4].lyricDuration, 1);
-      assert.strictEqual(layout.lyrics[4].melodyDuration, 1);
-      assert.strictEqual(layout.lyrics[5].lyricDuration, 2);
-      assert.strictEqual(layout.lyrics[5].melodyDuration, 2);
-      assert.ok(layout.lyrics[4].size > Math.max(...layout.lyrics.slice(0, 4).map((item: any) => item.size))
-        && layout.lyrics[5].size >= layout.lyrics[4].size,
-      `longer note bars allow larger lyrics instead of inheriting the measure's shortest note size: ${JSON.stringify(layout.lyrics)}`);
-      assert.ok(layout.lyrics.slice(1).every((item: any, index: number) =>
-        layout.lyrics[index].right <= item.left + 0.5), 'the single lyric row has no overlapping rendered text');
+      await evaluatePreviewWebview<void>("(() => document.getElementById('practice-guide-melody-toggle').click())()");
+      await settle(150);
+      assertSongSize(await readLayout(), 600);
     });
   });
 
