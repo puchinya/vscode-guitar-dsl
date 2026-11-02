@@ -16,7 +16,7 @@ import type { PlaybackEvent } from '../playbackTimeline';
 import { beamGroupStarts, measureBeats } from '../scoreEvents';
 import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
-import { practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
+import { PRACTICE_GUIDE_COMPACT_GRID16_WAVE_WIDTH, practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
 import type { PracticeGuideStrokeSpec } from './practiceGuideStrokeSvg';
 import type { VisualSourceBinding } from '../compiler';
 
@@ -726,6 +726,11 @@ ${cspMeta}
     white-space: normal;
   }
   .practice-guide-header > strong { flex: 0 0 auto; font-size: 14px; }
+  .practice-guide-current-lyric-wrap { display: flex; align-items: center; gap: 5px; flex: 1 1 120px; min-width: 0; max-width: 100%; overflow: hidden; color: #ffffff; font-size: 12px; }
+  .practice-guide-current-lyric-label { flex: 0 0 auto; color: #bccde0; font-size: 11px; }
+  .practice-guide-current-lyric { display: block; min-width: 0; max-width: 100%; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font-size: 12px; }
+  .practice-guide-current-lyric::-webkit-scrollbar { display: none; }
+  body.guide-collapsed .practice-guide-current-lyric-wrap { display: none; }
   .practice-guide-collapse {
     flex: 0 0 28px;
     width: 28px;
@@ -852,9 +857,14 @@ ${cspMeta}
   .practice-guide-compact-pitch-bar { fill: #55d4ef; stroke: #50c8ff; stroke-width: 1; }
   .practice-guide-compact-pitch-bar.is-current { fill: var(--guide-playhead); stroke: var(--guide-playhead); }
   .practice-guide-compact-pitch-bar.is-past { fill: #7f95aa; stroke: #7f95aa; }
+  .practice-guide-compact-lyric-event[hidden] { display: none !important; }
   .practice-guide-compact-lyric { fill: #233449; font-size: 13px; dominant-baseline: alphabetic; }
   .practice-guide-compact-lyric.is-current { fill: #006b4f; font-weight: 700; }
   .practice-guide-compact-lyric.is-past { fill: #52606d; }
+  .practice-guide-compact-lyric-marker { fill: #233449; }
+  .practice-guide-compact-lyric-marker.is-current { fill: #006b4f; }
+  .practice-guide-compact-lyric-marker.is-past { fill: #52606d; }
+  .practice-guide-compact-lyric-marker[hidden] { display: none !important; }
   .practice-guide-compact-symbol { color: #1f2937; fill: currentColor; stroke: currentColor; opacity: 1; }
   .practice-guide-compact-symbol.is-past { color: #475569; }
   .practice-guide-compact-symbol.is-next { color: #37465e; }
@@ -1709,6 +1719,8 @@ ${cspMeta}
       const practiceGuideMelodyToggle = document.getElementById('practice-guide-melody-toggle');
       const practiceGuideCollapseToggle = document.getElementById('practice-guide-collapse');
       const practiceGuideAutoFill = document.getElementById('practice-guide-auto-fill');
+      const practiceGuideCurrentLyric = document.getElementById('practice-guide-current-lyric');
+      const practiceGuideCurrentLyricWrap = document.getElementById('practice-guide-current-lyric-wrap');
       const practiceGuideNextChordName = document.getElementById('practice-guide-next-chord-name');
       const practiceGuideNextChordDiagram = document.getElementById('practice-guide-next-chord-diagram');
       let currentGuideMeasureIndex = null;
@@ -2123,6 +2135,67 @@ ${cspMeta}
         return [...String(text)].reduce((sum, glyph) => sum + (/[A-Z0-9]/i.test(glyph) ? fontSize * 0.62 : fontSize), 0);
       }
 
+      const compactTextWidthCache = new Map();
+      let compactTextMeasureSvg = null;
+      function measureCompactSvgText(text, fontSize, reference) {
+        const style = reference ? getComputedStyle(reference) : null;
+        const fontFamily = style?.fontFamily || getComputedStyle(document.body).fontFamily;
+        const fontWeight = style?.fontWeight || '400';
+        const fontStyle = style?.fontStyle || 'normal';
+        const letterSpacing = style?.letterSpacing || 'normal';
+        const key = [fontFamily, fontWeight, fontStyle, letterSpacing, fontSize, text].join('|');
+        const cached = compactTextWidthCache.get(key);
+        if (cached !== undefined) return cached;
+        if (!compactTextMeasureSvg) {
+          compactTextMeasureSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          compactTextMeasureSvg.setAttribute('width', '1000');
+          compactTextMeasureSvg.setAttribute('height', '40');
+          compactTextMeasureSvg.setAttribute('aria-hidden', 'true');
+          compactTextMeasureSvg.style.cssText = 'position:fixed;left:-10000px;top:0;overflow:visible;visibility:hidden;pointer-events:none';
+          document.body.appendChild(compactTextMeasureSvg);
+        }
+        const measurement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        measurement.setAttribute('x', '0');
+        measurement.setAttribute('y', '24');
+        measurement.setAttribute('font-size', String(fontSize));
+        measurement.setAttribute('font-family', fontFamily);
+        measurement.setAttribute('font-weight', fontWeight);
+        measurement.setAttribute('font-style', fontStyle);
+        measurement.setAttribute('letter-spacing', letterSpacing);
+        measurement.textContent = String(text);
+        compactTextMeasureSvg.appendChild(measurement);
+        let width = Number.NaN;
+        try {
+          width = measurement.getComputedTextLength();
+          if (!Number.isFinite(width) || width <= 0) width = measurement.getBBox().width;
+        } catch { /* Use a conservative fallback only when this browser cannot measure SVG text. */ }
+        measurement.remove();
+        if (!Number.isFinite(width) || width < 0) width = compactGuideTextWidth(text, fontSize);
+        if (compactTextWidthCache.size > 4096) compactTextWidthCache.clear();
+        compactTextWidthCache.set(key, width);
+        return width;
+      }
+
+      function compactLyricVisibleText(fullText, fontSize, maxWidth, reference) {
+        if (measureCompactSvgText(fullText, fontSize, reference) <= maxWidth + 0.05) return fullText;
+        const segments = typeof Intl.Segmenter === 'function'
+          ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(fullText)].map(part => part.segment)
+          : [...fullText];
+        if (measureCompactSvgText('…', fontSize, reference) > maxWidth + 0.05) return '';
+        let low = 0;
+        let high = segments.length;
+        let best = '…';
+        while (low <= high) {
+          const middle = Math.floor((low + high) / 2);
+          const candidate = segments.slice(0, middle).join('') + '…';
+          if (measureCompactSvgText(candidate, fontSize, reference) <= maxWidth + 0.05) {
+            best = candidate;
+            low = middle + 1;
+          } else high = middle - 1;
+        }
+        return best;
+      }
+
       function compareGuideFractions(left, right) {
         const parse = value => {
           const match = /^(-?\\d+)\\/(\\d+)$/.exec(String(value || '0/1'));
@@ -2167,7 +2240,7 @@ ${cspMeta}
             for (let groupIndex = index; groupIndex < groupEnd; groupIndex++) {
               const item = ordered[groupIndex];
               const itemX = startX + (groupIndex - index) * groupWidth / groupCount;
-              const measureWidth13 = compactGuideTextWidth(item.text, 13);
+              const measureWidth13 = measureCompactSvgText(item.text, 13, item.node.querySelector?.('text') ?? item.node);
               fontCandidates.push(13 * itemAvailable / Math.max(0.001, measureWidth13));
               placements.push({ ...item, x: itemX, available: itemAvailable });
             }
@@ -2214,6 +2287,7 @@ ${cspMeta}
           }
           if (lane === 'technique') {
             const starts = ordered.map(item => inset + item.beat / measureBeats * Math.max(0, slotWidth - inset * 2));
+            let grid16WaveVisualOffset = 0;
             for (let index = 0; index < ordered.length;) {
               let groupEnd = index + 1;
               while (groupEnd < ordered.length && Math.abs(ordered[groupEnd].beat - ordered[index].beat) < 0.000001) {
@@ -2230,9 +2304,11 @@ ${cspMeta}
                 const itemX = startX + (groupIndex - index) * stepWidth;
                 const itemWidth = Math.min(item.width, packedWidth);
                 for (const node of item.nodes) {
+                  const visualX = itemX + (Number(node.dataset.guideWaveGrid) === 16 ? grid16WaveVisualOffset : 0);
+                  if (Number(node.dataset.guideWaveGrid) === 16) grid16WaveVisualOffset += 0.125;
                   node.dataset.guideRow = '0';
                   node.dataset.guideLayoutAnchorX = String(startX);
-                  node.dataset.guideLayoutX = String(itemX);
+                  node.dataset.guideLayoutX = String(visualX);
                   node.dataset.guideLayoutPackedWidth = String(itemWidth);
                 }
               }
@@ -2428,11 +2504,16 @@ ${cspMeta}
             const isSelectedVerse = (Number(item.dataset.guideVerse) || 1) === selectedVerse;
             item.toggleAttribute('hidden', !isSelectedVerse);
             if (!isSelectedVerse || !text) continue;
-            const fontSize = Math.max(7, Math.min(13, Number(item.dataset.guideLyricFontSize) || 13));
+            const fontSize = Math.max(10, Math.min(13, Number(item.dataset.guideLyricFontSize) || 13));
             const availableWidth = Math.max(0.1, Number(item.dataset.guideLyricAvailableWidth) || 0.1);
-            item.setAttribute('x', x.toFixed(3));
-            item.setAttribute('y', '19');
+            item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' 0)');
+            text.setAttribute('x', '0');
+            text.setAttribute('y', '19');
             item.dataset.guideRow = '0';
+            text.dataset.guideRow = '0';
+            text.dataset.guideLayoutX = String(x);
+            text.dataset.guideLyricAvailableWidth = String(availableWidth);
+            text.dataset.guideLyricFontSize = String(fontSize);
             text.setAttribute('font-size', String(fontSize));
             if (text.style) text.style.fontSize = fontSize + 'px';
             const computedTextWidth = typeof text.getComputedTextLength === 'function'
@@ -2448,9 +2529,14 @@ ${cspMeta}
               } catch { /* detached SVG text is measured from its source string below */ }
             }
             if (!Number.isFinite(measuredTextWidth)) measuredTextWidth = compactGuideTextWidth(fullText, fontSize);
-            if (measuredTextWidth > availableWidth + 0.05) {
-              text.setAttribute('textLength', availableWidth.toFixed(3));
-              text.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+            const visibleText = compactLyricVisibleText(fullText, fontSize, availableWidth, text);
+            if (textNode) textNode.nodeValue = visibleText;
+            else text.textContent = visibleText;
+            const marker = item.querySelector('.practice-guide-compact-lyric-marker');
+            if (marker) {
+              marker.setAttribute('cx', Math.min(1.2, Math.max(0.4, availableWidth / 2)).toFixed(3));
+              marker.setAttribute('cy', '15');
+              marker.toggleAttribute('hidden', !isSelectedVerse || visibleText !== '');
             }
           } else if (lane === 'technique') {
             const naturalWidth = Math.max(0.001, Number(item.dataset.guideLayoutWidth) || 4);
@@ -2508,7 +2594,9 @@ ${cspMeta}
           card.setAttribute('aria-label', (audioLabels.practiceMeasure || 'Measure') + ' ' + (occurrence.measureIndex + 1)
             + ', ' + (audioLabels.guidePlaybackOrder || 'Playback order') + ' ' + (playbackPosition + 1));
           for (const lyric of card.querySelectorAll('.practice-guide-compact-lyric')) {
-            lyric.toggleAttribute('hidden', Number(lyric.dataset.guideVerse) !== (Number(occurrence.lyricVerse) || 1));
+            const hidden = Number(lyric.dataset.guideVerse) !== (Number(occurrence.lyricVerse) || 1);
+            lyric.toggleAttribute('hidden', hidden);
+            lyric.parentElement?.toggleAttribute('hidden', hidden);
           }
           layoutPracticeGuideCompactSvg(card, guideCompactSlotWidths[firstSlot + slot] || 0, guideCompactLayout);
           content.appendChild(card);
@@ -2878,6 +2966,17 @@ ${cspMeta}
         }
         const selectedVerse = Number(occurrence?.lyricVerse) || 1;
         const lyricItems = [...practiceGuideTimeline?.querySelectorAll?.('.practice-guide-lyric') ?? []];
+        const activeLyric = lyricItems.find(item => Number(item.dataset.guideVerse) === selectedVerse
+          && Number(item.dataset.guideMeasure) === measureIndex
+          && currentBeat >= Number(item.dataset.guideStartBeat) - 0.000001
+          && currentBeat < Number(item.dataset.guideEndBeat) - 0.000001);
+        if (practiceGuideCurrentLyric) {
+          const lyricText = activeLyric?.textContent?.trim() ?? '';
+          practiceGuideCurrentLyric.textContent = lyricText;
+          practiceGuideCurrentLyric.setAttribute('title', lyricText);
+          practiceGuideCurrentLyric.setAttribute('aria-label', lyricText);
+          practiceGuideCurrentLyricWrap?.toggleAttribute?.('hidden', !practiceEnabled || !lyricText);
+        }
         for (const item of lyricItems) {
           const verseMatches = Number(item.dataset.guideVerse) === selectedVerse;
           const itemMeasure = Number(item.dataset.guideMeasure);
@@ -2895,6 +2994,9 @@ ${cspMeta}
           const current = occurrenceMatches && verseMatches && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
           item.classList.toggle('is-current', current);
           item.classList.toggle('is-past', occurrenceMatches && verseMatches && end <= currentBeat + 0.000001);
+          const marker = item.parentElement?.querySelector?.('.practice-guide-compact-lyric-marker');
+          marker?.classList?.toggle('is-current', current);
+          marker?.classList?.toggle('is-past', occurrenceMatches && verseMatches && end <= currentBeat + 0.000001);
           const card = item.closest('.practice-guide-compact-measure');
           if (card) card.classList.toggle('is-current', Number(card.dataset.guideOccurrenceIndex) === Number(currentOccurrenceId));
         }
@@ -4640,7 +4742,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       return item.pitches.map(pitch => {
         const pitchOffset = 8 + (data.pitchMaxMidi - pitch.midi) / range * 40;
         const label = `${pitch.label} ${item.duration}`;
-        return `<rect class="practice-guide-compact-pitch-bar" ${common} data-guide-pitch-midi="${pitch.midi}" data-guide-pitch-label="${escapeXml(pitch.label)}" data-guide-pitch-offset="${pitchOffset.toFixed(2)}" data-guide-duration-beats="${fnum(item.durationBeats)}" data-guide-layout-width="3" data-guide-layout-anchor="start" x="0" y="0" width="3" height="6" rx="3" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title></rect>`;
+        return `<rect class="practice-guide-compact-pitch-bar" ${common} data-guide-pitch-midi="${pitch.midi}" data-guide-pitch-label="${escapeXml(pitch.label)}" data-guide-pitch-offset="${pitchOffset.toFixed(2)}" data-guide-duration-beats="${fnum(item.durationBeats)}" data-guide-layout-width="3" data-guide-layout-anchor="start" x="0" y="0" width="3" height="6" rx="0" ry="0" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title></rect>`;
       });
     }).join('');
     const lyrics = measure.lyrics.map(item => {
@@ -4649,7 +4751,8 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const start = fnum(item.at);
       const end = fnum(fadd(item.at, item.durationBeats));
       const width = Math.max(8, practiceGuideTextWidth(text, 13));
-      return `<text class="practice-guide-compact-lyric" data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-verse="${item.verse + 1}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-layout-item="true" data-guide-layout-lane="lyrics" data-guide-layout-width="${width}" data-guide-layout-anchor="start" data-guide-at-beat="${start}" data-guide-at-fraction="${fractions(item.at)}" data-guide-full-text="${escapeXml(text)}" x="0" y="0" font-size="13" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title>${escapeXml(text)}</text>`;
+      const identity = `data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-verse="${item.verse + 1}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${fractions(item.at)}" data-guide-full-text="${escapeXml(text)}"`;
+      return `<g class="practice-guide-compact-lyric-event" ${identity} data-guide-layout-item="true" data-guide-layout-lane="lyrics" data-guide-layout-width="${width}" data-guide-layout-anchor="start" data-guide-lyric-available-width="0" data-guide-lyric-font-size="13"><text class="practice-guide-compact-lyric" ${identity} x="0" y="0" font-size="13" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title>${escapeXml(text)}</text><circle class="practice-guide-compact-lyric-marker" data-guide-lyric-marker-event="${item.eventIndex}" cx="0" cy="15" r="0.8" aria-hidden="true" hidden/></g>`;
     }).join('');
     const techniques = measure.techniques.map(item => {
       const at = fnum(item.at);
@@ -4662,14 +4765,15 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const isTieContinuation = item.kind === 'continuation' && item.stroke?.kind === 'tie';
       const isCompactWave = isGridContinuation || isTieContinuation;
       const ariaLabel = item.kind === 'rest' ? `${msgs.uiPracticeGuideRest} ${item.duration}` : item.stroke?.label ?? item.label;
-      const width = isCompactWave ? practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: ariaLabel })
+      const width = isGridContinuation && item.grid === 16 ? PRACTICE_GUIDE_COMPACT_GRID16_WAVE_WIDTH
+        : isCompactWave ? practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: ariaLabel })
         : item.kind === 'rest' ? practiceGuideStrokeVisualWidth({ kind: 'attack', direction: 'neutral', label: ariaLabel })
           : practiceGuideCompactStrokeVisualWidth(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
       const grid = item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}" data-guide-grid="${item.grid}"`;
       const fraction = fractions(item.at);
       const waveSvg = isTieContinuation
-        ? renderPracticeGuideCompactWavePathSvg(ariaLabel).replace('data-guide-stroke="wave"', 'data-guide-stroke="tie"')
-        : renderPracticeGuideCompactWavePathSvg(ariaLabel);
+        ? renderPracticeGuideCompactWavePathSvg(ariaLabel, item.grid).replace('data-guide-stroke="wave"', 'data-guide-stroke="tie"')
+        : renderPracticeGuideCompactWavePathSvg(ariaLabel, item.grid);
       const wavePath = isCompactWave
         ? waveSvg.replace('<path class="practice-guide-wave-path"', `<path data-guide-measure="${measure.number - 1}" data-guide-event="${eventIndex}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}"${item.grid === undefined ? '' : ` data-guide-wave-grid="${item.grid}"`}` + ' class="practice-guide-wave-path"')
         : '';
@@ -4752,6 +4856,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
       <strong>${escapeXml(msgs.uiPracticeGuideTitle)}</strong>
+      <span class="practice-guide-current-lyric-wrap" id="practice-guide-current-lyric-wrap" hidden><span class="practice-guide-current-lyric-label" aria-hidden="true">${escapeXml(msgs.uiPracticeGuideLyrics)}</span><span class="practice-guide-current-lyric" id="practice-guide-current-lyric" aria-live="off" tabindex="0"></span></span>
       ${autoLabel}
       <div class="practice-guide-controls">
         <label>${escapeXml(msgs.uiPracticeGuideView)} <select class="practice-select" id="practice-guide-view" aria-label="${escapeXml(msgs.uiPracticeGuideView)}"><option value="compact">${escapeXml(msgs.uiPracticeGuideCompact)}</option><option value="detailed">${escapeXml(msgs.uiPracticeGuideDetailed)}</option></select></label>

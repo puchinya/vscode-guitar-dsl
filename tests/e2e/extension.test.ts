@@ -1600,11 +1600,32 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.strictEqual(await visibleWaveCount(0, event), 1, `quarter attack ${event} keeps exactly one wave on an eighth-note grid`);
       }
       await setGrid('16');
+      const quarterAttackGeometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify([...document.querySelectorAll('.practice-guide-compact-symbol[data-guide-measure="0"][data-guide-kind="attack"]')]
+        .filter(item => Number(item.dataset.guideEvent) >= 0 && Number(item.dataset.guideEvent) <= 3)
+        .sort((left, right) => Number(left.dataset.guideEvent) - Number(right.dataset.guideEvent))
+        .map(item => ({ event: Number(item.dataset.guideEvent),
+          shaft: item.querySelector('[data-guide-compact-part="shaft"]')?.getAttribute('d'),
+          head: item.querySelector('[data-guide-compact-part="head"]')?.getAttribute('d') })))`));
+      assert.deepStrictEqual(quarterAttackGeometry.map((item: { event: number; shaft: string; head: string }) => [item.event, item.shaft, item.head]), [
+        [0, 'M2 1 V27.8', 'M0.55 24 L2 28.5 L3.45 24'],
+        [1, 'M2 29 V2.2', 'M0.55 6 L2 1.5 L3.45 6'],
+        [2, 'M2 1 V27.8', 'M0.55 24 L2 28.5 L3.45 24'],
+        [3, 'M2 29 V2.2', 'M0.55 6 L2 1.5 L3.45 6']
+      ], 'the independent first-measure oracle is down/up/down/up');
       assert.strictEqual(await visibleWaveCount(1, 0), 1, '8.d on a sixteenth-note grid draws one continuation wave');
       assert.strictEqual(await visibleWaveCount(1, 1), 0, '16.d on a sixteenth-note grid draws only its attack');
       assert.strictEqual(await visibleWaveCount(2, 0), 3, '4.d on a sixteenth-note grid draws three independent continuation waves');
       for (const event of [0, 1, 2, 3]) {
         assert.strictEqual(await visibleWaveCount(0, event), 3, `quarter attack ${event} keeps all three sixteenth-grid continuation marks`);
+      }
+      for (const event of [2, 3, 4]) {
+        assert.strictEqual(await visibleWaveCount(1, event), 3,
+          `measure two quarter event ${event} has three independent grid16 continuation waves`);
+      }
+      assert.strictEqual(await visibleWaveCount(1, 5), 0, 'measure two final 16th event has no extra continuation wave');
+      for (let event = 0; event < 16; event++) {
+        assert.strictEqual(await visibleWaveCount(3, event), 0,
+          `measure four 16th-note brush event ${event} has no extra continuation wave`);
       }
       const currentCompactSlotAt = async (seconds: number) => {
         await evaluatePreviewWebview<void>(`(() => {
@@ -2102,6 +2123,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                   laneBottom: laneRect.bottom,
                   width: rect.width,
                   height: rect.height,
+                  rx: bar.getAttribute('rx'),
+                  ry: bar.getAttribute('ry'),
                 };
               });
               return { cardCount: cards.length, bars };
@@ -2120,6 +2143,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 && Math.abs(bar.left - bar.expectedLeft) <= 2
                 && bar.top >= bar.laneTop && bar.top + bar.height <= bar.laneBottom + 1),
             `${width}px measure ${measure + 1} has visible, correctly placed six-pixel pitch bars`);
+            assert.ok(bars.every((bar: { rx: string; ry: string }) => bar.rx === '0' && bar.ry === '0'),
+              `${width}px measure ${measure + 1} uses square-corner pitch bars`);
             const pitchOrder = [...bars].sort((a: { midi: number }, b: { midi: number }) => a.midi - b.midi);
             assert.ok(pitchOrder.every((bar: { top: number }, index: number) => index === 0 || pitchOrder[index - 1].top > bar.top),
               `${width}px measure ${measure + 1} maps higher pitches to higher screen positions`);
@@ -2331,7 +2356,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         })()`);
         await settle(60);
       };
-
       await evaluatePreviewWebview<void>(`(() => {
         const stage = document.getElementById('practice-guide-pair-page');
         for (const card of stage.querySelectorAll('.practice-guide-compact-measure')) {
@@ -2417,14 +2441,30 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     .filter(path => path.dataset.guideWaveGrid === waveGrid)
                     .sort((left, right) => Number(left.dataset.guideAtBeat) - Number(right.dataset.guideAtBeat))
                     .map(path => path.dataset.guideAtFraction);
-                  const isCanonicalWaveShape = path =>
-                    path.getAttribute('data-guide-wave-width') === '5.60'
-                    && path.getAttribute('d') === 'M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2'
-                    && path.getAttribute('stroke-width') === '1.15'
-                    && path.getAttribute('vector-effect') === 'non-scaling-stroke'
-                    && path.closest('svg')?.getAttribute('viewBox') === '0 0 5.6 30';
+                  const isCanonicalWaveShape = path => {
+                    const isGrid16 = path.dataset.guideWaveGrid === '16';
+                    return path.getAttribute('data-guide-wave-width') === (isGrid16 ? '2.40' : '5.60')
+                      && path.getAttribute('d') === (isGrid16
+                        ? 'M0.15 15 C0.45 13.8 0.9 13.8 1.2 15 S1.95 16.2 2.25 15'
+                        : 'M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2')
+                      && path.getAttribute('stroke-width') === '1.15'
+                      && path.getAttribute('stroke-linecap') === (isGrid16 ? 'butt' : 'round')
+                      && path.getAttribute('vector-effect') === 'non-scaling-stroke'
+                      && path.closest('svg')?.getAttribute('viewBox') === (isGrid16 ? '0 0 2.4 30' : '0 0 5.6 30');
+                  };
                   const canonicalWaveShape = wavePaths.length > 0 && wavePaths.every(isCanonicalWaveShape);
                   const visibleCanonicalWaveShape = visibleWavePaths.length > 0 && visibleWavePaths.every(isCanonicalWaveShape);
+                  const grid16WaveBounds = visibleWavePaths.filter(path => path.dataset.guideWaveGrid === '16')
+                    .map(path => {
+                      const box = path.getBBox();
+                      const matrix = path.getScreenCTM();
+                      const scale = Math.abs(matrix?.a ?? 1);
+                      return { left: (matrix?.e ?? 0) + box.x * (matrix?.a ?? 1) - 0.575,
+                        right: (matrix?.e ?? 0) + (box.x + box.width) * (matrix?.a ?? 1) + 0.575,
+                        scale };
+                    }).sort((left, right) => left.left - right.left);
+                  const minimumGrid16Gap = grid16WaveBounds.slice(1).reduce((minimum, item, index) =>
+                    Math.min(minimum, item.left - grid16WaveBounds[index].right), Number.POSITIVE_INFINITY);
                   const sameOnsetGroups = [...new Map(symbols.map(symbol => [symbol.fraction, symbols.filter(other => other.fraction === symbol.fraction)])).values()]
                     .filter(group => group.length > 1);
                   const simultaneousAnchorsMatch = sameOnsetGroups.every(group =>
@@ -2435,6 +2475,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                    height: Number(lane.dataset.guideLaneHeight), rowCount, collisions,
                      symbolCount: symbols.length, sameY, fits, wavePathCount: wavePaths.length,
                      visibleWavePathCount: visibleWavePaths.length, canonicalWaveShape, visibleCanonicalWaveShape,
+                     minimumGrid16Gap,
                      waveCountsByGrid: { four: waveCountForGrid('4'), eight: waveCountForGrid('8'), sixteen: waveCountForGrid('16') },
                      waveFractionsByGrid: { eight: waveFractionsForGrid('8'), sixteen: waveFractionsForGrid('16') },
                      simultaneousCount: sameOnsetGroups.length,
@@ -2455,7 +2496,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.deepStrictEqual(geometry.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'],
               `${width}px keeps the compact lane order in every measure SVG`);
             const expectedVisibleWaveCount = grid === '4' ? 0 : grid === '8' ? 4 : 12;
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; horizontalScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; horizontalScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; minimumGrid16Gap: number; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
               lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 36
                 && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed
                 && lane.simultaneousCount > 0 && lane.simultaneousAnchorsMatch && lane.simultaneousVisualOffsets
@@ -2466,6 +2507,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 && lane.waveCountsByGrid.four === 0 && lane.waveCountsByGrid.eight === 4 && lane.waveCountsByGrid.sixteen === 12
                 && lane.waveFractionsByGrid.eight.join(',') === '1/2,3/2,5/2,7/2'
                 && lane.waveFractionsByGrid.sixteen.join(',') === '1/4,1/2,3/4,5/4,3/2,7/4,9/4,5/2,11/4,13/4,7/2,15/4'
+                && (grid !== '16' || lane.minimumGrid16Gap >= 1)
                 && (grid !== '16' || width > 600 || lane.scaledSymbolCount > 0)),
             `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps canonical wave paths, exact beat anchors, same-onset voices, accessible labels, and X-only SVG scaling with fixed Y on one horizontal non-overlapping row: ${JSON.stringify(geometry.techniqueLanes)}`);
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
@@ -2652,6 +2694,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.ok(image.length >= 20000 && image.readUInt32BE(16) === width,
           `${filename} is a full-width Preview capture`);
       };
+      const seekToRatio = async (ratio: number): Promise<void> => {
+        await evaluatePreviewWebview<void>(`(() => {
+          const seek = document.getElementById('playback-seek');
+          seek.value = String(Number(seek.max) * ${ratio});
+          seek.dispatchEvent(new Event('input', { bubbles: true }));
+          seek.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await settle(360);
+      };
       const readCompactLyrics = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
         const stage = document.getElementById('practice-guide-pair-page');
         const layout = document.querySelector('.practice-guide-layout');
@@ -2663,6 +2714,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           mode: document.getElementById('practice-guide-view').value,
           range: document.getElementById('practice-guide-compact-range').textContent.trim(),
           seek: document.getElementById('playback-seek').value,
+          currentLyric: document.getElementById('practice-guide-current-lyric').textContent,
+          currentLyricAria: document.getElementById('practice-guide-current-lyric').getAttribute('aria-label'),
+          currentLyricTitle: document.getElementById('practice-guide-current-lyric').getAttribute('title'),
+          currentLyricFontSize: parseFloat(getComputedStyle(document.getElementById('practice-guide-current-lyric')).fontSize),
+          currentLyricWhiteSpace: getComputedStyle(document.getElementById('practice-guide-current-lyric')).whiteSpace,
+          currentLyricVisible: !document.getElementById('practice-guide-current-lyric-wrap').hidden,
+          currentLyricDisplayCount: document.querySelectorAll('#practice-guide-current-lyric').length,
           stageWidth: stage.clientWidth,
           railDisplay: getComputedStyle(rail).display,
           railWidth: rail.getBoundingClientRect().width,
@@ -2673,13 +2731,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             const items = all.map(item => {
               const textNode = [...item.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
               const itemRect = item.getBoundingClientRect();
+              const marker = item.parentElement.querySelector('.practice-guide-compact-lyric-marker');
               return {
                 verse: Number(item.dataset.guideVerse), event: Number(item.dataset.guideEvent),
                 fraction: item.dataset.guideAtFraction, beat: item.dataset.guideAtBeat,
                 row: item.dataset.guideRow, x: item.getAttribute('x'), y: item.getAttribute('y'),
                 full: item.dataset.guideFullText, text: textNode?.nodeValue ?? '',
                 aria: item.getAttribute('aria-label'), title: item.querySelector('title')?.textContent,
-                hidden: item.hidden, visible: item.getClientRects().length > 0,
+                hidden: item.parentElement.hidden, visible: item.parentElement.getClientRects().length > 0,
+                markerVisible: marker && !marker.hidden && marker.getClientRects().length > 0,
                 fontSize: parseFloat(getComputedStyle(item).fontSize),
                 available: Number(item.dataset.guideLyricAvailableWidth),
                 textLength: item.getAttribute('textLength'),
@@ -2731,31 +2791,42 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             })))}`);
           for (const lyric of card.selected) {
             assert.strictEqual(lyric.row, '0');
-            assert.strictEqual(lyric.text, lyric.full, 'the full lyric text node remains unchanged');
+            assert.ok(lyric.text === lyric.full || lyric.text.endsWith('…') || lyric.markerVisible,
+              'dense lyric cells use an intact prefix or a non-text marker');
             assert.strictEqual(lyric.aria, lyric.full, 'the accessible name retains the full lyric');
             assert.strictEqual(lyric.title, lyric.full, 'the SVG title retains the full lyric');
             assert.strictEqual(lyric.y, '19');
-            assert.ok(lyric.fontSize >= 7 && lyric.fontSize <= 13,
-              `${width}px lyric font size stays within the contracted 7–13px range`);
+            assert.ok(lyric.fontSize >= 10 && lyric.fontSize <= 13,
+              `${width}px lyric font size stays within the contracted 10–13px range`);
             const measuredTextWidth = Number.isFinite(lyric.computedTextWidth) && lyric.computedTextWidth > 0
               ? lyric.computedTextWidth : lyric.bboxTextWidth;
             assert.ok(Number.isFinite(measuredTextWidth) && measuredTextWidth <= lyric.available + 0.1,
               `${width}px SVG text width fits its slot: ${JSON.stringify(lyric)}`);
             assert.ok(lyric.renderedTextWidth <= lyric.available + 0.5,
               `${width}px screen rectangle fits its slot: ${JSON.stringify(lyric)}`);
-            if (lyric.textLength !== null) assert.strictEqual(lyric.lengthAdjust, 'spacingAndGlyphs');
+            assert.strictEqual(lyric.textLength, null, 'compact lyrics never use SVG textLength compression');
+            assert.strictEqual(lyric.lengthAdjust, null, 'compact lyrics never use spacingAndGlyphs');
           }
         }
       };
 
       await setPreviewWebviewViewportWidth(400);
       await settle(260);
+      await seekToRatio(0.005);
       const firstVerse = await readCompactLyrics();
       await captureLyrics(400, 'ja');
       assert.strictEqual(firstVerse.range, '1–4/8');
       assertSingleLineLayout(firstVerse, 400, [1, 1, 1, 1]);
       assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) => kana.includes(item.full))),
         'the first arrangement route shows Japanese lyrics only');
+      assert.strictEqual(firstVerse.currentLyric, 'あ', 'the single header lyric follows the seeked Japanese event');
+      assert.strictEqual(firstVerse.currentLyricAria, 'あ', 'the header exposes the complete Japanese lyric accessibly');
+      assert.strictEqual(firstVerse.currentLyricTitle, 'あ', 'the header title retains the complete Japanese lyric');
+      assert.ok(firstVerse.currentLyricFontSize >= 10 && firstVerse.currentLyricFontSize <= 13,
+        'the current lyric header stays within the contracted 10–13px font range');
+      assert.strictEqual(firstVerse.currentLyricWhiteSpace, 'nowrap', 'the current lyric header remains one line');
+      assert.strictEqual(firstVerse.currentLyricVisible, true);
+      assert.strictEqual(firstVerse.currentLyricDisplayCount, 1, 'the header does not duplicate current lyric state');
       const firstFractions = firstVerse.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full]));
 
       const initialSeek = firstVerse.seek;
@@ -2772,9 +2843,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assertSingleLineLayout(englishPage400, 400, [2, 2, 2, 2]);
       assert.ok(englishPage400.cards.every((card: any) => card.selected.some((item: any) => item.full === 'uninterruptedword')),
         'long English tokens stay intact in the single-row layout');
-      assert.strictEqual(englishPage400.cards[0].selected.find((item: any) => item.full === 'cat').textLength !== null, true,
-        'the narrow 400px view uses textLength for a full token that cannot fit at the minimum font size');
-      await captureLyrics(400, 'en');
 
       const widths = [320, 600, 1100];
       let width1100: any;
@@ -2786,12 +2854,42 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         assert.deepStrictEqual(resized.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
           englishPage400.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])),
           `${width}px resize preserves lyric event order, source text, beats, and Fractions`);
-        if (width === 600) await captureLyrics(width, 'en');
         if (width === 1100) width1100 = resized;
       }
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-previous').click()");
+      await settle(260);
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-previous').click()");
+      await settle(260);
+      const japaneseAt600 = await readCompactLyrics();
+      assert.strictEqual(japaneseAt600.range, '1–4/8');
+      assert.ok(japaneseAt600.cards.every((card: any) => card.selected.every((item: any) => kana.includes(item.full))),
+        'the 600px Japanese capture shows the first verse across all four cards');
+      await captureLyrics(600, 'ja');
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+      await settle(260);
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
+      await settle(260);
+      await seekToRatio(0.505);
+      const englishCurrent = await readCompactLyrics();
+      assert.strictEqual(englishCurrent.currentLyric, 'uninterruptedword', 'the header shows the full current English lyric');
+      assert.strictEqual(englishCurrent.currentLyricAria, 'uninterruptedword');
+      assert.strictEqual(englishCurrent.currentLyricTitle, 'uninterruptedword');
+      assert.ok(englishCurrent.currentLyricFontSize >= 10 && englishCurrent.currentLyricFontSize <= 13,
+        'the full current English lyric stays within the contracted 10–13px font range');
+      assert.strictEqual(englishCurrent.currentLyricWhiteSpace, 'nowrap');
+      assert.strictEqual(englishCurrent.currentLyricDisplayCount, 1);
+      assert.ok(englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword').text.endsWith('…')
+        || englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword').markerVisible,
+      'the narrow cell shortens only its visible lyric, preserving the full header text');
+      await setPreviewWebviewViewportWidth(400);
+      await settle(260);
+      await captureLyrics(400, 'en');
+      await setPreviewWebviewViewportWidth(600);
+      await settle(260);
+      await captureLyrics(600, 'en');
       const catAt400 = englishPage400.cards[0].selected.find((item: any) => item.full === 'cat');
       const catAt1100 = width1100.cards[0].selected.find((item: any) => item.full === 'cat');
-      assert.strictEqual(catAt1100.textLength, null, 'wide layout clears stale textLength when the full word fits');
+      assert.strictEqual(catAt1100.textLength, null, 'wide layout never adds textLength');
       assert.ok(catAt1100.fontSize >= catAt400.fontSize, 'wide layout restores the original larger font size');
 
       await setPreviewWebviewViewportWidth(600);

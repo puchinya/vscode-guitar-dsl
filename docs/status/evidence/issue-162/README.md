@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. The `contract-v7-final` images show the current single-row lyric behavior and both guide modes' hidden left rail. The `review-v4` and `contract-v4` images are historical captures; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at the source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v8 screenshots are from the current review-remediation source and show the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and the hidden left rail. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -20,9 +20,11 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v7 compact layout matrix | 400 / 421 / 600 / 1100 CSS px × JA / EN × Light / Dark × Melody on / off | 32 |
 | Contract v7 continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
 | Contract v7 compact lyrics | 400 CSS px × selected JA / EN verse; 600 CSS px × selected EN verse; JA / EN locale × Light / Dark | 12 |
+| Contract v8 continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
+| Contract v8 current lyric and compact cells | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **236** |
+| **Selected evidence files** |  | **264** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
@@ -55,14 +57,55 @@ Contract v7 adds 56 current-source images in four locale/theme combinations. The
 - [JA Light, 400 px, grid 16 (Contract v7)](practice-guide-grid-issue162-ja-light-400-grid-16-contract-v7-matrix.png)
 - [JA Light, 400 px, Japanese selected lyrics (Contract v7)](practice-guide-compact-lyrics-issue162-ja-ja-light-400-contract-v7-final.png)
 - [EN Dark, 400 px, English selected lyrics (Contract v7)](practice-guide-compact-lyrics-issue162-en-en-dark-400-contract-v7-final.png)
+- [JA Light, 400 px, grid 16 (Contract v8)](practice-guide-grid-issue162-ja-light-400-grid-16-contract-v8.png)
+- [EN Dark, 400 px, grid 16 (Contract v8)](practice-guide-grid-issue162-en-dark-400-grid-16-contract-v8.png)
+- [JA Light, 400 px, selected Japanese lyrics and current-lyric header (Contract v8)](practice-guide-compact-lyrics-issue162-ja-ja-light-400-contract-v8.png)
+- [EN Dark, 400 px, dense English lyric cells and full current-lyric header (Contract v8)](practice-guide-compact-lyrics-issue162-en-en-dark-400-contract-v8.png)
+- [EN Dark, 600 px, Japanese verse (Contract v8)](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v8.png)
+- [JA Light, 600 px, English verse (Contract v8)](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v8.png)
 
-The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images show the updated label-rail and one-line lyric behavior. The v4 matrix and portrait/rest images are retained as earlier contract evidence, and the earlier fade images are retained as references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
+The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 is the current visual evidence for compact lyric overflow and grid16 path shape. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
+
+
+## Contract v8 evidence
+
+The 12 grid captures cover JA/EN × Light/Dark at 400 CSS px for grid4, grid8, and grid16. The 16 lyric captures cover selected Japanese and English verses at 400 and 600 CSS px in both locales and themes. Each lyric capture contains the single current-lyric header; 400 px dense cells visibly truncate text without changing stored event text, while 600 px captures show the wider layout. The E2E capture test verifies real VS Code locale, output width, card containment, 10–13 px browser-measured text, absence of `textLength`/`spacingAndGlyphs`, and the header's full current lyric after seek.
+
+### Contract v8 captures (source under review)
+- [JA Light, 400 px, grid 4](practice-guide-grid-issue162-ja-light-400-grid-4-contract-v8.png)
+- [JA Light, 400 px, grid 8](practice-guide-grid-issue162-ja-light-400-grid-8-contract-v8.png)
+- [JA Light, 400 px, grid 16](practice-guide-grid-issue162-ja-light-400-grid-16-contract-v8.png)
+- [JA Dark, 400 px, grid 4](practice-guide-grid-issue162-ja-dark-400-grid-4-contract-v8.png)
+- [JA Dark, 400 px, grid 8](practice-guide-grid-issue162-ja-dark-400-grid-8-contract-v8.png)
+- [JA Dark, 400 px, grid 16](practice-guide-grid-issue162-ja-dark-400-grid-16-contract-v8.png)
+- [EN Light, 400 px, grid 4](practice-guide-grid-issue162-en-light-400-grid-4-contract-v8.png)
+- [EN Light, 400 px, grid 8](practice-guide-grid-issue162-en-light-400-grid-8-contract-v8.png)
+- [EN Light, 400 px, grid 16](practice-guide-grid-issue162-en-light-400-grid-16-contract-v8.png)
+- [EN Dark, 400 px, grid 4](practice-guide-grid-issue162-en-dark-400-grid-4-contract-v8.png)
+- [EN Dark, 400 px, grid 8](practice-guide-grid-issue162-en-dark-400-grid-8-contract-v8.png)
+- [EN Dark, 400 px, grid 16](practice-guide-grid-issue162-en-dark-400-grid-16-contract-v8.png)
+- [JA verse, JA Light, 400 px](practice-guide-compact-lyrics-issue162-ja-ja-light-400-contract-v8.png)
+- [JA verse, JA Light, 600 px](practice-guide-compact-lyrics-issue162-ja-ja-light-600-contract-v8.png)
+- [JA verse, JA Dark, 400 px](practice-guide-compact-lyrics-issue162-ja-ja-dark-400-contract-v8.png)
+- [JA verse, JA Dark, 600 px](practice-guide-compact-lyrics-issue162-ja-ja-dark-600-contract-v8.png)
+- [JA verse, EN Light, 400 px](practice-guide-compact-lyrics-issue162-ja-en-light-400-contract-v8.png)
+- [JA verse, EN Light, 600 px](practice-guide-compact-lyrics-issue162-ja-en-light-600-contract-v8.png)
+- [JA verse, EN Dark, 400 px](practice-guide-compact-lyrics-issue162-ja-en-dark-400-contract-v8.png)
+- [JA verse, EN Dark, 600 px](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v8.png)
+- [EN verse, JA Light, 400 px](practice-guide-compact-lyrics-issue162-en-ja-light-400-contract-v8.png)
+- [EN verse, JA Light, 600 px](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v8.png)
+- [EN verse, JA Dark, 400 px](practice-guide-compact-lyrics-issue162-en-ja-dark-400-contract-v8.png)
+- [EN verse, JA Dark, 600 px](practice-guide-compact-lyrics-issue162-en-ja-dark-600-contract-v8.png)
+- [EN verse, EN Light, 400 px](practice-guide-compact-lyrics-issue162-en-en-light-400-contract-v8.png)
+- [EN verse, EN Light, 600 px](practice-guide-compact-lyrics-issue162-en-en-light-600-contract-v8.png)
+- [EN verse, EN Dark, 400 px](practice-guide-compact-lyrics-issue162-en-en-dark-400-contract-v8.png)
+- [EN verse, EN Dark, 600 px](practice-guide-compact-lyrics-issue162-en-en-dark-600-contract-v8.png)
 
 ## PR #163 review evidence
 
 The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-measure page at an exact 400 CSS px Preview width. Chord diagrams stay in one horizontal row in playback order; each pair scales to its available interval spacing. The E2E checks the name/diagram pair and center, reads both DOM bounds against the card, confirms finger dots, and verifies that neighboring diagrams do not overlap.
 
-Contract v5 adds the exact attack/wave paths from the supplied reference pattern. The crop and its exact SVG target are kept beside the rendered captures for direct visual review.
+Contract v8 review remediation removes non-uniform lyric compression, adds one current-lyric header synchronized to the active selected-verse event, uses a dedicated 2.4×30 grid16 continuation path, and squares compact melody bars. The E2E keeps an independent down/up/down/up and Fraction/count oracle for the supplied four-measure fixture, checks painted grid16 wave gaps at 320–1600 CSS px, and verifies the lyric/header behavior across resize and seek. The crop and exact attack/wave targets remain beside the rendered captures for direct visual review.
 
 - [Supplied stroke-pattern reference crop](user-reference-stroke-pattern-crop.png)
 - [Exact SVG path target](stroke-svg-shape-target.svg)
