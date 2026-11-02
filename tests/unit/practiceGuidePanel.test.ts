@@ -105,6 +105,43 @@ describe('Practice guide panel renderer', () => {
     }
   });
 
+  it('keeps PM arrows at natural width and groups only directly adjacent PM events', () => {
+    const rhythmEvent = (start: ReturnType<typeof frac>, end: ReturnType<typeof frac>, eventIndex: number, palmMute: boolean) => ({
+      at: start,
+      durationBeats: frac(1, 4),
+      eventStart: start,
+      eventEnd: end,
+      label: 'Sixteenth note',
+      duration: '16',
+      kind: 'attack' as const,
+      eventIndex,
+      durationWaveEligible: true,
+      stroke: { kind: 'attack' as const, direction: 'down' as const, palmMute, label: 'Sixteenth note' }
+    });
+    const consecutive = [
+      rhythmEvent(frac(0), frac(1, 4), 0, true),
+      rhythmEvent(frac(1, 4), frac(1, 2), 1, true),
+      rhythmEvent(frac(1, 2), frac(3, 4), 2, false),
+      rhythmEvent(frac(3, 4), frac(1), 3, true)
+    ];
+    const html = render(consecutive);
+    const firstTemplate = html.slice(
+      html.indexOf('<template data-guide-template-measure="0"'),
+      html.indexOf('</template>')
+    );
+    const labels = [...firstTemplate.matchAll(/<text class="practice-guide-compact-pm-label"([^>]*)>([^<]+)<\/text>/g)];
+    assert.strictEqual(labels.length, 2, 'the non-PM event splits the final PM attack into a separate run');
+    assert.match(labels[0][1], /data-guide-pm-run-start-fraction="0\/1"/);
+    assert.match(labels[0][1], /data-guide-pm-run-end-fraction="1\/2"/);
+    assert.match(labels[0][1], /data-guide-pm-run-events="0,1"/);
+    assert.match(labels[1][1], /data-guide-pm-run-start-fraction="3\/4"/);
+    assert.match(labels[1][1], /data-guide-pm-run-end-fraction="1\/1"/);
+    assert.match(firstTemplate, /data-guide-event="0"[^>]*data-guide-layout-lane="technique"[^>]*data-guide-layout-width="4"/,
+      'PM and non-PM attacks both retain the natural 4px compact width');
+    assert.doesNotMatch(firstTemplate, /class="practice-guide-pm-label"|translate\(14 0\)/,
+      'PM is not drawn to the left inside the attack SVG');
+  });
+
   it('carries compact chord diagrams in playback order, while explicit N.C. clears the carry', () => {
     const diagram = (name: string) => ({
       name,

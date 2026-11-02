@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v9 is the current visual evidence for gapless measure boundaries and the adjacent next-chord area; v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v10 is the current visual evidence for PM annotations below arrows and duration-aware lyric sizing; v9 remains historical evidence for gapless measure boundaries and the adjacent next-chord area. Contract v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -27,9 +27,11 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v9 gapless continuation marks | 400 CSS px × grid 4 / 8 / 16 × JA / EN × Light / Dark | 12 |
 | Contract v9 current lyric and compact cells | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
 | Contract v9 gapless grid16 fade | 400 CSS px × JA / EN × Light / Dark | 4 |
+| Contract v10 PM annotations | 400 CSS px × JA / EN × Light / Dark | 4 |
+| Contract v10 duration-aware lyrics | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **360** |
+| **Selected evidence files** |  | **380** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
@@ -71,7 +73,7 @@ Contract v7 adds 56 current-source images in four locale/theme combinations. The
 - [EN Dark, 600 px, Japanese verse (Contract v8)](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v8.png)
 - [JA Light, 600 px, English verse (Contract v8)](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v8.png)
 
-The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 remains historical visual evidence for compact lyric overflow and grid16 path shape; Contract v9 is current for gapless compact geometry. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
+The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 remains historical visual evidence for compact lyric overflow and grid16 path shape; v9 is historical for gapless compact geometry. Contract v10 is current for PM placement and duration-aware lyrics. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
 
 
 ## Contract v8 evidence
@@ -233,3 +235,33 @@ Each of the four locale/theme capture runs verified the compact, grid, lyric, an
 - [EN Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-en-light-250ms-contract-v9-grid16-400.png)
 - [JA Dark, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-dark-250ms-contract-v9-grid16-400.png)
 - [JA Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-light-250ms-contract-v9-grid16-400.png)
+
+## Contract v10 evidence
+
+Contract v10 is canonical at Issue comment `6574706499` (18,451 bytes; SHA-256 `2dbf43f9328bb0d745660081cea43812df1053c33ccc41a2edd9384de6f42e90`). Its 20 new screenshots were captured in the VS Code 1.144.0 Extension Development Host on macOS arm64 from the implementation source committed with this evidence update. The four PM images use the 400px dense-stroke fixture; the 16 lyric images cover 400px and 600px selected Japanese/English verses in JA/EN locale and Light/Dark theme combinations.
+
+All 20 PNGs have the expected exact width, nonzero height, and are larger than 20KB. The PM and lyric capture E2Es passed in all four locale/theme combinations. The first EN Dark lyric capture returned an all-black 600px image and failed the size assertion; the focused lyric E2E was rerun once, replaced that file with a rendered 600 × 799 image, and passed. I visually inspected the JA Dark PM image, JA Light 400px Japanese lyric image, EN Dark 400px English lyric image, and EN Dark 600px English lyric image. The PM image keeps arrows in one horizontal row and places the two separated PM runs below them; the lyric images show visible leading characters in the dense 400px cells and the selected full lyric in the header. At 600px, the English text fits more of the available cells. The very small dense-cell text is present but is not claimed to be comfortably readable.
+
+### Compact PM annotations (4 images)
+- [JA Light, 400px](practice-guide-compact-pm-issue162-ja-light-400-contract-v10.png)
+- [JA Dark, 400px](practice-guide-compact-pm-issue162-ja-dark-400-contract-v10.png)
+- [EN Light, 400px](practice-guide-compact-pm-issue162-en-light-400-contract-v10.png)
+- [EN Dark, 400px](practice-guide-compact-pm-issue162-en-dark-400-contract-v10.png)
+
+### Duration-aware compact lyrics (16 images)
+- [JA verse, JA Light, 400px](practice-guide-compact-lyrics-issue162-ja-ja-light-400-contract-v10.png)
+- [JA verse, JA Light, 600px](practice-guide-compact-lyrics-issue162-ja-ja-light-600-contract-v10.png)
+- [EN verse, JA Light, 400px](practice-guide-compact-lyrics-issue162-en-ja-light-400-contract-v10.png)
+- [EN verse, JA Light, 600px](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v10.png)
+- [JA verse, JA Dark, 400px](practice-guide-compact-lyrics-issue162-ja-ja-dark-400-contract-v10.png)
+- [JA verse, JA Dark, 600px](practice-guide-compact-lyrics-issue162-ja-ja-dark-600-contract-v10.png)
+- [EN verse, JA Dark, 400px](practice-guide-compact-lyrics-issue162-en-ja-dark-400-contract-v10.png)
+- [EN verse, JA Dark, 600px](practice-guide-compact-lyrics-issue162-en-ja-dark-600-contract-v10.png)
+- [JA verse, EN Light, 400px](practice-guide-compact-lyrics-issue162-ja-en-light-400-contract-v10.png)
+- [JA verse, EN Light, 600px](practice-guide-compact-lyrics-issue162-ja-en-light-600-contract-v10.png)
+- [EN verse, EN Light, 400px](practice-guide-compact-lyrics-issue162-en-en-light-400-contract-v10.png)
+- [EN verse, EN Light, 600px](practice-guide-compact-lyrics-issue162-en-en-light-600-contract-v10.png)
+- [JA verse, EN Dark, 400px](practice-guide-compact-lyrics-issue162-ja-en-dark-400-contract-v10.png)
+- [JA verse, EN Dark, 600px](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v10.png)
+- [EN verse, EN Dark, 400px](practice-guide-compact-lyrics-issue162-en-en-dark-400-contract-v10.png)
+- [EN verse, EN Dark, 600px](practice-guide-compact-lyrics-issue162-en-en-dark-600-contract-v10.png)

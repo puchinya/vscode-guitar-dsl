@@ -870,6 +870,10 @@ ${cspMeta}
   .practice-guide-compact-symbol.is-past { color: #475569; }
   .practice-guide-compact-symbol.is-next { color: #37465e; }
   .practice-guide-compact-symbol.is-current { color: #005f85; }
+  .practice-guide-compact-pm-label { color: #1f2937; fill: currentColor; font-family: sans-serif; }
+  .practice-guide-compact-pm-label.is-past { color: #475569; }
+  .practice-guide-compact-pm-label.is-next { color: #37465e; }
+  .practice-guide-compact-pm-label.is-current { color: #005f85; }
   .practice-guide-compact-svg [data-guide-wave-grid] { display: none; }
   #practice-guide-panel[data-guide-grid="4"] .practice-guide-compact-svg [data-guide-wave-grid="4"],
   #practice-guide-panel[data-guide-grid="8"] .practice-guide-compact-svg [data-guide-wave-grid="8"],
@@ -2177,24 +2181,41 @@ ${cspMeta}
         return width;
       }
 
-      function compactLyricVisibleText(fullText, fontSize, maxWidth, reference) {
-        if (measureCompactSvgText(fullText, fontSize, reference) <= maxWidth + 0.05) return fullText;
-        const segments = typeof Intl.Segmenter === 'function'
+      function compactLyricGraphemes(fullText) {
+        return typeof Intl.Segmenter === 'function'
           ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(fullText)].map(part => part.segment)
           : [...fullText];
-        if (measureCompactSvgText('…', fontSize, reference) > maxWidth + 0.05) return '';
-        let low = 0;
+      }
+
+      function compactLyricFontSize(fullText, maxWidth, reference) {
+        let low = 4;
+        let high = 13;
+        let best = 0;
+        for (let attempt = 0; attempt < 18; attempt++) {
+          const size = (low + high) / 2;
+          if (measureCompactSvgText(fullText, size, reference) <= maxWidth + 0.05) {
+            best = size;
+            low = size;
+          } else high = size;
+        }
+        return best > 0 ? Math.min(13, Math.floor(best * 100) / 100) : 4;
+      }
+
+      function compactLyricVisibleText(fullText, fontSize, maxWidth, reference) {
+        if (measureCompactSvgText(fullText, fontSize, reference) <= maxWidth + 0.05) return fullText;
+        const segments = compactLyricGraphemes(fullText);
+        if (!segments.length || measureCompactSvgText(segments[0], fontSize, reference) > maxWidth + 0.05) return '';
+        let low = 1;
         let high = segments.length;
-        let best = '…';
+        let best = 1;
         while (low <= high) {
           const middle = Math.floor((low + high) / 2);
-          const candidate = segments.slice(0, middle).join('') + '…';
-          if (measureCompactSvgText(candidate, fontSize, reference) <= maxWidth + 0.05) {
-            best = candidate;
+          if (measureCompactSvgText(segments.slice(0, middle).join(''), fontSize, reference) <= maxWidth + 0.05) {
+            best = middle;
             low = middle + 1;
           } else high = middle - 1;
         }
-        return best;
+        return segments.slice(0, best).join('');
       }
 
       function compareGuideFractions(left, right) {
@@ -2217,7 +2238,7 @@ ${cspMeta}
           String(occurrence.occurrenceIndex) + '=' + String(Number(occurrence.lyricVerse) || 1)).join(',');
         const key = [slotWidth.toFixed(3), grid, melodyVisible, diagramsVisible, lyricVerseKey].join(':');
         if (guideCompactLayoutKey === key) return guideCompactLayout;
-        const maxRows = { lyrics: 0, technique: 0, chord: 0 };
+        const maxRows = { lyrics: 0, technique: 0, pm: 0, chord: 0 };
         let diagramSize = 0;
         const measureLayouts = [];
         const inset = 5;
@@ -2225,7 +2246,6 @@ ${cspMeta}
           const ordered = [...items].sort((a, b) => compareGuideFractions(a.fraction, b.fraction)
             || a.event - b.event || a.order - b.order);
           const placements = [];
-          const fontCandidates = [];
           for (let index = 0; index < ordered.length;) {
             let groupEnd = index + 1;
             while (groupEnd < ordered.length && compareGuideFractions(ordered[groupEnd].fraction, ordered[index].fraction) === 0) {
@@ -2237,25 +2257,56 @@ ${cspMeta}
               : slotWidth - inset;
             const groupCount = groupEnd - index;
             const groupWidth = Math.max(0, nextLeft - startX);
-            const itemAvailable = Math.max(0.1, groupWidth / groupCount - 0.5);
             for (let groupIndex = index; groupIndex < groupEnd; groupIndex++) {
               const item = ordered[groupIndex];
               const itemX = startX + (groupIndex - index) * groupWidth / groupCount;
-              const measureWidth13 = measureCompactSvgText(item.text, 13, item.node.querySelector?.('text') ?? item.node);
-              fontCandidates.push(13 * itemAvailable / Math.max(0.001, measureWidth13));
-              placements.push({ ...item, x: itemX, available: itemAvailable });
+              const groupItemRight = startX + (groupIndex - index + 1) * groupWidth / groupCount;
+              const lyricDuration = Math.max(0, Number(item.node.dataset.guideDurationBeats) || 0);
+              const melodyDuration = Math.max(0, Number(item.node.dataset.guideMelodyDurationBeats) || 0);
+              const eventWidth = Math.max(lyricDuration, melodyDuration) / measureBeats * Math.max(0, slotWidth - 10);
+              const available = Math.max(0, Math.min(
+                groupItemRight - itemX,
+                itemX + eventWidth - itemX,
+                slotWidth - inset - itemX
+              ) - 0.25);
+              const reference = item.node.querySelector?.('text') ?? item.node;
+              placements.push({ ...item, x: itemX, available, fontSize: compactLyricFontSize(item.text, available, reference) });
             }
             index = groupEnd;
           }
-          const fontSize = fontCandidates.length
-            ? Math.max(7, Math.min(13, ...fontCandidates))
-            : 13;
           for (const item of placements) {
             item.node.dataset.guideRow = '0';
             item.node.dataset.guideLayoutX = String(item.x);
             item.node.dataset.guideLyricAvailableWidth = String(item.available);
-            item.node.dataset.guideLyricFontSize = String(fontSize);
+            item.node.dataset.guideLyricFontSize = String(item.fontSize);
           }
+        };
+        const packPmAnnotations = (items, measureBeats) => {
+          const ordered = [...items].sort((a, b) => compareGuideFractions(a.startFraction, b.startFraction)
+            || a.event - b.event || a.order - b.order);
+          const rowRights = [];
+          for (const item of ordered) {
+            const node = item.node;
+            const width = measureCompactSvgText('PM', 9, node);
+            const startX = compactGuideX(item.startBeat, measureBeats, slotWidth);
+            const endX = compactGuideX(item.endBeat, measureBeats, slotWidth);
+            const intervalCenter = (startX + endX) / 2;
+            const minCenter = 2 + width / 2;
+            const maxCenter = slotWidth - 2 - width / 2;
+            const centerX = maxCenter >= minCenter
+              ? Math.max(minCenter, Math.min(maxCenter, intervalCenter))
+              : slotWidth / 2;
+            const left = centerX - width / 2;
+            const right = centerX + width / 2;
+            let row = rowRights.findIndex(edge => edge + 2 <= left + 0.001);
+            if (row < 0) row = rowRights.length;
+            rowRights[row] = right;
+            node.dataset.guideRow = String(row);
+            node.dataset.guidePmRow = String(row);
+            node.dataset.guideLayoutX = String(centerX);
+            node.dataset.guideLayoutWidth = String(width);
+          }
+          maxRows.pm = Math.max(maxRows.pm, rowRights.length);
         };
         const pack = (items, measureBeats, lane) => {
           const rowRights = [];
@@ -2341,7 +2392,7 @@ ${cspMeta}
           const occurrence = playbackOccurrences.find(item => item.occurrenceIndex === occurrenceIndex);
           const selectedLyricVerse = Number(occurrence?.lyricVerse) || 1;
           const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
-          const laneItems = { lyrics: [], technique: [], chord: new Map() };
+          const laneItems = { lyrics: [], technique: [], pm: [], chord: new Map() };
           let order = 0;
           for (const node of svg.querySelectorAll('[data-guide-layout-item="true"]')) {
             const lane = node.dataset.guideLayoutLane;
@@ -2366,6 +2417,16 @@ ${cspMeta}
                 text,
                 fraction: node.dataset.guideAtFraction || String(beat) + '/1'
               });
+            } else if (lane === 'pm-annotation') {
+              laneItems.pm.push({
+                node,
+                beat,
+                startBeat: Number(node.dataset.guideStartBeat) || 0,
+                endBeat: Number(node.dataset.guideEndBeat) || 0,
+                startFraction: node.dataset.guidePmRunStartFraction || String(beat) + '/1',
+                event,
+                order: order++
+              });
             } else if (lane === 'technique') {
               laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, anchor });
             } else if (lane === 'chord-pair') {
@@ -2384,6 +2445,7 @@ ${cspMeta}
             }
           }
           packSingleRowLyrics(laneItems.lyrics, measureBeats);
+          packPmAnnotations(laneItems.pm, measureBeats);
           pack(laneItems.technique, measureBeats, 'technique');
           pack([...laneItems.chord.values()], measureBeats, 'chord');
           measureLayouts.push({ occurrenceIndex, svg });
@@ -2392,7 +2454,9 @@ ${cspMeta}
           ruler: 24,
           melody: melodyVisible ? 64 : 0,
           lyrics: 28,
-          technique: Math.max(28, maxRows.technique * 32 + 4),
+          technique: maxRows.pm > 0
+            ? Math.max(36, 48 + 12 * (maxRows.pm - 1))
+            : Math.max(28, maxRows.technique * 32 + 4),
           chord: Math.max(24, maxRows.chord * 20 + 4),
           diagrams: diagramsVisible && maxRows.chord ? maxRows.chord * (diagramSize + 4) + 4 : 0
         };
@@ -2449,6 +2513,8 @@ ${cspMeta}
             else live.dataset.guideLyricAvailableWidth = source.dataset.guideLyricAvailableWidth;
             if (source.dataset.guideLyricFontSize === undefined) delete live.dataset.guideLyricFontSize;
             else live.dataset.guideLyricFontSize = source.dataset.guideLyricFontSize;
+            if (source.dataset.guidePmRow === undefined) delete live.dataset.guidePmRow;
+            else live.dataset.guidePmRow = source.dataset.guidePmRow;
             if (source.dataset.guideLayoutWidth !== undefined) {
               live.dataset.guideLayoutWidth = source.dataset.guideLayoutWidth;
             }
@@ -2505,8 +2571,8 @@ ${cspMeta}
             const isSelectedVerse = (Number(item.dataset.guideVerse) || 1) === selectedVerse;
             item.toggleAttribute('hidden', !isSelectedVerse);
             if (!isSelectedVerse || !text) continue;
-            const fontSize = Math.max(10, Math.min(13, Number(item.dataset.guideLyricFontSize) || 13));
-            const availableWidth = Math.max(0.1, Number(item.dataset.guideLyricAvailableWidth) || 0.1);
+            const fontSize = Math.max(4, Math.min(13, Number(item.dataset.guideLyricFontSize) || 13));
+            const availableWidth = Math.max(0, Number(item.dataset.guideLyricAvailableWidth) || 0);
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' 0)');
             text.setAttribute('x', '0');
             text.setAttribute('y', '19');
@@ -2517,19 +2583,6 @@ ${cspMeta}
             text.dataset.guideLyricFontSize = String(fontSize);
             text.setAttribute('font-size', String(fontSize));
             if (text.style) text.style.fontSize = fontSize + 'px';
-            const computedTextWidth = typeof text.getComputedTextLength === 'function'
-              ? text.getComputedTextLength()
-              : Number.NaN;
-            let measuredTextWidth = Number.isFinite(computedTextWidth) && computedTextWidth > 0
-              ? computedTextWidth
-              : Number.NaN;
-            if (!Number.isFinite(measuredTextWidth) && typeof text.getBBox === 'function') {
-              try {
-                const bounds = text.getBBox();
-                if (Number.isFinite(bounds.width) && bounds.width > 0) measuredTextWidth = bounds.width;
-              } catch { /* detached SVG text is measured from its source string below */ }
-            }
-            if (!Number.isFinite(measuredTextWidth)) measuredTextWidth = compactGuideTextWidth(fullText, fontSize);
             const visibleText = compactLyricVisibleText(fullText, fontSize, availableWidth, text);
             if (textNode) textNode.nodeValue = visibleText;
             else text.textContent = visibleText;
@@ -2537,8 +2590,17 @@ ${cspMeta}
             if (marker) {
               marker.setAttribute('cx', Math.min(1.2, Math.max(0.4, availableWidth / 2)).toFixed(3));
               marker.setAttribute('cy', '15');
-              marker.toggleAttribute('hidden', !isSelectedVerse || visibleText !== '');
+              const markerVisible = isSelectedVerse && visibleText === '';
+              marker.toggleAttribute('hidden', !markerVisible);
+              item.dataset.guideLyricMarkerVisible = String(markerVisible);
+              item.dataset.guideLyricMarkerReason = markerVisible ? 'first-grapheme-below-4px' : '';
             }
+          } else if (lane === 'pm-annotation') {
+            const row = Number(item.dataset.guidePmRow) || 0;
+            item.setAttribute('x', x.toFixed(3));
+            item.setAttribute('y', String(44 + row * 12));
+            item.setAttribute('font-size', '9');
+            item.style?.removeProperty('transform');
           } else if (lane === 'technique') {
             const naturalWidth = Math.max(0.001, Number(item.dataset.guideLayoutWidth) || 4);
             const packedWidth = Math.max(0, Number(item.dataset.guideLayoutPackedWidth) || naturalWidth);
@@ -3055,6 +3117,19 @@ ${cspMeta}
             : Boolean(currentTechniqueKey) && item.dataset.guideTechniqueKey === currentTechniqueKey;
           item.classList.toggle('is-current', current);
           item.classList.toggle('is-next', !past && !current);
+        }
+        for (const item of practiceGuidePanel?.querySelectorAll?.('.practice-guide-compact-pm-label') ?? []) {
+          const occurrenceMatches = matchesCompactOccurrence(item);
+          const itemMeasure = Number(item.dataset.guideMeasure);
+          const start = Number(item.dataset.guideStartBeat);
+          const end = Number(item.dataset.guideEndBeat);
+          const current = occurrenceMatches && measureIndex !== null && itemMeasure === measureIndex
+            && currentBeat >= start - 0.000001 && currentBeat < end - 0.000001;
+          const past = occurrenceMatches && measureIndex !== null
+            && (itemMeasure < measureIndex || (itemMeasure === measureIndex && end <= currentBeat + 0.000001));
+          item.classList.toggle('is-past', past);
+          item.classList.toggle('is-current', current);
+          item.classList.toggle('is-next', occurrenceMatches && !past && !current);
         }
         let currentChord = guideMeasure?.chords?.filter(chord => chord.beat <= currentBeat + 0.000001).slice(-1)[0] ?? null;
         if (!currentChord && measureIndex !== null) {
@@ -4751,9 +4826,40 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const label = item.text + (item.hyphenToNext ? '-' : '');
       const start = fnum(item.at);
       const end = fnum(fadd(item.at, item.durationBeats));
+      const matchingMelodyDurations = measure.melody
+        .filter(note => note.eventIndex === item.eventIndex && !note.isRest)
+        .map(note => fnum(note.durationBeats));
+      const melodyDuration = matchingMelodyDurations.length ? Math.min(...matchingMelodyDurations) : 0;
       const width = Math.max(8, practiceGuideTextWidth(text, 13));
-      const identity = `data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-verse="${item.verse + 1}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${fractions(item.at)}" data-guide-full-text="${escapeXml(text)}"`;
+      const identity = `data-guide-measure="${measure.number - 1}" data-guide-event="${item.eventIndex}" data-guide-verse="${item.verse + 1}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${fractions(item.at)}" data-guide-full-text="${escapeXml(text)}" data-guide-duration-beats="${fnum(item.durationBeats)}" data-guide-melody-duration-beats="${melodyDuration}"`;
       return `<g class="practice-guide-compact-lyric-event" ${identity} data-guide-layout-item="true" data-guide-layout-lane="lyrics" data-guide-layout-width="${width}" data-guide-layout-anchor="start" data-guide-lyric-available-width="0" data-guide-lyric-font-size="13"><text class="practice-guide-compact-lyric" ${identity} x="0" y="0" font-size="13" role="img" aria-label="${escapeXml(label)}"><title>${escapeXml(label)}</title>${escapeXml(text)}</text><circle class="practice-guide-compact-lyric-marker" data-guide-lyric-marker-event="${item.eventIndex}" cx="0" cy="15" r="0.8" aria-hidden="true" hidden/></g>`;
+    }).join('');
+    const sourceTechniqueEvents = measure.techniques
+      .filter(item => fnum(item.durationBeats) > 0)
+      .sort((a, b) => fcmp(a.eventStart, b.eventStart) || (a.eventIndex ?? 0) - (b.eventIndex ?? 0));
+    const pmRuns: { start: ReturnType<typeof frac>; end: ReturnType<typeof frac>; events: number[] }[] = [];
+    for (let index = 0; index < sourceTechniqueEvents.length; index++) {
+      const first = sourceTechniqueEvents[index];
+      if (first.kind !== 'attack' || !first.stroke?.palmMute) continue;
+      const events = [first.eventIndex ?? -1];
+      let end = first.eventEnd;
+      while (index + 1 < sourceTechniqueEvents.length) {
+        const next = sourceTechniqueEvents[index + 1];
+        if (fcmp(end, next.eventStart) !== 0 || next.kind !== 'attack' || !next.stroke?.palmMute) break;
+        index++;
+        end = next.eventEnd;
+        events.push(next.eventIndex ?? -1);
+      }
+      pmRuns.push({ start: first.eventStart, end, events });
+    }
+    const pmAnnotations = pmRuns.map(run => {
+      const start = fnum(run.start);
+      const end = fnum(run.end);
+      const startFraction = fractions(run.start);
+      const endFraction = fractions(run.end);
+      const event = run.events[0] ?? -1;
+      const accessibleLabel = `${msgs.uiPracticeGuideTechnique} PM`;
+      return `<text class="practice-guide-compact-pm-label" data-guide-measure="${measure.number - 1}" data-guide-event="${event}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-event-start="${start}" data-guide-event-end="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${startFraction}" data-guide-pm-run-start-fraction="${startFraction}" data-guide-pm-run-end-fraction="${endFraction}" data-guide-pm-run-events="${run.events.join(',')}" data-guide-layout-item="true" data-guide-layout-lane="pm-annotation" data-guide-layout-width="13" data-guide-layout-anchor="center" x="0" y="44" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" role="img" aria-label="${escapeXml(accessibleLabel)}" title="PM">PM</text>`;
     }).join('');
     const techniques = measure.techniques.map(item => {
       const at = fnum(item.at);
@@ -4808,7 +4914,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       <g data-guide-lane="ruler">${ruler}</g>
       <g class="practice-guide-compact-melody" data-guide-lane="melody">${melody}</g>
       <g class="practice-guide-compact-lyrics" data-guide-lane="lyrics">${lyrics}</g>
-      <g class="practice-guide-compact-technique" data-guide-lane="technique">${techniques}</g>
+      <g class="practice-guide-compact-technique" data-guide-lane="technique">${techniques}${pmAnnotations}</g>
       <g class="practice-guide-compact-chords" data-guide-lane="chord">${chordNames}</g>
       <g class="practice-guide-compact-diagrams" data-guide-lane="diagrams">${diagrams}</g>
       ${boundaryStart}${boundaryEnd}${playhead}

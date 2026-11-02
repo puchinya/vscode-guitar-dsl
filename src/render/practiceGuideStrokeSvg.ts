@@ -23,7 +23,6 @@ const COMPACT_BRUSH_WIDTH = 8;
 const COMPACT_BOTH_WIDTH = 8;
 const COMPACT_WAVE_WIDTH = 5.6;
 export const PRACTICE_GUIDE_COMPACT_GRID16_WAVE_WIDTH = 2.4;
-const COMPACT_PALM_MUTE_LABEL_WIDTH = 12;
 const COMPACT_STROKE_WIDTH = 1.15;
 const COMPACT_STROKE_ATTRIBUTES = `fill="none" stroke="currentColor" stroke-width="${COMPACT_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"`;
 
@@ -49,7 +48,7 @@ export function practiceGuideCompactStrokeVisualWidth(spec: PracticeGuideStrokeS
     : spec.kind === 'brush' ? COMPACT_BRUSH_WIDTH
       : spec.kind === 'attack' && spec.direction === 'both' ? COMPACT_BOTH_WIDTH
         : COMPACT_ATTACK_WIDTH;
-  return spec.palmMute ? COMPACT_PALM_MUTE_LABEL_WIDTH + 2 + iconWidth : iconWidth;
+  return iconWidth;
 }
 
 function compactIconSvg(width: number, kind: PracticeGuideStrokeKind, marks: string): string {
@@ -76,11 +75,6 @@ export function renderPracticeGuideCompactWavePathSvg(label: string, grid?: numb
 /** Renders compact-only path geometry; detailed-grid SVGs keep their existing renderer. */
 export function renderPracticeGuideCompactStrokeSvgElement(spec: PracticeGuideStrokeSpec): string {
   const label = escapeAttribute(spec.label);
-  if (spec.palmMute) {
-    const icon = renderPracticeGuideCompactStrokeSvgElement({ ...spec, palmMute: false });
-    return `<g class="practice-guide-pm-stroke"><text class="practice-guide-pm-label" x="0" y="21" text-anchor="start" font-family="sans-serif" font-size="8" font-weight="700" fill="currentColor">PM</text><g transform="translate(${COMPACT_PALM_MUTE_LABEL_WIDTH + 2} 0)">${icon}</g></g>`;
-  }
-
   if (spec.kind === 'tie') {
     return renderPracticeGuideCompactWavePathSvg(label).replace('data-guide-stroke="wave"', 'data-guide-stroke="tie"');
   }

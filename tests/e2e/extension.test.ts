@@ -1781,6 +1781,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     || getComputedStyle(layer).display === 'none' || getComputedStyle(layer).visibility === 'hidden') continue;
                 for (const card of [...layer.querySelectorAll('.practice-guide-compact-measure')]) {
                   const cardRect = card.getBoundingClientRect();
+                  palmMuteCount += card.querySelectorAll('.practice-guide-compact-pm-label').length;
                   const symbols = [...card.querySelectorAll('.practice-guide-compact-symbol')]
                     .filter(item => item.getClientRects().length > 0 && getComputedStyle(item).visibility !== 'hidden');
                   const rects = symbols.map(item => {
@@ -1797,7 +1798,6 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                         card: { left: cardRect.left, right: cardRect.right }, lane: { top: laneTop, bottom: laneBottom } });
                     }
                     brushCount += item.querySelectorAll('[data-guide-stroke="brush"]').length;
-                    palmMuteCount += item.querySelectorAll('.practice-guide-pm-stroke').length;
                     tieCount += item.querySelectorAll('[data-guide-stroke="tie"]').length;
                     visibleWaveCount += [...item.querySelectorAll('[data-guide-stroke="wave"]')]
                       .filter(wave => getComputedStyle(wave).display !== 'none').length;
@@ -2214,7 +2214,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     this.timeout(90000);
     await withWorkbenchSnapshotRestored(async () => {
       try {
-        const dense = Array.from({ length: 16 }, (_, index) => index === 2 ? '16.d.pm' : index % 2 === 0 ? '16.d' : '16.u').join(' ');
+        const dense = Array.from({ length: 16 }, (_, index) => index === 2 || index === 4
+          ? '16.d.pm' : index % 2 === 0 ? '16.d' : '16.u').join(' ');
         const source = [
           'title: Compact v5 path strokes and melody rests',
           'time: 4/4',
@@ -2286,7 +2287,28 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           const attackOverlaps = orderedAttacks.slice(1).filter((item, index) => orderedAttacks[index].right > item.left + 0.05).length;
           const technique = stage.querySelector('[data-guide-lane="technique"]');
           const hasContinuationWave = stage.querySelector('.practice-guide-compact-wave-icon') !== null;
-          const hasPalmMute = technique.querySelector('.practice-guide-pm-label') !== null;
+          const pmLabels = [...technique.querySelectorAll('.practice-guide-compact-pm-label')]
+            .filter(item => item.dataset.guideMeasure === '0')
+            .map(item => {
+              const rect = item.getBoundingClientRect();
+              const card = item.closest('.practice-guide-compact-measure');
+              const cardRect = card.getBoundingClientRect();
+              const events = (item.dataset.guidePmRunEvents || '').split(',').filter(Boolean);
+              const attacks = events.map(event => {
+                const attack = card.querySelector('.practice-guide-compact-symbol[data-guide-kind="attack"][data-guide-event="' + event + '"]');
+                const attackRect = attack.getBoundingClientRect();
+                const transform = attack.transform.baseVal.consolidate()?.matrix;
+                const icon = attack.querySelector('.practice-guide-compact-stroke-icon');
+                return { event, left: attackRect.left, right: attackRect.right, scaleX: transform?.a ?? null,
+                  viewBox: icon?.getAttribute('viewBox'), bottom: attackRect.bottom };
+              });
+              return { text: item.textContent.trim(), start: item.dataset.guidePmRunStartFraction,
+                end: item.dataset.guidePmRunEndFraction, events, row: item.dataset.guidePmRow,
+                x: parseFloat(item.getAttribute('x')), y: parseFloat(item.getAttribute('y')),
+                left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+                cardLeft: cardRect.left, cardRight: cardRect.right, attacks };
+            });
+          const hasPalmMute = pmLabels.length > 0;
           return {
             measureCount: stage.querySelectorAll('.practice-guide-compact-measure').length,
             restNodes, firstMeasureBars,
@@ -2297,7 +2319,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             scaleY: matrix?.d ?? null,
             colors, opacity, strokeWidths,
             firstMeasureAttacks, attackOverlaps,
-            hasContinuationWave, hasPalmMute
+            hasContinuationWave, hasPalmMute, pmLabels
           };
         })())`));
         assert.strictEqual(visual.measureCount, 4, 'the v4 guide keeps four measure slots at 400px');
@@ -2319,6 +2341,20 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           'the compact SVG transform can compress X while keeping Y at one');
         assert.strictEqual(visual.hasContinuationWave, true, 'the dense sample includes continuation waves');
         assert.strictEqual(visual.hasPalmMute, true, 'the dense sample includes a PM mark');
+        assert.strictEqual(visual.pmLabels.length, 2, 'PM attacks separated by a non-PM event form distinct annotation runs');
+        assert.deepStrictEqual(visual.pmLabels.map((item: any) => item.events), [['2'], ['4']]);
+        assert.deepStrictEqual(visual.pmLabels.map((item: any) => item.row), ['0', '1'],
+          'overlapping PM labels use additional annotation rows while attacks stay in one row');
+        assert.ok(visual.pmLabels.every((item: any) => item.text === 'PM' && item.y === 44 + Number(item.row) * 12
+          && item.left >= item.cardLeft + 2 && item.right <= item.cardRight - 2
+          && item.attacks.length === 1 && item.attacks[0].viewBox === '0 0 4 30'
+          && item.top >= item.attacks[0].bottom + 1),
+          `PM text stays below the natural-width attack and inside the measure card: ${JSON.stringify(visual.pmLabels)}`);
+        assert.ok(Math.abs((visual.pmLabels[1].x - visual.pmLabels[0].x) - 11.25) <= 0.5,
+          'PM annotations remain centered on their rhythm intervals when packed onto separate rows');
+        assert.ok(visual.pmLabels[0].left < visual.pmLabels[1].right - 2
+          && visual.pmLabels[1].left < visual.pmLabels[0].right - 2,
+        'the close PM labels overlap horizontally and are separated only by the dedicated PM rows');
         assert.deepStrictEqual(visual.colors, {
           normal: 'rgb(31, 41, 55)', past: 'rgb(71, 85, 105)', next: 'rgb(55, 70, 94)', current: 'rgb(0, 95, 133)'
         }, 'computed colors match the fixed high-contrast palette in every technique state');
@@ -2326,6 +2362,31 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           'compact technique states do not reduce opacity');
         assert.ok(Object.values(visual.strokeWidths as Record<string, number>).every(width => width >= 1.0 && width <= 1.2),
           `all technique states retain the 1.15 CSS px non-scaling stroke: ${JSON.stringify(visual.strokeWidths)}`);
+
+        await setPreviewWebviewViewportWidth(320);
+        await settle(150);
+        const narrowPm = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify([...document.querySelectorAll(
+          '.practice-guide-compact-pm-label[data-guide-measure="0"]')].map(item => {
+            const rect = item.getBoundingClientRect();
+            const card = item.closest('.practice-guide-compact-measure').getBoundingClientRect();
+            return { row: item.dataset.guidePmRow, events: item.dataset.guidePmRunEvents,
+              left: rect.left, right: rect.right, cardLeft: card.left, cardRight: card.right };
+          }))`));
+        assert.deepStrictEqual(narrowPm.map((item: any) => item.row), ['0', '1'],
+          '320px interval collisions add a second PM annotation row');
+        assert.ok(narrowPm.every((item: any) => item.left >= item.cardLeft + 2 && item.right <= item.cardRight - 2),
+          `320px PM labels stay inside each card: ${JSON.stringify(narrowPm)}`);
+        await evaluatePreviewWebview<void>(`(() => { const seek = document.getElementById('playback-seek'); seek.value = String(Number(seek.max) * 0.04); seek.dispatchEvent(new Event('input', { bubbles: true })); seek.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+        await settle(160);
+        const pmState = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify([...document.querySelectorAll(
+          '.practice-guide-compact-pm-label[data-guide-measure="0"]')].map(item => ({ events: item.dataset.guidePmRunEvents,
+            current: item.classList.contains('is-current'), next: item.classList.contains('is-next'), past: item.classList.contains('is-past') })))`));
+        assert.deepStrictEqual(pmState.map((item: any) => [item.events, item.current, item.next, item.past]),
+          [['2', true, false, false], ['4', false, true, false]],
+          'PM annotations follow seek time and preserve the upcoming run state');
+        await evaluatePreviewWebview<void>(`(() => { const seek = document.getElementById('playback-seek'); seek.value = '0'; seek.dispatchEvent(new Event('input', { bubbles: true })); seek.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+        await setPreviewWebviewViewportWidth(400);
+        await settle(150);
 
         await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'detailed'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
         await settle(100);
@@ -2346,7 +2407,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
           await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
           await settle(180);
-          const filename = `practice-guide-v5-compact-400-${requestedLocale}-${themeName}.png`;
+          const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
+          const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
+          const filename = `practice-guide-compact-pm-issue162-${requestedLocale}-${themeName}-400${guideEvidenceSuffix}.png`;
           await capturePreviewWebviewScreenshot(filename, 162, 400);
           const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
           assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
@@ -2779,8 +2842,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 aria: item.getAttribute('aria-label'), title: item.querySelector('title')?.textContent,
                 hidden: item.parentElement.hidden, visible: item.parentElement.getClientRects().length > 0,
                 markerVisible: marker && !marker.hidden && marker.getClientRects().length > 0,
+                markerReason: item.parentElement.dataset.guideLyricMarkerReason,
                 fontSize: parseFloat(getComputedStyle(item).fontSize),
                 available: Number(item.dataset.guideLyricAvailableWidth),
+                lyricDuration: Number(item.dataset.guideDurationBeats),
+                melodyDuration: Number(item.dataset.guideMelodyDurationBeats),
                 textLength: item.getAttribute('textLength'),
                 lengthAdjust: item.getAttribute('lengthAdjust'),
                 computedTextWidth: item.getComputedTextLength(),
@@ -2830,13 +2896,19 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             })))}`);
           for (const lyric of card.selected) {
             assert.strictEqual(lyric.row, '0');
-            assert.ok(lyric.text === lyric.full || lyric.text.endsWith('…') || lyric.markerVisible,
-              'dense lyric cells use an intact prefix or a non-text marker');
+            if (lyric.markerVisible) {
+              assert.strictEqual(lyric.text, '', 'the exceptional time marker appears only when no grapheme fits');
+              assert.strictEqual(lyric.markerReason, 'first-grapheme-below-4px');
+              assert.strictEqual(lyric.fontSize, 4);
+            } else {
+              assert.ok(lyric.text.length > 0 && lyric.full.startsWith(lyric.text),
+                'dense lyric cells retain a real leading grapheme prefix without an ellipsis');
+            }
             assert.strictEqual(lyric.aria, lyric.full, 'the accessible name retains the full lyric');
             assert.strictEqual(lyric.title, lyric.full, 'the SVG title retains the full lyric');
             assert.strictEqual(lyric.y, '19');
-            assert.ok(lyric.fontSize >= 10 && lyric.fontSize <= 13,
-              `${width}px lyric font size stays within the contracted 10–13px range`);
+            assert.ok(lyric.fontSize >= 4 && lyric.fontSize <= 13,
+              `${width}px lyric font size stays within the contracted 4–13px range`);
             const measuredTextWidth = Number.isFinite(lyric.computedTextWidth) && lyric.computedTextWidth > 0
               ? lyric.computedTextWidth : lyric.bboxTextWidth;
             assert.ok(Number.isFinite(measuredTextWidth) && measuredTextWidth <= lyric.available + 0.1,
@@ -2858,6 +2930,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assertSingleLineLayout(firstVerse, 400, [1, 1, 1, 1]);
       assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) => kana.includes(item.full))),
         'the first arrangement route shows Japanese lyrics only');
+      assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) => item.text === item.full && !item.markerVisible)),
+        '400px with sixteen sixteenth-note Japanese syllables displays all sixteen actual graphemes without markers');
+      assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) =>
+        Math.abs(item.available - Math.min(item.lyricDuration, item.melodyDuration) / 4 * (card.width - 10) + 0.25) < 0.1)),
+      'each lyric cell follows its matching short melody bar width');
+      const sixteenthFontSizes = firstVerse.cards.flatMap((card: any) => card.selected.map((item: any) => item.fontSize));
+      assert.ok(Math.min(...sixteenthFontSizes) >= 4 && Math.max(...sixteenthFontSizes) <= 6,
+        `sixteenth-note Japanese glyphs use their measured approximately 5px cell widths: ${sixteenthFontSizes}`);
       assert.strictEqual(firstVerse.currentLyric, 'あ', 'the single header lyric follows the seeked Japanese event');
       assert.strictEqual(firstVerse.currentLyricAria, 'あ', 'the header exposes the complete Japanese lyric accessibly');
       assert.strictEqual(firstVerse.currentLyricTitle, 'あ', 'the header title retains the complete Japanese lyric');
@@ -2917,9 +2997,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'the full current English lyric stays within the contracted 10–13px font range');
       assert.strictEqual(englishCurrent.currentLyricWhiteSpace, 'nowrap');
       assert.strictEqual(englishCurrent.currentLyricDisplayCount, 1);
-      assert.ok(englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword').text.endsWith('…')
-        || englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword').markerVisible,
-      'the narrow cell shortens only its visible lyric, preserving the full header text');
+      const denseEnglishLyric = englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword');
+      assert.ok((denseEnglishLyric.text.length > 0 && denseEnglishLyric.full.startsWith(denseEnglishLyric.text))
+        || denseEnglishLyric.markerVisible,
+      'the narrow cell keeps a real leading lyric grapheme or the contracted sub-4px marker, preserving full header text');
       await setPreviewWebviewViewportWidth(400);
       await settle(260);
       await captureLyrics(400, 'en');
@@ -2958,6 +3039,62 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'compact/detailed/compact restores the selected verse and original timing metadata');
       assert.deepStrictEqual(firstVerse.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full])), firstFractions,
         'the original Japanese lyric sequence remains unchanged');
+    });
+  });
+
+  test('Issue #162 compact lyric size follows its matching melody duration without unrelated-note shrinkage', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Compact lyric note-width pairing',
+        'time: 4/4',
+        '| C | G | Am | F ||',
+        'mel: | c4/16 d4/16 e4/16 f4/16 g4/4 a4/2 | c4/4 d4/4 e4/4 f4/4 | c4/4 d4/4 e4/4 f4/4 | c4/4 d4/4 e4/4 f4/4 |',
+        'lyr: あ い う え お か あ い う え お か き く け こ さ し'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await setPreviewWebviewViewportWidth(400);
+      await settle(180);
+      const layout = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const card = [...document.querySelectorAll('.practice-guide-compact-measure')]
+          .find(item => item.getClientRects().length > 0 && Number(item.dataset.guideMeasureIndex) === 0);
+        const lyrics = [...card.querySelectorAll('.practice-guide-compact-lyric-event')]
+          .filter(item => !item.hidden && Number(item.dataset.guideVerse) === 1)
+          .sort((a, b) => Number(a.dataset.guideEvent) - Number(b.dataset.guideEvent));
+        return { cardWidth: card.getBoundingClientRect().width, lyrics: lyrics.map(item => {
+          const text = item.querySelector('.practice-guide-compact-lyric');
+          const rect = text.getBoundingClientRect();
+          return { event: Number(item.dataset.guideEvent), full: item.dataset.guideFullText,
+            text: [...text.childNodes].find(node => node.nodeType === Node.TEXT_NODE)?.nodeValue ?? '',
+            lyricDuration: Number(item.dataset.guideDurationBeats), melodyDuration: Number(item.dataset.guideMelodyDurationBeats),
+            available: Number(item.dataset.guideLyricAvailableWidth), size: parseFloat(getComputedStyle(text).fontSize),
+            left: rect.left, right: rect.right };
+        }) };
+      })())`));
+      assert.strictEqual(layout.cardWidth, 100);
+      assert.strictEqual(layout.lyrics.length, 6, 'all six lyric events in the mixed-duration measure remain visible');
+      for (let index = 0; index < 4; index++) {
+        const lyric = layout.lyrics[index];
+        assert.strictEqual(lyric.lyricDuration, 0.25);
+        assert.strictEqual(lyric.melodyDuration, 0.25);
+        assert.ok(lyric.size >= 4 && lyric.size <= 6,
+          `sixteenth-note event ${index} follows its short bar width: ${JSON.stringify(lyric)}`);
+        assert.strictEqual(lyric.text, lyric.full, 'each single-grapheme sixteenth lyric stays visible');
+      }
+      assert.strictEqual(layout.lyrics[4].lyricDuration, 1);
+      assert.strictEqual(layout.lyrics[4].melodyDuration, 1);
+      assert.strictEqual(layout.lyrics[5].lyricDuration, 2);
+      assert.strictEqual(layout.lyrics[5].melodyDuration, 2);
+      assert.ok(layout.lyrics[4].size > Math.max(...layout.lyrics.slice(0, 4).map((item: any) => item.size))
+        && layout.lyrics[5].size >= layout.lyrics[4].size,
+      `longer note bars allow larger lyrics instead of inheriting the measure's shortest note size: ${JSON.stringify(layout.lyrics)}`);
+      assert.ok(layout.lyrics.slice(1).every((item: any, index: number) =>
+        layout.lyrics[index].right <= item.left + 0.5), 'the single lyric row has no overlapping rendered text');
     });
   });
 

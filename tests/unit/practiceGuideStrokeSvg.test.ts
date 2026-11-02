@@ -64,6 +64,7 @@ describe('practice guide stroke SVG', () => {
     const down = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'down', label: 'Down stroke' });
     const up = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'up', label: 'Up stroke' });
     const both = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'both', label: 'Both strokes' });
+    const palmMuteDown = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'down', palmMute: true, label: 'PM down stroke' });
     assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downShaft, 'M2 1 V27.8');
     assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downHead, 'M0.55 24 L2 28.5 L3.45 24');
     assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.upShaft, 'M2 29 V2.2');
@@ -77,13 +78,15 @@ describe('practice guide stroke SVG', () => {
     assert.match(down, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
     assert.match(both, /viewBox="0 0 8 30"/);
     assert.match(both, /translate\(4 0\)/);
+    assert.strictEqual(palmMuteDown, down, 'compact PM metadata never moves or widens the attack path');
+    assert.doesNotMatch(palmMuteDown, /practice-guide-pm-label|>PM</);
     assert.match(`${down}${up}${both}`, /aria-hidden="true" focusable="false"/);
     assert.doesNotMatch(`${down}${up}${both}`, /[↓↑〜]/u);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', label: 'Attack' }), 4);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: 'Tie' }), 5.6);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'brush', label: 'Brush' }), 8);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', direction: 'both', label: 'Both' }), 8);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', palmMute: true, label: 'PM attack' }), 18);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', palmMute: true, label: 'PM attack' }), 4);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'mute', label: 'Mute' }), 4);
     assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'string', label: 'String' }), 4);
     assert.match(renderPracticeGuideStrokeSvg({ kind: 'attack', direction: 'down', label: 'Detailed down' }), /viewBox="0 0 20 34"/);
