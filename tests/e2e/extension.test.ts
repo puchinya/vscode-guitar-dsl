@@ -1955,11 +1955,24 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
         const stage = document.getElementById('practice-guide-pair-page');
         const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+        const allTemplateDiagrams = [...document.querySelectorAll('template[data-guide-template-occurrence]')]
+          .flatMap(template => [...template.content.querySelectorAll('.practice-guide-compact-diagram-event')].map(item => ({
+            size: Number(item.dataset.guideLayoutWidth), availableWidth: Number(item.dataset.guideDiagramAvailableWidth)
+          })));
         const pairs = cards.flatMap(card => {
           const cardRect = card.getBoundingClientRect();
           return [...card.querySelectorAll('.practice-guide-compact-diagram-event')].map(diagramEvent => {
             const diagram = diagramEvent.querySelector('svg.practice-guide-diagram');
-            const diagramRect = diagram.getBoundingClientRect();
+              const diagramMatrix = diagram.getScreenCTM();
+              const diagramRect = { left: diagramMatrix?.e ?? 0, top: diagramMatrix?.f ?? 0,
+                width: 144 * (diagramMatrix?.a ?? 0), height: 144 * (diagramMatrix?.d ?? 0),
+                right: (diagramMatrix?.e ?? 0) + 144 * (diagramMatrix?.a ?? 0),
+                bottom: (diagramMatrix?.f ?? 0) + 144 * (diagramMatrix?.d ?? 0) };
+            const diagramLane = card.querySelector('[data-guide-lane="diagrams"]');
+            const laneMatrix = diagramLane.getScreenCTM();
+            const laneHeight = Number(diagramLane.dataset.guideLaneHeight) || 0;
+            const laneTop = laneMatrix?.f ?? 0;
+            const laneBottom = laneTop + laneHeight * (laneMatrix?.d ?? 1);
             const name = [...card.querySelectorAll('.practice-guide-compact-chord-name')]
               .find(item => item.dataset.guidePackKey === diagramEvent.dataset.guidePackKey);
             const nameRect = name?.querySelector('text')?.getBoundingClientRect();
@@ -1982,8 +1995,14 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 diagramWidthAttribute,
                 diagramComputedWidth: diagramRect.width },
               diagramInside: diagramRect.left >= cardRect.left - 1 && diagramRect.right <= cardRect.right + 1,
+              diagramInsideLane: diagramRect.top >= laneTop + 3.5 && diagramRect.bottom <= laneBottom - 3.5,
+              diagramLaneBounds: { top: laneTop, bottom: laneBottom, height: laneHeight },
               nameInside: !!nameRect && nameRect.left >= cardRect.left - 1 && nameRect.right <= cardRect.right + 1,
               diagramWidth: diagramRect.width,
+              availableWidth: Number(diagramEvent.dataset.guideDiagramAvailableWidth),
+              diagramHeight: diagramRect.height,
+              viewBox: diagram.getAttribute('viewBox'),
+              diagramHeightAttribute: parseFloat(diagram.getAttribute('height') ?? '0'),
               fingerDots: diagram.querySelectorAll('circle[fill="#121e2b"]').length
             };
           });
@@ -1991,11 +2010,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         return {
           viewportWidth: window.innerWidth,
           cardCount: cards.length,
+          allTemplateDiagrams,
           counts: cards.map(card => card.querySelectorAll('.practice-guide-compact-diagram-event').length),
           rows: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-chord-name')].map(item => Number(item.dataset.guideRow))),
           diagramRows: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-diagram-event')].map(item => Number(item.dataset.guideRow))),
           diagramBounds: cards.map(card => [...card.querySelectorAll('.practice-guide-compact-diagram-event svg.practice-guide-diagram')]
-            .map(diagram => { const rect = diagram.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top }; })),
+            .map(diagram => { const diagramCtm = diagram.getScreenCTM(); const left = diagramCtm?.e ?? 0; const top = diagramCtm?.f ?? 0;
+              return { left, right: left + 144 * (diagramCtm?.a ?? 0), top }; })),
           pairs
         };
       })())`));
@@ -2014,6 +2035,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         pair.samePack && pair.nameChord === pair.chord && pair.aligned && pair.diagramInside && pair.nameInside
           && pair.domCenterOffset <= 4 && pair.diagramWidth > 0 && pair.fingerDots > 0),
       `each name and finger diagram stays paired and within the card: ${JSON.stringify(geometry.pairs)}`);
+      const commonDiagramSize = Math.min(...geometry.allTemplateDiagrams.map((diagram: { availableWidth: number }) => diagram.availableWidth));
+      assert.ok(geometry.allTemplateDiagrams.every((diagram: { size: number }) => Math.abs(diagram.size - commonDiagramSize) < 0.01),
+        `all playback occurrence templates use the song-wide minimum ${commonDiagramSize}px: ${JSON.stringify(geometry.allTemplateDiagrams)}`);
+      assert.ok(geometry.pairs.every((pair: { availableWidth: number; diagramWidth: number; diagramHeight: number; diagramHeightAttribute: number; viewBox: string; diagramInsideLane: boolean }) =>
+        Math.abs(pair.diagramWidth - commonDiagramSize) < 0.1
+          && Math.abs(pair.diagramHeight - commonDiagramSize) < 0.1
+          && Math.abs(pair.diagramHeightAttribute - commonDiagramSize) < 0.01
+          && pair.viewBox === '0 0 144 144' && pair.diagramInsideLane),
+      `every one- through four-chord measure uses the song-wide minimum square size ${commonDiagramSize}px and keeps the full diagram inside its lane: ${JSON.stringify(geometry.pairs)}`);
 
       if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
         const locale = vscode.env.language.toLowerCase().split('-')[0];
@@ -2054,15 +2084,34 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         return {
           viewportWidth: window.innerWidth,
           measures: cards.map(card => Number(card.dataset.guideMeasureIndex)),
+          allTemplateDiagrams: [...document.querySelectorAll('template[data-guide-template-occurrence]')]
+            .flatMap(template => [...template.content.querySelectorAll('.practice-guide-compact-diagram-event')].map(item => ({
+              occurrence: Number(template.dataset.guideTemplateOccurrence),
+              size: Number(item.dataset.guideLayoutWidth),
+              availableWidth: Number(item.dataset.guideDiagramAvailableWidth)
+            }))),
           cards: cards.map(card => {
             const cardRect = card.getBoundingClientRect();
             const diagrams = [...card.querySelectorAll('.practice-guide-compact-diagram-event')].map(diagramEvent => {
               const diagram = diagramEvent.querySelector('svg.practice-guide-diagram');
-              const rect = diagram.getBoundingClientRect();
+              const matrix = diagram.getScreenCTM();
+              const rect = { left: matrix?.e ?? 0, top: matrix?.f ?? 0,
+                width: 144 * (matrix?.a ?? 0), height: 144 * (matrix?.d ?? 0),
+                right: (matrix?.e ?? 0) + 144 * (matrix?.a ?? 0),
+                bottom: (matrix?.f ?? 0) + 144 * (matrix?.d ?? 0) };
+              const lane = diagramEvent.closest('[data-guide-lane="diagrams"]');
+              const laneMatrix = lane.getScreenCTM();
+              const laneHeight = Number(lane.dataset.guideLaneHeight) || 0;
+              const laneTop = laneMatrix?.f ?? 0;
+              const laneBottom = laneTop + laneHeight * (laneMatrix?.d ?? 1);
               const name = [...card.querySelectorAll('.practice-guide-compact-chord-name')]
                 .find(item => item.dataset.guidePackKey === diagramEvent.dataset.guidePackKey);
               return { chord: diagramEvent.dataset.guideChord, nameChord: name?.dataset.guideChord ?? null,
                 row: Number(diagramEvent.dataset.guideRow), left: rect.left, right: rect.right, top: rect.top,
+                width: rect.width, height: rect.height, viewBox: diagram.getAttribute('viewBox'),
+                availableWidth: Number(diagramEvent.dataset.guideDiagramAvailableWidth),
+                heightAttribute: parseFloat(diagram.getAttribute('height') ?? '0'),
+                insideLane: rect.top >= laneTop + 3.5 && rect.bottom <= laneBottom - 3.5,
                 inside: rect.left >= cardRect.left - 1 && rect.right <= cardRect.right + 1,
                 fingerDots: diagram.querySelectorAll('circle[fill="#121e2b"]').length };
             });
@@ -2084,19 +2133,70 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           index === 0 || (diagram.left >= card.diagrams[index - 1].right - 1 && Math.abs(diagram.top - card.diagrams[0].top) <= 3)),
         `sample chord diagrams stay side by side without overlap: ${JSON.stringify(card.diagrams)}`);
       }
+      const sampleDiagrams = geometry.cards.flatMap((card: { diagrams: { width: number; height: number; availableWidth: number; heightAttribute: number; viewBox: string; insideLane: boolean }[] }) =>
+        card.diagrams);
+      const sampleDiagramSizes = sampleDiagrams.map((diagram: { width: number }) => diagram.width);
+      const sampleMinimumAvailable = Math.min(...geometry.allTemplateDiagrams.map((diagram: { availableWidth: number }) => diagram.availableWidth));
+      assert.ok(geometry.allTemplateDiagrams.every((diagram: { size: number }) => Math.abs(diagram.size - sampleMinimumAvailable) < 0.01),
+        `every playback occurrence template shares the global minimum size ${sampleMinimumAvailable}px: ${JSON.stringify(geometry.allTemplateDiagrams)}`);
+      assert.ok(sampleDiagrams.every((diagram: { width: number; height: number; availableWidth: number; heightAttribute: number; viewBox: string; insideLane: boolean }) =>
+        Math.abs(diagram.width - sampleMinimumAvailable) < 0.1
+          && Math.abs(diagram.height - sampleMinimumAvailable) < 0.1
+          && Math.abs(diagram.heightAttribute - sampleMinimumAvailable) < 0.01
+          && diagram.viewBox === '0 0 144 144' && diagram.insideLane),
+      `all one- and two-chord sample measures use the narrowest available square size ${sampleMinimumAvailable}px and retain 4px lane reserves: ${JSON.stringify(sampleDiagrams)}`);
+      assert.strictEqual(new Set(sampleDiagramSizes).size, 1,
+        `one-chord and two-chord measures share one song-wide diagram size: ${sampleDiagramSizes}`);
+      assert.ok(geometry.cards.every((card: { diagrams: { width: number; height: number; viewBox: string }[] }) =>
+        card.diagrams.every(diagram => Math.abs(diagram.width - diagram.height) < 0.1 && diagram.viewBox === '0 0 144 144')),
+      'every sample diagram remains a full, square 144×144 viewBox');
+
+      await setPreviewWebviewViewportWidth(600);
+      await settle(180);
+      const sample600 = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        const templates = [...document.querySelectorAll('template[data-guide-template-occurrence]')]
+          .flatMap(template => [...template.content.querySelectorAll('.practice-guide-compact-diagram-event')]
+            .map(item => ({ size: Number(item.dataset.guideLayoutWidth), available: Number(item.dataset.guideDiagramAvailableWidth) })));
+        const live = [...stage.querySelectorAll('.practice-guide-compact-diagram-event')].map(item => {
+          const svg = item.querySelector('svg.practice-guide-diagram');
+          const diagramCtm = svg.getScreenCTM();
+          const rect = { left: diagramCtm?.e ?? 0, top: diagramCtm?.f ?? 0,
+            width: 144 * (diagramCtm?.a ?? 0), height: 144 * (diagramCtm?.d ?? 0),
+            right: (diagramCtm?.e ?? 0) + 144 * (diagramCtm?.a ?? 0),
+            bottom: (diagramCtm?.f ?? 0) + 144 * (diagramCtm?.d ?? 0) };
+          const lane = item.closest('[data-guide-lane="diagrams"]');
+          const laneCtm = lane.getScreenCTM();
+          const laneTop = laneCtm?.f ?? 0;
+          const laneBottom = laneTop + (Number(lane.dataset.guideLaneHeight) || 0) * (laneCtm?.d ?? 1);
+          return { width: rect.width, height: rect.height, top: rect.top, bottom: rect.bottom,
+            laneTop, laneBottom, viewBox: svg.getAttribute('viewBox') };
+        });
+        return { viewportWidth: window.innerWidth, measures: [...stage.querySelectorAll('.practice-guide-compact-measure')]
+          .map(card => Number(card.dataset.guideMeasureIndex)), templates, live };
+      })())`));
+      const common600 = Math.min(...sample600.templates.map((item: { available: number }) => item.available));
+      assert.strictEqual(sample600.viewportWidth, 600);
+      assert.deepStrictEqual(sample600.measures, [4, 5, 6, 7]);
+      assert.ok(sample600.templates.every((item: { size: number }) => Math.abs(item.size - common600) < 0.01)
+        && sample600.live.every((item: any) => Math.abs(item.width - common600) < 0.1
+          && Math.abs(item.height - common600) < 0.1 && item.viewBox === '0 0 144 144'
+          && item.top >= item.laneTop + 3.5 && item.bottom <= item.laneBottom - 3.5),
+      `600px playback templates and visible sample diagrams use one complete square size ${common600}px: ${JSON.stringify(sample600)}`);
 
       if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
         const locale = vscode.env.language.toLowerCase().split('-')[0];
         const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light') ? 'light' : 'dark';
         const evidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
         const evidenceSuffix = evidenceTag && /^[a-z0-9-]+$/i.test(evidenceTag) ? `-${evidenceTag}` : '';
-        const filename = `practice-guide-horizontal-sample-issue162-${locale}-${theme}-400${evidenceSuffix}.png`;
+        await setWorkbenchViewportWidth(2200);
+        const filename = `practice-guide-horizontal-sample-issue162-${locale}-${theme}-600-contract-v12${evidenceSuffix}.png`;
         await evaluatePreviewWebview<void>("(() => { const layout = document.querySelector('.practice-guide-layout'); const chordLane = document.querySelector('.practice-guide-compact-measure [data-guide-lane=\"chord\"]'); layout.scrollTop += chordLane.getBoundingClientRect().top - layout.getBoundingClientRect().top - 8; })()");
         await settle(200);
-        await capturePreviewWebviewScreenshot(filename, 162, 400);
+        await capturePreviewWebviewScreenshot(filename, 162, 600);
         const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
-        assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
-          'the original sample receives exact-width compact chord evidence');
+        assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 600,
+          'the original sample receives exact-width 600px compact chord evidence');
       }
       await resetPreviewWebviewViewport();
     });
@@ -2678,32 +2778,205 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     });
   });
 
+  test('Issue #162 compact melody and header geometry do not depend on lyric presence', async function () {
+    this.timeout(90000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const melody = 'mel: | c4/4 d4/4 e4/2 | g4/2 f4/2 |';
+      const readGeometry = async (withLyrics: boolean) => {
+        const source = [
+          'title: Compact lyric-independent melody geometry',
+          'time: 4/4',
+          '| C | G |',
+          melody,
+          ...(withLyrics ? ['lyr: あ い う'] : [])
+        ].join('\n');
+        const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+        await showAndFocus(doc);
+        const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
+          generation: number;
+          currentDocumentUri?: string;
+        };
+        const previousGeneration = previewLifecycle.generation;
+        await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        for (let attempt = 0; attempt < 100
+          && (previewLifecycle.currentDocumentUri !== doc.uri.toString()
+            || previewLifecycle.generation === previousGeneration); attempt++) await settle(20);
+        assert.strictEqual(previewLifecycle.currentDocumentUri, doc.uri.toString(), 'the Preview switches to the lyric geometry fixture');
+        assert.ok(previewLifecycle.generation > previousGeneration, 'the lyric geometry fixture receives a fresh Preview generation');
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version,
+          previewGeneration: previewLifecycle.generation });
+        await waitForPreviewDocument();
+        await setPreviewPracticeEnabled(true);
+        await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await setPreviewWebviewViewportWidth(600);
+        await settle(180);
+        return JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+          const lane = cards[0].querySelector('[data-guide-lane="melody"]');
+          const header = document.querySelector('.practice-guide-header');
+          const lyricNodes = [...stage.querySelectorAll('.practice-guide-compact-lyric')];
+          return {
+            headerHeight: header.getBoundingClientRect().height,
+            headerLyricCount: document.querySelectorAll('.practice-guide-current-lyric-wrap, #practice-guide-current-lyric, .practice-guide-current-lyric-label').length,
+            laneTransform: lane.getAttribute('transform'),
+            laneHeight: lane.dataset.guideLaneHeight,
+            bars: cards.flatMap(card => [...card.querySelectorAll('.practice-guide-compact-pitch-bar')]
+              .map(bar => ({ measure: Number(bar.dataset.guideMeasure), event: Number(bar.dataset.guideEvent),
+                pitch: Number(bar.dataset.guidePitchMidi), x: bar.getAttribute('x'), y: bar.getAttribute('y'),
+                width: bar.getAttribute('width'), height: bar.getAttribute('height') }))),
+            lyricCount: lyricNodes.length,
+            lyricMetadataIntact: lyricNodes.every(item => item.getAttribute('aria-label') === item.dataset.guideFullText
+              && item.querySelector('title')?.textContent === item.dataset.guideFullText)
+          };
+        })())`));
+      };
+
+      const withLyrics = await readGeometry(true);
+      const withoutLyrics = await readGeometry(false);
+      assert.strictEqual(withLyrics.headerLyricCount, 0, 'the header has no duplicate current-lyric field');
+      assert.strictEqual(withoutLyrics.headerLyricCount, 0, 'the lyric-free header also has no current-lyric field');
+      assert.strictEqual(withLyrics.headerHeight, withoutLyrics.headerHeight,
+        'adding lyrics does not change Practice Guide header height');
+      assert.strictEqual(withLyrics.laneHeight, '64', 'the visible melody lane remains 64px high');
+      assert.strictEqual(withoutLyrics.laneHeight, '64', 'the melody lane remains 64px high without lyrics');
+      assert.strictEqual(withLyrics.laneTransform, 'translate(0 24.000)', 'melody starts immediately after the 24px ruler');
+      assert.strictEqual(withoutLyrics.laneTransform, withLyrics.laneTransform);
+      assert.deepStrictEqual(withLyrics.bars, withoutLyrics.bars,
+        'the same score retains identical pitch mapping and vertical bar coordinates with or without lyrics');
+      assert.ok(withLyrics.lyricCount > 0 && withLyrics.lyricMetadataIntact,
+        'the lower lyric lane remains and keeps each complete source lyric accessibly');
+      assert.strictEqual(withoutLyrics.lyricCount, 0, 'a lyric-free score has no lower lyric events');
+
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'detailed'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(180);
+      const detailedHeaderLyrics = await evaluatePreviewWebview<number>("document.querySelectorAll('.practice-guide-current-lyric-wrap, #practice-guide-current-lyric, .practice-guide-current-lyric-label').length");
+      assert.strictEqual(detailedHeaderLyrics, 0, 'the redundant current-lyric field is absent in detailed mode too');
+    });
+  });
+
+  test('Issue #162 compact lyric sizing falls back to lyric duration when melody has no pitch bars', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Compact lyric duration fallback',
+        'time: 4/4',
+        '| C l:"first fallback phrase" | G l:"second fallback phrase" | Am l:"third fallback phrase" | F l:"fourth fallback phrase" |'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await setPreviewWebviewViewportWidth(400);
+      await settle(180);
+      const fallback = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        const templates = [...document.querySelectorAll('template[data-guide-template-occurrence]')];
+        const bars = templates.flatMap(template => [...template.content.querySelectorAll('.practice-guide-compact-pitch-bar')]);
+        const lyricEvents = templates.flatMap(template => [...template.content.querySelectorAll('.practice-guide-compact-lyric-event')]
+          .map(item => ({ measure: Number(template.dataset.guideTemplateMeasure), item })));
+        return { slotWidth: stage.clientWidth / 4, pitchBarCount: bars.length,
+          events: lyricEvents.map(({ measure, item }) => ({ measure, event: Number(item.dataset.guideEvent), verse: Number(item.dataset.guideVerse),
+            text: item.dataset.guideFullText, duration: Number(item.dataset.guideDurationBeats),
+            melodyDuration: Number(item.dataset.guideMelodyDurationBeats) || 0,
+            aria: item.querySelector('text')?.getAttribute('aria-label'), title: item.querySelector('title')?.textContent,
+            fontSize: parseFloat(item.querySelector('text')?.getAttribute('font-size') || '0') })),
+          visibleMelodyBars: [...stage.querySelectorAll('.practice-guide-compact-pitch-bar')].length };
+      })())`));
+      assert.strictEqual(fallback.pitchBarCount, 0, 'the fixture has no melody pitch bars to supply a size');
+      assert.strictEqual(fallback.visibleMelodyBars, 0, 'a score without melody has no compact pitch bars');
+      assert.deepStrictEqual(fallback.events.map((item: any) => item.measure), [0, 1, 2, 3],
+        'all four measure-level fallback lyrics remain in playback order without duplicates or omissions');
+      assert.deepStrictEqual(fallback.events.map((item: any) => item.duration), [4, 4, 4, 4],
+        'each fallback event retains its effective full-measure duration');
+      assert.ok(fallback.events.every((item: any) => item.event === -1 && item.melodyDuration === 0
+        && item.aria === item.text && item.title === item.text),
+      'the fallback keeps complete accessible text without a mapped pitch duration');
+      const shortestLyricWidth = Math.min(...fallback.events.map((item: any) => item.duration))
+        / 4 * (fallback.slotWidth - 10);
+      const expected = Math.min(13, Math.max(4, Math.floor(Math.max(0, shortestLyricWidth - 0.25) * 100) / 100));
+      assert.ok(Math.abs(expected - 13) < 0.01 && fallback.events.every((item: any) => Math.abs(item.fontSize - expected) < 0.01),
+        `all fallback lyrics use the shortest effective lyric-duration width ${shortestLyricWidth}px: ${JSON.stringify(fallback.events)}`);
+    });
+  });
+
   test('Issue #155 manual pages follow repeat, volta, and lyric verse occurrences', async function () {
     this.timeout(60000);
     await withWorkbenchSnapshotRestored(async () => {
       const openCompactGuide = async (lines: string[]): Promise<void> => {
         const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: lines.join('\n') });
         await showAndFocus(doc);
+        const previewLifecycle = require('../../previewCapo').previewLifecycleProbe as {
+          generation: number;
+          currentDocumentUri?: string;
+        };
+        const previousGeneration = previewLifecycle.generation;
         await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+        for (let attempt = 0; attempt < 100
+          && (previewLifecycle.currentDocumentUri !== doc.uri.toString()
+            || previewLifecycle.generation === previousGeneration); attempt++) await settle(20);
+        assert.strictEqual(previewLifecycle.currentDocumentUri, doc.uri.toString(), 'the Preview switches to the playback occurrence fixture');
+        assert.ok(previewLifecycle.generation > previousGeneration, 'the playback occurrence fixture receives a fresh Preview generation');
+        await waitForPreviewIdentity({ documentUri: doc.uri.toString(), documentVersion: doc.version,
+          previewGeneration: previewLifecycle.generation });
         await waitForPreviewDocument();
         await setPreviewPracticeEnabled(true);
         await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await setPreviewWebviewViewportWidth(400);
         await settle(150);
       };
-      const readPage = async () => JSON.parse(await evaluatePreviewWebview<string>("JSON.stringify((() => { const stage = document.getElementById('practice-guide-pair-page'); return { range: document.getElementById('practice-guide-compact-range').textContent.trim(), nextDisabled: document.getElementById('practice-guide-compact-next').disabled, previousDisabled: document.getElementById('practice-guide-compact-previous').disabled, seek: document.getElementById('playback-seek').value, cards: [...stage.querySelectorAll('.practice-guide-compact-measure')].map(item => ({ order: Number(item.dataset.guidePlaybackPosition), measure: Number(item.dataset.guideMeasureIndex), verse: Number(item.dataset.guideLyricVerse) })).sort((a, b) => a.order - b.order) }; })())"));
+      const readPage = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const stage = document.getElementById('practice-guide-pair-page');
+        const templates = [...document.querySelectorAll('template[data-guide-template-occurrence]')].map(template => {
+          const svg = template.content.querySelector('.practice-guide-compact-svg');
+          return { occurrence: Number(template.dataset.guideTemplateOccurrence),
+            measureBeats: Number(svg?.dataset.guideMeasureBeats) || 4,
+            bars: [...(svg?.querySelectorAll('.practice-guide-compact-pitch-bar') ?? [])]
+              .map(bar => Number(bar.dataset.guideDurationBeats)),
+            lyrics: [...(svg?.querySelectorAll('.practice-guide-compact-lyric') ?? [])]
+              .map(text => ({ verse: Number(text.dataset.guideVerse), fontSize: parseFloat(text.getAttribute('font-size') || '0') })) };
+        });
+        return { range: document.getElementById('practice-guide-compact-range').textContent.trim(),
+          nextDisabled: document.getElementById('practice-guide-compact-next').disabled,
+          previousDisabled: document.getElementById('practice-guide-compact-previous').disabled,
+          seek: document.getElementById('playback-seek').value, slotWidth: stage.clientWidth / 4, templates,
+          cards: [...stage.querySelectorAll('.practice-guide-compact-measure')]
+            .map(item => ({ order: Number(item.dataset.guidePlaybackPosition), measure: Number(item.dataset.guideMeasureIndex), verse: Number(item.dataset.guideLyricVerse) }))
+            .sort((a, b) => a.order - b.order) };
+      })())`));
+      const assertSongWideTemplateSize = (page: any, requireLateShortest = false): number => {
+        const bars = page.templates.flatMap((template: any) => template.bars.map((duration: number) => ({
+          occurrence: template.occurrence, duration, measureBeats: template.measureBeats
+        })));
+        assert.ok(bars.length > 0, 'all playback occurrence templates retain compact pitch bars');
+        const shortest = bars.reduce((best: any, item: any) => item.duration < best.duration ? item : best);
+        if (requireLateShortest) assert.ok(shortest.occurrence >= 4,
+          `the shortest pitch bar belongs only to a playback occurrence after the first four: ${JSON.stringify(shortest)}`);
+        const expected = Math.min(13, Math.max(4, Math.floor(Math.max(0,
+          shortest.duration / shortest.measureBeats * (page.slotWidth - 10) - 0.25) * 100) / 100));
+        const sizes = page.templates.flatMap((template: any) => template.lyrics.map((item: any) => item.fontSize));
+        assert.ok(sizes.length > 0, 'the song has lyric events in its occurrence templates');
+        assert.strictEqual(new Set(sizes).size, 1, `all hidden and visible verses share one font size: ${sizes}`);
+        assert.ok(Math.abs(sizes[0] - expected) < 0.01,
+          `the song-wide font size ${sizes[0]} follows the shortest ${shortest.duration}-beat bar at occurrence ${shortest.occurrence}: expected ${expected}`);
+        return sizes[0];
+      };
 
       await openCompactGuide([
         'title: Playback repeat and volta pages',
         'time: 4/4',
         '|: C | G | [1.] Am :| [2.] F ||',
-        'mel: | c4/1 | d4/1 | e4/1 | f4/1 |',
-        'lyr: one two three four',
-        'lyr: ichi ni san yon'
+        'mel: | c4/1 | d4/1 | e4/1 | f4/16 g4/16 a4/16 b4/16 c5/2 d5/4 |',
+        'lyr: one two three four five six seven eight nine',
+        'lyr: ichi ni san yon go roku nana hachi kyuu'
       ]);
       const repeatedInitial = await readPage();
       assert.strictEqual(repeatedInitial.range, '1–4/6', 'repeat and volta create six playback occurrences from four written measures');
       assert.strictEqual(repeatedInitial.nextDisabled, false, 'Next uses playback occurrence count instead of written measure count');
       assert.deepStrictEqual(repeatedInitial.cards.map((item: { order: number }) => item.order), [1, 2, 3, 4]);
+      const repeatFontSize400 = assertSongWideTemplateSize(repeatedInitial, true);
       const repeatedSeek = repeatedInitial.seek;
       await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-next').click()");
       await settle(150);
@@ -2714,11 +2987,41 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'manual pages follow repeat and volta order while retaining each written measure identity');
       assert.strictEqual(repeatedNext.nextDisabled, true, 'Next is disabled at the final occurrence page');
       assert.strictEqual(repeatedNext.seek, repeatedSeek, 'repeat and volta browsing never seeks or changes playback time');
+      assert.strictEqual(assertSongWideTemplateSize(repeatedNext, true), repeatFontSize400,
+        'the late volta occurrence does not change font size during page navigation');
       await evaluatePreviewWebview<void>("document.getElementById('practice-guide-compact-previous').click()");
       await settle(120);
       const repeatedPrevious = await readPage();
       assert.strictEqual(repeatedPrevious.range, '1–4/6');
       assert.strictEqual(repeatedPrevious.previousDisabled, true, 'Previous is disabled at the first occurrence page');
+      await setPreviewWebviewViewportWidth(600);
+      await settle(180);
+      const repeatedAt600 = await readPage();
+      const repeatFontSize600 = assertSongWideTemplateSize(repeatedAt600, true);
+      assert.ok(repeatFontSize600 > repeatFontSize400, 'resizing to 600px recalculates the common song-wide size');
+      await setPreviewWebviewViewportWidth(400);
+      await settle(180);
+      const repeatedAt400Again = await readPage();
+      assert.strictEqual(assertSongWideTemplateSize(repeatedAt400Again, true), repeatFontSize400,
+        'resizing 400→600→400 restores the original common size');
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-melody-toggle').click()");
+      await settle(120);
+      const melodyOff = await readPage();
+      assert.strictEqual(assertSongWideTemplateSize(melodyOff, true), repeatFontSize400,
+        'hiding melody does not change the lyric size calculated from the score');
+      await evaluatePreviewWebview<void>("document.getElementById('practice-guide-melody-toggle').click()");
+      await settle(120);
+      await evaluatePreviewWebview<void>(`(() => {
+        const seek = document.getElementById('playback-seek');
+        seek.value = String(Number(seek.max) * 0.98);
+        seek.dispatchEvent(new Event('input', { bubbles: true }));
+        seek.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await settle(320);
+      const repeatSeekPage = await readPage();
+      assert.ok(repeatSeekPage.seek > 0.9, 'the seek enters the final repeat/volta playback occurrences');
+      assert.strictEqual(assertSongWideTemplateSize(repeatSeekPage, true), repeatFontSize400,
+        'seeking across repeat and volta boundaries preserves the song-wide lyric size');
 
       await openCompactGuide([
         'title: Playback lyric verse pages',
@@ -2746,6 +3049,10 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       assert.deepStrictEqual(crossedVerses.cards.map((item: { verse: number }) => item.verse), [1, 1, 2, 2],
         'manual page projection carries the arrangement lyricVerse at the boundary between verses');
       assert.strictEqual(crossedVerses.seek, verseSeek, 'lyric verse browsing never seeks or changes playback time');
+      const verseSizes = crossedVerses.templates.flatMap((template: any) => template.lyrics.map((item: any) => item.fontSize));
+      assert.strictEqual(new Set(verseSizes).size, 1, 'both lyrics verses share one size across the route boundary');
+      assert.deepStrictEqual([...new Set(crossedVerses.templates.flatMap((template: any) => template.lyrics.map((item: any) => item.verse)))].sort(), [1, 2],
+        'the size check includes hidden source events from both lyric verses');
     });
   });
 
@@ -2816,13 +3123,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           mode: document.getElementById('practice-guide-view').value,
           range: document.getElementById('practice-guide-compact-range').textContent.trim(),
           seek: document.getElementById('playback-seek').value,
-          currentLyric: document.getElementById('practice-guide-current-lyric').textContent,
-          currentLyricAria: document.getElementById('practice-guide-current-lyric').getAttribute('aria-label'),
-          currentLyricTitle: document.getElementById('practice-guide-current-lyric').getAttribute('title'),
-          currentLyricFontSize: parseFloat(getComputedStyle(document.getElementById('practice-guide-current-lyric')).fontSize),
-          currentLyricWhiteSpace: getComputedStyle(document.getElementById('practice-guide-current-lyric')).whiteSpace,
-          currentLyricVisible: !document.getElementById('practice-guide-current-lyric-wrap').hidden,
-          currentLyricDisplayCount: document.querySelectorAll('#practice-guide-current-lyric').length,
+          currentLyricHeaderCount: document.querySelectorAll('.practice-guide-current-lyric-wrap, #practice-guide-current-lyric').length,
+          headerHeight: document.querySelector('.practice-guide-header').getBoundingClientRect().height,
           stageWidth: stage.clientWidth,
           railDisplay: getComputedStyle(rail).display,
           railWidth: rail.getBoundingClientRect().width,
@@ -2876,6 +3178,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       })())`));
       const assertSingleLineLayout = (layout: any, width: number, expectedVerses: number[]) => {
         assert.strictEqual(layout.mode, 'compact');
+        assert.strictEqual(layout.currentLyricHeaderCount, 0,
+          'the header has no duplicate current-lyric display; lyrics remain in the measure lane');
         assert.strictEqual(layout.railDisplay, 'none', `${width}px hides the label rail`);
         assert.strictEqual(layout.railWidth, 0, `${width}px reserves no label-rail width`);
         assert.strictEqual(layout.gridColumnCount, width <= 480 ? 1 : 2,
@@ -2942,14 +3246,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         `all lyrics in the song share one font size: ${sixteenthFontSizes}`);
       assert.ok(Math.abs(sixteenthFontSizes[0] - 5.37) < 0.02,
         `song-wide lyric size follows the shortest 5.625px melody bar minus the 0.25px cell inset: ${sixteenthFontSizes}`);
-      assert.strictEqual(firstVerse.currentLyric, 'あ', 'the single header lyric follows the seeked Japanese event');
-      assert.strictEqual(firstVerse.currentLyricAria, 'あ', 'the header exposes the complete Japanese lyric accessibly');
-      assert.strictEqual(firstVerse.currentLyricTitle, 'あ', 'the header title retains the complete Japanese lyric');
-      assert.ok(firstVerse.currentLyricFontSize >= 10 && firstVerse.currentLyricFontSize <= 13,
-        'the current lyric header stays within the contracted 10–13px font range');
-      assert.strictEqual(firstVerse.currentLyricWhiteSpace, 'nowrap', 'the current lyric header remains one line');
-      assert.strictEqual(firstVerse.currentLyricVisible, true);
-      assert.strictEqual(firstVerse.currentLyricDisplayCount, 1, 'the header does not duplicate current lyric state');
+      assert.ok(firstVerse.cards.every((card: any) => card.selected.every((item: any) =>
+        item.aria === item.full && item.title === item.full)),
+      'full lyric text remains available in each lyric event after removing the header duplicate');
       const firstFractions = firstVerse.cards.map((card: any) => card.selected.map((item: any) => [item.event, item.beat, item.fraction, item.full]));
 
       const initialSeek = firstVerse.seek;
@@ -2994,17 +3293,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await settle(260);
       await seekToRatio(0.505);
       const englishCurrent = await readCompactLyrics();
-      assert.strictEqual(englishCurrent.currentLyric, 'uninterruptedword', 'the header shows the full current English lyric');
-      assert.strictEqual(englishCurrent.currentLyricAria, 'uninterruptedword');
-      assert.strictEqual(englishCurrent.currentLyricTitle, 'uninterruptedword');
-      assert.ok(englishCurrent.currentLyricFontSize >= 10 && englishCurrent.currentLyricFontSize <= 13,
-        'the full current English lyric stays within the contracted 10–13px font range');
-      assert.strictEqual(englishCurrent.currentLyricWhiteSpace, 'nowrap');
-      assert.strictEqual(englishCurrent.currentLyricDisplayCount, 1);
+      assert.strictEqual(englishCurrent.currentLyricHeaderCount, 0);
       const denseEnglishLyric = englishCurrent.cards[0].selected.find((item: any) => item.full === 'uninterruptedword');
       assert.ok((denseEnglishLyric.text.length > 0 && denseEnglishLyric.full.startsWith(denseEnglishLyric.text))
         || denseEnglishLyric.markerVisible,
-      'the narrow cell keeps a real leading lyric grapheme or the contracted sub-4px marker, preserving full header text');
+      'the narrow cell keeps a real leading lyric grapheme or the contracted sub-4px marker, preserving full accessible event text');
       await setPreviewWebviewViewportWidth(400);
       await settle(260);
       await captureLyrics(400, 'en');
@@ -3120,11 +3413,70 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
         const theme = (process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern').toLowerCase().includes('light')
           ? 'light' : 'dark';
-        const filename = `practice-guide-compact-uniform-lyrics-issue162-${locale}-${theme}-600-contract-v11.png`;
-        await capturePreviewWebviewScreenshot(filename, 162, 600);
-        const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
-        assert.ok(image.length >= 20000 && image.readUInt32BE(16) === 600,
-          `${filename} is a full-width 600px Preview capture`);
+        await setWorkbenchViewportWidth(2200);
+        const initialWorkbench = JSON.parse(await inspectWorkbenchLayout()) as {
+          parts: { sidebar: { visible: boolean }; auxiliarybar: { visible: boolean } };
+          statusbar: { visible: boolean };
+        };
+        if (initialWorkbench.parts.sidebar.visible) await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+        if (initialWorkbench.parts.auxiliarybar.visible) await vscode.commands.executeCommand('workbench.action.toggleAuxiliaryBar');
+        const restoreStatusbar = initialWorkbench.statusbar.visible;
+        if (restoreStatusbar) await vscode.commands.executeCommand('workbench.action.toggleStatusbarVisibility');
+        try {
+          await settle(200);
+          await setPreviewWebviewViewportWidth(600, 740);
+          await settle(150);
+          const workbench = JSON.parse(await inspectWorkbenchLayout()) as {
+            viewport: { width: number };
+            parts: { sidebar: { visible: boolean }; auxiliarybar: { visible: boolean } };
+            statusbar: { visible: boolean };
+          };
+          assert.ok(workbench.viewport.width >= 600 && !workbench.parts.sidebar.visible
+            && !workbench.parts.auxiliarybar.visible && !workbench.statusbar.visible,
+          `the full 600px Preview capture has no Workbench sidebars or status bar covering it: ${JSON.stringify(workbench)}`);
+          const screenshotBounds = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const layout = document.querySelector('.practice-guide-layout');
+          const next = document.getElementById('practice-guide-next-chord');
+          const rect = node => { const value = node.getBoundingClientRect(); return {
+            left: value.left, top: value.top, right: value.right, bottom: value.bottom,
+            width: value.width, height: value.height
+          }; };
+          return { viewport: { width: window.innerWidth, height: window.innerHeight },
+            layout: rect(layout), stage: rect(stage), nextChord: rect(next),
+            cards: [...stage.querySelectorAll('.practice-guide-compact-measure')].map(rect) };
+          })())`));
+          assert.strictEqual(screenshotBounds.viewport.width, 600, 'the evidence webview viewport is exactly 600px');
+          assert.strictEqual(screenshotBounds.viewport.height, 740, 'the evidence webview has enough height to show the full Practice Guide');
+          assert.strictEqual(screenshotBounds.cards.length, 4, 'all four measure cards are present for evidence');
+          assert.ok(screenshotBounds.layout.left >= -1 && screenshotBounds.layout.right <= screenshotBounds.viewport.width + 1
+            && screenshotBounds.stage.left >= screenshotBounds.layout.left - 1
+            && screenshotBounds.stage.right <= screenshotBounds.layout.right + 1
+            && screenshotBounds.stage.top >= screenshotBounds.layout.top - 1
+            && screenshotBounds.stage.bottom <= screenshotBounds.viewport.height + 1
+            && screenshotBounds.cards.every((rect: any) => rect.left >= screenshotBounds.stage.left - 1
+              && rect.right <= screenshotBounds.stage.right + 1
+              && rect.top >= screenshotBounds.stage.top - 1
+              && rect.bottom <= screenshotBounds.viewport.height + 1)
+            && screenshotBounds.nextChord.left >= screenshotBounds.layout.left - 1
+            && screenshotBounds.nextChord.right <= screenshotBounds.layout.right + 1
+            && screenshotBounds.nextChord.top >= screenshotBounds.layout.top - 1
+            && screenshotBounds.nextChord.bottom <= screenshotBounds.viewport.height + 1,
+          `the stage, all four cards, and next-chord aside fit inside the full 600x740px Preview viewport: ${JSON.stringify(screenshotBounds)}`);
+          const filename = `practice-guide-compact-uniform-lyrics-issue162-${locale}-${theme}-600-contract-v12.png`;
+          await capturePreviewWebviewScreenshot(filename, 162, 600);
+          const evidenceDirectory = path.resolve(__dirname, '../../../docs/status/evidence/issue-162');
+          const image = await fs.readFile(path.join(evidenceDirectory, filename));
+          assert.ok(image.length >= 20000 && image.readUInt32BE(16) === 600,
+            `${filename} is a full-width 600px Preview capture`);
+          await fs.writeFile(path.join(evidenceDirectory, filename.replace(/\.png$/, '.bounds.json')),
+            JSON.stringify(screenshotBounds, null, 2) + '\n');
+        } finally {
+          if (restoreStatusbar) {
+            await vscode.commands.executeCommand('workbench.action.toggleStatusbarVisibility');
+            await settle(100);
+          }
+        }
       }
       await evaluatePreviewWebview<void>("(() => document.getElementById('practice-guide-melody-toggle').click())()");
       await settle(150);
@@ -3845,6 +4197,87 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
       await resetPreviewWebviewViewport();
       await resetWorkbenchViewport();
     }
+  });
+
+  test('Issue #162 one lyric size is shared by both banks during the 400px fade', async function () {
+    this.timeout(90000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const chords = ['F', 'C', 'Dm7', 'E7', 'F', 'C', 'Dm7', 'E7'];
+      const melodyMeasures = [
+        'c5/4 d5/4 e5/4 f5/4',
+        'g5/4 a5/4 g5/4 f5/4',
+        'e5/4 f5/4 g5/4 a5/4',
+        'b5/4 a5/4 g5/4 f5/4',
+        'c5/16 d5/16 e5/16 f5/16 g5/2 a5/4',
+        'c5/4 d5/4 e5/4 f5/4',
+        'g5/4 a5/4 g5/4 f5/4',
+        'e5/4 f5/4 g5/4 a5/4'
+      ];
+      const syllables = Array.from({ length: 34 }, (_, index) => `lyr${index + 1}`).join(' ');
+      const source = [
+        'title: Compact song-wide lyric fade size',
+        'time: 4/4',
+        'bpm: 120',
+        ...chords.map(chord => `| ${chord} | 4.d 4.u 4.d 4.u |`),
+        `mel: | ${melodyMeasures.join(' | ')} |`,
+        `lyr: ${syllables}`
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); const countIn = document.getElementById('count-in-toggle'); countIn.checked = false; countIn.dispatchEvent(new Event('change', { bubbles: true })); const seek = document.getElementById('playback-seek'); seek.value = '0'; seek.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await setPreviewWebviewViewportWidth(400);
+      await settle(180);
+      await clickPreviewElement('#btn-play');
+      let fade: any = null;
+      for (let attempt = 0; attempt < 320; attempt++) {
+        fade = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const left = document.getElementById('practice-guide-bank-left');
+          const right = document.getElementById('practice-guide-bank-right');
+          const templates = [...document.querySelectorAll('template[data-guide-template-occurrence]')].map(template => {
+            const svg = template.content.querySelector('.practice-guide-compact-svg');
+            return { occurrence: Number(template.dataset.guideTemplateOccurrence),
+              measureBeats: Number(svg?.dataset.guideMeasureBeats) || 4,
+              bars: [...(svg?.querySelectorAll('.practice-guide-compact-pitch-bar') ?? [])]
+                .map(bar => Number(bar.dataset.guideDurationBeats)),
+              lyricSizes: [...(svg?.querySelectorAll('.practice-guide-compact-lyric') ?? [])]
+                .map(text => parseFloat(text.getAttribute('font-size') || '0')) };
+          });
+          const layers = [...stage.querySelectorAll('.practice-guide-bank-content')];
+          const liveSizes = layers.flatMap(layer => [...layer.querySelectorAll('.practice-guide-compact-lyric')]
+            .map(text => parseFloat(getComputedStyle(text).fontSize)));
+          return { occurrence: Number(stage.dataset.guideOccurrenceIndex), slotWidth: stage.clientWidth / 4,
+            leftLayerCount: left.querySelectorAll('.practice-guide-bank-content').length,
+            rightLayerCount: right.querySelectorAll('.practice-guide-bank-content').length,
+            layerMeasures: layers.map(layer => [...layer.querySelectorAll('.practice-guide-compact-ruler')]
+              .map(ruler => Number(ruler.textContent.trim()))), liveSizes, templates };
+        })())`));
+        if (fade.occurrence === 2 && fade.leftLayerCount === 2) break;
+        await settle(20);
+      }
+      assert.ok(fade && fade.occurrence === 2 && fade.leftLayerCount === 2 && fade.rightLayerCount === 1,
+        `playback reaches the two-bank transition with outgoing and incoming content: ${JSON.stringify(fade)}`);
+      assert.deepStrictEqual(fade.layerMeasures, [[1, 2], [5, 6], [3, 4]],
+        'both fading pages and the unchanged bank are simultaneously present');
+      const bars = fade.templates.flatMap((template: any) => template.bars.map((duration: number) => ({
+        occurrence: template.occurrence, duration, measureBeats: template.measureBeats
+      })));
+      const shortest = bars.reduce((best: any, item: any) => item.duration < best.duration ? item : best);
+      assert.ok(shortest.occurrence >= 4,
+        `the shortest sixteenth-note bar occurs only after the first four playback measures: ${JSON.stringify(shortest)}`);
+      const expected = Math.min(13, Math.max(4, Math.floor(Math.max(0,
+        shortest.duration / shortest.measureBeats * (fade.slotWidth - 10) - 0.25) * 100) / 100));
+      const allSizes = [...fade.liveSizes, ...fade.templates.flatMap((template: any) => template.lyricSizes)];
+      assert.ok(allSizes.length >= 34, 'the size check includes both live fade banks and every occurrence template');
+      assert.strictEqual(new Set(allSizes).size, 1,
+        `outgoing, incoming, active bank, and hidden templates share one lyric size: ${allSizes}`);
+      assert.ok(Math.abs(allSizes[0] - expected) < 0.01,
+        `all banks use the size derived from the later ${shortest.duration}-beat note: ${allSizes[0]}px, expected ${expected}px`);
+      await clickPreviewElement('#btn-stop');
+    });
   });
 
   test('P145 Preview settings and P136 toolbar layout, focus, and transport remain usable', async function () {
@@ -8018,7 +8451,9 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
           for (let attempt = 0; attempt < 100; attempt++) {
             previewPaintReady = await evaluatePreviewWebview<boolean>(`(() => {
               const score = [...document.querySelectorAll('svg')].some(svg => {
-                const rect = svg.getBoundingClientRect();
+          const matrix = svg.getScreenCTM();
+          const rect = { width: 144 * (matrix?.a ?? 0), height: 144 * (matrix?.d ?? 0),
+            top: matrix?.f ?? 0, bottom: (matrix?.f ?? 0) + 144 * (matrix?.d ?? 0) };
                 return rect.width > 0 && rect.height > 0 && getComputedStyle(svg).display !== 'none';
               });
               return document.body.dataset.previewEditMode === 'true'
@@ -8229,8 +8664,13 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
         .find(option => option.textContent.includes(' · letReference · $riff'))?.value || ''`);
       assert.ok(referenceId);
       await clickPreviewElement(`[data-visual-binding="${referenceId}"]`);
-      await settle(250);
-      assert.strictEqual(await evaluateInspectorWebview<string>(`document.getElementById('variables-operation')?.value`), 'chooseReference',
+      let referenceOperation = '';
+      for (let attempt = 0; attempt < 100; attempt++) {
+        referenceOperation = await evaluateInspectorWebview<string>(`document.getElementById('variables-operation')?.value || ''`);
+        if (referenceOperation === 'chooseReference') break;
+        await settle(20);
+      }
+      assert.strictEqual(referenceOperation, 'chooseReference',
         'clicking a rendered variable reference opens the explicit global-versus-local choice');
       const usageSummary = await evaluateInspectorWebview<string>(`document.getElementById('variables-meta')?.textContent || ''`);
       assert.match(usageSummary, locale === 'ja' ? /直接: 2/ : /Direct: 2/,

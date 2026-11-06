@@ -39,6 +39,8 @@ describe('Practice guide panel renderer', () => {
     assert.match(first, /viewBox="0 0 100 100"/);
     assert.match(html, /data-guide-projections=/);
     assert.doesNotMatch(html, /practice-guide-compact-wave/);
+    assert.doesNotMatch(html, /practice-guide-current-lyric/,
+      'the redundant current-lyric header is absent while per-measure lyric lanes remain');
   });
 
   it('omits compact melody-rest nodes while preserving later pitch timing and detailed rests', () => {

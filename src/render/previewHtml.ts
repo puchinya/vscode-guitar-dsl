@@ -726,11 +726,6 @@ ${cspMeta}
     white-space: normal;
   }
   .practice-guide-header > strong { flex: 0 0 auto; font-size: 14px; }
-  .practice-guide-current-lyric-wrap { display: flex; align-items: center; gap: 5px; flex: 1 1 120px; min-width: 0; max-width: 100%; overflow: hidden; color: #ffffff; font-size: 12px; }
-  .practice-guide-current-lyric-label { flex: 0 0 auto; color: #bccde0; font-size: 11px; }
-  .practice-guide-current-lyric { display: block; min-width: 0; max-width: 100%; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font-size: 12px; }
-  .practice-guide-current-lyric::-webkit-scrollbar { display: none; }
-  body.guide-collapsed .practice-guide-current-lyric-wrap { display: none; }
   .practice-guide-collapse {
     flex: 0 0 28px;
     width: 28px;
@@ -1724,8 +1719,6 @@ ${cspMeta}
       const practiceGuideMelodyToggle = document.getElementById('practice-guide-melody-toggle');
       const practiceGuideCollapseToggle = document.getElementById('practice-guide-collapse');
       const practiceGuideAutoFill = document.getElementById('practice-guide-auto-fill');
-      const practiceGuideCurrentLyric = document.getElementById('practice-guide-current-lyric');
-      const practiceGuideCurrentLyricWrap = document.getElementById('practice-guide-current-lyric-wrap');
       const practiceGuideNextChordName = document.getElementById('practice-guide-next-chord-name');
       const practiceGuideNextChordDiagram = document.getElementById('practice-guide-next-chord-diagram');
       let currentGuideMeasureIndex = null;
@@ -2225,7 +2218,7 @@ ${cspMeta}
         const key = [slotWidth.toFixed(3), grid, melodyVisible, diagramsVisible, lyricVerseKey].join(':');
         if (guideCompactLayoutKey === key) return guideCompactLayout;
         const maxRows = { lyrics: 0, technique: 0, pm: 0, chord: 0 };
-        let diagramSize = 0;
+        let diagramSize = Number.POSITIVE_INFINITY;
         const measureLayouts = [];
         const inset = 5;
         let commonLyricFontSize = 13;
@@ -2312,11 +2305,13 @@ ${cspMeta}
               for (const node of item.nodes) {
                 node.dataset.guideRow = '0';
                 node.dataset.guideLayoutX = String(centerX);
-                node.dataset.guideLayoutWidth = String(Math.min(
+                const assignedWidth = Math.min(
                   Math.max(1, Number(node.dataset.guideLayoutWidth) || item.width), item.width
-                ));
+                );
+                node.dataset.guideLayoutWidth = String(assignedWidth);
                 if (node.classList.contains('practice-guide-compact-diagram-event')) {
-                  diagramSize = Math.max(diagramSize, Number(node.dataset.guideLayoutWidth) || 0);
+                  node.dataset.guideDiagramAvailableWidth = String(assignedWidth);
+                  diagramSize = Math.min(diagramSize, Number(node.dataset.guideLayoutWidth) || 0);
                 }
               }
             }
@@ -2476,6 +2471,14 @@ ${cspMeta}
           pack([...laneItems.chord.values()], measureBeats, 'chord');
           measureLayouts.push({ occurrenceIndex, svg });
         }
+        diagramSize = Number.isFinite(diagramSize) ? Math.max(0, diagramSize) : 0;
+        if (diagramSize > 0) {
+          for (const { svg } of measureLayouts) {
+            for (const diagram of svg.querySelectorAll('.practice-guide-compact-diagram-event')) {
+              diagram.dataset.guideLayoutWidth = String(diagramSize);
+            }
+          }
+        }
         const laneHeights = {
           ruler: 24,
           melody: melodyVisible ? 64 : 0,
@@ -2544,6 +2547,9 @@ ${cspMeta}
             if (source.dataset.guideLayoutWidth !== undefined) {
               live.dataset.guideLayoutWidth = source.dataset.guideLayoutWidth;
             }
+            if (source.dataset.guideDiagramAvailableWidth !== undefined) {
+              live.dataset.guideDiagramAvailableWidth = source.dataset.guideDiagramAvailableWidth;
+            }
             if (source.hasAttribute('display')) live.setAttribute('display', source.getAttribute('display'));
             else live.removeAttribute('display');
           }
@@ -2573,10 +2579,9 @@ ${cspMeta}
             ? Number(item.dataset.guideLayoutX)
             : compactGuideX(at, measureBeats, slotWidth);
           const row = Number(item.dataset.guideRow) || 0;
-          const rowY = row * (lane === 'lyrics' ? 24
-            : lane === 'chord-pair' && item.classList.contains('practice-guide-compact-diagram-event')
-              ? layout.diagramSize + 4
-              : lane === 'chord-pair' ? 20 : 32);
+          const rowY = lane === 'chord-pair' && item.classList.contains('practice-guide-compact-diagram-event')
+            ? 4 + row * (layout.diagramSize + 4)
+            : row * (lane === 'lyrics' ? 24 : lane === 'chord-pair' ? 20 : 32);
           if (lane === 'melody') {
             if (item.tagName.toLowerCase() === 'rect') {
               const duration = Math.max(0, Number(item.dataset.guideDurationBeats) || 0);
@@ -3055,17 +3060,6 @@ ${cspMeta}
         }
         const selectedVerse = Number(occurrence?.lyricVerse) || 1;
         const lyricItems = [...practiceGuideTimeline?.querySelectorAll?.('.practice-guide-lyric') ?? []];
-        const activeLyric = lyricItems.find(item => Number(item.dataset.guideVerse) === selectedVerse
-          && Number(item.dataset.guideMeasure) === measureIndex
-          && currentBeat >= Number(item.dataset.guideStartBeat) - 0.000001
-          && currentBeat < Number(item.dataset.guideEndBeat) - 0.000001);
-        if (practiceGuideCurrentLyric) {
-          const lyricText = activeLyric?.textContent?.trim() ?? '';
-          practiceGuideCurrentLyric.textContent = lyricText;
-          practiceGuideCurrentLyric.setAttribute('title', lyricText);
-          practiceGuideCurrentLyric.setAttribute('aria-label', lyricText);
-          practiceGuideCurrentLyricWrap?.toggleAttribute?.('hidden', !practiceEnabled || !lyricText);
-        }
         for (const item of lyricItems) {
           const verseMatches = Number(item.dataset.guideVerse) === selectedVerse;
           const itemMeasure = Number(item.dataset.guideMeasure);
@@ -4989,7 +4983,6 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
     <header class="practice-guide-header">
       <button class="practice-guide-collapse" id="practice-guide-collapse" type="button" aria-expanded="true" title="${escapeXml(msgs.uiPracticeGuideCollapse)}">⌄</button>
       <strong>${escapeXml(msgs.uiPracticeGuideTitle)}</strong>
-      <span class="practice-guide-current-lyric-wrap" id="practice-guide-current-lyric-wrap" hidden><span class="practice-guide-current-lyric-label" aria-hidden="true">${escapeXml(msgs.uiPracticeGuideLyrics)}</span><span class="practice-guide-current-lyric" id="practice-guide-current-lyric" aria-live="off" tabindex="0"></span></span>
       ${autoLabel}
       <div class="practice-guide-controls">
         <label>${escapeXml(msgs.uiPracticeGuideView)} <select class="practice-select" id="practice-guide-view" aria-label="${escapeXml(msgs.uiPracticeGuideView)}"><option value="compact">${escapeXml(msgs.uiPracticeGuideCompact)}</option><option value="detailed">${escapeXml(msgs.uiPracticeGuideDetailed)}</option></select></label>

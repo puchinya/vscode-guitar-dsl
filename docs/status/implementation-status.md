@@ -3,20 +3,20 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-03
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) は承認済みContract v11の歌詞サイズ指摘を実装し、source commit `1a484a5400139e6e37c379a8124c41aa8fd70f84` の検証と画面証拠を記録中。PRはopenでレビュー待ち。
+- **最終更新日**: 2026-11-07
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はContract v12の指摘対応と画面証拠を反映中。PRはopenでレビュー待ち。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: 承認済みImplementation Contract v11はv10のPM注記、4小節gapless、次コード欄接続、grid16独立wave、角形メロディバーを維持し、PMを矢印下の別注記に分離する。compact歌詞は曲内の全再生出現にある最短メロディ音価を基準に共通font-sizeを決め、歌詞イベント・verse・bankごとには変えない。幅変更時は曲全体を再計算し、各セルは同じ字形サイズで入る先頭graphemeだけを表示する。左レール非表示、固定4小節、現在歌詞全文ヘッダーも維持する。[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はopen。
-- **契約**: Issue comment `6581189304` がcanonical Implementation Contract v11。**7,994 bytes / SHA-256 `26b92f44855d02d40e31de21e6fdea1a93dd832e3cc1bc017b9981e5143ba597`**。`verify-implementation-contract 162` は `verified:true`。v10は履歴として保持。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
-- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv11へ同期した。
-- **画面証拠**: [Contract v11の歌詞画面17枚と過去画像](evidence/issue-162/README.md)。v11の16枚は実装source HEAD `1a484a5400139e6e37c379a8124c41aa8fd70f84` のコードでmacOS arm64 / VS Code 1.144.0、400/600px × JA/EN × Light/Darkにて撮影した。別の600px混在音価画像も同じHEADで撮影した。全17 PNGは幅・非ゼロ高さ・20KB超を検査し、混在音価画像を目視した。4つのlocale/theme capture E2EはすべてPASS。選定済みPNGは計397枚。
-- **検証**: macOS arm64 / VS Code 1.144.0。`npm run compile:all`、`npm run vscode:prepublish`、Help/AI同期、`validate-docs --issue 162`、`verify-implementation-contract 162`、`git diff --check` はPASS。PR code HEAD `1a484a5400139e6e37c379a8124c41aa8fd70f84`で`npm test`は終了コード0、unit 1,235 PASS、E2E 129 PASS・6 pending・0 FAIL。v11の混在音価E2Eは400/600pxの全歌詞font-sizeが一つであることと最短音価からの値を検証した。画面capture E2EはJA/EN × Light/Darkで各PASS。前回はIssue #155 manual-pageのPractice mode収束1件が失敗したが、前の再実行でも再現せず原因は未特定。current-HEAD Self-Review、Required Check、delivery-checkの最新結果は[PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)を参照。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **状態**: Contract v12はv11の曲全体共通歌詞サイズ、4小節gapless、左レール非表示、PM注記、grid16独立wave、角形メロディバーなどを維持し、コード図の全曲共通サイズと完全表示、歌詞の有無で変わらないメロディ幾何、上部「現在の歌詞」欄の削除を追加した。下段の歌詞レーンとアクセシブルな全文は維持する。PR #163はopenでレビュー待ち。
+- **契約**: Issue comment `6688929860` がcanonical Implementation Contract v12 Delta。**8,202 bytes / SHA-256 `12e48408413d09b044a632e46c186e8a7a883180c3fbcc8def33c4c81b77a543`**。v11 comment `6581189304` は不変の履歴として保持する。v12には必須のImplementation Contract文面を逐語で含む。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv12の表示仕様へ同期した。
+- **画面証拠**: [Contract v12と過去画像の証拠一覧](evidence/issue-162/README.md)。macOS arm64 / VS Code 1.145.2で、600×740の混在音価画像は4小節・歌詞レーン・次コード欄を収めた。PNG SHA-256 `709557ac3ad8a00cfbd794b9a49414d208fac575e98a6e24158c3312e65a9178`、bounds sidecar SHA-256 `40a62eacad4ca93eba6e23978f199cec52add99d63c0f0ff127548eff076b77e`。DOMはviewport 600×740、4小節stage x=0–504 / y=429–739、next aside x=504–600 / y=429–739を記録する。`sample_gozen0jino_page` は600×710、SHA-256 `2c47b359549639f9c91060ef443fe502bde9ac846f29dba5962b95a463852d15`。双方の画像を目視確認した。未完成の600×710混在音価候補は診断履歴に分離し、選定画像に含めない。
+- **検証**: macOS arm64。`npm run compile`、`npm run compile:tests`、`npm run vscode:prepublish`、`npm run check:help`、`npm run check:ai`、`npm run test:unit` はPASS（unit 1,235件）。`verify-implementation-contract 162` と `validate-docs --issue 162` はPASS。`npm test` は終了コード1で、E2E 130 PASS・6 pending・2 FAIL。失敗は bank crossfade（120秒）と400px両bank lyric fade（90秒）のタイムアウトで、失敗時のbounded focus traceはVS Code Workbench windowが実行中に非focusedとなったことを記録した。画面幾何・LY07/LY08の対象E2Eは通過したが、全体ゲートをPASSとは扱わない。VSIX一覧はnpm registryのDNS解決失敗によりNOT RUN。current-HEAD Self-Review、Required Check、delivery-checkはPR更新後の確認待ち。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
-- **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAの手動確認はNOT RUN.
+- **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。マージ前のためIssueは未完了、マージ保留。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 

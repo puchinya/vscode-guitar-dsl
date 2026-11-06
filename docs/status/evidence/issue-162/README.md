@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code 1.144.0 Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v11 is the current visual evidence for one song-wide compact lyric size derived from the shortest melody note, and retains the v10 PM annotation behavior; v10 remains historical evidence for per-event lyric sizing. Contract v9 is historical evidence for gapless measure boundaries and the adjacent next-chord area. Contract v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v12 is the current visual evidence: it keeps one song-wide compact lyric size, removes the duplicate current-lyric header, fixes melody geometry, and gives all measure diagrams one complete common size. Contract v11 remains historical evidence for the same lyric size while retaining the then-current header field; v10 remains historical evidence for per-event lyric sizing. Contract v9 is historical evidence for gapless measure boundaries and the adjacent next-chord area. Contract v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -31,9 +31,11 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v10 duration-aware lyrics | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
 | Contract v11 uniform-size lyric matrix | 400 / 600 CSS px × selected JA / EN verse × JA / EN locale × Light / Dark | 16 |
 | Contract v11 uniform lyrics | 600 CSS px × mixed 16th / quarter / half-note fixture × EN locale / Dark | 1 |
+| Contract v12 complete mixed-duration lyric screenshot | 600 × 740 CSS px × EN locale / Dark, with DOM bounds | 1 |
+| Contract v12 common chord-diagram screenshot | 600 CSS px × `sample_gozen0jino_page` × EN locale / Dark | 1 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **397** |
+| **Selected evidence files** |  | **399** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
@@ -75,7 +77,7 @@ Contract v7 adds 56 current-source images in four locale/theme combinations. The
 - [EN Dark, 600 px, Japanese verse (Contract v8)](practice-guide-compact-lyrics-issue162-ja-en-dark-600-contract-v8.png)
 - [JA Light, 600 px, English verse (Contract v8)](practice-guide-compact-lyrics-issue162-en-ja-light-600-contract-v8.png)
 
-The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 remains historical visual evidence for compact lyric overflow and grid16 path shape; v9 is historical for gapless compact geometry. Contract v10 is current for PM placement and duration-aware lyrics. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
+The v5 exact-path images and 52-image v5 matrix are historical evidence from source HEAD `a8af44221e095132ab07cc542e044650d1f07349`. The v7 matrix and lyric images are retained as prior-contract captures. Contract v8 remains historical visual evidence for compact lyric overflow and grid16 path shape; v9 is historical for gapless compact geometry. The v4 matrix and portrait/rest images remain earlier contract evidence, and the earlier fade images remain references for transition phases; their source commits are shown above. E2E reruns and the implementation source commit are recorded in [`implementation-status.md`](../../implementation-status.md).
 
 
 ## Contract v8 evidence
@@ -237,6 +239,24 @@ Each of the four locale/theme capture runs verified the compact, grid, lyric, an
 - [EN Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-en-light-250ms-contract-v9-grid16-400.png)
 - [JA Dark, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-dark-250ms-contract-v9-grid16-400.png)
 - [JA Light, 400px, grid16 during fade](practice-guide-crossfade-issue162-ja-light-250ms-contract-v9-grid16-400.png)
+
+## Contract v12 evidence
+
+Contract v12 is canonical at Issue comment `6688929860` (8,202 bytes; SHA-256 `12e48408413d09b044a632e46c186e8a7a883180c3fbcc8def33c4c81b77a543`). It preserves the v11 song-wide lyric size while removing the duplicate current-lyric header, fixing melody-lane geometry, and requiring every chord diagram to use the same complete square size. The left label rail remains hidden.
+
+The mixed-duration capture was made in the macOS arm64 VS Code 1.145.2 Extension Development Host at 600 × 740 CSS px with the Workbench sidebars and status bar hidden. It shows all four cards, the lower lyric lane, the full chord diagrams, and the next-chord aside. The E2E records and asserts the viewport, stage, every card, and next-chord rectangles; the stage spans `(0, 429)` to `(504, 739)`, and the next-chord aside spans `(504, 429)` to `(600, 739)`. The PNG is 600 × 740, 59 KB, SHA-256 `709557ac3ad8a00cfbd794b9a49414d208fac575e98a6e24158c3312e65a9178`; the bounds sidecar is SHA-256 `40a62eacad4ca93eba6e23978f199cec52add99d63c0f0ff127548eff076b77e`.
+
+The `sample_gozen0jino_page` image is 600 × 710, 65 KB, SHA-256 `2c47b359549639f9c91060ef443fe502bde9ac846f29dba5962b95a463852d15`. Its E2E checks the same song-wide square size in one- and two-chord measures and verifies the full `0 0 144 144` diagrams remain inside their lanes. Both images were visually inspected.
+
+- [Mixed lyric durations with all four measures, 600 × 740, EN Dark](practice-guide-compact-uniform-lyrics-issue162-en-dark-600-contract-v12.png)
+- [Mixed one- and two-chord measures, 600px, EN Dark](practice-guide-horizontal-sample-issue162-en-dark-600-contract-v12.png)
+- [Mixed lyric screenshot DOM bounds](practice-guide-compact-uniform-lyrics-issue162-en-dark-600-contract-v12.bounds.json)
+
+An earlier 600 × 710 lyric capture and its bounds are retained under the `incomplete-v12` filename for diagnostic history; that candidate placed card bottoms below the captured viewport and is excluded from the selected evidence count. The final capture and DOM bounds above pass the full-viewport assertion.
+
+### Verification at the v12 implementation
+
+`npm run compile`, `npm run compile:tests`, `npm run vscode:prepublish`, `npm run check:help`, `npm run check:ai`, `npm run test:unit` (1,235 tests), `verify-implementation-contract 162`, and `validate-docs --issue 162` passed. The full `npm test` run exited 1: 130 E2E passed, 6 remained pending, and 2 timed out while the VS Code Workbench window was unfocused according to the bounded failure traces (the 120-second bank crossfade case and 90-second 400px dual-bank lyric fade case). The suite is therefore recorded as failed, despite the focused compact geometry, song-wide lyric, LY07/LY08, and 600px capture checks passing. `vsce ls` was not run because the npm registry hostname could not be resolved (`ENOTFOUND`).
 
 ## Contract v11 evidence
 
