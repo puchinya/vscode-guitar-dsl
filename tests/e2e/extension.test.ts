@@ -2506,14 +2506,17 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
           await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
           await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+          const evidenceWidth = Number(process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_WIDTH) || 400;
+          assert.ok(evidenceWidth === 400 || evidenceWidth === 600, 'v13 wave evidence uses the contracted 400px or 600px viewport');
+          await setPreviewWebviewViewportWidth(evidenceWidth);
           await settle(180);
           const guideEvidenceTag = process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_TAG;
           const guideEvidenceSuffix = guideEvidenceTag && /^[a-z0-9-]+$/i.test(guideEvidenceTag) ? `-${guideEvidenceTag}` : '';
-          const filename = `practice-guide-compact-pm-issue162-${requestedLocale}-${themeName}-400${guideEvidenceSuffix}.png`;
-          await capturePreviewWebviewScreenshot(filename, 162, 400);
+          const filename = `practice-guide-compact-pm-issue162-${requestedLocale}-${themeName}-${evidenceWidth}${guideEvidenceSuffix}.png`;
+          await capturePreviewWebviewScreenshot(filename, 162, evidenceWidth);
           const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
-          assert.ok(image.length >= 5000 && image.readUInt32BE(16) === 400,
-            'the current-HEAD v5 stroke geometry screenshot uses the real 400px preview width');
+          assert.ok(image.length >= 5000 && image.readUInt32BE(16) === evidenceWidth,
+            'the current-HEAD v13 wave screenshot uses the requested real preview width');
         }
       } finally {
         await resetPreviewWebviewViewport();
@@ -2643,16 +2646,27 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     .filter(path => path.dataset.guideWaveGrid === waveGrid)
                     .sort((left, right) => Number(left.dataset.guideAtBeat) - Number(right.dataset.guideAtBeat))
                     .map(path => path.dataset.guideAtFraction);
+                  const cardWidth = card.getBoundingClientRect().width;
+                  const measureBeats = Number(card.querySelector('.practice-guide-compact-svg').dataset.guideMeasureBeats) || 4;
+                  const grid16CellWidth = (cardWidth - 10) / (measureBeats * 4);
+                  const expectedGrid16Variant = grid16CellWidth >= 7 ? 'wide' : grid16CellWidth >= 5.5 ? 'medium' : 'narrow';
+                  const waveMasters = {
+                    narrow: { width: '2.40', viewBox: '0 0 2.4 30', path: 'M0.15 15 C0.45 9.8 0.90 9.8 1.20 15 S1.95 20.2 2.25 15' },
+                    medium: { width: '4.20', viewBox: '0 0 4.2 30', path: 'M0.45 15 C1.00 10.4 1.55 10.4 2.10 15 S3.20 19.6 3.75 15' },
+                    wide: { width: '5.60', viewBox: '0 0 5.6 30', path: 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15' }
+                  };
                   const isCanonicalWaveShape = path => {
                     const isGrid16 = path.dataset.guideWaveGrid === '16';
-                    return path.getAttribute('data-guide-wave-width') === (isGrid16 ? '2.40' : '5.60')
-                      && path.getAttribute('d') === (isGrid16
-                        ? 'M0.15 15 C0.45 13.8 0.9 13.8 1.2 15 S1.95 16.2 2.25 15'
-                        : 'M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2')
+                    const variant = isGrid16 ? expectedGrid16Variant : 'wide';
+                    const master = waveMasters[variant];
+                    return path.dataset.guideWaveVariant === variant
+                      && path.getAttribute('data-guide-wave-width') === master.width
+                      && path.getAttribute('d') === master.path
                       && path.getAttribute('stroke-width') === '1.15'
-                      && path.getAttribute('stroke-linecap') === (isGrid16 ? 'butt' : 'round')
+                      && path.getAttribute('stroke-linecap') === 'round'
                       && path.getAttribute('vector-effect') === 'non-scaling-stroke'
-                      && path.closest('svg')?.getAttribute('viewBox') === (isGrid16 ? '0 0 2.4 30' : '0 0 5.6 30');
+                      && path.closest('svg')?.dataset.guideWaveVariant === variant
+                      && path.closest('svg')?.getAttribute('viewBox') === master.viewBox;
                   };
                   const canonicalWaveShape = wavePaths.length > 0 && wavePaths.every(isCanonicalWaveShape);
                   const visibleCanonicalWaveShape = visibleWavePaths.length > 0 && visibleWavePaths.every(isCanonicalWaveShape);
@@ -2660,13 +2674,36 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     .map(path => {
                       const box = path.getBBox();
                       const matrix = path.getScreenCTM();
-                      const scale = Math.abs(matrix?.a ?? 1);
-                      return { left: (matrix?.e ?? 0) + box.x * (matrix?.a ?? 1) - 0.575,
-                        right: (matrix?.e ?? 0) + (box.x + box.width) * (matrix?.a ?? 1) + 0.575,
-                        scale };
+                      const scaleX = Math.abs(matrix?.a ?? 1);
+                      const scaleY = Math.abs(matrix?.d ?? 1);
+                      const originX = matrix?.e ?? 0;
+                      const left = originX + box.x * (matrix?.a ?? 1);
+                      const right = originX + (box.x + box.width) * (matrix?.a ?? 1);
+                      return { left: Math.min(left, right) - 0.575,
+                        right: Math.max(left, right) + 0.575,
+                        paintedWidth: box.width * scaleX + 1.15,
+                        paintedHeight: box.height * scaleY + 1.15,
+                        variant: path.dataset.guideWaveVariant };
                     }).sort((left, right) => left.left - right.left);
                   const minimumGrid16Gap = grid16WaveBounds.slice(1).reduce((minimum, item, index) =>
                     Math.min(minimum, item.left - grid16WaveBounds[index].right), Number.POSITIVE_INFINITY);
+                  const liveGrid16 = [...card.querySelectorAll('.practice-guide-compact-symbol[data-guide-wave-grid="16"]')];
+                  const occurrenceId = card.dataset.guideOccurrenceIndex;
+                  const template = [...document.querySelectorAll('template[data-guide-template-occurrence]')]
+                    .find(candidate => candidate.dataset.guideTemplateOccurrence === occurrenceId);
+                  const templateGrid16 = [...(template?.content.querySelectorAll('.practice-guide-compact-symbol[data-guide-wave-grid="16"]') ?? [])];
+                  const waveVariantsSynced = liveGrid16.length === templateGrid16.length && liveGrid16.every((symbol, index) => {
+                    const source = templateGrid16[index];
+                    const livePath = symbol.querySelector('.practice-guide-wave-path');
+                    const sourcePath = source.querySelector('.practice-guide-wave-path');
+                    const liveSvg = symbol.querySelector('.practice-guide-compact-wave-icon');
+                    const sourceSvg = source.querySelector('.practice-guide-compact-wave-icon');
+                    return symbol.dataset.guideLayoutWidth === source.dataset.guideLayoutWidth
+                      && livePath?.getAttribute('d') === sourcePath?.getAttribute('d')
+                      && livePath?.dataset.guideWaveVariant === sourcePath?.dataset.guideWaveVariant
+                      && liveSvg?.getAttribute('viewBox') === sourceSvg?.getAttribute('viewBox')
+                      && liveSvg?.dataset.guideWaveVariant === sourceSvg?.dataset.guideWaveVariant;
+                  });
                   const sameOnsetGroups = [...new Map(symbols.map(symbol => [symbol.fraction, symbols.filter(other => other.fraction === symbol.fraction)])).values()]
                     .filter(group => group.length > 1);
                   const simultaneousAnchorsMatch = sameOnsetGroups.every(group =>
@@ -2678,6 +2715,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                      symbolCount: symbols.length, sameY, fits, wavePathCount: wavePaths.length,
                      visibleWavePathCount: visibleWavePaths.length, canonicalWaveShape, visibleCanonicalWaveShape,
                      minimumGrid16Gap,
+                     grid16CellWidth, expectedGrid16Variant,
+                     grid16PaintedHeight: grid16WaveBounds.length ? Math.min(...grid16WaveBounds.map(item => item.paintedHeight)) : 0,
+                     grid16PaintedWidth: grid16WaveBounds.length ? Math.max(...grid16WaveBounds.map(item => item.paintedWidth)) : 0,
+                     grid16Variants: [...new Set(wavePaths.filter(path => path.dataset.guideWaveGrid === '16').map(path => path.dataset.guideWaveVariant))],
+                     waveVariantsSynced,
                      waveCountsByGrid: { four: waveCountForGrid('4'), eight: waveCountForGrid('8'), sixteen: waveCountForGrid('16') },
                      waveFractionsByGrid: { eight: waveFractionsForGrid('8'), sixteen: waveFractionsForGrid('16') },
                      simultaneousCount: sameOnsetGroups.length,
@@ -2698,18 +2740,22 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             assert.deepStrictEqual(geometry.laneOrder, ['ruler', 'melody', 'lyrics', 'technique', 'chord', 'diagrams'],
               `${width}px keeps the compact lane order in every measure SVG`);
             const expectedVisibleWaveCount = grid === '4' ? 0 : grid === '8' ? 4 : 12;
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; horizontalScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; minimumGrid16Gap: number; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; horizontalScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; minimumGrid16Gap: number; grid16CellWidth: number; expectedGrid16Variant: string; grid16PaintedHeight: number; grid16PaintedWidth: number; grid16Variants: string[]; waveVariantsSynced: boolean; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
               lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 36
                 && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed
                 && lane.simultaneousCount > 0 && lane.simultaneousAnchorsMatch && lane.simultaneousVisualOffsets
                 && lane.anchorsMatchBeats && lane.horizontalScale && lane.allAccessible
                 && lane.wavePathCount === 16 && lane.canonicalWaveShape
+                && lane.waveVariantsSynced
+                && lane.grid16Variants.join(',') === lane.expectedGrid16Variant
                 && lane.visibleWavePathCount === expectedVisibleWaveCount
                 && (expectedVisibleWaveCount === 0 || lane.visibleCanonicalWaveShape)
                 && lane.waveCountsByGrid.four === 0 && lane.waveCountsByGrid.eight === 4 && lane.waveCountsByGrid.sixteen === 12
                 && lane.waveFractionsByGrid.eight.join(',') === '1/2,3/2,5/2,7/2'
                 && lane.waveFractionsByGrid.sixteen.join(',') === '1/4,1/2,3/4,5/4,3/2,7/4,9/4,5/2,11/4,13/4,7/2,15/4'
-                && (grid !== '16' || lane.minimumGrid16Gap >= 1)
+                && (grid !== '16' || lane.minimumGrid16Gap >= 1
+                  && lane.grid16PaintedHeight >= 7
+                  && lane.grid16PaintedWidth <= lane.grid16CellWidth + 0.01)
                 && (grid !== '16' || width > 600 || lane.scaledSymbolCount > 0)),
             `${width}px / ${grid}-grid / melody ${melodyVisible ? 'on' : 'off'} keeps canonical wave paths, exact beat anchors, same-onset voices, accessible labels, and X-only SVG scaling with fixed Y on one horizontal non-overlapping row: ${JSON.stringify(geometry.techniqueLanes)}`);
             assert.ok(geometry.techniqueLanes.every((lane: { height: number }, index: number) =>
@@ -2720,6 +2766,132 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             }
           }
         }
+        if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS === '1') {
+          const requestedLocale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
+          const requestedTheme = process.env.GUITARDSL_E2E_THEME ?? 'Default Dark Modern';
+          const themeName = requestedTheme.toLowerCase().includes('light') ? 'light' : 'dark';
+          const captureWidth = Number(process.env.GUITARDSL_E2E_GUIDE_EVIDENCE_WIDTH) || 400;
+          assert.ok(captureWidth === 400 || captureWidth === 600, 'v13 wave evidence uses the contracted 400px or 600px viewport');
+          assert.ok(vscode.env.language.toLowerCase().startsWith(requestedLocale), 'screenshot locale matches the Extension Development Host');
+          await vscode.workspace.getConfiguration('workbench').update('colorTheme', requestedTheme, vscode.ConfigurationTarget.Global);
+          await setPreviewWebviewViewportWidth(captureWidth);
+          await setMelodyVisibility(true);
+          await setGrid('16');
+          await settle(180);
+          const metrics = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+            const cardMetrics = cards.map(card => {
+              const cardRect = card.getBoundingClientRect();
+              const measureBeats = Number(card.querySelector('.practice-guide-compact-svg').dataset.guideMeasureBeats) || 4;
+              const cellWidth = (cardRect.width - 10) / (measureBeats * 4);
+              const waves = [...card.querySelectorAll('.practice-guide-compact-symbol[data-guide-wave-grid="16"]')]
+                .filter(symbol => getComputedStyle(symbol).display !== 'none')
+                .map(symbol => {
+                  const path = symbol.querySelector('.practice-guide-wave-path');
+                  const box = path.getBBox();
+                  const matrix = path.getScreenCTM();
+                  const firstX = (matrix?.e ?? 0) + box.x * (matrix?.a ?? 1);
+                  const lastX = (matrix?.e ?? 0) + (box.x + box.width) * (matrix?.a ?? 1);
+                  return { event: Number(path.dataset.guideEvent), fraction: path.dataset.guideAtFraction,
+                    variant: path.dataset.guideWaveVariant, d: path.getAttribute('d'),
+                    viewBox: path.closest('svg')?.getAttribute('viewBox'),
+                    paintedWidth: box.width * Math.abs(matrix?.a ?? 1) + 1.15,
+                    paintedHeight: box.height * Math.abs(matrix?.d ?? 1) + 1.15,
+                    left: Math.min(firstX, lastX) - 0.575, right: Math.max(firstX, lastX) + 0.575,
+                    stroke: getComputedStyle(path).stroke };
+                }).sort((left, right) => left.left - right.left);
+              const minimumGap = waves.slice(1).reduce((minimum, wave, index) =>
+                Math.min(minimum, wave.left - waves[index].right), Number.POSITIVE_INFINITY);
+              return { cardWidth: cardRect.width, cellWidth, waves, minimumGap };
+            });
+            const allWaves = cardMetrics.flatMap(card => card.waves);
+            return { viewportWidth: stage.clientWidth, cardCount: cards.length,
+              waveCount: allWaves.length, variants: [...new Set(allWaves.map(wave => wave.variant))],
+              minimumPaintedHeight: allWaves.length ? Math.min(...allWaves.map(wave => wave.paintedHeight)) : 0,
+              maximumPaintedWidth: allWaves.length ? Math.max(...allWaves.map(wave => wave.paintedWidth)) : 0,
+              minimumPaintedGap: Math.min(...cardMetrics.map(card => card.minimumGap)),
+              widthsWithinCells: cardMetrics.every(card => card.waves.every(wave => wave.paintedWidth <= card.cellWidth + 0.01)),
+              cardMetrics };
+          })())`));
+          assert.strictEqual(metrics.cardCount, 4, 'wave screenshots retain all four measure cards');
+          assert.ok(metrics.waveCount >= 12, `wave screenshots contain the full four-measure continuation fixture: ${JSON.stringify(metrics)}`);
+          assert.ok(metrics.minimumPaintedHeight >= 7, `wave screenshots meet the painted-height contract: ${JSON.stringify(metrics)}`);
+          assert.ok(metrics.widthsWithinCells,
+            `wave screenshots keep each painted mark within its grid cell: ${JSON.stringify(metrics)}`);
+          assert.ok(metrics.minimumPaintedGap >= 1, `wave screenshots preserve a visible painted gap: ${JSON.stringify(metrics)}`);
+          const filename = `practice-guide-compact-wave-issue162-${requestedLocale}-${themeName}-${captureWidth}-wave-v13.png`;
+          await capturePreviewWebviewScreenshot(filename, 162, captureWidth);
+          const image = await fs.readFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename));
+          assert.ok(image.length >= 5000 && image.readUInt32BE(16) === captureWidth,
+            'the v13 wave screenshot uses the requested real preview width');
+          await fs.writeFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename.replace(/\.png$/, '.json')),
+            JSON.stringify({ filename, locale: requestedLocale, theme: requestedTheme, ...metrics }, null, 2) + '\n');
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+
+  test('Issue #162 compact chord names recover their natural widths after repeated resizing', async function () {
+    this.timeout(60000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const source = [
+        'title: Compact chord label resize recovery',
+        'time: 4/4',
+        '| C7sus4 F#maj7 | 2.d 2.u |',
+        '| Bbadd9 G7sus4 | 2.d 2.u |',
+        '| Cmaj7 Am7 Dsus4 Gsus4 | 4.d 4.u 4.d 4.u |',
+        '| Fmaj7 Cadd9 | 2.d 2.u |'
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+
+      const readChordNames = async () => JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify(
+        [...document.querySelectorAll('#practice-guide-pair-page .practice-guide-compact-chord-name')]
+          .map(node => {
+            const text = node.querySelector('text');
+            return { key: node.dataset.guidePackKey,
+              naturalWidth: Number(node.dataset.guideNaturalWidth),
+              assignedWidth: Number(node.dataset.guideLayoutWidth),
+              visibleText: text?.textContent ?? '',
+              fullText: text?.dataset.guideFullText ?? '' };
+          }).sort((left, right) => left.key.localeCompare(right.key)))`));
+      const atWidth = async (width: number) => {
+        await setPreviewWebviewViewportWidth(width);
+        await settle(180);
+        const state = await readChordNames();
+        assert.ok(state.length >= 8, `${width}px shows the multi-chord measure fixture: ${JSON.stringify(state)}`);
+        return state;
+      };
+
+      try {
+        const initialWide = await atWidth(1100);
+        const narrow = await atWidth(400);
+        const wideAfterNarrow = await atWidth(1100);
+        const narrowAgain = await atWidth(400);
+        const finalWide = await atWidth(1100);
+        assert.ok(narrow.some((name: { naturalWidth: number; assignedWidth: number; visibleText: string; fullText: string }) =>
+          name.assignedWidth + 0.5 < name.naturalWidth && name.visibleText !== name.fullText),
+        `400px should constrain at least one long chord label: ${JSON.stringify(narrow)}`);
+        assert.deepStrictEqual(wideAfterNarrow, initialWide,
+          'the first 400-to-1100 resize restores the initial natural widths and full labels');
+        assert.deepStrictEqual(finalWide, initialWide,
+          'the final 400-to-1100 resize is independent of previous narrow assignments');
+        assert.ok(finalWide.every((name: { naturalWidth: number; assignedWidth: number; visibleText: string; fullText: string }) =>
+          name.assignedWidth + 0.01 >= name.naturalWidth && name.visibleText === name.fullText),
+        `the wide layout fits every natural chord-name width: ${JSON.stringify(finalWide)}`);
+        assert.deepStrictEqual(narrowAgain.map((name: { key: string; naturalWidth: number; assignedWidth: number; visibleText: string }) =>
+          [name.key, name.naturalWidth, name.assignedWidth, name.visibleText]),
+        narrow.map((name: { key: string; naturalWidth: number; assignedWidth: number; visibleText: string }) =>
+          [name.key, name.naturalWidth, name.assignedWidth, name.visibleText]),
+        'repeated 400px layouts produce the same constrained widths and visible labels');
       } finally {
         await resetPreviewWebviewViewport();
         await resetWorkbenchViewport();

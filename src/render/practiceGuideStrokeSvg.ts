@@ -22,17 +22,50 @@ const COMPACT_ATTACK_HEIGHT = 30;
 const COMPACT_BRUSH_WIDTH = 8;
 const COMPACT_BOTH_WIDTH = 8;
 const COMPACT_WAVE_WIDTH = 5.6;
-export const PRACTICE_GUIDE_COMPACT_GRID16_WAVE_WIDTH = 2.4;
 const COMPACT_STROKE_WIDTH = 1.15;
 const COMPACT_STROKE_ATTRIBUTES = `fill="none" stroke="currentColor" stroke-width="${COMPACT_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"`;
+
+export type PracticeGuideCompactWaveVariant = 'narrow' | 'medium' | 'wide';
+
+export const PRACTICE_GUIDE_COMPACT_WAVE_THRESHOLDS = { wide: 7, medium: 5.5 } as const;
+
+export const PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS: Record<PracticeGuideCompactWaveVariant, { width: number; path: string }> = {
+  narrow: {
+    width: 2.4,
+    path: 'M0.15 15 C0.45 9.8 0.90 9.8 1.20 15 S1.95 20.2 2.25 15'
+  },
+  medium: {
+    width: 4.2,
+    path: 'M0.45 15 C1.00 10.4 1.55 10.4 2.10 15 S3.20 19.6 3.75 15'
+  },
+  wide: {
+    width: COMPACT_WAVE_WIDTH,
+    path: 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15'
+  }
+};
+
+/** Selects the fixed grid16 path using its actual horizontal beat interval. */
+export function practiceGuideCompactWaveVariant(
+  slotWidth: number,
+  measureBeats: number,
+  grid: number
+): PracticeGuideCompactWaveVariant {
+  if (grid !== 16) return 'wide';
+  const cell = (slotWidth - 10) / (Math.max(0.000001, measureBeats) * 4);
+  return cell >= PRACTICE_GUIDE_COMPACT_WAVE_THRESHOLDS.wide ? 'wide'
+    : cell >= PRACTICE_GUIDE_COMPACT_WAVE_THRESHOLDS.medium ? 'medium'
+      : 'narrow';
+}
 
 export const PRACTICE_GUIDE_COMPACT_PATHS = {
   downShaft: 'M2 1 V27.8',
   downHead: 'M0.55 24 L2 28.5 L3.45 24',
   upShaft: 'M2 29 V2.2',
   upHead: 'M0.55 6 L2 1.5 L3.45 6',
-  wave: 'M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2',
-  grid16Wave: 'M0.15 15 C0.45 13.8 0.9 13.8 1.2 15 S1.95 16.2 2.25 15',
+  wave: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path,
+  grid16WaveNarrow: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.narrow.path,
+  grid16WaveMedium: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.medium.path,
+  grid16WaveWide: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path,
   brushCross: 'M0.5 11 L2.5 13 M2.5 11 L0.5 13'
 } as const;
 
@@ -61,15 +94,18 @@ function compactAttackPath(direction: 'down' | 'up', x: number): string {
   return `<g transform="translate(${x} 0)"><path class="practice-guide-compact-attack-shaft" data-guide-compact-part="shaft" d="${shaft}" ${COMPACT_STROKE_ATTRIBUTES}/><path class="practice-guide-compact-attack-head" data-guide-compact-part="head" d="${head}" ${COMPACT_STROKE_ATTRIBUTES}/></g>`;
 }
 
-/** One fixed continuation/tie path; grid16 uses its own shorter compact geometry. */
-export function renderPracticeGuideCompactWavePathSvg(label: string, grid?: number): string {
+/** One fixed continuation/tie path; grid16 selects one of three fixed compact geometries. */
+export function renderPracticeGuideCompactWavePathSvg(
+  label: string,
+  grid?: number,
+  variant: PracticeGuideCompactWaveVariant = 'narrow'
+): string {
   const safeLabel = escapeAttribute(label);
   const isGrid16 = grid === 16;
-  const width = isGrid16 ? PRACTICE_GUIDE_COMPACT_GRID16_WAVE_WIDTH : COMPACT_WAVE_WIDTH;
-  const path = isGrid16 ? PRACTICE_GUIDE_COMPACT_PATHS.grid16Wave : PRACTICE_GUIDE_COMPACT_PATHS.wave;
-  const strokeAttributes = isGrid16 ? COMPACT_STROKE_ATTRIBUTES.replace('stroke-linecap="round"', 'stroke-linecap="butt"') : COMPACT_STROKE_ATTRIBUTES;
-  const gridAttribute = isGrid16 ? ' data-guide-wave-geometry="grid16"' : '';
-  return `<svg class="practice-guide-stroke-icon practice-guide-compact-wave-icon" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false"><title>${safeLabel}</title><path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${width.toFixed(2)}"${gridAttribute} d="${path}" ${strokeAttributes}/></svg>`;
+  const selectedVariant = isGrid16 ? variant : 'wide';
+  const geometry = PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS[selectedVariant];
+  const width = geometry.width;
+  return `<svg class="practice-guide-stroke-icon practice-guide-compact-wave-icon" data-guide-wave-variant="${selectedVariant}" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false"><title>${safeLabel}</title><path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${width.toFixed(2)}" data-guide-wave-variant="${selectedVariant}" d="${geometry.path}" ${COMPACT_STROKE_ATTRIBUTES}/></svg>`;
 }
 
 /** Renders compact-only path geometry; detailed-grid SVGs keep their existing renderer. */

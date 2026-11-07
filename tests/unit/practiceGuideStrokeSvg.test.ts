@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { PRACTICE_GUIDE_COMPACT_PATHS, practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
+import { PRACTICE_GUIDE_COMPACT_PATHS, PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, practiceGuideCompactStrokeVisualWidth, practiceGuideCompactWaveVariant, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
 
 describe('practice guide stroke SVG', () => {
   it('renders down and up attacks as vector geometry with descriptive labels', () => {
@@ -92,17 +92,46 @@ describe('practice guide stroke SVG', () => {
     assert.match(renderPracticeGuideStrokeSvg({ kind: 'attack', direction: 'down', label: 'Detailed down' }), /viewBox="0 0 20 34"/);
   });
 
-  it('renders compact continuation and tie waves as a fixed short vector path', () => {
-    const wave = renderPracticeGuideCompactWavePathSvg('Continuation');
+  it('renders compact continuation waves as fixed variants and keeps ties wide', () => {
+    const wave = renderPracticeGuideCompactWavePathSvg('Continuation', 8);
+    const narrow = renderPracticeGuideCompactWavePathSvg('Narrow', 16, 'narrow');
+    const medium = renderPracticeGuideCompactWavePathSvg('Medium', 16, 'medium');
+    const wide = renderPracticeGuideCompactWavePathSvg('Wide', 16, 'wide');
     const tie = renderPracticeGuideCompactStrokeSvgElement({ kind: 'tie', label: 'Tie' });
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.wave, 'M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2');
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.wave, 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15');
+    assert.deepStrictEqual(PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, {
+      narrow: { width: 2.4, path: 'M0.15 15 C0.45 9.8 0.90 9.8 1.20 15 S1.95 20.2 2.25 15' },
+      medium: { width: 4.2, path: 'M0.45 15 C1.00 10.4 1.55 10.4 2.10 15 S3.20 19.6 3.75 15' },
+      wide: { width: 5.6, path: 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15' }
+    });
     assert.match(wave, /viewBox="0 0 5\.6 30"/);
+    assert.match(wave, /data-guide-wave-variant="wide"/);
     assert.match(wave, /<path[^>]*data-guide-stroke="wave"/);
     assert.doesNotMatch(wave, /<svg[^>]*data-guide-stroke="wave"/);
     assert.match(wave, /data-guide-wave-width="5\.60"/);
-    assert.match(wave, /d="M0\.4 15\.2 C1\.2 13\.3 2 13\.3 2\.8 15\.2 S4\.4 17\.1 5\.2 15\.2"/);
+    assert.match(wave, /d="M0\.40 15 C1\.15 10\.8 2\.00 10\.8 2\.80 15 S4\.45 19\.2 5\.20 15"/);
     assert.match(wave, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
+    for (const [svg, variant, width, viewBox, path] of [
+      [narrow, 'narrow', '2.40', '0 0 2.4 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.narrow.path],
+      [medium, 'medium', '4.20', '0 0 4.2 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.medium.path],
+      [wide, 'wide', '5.60', '0 0 5.6 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path]
+    ] as const) {
+      assert.match(svg, new RegExp(`viewBox="${viewBox.replaceAll('.', '\\.')}"`));
+      assert.match(svg, new RegExp(`data-guide-wave-variant="${variant}"`));
+      assert.match(svg, new RegExp(`data-guide-wave-width="${width}"`));
+      assert.ok(svg.includes(`d="${path}"`));
+      assert.match(svg, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
+    }
+    assert.strictEqual(practiceGuideCompactWaveVariant(100, 4, 16), 'medium');
+    assert.strictEqual(practiceGuideCompactWaveVariant(122, 4, 16), 'wide', '7px cells select the wide path');
+    assert.strictEqual(practiceGuideCompactWaveVariant(121.99, 4, 16), 'medium', 'cells below 7px select medium');
+    assert.strictEqual(practiceGuideCompactWaveVariant(98, 4, 16), 'medium', '5.5px cells select medium');
+    assert.strictEqual(practiceGuideCompactWaveVariant(97.99, 4, 16), 'narrow', 'cells below 5.5px select narrow');
+    assert.strictEqual(practiceGuideCompactWaveVariant(320 / 4, 4, 16), 'narrow');
+    assert.strictEqual(practiceGuideCompactWaveVariant(600 / 4, 4, 16), 'wide');
+    assert.strictEqual(practiceGuideCompactWaveVariant(100, 4, 8), 'wide');
     assert.match(tie, /<path[^>]*data-guide-stroke="tie"/);
+    assert.match(tie, /data-guide-wave-variant="wide"/);
     assert.match(tie, /viewBox="0 0 5\.6 30"/);
   });
 

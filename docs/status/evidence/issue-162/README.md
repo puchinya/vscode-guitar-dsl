@@ -1,6 +1,6 @@
 # Issue #162 Practice Guide evidence
 
-These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v12 is the current visual evidence: it keeps one song-wide compact lyric size, removes the duplicate current-lyric header, fixes melody geometry, and gives all measure diagrams one complete common size. Contract v11 remains historical evidence for the same lyric size while retaining the then-current header field; v10 remains historical evidence for per-event lyric sizing. Contract v9 is historical evidence for gapless measure boundaries and the adjacent next-chord area. Contract v8 screenshots remain historical evidence for the dedicated 16th-grid wave, non-compressed lyrics, full current lyric in the header, and hidden left rail. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
+These PNGs show the compact four-measure Practice Guide and tempo-linked bank fade captured in the VS Code Extension Development Host on macOS arm64. The Japanese runs used the installed Japanese language pack; English runs used the default locale. Contract v13 is the current visual evidence: in addition to v12's shared lyric size, fixed melody geometry, hidden left rail, removed current-lyric header, and complete common-size diagrams, it verifies visible grid16 waves at 400/600 px and code-name width recovery after resize. Contract v12 and earlier screenshots remain historical evidence; v11 retained the then-current lyric header, v10 used per-event lyric sizing, and v8 used the shallow dedicated grid16 wave. The 32-image v8 compact matrix was captured from implementation source HEAD `2ff95de7c456754a58b4bc784dfbd66654cd4afd`. The `contract-v7-final` files and earlier matrices remain historical; the `v5-a8af442` matrix and `practice-guide-v5` images show the exact-path geometry at source HEAD `a8af44221e095132ab07cc542e044650d1f07349`.
 
 ## Capture matrix
 
@@ -33,9 +33,11 @@ These PNGs show the compact four-measure Practice Guide and tempo-linked bank fa
 | Contract v11 uniform lyrics | 600 CSS px × mixed 16th / quarter / half-note fixture × EN locale / Dark | 1 |
 | Contract v12 complete mixed-duration lyric screenshot | 600 × 740 CSS px × EN locale / Dark, with DOM bounds | 1 |
 | Contract v12 common chord-diagram screenshot | 600 CSS px × `sample_gozen0jino_page` × EN locale / Dark | 1 |
+| Contract v13 grid16 wave screenshots | 400 CSS px × JA locale × Light / Dark; 600 CSS px × EN locale × Light / Dark | 4 |
+| Contract v13 painted-wave DOM measurement sidecars | Same four locale/theme/width combinations, with path bounds, stroke color, height, width, gap, and variant | 4 |
 | Four-measure fade reference (prior capture) | 1600 CSS px × JA / EN × Light / Dark | 4 |
 | Crossfade phases (prior capture) | 1600 CSS px × 0 / 250 / 500 ms × JA / EN × Light / Dark | 12 |
-| **Selected evidence files** |  | **399** |
+| **Selected evidence files** |  | **407** |
 
 The 52 `review-v4` and 52 `contract-v4` compact/grid/chord/sample PNGs are historical captures. The complete v4 matrix has 32 compact-layout PNGs, 12 grid PNGs, four short-chord PNGs, and four `sample_gozen0jino_page` PNGs. They have valid PNG headers, the expected CSS-pixel width, nonzero height, and at least 20 KB. Their E2E checked computed lyric contrast, technique-anchor geometry, canonical wave `d` and stroke width, per-grid wave counts and Fractions, and the v4 equal X/Y SVG scale. At 400 px and grid 16, the original 12px wave SVG was retained and uniformly scaled; recognition below the 12px reference interval was not required. Representative v4 compact layouts and the 16th-note grid were visually inspected in both locales and themes. The earlier review-v3 compact/grid images remain historical evidence. The 16 fade reference/phase images retain the earlier visual capture at source commit `c7d1f9d2f992041ceffc9f77e99ea5b21f6e5ddd`; the fade lifecycle is covered by current-HEAD tests below.
 
@@ -151,6 +153,20 @@ The 60 current-source images comprise a 32-image compact layout matrix, 12 grid 
 ## PR #163 review evidence
 
 The compact chord edge regression uses 2, 3, and 4 chord intervals in one four-measure page at an exact 400 CSS px Preview width. Chord diagrams stay in one horizontal row in playback order; each pair scales to its available interval spacing. The E2E checks the name/diagram pair and center, reads both DOM bounds against the card, confirms finger dots, and verifies that neighboring diagrams do not overlap.
+
+### Contract v13 grid16 wave and resize evidence
+
+Contract v13 is canonical at Issue comment `6704603787` (13,172 bytes; SHA-256 `ac580d004632e22c58d11bff38b2774b1109322fbdeb8a1ffb2c58559be9fc36`). Four current-source screenshots include the real 16th-grid continuation fixture: JA Light/Dark at 400 px select the 4.2-wide medium path; EN Light/Dark at 600 px use the 504 px four-card stage beside the 96 px next-chord column, so each 126 px slot selects the 5.6-wide wide path. Every capture retains four measure cards and 48 independent grid16 continuation marks. The DOM sidecars record painted height ≥7 px, painted width within the cell, at least 1 px between neighboring marks, `stroke=currentColor`, the selected variant, and each path's event/Fraction. The same E2E matrix checks 320/360/400/421/480/600/1100/1600 px, exact wave counts/Fractions, selected and hidden grids, template/live-bank synchronization, and variant changes across resize and grid switches. A separate E2E checks long chord labels through 400→1100→400→1100 against a fresh 1100 px layout.
+
+| Width / locale / theme | Screenshot | DOM sidecar | Measured wave result / PNG SHA-256 |
+|---|---|---|---|
+| 400 px / JA / Light | [PNG](practice-guide-compact-wave-issue162-ja-light-400-wave-v13.png) | [JSON](practice-guide-compact-wave-issue162-ja-light-400-wave-v13.json) | medium; 8.05 px high; max 4.45 px wide; min gap 1.30 px; `3e00a84b42a71783030f212f5bf6590cd024aaf89dca3512ec58a98ad21e6b63` |
+| 400 px / JA / Dark | [PNG](practice-guide-compact-wave-issue162-ja-dark-400-wave-v13.png) | [JSON](practice-guide-compact-wave-issue162-ja-dark-400-wave-v13.json) | medium; 8.05 px high; max 4.45 px wide; min gap 1.30 px; `27576008e0fc59435d8280ec223a7dba2c3b51ae98c794c572afb8311d4780d8` |
+| 600 px / EN / Light | [PNG](practice-guide-compact-wave-issue162-en-light-600-wave-v13.png) | [JSON](practice-guide-compact-wave-issue162-en-light-600-wave-v13.json) | wide; 7.45 px high; max 5.95 px wide; min gap 1.43 px; `d8ff23bac711626140a75caa9162c6457e6b7b6147a59c983c4167678d2b8751` |
+| 600 px / EN / Dark | [PNG](practice-guide-compact-wave-issue162-en-dark-600-wave-v13.png) | [JSON](practice-guide-compact-wave-issue162-en-dark-600-wave-v13.json) | wide; 7.45 px high; max 5.95 px wide; min gap 1.43 px; `85ba552b7d72eb4b7ec5c70b5b74d42070b661329cb20add6e5466f28a175b78` |
+
+- [User-supplied stroke-pattern reference crop](user-reference-stroke-pattern-crop.png)
+- [Contract v13 fixed wave-path target](stroke-wave-v13-shape-target.svg)
 
 Contract v8 review remediation removes non-uniform lyric compression, adds one current-lyric header synchronized to the active selected-verse event, uses a dedicated 2.4×30 grid16 continuation path, and squares compact melody bars. The E2E keeps an independent down/up/down/up and Fraction/count oracle for the supplied four-measure fixture, checks painted grid16 wave gaps at 320–1600 CSS px, and verifies the lyric/header behavior across resize and seek. The crop and exact attack/wave targets remain beside the rendered captures for direct visual review.
 
