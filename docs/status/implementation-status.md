@@ -3,10 +3,20 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-10-30
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。
+- **最終更新日**: 2026-11-07
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はContract v13のgrid16波線視覚品質とコード名resize指摘を修正し、検証中。PRはopenでレビュー待ち。
 
 ---
+
+## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
+
+- **状態**: Contract v13はv12の4小節gapless、左レール非表示、曲全体共通歌詞サイズ、上部現在歌詞欄の削除、固定メロディ幾何、全曲共通の完全なコード図を維持する。grid16波線はセル幅別の3種類にし、コード名は自然幅からresizeごとに再計算する。下段歌詞レーンとアクセシブルな全文は維持する。PR #163はopenでレビュー待ち。
+- **契約**: Issue comment `6704603787` がcanonical Implementation Contract v13 Delta。**13,172 bytes / SHA-256 `ac580d004632e22c58d11bff38b2774b1109322fbdeb8a1ffb2c58559be9fc36`**。v12 comment `6688929860` とv11以前は不変の履歴として保持する。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv13の表示仕様へ同期した。
+- **画面証拠**: [Contract v13の波線画像・DOM実測と過去画像の一覧](evidence/issue-162/README.md)。macOS arm64 / VS Code 1.145.2で、400px JA Light/Darkは48本のgrid16 waveをmediumで表示（最小描画高8.05px、最大幅4.45px、最小隙間1.30px）、600px EN Light/Darkはwideで表示（最小描画高7.45px、最大幅5.95px、最小隙間1.43px）。PNGとDOM実測JSONを4組保存し、参考切出しとv13 SVG targetとの見た目を確認した。v12の600×740混在音価画像は4小節・歌詞レーン・次コード欄を収め、PNG SHA-256 `709557ac3ad8a00cfbd794b9a49414d208fac575e98a6e24158c3312e65a9178`、bounds sidecar SHA-256 `40a62eacad4ca93eba6e23978f199cec52add99d63c0f0ff127548eff076b77e`。`sample_gozen0jino_page` は600×710、SHA-256 `2c47b359549639f9c91060ef443fe502bde9ac846f29dba5962b95a463852d15`。双方の旧画像は履歴として保持する。
+- **検証**: macOS arm64。`npm run compile`、`npm run compile:tests`、`npm run vscode:prepublish`、`npm run check:help`、`npm run check:ai`、`npm run test:unit` はPASS（unit 1,235件）。`verify-implementation-contract 162` と `validate-docs --issue 162` もPASS。Contract v13のfocused E2Eはgrid16波線・自然幅復元・歌詞欄/下段レーン幾何の3件がPASSし、画面証拠の4組も各1件PASS。最終 `npm test` は終了コード1で、unit 1,235件、E2E 132 PASS・6 pending・1 FAIL。失敗はIssue #158の既存変数参照テストで、クリック後の期待状態`chooseReference`に対して`add`が返った。失敗時のtraceではWorkbenchがfocusedだった。1回だけのfocused diagnosticでは同テストが1/1 PASSし、再現しなかったため、全体suiteはPASSに変更しない。v13が対象とするbank crossfade（33.5秒）と400px両bank歌詞fade（5.4秒）は全体suite内でPASS。`npm run vscode:prepublish` はPASS（wasm-bindgenの自動取得失敗後にcargo installへfallback）。`npx @vscode/vsce ls` はnpm registry `npm.flatt.tech` のDNS失敗（`ENOTFOUND`）により一覧を取得できずNOT RUN。current-HEAD Self-Review、Required Check、delivery-checkの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
+- **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。マージ前のためIssueは未完了、マージ保留。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース
 
@@ -158,10 +168,10 @@
 
 - **文書オーナー**: `docs/specs/guitardsl-syntax.md`、`extension.md`、`gui_design.md`、`docs/design/language-and-score-processing.md`、`preview-rendering-and-export.md`、`score-editing.md`、EN/JA Helpとmanifest、生成済み `media/help/`、AI syntax reference、本書。
 
-## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード
+## Issue #155: 弾き語り練習ガイドのSVGストローク・正方形コード図・2小節クロスフェード（当時の実装記録）
 
 - **状態**: [Issue #155](https://github.com/puchinya/vscode-guitar-dsl/issues/155) の更新済みImplementation Contract（SHA-256 `81b60f006aa6f1350884bb522d3e7c7b84a94f5d0868662688cf624c2767e0c1`）を承認済み。[PR #156](https://github.com/puchinya/vscode-guitar-dsl/pull/156) は 2026-10-24 に `main` へマージ済み、Issue #155 はclosed。handoff時のself-reviewとdelivery-checkは常にPRの現HEADに対して実行する。
-- **表示仕様**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。前後ボタンで停止中にページを手動で閲覧できる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。
+- **表示仕様（PR #156時点）**: コンパクト表示は常に4小節を投影し、適応的に2/1小節へ減らさない。小節幅や譜面密度で収まらない時は横スクロールで4小節へ到達できる。通常幅では4小節を横一列に並べる。前後ボタンで停止中にページを手動で閲覧できる。コード名と144×144 pxの図は小節境界から離し、各コード区間の中央へ配置する。ストローク記号はベクターSVG、二組のバンクを交互に220 msでクロスフェードし、演奏中バンクと次コード欄の位置を維持する。この狭幅・横スクロール・図サイズ・fade期間の記述はIssue #162の新しいコンパクト仕様で置き換えられた。
 - **検証**: 最新修正後の `npm test` はHelp/AI同期PASS、単体 **1,192件PASS**、VS Code E2E **112件PASS・6件pending**。コンパクト奏法の高さ共有E2Eは幅280/320/360/400/420/421/600/1400/1600px × Melody ON/OFF × 4/8/16分グリッドの54状態で4小節、レーンと固定ラベルの境界差1px以内、奏法SVGの同一小節内非衝突・レーン内包含を確認した。別のレンダラー単体テストは内部同時イベントから2行割当と67px共通高さを算出し、4小節出力を検証する。公開DSLのTAB声部制約は維持する。メロディバーE2Eは承認幅280/320/360/420/421/600/840/1100/1400pxと1600pxで各小節4音の実DOMRect、Fraction拍位置、音高Y座標、寸法、レーン内包含、Melody ON/OFFを検査する。Help/AI同期、`verify-implementation-contract 155`、`validate-docs --issue 155`、`vscode:prepublish`、VSIX収録1,602項目、`git diff --check`もPASS。pending 6件、VoiceOver/NVDA、Windows/Linuxは未実施。
 - **画面証拠**: メロディバーCSS修正後の現行Previewを、幅280/320/360/420/421/600/840/1100/1400px × JA/EN × Light/Dark × Melody ON/OFFの72状態で撮影し、全画像を目視確認した。72枚すべてPNG実幅が指定CSS幅と一致し、音程バー、5レーン、歌詞・奏法・コード図、固定次コード、Melody OFF時の高さ、横スクロール可能な小節内容を確認した。画像は `docs/status/evidence/issue-155/` に `-melody-matrix.png` 付きで保存。代表画像: [JA Light・421px](evidence/issue-155/practice-guide-compact-issue155-ja-light-421-melody-on-melody-matrix.png)、[EN Dark・1400px](evidence/issue-155/practice-guide-compact-issue155-en-dark-1400-melody-on-melody-matrix.png)、[EN Dark・1600pxの4小節参照](evidence/issue-155/practice-guide-reference-4-measures-issue155-en-dark-melody-bars.png)、[110msクロスフェード](evidence/issue-155/practice-guide-crossfade-issue155-en-dark-110ms-melody-bars.png)。従来の72枚は旧HEADの履歴として保持する。
 - **文書オーナー**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、EN/JA Helpとmanifest、生成済み `media/help/`、本書。

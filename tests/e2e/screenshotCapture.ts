@@ -302,7 +302,7 @@ export async function capturePreviewWebviewScreenshot(
 
 /** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
 export async function setPreviewWebviewViewportWidth(width: number, height?: number): Promise<void> {
-  if (!Number.isFinite(width) || width < 280) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  if (!Number.isFinite(width) || width < 1) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
   if (height !== undefined && (!Number.isFinite(height) || height < 240)) {
     throw new Error(`Invalid Preview Webview viewport height: ${height}`);
   }
@@ -988,6 +988,7 @@ export async function inspectWorkbenchLayout(): Promise<string> {
       expression: `JSON.stringify({ viewport: { width: innerWidth, height: innerHeight },
         editor: [...document.querySelectorAll('.part.editor')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right) }; }),
         parts: Object.fromEntries(['sidebar', 'auxiliarybar'].map(name => { const node=document.querySelector('.part.'+name); if(!node) return [name, { visible:false, width:0 }]; const r=node.getBoundingClientRect(); const style=getComputedStyle(node); return [name, { visible:style.display!=='none' && style.visibility!=='hidden' && r.width>0 && r.height>0, width:Math.round(r.width) }]; })),
+        statusbar: (() => { const node=document.querySelector('.part.statusbar'); if(!node) return { visible:false, height:0 }; const r=node.getBoundingClientRect(); const style=getComputedStyle(node); return { visible:style.display!=='none' && style.visibility!=='hidden' && r.width>0 && r.height>0, height:Math.round(r.height) }; })(),
         groups: [...document.querySelectorAll('.editor-group-container')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right), classes: node.className }; }),
         sashes: [...document.querySelectorAll('.monaco-sash')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), top: Math.round(r.top), classes: node.className }; }) })`,
       returnByValue: true
