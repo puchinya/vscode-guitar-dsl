@@ -86,11 +86,11 @@ describe('Practice guide panel renderer', () => {
     assert.ok(paths.every(path => /data-guide-wave-grid="16"/.test(path)));
     assert.ok(paths.every(path => /data-guide-event="7"/.test(path)));
     assert.ok(paths.every(path => /data-guide-at-beat="/.test(path)));
-    assert.ok(paths.every(path => /d="M0\.15 15 C0\.45 9\.8 0\.90 9\.8 1\.20 15 S1\.95 20\.2 2\.25 15"/.test(path)));
+    assert.ok(paths.every(path => /d="M0\.40 15 C1\.15 10\.8 2\.00 10\.8 2\.80 15 S4\.45 19\.2 5\.20 15"/.test(path)));
     assert.ok(paths.every(path => /stroke-width="1\.15" stroke-linecap="round"[^>]*vector-effect="non-scaling-stroke"/.test(path)));
-    assert.ok(paths.every(path => /data-guide-wave-width="2\.40"/.test(path)));
-    assert.ok(paths.every(path => /data-guide-wave-variant="narrow"/.test(path)));
-    assert.match(compactHtml, /viewBox="0 0 2\.4 30"/);
+    assert.ok(paths.every(path => /data-guide-wave-width="5\.60"/.test(path)));
+    assert.ok(paths.every(path => /data-guide-wave-variant="wide"/.test(path)));
+    assert.match(compactHtml, /viewBox="0 0 5\.6 30"/);
     assert.match(compactHtml, /class="practice-guide-stroke-icon practice-guide-compact-wave-icon"/);
   });
 

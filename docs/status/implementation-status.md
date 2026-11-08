@@ -3,18 +3,18 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-07
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はContract v13のgrid16波線視覚品質とコード名resize指摘を修正し、検証中。PRはopenでレビュー待ち。
+- **最終更新日**: 2026-11-08
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はcanonical Contract v22の実装・検証済みで、PRはopen / レビュー待ち。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: Contract v13はv12の4小節gapless、左レール非表示、曲全体共通歌詞サイズ、上部現在歌詞欄の削除、固定メロディ幾何、全曲共通の完全なコード図を維持する。grid16波線はセル幅別の3種類にし、コード名は自然幅からresizeごとに再計算する。下段歌詞レーンとアクセシブルな全文は維持する。PR #163はopenでレビュー待ち。
-- **契約**: Issue comment `6704603787` がcanonical Implementation Contract v13 Delta。**13,172 bytes / SHA-256 `ac580d004632e22c58d11bff38b2774b1109322fbdeb8a1ffb2c58559be9fc36`**。v12 comment `6688929860` とv11以前は不変の履歴として保持する。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
-- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv13の表示仕様へ同期した。
-- **画面証拠**: [Contract v13の波線画像・DOM実測と過去画像の一覧](evidence/issue-162/README.md)。macOS arm64 / VS Code 1.145.2で、400px JA Light/Darkは48本のgrid16 waveをmediumで表示（最小描画高8.05px、最大幅4.45px、最小隙間1.30px）、600px EN Light/Darkはwideで表示（最小描画高7.45px、最大幅5.95px、最小隙間1.43px）。PNGとDOM実測JSONを4組保存し、参考切出しとv13 SVG targetとの見た目を確認した。v12の600×740混在音価画像は4小節・歌詞レーン・次コード欄を収め、PNG SHA-256 `709557ac3ad8a00cfbd794b9a49414d208fac575e98a6e24158c3312e65a9178`、bounds sidecar SHA-256 `40a62eacad4ca93eba6e23978f199cec52add99d63c0f0ff127548eff076b77e`。`sample_gozen0jino_page` は600×710、SHA-256 `2c47b359549639f9c91060ef443fe502bde9ac846f29dba5962b95a463852d15`。双方の旧画像は履歴として保持する。
-- **検証**: macOS arm64。`npm run compile`、`npm run compile:tests`、`npm run vscode:prepublish`、`npm run check:help`、`npm run check:ai`、`npm run test:unit` はPASS（unit 1,235件）。`verify-implementation-contract 162` と `validate-docs --issue 162` もPASS。Contract v13のfocused E2Eはgrid16波線・自然幅復元・歌詞欄/下段レーン幾何の3件がPASSし、画面証拠の4組も各1件PASS。最終 `npm test` は終了コード1で、unit 1,235件、E2E 132 PASS・6 pending・1 FAIL。失敗はIssue #158の既存変数参照テストで、クリック後の期待状態`chooseReference`に対して`add`が返った。失敗時のtraceではWorkbenchがfocusedだった。1回だけのfocused diagnosticでは同テストが1/1 PASSし、再現しなかったため、全体suiteはPASSに変更しない。v13が対象とするbank crossfade（33.5秒）と400px両bank歌詞fade（5.4秒）は全体suite内でPASS。`npm run vscode:prepublish` はPASS（wasm-bindgenの自動取得失敗後にcargo installへfallback）。`npx @vscode/vsce ls` はnpm registry `npm.flatt.tech` のDNS失敗（`ENOTFOUND`）により一覧を取得できずNOT RUN。current-HEAD Self-Review、Required Check、delivery-checkの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **状態**: Contract v22はv14の4小節gapless、左レール非表示、上部現在歌詞欄の削除、固定メロディ幾何、曲全体共通歌詞サイズ、完全なコード図、24pxコード名、songwide空レーン縮小を維持する。コンパクト表示の奏法レーンとコード名の間隔を20pxにし、実際の描画端で11.65pxを確保する。grid8/grid16の波線は意味上のFraction・アンカーを保ち、矢印との実描画間隔も維持する。実装・検証済みでPR #163はopen。
+- **契約**: Issue comment `6714560967` がcanonical Implementation Contract v22 Delta。**4,703 bytes / SHA-256 `41596106ceea47f7a53805e8aa75ad66a9a4964862976888f8b4b4c62ec76108`**。v21の12px案は実画面で3.65pxとなり10px要件を満たさなかったため歴史として保持し、v22で20pxへ改訂した。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv22表示仕様へ同期した。
+- **画面証拠**: [Issue #162の画像・DOM実測一覧](evidence/issue-162/README.md)。v22の16枚（JA/EN × Light/Dark × 400/600px × grid8/grid16）とSHA付きDOM sidecarがPASSし、すべて11.65pxの描画間隔を記録した。コード図は全表示され、波線と矢印も接触なし。v21の不足画像は履歴として説明し、v15の接触画像は歴史的な失敗証拠として残す。
+- **検証**: `npm test` は1,235 unit PASS、135 E2E PASS、6 pending、0 failures。Practice Guideのfocused geometry E2Eは幅320/400/421/480/600/1100/1600pxでPASS。JA/EN × Light/Darkの画面撮影E2Eは各1/1 PASS。`check:help`、`check:ai`、`verify-implementation-contract 162`、`validate-docs --issue 162`、`npm run vscode:prepublish`、`git diff --check`もPASS。`npx @vscode/vsce ls` は1,607項目で、必須ファイルがあり、tests/docs/scripts等の開発専用パスは含まれない。PRの最新HEAD向けSelf-ReviewとRequired Checkはpush後に更新する。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。マージ前のためIssueは未完了、マージ保留。
 

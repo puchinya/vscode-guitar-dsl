@@ -1,0 +1,414 @@
+{
+  "filename": "practice-guide-compact-wave-issue162-ja-light-400-grid-8-v20.png",
+  "locale": "ja",
+  "theme": "Default Light Modern",
+  "imageWidth": 400,
+  "imageHeight": 799,
+  "imageBytes": 47642,
+  "imageSha256": "4c708cb6388d1a8c29df0342bc8ef2ab007bb38ef473b2be721bcade54f5dbdd",
+  "waveAttackClearance": "PASS",
+  "viewportWidth": 400,
+  "stageWidth": 400,
+  "cardCount": 4,
+  "grid": "8",
+  "waveCount": 16,
+  "variants": [
+    "wide"
+  ],
+  "minimumPaintedHeight": 7.45000114440918,
+  "maximumPaintedWidth": 8.17857096584476,
+  "minimumPaintedGap": 15.821429034155237,
+  "widthsWithinCells": true,
+  "minimumWaveArrowClearance": 4.460701010452226,
+  "waveArrowOverlapCount": 0,
+  "minimumAttackNaturalWidth": 4,
+  "minimumAttackScaleX": 1,
+  "arrowCount": 16,
+  "attackBounds": [
+    [
+      {
+        "left": 2.549999952316284,
+        "right": 5.449999809265137,
+        "width": 2.8999998569488525,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 26.549999237060547,
+        "right": 29.450000762939453,
+        "width": 2.9000015258789062,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 50.54999923706055,
+        "right": 53.45000076293945,
+        "width": 2.9000015258789062,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 74.55000305175781,
+        "right": 77.44999694824219,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      }
+    ],
+    [
+      {
+        "left": 102.55000305175781,
+        "right": 105.44999694824219,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 126.55000305175781,
+        "right": 129.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 150.5500030517578,
+        "right": 153.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 174.5500030517578,
+        "right": 177.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      }
+    ],
+    [
+      {
+        "left": 202.5500030517578,
+        "right": 205.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 226.5500030517578,
+        "right": 229.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 250.5500030517578,
+        "right": 253.4499969482422,
+        "width": 2.899993896484375,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 274.54998779296875,
+        "right": 277.45001220703125,
+        "width": 2.9000244140625,
+        "naturalWidth": 4,
+        "scaleX": 1
+      }
+    ],
+    [
+      {
+        "left": 302.54998779296875,
+        "right": 305.45001220703125,
+        "width": 2.9000244140625,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 326.54998779296875,
+        "right": 329.45001220703125,
+        "width": 2.9000244140625,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 350.54998779296875,
+        "right": 353.45001220703125,
+        "width": 2.9000244140625,
+        "naturalWidth": 4,
+        "scaleX": 1
+      },
+      {
+        "left": 374.54998779296875,
+        "right": 377.45001220703125,
+        "width": 2.9000244140625,
+        "naturalWidth": 4,
+        "scaleX": 1
+      }
+    ]
+  ],
+  "techniqueToChordGap": 6,
+  "painterOrder": [
+    "waves",
+    "attacks",
+    "pm"
+  ],
+  "nextChordBounds": {
+    "left": 0,
+    "right": 400,
+    "width": 400
+  },
+  "cardMetrics": [
+    {
+      "cardWidth": 100,
+      "cellWidth": 12,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 13.91071390932312,
+          "right": 22.089284875167877,
+          "displayLeft": 14.485713958740234,
+          "displayRight": 21.514286041259766,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 1,
+          "fraction": "3/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 37.91071581667175,
+          "right": 46.08928678251651,
+          "displayLeft": 38.485713958740234,
+          "displayRight": 45.514286041259766,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "5/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 61.91071581667175,
+          "right": 70.08928678251651,
+          "displayLeft": 62.485713958740234,
+          "displayRight": 69.51428985595703,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 3,
+          "fraction": "7/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 85.91071581667175,
+          "right": 94.08928678251651,
+          "displayLeft": 86.4857177734375,
+          "displayRight": 93.51428985595703,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 15.821429034155237
+    },
+    {
+      "cardWidth": 100,
+      "cellWidth": 12,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 113.91071390932312,
+          "right": 122.08928487516788,
+          "displayLeft": 114.4857177734375,
+          "displayRight": 121.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 1,
+          "fraction": "3/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 137.91071581667177,
+          "right": 146.0892867825165,
+          "displayLeft": 138.4857177734375,
+          "displayRight": 145.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "5/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 161.91071581667177,
+          "right": 170.0892867825165,
+          "displayLeft": 162.4857177734375,
+          "displayRight": 169.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 3,
+          "fraction": "7/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 185.91071581667177,
+          "right": 194.0892867825165,
+          "displayLeft": 186.4857177734375,
+          "displayRight": 193.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 15.821429034155273
+    },
+    {
+      "cardWidth": 100,
+      "cellWidth": 12,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 213.91071390932314,
+          "right": 222.08928487516786,
+          "displayLeft": 214.4857177734375,
+          "displayRight": 221.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 1,
+          "fraction": "3/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 237.91071581667177,
+          "right": 246.0892867825165,
+          "displayLeft": 238.4857177734375,
+          "displayRight": 245.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "5/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 261.91071581667177,
+          "right": 270.0892867825165,
+          "displayLeft": 262.4857177734375,
+          "displayRight": 269.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 3,
+          "fraction": "7/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 285.91071581667177,
+          "right": 294.0892867825165,
+          "displayLeft": 286.4857177734375,
+          "displayRight": 293.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 15.821429034155244
+    },
+    {
+      "cardWidth": 100,
+      "cellWidth": 12,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 313.91071390932314,
+          "right": 322.0892848751679,
+          "displayLeft": 314.4857177734375,
+          "displayRight": 321.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 1,
+          "fraction": "3/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 337.91071581667177,
+          "right": 346.0892867825165,
+          "displayLeft": 338.4857177734375,
+          "displayRight": 345.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "5/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 361.91071581667177,
+          "right": 370.0892867825165,
+          "displayLeft": 362.4857177734375,
+          "displayRight": 369.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 3,
+          "fraction": "7/2",
+          "variant": "wide",
+          "d": "M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15",
+          "viewBox": "0 0 5.6 30",
+          "paintedWidth": 8.17857096584476,
+          "paintedHeight": 7.45000114440918,
+          "left": 385.91071581667177,
+          "right": 394.0892867825165,
+          "displayLeft": 386.4857177734375,
+          "displayRight": 393.5142822265625,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 15.821429034155244
+    }
+  ]
+}
