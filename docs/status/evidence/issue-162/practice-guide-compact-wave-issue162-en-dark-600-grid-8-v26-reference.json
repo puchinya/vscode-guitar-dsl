@@ -1,0 +1,724 @@
+{
+  "filename": "practice-guide-compact-wave-issue162-en-dark-600-grid-8-v26-reference.png",
+  "locale": "en",
+  "theme": "Default Dark Modern",
+  "imageWidth": 600,
+  "imageHeight": 799,
+  "imageBytes": 58238,
+  "imageSha256": "1ea92e4041f4f50c23ca03fcb13affbd74685499a8989ed24ee4ad8553275676",
+  "referenceScale": 0.3442622950819672,
+  "waveAttackClearance": "PASS",
+  "techniqueChordClearance": "PASS",
+  "viewportWidth": 600,
+  "stageWidth": 504,
+  "cardCount": 4,
+  "grid": "8",
+  "waveCount": 8,
+  "variants": [
+    "wide"
+  ],
+  "firstMeasurePattern": [
+    "D",
+    "W",
+    "D",
+    "U",
+    "W",
+    "U",
+    "D",
+    "U"
+  ],
+  "firstMeasureWaveFractions": [
+    "1/2",
+    "2/1"
+  ],
+  "minimumPaintedHeight": 2.539212382375001,
+  "maximumPaintedWidth": 5.973605032265186,
+  "minimumPaintedGap": 39.77639306038617,
+  "widthsWithinCells": true,
+  "minimumWaveArrowClearance": 7.377942996472115,
+  "waveArrowOverlapCount": 0,
+  "expectedReferenceScale": 0.3442622950819672,
+  "attackScaleRange": {
+    "min": 0.3443000018596649,
+    "max": 0.3443000018596649
+  },
+  "minimumTechniqueChordClearance": 25.507910156249977,
+  "minimumAttackPackedWidth": 5.163934426229508,
+  "minimumAttackScaleX": 0.3443000018596649,
+  "uniformWaveScaling": true,
+  "uniformAttackScaling": true,
+  "attackMasterViewBoxes": [
+    "0 0 15 47"
+  ],
+  "arrowCount": 24,
+  "attackBounds": [
+    [
+      {
+        "left": 0,
+        "right": 5.1645002365112305,
+        "width": 5.1645002365112305,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 29.917999267578125,
+        "right": 35.08250045776367,
+        "width": 5.164501190185547,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 45.167999267578125,
+        "right": 50.33250045776367,
+        "width": 5.164501190185547,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 75.66799926757812,
+        "right": 80.8324966430664,
+        "width": 5.164497375488281,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 90.91799926757812,
+        "right": 96.0824966430664,
+        "width": 5.164497375488281,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 106.16799926757812,
+        "right": 111.3324966430664,
+        "width": 5.164497375488281,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      }
+    ],
+    [
+      {
+        "left": 126,
+        "right": 131.1645050048828,
+        "width": 5.1645050048828125,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 155.91799926757812,
+        "right": 161.08250427246094,
+        "width": 5.1645050048828125,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 171.16799926757812,
+        "right": 176.33250427246094,
+        "width": 5.1645050048828125,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 201.66799926757812,
+        "right": 206.83248901367188,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 216.91799926757812,
+        "right": 222.08248901367188,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 232.16799926757812,
+        "right": 237.33248901367188,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      }
+    ],
+    [
+      {
+        "left": 252,
+        "right": 257.16448974609375,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 281.9179992675781,
+        "right": 287.0824890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 297.1679992675781,
+        "right": 302.3324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 327.6679992675781,
+        "right": 332.8324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 342.9179992675781,
+        "right": 348.0824890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 358.1679992675781,
+        "right": 363.3324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      }
+    ],
+    [
+      {
+        "left": 378,
+        "right": 383.16448974609375,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 407.9179992675781,
+        "right": 413.0824890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 423.1679992675781,
+        "right": 428.3324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 453.6679992675781,
+        "right": 458.8324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 468.9179992675781,
+        "right": 474.0824890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      },
+      {
+        "left": 484.1679992675781,
+        "right": 489.3324890136719,
+        "width": 5.16448974609375,
+        "packedWidth": 5.163934426229508,
+        "scaleX": 0.3443000018596649,
+        "scaleY": 0.3443000018596649,
+        "naturalWidth": 15,
+        "viewBox": "0 0 15 47"
+      }
+    ]
+  ],
+  "techniqueToChordGap": 20,
+  "viewportHeight": 799,
+  "layoutBounds": {
+    "top": 539,
+    "bottom": 798
+  },
+  "layoutScroll": {
+    "top": 0,
+    "clientHeight": 259,
+    "scrollHeight": 259,
+    "compactTop": 0,
+    "compactHeight": 259,
+    "compactScrollHeight": 259,
+    "pairPageHeight": 259
+  },
+  "diagramBounds": [
+    [
+      {
+        "left": 7.166666507720947,
+        "right": 108.00000238418579,
+        "top": 674.5,
+        "bottom": 769.5,
+        "cardLeft": 0,
+        "cardRight": 126,
+        "layoutTop": 539,
+        "layoutBottom": 798,
+        "compactTop": 539,
+        "compactBottom": 798,
+        "svgLeft": 7.166666507720947,
+        "svgRight": 108.00000238418579,
+        "svgTop": 674.5,
+        "svgBottom": 769.5,
+        "diagramDots": 5
+      }
+    ],
+    [
+      {
+        "left": 133.1666717529297,
+        "right": 234,
+        "top": 673.6666870117188,
+        "bottom": 770.3333740234375,
+        "cardLeft": 126,
+        "cardRight": 252,
+        "layoutTop": 539,
+        "layoutBottom": 798,
+        "compactTop": 539,
+        "compactBottom": 798,
+        "svgLeft": 133.1666717529297,
+        "svgRight": 234,
+        "svgTop": 673.6666870117188,
+        "svgBottom": 770.3333740234375,
+        "diagramDots": 6
+      }
+    ],
+    [
+      {
+        "left": 259.1666564941406,
+        "right": 360,
+        "top": 673.6666870117188,
+        "bottom": 769.5,
+        "cardLeft": 252,
+        "cardRight": 378,
+        "layoutTop": 539,
+        "layoutBottom": 798,
+        "compactTop": 539,
+        "compactBottom": 798,
+        "svgLeft": 259.1666564941406,
+        "svgRight": 360,
+        "svgTop": 673.6666870117188,
+        "svgBottom": 769.5,
+        "diagramDots": 4
+      }
+    ],
+    [
+      {
+        "left": 385.1666564941406,
+        "right": 486,
+        "top": 674.5,
+        "bottom": 769.5,
+        "cardLeft": 378,
+        "cardRight": 504,
+        "layoutTop": 539,
+        "layoutBottom": 798,
+        "compactTop": 539,
+        "compactBottom": 798,
+        "svgLeft": 385.1666564941406,
+        "svgRight": 486,
+        "svgTop": 674.5,
+        "svgBottom": 769.5,
+        "diagramDots": 5
+      }
+    ]
+  ],
+  "allDiagramsInsideCards": true,
+  "allDiagramsVisible": true,
+  "techniqueBounds": [
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 586.9352416992188,
+      "bottom": 588.6653442382812
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    },
+    {
+      "top": 579.7100219726562,
+      "bottom": 595.89208984375
+    }
+  ],
+  "allTechniqueMarksVisible": true,
+  "painterOrder": [
+    "waves",
+    "attacks",
+    "pm"
+  ],
+  "nextChordBounds": {
+    "left": 504,
+    "right": 600,
+    "top": 539,
+    "bottom": 798,
+    "width": 96
+  },
+  "cardMetrics": [
+    {
+      "cardWidth": 126,
+      "slotWidth": 126,
+      "cellWidth": 15.25,
+      "svgScale": 1,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 12.542448001354932,
+          "right": 18.516053033620118,
+          "centerX": 15.529250517487526,
+          "expectedCenterX": 15.528688524590164,
+          "displayLeft": 12.947000503540039,
+          "displayRight": 18.111499786376953,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "2/1",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 58.2924460940063,
+          "right": 64.26605112627149,
+          "centerX": 61.27924861013889,
+          "expectedCenterX": 61.278688524590166,
+          "displayLeft": 58.696998596191406,
+          "displayRight": 63.86149978637695,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 39.776393060386184
+    },
+    {
+      "cardWidth": 126,
+      "slotWidth": 126,
+      "cellWidth": 15.25,
+      "svgScale": 1,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 138.54244800135493,
+          "right": 144.51605303362012,
+          "centerX": 141.52925051748753,
+          "expectedCenterX": 141.52868852459017,
+          "displayLeft": 138.94700622558594,
+          "displayRight": 144.1114959716797,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "2/1",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 184.2924460940063,
+          "right": 190.2660511262715,
+          "centerX": 187.2792486101389,
+          "expectedCenterX": 187.27868852459017,
+          "displayLeft": 184.69699096679688,
+          "displayRight": 189.8614959716797,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 39.77639306038617
+    },
+    {
+      "cardWidth": 126,
+      "slotWidth": 126,
+      "cellWidth": 15.25,
+      "svgScale": 1,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 264.54244800135496,
+          "right": 270.5160530336201,
+          "centerX": 267.5292505174875,
+          "expectedCenterX": 267.52868852459017,
+          "displayLeft": 264.9469909667969,
+          "displayRight": 270.11151123046875,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "2/1",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 310.2924460940063,
+          "right": 316.26605112627146,
+          "centerX": 313.2792486101389,
+          "expectedCenterX": 313.27868852459017,
+          "displayLeft": 310.6969909667969,
+          "displayRight": 315.86151123046875,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 39.776393060386226
+    },
+    {
+      "cardWidth": 126,
+      "slotWidth": 126,
+      "cellWidth": 15.25,
+      "svgScale": 1,
+      "waves": [
+        {
+          "event": 0,
+          "fraction": "1/2",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 390.54244800135496,
+          "right": 396.5160530336201,
+          "centerX": 393.5292505174875,
+          "expectedCenterX": 393.52868852459017,
+          "displayLeft": 390.9469909667969,
+          "displayRight": 396.11151123046875,
+          "stroke": "rgb(55, 70, 94)"
+        },
+        {
+          "event": 2,
+          "fraction": "2/1",
+          "variant": "wide",
+          "d": "M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0",
+          "viewBox": "0 0 15 47",
+          "scaleX": 0.3443000018596649,
+          "scaleY": 0.3443000018596649,
+          "paintedWidth": 5.973605032265186,
+          "paintedHeight": 2.539212382375001,
+          "left": 436.2924460940063,
+          "right": 442.26605112627146,
+          "centerX": 439.2792486101389,
+          "expectedCenterX": 439.27868852459017,
+          "displayLeft": 436.6969909667969,
+          "displayRight": 441.86151123046875,
+          "stroke": "rgb(55, 70, 94)"
+        }
+      ],
+      "minimumGap": 39.776393060386226
+    }
+  ]
+}

@@ -16,7 +16,7 @@ import type { PlaybackEvent } from '../playbackTimeline';
 import { beamGroupStarts, measureBeats } from '../scoreEvents';
 import { PageOrientation, PageSize, getSheetSize } from './layout';
 import { FONT_FAMILY_SANS, SCORE_FONT_FAMILY, escapeXml, renderContinuousSvg, renderScoreSheets } from './svg';
-import { PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
+import { PRACTICE_GUIDE_COMPACT_MARK_HEIGHT, PRACTICE_GUIDE_COMPACT_MARK_WIDTH, PRACTICE_GUIDE_COMPACT_REFERENCE_LAYOUT, PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, practiceGuideCompactStrokeVisualWidth, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideStrokeSvg, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideWaveSvg } from './practiceGuideStrokeSvg';
 import type { PracticeGuideStrokeSpec } from './practiceGuideStrokeSvg';
 import type { VisualSourceBinding } from '../compiler';
 
@@ -772,7 +772,7 @@ ${cspMeta}
   .practice-guide-pitch-range { display: flex; flex-direction: column; color: #a0b4c8; font-size: 10px; line-height: 12px; }
   .practice-guide-label[data-guide-lane="lyrics"] { flex-basis: auto; }
   .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-technique-height, 48px); }
-  body.guide-compact-mode .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-compact-technique-height, 48px); }
+  body.guide-compact-mode .practice-guide-label[data-guide-lane="technique"] { height: var(--guide-compact-technique-height, 64px); }
   .practice-guide-label[data-guide-lane="chord"] { height: 36px; }
   .practice-guide-label[data-guide-lane="diagrams"] { height: 154px; }
   .practice-guide-scroll { grid-column: 1; min-width: 0; min-height: max-content; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
@@ -826,6 +826,7 @@ ${cspMeta}
   .practice-guide-next-chord-diagram { box-sizing: border-box; width: 100%; padding: 4px; border: 1px solid #d2dde9; border-radius: 8px; background: #ffffff; }
   .practice-guide-next-chord-diagram .practice-guide-diagram { box-sizing: border-box; width: 100%; max-width: 144px; height: auto; aspect-ratio: 1; margin: 0 auto; }
   .practice-guide-compact { display: none; box-sizing: border-box; min-width: 0; min-height: 0; overflow: hidden; background: #ffffff; color: #21354b; }
+  body.guide-compact-mode .practice-guide-compact { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
   .practice-guide-layout.is-narrow-compact { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: auto auto; }
   .practice-guide-layout.is-narrow-compact .practice-guide-next-chord { grid-column: 1 / -1; grid-row: 1; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 56px; padding: 4px 8px; border-left: 0; border-bottom: 1px solid var(--guide-border); text-align: left; }
   .practice-guide-layout.is-narrow-compact .practice-guide-next-chord-label { align-self: center; flex: 0 0 auto; }
@@ -1731,7 +1732,7 @@ ${cspMeta}
         .map(template => [Number(template.dataset.guideTemplateOccurrence), template]));
       let guideCompactSlotWidths = [0, 0, 0, 0];
       let guideCompactLayoutKey = '';
-      let guideCompactLayout = { laneHeights: { ruler: 24, melody: 64, lyrics: 28, technique: 28, chord: 24, diagrams: 0 }, laneTops: {}, totalHeight: 168, diagramSize: 0, grid: 4 };
+      let guideCompactLayout = { laneHeights: { ruler: 24, melody: 64, lyrics: 28, technique: 51, chord: 24, diagrams: 0 }, laneTops: {}, totalHeight: 191, diagramSize: 0, grid: 4 };
       let lastGuideOccurrenceIndex = null;
       let lastGuidePageIndex = null;
       let lastGuideCurrentBank = 'left';
@@ -2210,25 +2211,28 @@ ${cspMeta}
       }
 
       const compactGrid16WaveMasters = ${JSON.stringify(PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS)};
+      const compactGrid16MarkWidth = ${PRACTICE_GUIDE_COMPACT_MARK_WIDTH};
+      const compactGrid16MarkHeight = ${PRACTICE_GUIDE_COMPACT_MARK_HEIGHT};
+      const compactReferenceLayouts = ${JSON.stringify(PRACTICE_GUIDE_COMPACT_REFERENCE_LAYOUT)};
+      const compactTechniqueMarkTopInset = 1.3;
 
-      function applyCompactGrid16WaveVariant(symbol, slotWidth, measureBeats) {
+      function applyCompactGrid16WaveVariant(symbol) {
         const grid = Number(symbol?.dataset?.guideWaveGrid);
         if (grid !== 8 && grid !== 16) return;
-        const cell = Math.max(0, slotWidth - 4) / (Math.max(0.000001, measureBeats) * (grid / 4));
         const master = compactGrid16WaveMasters.wide;
-        const displayWidth = Math.min(cell, Math.max(2.2, cell - 3.8));
         const waveSvg = symbol.querySelector('.practice-guide-compact-wave-icon');
         const path = waveSvg?.querySelector('.practice-guide-wave-path');
         if (!waveSvg || !path) return;
         waveSvg.dataset.guideWaveVariant = 'wide';
-        waveSvg.dataset.guideWaveDisplayWidth = displayWidth.toFixed(3);
-        waveSvg.setAttribute('width', displayWidth.toFixed(3));
-        waveSvg.setAttribute('viewBox', '0 0 ' + master.width + ' 30');
-        waveSvg.setAttribute('preserveAspectRatio', 'none');
+        waveSvg.setAttribute('width', master.width.toFixed(3));
+        waveSvg.setAttribute('height', String(compactGrid16MarkHeight));
+        waveSvg.setAttribute('viewBox', '0 0 ' + master.width + ' ' + compactGrid16MarkHeight);
+        waveSvg.removeAttribute('preserveAspectRatio');
         path.dataset.guideWaveVariant = 'wide';
         path.dataset.guideWaveWidth = master.width.toFixed(2);
         path.setAttribute('d', master.path);
-        symbol.dataset.guideLayoutWidth = displayWidth.toFixed(3);
+        symbol.dataset.guideLayoutWidth = String(master.width);
+        symbol.dataset.guideLayoutPackedWidth = String(master.width);
       }
 
       function syncCompactGuideWave(sourceSymbol, liveSymbol) {
@@ -2389,37 +2393,64 @@ ${cspMeta}
             return;
           }
           if (lane === 'technique') {
-            const starts = ordered.map(item => compactGuideX(item.beat, measureBeats, slotWidth));
+            const referenceLayout = grid === 8 || grid === 16 ? compactReferenceLayouts[grid] : null;
+            const referenceScale = referenceLayout
+              ? Math.min(1, Math.max(0, slotWidth) / referenceLayout.measureWidth)
+              : 1;
+            const referenceAnchorX = beat => referenceLayout
+              ? (referenceLayout.trackInset + beat / measureBeats * referenceLayout.trackWidth) * referenceScale
+              : compactGuideX(beat, measureBeats, slotWidth);
+            const starts = ordered.map(item => referenceAnchorX(item.beat));
+            const trackEndX = referenceLayout
+              ? (referenceLayout.trackInset + referenceLayout.trackWidth) * referenceScale
+              : slotWidth - inset;
+            const gridCellWidth = referenceLayout
+              ? referenceLayout.trackWidth * referenceScale / (measureBeats * (grid / 4))
+              : Math.max(0, slotWidth - inset * 2) / (measureBeats * (grid / 4));
             for (let index = 0; index < ordered.length;) {
               let groupEnd = index + 1;
               while (groupEnd < ordered.length && Math.abs(ordered[groupEnd].beat - ordered[index].beat) < 0.000001) {
                 groupEnd++;
               }
               const startX = starts[index];
-              const nextLeft = groupEnd < starts.length ? starts[groupEnd] : slotWidth - inset;
+              const nextLeft = groupEnd < starts.length ? starts[groupEnd] : trackEndX;
               const groupCount = groupEnd - index;
               const stepWidth = Math.max(0.001, (nextLeft - startX) / groupCount);
-              const gap = Math.min(0.5, Math.max(0, stepWidth - 4));
-              const packedWidth = Math.max(0.001, stepWidth - gap);
               for (let groupIndex = index; groupIndex < groupEnd; groupIndex++) {
                 const item = ordered[groupIndex];
                 const itemX = startX + (groupIndex - index) * stepWidth;
                 for (const node of item.nodes) {
+                  const naturalPaintedWidth = Math.max(item.width, item.naturalPaintedWidth || item.width);
                   const waveGrid = Number(node.dataset.guideWaveGrid);
-                  const isDensityWave = waveGrid === 8 || waveGrid === 16;
-                  const cell = isDensityWave
-                    ? Math.max(0, slotWidth - 4) / (measureBeats * (waveGrid / 4))
+                  let uniformScale = referenceScale;
+                  if (referenceLayout) {
+                    const simultaneousFit = groupCount > 1
+                      ? Math.min(1, stepWidth / Math.max(0.001, naturalPaintedWidth * referenceScale))
+                      : 1;
+                    const compositeFit = item.width > compactGrid16MarkWidth
+                      ? Math.min(1, Math.min(gridCellWidth, stepWidth)
+                        / Math.max(0.001, naturalPaintedWidth * referenceScale))
+                      : 1;
+                    uniformScale *= Math.min(simultaneousFit, compositeFit);
+                  } else {
+                    const intervalWidth = Math.max(0, stepWidth - 3);
+                    const cellWidth = Math.max(0, gridCellWidth - 3);
+                    const edgeRoom = Math.max(0, 2 * Math.min(itemX, slotWidth - itemX));
+                    const availablePaintedWidth = Math.max(0, Math.min(intervalWidth, cellWidth, edgeRoom));
+                    uniformScale = Math.min(1, availablePaintedWidth / naturalPaintedWidth);
+                  }
+                  const itemWidth = item.width * uniformScale;
+                  const waveOffset = referenceLayout && (waveGrid === 8 || waveGrid === 16)
+                    ? Math.min(5 * referenceScale, Math.max(0, gridCellWidth - 1 - 17.4 * referenceScale))
                     : 0;
-                  const itemWidth = isDensityWave
-                    ? Math.min(cell, Math.max(2.2, cell - 3.8))
-                    : Math.min(item.width, packedWidth);
-                  const waveLeft = isDensityWave ? startX + cell / 3 - itemWidth / 2 : itemX;
-                  const visualX = isDensityWave
-                    ? Math.max(0, Math.min(slotWidth - itemWidth, waveLeft))
-                    : itemX;
+                  const unclampedCenterX = itemX - waveOffset;
+                  const paintedHalfWidth = naturalPaintedWidth * uniformScale / 2;
+                  const visualCenterX = Math.max(paintedHalfWidth,
+                    Math.min(slotWidth - paintedHalfWidth, unclampedCenterX));
+                  const visualX = visualCenterX - itemWidth / 2;
                   node.dataset.guideLayoutWidth = String(itemWidth);
                   node.dataset.guideRow = '0';
-                  node.dataset.guideLayoutAnchorX = String(startX);
+                  node.dataset.guideLayoutAnchorX = String(referenceAnchorX(item.beat));
                   node.dataset.guideLayoutX = String(visualX);
                   node.dataset.guideLayoutPackedWidth = String(itemWidth);
                 }
@@ -2490,7 +2521,7 @@ ${cspMeta}
           const selectedLyricVerse = Number(occurrence?.lyricVerse) || 1;
           const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
           for (const wave of svg.querySelectorAll('.practice-guide-compact-symbol[data-guide-wave-grid="8"], .practice-guide-compact-symbol[data-guide-wave-grid="16"]')) {
-            applyCompactGrid16WaveVariant(wave, slotWidth, measureBeats);
+            applyCompactGrid16WaveVariant(wave);
           }
           const laneItems = { lyrics: [], technique: [], pm: [], chord: new Map() };
           let order = 0;
@@ -2504,7 +2535,10 @@ ${cspMeta}
             if (lane === 'technique') node.removeAttribute('display');
             const beat = Number(node.dataset.guideAtBeat) || 0;
             const event = Number(node.dataset.guideEvent) || 0;
-            const width = Math.max(1, Number(node.dataset.guideLayoutWidth) || 12);
+            // Layout passes write into guideLayoutWidth; always derive a new width from the
+            // immutable source width so a narrow resize does not permanently shrink the template.
+            const width = Math.max(1, Number(node.dataset.guideNaturalWidth)
+              || Number(node.dataset.guideLayoutWidth) || 12);
             const anchor = node.dataset.guideLayoutAnchor === 'center' ? 'center' : 'start';
             if (lane === 'lyrics') {
               node.dataset.guideLyricFontSize = String(commonLyricFontSize);
@@ -2537,7 +2571,11 @@ ${cspMeta}
             } else if (lane === 'technique') {
               const waveGrid = Number(node.dataset.guideWaveGrid);
               if (waveGrid && waveGrid !== grid) continue;
-              laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, anchor });
+              const wavePath = node.querySelector('.practice-guide-wave-path');
+              const naturalPaintedWidth = wavePath
+                ? Math.max(width, wavePath.getBBox().width + Number(wavePath.getAttribute('stroke-width') || 0))
+                : width;
+              laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, naturalPaintedWidth, anchor });
             } else if (lane === 'chord-pair') {
               const packKey = node.dataset.guidePackKey || String(occurrenceIndex) + ':' + String(order);
               const existing = laneItems.chord.get(packKey);
@@ -2575,8 +2613,8 @@ ${cspMeta}
           melody: melodyVisible && hasAnyMelodyEvents ? 64 : 0,
           lyrics: hasAnyLyricEvents ? 28 : 0,
           technique: maxRows.pm > 0
-            ? Math.max(36, 48 + 12 * (maxRows.pm - 1))
-            : Math.max(28, maxRows.technique * 32 + 4),
+            ? compactGrid16MarkHeight + 17 + 12 * (maxRows.pm - 1)
+            : Math.max(compactGrid16MarkHeight + 4, maxRows.technique * (compactGrid16MarkHeight + 4)),
           chord: Math.max(24, maxRows.chord * 20 + 4),
           diagrams: diagramsVisible && maxRows.chord ? maxRows.chord * (diagramSize + 4) + 4 : 0
         };
@@ -2635,6 +2673,7 @@ ${cspMeta}
       function layoutPracticeGuideCompactSvg(card, slotWidth, layout) {
         const svg = card?.querySelector?.('.practice-guide-compact-svg');
         if (!svg) return;
+        const grid = Number(layout.grid) || 4;
         const template = guideOccurrenceTemplates.get(Number(card.dataset.guideOccurrenceIndex));
         const templateSvg = template?.content?.querySelector?.('.practice-guide-compact-svg');
         if (templateSvg) {
@@ -2744,21 +2783,25 @@ ${cspMeta}
           } else if (lane === 'pm-annotation') {
             const row = Number(item.dataset.guidePmRow) || 0;
             item.setAttribute('x', x.toFixed(3));
-            item.setAttribute('y', String(44 + row * 12));
+            item.setAttribute('y', String(compactGrid16MarkHeight + 11 + row * 12));
             item.setAttribute('font-size', '9');
             item.style?.removeProperty('transform');
           } else if (lane === 'technique') {
-            const naturalWidth = Math.max(0.001, item.getBBox().width || Number(item.dataset.guideLayoutWidth) || 4);
+            const naturalWidth = Math.max(0.001,
+              Number(item.dataset.guideNaturalWidth) || item.getBBox().width
+                || Number(item.dataset.guideLayoutWidth) || 4);
             const packedWidth = Math.max(0, Number(item.dataset.guideLayoutPackedWidth) || naturalWidth);
             const waveGrid = Number(item.dataset.guideWaveGrid);
             const rightInset = waveGrid === 8 || waveGrid === 16 ? 0 : 2;
             const usableWidth = Math.max(0, Math.min(packedWidth, slotWidth - x - rightInset));
-            const scaleX = Math.min(1, usableWidth / naturalWidth);
+            const uniformScale = Math.min(1, usableWidth / naturalWidth);
             const visualBounds = item.getBBox();
             const visualCenterY = visualBounds.y + visualBounds.height / 2;
-            const translateY = rowY + 18 - visualCenterY;
+            const translateY = rowY + compactTechniqueMarkTopInset + compactGrid16MarkHeight / 2
+              - visualCenterY * uniformScale;
+            item.dataset.guideLayoutScale = uniformScale.toFixed(4);
             item.setAttribute('transform', 'translate(' + x.toFixed(3) + ' ' + translateY.toFixed(3)
-              + ') scale(' + scaleX.toFixed(4) + ' 1)');
+              + ') scale(' + uniformScale.toFixed(4) + ' ' + uniformScale.toFixed(4) + ')');
           } else if (lane === 'chord-pair' && item.classList.contains('practice-guide-compact-chord-name')) {
             const text = item.querySelector('text');
             const y = rowY + 16;
@@ -4997,7 +5040,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
       const endFraction = fractions(run.end);
       const event = run.events[0] ?? -1;
       const accessibleLabel = `${msgs.uiPracticeGuideTechnique} PM`;
-      return `<text class="practice-guide-compact-pm-label" data-guide-measure="${measure.number - 1}" data-guide-event="${event}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-event-start="${start}" data-guide-event-end="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${startFraction}" data-guide-pm-run-start-fraction="${startFraction}" data-guide-pm-run-end-fraction="${endFraction}" data-guide-pm-run-events="${run.events.join(',')}" data-guide-layout-item="true" data-guide-layout-lane="pm-annotation" data-guide-layout-width="13" data-guide-layout-anchor="center" x="0" y="44" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" role="img" aria-label="${escapeXml(accessibleLabel)}" title="PM">PM</text>`;
+      return `<text class="practice-guide-compact-pm-label" data-guide-measure="${measure.number - 1}" data-guide-event="${event}" data-guide-start-beat="${start}" data-guide-end-beat="${end}" data-guide-event-start="${start}" data-guide-event-end="${end}" data-guide-at-beat="${start}" data-guide-at-fraction="${startFraction}" data-guide-pm-run-start-fraction="${startFraction}" data-guide-pm-run-end-fraction="${endFraction}" data-guide-pm-run-events="${run.events.join(',')}" data-guide-layout-item="true" data-guide-layout-lane="pm-annotation" data-guide-layout-width="13" data-guide-layout-anchor="center" x="0" y="58" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" role="img" aria-label="${escapeXml(accessibleLabel)}" title="PM">PM</text>`;
     }).join('');
     const techniques = measure.techniques.map(item => {
       const at = fnum(item.at);
@@ -5026,7 +5069,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
         : item.kind === 'rest'
           ? `<g transform="translate(0 4)">${renderPracticeGuideRestSvg(item.restBase, ariaLabel)}</g>`
           : renderPracticeGuideCompactStrokeSvgElement(item.stroke ?? { kind: 'attack', direction: 'neutral', label: ariaLabel });
-      return `<g class="practice-guide-compact-symbol" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(techniqueKey)}" data-guide-technique-event-key="${escapeXml(eventKey)}" data-guide-kind="${item.kind ?? 'attack'}" data-guide-event="${eventIndex}" data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${at}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}" data-guide-slot-start="${at}" data-guide-layout-item="true" data-guide-layout-lane="technique" data-guide-layout-width="${width}" data-guide-layout-anchor="start"${grid} role="img" aria-label="${escapeXml(ariaLabel)}"><title>${escapeXml(item.duration || ariaLabel)}</title>${mark}</g>`;
+      return `<g class="practice-guide-compact-symbol" data-guide-measure="${measure.number - 1}" data-guide-technique-key="${escapeXml(techniqueKey)}" data-guide-technique-event-key="${escapeXml(eventKey)}" data-guide-kind="${item.kind ?? 'attack'}" data-guide-event="${eventIndex}" data-guide-event-start="${eventStart}" data-guide-event-end="${eventEnd}" data-guide-start-beat="${at}" data-guide-at-beat="${at}" data-guide-at-fraction="${fraction}" data-guide-slot-start="${at}" data-guide-layout-item="true" data-guide-layout-lane="technique" data-guide-natural-width="${width}" data-guide-layout-width="${width}" data-guide-layout-anchor="center"${grid} role="img" aria-label="${escapeXml(ariaLabel)}"><title>${escapeXml(item.duration || ariaLabel)}</title>${mark}</g>`;
     }).join('');
     const chordSpans = occurrenceChordSpans.get(occurrenceIndex) ?? [];
     const chordNames = chordSpans.map(({ chord, start, end, index }) => {
@@ -5073,7 +5116,7 @@ export function renderPracticeGuidePanel(data: PracticeGuideData, msgs: Messages
   const guideProjectionJson = escapeXml(JSON.stringify(projections));
   const guideWidthsJson = escapeXml(JSON.stringify(compactMeasureWidths));
   const guideBankWidthsJson = escapeXml(JSON.stringify({ '4': { left: [1, 1], right: [1, 1] } }));
-  const compactTechniqueHeight = 48;
+  const compactTechniqueHeight = 64;
   const compactGuide = `<div class="practice-guide-compact" id="practice-guide-compact" aria-label="${escapeXml(msgs.uiPracticeGuideCompact)}" data-guide-technique-height="${compactTechniqueHeight}" data-guide-projections="${guideProjectionJson}" data-guide-measure-widths="${guideWidthsJson}" data-guide-bank-widths="${guideBankWidthsJson}">
     <div class="practice-guide-pair-page" id="practice-guide-pair-page" data-guide-capacity="4" role="region" tabindex="0" aria-label="${escapeXml(msgs.uiPracticeGuideCompact)}">
       <div class="practice-guide-scale-holder" id="practice-guide-scale-holder">

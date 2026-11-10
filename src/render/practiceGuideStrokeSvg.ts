@@ -17,13 +17,22 @@ const DOWN = '<path d="M10 3v25M4 22l6 7 6-7" fill="none" stroke="currentColor" 
 const UP = '<path d="M10 31V6M4 12l6-7 6 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
 const CROSS = '<path d="m1 9 6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
 const PALM_MUTE_LABEL_WIDTH = 12;
-const COMPACT_ATTACK_WIDTH = 4;
-const COMPACT_ATTACK_HEIGHT = 30;
-const COMPACT_BRUSH_WIDTH = 8;
-const COMPACT_BOTH_WIDTH = 8;
-const COMPACT_WAVE_WIDTH = 5.6;
-const COMPACT_STROKE_WIDTH = 1.15;
-const COMPACT_STROKE_ATTRIBUTES = `fill="none" stroke="currentColor" stroke-width="${COMPACT_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"`;
+export const PRACTICE_GUIDE_COMPACT_MARK_WIDTH = 15;
+export const PRACTICE_GUIDE_COMPACT_MARK_HEIGHT = 47;
+/** Native trace bounds for the inset stroke track inside each reference measure. */
+export const PRACTICE_GUIDE_COMPACT_REFERENCE_LAYOUT = {
+  8: { measureWidth: 366, trackInset: 34, trackWidth: 324 },
+  16: { measureWidth: 400, trackInset: 32, trackWidth: 324 }
+} as const;
+const COMPACT_ATTACK_WIDTH = PRACTICE_GUIDE_COMPACT_MARK_WIDTH;
+const COMPACT_ATTACK_HEIGHT = PRACTICE_GUIDE_COMPACT_MARK_HEIGHT;
+const COMPACT_BRUSH_WIDTH = PRACTICE_GUIDE_COMPACT_MARK_WIDTH * 2;
+const COMPACT_BOTH_WIDTH = PRACTICE_GUIDE_COMPACT_MARK_WIDTH * 2;
+const COMPACT_WAVE_WIDTH = PRACTICE_GUIDE_COMPACT_MARK_WIDTH;
+const COMPACT_WAVE_OFFSET_Y = 21;
+const COMPACT_ATTACK_STROKE_WIDTH = 2.65;
+const COMPACT_WAVE_STROKE_WIDTH = 2.35;
+const COMPACT_AUX_STROKE_ATTRIBUTES = 'fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="miter"';
 
 export type PracticeGuideCompactWaveVariant = 'narrow' | 'medium' | 'wide';
 
@@ -31,16 +40,16 @@ export const PRACTICE_GUIDE_COMPACT_WAVE_THRESHOLDS = { wide: 7, medium: 5.5 } a
 
 export const PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS: Record<PracticeGuideCompactWaveVariant, { width: number; path: string }> = {
   narrow: {
-    width: 2.4,
-    path: 'M0.15 15 C0.45 9.8 0.90 9.8 1.20 15 S1.95 20.2 2.25 15'
+    width: COMPACT_WAVE_WIDTH,
+    path: 'M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0'
   },
   medium: {
-    width: 4.2,
-    path: 'M0.45 15 C1.00 10.4 1.55 10.4 2.10 15 S3.20 19.6 3.75 15'
+    width: COMPACT_WAVE_WIDTH,
+    path: 'M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0'
   },
   wide: {
     width: COMPACT_WAVE_WIDTH,
-    path: 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15'
+    path: 'M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0'
   }
 };
 
@@ -58,15 +67,15 @@ export function practiceGuideCompactWaveVariant(
 }
 
 export const PRACTICE_GUIDE_COMPACT_PATHS = {
-  downShaft: 'M2 1 V27.8',
-  downHead: 'M0.55 24 L2 28.5 L3.45 24',
-  upShaft: 'M2 29 V2.2',
-  upHead: 'M0.55 6 L2 1.5 L3.45 6',
+  downShaft: 'M0 0 V31',
+  downHead: 'M-7.5 30 L7.5 30 L0 47 Z',
+  upShaft: 'M0 47 V17',
+  upHead: 'M-7.5 17 L0 0 L7.5 17 Z',
   wave: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path,
   grid16WaveNarrow: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.narrow.path,
   grid16WaveMedium: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.medium.path,
   grid16WaveWide: PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path,
-  brushCross: 'M0.5 11 L2.5 13 M2.5 11 L0.5 13'
+  brushCross: 'M5.5 15 L9.5 19 M9.5 15 L5.5 19'
 } as const;
 
 /** Returns the CSS width occupied by a stroke and its optional palm-mute label. */
@@ -75,7 +84,7 @@ export function practiceGuideStrokeVisualWidth(spec: PracticeGuideStrokeSpec): n
   return spec.palmMute ? PALM_MUTE_LABEL_WIDTH + 2 + iconWidth : iconWidth;
 }
 
-/** Returns the natural width of a compact-only icon in its fixed 30-unit height. */
+/** Returns the natural width of a compact-only icon in its fixed 47-unit reference height. */
 export function practiceGuideCompactStrokeVisualWidth(spec: PracticeGuideStrokeSpec): number {
   const iconWidth = spec.kind === 'tie' ? COMPACT_WAVE_WIDTH
     : spec.kind === 'brush' ? COMPACT_BRUSH_WIDTH
@@ -85,16 +94,16 @@ export function practiceGuideCompactStrokeVisualWidth(spec: PracticeGuideStrokeS
 }
 
 function compactIconSvg(width: number, kind: PracticeGuideStrokeKind, marks: string): string {
-  return `<svg class="practice-guide-stroke-icon practice-guide-compact-stroke-icon" data-guide-stroke="${kind}" x="0" y="0" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${marks}</svg>`;
+  return `<svg class="practice-guide-stroke-icon practice-guide-compact-stroke-icon" data-guide-stroke="${kind}" x="0" y="0" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false">${marks}</svg>`;
 }
 
 function compactAttackPath(direction: 'down' | 'up', x: number): string {
   const shaft = direction === 'down' ? PRACTICE_GUIDE_COMPACT_PATHS.downShaft : PRACTICE_GUIDE_COMPACT_PATHS.upShaft;
   const head = direction === 'down' ? PRACTICE_GUIDE_COMPACT_PATHS.downHead : PRACTICE_GUIDE_COMPACT_PATHS.upHead;
-  return `<g transform="translate(${x} 0)"><path class="practice-guide-compact-attack-shaft" data-guide-compact-part="shaft" d="${shaft}" ${COMPACT_STROKE_ATTRIBUTES}/><path class="practice-guide-compact-attack-head" data-guide-compact-part="head" d="${head}" ${COMPACT_STROKE_ATTRIBUTES}/></g>`;
+  return `<g transform="translate(${x} 0)"><path class="practice-guide-compact-attack-shaft" data-guide-compact-part="shaft" d="${shaft}" fill="none" stroke="currentColor" stroke-width="${COMPACT_ATTACK_STROKE_WIDTH}" stroke-linecap="butt"/><path class="practice-guide-compact-attack-head" data-guide-compact-part="head" d="${head}" fill="currentColor" stroke="none"/></g>`;
 }
 
-/** One fixed continuation/tie path; grid16 selects one of three fixed compact geometries. */
+/** One screenshot-traced continuation/tie master; grid labels never select another path. */
 export function renderPracticeGuideCompactWavePathSvg(
   label: string,
   grid?: number,
@@ -105,7 +114,7 @@ export function renderPracticeGuideCompactWavePathSvg(
   const selectedVariant = isGrid16 ? variant : 'wide';
   const geometry = PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS[selectedVariant];
   const width = geometry.width;
-  return `<svg class="practice-guide-stroke-icon practice-guide-compact-wave-icon" data-guide-wave-variant="${selectedVariant}" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false"><title>${safeLabel}</title><path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${width.toFixed(2)}" data-guide-wave-variant="${selectedVariant}" d="${geometry.path}" ${COMPACT_STROKE_ATTRIBUTES}/></svg>`;
+  return `<svg class="practice-guide-stroke-icon practice-guide-compact-wave-icon" data-guide-wave-variant="${selectedVariant}" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false"><title>${safeLabel}</title><g transform="translate(0 ${COMPACT_WAVE_OFFSET_Y})"><path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${width.toFixed(2)}" data-guide-wave-offset-y="${COMPACT_WAVE_OFFSET_Y}" data-guide-wave-variant="${selectedVariant}" d="${geometry.path}" fill="none" stroke="currentColor" stroke-width="${COMPACT_WAVE_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
 }
 
 /** Renders compact-only path geometry; detailed-grid SVGs keep their existing renderer. */
@@ -116,31 +125,31 @@ export function renderPracticeGuideCompactStrokeSvgElement(spec: PracticeGuideSt
   }
   if (spec.kind === 'mute') {
     return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind,
-      '<circle cx="2" cy="15" r="1.6" fill="currentColor"/>');
+      '<circle cx="7.5" cy="23.5" r="2.8" fill="currentColor"/>');
   }
   if (spec.kind === 'string') {
     const number = Math.max(1, Math.min(6, Math.floor(spec.stringNumber ?? 1)));
     return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind,
-      `<text x="2" y="22" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="700" fill="currentColor">${number}</text>`);
+      `<text x="7.5" y="30" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="currentColor">${number}</text>`);
   }
 
   const direction = spec.direction ?? (spec.kind === 'brush' ? 'down' : 'neutral');
   if (spec.kind === 'brush') {
-    const arrow = direction === 'up' ? compactAttackPath('up', 4) : compactAttackPath('down', 4);
-    const cross = `<path class="practice-guide-compact-brush-cross" d="${PRACTICE_GUIDE_COMPACT_PATHS.brushCross}" ${COMPACT_STROKE_ATTRIBUTES}/>`;
+    const arrow = direction === 'up' ? compactAttackPath('up', 22.5) : compactAttackPath('down', 22.5);
+    const cross = `<path class="practice-guide-compact-brush-cross" d="${PRACTICE_GUIDE_COMPACT_PATHS.brushCross}" ${COMPACT_AUX_STROKE_ATTRIBUTES}/>`;
     return compactIconSvg(COMPACT_BRUSH_WIDTH, spec.kind, `${cross}${arrow}`);
   }
   if (direction === 'down' || direction === 'both') {
-    const down = compactAttackPath('down', 0);
+    const down = compactAttackPath('down', 7.5);
     if (direction !== 'both') return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind, down);
-    const up = compactAttackPath('up', 4);
+    const up = compactAttackPath('up', 22.5);
     return compactIconSvg(COMPACT_BOTH_WIDTH, spec.kind, `${down}${up}`);
   }
   if (direction === 'up') {
-    return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind, compactAttackPath('up', 0));
+    return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind, compactAttackPath('up', 7.5));
   }
   return compactIconSvg(COMPACT_ATTACK_WIDTH, spec.kind,
-    '<circle cx="2" cy="15" r="1.6" fill="currentColor"/>');
+    '<circle cx="7.5" cy="23.5" r="2.8" fill="currentColor"/>');
 }
 
 /** Renders a visible stroke mark with vector geometry; descriptive text is only metadata. */

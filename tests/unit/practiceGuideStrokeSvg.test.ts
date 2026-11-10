@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { PRACTICE_GUIDE_COMPACT_PATHS, PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, practiceGuideCompactStrokeVisualWidth, practiceGuideCompactWaveVariant, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
+import { PRACTICE_GUIDE_COMPACT_PATHS, PRACTICE_GUIDE_COMPACT_REFERENCE_LAYOUT, PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, practiceGuideCompactStrokeVisualWidth, practiceGuideCompactWaveVariant, practiceGuideStrokeVisualWidth, renderPracticeGuideCompactStrokeSvgElement, renderPracticeGuideCompactWavePathSvg, renderPracticeGuideStrokeSvg, renderPracticeGuideStrokeSvgElement, renderPracticeGuideWavePathSvg, renderPracticeGuideWaveSvg } from '../../src/render/practiceGuideStrokeSvg';
 
 describe('practice guide stroke SVG', () => {
   it('renders down and up attacks as vector geometry with descriptive labels', () => {
@@ -60,67 +60,79 @@ describe('practice guide stroke SVG', () => {
     assert.doesNotMatch(`${attack}${palmMute}`, /<span/);
   });
 
-  it('renders canonical compact down/up paths and horizontal-only stroke masters', () => {
+  it('renders reference-traced 15x47 compact arrows with separate solid heads', () => {
     const down = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'down', label: 'Down stroke' });
     const up = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'up', label: 'Up stroke' });
     const both = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'both', label: 'Both strokes' });
     const palmMuteDown = renderPracticeGuideCompactStrokeSvgElement({ kind: 'attack', direction: 'down', palmMute: true, label: 'PM down stroke' });
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downShaft, 'M2 1 V27.8');
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downHead, 'M0.55 24 L2 28.5 L3.45 24');
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.upShaft, 'M2 29 V2.2');
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.upHead, 'M0.55 6 L2 1.5 L3.45 6');
-    assert.match(down, /viewBox="0 0 4 30"/);
-    assert.match(down, /width="4" height="30"/);
-    assert.match(down, /data-guide-compact-part="shaft" d="M2 1 V27\.8"/);
-    assert.match(down, /data-guide-compact-part="head" d="M0\.55 24 L2 28\.5 L3\.45 24"/);
-    assert.match(up, /data-guide-compact-part="shaft" d="M2 29 V2\.2"/);
-    assert.match(up, /data-guide-compact-part="head" d="M0\.55 6 L2 1\.5 L3\.45 6"/);
-    assert.match(down, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
-    assert.match(both, /viewBox="0 0 8 30"/);
-    assert.match(both, /translate\(4 0\)/);
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downShaft, 'M0 0 V31');
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.downHead, 'M-7.5 30 L7.5 30 L0 47 Z');
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.upShaft, 'M0 47 V17');
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.upHead, 'M-7.5 17 L0 0 L7.5 17 Z');
+    assert.match(down, /viewBox="0 0 15 47"/);
+    assert.match(down, /width="15" height="47"/);
+    assert.match(down, /data-guide-compact-part="shaft" d="M0 0 V31" fill="none" stroke="currentColor" stroke-width="2\.65" stroke-linecap="butt"/);
+    assert.match(down, /data-guide-compact-part="head" d="M-7\.5 30 L7\.5 30 L0 47 Z" fill="currentColor" stroke="none"/);
+    assert.match(up, /data-guide-compact-part="shaft" d="M0 47 V17" fill="none" stroke="currentColor" stroke-width="2\.65" stroke-linecap="butt"/);
+    assert.match(up, /data-guide-compact-part="head" d="M-7\.5 17 L0 0 L7\.5 17 Z" fill="currentColor" stroke="none"/);
+    assert.match(both, /viewBox="0 0 30 47"/);
+    assert.match(both, /translate\(22\.5 0\)/);
     assert.strictEqual(palmMuteDown, down, 'compact PM metadata never moves or widens the attack path');
     assert.doesNotMatch(palmMuteDown, /practice-guide-pm-label|>PM</);
     assert.match(`${down}${up}${both}`, /aria-hidden="true" focusable="false"/);
     assert.doesNotMatch(`${down}${up}${both}`, /[↓↑〜]/u);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', label: 'Attack' }), 4);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: 'Tie' }), 5.6);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'brush', label: 'Brush' }), 8);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', direction: 'both', label: 'Both' }), 8);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', palmMute: true, label: 'PM attack' }), 4);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'mute', label: 'Mute' }), 4);
-    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'string', label: 'String' }), 4);
+    assert.doesNotMatch(`${down}${up}${both}`, /preserveAspectRatio="none"/,
+      'compact attack masters keep their natural proportions when scaled');
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', label: 'Attack' }), 15);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'tie', label: 'Tie' }), 15);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'brush', label: 'Brush' }), 30);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', direction: 'both', label: 'Both' }), 30);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'attack', palmMute: true, label: 'PM attack' }), 15);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'mute', label: 'Mute' }), 15);
+    assert.strictEqual(practiceGuideCompactStrokeVisualWidth({ kind: 'string', label: 'String' }), 15);
     assert.match(renderPracticeGuideStrokeSvg({ kind: 'attack', direction: 'down', label: 'Detailed down' }), /viewBox="0 0 20 34"/);
   });
 
-  it('renders compact continuation waves as fixed variants and keeps ties wide', () => {
+  it('keeps the reference-measure and inset stroke-track coordinates', () => {
+    assert.deepStrictEqual(PRACTICE_GUIDE_COMPACT_REFERENCE_LAYOUT, {
+      8: { measureWidth: 366, trackInset: 34, trackWidth: 324 },
+      16: { measureWidth: 400, trackInset: 32, trackWidth: 324 }
+    });
+  });
+
+  it('renders the traced compact continuation wave in one 15x47 master at y=21', () => {
     const wave = renderPracticeGuideCompactWavePathSvg('Continuation', 8);
     const narrow = renderPracticeGuideCompactWavePathSvg('Narrow', 16, 'narrow');
     const medium = renderPracticeGuideCompactWavePathSvg('Medium', 16, 'medium');
     const wide = renderPracticeGuideCompactWavePathSvg('Wide', 16, 'wide');
     const tie = renderPracticeGuideCompactStrokeSvgElement({ kind: 'tie', label: 'Tie' });
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.wave, 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15');
+    const masterPath = 'M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0';
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.wave, masterPath);
     assert.deepStrictEqual(PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS, {
-      narrow: { width: 2.4, path: 'M0.15 15 C0.45 9.8 0.90 9.8 1.20 15 S1.95 20.2 2.25 15' },
-      medium: { width: 4.2, path: 'M0.45 15 C1.00 10.4 1.55 10.4 2.10 15 S3.20 19.6 3.75 15' },
-      wide: { width: 5.6, path: 'M0.40 15 C1.15 10.8 2.00 10.8 2.80 15 S4.45 19.2 5.20 15' }
+      narrow: { width: 15, path: masterPath },
+      medium: { width: 15, path: masterPath },
+      wide: { width: 15, path: masterPath }
     });
-    assert.match(wave, /viewBox="0 0 5\.6 30"/);
+    assert.match(wave, /viewBox="0 0 15 47"/);
     assert.match(wave, /data-guide-wave-variant="wide"/);
     assert.match(wave, /<path[^>]*data-guide-stroke="wave"/);
     assert.doesNotMatch(wave, /<svg[^>]*data-guide-stroke="wave"/);
-    assert.match(wave, /data-guide-wave-width="5\.60"/);
-    assert.match(wave, /d="M0\.40 15 C1\.15 10\.8 2\.00 10\.8 2\.80 15 S4\.45 19\.2 5\.20 15"/);
-    assert.match(wave, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
+    assert.match(wave, /data-guide-wave-width="15\.00"/);
+    assert.match(wave, /data-guide-wave-offset-y="21"/);
+    assert.match(wave, /d="M0 0 C3\.2 -3\.35 5\.2 -3\.35 7\.5 0 S12\.4 3\.35 15 0"/);
+    assert.match(wave, /stroke-width="2\.35" stroke-linecap="round" stroke-linejoin="round"/);
+    assert.doesNotMatch(`${wave}${narrow}${medium}${wide}${tie}`, /preserveAspectRatio="none"/,
+      'the compact master SVGs keep their natural proportions when scaled');
     for (const [svg, variant, width, viewBox, path] of [
-      [narrow, 'narrow', '2.40', '0 0 2.4 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.narrow.path],
-      [medium, 'medium', '4.20', '0 0 4.2 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.medium.path],
-      [wide, 'wide', '5.60', '0 0 5.6 30', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path]
+      [narrow, 'narrow', '15.00', '0 0 15 47', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.narrow.path],
+      [medium, 'medium', '15.00', '0 0 15 47', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.medium.path],
+      [wide, 'wide', '15.00', '0 0 15 47', PRACTICE_GUIDE_COMPACT_WAVE_VARIANTS.wide.path]
     ] as const) {
       assert.match(svg, new RegExp(`viewBox="${viewBox.replaceAll('.', '\\.')}"`));
       assert.match(svg, new RegExp(`data-guide-wave-variant="${variant}"`));
       assert.match(svg, new RegExp(`data-guide-wave-width="${width}"`));
       assert.ok(svg.includes(`d="${path}"`));
-      assert.match(svg, /stroke-width="1\.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke"/);
+      assert.match(svg, /stroke-width="2\.35" stroke-linecap="round" stroke-linejoin="round"/);
     }
     assert.strictEqual(practiceGuideCompactWaveVariant(100, 4, 16), 'medium');
     assert.strictEqual(practiceGuideCompactWaveVariant(122, 4, 16), 'wide', '7px cells select the wide path');
@@ -132,17 +144,17 @@ describe('practice guide stroke SVG', () => {
     assert.strictEqual(practiceGuideCompactWaveVariant(100, 4, 8), 'wide');
     assert.match(tie, /<path[^>]*data-guide-stroke="tie"/);
     assert.match(tie, /data-guide-wave-variant="wide"/);
-    assert.match(tie, /viewBox="0 0 5\.6 30"/);
+    assert.match(tie, /viewBox="0 0 15 47"/);
   });
 
   it('keeps compact brush and mute masters on the path-based geometry contract', () => {
     const brush = renderPracticeGuideCompactStrokeSvgElement({ kind: 'brush', label: 'Brush' });
     const mute = renderPracticeGuideCompactStrokeSvgElement({ kind: 'mute', label: 'Mute' });
-    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.brushCross, 'M0.5 11 L2.5 13 M2.5 11 L0.5 13');
-    assert.match(brush, /viewBox="0 0 8 30"/);
-    assert.match(brush, /d="M0\.5 11 L2\.5 13 M2\.5 11 L0\.5 13"/);
-    assert.match(mute, /viewBox="0 0 4 30"/);
-    assert.match(mute, /<circle cx="2" cy="15" r="1\.6"/);
+    assert.strictEqual(PRACTICE_GUIDE_COMPACT_PATHS.brushCross, 'M5.5 15 L9.5 19 M9.5 15 L5.5 19');
+    assert.match(brush, /viewBox="0 0 30 47"/);
+    assert.match(brush, /d="M5\.5 15 L9\.5 19 M9\.5 15 L5\.5 19"/);
+    assert.match(mute, /viewBox="0 0 15 47"/);
+    assert.match(mute, /<circle cx="7\.5" cy="23\.5" r="2\.8"/);
     assert.doesNotMatch(`${brush}${mute}`, /[↓↑〜]/u);
   });
 });

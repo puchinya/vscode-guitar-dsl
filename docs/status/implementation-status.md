@@ -3,19 +3,19 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-08
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。Issue #160 / PR #161 はレビュー待ち。Issue #162 / [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163) はcanonical Contract v22の実装・検証済みで、PRはopen / レビュー待ち。
+- **最終更新日**: 2026-11-11
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v26に基づき、参考画像に沿うCompact奏法SVGの比例縮小を実装・検証中。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: Contract v22はv14の4小節gapless、左レール非表示、上部現在歌詞欄の削除、固定メロディ幾何、曲全体共通歌詞サイズ、完全なコード図、24pxコード名、songwide空レーン縮小を維持する。コンパクト表示の奏法レーンとコード名の間隔を20pxにし、実際の描画端で11.65pxを確保する。grid8/grid16の波線は意味上のFraction・アンカーを保ち、矢印との実描画間隔も維持する。実装・検証済みでPR #163はopen。
-- **契約**: Issue comment `6714560967` がcanonical Implementation Contract v22 Delta。**4,703 bytes / SHA-256 `41596106ceea47f7a53805e8aa75ad66a9a4964862976888f8b4b4c62ec76108`**。v21の12px案は実画面で3.65pxとなり10px要件を満たさなかったため歴史として保持し、v22で20pxへ改訂した。対象ブランチは `feature/162-practice-guide-svg-compact-tempo-fade`。
-- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、英語・日本語Helpとmanifest、生成済み `media/help/` をv22表示仕様へ同期した。
-- **画面証拠**: [Issue #162の画像・DOM実測一覧](evidence/issue-162/README.md)。v22の16枚（JA/EN × Light/Dark × 400/600px × grid8/grid16）とSHA付きDOM sidecarがPASSし、すべて11.65pxの描画間隔を記録した。コード図は全表示され、波線と矢印も接触なし。v21の不足画像は履歴として説明し、v15の接触画像は歴史的な失敗証拠として残す。
-- **検証**: `npm test` は1,235 unit PASS、135 E2E PASS、6 pending、0 failures。Practice Guideのfocused geometry E2Eは幅320/400/421/480/600/1100/1600pxでPASS。JA/EN × Light/Darkの画面撮影E2Eは各1/1 PASS。`check:help`、`check:ai`、`verify-implementation-contract 162`、`validate-docs --issue 162`、`npm run vscode:prepublish`、`git diff --check`もPASS。`npx @vscode/vsce ls` は1,607項目で、必須ファイルがあり、tests/docs/scripts等の開発専用パスは含まれない。PRの最新HEAD向けSelf-Reviewを公開し、Required CheckはPASS。Windows/Linux、VoiceOver/NVDAはNOT RUN。
-- **異常狭幅検証**: 48pxのPreview viewportで記号が2 CSS px未満になる場合も、4小節と全event/Fraction/ARIA identityをDOMに維持し、Y scaleを1のままXだけを縮小することを実Preview E2Eで確認した。
+- **状態**: v25のper-cell width capで起きたgrid8とgrid16の見た目の差を、参考画像の小節幅を基準に矢印とwaveを同率縮小するv26で修正した。カード端では共通倍率を変えず位置だけ内側に制約し、左端の矢印も他と同じ縮小率を保つ。320px端でもカード内に収め、4小節・全イベント・完全なコード図を保つ。focused E2E 2件と `npm test` はPASS（E2E 135 PASS / 6 pending）。
+- **契約**: Issue comment `6772800154` がcanonical Implementation Contract v26 Delta。**5,621 bytes / SHA-256 `1da32d9f6755bb5a6af064fe873135b009b0237ff1bf4bf01512471bd97b8597`**。公式workflowのpublishでv25をsupersedeし、`verify-implementation-contract 162` で完全一致を確認。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、日英Helpをv26へ同期。Help manifest、AI同期のゲート結果を更新する。
+- **画面証拠**: [Issue #162の画像・DOM実測一覧](evidence/issue-162/README.md)。v26 `reference-r4` は修正後のソースから採取した400/600px × grid8/grid16 × JA/EN × Light/Darkの16枚とDOM sidecar。代表画像は[EN Dark、600px、grid16](evidence/issue-162/practice-guide-compact-wave-issue162-en-dark-600-grid-16-v26-reference-r4.png)。
+- **検証**: `npm test` はPASS（Help/AI sync、unit、E2E 135 PASS / 6 pending）。focused E2E「compact SVG lanes fit four measure slots」「compact 8/16-beat marks shrink uniformly」は各1件PASS。`npm run compile:all` と全4 locale/themeのr4撮影E2EもPASS。`git diff --check`、current-HEAD Self-Review、Required CI、delivery-checkは未実行。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **異常狭幅検証**: 48px viewportでは表示可能幅に応じてSVG全体を縮小し、`scaleX === scaleY` を確認する。表示の最小幅・高さは設けず、4小節と全event/Fraction/ARIA identityをDOMに維持する。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。マージ前のためIssueは未完了、マージ保留。
 
 ## Issue #160: 歌唱ブラケットとギター譜表ブレース

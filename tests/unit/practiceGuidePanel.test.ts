@@ -86,12 +86,15 @@ describe('Practice guide panel renderer', () => {
     assert.ok(paths.every(path => /data-guide-wave-grid="16"/.test(path)));
     assert.ok(paths.every(path => /data-guide-event="7"/.test(path)));
     assert.ok(paths.every(path => /data-guide-at-beat="/.test(path)));
-    assert.ok(paths.every(path => /d="M0\.40 15 C1\.15 10\.8 2\.00 10\.8 2\.80 15 S4\.45 19\.2 5\.20 15"/.test(path)));
-    assert.ok(paths.every(path => /stroke-width="1\.15" stroke-linecap="round"[^>]*vector-effect="non-scaling-stroke"/.test(path)));
-    assert.ok(paths.every(path => /data-guide-wave-width="5\.60"/.test(path)));
+    assert.ok(paths.every(path => /d="M0 0 C3\.2 -3\.35 5\.2 -3\.35 7\.5 0 S12\.4 3\.35 15 0"/.test(path)));
+    assert.ok(paths.every(path => /stroke-width="2\.35" stroke-linecap="round" stroke-linejoin="round"/.test(path)));
+    assert.ok(paths.every(path => /data-guide-wave-width="15\.00"/.test(path)));
+    assert.ok(paths.every(path => /data-guide-wave-offset-y="21"/.test(path)));
     assert.ok(paths.every(path => /data-guide-wave-variant="wide"/.test(path)));
-    assert.match(compactHtml, /viewBox="0 0 5\.6 30"/);
+    assert.match(compactHtml, /viewBox="0 0 15 47"/);
     assert.match(compactHtml, /class="practice-guide-stroke-icon practice-guide-compact-wave-icon"/);
+    assert.doesNotMatch(compactHtml, /preserveAspectRatio="none"/,
+      'compact continuation paths are scaled with their SVG rather than horizontally distorted');
   });
 
   it('keeps the wide compact wave shape for grid4 and grid8 continuations', () => {
@@ -103,9 +106,9 @@ describe('Practice guide panel renderer', () => {
     for (const grid of [4, 8] as const) {
       const html = render([{ ...base, grid }]);
       const firstMeasure = html.slice(html.indexOf('<template data-guide-template-measure="0"'), html.indexOf('</template>'));
-      assert.match(firstMeasure, /viewBox="0 0 5\.6 30"/);
+      assert.match(firstMeasure, /viewBox="0 0 15 47"/);
       assert.match(firstMeasure, /data-guide-wave-variant="wide"/);
-      assert.match(firstMeasure, /d="M0\.40 15 C1\.15 10\.8 2\.00 10\.8 2\.80 15 S4\.45 19\.2 5\.20 15"/);
+      assert.match(firstMeasure, /d="M0 0 C3\.2 -3\.35 5\.2 -3\.35 7\.5 0 S12\.4 3\.35 15 0"/);
     }
   });
 
@@ -140,8 +143,8 @@ describe('Practice guide panel renderer', () => {
     assert.match(labels[0][1], /data-guide-pm-run-events="0,1"/);
     assert.match(labels[1][1], /data-guide-pm-run-start-fraction="3\/4"/);
     assert.match(labels[1][1], /data-guide-pm-run-end-fraction="1\/1"/);
-    assert.match(firstTemplate, /data-guide-event="0"[^>]*data-guide-layout-lane="technique"[^>]*data-guide-layout-width="4"/,
-      'PM and non-PM attacks both retain the natural 4px compact width');
+    assert.match(firstTemplate, /data-guide-event="0"[^>]*data-guide-layout-lane="technique"[^>]*data-guide-layout-width="15"/,
+      'PM and non-PM attacks both retain the traced 15px compact master width');
     assert.doesNotMatch(firstTemplate, /class="practice-guide-pm-label"|translate\(14 0\)/,
       'PM is not drawn to the left inside the attack SVG');
   });
