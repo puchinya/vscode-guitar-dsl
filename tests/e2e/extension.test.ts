@@ -2667,7 +2667,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                 const lane = card.querySelector('.practice-guide-compact-svg > g[data-guide-lane="technique"]');
                 const symbols = [...lane.querySelectorAll('.practice-guide-compact-symbol')]
                   .filter(symbol => getComputedStyle(symbol).display !== 'none')
-                  .map(symbol => {
+                  .map((symbol, sourceOrder) => {
                     const matrix = symbol.transform.baseVal.consolidate()?.matrix;
                     const x = matrix?.e ?? NaN;
                     const y = matrix?.f ?? NaN;
@@ -2681,24 +2681,31 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                     const waveLastX = waveMatrix ? waveMatrix.e + ((waveBox?.x ?? 0) + (waveBox?.width ?? 0)) * waveMatrix.a : symbolRect.right;
                     const waveStrokeInset = wavePath ? Number(wavePath.getAttribute('stroke-width') ?? 0) * Math.abs(waveMatrix?.a ?? 1) / 2 : 0;
                     const beat = Number(symbol.dataset.guideAtBeat);
+                    const event = Number(symbol.dataset.guideEvent) || 0;
                     const measureSvg = card.querySelector('.practice-guide-compact-svg');
                     const measureBeats = Number(measureSvg.dataset.guideMeasureBeats) || 4;
                     const referenceLayout = Number('${grid}') === 8
                       ? { measureWidth: 366, trackInset: 34, trackWidth: 324 }
                       : Number('${grid}') === 16 ? { measureWidth: 400, trackInset: 32, trackWidth: 324 } : null;
                     const slotWidth = measureSvg.viewBox.baseVal.width;
+                    const svgRect = measureSvg.getBoundingClientRect();
+                    const svgScale = svgRect.width / Math.max(0.001, slotWidth);
                     const referenceScale = referenceLayout ? Math.min(1, slotWidth / referenceLayout.measureWidth) : 1;
                     const expectedAnchorX = referenceLayout
                       ? (referenceLayout.trackInset + beat / measureBeats * referenceLayout.trackWidth) * referenceScale
                       : 2 + beat / measureBeats * (card.getBoundingClientRect().width - 4);
-                   const width = Number(symbol.dataset.guideLayoutWidth);
                    const packedWidth = Number(symbol.dataset.guideLayoutPackedWidth);
+                   const renderedWidth = symbolRect.width / Math.max(0.001, svgScale);
                    return {
                      row: Number(symbol.dataset.guideRow),
                      kind: symbol.dataset.guideKind,
                      waveGrid: Number(symbol.dataset.guideWaveGrid) || 0,
                       testOnly: symbol.getAttribute('data-guide-test-simultaneous') === 'true',
+                      beat,
+                      event,
+                      sourceOrder,
                       x,
+                      centerX: x + renderedWidth / 2,
                       y,
                       left: symbolRect.left,
                       right: symbolRect.right,
@@ -2709,7 +2716,9 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                       fraction: symbol.dataset.guideAtFraction,
                       anchorX: Number(symbol.dataset.guideLayoutAnchorX),
                       anchorCorrect: Math.abs(Number(symbol.dataset.guideLayoutAnchorX) - expectedAnchorX) <= 0.01,
-                      renderedWidth: width * scaleX,
+                      renderedWidth,
+                      naturalWidth: Number(symbol.dataset.guideNaturalWidth),
+                      packedWidth,
                       scaleX,
                       scaleY,
                       hasPackedWidth: Number.isFinite(packedWidth) && packedWidth > 0,
@@ -2816,13 +2825,45 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                       && liveSvg?.getAttribute('viewBox') === sourceSvg?.getAttribute('viewBox')
                       && liveSvg?.dataset.guideWaveVariant === sourceSvg?.dataset.guideWaveVariant;
                   });
-                  const sameOnsetGroups = [...new Map(symbols.filter(symbol => !symbol.waveGrid)
-                    .map(symbol => [symbol.fraction, symbols.filter(other => !other.waveGrid && other.fraction === symbol.fraction)])).values()]
-                    .filter(group => group.length > 1);
+                  const attacksByOnset = symbols.filter(symbol => !symbol.waveGrid)
+                    .sort((left, right) => left.beat - right.beat || left.event - right.event || left.sourceOrder - right.sourceOrder);
+                  const sameOnsetGroups = [];
+                  for (let index = 0; index < attacksByOnset.length;) {
+                    let groupEnd = index + 1;
+                    while (groupEnd < attacksByOnset.length
+                      && Math.abs(attacksByOnset[groupEnd].beat - attacksByOnset[index].beat) < 0.000001) groupEnd++;
+                    if (groupEnd - index > 1) sameOnsetGroups.push(attacksByOnset.slice(index, groupEnd));
+                    index = groupEnd;
+                  }
                   const simultaneousAnchorsMatch = sameOnsetGroups.every(group =>
                     group.every(symbol => Math.abs(symbol.anchorX - group[0].anchorX) <= 0.001));
                   const simultaneousVisualOffsets = sameOnsetGroups.every(group =>
                     new Set(group.map(symbol => symbol.x.toFixed(3))).size === group.length);
+                  const simultaneousGroupPackingMatches = sameOnsetGroups.every(group => {
+                    const ordered = [...group].sort((left, right) => left.event - right.event || left.sourceOrder - right.sourceOrder);
+                    const onsetBeat = ordered[0].beat;
+                    const nextItem = symbols.filter(symbol => symbol.beat > onsetBeat + 0.000001)
+                      .sort((left, right) => left.beat - right.beat || left.event - right.event || left.sourceOrder - right.sourceOrder)[0];
+                    const referenceLayout = Number('${grid}') === 8
+                      ? { measureWidth: 366, trackInset: 34, trackWidth: 324 }
+                      : Number('${grid}') === 16 ? { measureWidth: 400, trackInset: 32, trackWidth: 324 } : null;
+                    const measureSvg = card.querySelector('.practice-guide-compact-svg');
+                    const measureBeats = Number(measureSvg.dataset.guideMeasureBeats) || 4;
+                    const slotWidth = measureSvg.viewBox.baseVal.width;
+                    const referenceScale = referenceLayout ? Math.min(1, slotWidth / referenceLayout.measureWidth) : 1;
+                    const anchorForBeat = beat => referenceLayout
+                      ? (referenceLayout.trackInset + beat / measureBeats * referenceLayout.trackWidth) * referenceScale
+                      : 2 + beat / measureBeats * (slotWidth - 4);
+                    const trackEndX = referenceLayout
+                      ? (referenceLayout.trackInset + referenceLayout.trackWidth) * referenceScale
+                      : slotWidth - 2;
+                    const startX = ordered[0].anchorX;
+                    const endX = nextItem ? anchorForBeat(nextItem.beat) : trackEndX;
+                    const stepWidth = Math.max(0.001, (endX - startX) / ordered.length);
+                    return ordered.every((symbol, rank) =>
+                      Math.abs(symbol.centerX - (startX + rank * stepWidth)) <= 0.05
+                      && symbol.renderedWidth <= stepWidth + 0.05);
+                  });
                  return {
                      height: Number(lane.dataset.guideLaneHeight), rowCount, collisions, collisionPairs, minimumWaveAttackClearance, minimumTechniqueChordClearance, closestWaveAttackPair, waveArrowOverlapCount,
                      painterOrder: [...lane.children].map(group => group.dataset.guidePainter),
@@ -2837,7 +2878,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
                      waveCountsByGrid: { four: waveCountForGrid('4'), eight: waveCountForGrid('8'), sixteen: waveCountForGrid('16') },
                      waveFractionsByGrid: { eight: waveFractionsForGrid('8'), sixteen: waveFractionsForGrid('16') },
                      simultaneousCount: sameOnsetGroups.length,
-                    simultaneousAnchorsMatch, simultaneousVisualOffsets,
+                    simultaneousAnchorsMatch, simultaneousVisualOffsets, simultaneousGroupPackingMatches,
                     anchorsMatchBeats: symbols.every(symbol => symbol.anchorCorrect),
                     uniformScale: symbols.every(symbol => symbol.scaleX >= 0 && symbol.scaleX <= 1.0001
                       && Math.abs(symbol.scaleY - symbol.scaleX) <= 0.0001),
@@ -2864,12 +2905,13 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
               `${width}px keeps a twenty-pixel vertical gutter between the technique lane and chord names`);
             const expectedVisibleWaveCount = grid === '4' ? 0 : grid === '8' ? 4 : 12;
             const requiredWaveArrowClearance = width === 400 || width === 600 ? 0.99 : 0.01;
-            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; minimumWaveAttackClearance: number; minimumTechniqueChordClearance: number; waveArrowOverlapCount: number; painterOrder: string[]; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; anchorsMatchBeats: boolean; uniformScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; minimumGrid16Gap: number; grid16CellWidth: number; expectedGrid16Variant: string; grid16PaintedHeight: number; grid16PaintedWidth: number; grid16Variants: string[]; waveVariantsSynced: boolean; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
+            assert.ok(geometry.techniqueLanes.every((lane: { height: number; rowCount: number; collisions: number; minimumWaveAttackClearance: number; minimumTechniqueChordClearance: number; waveArrowOverlapCount: number; painterOrder: string[]; symbolCount: number; sameY: boolean; fits: boolean; packed: boolean; simultaneousCount: number; simultaneousAnchorsMatch: boolean; simultaneousVisualOffsets: boolean; simultaneousGroupPackingMatches: boolean; anchorsMatchBeats: boolean; uniformScale: boolean; allAccessible: boolean; scaledSymbolCount: number; wavePathCount: number; visibleWavePathCount: number; canonicalWaveShape: boolean; visibleCanonicalWaveShape: boolean; minimumGrid16Gap: number; grid16CellWidth: number; expectedGrid16Variant: string; grid16PaintedHeight: number; grid16PaintedWidth: number; grid16Variants: string[]; waveVariantsSynced: boolean; waveCountsByGrid: { four: number; eight: number; sixteen: number }; waveFractionsByGrid: { eight: string[]; sixteen: string[] } }) =>
               lane.symbolCount > 0 && lane.rowCount === 1 && lane.height === 51
                 && lane.minimumTechniqueChordClearance >= 10
                 && lane.collisions === 0 && lane.sameY && lane.fits && lane.packed
                 && lane.painterOrder.join(',') === 'waves,attacks,pm'
                 && lane.simultaneousCount > 0 && lane.simultaneousAnchorsMatch && lane.simultaneousVisualOffsets
+                && lane.simultaneousGroupPackingMatches
                 && lane.anchorsMatchBeats && lane.uniformScale && lane.allAccessible
                 && lane.wavePathCount === 16 && lane.canonicalWaveShape
                 && lane.waveVariantsSynced
@@ -3149,11 +3191,11 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           `all reference attacks use the same measure-width scale rather than grid-cell-specific sizes: ${JSON.stringify({ expected: metrics.expectedReferenceScale, actual: metrics.attackScaleRange })}`);
           assert.ok(Math.abs(metrics.firstMeasureAnchorBounds.min - metrics.referenceTrackInset * metrics.expectedReferenceScale) <= 0.01
             && metrics.firstMeasureAnchorBounds.max <= (metrics.referenceTrackInset + metrics.referenceTrackWidth) * metrics.expectedReferenceScale + 0.01,
-          `Fraction anchors stay inside the screenshot-traced inset stroke track: ${JSON.stringify({ inset: metrics.referenceTrackInset, trackWidth: metrics.referenceTrackWidth, bounds: metrics.firstMeasureAnchorBounds })}`);
+          `Fraction anchors stay inside the configured inset reference track: ${JSON.stringify({ inset: metrics.referenceTrackInset, trackWidth: metrics.referenceTrackWidth, bounds: metrics.firstMeasureAnchorBounds })}`);
           const waveAnchorMetrics = metrics.cardMetrics.flatMap((card: { waves: { centerX: number; expectedCenterX: number }[] }) => card.waves)
             .map((wave: { centerX: number; expectedCenterX: number }) => [wave.centerX, wave.expectedCenterX]);
           assert.ok(waveAnchorMetrics.every(([centerX, expectedCenterX]: number[]) => Math.abs(centerX - expectedCenterX) <= 0.1),
-            `each reference wave uses the traced inset Fraction anchor and offset: ${JSON.stringify(waveAnchorMetrics)}`);
+            `each continuation wave uses the configured inset Fraction anchor and offset: ${JSON.stringify(waveAnchorMetrics)}`);
           if (captureWidth === 600 && capturedAttackScales.length > 0) {
             assert.ok(metrics.minimumAttackScaleX > capturedAttackScales[0] + 0.01,
               `${grid}-grid attacks grow again when the Preview widens from 400px to 600px: ${JSON.stringify(capturedAttackScales)} -> ${metrics.minimumAttackScaleX}`);
@@ -3173,7 +3215,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.ok(metrics.nextChordBounds && metrics.nextChordBounds.top >= metrics.layoutBounds.top - 1
             && metrics.nextChordBounds.bottom <= metrics.layoutBounds.bottom + 1,
           `the next-chord card remains visible alongside the measure diagrams: ${JSON.stringify(metrics.nextChordBounds)}`);
-          const filename = `practice-guide-compact-wave-issue162-${requestedLocale}-${themeName}-${captureWidth}-grid-${grid}-v26-reference-${evidenceTag}.png`;
+          const filename = `practice-guide-compact-wave-issue162-${requestedLocale}-${themeName}-${captureWidth}-grid-${grid}-v28-reference-${evidenceTag}.png`;
           await capturePreviewWebviewScreenshot(filename, 162, captureWidth);
           const imagePath = path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename);
           let image = await fs.readFile(imagePath);
@@ -3184,7 +3226,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           }
           assert.ok(image.length >= 5000 && image.readUInt32BE(16) === captureWidth
             && image.readUInt32BE(20) === metrics.viewportHeight,
-            `the v26 trace-mapped screenshot uses the requested Preview width/height and nonempty page content: ${JSON.stringify({ bytes: image.length, width: image.readUInt32BE(16), height: image.readUInt32BE(20), expectedWidth: captureWidth, expectedHeight: metrics.viewportHeight })}`);
+            `the v28 runtime screenshot uses the requested Preview width/height and nonempty page content: ${JSON.stringify({ bytes: image.length, width: image.readUInt32BE(16), height: image.readUInt32BE(20), expectedWidth: captureWidth, expectedHeight: metrics.viewportHeight })}`);
           await fs.writeFile(path.resolve(__dirname, '../../../docs/status/evidence/issue-162', filename.replace(/\.png$/, '.json')),
             JSON.stringify({ filename, locale: requestedLocale, theme: requestedTheme,
               imageWidth: image.readUInt32BE(16), imageHeight: image.readUInt32BE(20), imageBytes: image.length,

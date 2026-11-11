@@ -2407,6 +2407,7 @@ ${cspMeta}
             const gridCellWidth = referenceLayout
               ? referenceLayout.trackWidth * referenceScale / (measureBeats * (grid / 4))
               : Math.max(0, slotWidth - inset * 2) / (measureBeats * (grid / 4));
+            const placements = [];
             for (let index = 0; index < ordered.length;) {
               let groupEnd = index + 1;
               while (groupEnd < ordered.length && Math.abs(ordered[groupEnd].beat - ordered[index].beat) < 0.000001) {
@@ -2439,23 +2440,46 @@ ${cspMeta}
                     const availablePaintedWidth = Math.max(0, Math.min(intervalWidth, cellWidth, edgeRoom));
                     uniformScale = Math.min(1, availablePaintedWidth / naturalPaintedWidth);
                   }
-                  const itemWidth = item.width * uniformScale;
                   const waveOffset = referenceLayout && (waveGrid === 8 || waveGrid === 16)
                     ? Math.min(5 * referenceScale, Math.max(0, gridCellWidth - 1 - 17.4 * referenceScale))
                     : 0;
-                  const unclampedCenterX = itemX - waveOffset;
-                  const paintedHalfWidth = naturalPaintedWidth * uniformScale / 2;
-                  const visualCenterX = Math.max(paintedHalfWidth,
-                    Math.min(slotWidth - paintedHalfWidth, unclampedCenterX));
-                  const visualX = visualCenterX - itemWidth / 2;
-                  node.dataset.guideLayoutWidth = String(itemWidth);
-                  node.dataset.guideRow = '0';
-                  node.dataset.guideLayoutAnchorX = String(referenceAnchorX(item.beat));
-                  node.dataset.guideLayoutX = String(visualX);
-                  node.dataset.guideLayoutPackedWidth = String(itemWidth);
+                  placements.push({ item, node, itemX, naturalPaintedWidth, waveOffset, uniformScale });
                 }
               }
               index = groupEnd;
+            }
+            const visualCenterX = placement => {
+              const halfWidth = placement.naturalPaintedWidth * placement.uniformScale / 2;
+              return Math.max(halfWidth,
+                Math.min(slotWidth - halfWidth, placement.itemX - placement.waveOffset));
+            };
+            // Same-onset packing can leave less room for the following mark than either local fit sees alone.
+            // Fit actual painted bounds pairwise after positions and wave offsets are assigned.
+            while (true) {
+              let changed = false;
+              for (let leftIndex = 0; leftIndex + 1 < placements.length; leftIndex++) {
+                const left = placements[leftIndex];
+                const right = placements[leftIndex + 1];
+                const combinedPaintedWidth = left.naturalPaintedWidth * left.uniformScale
+                  + right.naturalPaintedWidth * right.uniformScale;
+                const maximumWidthWithoutOverlap = 2 * Math.abs(visualCenterX(right) - visualCenterX(left));
+                if (combinedPaintedWidth <= maximumWidthWithoutOverlap + 0.001) continue;
+                const fit = Math.max(0, maximumWidthWithoutOverlap / Math.max(0.001, combinedPaintedWidth));
+                left.uniformScale *= fit;
+                right.uniformScale *= fit;
+                changed = true;
+              }
+              if (!changed) break;
+            }
+            for (const placement of placements) {
+              const { item, node, uniformScale } = placement;
+              const itemWidth = item.width * uniformScale;
+              const visualX = visualCenterX(placement) - itemWidth / 2;
+              node.dataset.guideLayoutWidth = String(itemWidth);
+              node.dataset.guideRow = '0';
+              node.dataset.guideLayoutAnchorX = String(referenceAnchorX(item.beat));
+              node.dataset.guideLayoutX = String(visualX);
+              node.dataset.guideLayoutPackedWidth = String(itemWidth);
             }
             maxRows.technique = Math.max(maxRows.technique, ordered.length > 0 ? 1 : 0);
             return;

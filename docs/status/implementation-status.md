@@ -4,17 +4,17 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-11-11
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v26に基づき、参考画像に沿うCompact奏法SVGの比例縮小を実装・検証中。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
 ---
 
 ## Issue #162: 練習ガイド4小節SVG表示・複数継続記号・テンポ連動クロスフェード
 
-- **状態**: v25のper-cell width capで起きたgrid8とgrid16の見た目の差を、参考画像の小節幅を基準に矢印とwaveを同率縮小するv26で修正した。カード端では共通倍率を変えず位置だけ内側に制約し、左端の矢印も他と同じ縮小率を保つ。320px端でもカード内に収め、4小節・全イベント・完全なコード図を保つ。focused E2E 2件と `npm test` はPASS（E2E 135 PASS / 6 pending）。
-- **契約**: Issue comment `6772800154` がcanonical Implementation Contract v26 Delta。**5,621 bytes / SHA-256 `1da32d9f6755bb5a6af064fe873135b009b0237ff1bf4bf01512471bd97b8597`**。公式workflowのpublishでv25をsupersedeし、`verify-implementation-contract 162` で完全一致を確認。
-- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md`、日英Helpをv26へ同期。Help manifest、AI同期のゲート結果を更新する。
-- **画面証拠**: [Issue #162の画像・DOM実測一覧](evidence/issue-162/README.md)。v26 `reference-r4` は修正後のソースから採取した400/600px × grid8/grid16 × JA/EN × Light/Darkの16枚とDOM sidecar。代表画像は[EN Dark、600px、grid16](evidence/issue-162/practice-guide-compact-wave-issue162-en-dark-600-grid-16-v26-reference-r4.png)。
-- **検証**: commit `ca21eeb` のコードで `npm test` はPASS（Help/AI sync、unit 1,236、E2E 135、6 pending）。focused geometry / reference-scale E2Eと4 locale/themeのr4撮影もPASS。`npm run compile:all`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 162`、契約SHA検証、`git diff --check` はPASS。PR #163のcurrent-HEAD Self-Review・Required CI・delivery-checkの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAはNOT RUN。
+- **状態**: v26でreference-proportional scalingを適用し、v28で同拍群の視覚中心、イベント順、semantic Fraction anchorを規範化した。実描画boundsのE2E計測で見つかった同拍群境界の重なりに対し、隣接SVGを同率で追加縮小する処理を実装した。対象E2Eとr6画面撮影はPASS。全体 `npm test` は1件FAILで、内容は下記に記録。
+- **契約**: Issue comment `6794304855` がcanonical Implementation Contract v28 Delta。**8,703 bytes / SHA-256 `e95e741c0d9fad7d52071ec6b3257c71dbb8be23a32507912d51cd6670b50d66`**。公式workflowでv27をsupersedeし、`verify-implementation-contract 162` で完全一致を確認。
+- **仕様 / 設計 / Help**: `docs/specs/gui_design.md` §2.4、`docs/specs/extension.md` §4.6、`docs/design/preview-rendering-and-export.md` をv28へ同期。日英Helpの記述とmanifest digestを更新し、Help/AI同期gateをPASS。
+- **画面証拠**: [Issue #162の画像・DOM実測一覧](evidence/issue-162/README.md)。v28 `reference-r6` の400/600px × grid8/grid16 × JA/EN × Light/Dark、16枚とDOM sidecarを実装状態から採取。各画面で同一gridの矢印はreference scaleが同一。代表画像は[JA Light、600px、grid16](evidence/issue-162/practice-guide-compact-wave-issue162-ja-light-600-grid-16-v28-reference-r6.png)。
+- **検証**: 最終 `npm test` は **FAIL**（Help/AI syncとunit 1,236 PASS、E2E 134 PASS / 6 pending / 1 FAIL）。失敗はIssue #158 PB05のWorkbench後片付け `P136 changed pre-existing tab order or position`。同PB05を単独診断した結果は1/1 PASS。Issue #162のgeometry E2Eと4 locale/theme × r6撮影はPASS。`npm run compile`、`npm run vscode:prepublish`、`check:help`、`check:ai`、`validate-docs --issue 162`、契約SHA検証、`git diff --check` はPASS。`npx @vscode/vsce ls` はローカル未導入かつnpm registryのDNS解決失敗で **NOT RUN**。PR #163のcurrent-HEAD Self-Review・Required CI・delivery-checkの最新状態はPR記録を参照。Windows/Linux、VoiceOver/NVDAはNOT RUN。
 - **異常狭幅検証**: 48px viewportでは表示可能幅に応じてSVG全体を縮小し、`scaleX === scaleY` を確認する。表示の最小幅・高さは設けず、4小節と全event/Fraction/ARIA identityをDOMに維持する。
 - **PR / Completion Report**: [PR #163](https://github.com/puchinya/vscode-guitar-dsl/pull/163)。レビュー・CI・current-HEAD self-reviewの最新状態はPR記録を参照。マージ前のためIssueは未完了、マージ保留。
 
