@@ -2454,22 +2454,64 @@ ${cspMeta}
                 Math.min(slotWidth - halfWidth, placement.itemX - placement.waveOffset));
             };
             // Same-onset packing can leave less room for the following mark than either local fit sees alone.
-            // Fit actual painted bounds pairwise after positions and wave offsets are assigned.
-            while (true) {
+            // Fit painted bounds to the contracted clearances without moving their visual centers.
+            const visualOrder = placements.map((placement, sourceIndex) => ({ placement, sourceIndex }))
+              .sort((left, right) => visualCenterX(left.placement) - visualCenterX(right.placement)
+                || left.sourceIndex - right.sourceIndex);
+            const blockedPairs = new Set();
+            let clearanceFitConverged = visualOrder.length < 2;
+            const maxClearanceFitPasses = Math.max(1, visualOrder.length * 2 + 4);
+            for (let pass = 0; pass < maxClearanceFitPasses; pass++) {
               let changed = false;
-              for (let leftIndex = 0; leftIndex + 1 < placements.length; leftIndex++) {
-                const left = placements[leftIndex];
-                const right = placements[leftIndex + 1];
+              for (let leftIndex = 0; leftIndex + 1 < visualOrder.length; leftIndex++) {
+                if (blockedPairs.has(leftIndex)) continue;
+                const left = visualOrder[leftIndex].placement;
+                const right = visualOrder[leftIndex + 1].placement;
+                const leftWave = Number(left.node.dataset.guideWaveGrid) === 8
+                  || Number(left.node.dataset.guideWaveGrid) === 16;
+                const rightWave = Number(right.node.dataset.guideWaveGrid) === 8
+                  || Number(right.node.dataset.guideWaveGrid) === 16;
+                const requiredGap = leftWave && rightWave ? 0.25 : leftWave || rightWave ? 1 : 0;
                 const combinedPaintedWidth = left.naturalPaintedWidth * left.uniformScale
                   + right.naturalPaintedWidth * right.uniformScale;
-                const maximumWidthWithoutOverlap = 2 * Math.abs(visualCenterX(right) - visualCenterX(left));
-                if (combinedPaintedWidth <= maximumWidthWithoutOverlap + 0.001) continue;
-                const fit = Math.max(0, maximumWidthWithoutOverlap / Math.max(0.001, combinedPaintedWidth));
+                const centerDistance = Math.abs(visualCenterX(right) - visualCenterX(left));
+                const maximumPairWidth = 2 * centerDistance;
+                // The widths extend on both sides of each fixed center, so reserve the
+                // required CSS gap on both halves of the combined-width budget.
+                const availableWidth = 2 * (centerDistance - requiredGap) - 0.01;
+                // The first layout pass can run before a hidden card has a measurable width.
+                // Leave that pass at its base fit; a later ResizeObserver pass has real geometry.
+                if (!Number.isFinite(combinedPaintedWidth) || !Number.isFinite(maximumPairWidth)
+                  || !Number.isFinite(availableWidth)) continue;
+                if (combinedPaintedWidth <= availableWidth + 0.001) continue;
+                if (availableWidth <= 0) {
+                  // Fixed visual centers cannot make this minimum gap. Keep both source events and
+                  // their accessible names, shrink only as far as non-overlap permits, and expose
+                  // an explicit blocked state instead of silently dropping or relocating a mark.
+                  const nonOverlapWidth = Math.max(0, maximumPairWidth - 0.01);
+                  const fit = Math.min(1, nonOverlapWidth / Math.max(0.001, combinedPaintedWidth));
+                  if (fit < 0.999999) {
+                    left.uniformScale *= fit;
+                    right.uniformScale *= fit;
+                    changed = true;
+                  }
+                  left.clearanceBlocked = true;
+                  right.clearanceBlocked = true;
+                  blockedPairs.add(leftIndex);
+                  continue;
+                }
+                const fit = Math.min(1, availableWidth / Math.max(0.001, combinedPaintedWidth));
                 left.uniformScale *= fit;
                 right.uniformScale *= fit;
                 changed = true;
               }
-              if (!changed) break;
+              if (!changed) {
+                clearanceFitConverged = true;
+                break;
+              }
+            }
+            if (!clearanceFitConverged) {
+              for (const placement of placements) placement.clearanceBlocked = true;
             }
             for (const placement of placements) {
               const { item, node, uniformScale } = placement;
@@ -2480,6 +2522,18 @@ ${cspMeta}
               node.dataset.guideLayoutAnchorX = String(referenceAnchorX(item.beat));
               node.dataset.guideLayoutX = String(visualX);
               node.dataset.guideLayoutPackedWidth = String(itemWidth);
+              if (placement.clearanceBlocked) node.dataset.guideLayoutClearanceBlocked = 'true';
+              else delete node.dataset.guideLayoutClearanceBlocked;
+            }
+            const techniqueLanes = new Set(placements.map(placement =>
+              placement.node.closest('[data-guide-lane="technique"]')).filter(Boolean));
+            for (const techniqueLane of techniqueLanes) {
+              if (placements.some(placement => placement.node.closest('[data-guide-lane="technique"]') === techniqueLane
+                && placement.clearanceBlocked)) {
+                techniqueLane.dataset.guideLayoutClearanceState = 'blocked';
+              } else {
+                delete techniqueLane.dataset.guideLayoutClearanceState;
+              }
             }
             maxRows.technique = Math.max(maxRows.technique, ordered.length > 0 ? 1 : 0);
             return;
@@ -2541,6 +2595,7 @@ ${cspMeta}
         for (const [occurrenceIndex, template] of guideOccurrenceTemplates) {
           const svg = template.content?.querySelector?.('.practice-guide-compact-svg');
           if (!svg) continue;
+          svg.querySelector('[data-guide-lane="technique"]')?.removeAttribute('data-guide-layout-clearance-state');
           const occurrence = playbackOccurrences.find(item => item.occurrenceIndex === occurrenceIndex);
           const selectedLyricVerse = Number(occurrence?.lyricVerse) || 1;
           const measureBeats = Math.max(0.000001, Number(svg.dataset.guideMeasureBeats) || 4);
@@ -2596,8 +2651,11 @@ ${cspMeta}
               const waveGrid = Number(node.dataset.guideWaveGrid);
               if (waveGrid && waveGrid !== grid) continue;
               const wavePath = node.querySelector('.practice-guide-wave-path');
+              const wavePathWidth = wavePath
+                ? Number(wavePath.getAttribute('data-guide-wave-width')) || Number(wavePath.getBBox().width) || width
+                : width;
               const naturalPaintedWidth = wavePath
-                ? Math.max(width, wavePath.getBBox().width + Number(wavePath.getAttribute('stroke-width') || 0))
+                ? Math.max(width, wavePathWidth + Number(wavePath.getAttribute('stroke-width') || 0))
                 : width;
               laneItems[lane].push({ nodes: [node], beat, event, order: order++, width, naturalPaintedWidth, anchor });
             } else if (lane === 'chord-pair') {
@@ -2703,6 +2761,13 @@ ${cspMeta}
         if (templateSvg) {
           const sourceItems = [...templateSvg.querySelectorAll('[data-guide-layout-item="true"]')];
           const liveItems = [...svg.querySelectorAll('[data-guide-layout-item="true"]')];
+          const sourceTechniqueLane = templateSvg.querySelector('[data-guide-lane="technique"]');
+          const liveTechniqueLane = svg.querySelector('[data-guide-lane="technique"]');
+          if (sourceTechniqueLane?.dataset.guideLayoutClearanceState === 'blocked') {
+            liveTechniqueLane?.setAttribute('data-guide-layout-clearance-state', 'blocked');
+          } else {
+            liveTechniqueLane?.removeAttribute('data-guide-layout-clearance-state');
+          }
           for (let index = 0; index < Math.min(sourceItems.length, liveItems.length); index++) {
             const source = sourceItems[index];
             const live = liveItems[index];
@@ -2714,6 +2779,8 @@ ${cspMeta}
             else live.dataset.guideLayoutAnchorX = source.dataset.guideLayoutAnchorX;
             if (source.dataset.guideLayoutPackedWidth === undefined) delete live.dataset.guideLayoutPackedWidth;
             else live.dataset.guideLayoutPackedWidth = source.dataset.guideLayoutPackedWidth;
+            if (source.dataset.guideLayoutClearanceBlocked === undefined) delete live.dataset.guideLayoutClearanceBlocked;
+            else live.dataset.guideLayoutClearanceBlocked = source.dataset.guideLayoutClearanceBlocked;
             if (source.dataset.guideLyricAvailableWidth === undefined) delete live.dataset.guideLyricAvailableWidth;
             else live.dataset.guideLyricAvailableWidth = source.dataset.guideLyricAvailableWidth;
             if (source.dataset.guideLyricFontSize === undefined) delete live.dataset.guideLyricFontSize;

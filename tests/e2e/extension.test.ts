@@ -3169,14 +3169,15 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
           assert.strictEqual(metrics.techniqueToChordGap, 20, 'wave screenshots keep a twenty-pixel gutter between the technique and chord lanes');
           assert.ok(metrics.minimumTechniqueChordClearance >= 10,
             `wave screenshots keep at least ten pixels between painted marks and chord-name text: ${JSON.stringify(metrics)}`);
-          assert.strictEqual(metrics.waveCount, grid === '8' ? 8 : 20, 'wave screenshots retain the user-reference continuation Fractions');
+          assert.strictEqual(metrics.waveCount, grid === '8' ? 8 : 20,
+            'wave screenshots retain every Fraction-anchored wave event in the v24 reference-derived fixture');
           assert.deepStrictEqual(metrics.firstMeasurePattern,
             grid === '8' ? ['D', 'W', 'D', 'U', 'W', 'U', 'D', 'U']
               : ['D', 'W', 'D', 'W', 'D', 'W', 'D', 'U', 'D', 'U', 'D', 'W', 'D', 'W', 'D', 'U'],
-            `${grid}-grid screenshot uses the exact reference mark sequence in its first measure`);
+            `${grid}-grid screenshot uses the expected mark sequence in the v24 illustrative fixture's first measure`);
           assert.deepStrictEqual(metrics.firstMeasureWaveFractions,
             grid === '8' ? ['1/2', '2/1'] : ['1/4', '3/4', '5/4', '11/4', '13/4'],
-            `${grid}-grid screenshot places every wave at the reference Fraction`);
+            `${grid}-grid screenshot places every wave at the fixture's declared Fraction anchor`);
           assert.ok(metrics.widthsWithinCells,
             `wave screenshots keep each painted mark within its grid cell: ${JSON.stringify(metrics)}`);
           assert.ok(metrics.minimumPaintedGap >= 0.25, `wave screenshots preserve separate adjacent marks: ${JSON.stringify(metrics)}`);
@@ -3247,6 +3248,218 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             `${grid}-grid attacks return to their original 400px scale after a 400→600→400 resize: ${capturedAttackScales[0]} -> ${restoredAttackScale}`);
           }
           assert.deepStrictEqual(clearanceFailures, [], `painted wave and arrow bounds stay at least 1px apart in reference captures: ${clearanceFailures.join(', ')}`);
+        }
+      } finally {
+        await resetPreviewWebviewViewport();
+        await resetWorkbenchViewport();
+      }
+    });
+  });
+
+  test('Issue #162 compact strokes enforce painted clearances at 400px and 600px', async function () {
+    this.timeout(90000);
+    await withWorkbenchSnapshotRestored(async () => {
+      const referenceGrid16Rhythm = '8.d 8.d 8.d 16.d 16.u 16.d 16.u 8.d 8.d 16.d 16.u';
+      const source = [
+        'title: Compact minimum-clearance geometry',
+        'time: 4/4',
+        `| C ${referenceGrid16Rhythm} |`,
+        `| G ${referenceGrid16Rhythm} |`,
+        `| D ${referenceGrid16Rhythm} |`,
+        `| A ${referenceGrid16Rhythm} |`
+      ].join('\n');
+      const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });
+      await showAndFocus(doc);
+      await vscode.commands.executeCommand('guitardsl.showPreview', doc.uri);
+      await waitForPreviewDocument();
+      await setPreviewPracticeEnabled(true);
+      await evaluatePreviewWebview<void>("(() => { const view = document.getElementById('practice-guide-view'); view.value = 'compact'; view.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await evaluatePreviewWebview<void>("(() => { const select = document.getElementById('practice-guide-grid'); select.value = '16'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+      await settle(150);
+
+      const preparePair = async (
+        width: number,
+        pair: 'wave-arrow' | 'wave-wave' | 'impossible-wave-arrow',
+        requestedGap: number
+      ): Promise<{ rawGap: number; expectedMinimum: number }> => {
+        await setPreviewWebviewViewportWidth(width);
+        await settle(100);
+        const metrics = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const stage = document.getElementById('practice-guide-pair-page');
+          const card = stage.querySelector('.practice-guide-compact-measure');
+          const occurrence = card.dataset.guideOccurrenceIndex;
+          const template = [...document.querySelectorAll('template[data-guide-template-occurrence]')]
+            .find(candidate => candidate.dataset.guideTemplateOccurrence === occurrence);
+          const liveSvg = card.querySelector('.practice-guide-compact-svg');
+          const templateSvg = template?.content.querySelector('.practice-guide-compact-svg');
+          const liveLane = liveSvg?.querySelector('[data-guide-lane="technique"]');
+          const templateLane = templateSvg?.querySelector('[data-guide-lane="technique"]');
+          if (!card || !liveLane || !templateLane) throw new Error('The minimum-clearance fixture must expose a technique lane.');
+          const currentWave = templateLane.querySelector('.practice-guide-compact-symbol[data-guide-wave-grid="16"]');
+          const currentArrow = templateLane.querySelector('.practice-guide-compact-symbol[data-guide-kind="attack"]');
+          const seedBank = window.__issue162ClearanceSeedBank || (currentWave && currentArrow
+            ? (window.__issue162ClearanceSeedBank = { wave: currentWave.cloneNode(true), arrow: currentArrow.cloneNode(true) })
+            : undefined);
+          if (!seedBank?.wave || !seedBank?.arrow) throw new Error('The minimum-clearance fixture must contain a grid16 wave and attack.');
+          const waveWave = '${pair}' === 'wave-wave';
+          const sourceNodes = waveWave ? [seedBank.wave, seedBank.wave] : [seedBank.arrow, seedBank.wave];
+          const firstEvent = 910001;
+          const secondEvent = 910002;
+          const minimum = waveWave ? 0.25 : 1;
+          const targetRawGap = ${requestedGap};
+          const impossible = '${pair}' === 'impossible-wave-arrow';
+          const firstBeat = 0.5;
+          let beatDelta = impossible ? 0.01 : waveWave ? 0.216 : 0.205;
+          const slotWidth = liveSvg.viewBox.baseVal.width;
+          const measureBeats = Number(liveSvg.dataset.guideMeasureBeats) || 4;
+          const referenceScale = Math.min(1, slotWidth / 400);
+          const trackInset = 32;
+          const trackWidth = 324;
+          const cellWidth = trackWidth * referenceScale / (measureBeats * 4);
+          const waveOffset = Math.min(5 * referenceScale, Math.max(0, cellWidth - 1 - 17.4 * referenceScale));
+          const cssPerSvgUnit = liveSvg.getBoundingClientRect().width / Math.max(0.001, slotWidth);
+          const templateNodes = [];
+          const liveNodes = [];
+          for (const lane of [templateLane, liveLane]) {
+            for (const oldNode of [...lane.querySelectorAll('[data-guide-layout-item="true"][data-guide-layout-lane="technique"]')]) oldNode.remove();
+          }
+          for (let index = 0; index < sourceNodes.length; index++) {
+            const templateNode = sourceNodes[index].cloneNode(true);
+            const liveNode = templateNode.cloneNode(true);
+            const event = index === 0 ? firstEvent : secondEvent;
+            const label = 'E2E minimum-clearance ' + '${pair}' + ' mark ' + (index + 1);
+            for (const node of [templateNode, liveNode]) {
+              const beat = firstBeat + (index === 0 ? 0 : beatDelta);
+              node.dataset.guideEvent = String(event);
+              node.dataset.guideAtBeat = String(beat);
+              node.dataset.guideAtFraction = String(Math.round(beat * 100000)) + '/100000';
+              node.dataset.guideTechniqueEventKey = 'e2e-clearance-' + '${pair}' + '-' + index;
+              node.setAttribute('aria-label', label);
+              const title = node.querySelector('title');
+              if (title) title.textContent = label;
+              const path = node.querySelector('.practice-guide-wave-path');
+              if (path) {
+                path.dataset.guideEvent = String(event);
+                path.dataset.guideAtBeat = String(beat);
+                path.dataset.guideAtFraction = node.dataset.guideAtFraction;
+              }
+            }
+            templateNodes.push(templateNode);
+            liveNodes.push(liveNode);
+          }
+          templateNodes.forEach(node => templateLane.appendChild(node));
+          liveNodes.forEach(node => liveLane.appendChild(node));
+          const measurePaintedBounds = node => {
+            const paths = [...node.querySelectorAll('.practice-guide-compact-attack-shaft, .practice-guide-compact-attack-head, .practice-guide-wave-path')];
+            const bounds = paths.map(path => {
+              const box = path.getBBox();
+              const matrix = path.getScreenCTM();
+              if (!matrix) throw new Error('The painted-bound fixture requires a rendered SVG transform.');
+              const firstX = matrix.e + box.x * matrix.a;
+              const lastX = matrix.e + (box.x + box.width) * matrix.a;
+              const style = getComputedStyle(path);
+              const strokeWidth = style.stroke !== 'none' ? Number.parseFloat(style.strokeWidth) || 0 : 0;
+              const strokeInset = strokeWidth * Math.abs(matrix.a) / 2;
+              return { left: Math.min(firstX, lastX) - strokeInset, right: Math.max(firstX, lastX) + strokeInset };
+            });
+            return { left: Math.min(...bounds.map(item => item.left)), right: Math.max(...bounds.map(item => item.right)) };
+          };
+          const placeRaw = () => {
+            liveNodes.forEach((node, index) => {
+              const beat = firstBeat + (index === 0 ? 0 : beatDelta);
+              for (const target of [templateNodes[index], node]) {
+                target.dataset.guideAtBeat = String(beat);
+                target.dataset.guideAtFraction = String(Math.round(beat * 100000)) + '/100000';
+                const path = target.querySelector('.practice-guide-wave-path');
+                if (path) {
+                  path.dataset.guideAtBeat = String(beat);
+                  path.dataset.guideAtFraction = target.dataset.guideAtFraction;
+                }
+              }
+              const anchor = (trackInset + beat / measureBeats * trackWidth) * referenceScale;
+              const isWave = Number(node.dataset.guideWaveGrid) === 16;
+              const center = anchor - (isWave ? waveOffset : 0);
+              const localWidth = node.getBBox().width;
+              node.setAttribute('transform', 'translate(' + (center - localWidth * referenceScale / 2) + ' 0) scale(' + referenceScale + ')');
+            });
+            const firstBounds = measurePaintedBounds(liveNodes[0]);
+            const secondBounds = measurePaintedBounds(liveNodes[1]);
+            return secondBounds.left - firstBounds.right;
+          };
+          let rawGap = placeRaw();
+          if (!impossible) {
+            for (let attempt = 0; attempt < 8 && Math.abs(rawGap - targetRawGap) > 0.015; attempt++) {
+              beatDelta += (targetRawGap - rawGap) / (2 * (trackWidth / measureBeats) * referenceScale * cssPerSvgUnit);
+              rawGap = placeRaw();
+            }
+          }
+          return { rawGap, expectedMinimum: minimum };
+        })())`));
+        return metrics;
+      };
+
+      const measureFinalPair = async (width: number, pair: 'wave-arrow' | 'wave-wave' | 'impossible-wave-arrow') => {
+        await evaluatePreviewWebview<void>("(() => { const select = document.getElementById('practice-guide-grid'); select.value = '8'; select.dispatchEvent(new Event('change', { bubbles: true })); select.value = '16'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+        await evaluatePreviewWebview<void>("window.dispatchEvent(new Event('resize'))");
+        await settle(120);
+        return JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+          const card = document.querySelector('.practice-guide-compact-measure');
+          const lane = card.querySelector('.practice-guide-compact-svg [data-guide-lane="technique"]');
+          const symbols = [...lane.querySelectorAll('.practice-guide-compact-symbol')]
+            .filter(node => ['910001', '910002'].includes(node.dataset.guideEvent))
+            .sort((left, right) => Number(left.dataset.guideEvent) - Number(right.dataset.guideEvent));
+          const measurePaintedBounds = node => {
+            const paths = [...node.querySelectorAll('.practice-guide-compact-attack-shaft, .practice-guide-compact-attack-head, .practice-guide-wave-path')];
+            const bounds = paths.map(path => {
+              const box = path.getBBox();
+              const matrix = path.getScreenCTM();
+              const firstX = matrix.e + box.x * matrix.a;
+              const lastX = matrix.e + (box.x + box.width) * matrix.a;
+              const style = getComputedStyle(path);
+              const strokeWidth = style.stroke !== 'none' ? Number.parseFloat(style.strokeWidth) || 0 : 0;
+              const inset = strokeWidth * Math.abs(matrix.a) / 2;
+              return { left: Math.min(firstX, lastX) - inset, right: Math.max(firstX, lastX) + inset };
+            });
+            return { left: Math.min(...bounds.map(item => item.left)), right: Math.max(...bounds.map(item => item.right)) };
+          };
+          const paintedBounds = symbols.map(measurePaintedBounds).sort((left, right) => left.left - right.left);
+          return { width: ${width}, pair: '${pair}', eventCount: symbols.length,
+            clearance: paintedBounds.length === 2 ? paintedBounds[1].left - paintedBounds[0].right : Number.NaN,
+            marks: symbols.map(node => ({ beat: node.dataset.guideAtBeat, anchor: node.dataset.guideLayoutAnchorX,
+              x: node.dataset.guideLayoutX, packedWidth: node.dataset.guideLayoutPackedWidth,
+              naturalWidth: node.dataset.guideNaturalWidth, scale: node.dataset.guideLayoutScale,
+              transform: node.getAttribute('transform'), box: (() => { const box = node.getBBox(); return { x: box.x, width: box.width }; })() })),
+            namesRetained: symbols.length === 2 && symbols.every(node => node.getAttribute('aria-label') && node.querySelector('title')?.textContent),
+            blockedEvents: symbols.filter(node => node.dataset.guideLayoutClearanceBlocked === 'true').length,
+            layoutState: lane.dataset.guideLayoutClearanceState || 'clear' };
+        })())`));
+      };
+
+      try {
+        for (const width of [400, 600]) {
+          for (const [pair, requestedGap, minimum] of [
+            ['wave-arrow', 0.5, 1],
+            ['wave-wave', 0.1, 0.25]
+          ] as const) {
+            const before = await preparePair(width, pair, requestedGap);
+            assert.ok(before.rawGap > 0 && before.rawGap < minimum,
+              `${pair} at ${width}px starts with a positive painted DOM gap below ${minimum}px: ${JSON.stringify(before)}`);
+            const after = await measureFinalPair(width, pair);
+            assert.strictEqual(after.eventCount, 2, `${pair} at ${width}px keeps both source events`);
+            assert.strictEqual(after.namesRetained, true, `${pair} at ${width}px keeps both accessible names`);
+            assert.ok(after.clearance >= minimum - 0.01,
+              `${pair} at ${width}px fits the contracted painted minimum: ${JSON.stringify(after)}`);
+            assert.strictEqual(after.blockedEvents, 0, `${pair} at ${width}px fits without a blocked pair`);
+            assert.strictEqual(after.layoutState, 'clear', `${pair} at ${width}px reports clear layout state`);
+          }
+
+          const impossible = await preparePair(width, 'impossible-wave-arrow', 0);
+          assert.ok(impossible.rawGap < 1, `impossible wave-arrow pair at ${width}px begins below the 1px requirement`);
+          const blocked = await measureFinalPair(width, 'impossible-wave-arrow');
+          assert.strictEqual(blocked.eventCount, 2, `impossible pair at ${width}px retains both source events`);
+          assert.strictEqual(blocked.namesRetained, true, `impossible pair at ${width}px retains accessible names`);
+          assert.strictEqual(blocked.blockedEvents, 2, `impossible pair at ${width}px marks both events blocked`);
+          assert.strictEqual(blocked.layoutState, 'blocked', `impossible pair at ${width}px exposes blocked layout state`);
         }
       } finally {
         await resetPreviewWebviewViewport();
