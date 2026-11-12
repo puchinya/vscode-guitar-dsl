@@ -483,7 +483,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
   });
 
   test('Issue #164 compact SVG lanes fit four measure slots, continuation waves follow the guide grid, and pages navigate without seeking', async function () {
-    this.timeout(60000);
+    this.timeout(120000);
     await withWorkbenchSnapshotRestored(async () => {
       const playbackOrderLabel = vscode.env.language.toLowerCase().startsWith('ja') ? '演奏順' : 'Playback order';
       const denseBrushRhythm = Array.from({ length: 16 }, (_, index) => {
@@ -642,10 +642,137 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
         'the compact SVG retains its shared music lane order');
       assert.strictEqual(geometry.range, '1–4/6', 'compact navigation starts on measures 1–4');
 
+      await setPreviewWebviewViewportWidth(400);
+      await setGrid('16');
+      await settle(120);
+      const lyricPalette = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+        const lyric = document.querySelector('.practice-guide-compact-measure .practice-guide-compact-lyric');
+        if (!lyric) return null;
+        const card = lyric.closest('.practice-guide-compact-measure');
+        const originalCurrent = lyric.classList.contains('is-current');
+        const originalPast = lyric.classList.contains('is-past');
+        const read = state => {
+          lyric.classList.remove('is-current', 'is-past');
+          if (state !== 'normal') lyric.classList.add('is-' + state);
+          const style = getComputedStyle(lyric);
+          const channels = style.fill.match(/[0-9.]+/g).map(Number);
+          const linear = channels.slice(0, 3).map(channel => {
+            const value = channel / 255;
+            return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+          });
+          const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+          return { fill: style.fill, channels, contrast: 1.05 / (luminance + 0.05), weight: Number(style.fontWeight) };
+        };
+        const states = { normal: read('normal'), current: read('current'), past: read('past') };
+        lyric.classList.toggle('is-current', originalCurrent);
+        lyric.classList.toggle('is-past', originalPast);
+        return { background: getComputedStyle(card).backgroundColor, states };
+      })())`));
+      assert.ok(lyricPalette, 'the compact lyric fixture exposes a rendered lyric');
+      const paletteStates = Object.values(lyricPalette.states) as { fill: string; contrast: number; channels: number[]; weight: number }[];
+      assert.strictEqual(lyricPalette.background, 'rgb(255, 255, 255)', 'compact lyric colors are evaluated against the white SVG card');
+      assert.ok(paletteStates.every(state => state.contrast >= 4.5),
+        `normal/current/past lyric fills exceed 4.5:1 contrast against white: ${JSON.stringify(lyricPalette.states)}`);
+      assert.strictEqual(new Set(paletteStates.map(state => state.fill)).size, 3,
+        `normal/current/past use three distinct colors: ${JSON.stringify(lyricPalette.states)}`);
+      const currentChannels = lyricPalette.states.current.channels;
+      const pastChannels = lyricPalette.states.past.channels;
+      assert.ok(currentChannels[1] > currentChannels[0] * 1.5 + 20 && currentChannels[1] > currentChannels[2] * 1.15,
+        `the current lyric uses a green hue in addition to bold weight: ${JSON.stringify(lyricPalette.states.current)}`);
+      assert.ok(pastChannels[2] > pastChannels[0] && pastChannels[1] > pastChannels[0]
+        && lyricPalette.states.current.weight >= 700,
+      `the past lyric uses a blue-gray hue while current is bold: ${JSON.stringify(lyricPalette.states)}`);
+
       try {
-        for (const width of [320, 400, 421, 480, 600, 1100, 1600]) {
+        for (const width of [320, 360, 400, 421, 480, 481, 600, 601, 840, 1100, 1600]) {
           await setPreviewWebviewViewportWidth(width);
           await settle(120);
+          const responsiveGeometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
+            const stage = document.getElementById('practice-guide-pair-page');
+            const stageRect = stage.getBoundingClientRect();
+            const layout = document.querySelector('.practice-guide-layout');
+            const layoutRect = layout.getBoundingClientRect();
+            const cards = [...stage.querySelectorAll('.practice-guide-compact-measure')];
+            const cardRects = cards.map(card => card.getBoundingClientRect());
+            const orderedCards = [...cardRects].sort((left, right) => left.left - right.left);
+            const expectedSlot = stage.clientWidth / 4;
+            const expectedSlotWidths = [expectedSlot, expectedSlot, expectedSlot, stage.clientWidth - expectedSlot * 3];
+            const slotWidthErrorMax = Math.max(...cardRects.map((rect, index) => Math.abs(rect.width - expectedSlotWidths[index])));
+            const adjacentCardGaps = orderedCards.slice(1).map((rect, index) => rect.left - orderedCards[index].right);
+            const cardsInsideStage = cardRects.length === 4 && cardRects.every(rect =>
+              rect.left >= stageRect.left - 1 && rect.right <= stageRect.right + 1);
+            const nextChord = document.getElementById('practice-guide-next-chord');
+            const nextRect = nextChord.getBoundingClientRect();
+            const nextName = document.getElementById('practice-guide-next-chord-name');
+            const nextDiagram = document.getElementById('practice-guide-next-chord-diagram');
+            const nextDiagramSvg = nextDiagram.querySelector('svg.practice-guide-diagram');
+            const nextDiagramMatrix = nextDiagramSvg?.getScreenCTM();
+            const nextDiagramRect = nextDiagramMatrix ? {
+              left: nextDiagramMatrix.e, top: nextDiagramMatrix.f,
+              width: 144 * Math.abs(nextDiagramMatrix.a), height: 144 * Math.abs(nextDiagramMatrix.d),
+              right: nextDiagramMatrix.e + 144 * Math.abs(nextDiagramMatrix.a),
+              bottom: nextDiagramMatrix.f + 144 * Math.abs(nextDiagramMatrix.d)
+            } : undefined;
+            const narrow = layout.classList.contains('is-narrow-compact');
+            const nextChordBesideOrAboveStage = narrow
+              ? nextRect.bottom <= stageRect.top + 1
+              : nextRect.left >= stageRect.right - 1;
+            const diagrams = cards.flatMap(card => [...card.querySelectorAll('.practice-guide-compact-diagram-event svg.practice-guide-diagram')]
+              .map(svg => {
+                const matrix = svg.getScreenCTM();
+                const cardRect = card.getBoundingClientRect();
+                return { rect: matrix ? {
+                  left: matrix.e, top: matrix.f,
+                  width: 144 * Math.abs(matrix.a), height: 144 * Math.abs(matrix.d),
+                  right: matrix.e + 144 * Math.abs(matrix.a), bottom: matrix.f + 144 * Math.abs(matrix.d)
+                } : { left: NaN, right: NaN, top: NaN, bottom: NaN, width: 0, height: 0 }, cardRect };
+              }));
+            const diagramsInsideCards = diagrams.length > 0 && diagrams.every(item =>
+              item.rect.width > 0 && item.rect.height > 0
+                && Math.abs(item.rect.width - item.rect.height) <= 1
+                && item.rect.left >= item.cardRect.left - 1 && item.rect.right <= item.cardRect.right + 1
+                && item.rect.top >= item.cardRect.top - 1 && item.rect.bottom <= item.cardRect.bottom + 1);
+            return {
+              viewportWidth: window.innerWidth,
+              stage: { left: stageRect.left, right: stageRect.right, width: stageRect.width,
+                clientWidth: stage.clientWidth, scrollWidth: stage.scrollWidth },
+              cardCount: cards.length, cardsInsideStage, slotWidthErrorMax, adjacentCardGaps,
+              horizontalOverflow: stage.scrollWidth - stage.clientWidth,
+              nextChord: { visible: nextChord.getClientRects().length > 0
+                  && getComputedStyle(nextChord).display !== 'none'
+                  && getComputedStyle(nextChord).visibility !== 'hidden',
+                left: nextRect.left, right: nextRect.right, top: nextRect.top, bottom: nextRect.bottom,
+                name: nextName.textContent.trim(), diagramVisible: !!nextDiagramSvg && !!nextDiagramRect
+                  && nextDiagramRect.width > 0 && nextDiagramRect.height > 0,
+                diagramInside: !!nextDiagramRect && nextDiagramRect.left >= nextRect.left - 1
+                  && nextDiagramRect.right <= nextRect.right + 1 && nextDiagramRect.top >= nextRect.top - 1
+                  && nextDiagramRect.bottom <= nextRect.bottom + 1 },
+              nextChordBesideOrAboveStage,
+              nextChordInsideLayout: nextRect.left >= layoutRect.left - 1 && nextRect.right <= layoutRect.right + 1,
+              diagramsInsideCards,
+              diagrams: diagrams.map(item => ({
+                left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom,
+                width: item.rect.width, height: item.rect.height,
+                cardLeft: item.cardRect.left, cardRight: item.cardRect.right,
+                cardTop: item.cardRect.top, cardBottom: item.cardRect.bottom
+              }))
+            };
+          })())`));
+          assert.strictEqual(responsiveGeometry.viewportWidth, width,
+            `${width}px Compact geometry is measured at the requested CSS width`);
+          assert.strictEqual(responsiveGeometry.cardCount, 4,
+            `${width}px keeps exactly four measure slots on the page`);
+          assert.ok(responsiveGeometry.cardsInsideStage && responsiveGeometry.slotWidthErrorMax <= 1,
+            `${width}px four slots have equal widths and visible card bounds: ${JSON.stringify(responsiveGeometry)}`);
+          assert.ok(responsiveGeometry.horizontalOverflow <= 1
+            && responsiveGeometry.adjacentCardGaps.every((gap: number) => Math.abs(gap) <= 1),
+          `${width}px cards have no horizontal overflow or inter-card gap: ${JSON.stringify(responsiveGeometry)}`);
+          assert.ok(responsiveGeometry.nextChord.visible && responsiveGeometry.nextChord.name
+            && responsiveGeometry.nextChord.diagramVisible && responsiveGeometry.nextChord.diagramInside
+            && responsiveGeometry.nextChordBesideOrAboveStage && responsiveGeometry.nextChordInsideLayout,
+          `${width}px next-chord name and diagram remain visible within their responsive layout bounds: ${JSON.stringify(responsiveGeometry)}`);
+          assert.ok(responsiveGeometry.diagramsInsideCards,
+            `${width}px chord diagrams remain square and visible inside their measure cards: ${JSON.stringify(responsiveGeometry.diagrams)}`);
           for (const grid of ['4', '8', '16'] as const) {
             await setGrid(grid);
             await settle(60);

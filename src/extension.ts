@@ -31,6 +31,7 @@ import { registerProgressionCompletions } from './progressionCompletionProvider'
 import { registerProgressionAssistant, type ProgressionAssistantController, type ProgressionAssistantRenderOptions, type ProgressionAssistantSessionIdentity } from './progressionAssistant';
 import { planProgressionEdit } from './progressionSourceEdits';
 import { ProgressionAudioLeaseCoordinator } from './progressionAudioLease';
+import { deleteRetiredGeminiApiKeyBestEffort } from './retiredGeminiSecret';
 
 export const progressionAudioLeaseProbe: { coordinator?: ProgressionAudioLeaseCoordinator } = {};
 
@@ -132,12 +133,7 @@ export function computeDocumentDiagnostics(doc: vscode.TextDocument, locale: Sup
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  // Remove the retired Gemini credential once, without allowing SecretStorage failures to block activation.
-  try {
-    void Promise.resolve(context.secrets.delete('guitardsl.geminiApiKey')).catch(() => undefined);
-  } catch {
-    // Best effort only; never read or expose the old value.
-  }
+  deleteRetiredGeminiApiKeyBestEffort(context.secrets);
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   let progressionAssistantController: ProgressionAssistantController | undefined;
