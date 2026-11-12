@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 342 48" width="1026" height="144" role="img" aria-label="Proposed compact practice stroke patterns: down, up and short continuation wave, path-only geometry">
+  <title>Compact practice guide: SVG path geometry proposal (not a font)</title>
+  <desc>Reference crop: user-reference-stroke-pattern-crop.png. Stroke arrows have a 4 by 30 local box and remain 30 px tall at standard compact density. This drawing is a geometric target for review, not a screenshot reproduction.</desc>
+  <defs>
+    <g id="stroke-down" stroke="#1f2937" fill="none" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+      <path d="M2 1 V27.8"/>
+      <path d="M0.55 24 L2 28.5 L3.45 24"/>
+    </g>
+    <g id="stroke-up" stroke="#1f2937" fill="none" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="miter" vector-effect="non-scaling-stroke">
+      <path d="M2 29 V2.2"/>
+      <path d="M0.55 6 L2 1.5 L3.45 6"/>
+    </g>
+    <g id="stroke-wave" fill="none" stroke="#1f2937" stroke-width="1.15" stroke-linecap="round" vector-effect="non-scaling-stroke">
+      <path d="M0.4 15.2 C1.2 13.3 2 13.3 2.8 15.2 S4.4 17.1 5.2 15.2"/>
+    </g>
+  </defs>
+  <g transform="translate(9 8)"><use href="#stroke-down"/><use href="#stroke-wave" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(58 8)"><use href="#stroke-down"/><use href="#stroke-up" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(107 8)"><use href="#stroke-down"/><use href="#stroke-wave" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(156 8)"><use href="#stroke-down"/><use href="#stroke-up" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(205 8)"><use href="#stroke-down"/><use href="#stroke-wave" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(254 8)"><use href="#stroke-down"/><use href="#stroke-up" x="9"/><use href="#stroke-down" x="19"/><use href="#stroke-up" x="29"/></g>
+  <g transform="translate(301 8)"><use href="#stroke-down"/><use href="#stroke-wave" x="7"/><use href="#stroke-up" x="14"/><use href="#stroke-wave" x="21"/><use href="#stroke-down" x="28"/></g>
+</svg>

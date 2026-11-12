@@ -880,7 +880,7 @@ export function activate(context: vscode.ExtensionContext) {
             const reference = definition?.directReferences.find(item => item.kind === 'score'
               && item.line === binding.line && item.startCol === binding.startCol && item.endCol === binding.endCol);
             if (!definition?.valid || !reference) return;
-            setVariablesContext(activeDocument, true, undefined, reference);
+            await setVariablesContext(activeDocument, true, undefined, reference);
             return;
           }
           if (message.command === 'previewOpenVisualSource') {

@@ -1,0 +1,64 @@
+{
+  "viewport": {
+    "width": 600,
+    "height": 740
+  },
+  "layout": {
+    "left": 0,
+    "top": 429,
+    "right": 600,
+    "bottom": 739,
+    "width": 600,
+    "height": 310
+  },
+  "stage": {
+    "left": 0,
+    "top": 429,
+    "right": 504,
+    "bottom": 739,
+    "width": 504,
+    "height": 310
+  },
+  "nextChord": {
+    "left": 504,
+    "top": 429,
+    "right": 600,
+    "bottom": 739,
+    "width": 96,
+    "height": 310
+  },
+  "cards": [
+    {
+      "left": 0,
+      "top": 429,
+      "right": 126,
+      "bottom": 727,
+      "width": 126,
+      "height": 298
+    },
+    {
+      "left": 126,
+      "top": 429,
+      "right": 252,
+      "bottom": 727,
+      "width": 126,
+      "height": 298
+    },
+    {
+      "left": 252,
+      "top": 429,
+      "right": 378,
+      "bottom": 727,
+      "width": 126,
+      "height": 298
+    },
+    {
+      "left": 378,
+      "top": 429,
+      "right": 504,
+      "bottom": 727,
+      "width": 126,
+      "height": 298
+    }
+  ]
+}

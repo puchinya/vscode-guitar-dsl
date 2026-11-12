@@ -60,7 +60,7 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
   throw new Error(`Could not find the Extension Development Host window. DevTools page titles: ${lastTitles.join(', ')}`);
 }
 
-async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
+async function waitForPreviewTarget(port: number, expectedDocumentUri?: string): Promise<DevToolsTarget> {
   let lastTargets: DevToolsTarget[] = [];
   for (let attempt = 0; attempt < 50; attempt++) {
     lastTargets = await getTargets(port);
@@ -94,10 +94,11 @@ async function waitForPreviewTarget(port: number): Promise<DevToolsTarget> {
           if (typeof isolated.executionContextId !== 'number') return false;
           const result = await send('Runtime.evaluate', {
             contextId: isolated.executionContextId,
-            expression: `!!document.querySelector('.toolbar-container') && !!document.getElementById('preview-edit-row')`,
+            expression: `JSON.stringify({ ready: !!document.querySelector('.toolbar-container') && !!document.getElementById('preview-edit-row'), uri: document.body?.dataset.previewDocumentUri })`,
             returnByValue: true
           });
-          return (result.result as { value?: unknown } | undefined)?.value === true;
+          const state = JSON.parse(String((result.result as { value?: unknown } | undefined)?.value ?? '{}')) as { ready?: boolean; uri?: string };
+          return state.ready === true && (!expectedDocumentUri || state.uri === expectedDocumentUri);
         });
         if (containsPreviewDom) return candidate;
       } catch {
@@ -302,7 +303,7 @@ export async function capturePreviewWebviewScreenshot(
 
 /** Emulates an exact CSS viewport inside the Preview Webview even when the host display is narrower. */
 export async function setPreviewWebviewViewportWidth(width: number, height?: number): Promise<void> {
-  if (!Number.isFinite(width) || width < 280) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
+  if (!Number.isFinite(width) || width < 1) throw new Error(`Invalid Preview Webview viewport width: ${width}`);
   if (height !== undefined && (!Number.isFinite(height) || height < 240)) {
     throw new Error(`Invalid Preview Webview viewport height: ${height}`);
   }
@@ -571,53 +572,57 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
   });
 }
 
+async function evaluatePreviewTarget<T>(target: DevToolsTarget, expression: string): Promise<T> {
+  return withDevToolsTarget(target, async send => {
+    await send('Runtime.enable');
+    let contextId: number | undefined;
+    let lastFrames: string[] = [];
+    for (let attempt = 0; attempt < 6 && contextId === undefined; attempt++) {
+      const tree = await send('Page.getFrameTree');
+      let activeFrameId: string | undefined;
+      lastFrames = [];
+      const visit = (node: Record<string, unknown>): void => {
+        const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+        if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
+        if (frame?.name === 'active-frame') activeFrameId = frame.id;
+        if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
+      };
+      if (tree.frameTree) {
+        const frameTree = tree.frameTree as Record<string, unknown>;
+        visit(frameTree);
+        if (!activeFrameId) {
+          const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
+          if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
+        }
+      }
+      if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${lastFrames.join(' | ')}`);
+      try {
+        const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
+        if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a Preview evaluation context');
+        contextId = isolated.executionContextId;
+      } catch (error) {
+        if (!(error instanceof Error) || !/No frame for given id found/.test(error.message) || attempt === 5) throw error;
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+    }
+    if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
+    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
+    if (response.exceptionDetails) {
+      const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
+      throw new Error(`Preview Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'})`);
+    }
+    const value = (response.result as { value?: unknown } | undefined)?.value;
+    return value as T;
+  });
+}
+
 /** Evaluates an expression in the singleton Preview WebviewPanel renderer. */
-export async function evaluatePreviewWebview<T>(expression: string): Promise<T> {
+export async function evaluatePreviewWebview<T>(expression: string, expectedDocumentUri?: string): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   for (let evaluationAttempt = 0; evaluationAttempt < 3; evaluationAttempt++) {
-    const target = await waitForPreviewTarget(port);
+    const target = await waitForPreviewTarget(port, expectedDocumentUri);
     try {
-      return await withDevToolsTarget(target, async send => {
-        await send('Runtime.enable');
-        let contextId: number | undefined;
-        let lastFrames: string[] = [];
-        for (let attempt = 0; attempt < 6 && contextId === undefined; attempt++) {
-          const tree = await send('Page.getFrameTree');
-          let activeFrameId: string | undefined;
-          lastFrames = [];
-          const visit = (node: Record<string, unknown>): void => {
-            const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
-            if (frame) lastFrames.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
-            if (frame?.name === 'active-frame') activeFrameId = frame.id;
-            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-          };
-          if (tree.frameTree) {
-            const frameTree = tree.frameTree as Record<string, unknown>;
-            visit(frameTree);
-            if (!activeFrameId) {
-              const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
-              if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
-            }
-          }
-          if (!activeFrameId) throw new Error(`Could not find the active Preview webview frame: ${lastFrames.join(' | ')}`);
-          try {
-            const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-preview-evaluation' });
-            if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a Preview evaluation context');
-            contextId = isolated.executionContextId;
-          } catch (error) {
-            if (!(error instanceof Error) || !/No frame for given id found/.test(error.message) || attempt === 5) throw error;
-            await new Promise(resolve => setTimeout(resolve, 40));
-          }
-        }
-        if (contextId === undefined) throw new Error(`Could not create a Preview evaluation context for ${lastFrames.join(' | ')}`);
-        const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-        if (response.exceptionDetails) {
-          const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
-          throw new Error(`Preview Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'})`);
-        }
-        const value = (response.result as { value?: unknown } | undefined)?.value;
-        return value as T;
-      });
+      return await evaluatePreviewTarget<T>(target, expression);
     } catch (error) {
       if (!(error instanceof Error) || !/Cannot find context with specified id/.test(error.message) || evaluationAttempt === 2) throw error;
       await new Promise(resolve => setTimeout(resolve, 40));
@@ -789,19 +794,57 @@ export async function dispatchPreviewKeyboardKey(key: 'Tab' | 'Escape' | 'Enter'
 }
 
 /** Opens a native Preview control using a real DevTools mouse input event. */
-export async function clickPreviewElement(selector: string): Promise<void> {
-  const geometry = JSON.parse(await evaluatePreviewWebview<string>(`JSON.stringify((() => {
-    const element = document.querySelector(${JSON.stringify(selector)});
-    if (!element) throw new Error('Preview element not found: ' + ${JSON.stringify(selector)});
+export async function clickPreviewElement(selector: string, expectedDocumentUri?: string): Promise<void> {
+  const target = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT), expectedDocumentUri);
+  const geometry = JSON.parse(await evaluatePreviewTarget<string>(target, `JSON.stringify((() => {
+    const matches = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
+    const isPainted = element => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || element.getClientRects().length === 0) return false;
+      for (let parent = element; parent instanceof Element; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0 || parent.hidden) return false;
+      }
+      return true;
+    };
+    const element = matches.find(isPainted);
+    if (!element) throw new Error('No painted Preview element found: ' + ${JSON.stringify(selector)} + '; matches=' + matches.length);
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
     const rect = element.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.right <= 0 || rect.left >= window.innerWidth) {
+      throw new Error('Preview element remains outside the viewport after scrolling: ' + JSON.stringify({ top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));
+    }
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
   })())`)) as { x: number; y: number };
-  const target = await waitForPreviewTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
+  if (expectedDocumentUri) {
+    await evaluatePreviewTarget<void>(target, `(() => {
+      window.__guitardslPreviewClickProbe = null;
+      document.addEventListener('click', event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const match = target?.closest(${JSON.stringify(selector)}) ?? null;
+        const binding = target?.closest('[data-visual-binding]') ?? null;
+        window.__guitardslPreviewClickProbe = {
+          matched: !!match,
+          node: target?.tagName ?? null,
+          binding: binding?.getAttribute('data-visual-binding') ?? null,
+          x: event.clientX, y: event.clientY,
+          editMode: document.body?.dataset.previewEditMode,
+          editAvailable: document.body?.dataset.previewEditAvailable
+        };
+      }, { capture: true, once: true });
+    })()`);
+  }
   await withDevToolsTarget(target, async send => {
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: geometry.x, y: geometry.y });
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
   });
+  if (expectedDocumentUri) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const probe = await evaluatePreviewTarget<string>(target, 'JSON.stringify(window.__guitardslPreviewClickProbe)');
+    const click = JSON.parse(probe) as { matched?: boolean; node?: string | null; binding?: string | null; x?: number; y?: number; editMode?: string; editAvailable?: string } | null;
+    if (!click?.matched) throw new Error(`Preview click did not hit ${selector}; observed=${probe}; geometry=${JSON.stringify(geometry)}`);
+  }
 }
 
 export async function activateInspectorControlWithKeyboard(
@@ -988,6 +1031,7 @@ export async function inspectWorkbenchLayout(): Promise<string> {
       expression: `JSON.stringify({ viewport: { width: innerWidth, height: innerHeight },
         editor: [...document.querySelectorAll('.part.editor')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right) }; }),
         parts: Object.fromEntries(['sidebar', 'auxiliarybar'].map(name => { const node=document.querySelector('.part.'+name); if(!node) return [name, { visible:false, width:0 }]; const r=node.getBoundingClientRect(); const style=getComputedStyle(node); return [name, { visible:style.display!=='none' && style.visibility!=='hidden' && r.width>0 && r.height>0, width:Math.round(r.width) }]; })),
+        statusbar: (() => { const node=document.querySelector('.part.statusbar'); if(!node) return { visible:false, height:0 }; const r=node.getBoundingClientRect(); const style=getComputedStyle(node); return { visible:style.display!=='none' && style.visibility!=='hidden' && r.width>0 && r.height>0, height:Math.round(r.height) }; })(),
         groups: [...document.querySelectorAll('.editor-group-container')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right), classes: node.className }; }),
         sashes: [...document.querySelectorAll('.monaco-sash')].map(node => { const r=node.getBoundingClientRect(); return { width: Math.round(r.width), left: Math.round(r.left), top: Math.round(r.top), classes: node.className }; }) })`,
       returnByValue: true

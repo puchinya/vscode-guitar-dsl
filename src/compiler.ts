@@ -288,6 +288,8 @@ export interface MeasureData {
   rhythmOrigin: 'explicit' | 'implicit' | 'repeat';
   /** Parser-owned chord positioning mode. Numeric ChordPlacement.beat remains the renderer authority. */
   chordPlacementMode: 'equalSplit' | 'explicitDuration' | 'inline';
+  /** True when the source explicitly marks this measure as having no chord (`N.C.`). */
+  noChordMarker?: boolean;
   /** Exact quarter-beat chord onsets; one entry per chords[] value. */
   chordBeatOffsets: readonly Fraction[];
   isMeasureRepeat?: boolean;
@@ -1823,6 +1825,7 @@ export function parseGuitarDsl(dslContent: string, options?: ParseGuitarDslOptio
         rhythmOrigin: isMeasureRepeat ? 'repeat' : rhythms.length > 0 ? 'explicit' : 'implicit',
         chordPlacementMode,
         chordBeatOffsets,
+        ...(noChordMarker ? { noChordMarker: true } : {}),
         isMeasureRepeat,
         repeatStart: rStart,
         repeatEnd: rEnd,
