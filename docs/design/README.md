@@ -21,8 +21,8 @@
 | [拡張機能仕様 §3.1–§3.2、§4、§4.6](../specs/extension.md) | プレビュー、レンダリング、PDF、再生 | [Preview, rendering, and export](preview-rendering-and-export.md) |
 | [拡張機能仕様 §3.15–§3.16](../specs/extension.md) | Guitar Pro 7/8 のインポート、エクスポート | [Guitar Pro 7/8 interchange](gp78-interchange.md), [Canonical score interchange](interchange.md) |
 | [拡張機能仕様 §3.3、§3.9–§3.10、§4.4–§4B](../specs/extension.md) | コードダイアグラム、楽譜設定、カポ、初心者モード、移調、伴奏 | [Score editing](score-editing.md) |
-| [拡張機能仕様 §3.4、§3.8](../specs/extension.md) | YouTube / ローカル音声の採譜 | [Audio transcription](audio-transcription.md) |
-| [拡張機能仕様 §3.5–§3.7、§3.11–§3.13、§4C–§7](../specs/extension.md) | キー設定、コマンド、サイドバー、診断、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md), [AI integration](ai-integration.md) |
+| [拡張機能仕様 §3.8](../specs/extension.md) | ローカル WAV 採譜 | [Audio transcription](audio-transcription.md) |
+| [拡張機能仕様 §3、§3.11–§3.13、§4C–§7](../specs/extension.md) | コマンド、設定、サイドバー、診断、Help、ローカライズ | [VS Code editor experience](vscode-editor-experience.md), [AI integration](ai-integration.md) |
 | [拡張機能仕様 §8](../specs/extension.md) | VS Code AI skills、instructions、tools | [AI integration](ai-integration.md) |
 | [言語構文仕様 §1–§10、§12–§13、§15–§18](../specs/guitardsl-syntax.md) | 言語構文、スコアイベント、音符と歌詞、再利用フラグメント | [Language and score processing](language-and-score-processing.md) |
 | [言語構文仕様 §11、§14](../specs/guitardsl-syntax.md) | レンダリング、レイアウト、表示設定 | [Preview, rendering, and export](preview-rendering-and-export.md), [Language and score processing](language-and-score-processing.md) |
@@ -41,7 +41,7 @@
 | [Guitar Pro 7/8 interchange](gp78-interchange.md) | GPIF archive reader/writer、track policy、InterchangeScore 変換、安全なファイル公開 |
 | [Preview, rendering, and export](preview-rendering-and-export.md) | プレビュー、SVG、ページネーション、PDF、プレビュー再生 |
 | [Score editing](score-editing.md) | コード編集、設定、カポ、初心者モード、移調、伴奏編集 |
-| [Audio transcription](audio-transcription.md) | YouTube / Audio MIR、Music IR、GuitarDSL への直列化 |
+| [Audio transcription](audio-transcription.md) | ローカル Audio MIR、Music IR、GuitarDSL への直列化 |
 | [VS Code editor experience](vscode-editor-experience.md) | 言語貢献、コマンド、Outline、診断、Help、サイドバー、ローカライズ |
 | [AI integration](ai-integration.md) | AI tool 境界、文書対象の解決、変換アダプター |
 

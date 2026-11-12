@@ -3,8 +3,16 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-11
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+- **最終更新日**: 2026-11-13
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 は承認済みContractに基づき実装中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+
+## Issue #164: YouTube採譜の撤去と練習ガイドのCompact固定
+
+- **状態**: 承認済みImplementation Contractの実装完了。YouTube/Gemini採譜経路、公開キー管理コマンドと設定、基準Music IR枝を撤去し、SidebarからローカルWAV採譜を直接起動する。Practice GuideはCompact表示に固定し、旧 `guideViewMode: 'detailed'` は復元時に無視して次の `setState` に含めない。ローカルAudio MIR、厳格な共通Music IR validator/serializer、Practiceの再生・ページ・grid・表示トグルは維持する。
+- **実装・文書**: Help、仕様、設計、ステータス、パッケージ寄与、ユニット/E2Eを同期済み。旧 `guitardsl.geminiApiKey` はactivation時に一度だけ SecretStorage.delete を試み、値を読まず、同期throwとPromise rejectionを無視する。
+- **画面証拠**: [Issue #164のPractice Guide画面一覧](evidence/issue-164/README.md)。VS Code Extension Development Host（macOS arm64 / VS Code 1.146.0）で400/421/600/1100 CSS px × JA/EN × Light/Dark × Melody ON/OFF（32枚）、400px × grid4/8/16 × JA/EN × Light/Dark（12枚）を取得し、全44枚のPNG寸法を検査した。
+- **検証**: `npm run compile:all`、`npm run check:help`、`npm run check:ai`、`npm run test:unit`（1,135 PASS）、サンドボックス外の `npm run test:e2e`（131 PASS / 6 pending）、`npm test`（同じHelp/AI・unit・E2E gate PASS）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,147項目、YouTube/Gemini旧実装なし）、`validate-docs --issue 164`（9 owner files）、`verify-implementation-contract 164`（26,561 bytes / SHA-256 `c64987d34b8e49a8fe1a1fc6d54bfb5b94a78cc9216e4a3a2257a82f33146543`）、`git diff --check` はPASS。VSIXには共有 `out/transcription/model.js` と `serializer.js` のみ含まれる。6件のpendingは既存のcapture/audio依存E2E。Windows/Linux、VoiceOver/NVDAは未検証。
+- **Delivery**: PR作成と `phase:review` 遷移を実施予定。
 
 ---
 
@@ -81,7 +89,7 @@
 
 ## Issue #137: GuitarDSL Sidebar navigation
 
-- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) は 2026-10-18 に `main` へマージ済み、Issue #137 はclosed。A-9〜A-13の指摘対応は、承認済みImplementation Contract comment 6251494436（SHA-256 `353e3d5ec70cb8ca5a049476fed51605b24c63625cab7e3a4c23ebcea32063e6`、25,314 bytes）の範囲内で実装・検証した。結果プレビューの画面証拠をIssue #137へ添付済み。
+- **状態**: [PR #152](https://github.com/puchinya/vscode-guitar-dsl/pull/152) は 2026-10-18 に `main` へマージ済み、Issue #137 はclosed。A-9〜A-13の指摘対応は、承認済みImplementation Contract comment 6251494436（SHA-256 `353e3d5ec70cb8ca5a049476fed51605b24c63625cab7e3a4c23ebcea32063e6`、25,314 bytes）の範囲内で実装・検証した。結果プレビューの画面証拠をIssue #137へ添付済み。YouTube/Geminiとそのパネル証拠は当時の履歴であり、現行版ではIssue #164により削除済みとなる。
 - **実装**: Sidebar を target 行＋5分類にし、Current File はアクティブな GuitarDSL 文書だけを表示する。Preview/PDF/GP は実行時に捕捉したアクティブ文書 URI に固定し、URI の解決失敗時に他文書へ fallback しない。ファイル選択と採譜 source Quick Pick は内部 command で追加し、公開 command contribution は変更しない。YouTube 採譜は SecretStorage 保存成功後に Webview のキー状態を同期し、失敗は成功扱いせず再試行可能にする。処理中の所有権と二重Start防止はパネル破棄後も Host に残る。成功結果はパネル内の読み取り専用プレビューとCopy操作で渡し、文書を自動生成しない。パネルを閉じると結果を破棄する。Webview準備後にHostの最新ジョブ状態を取得し、job IDと単調増加revisionで古い通知を無視する。Import/Export Guitar Pro は VS Code 標準 `music` Codicon を使う。
 - **検証**: macOS arm64 / VS Code 1.142.0。`npm test`（Help/AI同期、unit **1,167件 PASS**、VS Code E2E **104件 PASS / 6件 pending**）、`npm run compile:all`、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,600項目）、`verify-implementation-contract 137`、`validate-docs --issue 137`、`git diff --check` は PASS。E2EのGemini経路は全てfixtureで置き換え、実Gemini APIを呼び出さない規則を `docs/agents/testing.md` に記録している。A-10は成功したDSLのPanel内プレビュー、コピー、文書未生成を、A-11はready後の状態再取得、古いreleaseの無視、Start復旧をUnit/E2Eで確認した。A-12は成功通知を落とした場合のHost result snapshot再取得、単調revisionによる結果表示と所有job一致をUnit/E2Eで確認した。A-13は実WebviewのCopyクリックからHost clipboard adapterまでの成功、localized失敗、結果保持、古いjob ID拒否を確認した。A-9のSecretStorage読み取り失敗はlocalized unknown/error表示、Start復旧、Gemini実行なし、キー・例外本文・stack非露出をUnit/E2Eで確認した。SidebarのURI固定、Guitar Proアイコン、キー保存、進捗、再試行等の既存G137確認も維持する。VS Code/Electron E2Eは `docs/agents/testing.md` に従いサンドボックス外で実行。
 - **A-9追加検証（A-9時点）**: `npm run compile:all` と `npm run test:unit`（1,165 PASS）、サンドボックス外の `npm run test:e2e`（103 PASS / 6 pending）、`npm run check:help`、`npm run check:ai`、`npm run vscode:prepublish` は PASS。初期 `SecretStorage.get` reject は localized unknown 状態とキー再入力導線を、Start reject は localized error、Start復旧、Gemini呼び出しなし、生成文書なし、APIキー・例外本文・stack非露出を unit / 実Webview E2E で確認。
@@ -233,20 +241,17 @@
 | | Issue #93 再生 / Practice Mode コマンド | ✅ 完了 | `guitardsl.playback.togglePlayPause` / `guitardsl.playback.stop`、`guitardsl.practice.toggle` / `setLoopStart` / `setLoopEnd` / `clearLoop` / `slower` / `faster` |
 | | `guitardsl.editChordDiagram` (コードダイアグラム編集) | ✅ 完了 | コマンドパレット（クイックピック）、`chord` 行の CodeLens、プレビューのダイアグラムクリック |
 | | `guitardsl.editScoreSettings` / `guitardsl.editCapo` (楽譜設定 / カポ・弾きやすさ) | ✅ 完了 | コマンドパレットから共通 Inspector の Capo / Playability を開く。Capo / Beginner / Transpose の設定 UI は Inspector に集約 |
-| | `guitardsl.transcribeYouTube` (YouTube自動採譜・実験的) | 🧪 実験的 | 4/4 の Music IR を構造検証し、DSL のパース検証に成功した場合だけ採譜パネル内に読み取り専用プレビューを表示し、Copy からエディタへ貼り付ける。文書は自動作成しない。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化する。実音の精度は未検証で、生成結果は下書きとして要確認 |
-| | `guitardsl.setGeminiApiKey` (APIキー設定) | ✅ 完了 | コマンドパレットのみ。SecretStorageに安全保存 |
-| | `guitardsl.clearGeminiApiKey` (APIキー削除) | ✅ 完了 | コマンドパレットのみ。SecretStorageから削除 |
-| | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットのみ。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、既存の検証・シリアライザで DSL 化 |
+| | `guitardsl.transcribeAudio` (ローカル音源採譜・実験的) | 🧪 実験的 | コマンドパレットとSidebarから直接起動。デスクトップ版のみ。PCM WAV を Worker 上の Rust/WASM で解析し、厳格な共通validator/serializerで DSL 化 |
 | | `guitardsl.applyStrummingPattern` (伴奏パターン変更) | ✅ 完了 | コマンドパレット（範囲 → 拍子に合うカテゴリ → 用途グループ区切りのパターン）、セクション見出し行の CodeLens（セクション番号）。正規カタログ 58 件を伴奏エンジンで適用。リズムの範囲だけを 1 回の元に戻せる編集で書き換え |
 | | `guitardsl.suggestChordProgression` (コード進行候補) | ✅ 完了 | chord cell の補完と CodeLens から決定論的な候補を提示。単一コード補完は prefix のみを置換し、多小節の置換・末尾追加は共通 Inspector で選択・確認後に適用 |
 | | `guitardsl.openHelp` (ヘルプを開く) | ✅ 完了 | コマンドパレット、プレビューツールバーのヘルプボタン、サイドバー。同梱の `media/help/guitardsl-help.{ja,en}.md` を組み込み Markdown プレビューで表示。GuitarDSL ドキュメント不要 |
 | | `guitardsl.openInspector` (共通 Inspector を開く, Issue #133) | ✅ 実装済み・PR #138 マージ済み | Secondary Sidebar の単一 Webview View。アクティブな GuitarDSL 文書の URI / version のみを表示し、対象がなければローカライズした空状態。進行の一時試聴はInspector内AudioContext、Extension Hostの排他leaseはPreview停止ACK後に付与する。候補選択はソースを編集せず、確認済みApplyだけが1回のUndo可能な編集になる |
 | | `guitardsl.newDocumentFromTemplate` / `guitardsl.openSample` (テンプレートから新規作成 / サンプルを開く) | ✅ 完了 | コマンドパレット、サイドバー。3 つのテンプレート・5 つの同梱サンプルから無題の編集可能なドキュメントを作成 |
 | **サイドバー** | アクティビティバーの `guitardslSidebar` / Tree View `guitardsl.sidebar` | ✅ 完了 | アクティブなGuitarDSL文書のTarget行と5分類（Create、Open / Import、Edit Assist、Export、Help）。Current Fileの対象はアクティブ文書のみ。`onView:guitardsl.sidebar` で起動 |
-| **設定** | `guitardsl.gemini.model`, `guitardsl.transcription.compressRepeats`, `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
+| **設定** | `guitardsl.expandPageBreakRepeats` | ✅ 完了 | 仕様 §3.7 と `package.json` の一致を `check:help` で検査 |
 | **ヘルプ同期** | `docs/help/` → `media/help/`（`generate:help` / `check:help`） | ✅ 完了 | 仕様セクションの割り当てとダイジェスト、見出しごとの `help-sources` による本文の所有、コマンド・設定の仕様との一致、NLS、生成物の最新性を `npm test` で検査。コマンド・設定一覧は `package.json` から生成 |
 | **ローカル音源採譜 (Audio MIR, 実験的)** | `wasm/crates/audio-mir/`, `src/audioMir/` | 🧪 実験的 | 4/4 のみ。テンプレート分類器によるコード推定（学習モデルは未導入。倍音の差し引き {3,5,6} と 7th ゲートで maj7/7 への偏りを抑制）、拍は学習済みモデル Beat This! small（ONNX を tract で推論、最大 2 Worker で並列。拍が得られなければ従来方式に切り替え）、ダウンビート、8/12/16 グリッドのストローク位置。既知の限界: 約 100 Hz 未満のベースは 8192 点 FFT の分解能を超える／ギター以外のドラム無し音源（ピアノ・ストリングス・パッド）では倍・半分テンポの選択を誤りやすい（#59）／5 分の曲の解析に約 45 秒・ピーク約 1.5 GB（M1）／ファンク・ジャズ等のテンションの多い和音のルート精度が低い／近接音程のうなりやキックの残響が偽アタックになりうる／ダウン・アップは位置からの推定／小節をまたぐサステイン・ゴースト・アルペジオは未対応 |
-| **YouTube自動採譜** | `src/transcription/` (Music IR, Gemini, Serializer, URL) | 🧪 実験的 | 4/4 限定、構造検証・決定論的シリアライズ・DSL パース検証は実装済み。#45（PR #46）はハーモニー／グルーヴ／カポ処理を精緻化するが、実音の精度は未検証で非実験的な分類を支える根拠がない。生成結果は下書きとして要確認 |
+| **YouTube自動採譜** | 旧 `src/transcription/` ネットワーク経路 | ⛔ 削除（Issue #164） | Gemini SDK・URL処理・生成用パイプラインとUIを削除。履歴は上記Issue #137と旧PR #46の記録に限る |
 | **コードダイアグラムエディタ** | Webview（プリセット、指板グリッド、指番号、セーハ、自動判定、保存） | ✅ 完了 | スコアの調弦・カポでプリセット照合と自動判定。Webview 内のクリック操作は自動テストの対象外（パネルが開くことと保存処理を E2E で確認） |
 | **カポ推論・弾きやすさ** | `src/capo.ts`（汎用推論 API、弾きやすさ、ソースを保つカポ変換、有効 DSL） | ✅ 完了 | 純粋モジュール（VS Code・採譜に非依存）。候補 0〜12、スコアの調弦で各カポの形を解決。推奨は最高スコア・同点は小さいカポ。ラベル付きコード・定義との衝突は変換不可。採譜への組み込みは未実施 |
 | **初心者モード** | `src/beginnerMode.ts`（カポ + 簡単なコードへの置き換え）、`src/previewBeginner.ts`、楽譜設定の `beginner` セクション | ✅ 完了 | スコアの調弦を原曲と変換後の評価に保持。バレーコード許可／使用しない（絶対条件）、置き換えは固定の規則のみ。評価する押さえ方は描画されるもの（`chord` 定義または既定の押さえ方）だけ。既定の押さえ方がセーハの長三和音／短三和音は `forbid` で `maj7` / `m7` へ置き換え、両方セーハ（例 `Bm`）はそのカポで不可 |
@@ -313,7 +318,7 @@
   - `tests/unit/audioMirEvaluator.test.ts`: 評価スクリプトの Harte 表記の語彙縮約、時間加重の各一致率、GuitarSet JAMS（演奏側コード・テンポ）の読み取り、テンポ Acc1/Acc2
   - `tests/unit/audioMir.test.ts`: `AudioMirResultV1` の実行時検証（版・tick・スロット重複・非有限値・コード名/キー名）、アダプタ（1 セクション、コード/リズム 8・12・16 グリッドの各小節ちょうど 4 拍、先頭休符・`r1`・3 連、方向の決定的割り当て、strict 検証をそのまま通過、再パースでエラー 0）、Worker プロトコル（1 回だけ確定・遅延メッセージ無視）、推論プール（並列数の上限、完了順に依存しない集約、キャンセルで全 Worker 終了、推論 Worker の失敗・不正メッセージ）、`tempo.tracker` の検証、コントローラ（多重起動防止、キャンセル、失敗後の再実行、非 file URI、失敗時にドキュメントを作らない、dispose）
   - `tests/unit/beginnerMode.test.ts`: バレーコードの絶対条件（`F → Fmaj7`、全カポでセーハなし）、Standard と Open G での調弦を保つ評価・解なし、カポ 0〜12 の決定的な推奨、通常のカポ推論が変わらないこと、置き換え規則の範囲（ルート・長短の性質を変えない、sus/dim/aug を変えない）、分数コードのベース省略とペナルティ、定義との衝突・保持・未使用警告、ラベル付きコード、ソースのバイト保持（CRLF・調弦・コメント・長さ・メロディ・歌詞）、再解析、積み重ならないこと、カポバーの描画と JA/EN 文言
-  - `tests/unit/transcription.test.ts`: Music IR v1 バリデーション（4/4拍子、BPM、キー、カポ、コード・リズム・メロディ各小節4拍検証、歌詞・音節）、決定論的シリアライザ（DSL構文適合、ゼロエラー診断、カポ出力、`%` 小節リピート活用、`mel:` / `lyr:` 音節歌詞出力、伴奏プリセットの未知 ID・拍子不一致の拒否）、採譜パネルが 4/4 のプリセットだけをファミリー別に出すこと、YouTube URL形式検証、モック化されたGeminiアダプタ（認証エラー秘匿、非JSON防御）
+  - `tests/unit/transcription.test.ts`: strict shared Music IR validation (meter, BPM, key, capo, chords, rhythm, melody and lyrics), deterministic DSL serialization, round-trip diagnostics, invalid IR rejection and retained local-Audio-MIR coverage; YouTube/panel/Gemini adapter cases were removed by Issue #164
   - `tests/unit/scoreEvents.test.ts`: 拍子の解析・既定のグループ・小節の長さ・連桁のまとまり（`3/8` と `3/8(1+1+1)` も拍のグループどおり）、イベント値の正規化、コンテキストの持続と `tempo primo`、イベントの順序・孤立イベント・不正イベントからの回復、拍子ごとの長さ検証、弱起と補完、`%` の拍子境界、フィールで拍数が変わらないこと
   - `tests/unit/transpose.test.ts`: 実音移調（固定カポ・指定カポ・推奨カポ・コードなし）、転調を含む楽譜、オクターブ境界と範囲外、ソースのバイト保持（CRLF・コメント・空白・歌詞・奏法）、ラベル付きコード・定義衝突、オッターヴァとの関係
   - `tests/unit/render-advanced.test.ts`: 構造的な段区切り、全段で揃う第1小節線、転調（打ち消し・臨時記号のリセット・リズムのみの段の `Key:`）、拍子記号、注記欄と改ページ、注記欄を五線に近づける配置（コード名の上の空きへの重ね、強弱記号を一番下の五線・歌詞・低い音のすぐ下に置く）、メロディのある段の見出し（コード名・セクション名等）を五線へ下げる量と、描画された SVG で測ったメロディ譜表のインクとの間隔（記号の種類ごと、複合音価、段をまたぐ H/P・スラー、各サンプル）、同じ小節前の複数強弱記号が重ならないこと、XML エスケープ、オッターヴァ、奏法記号（高音でもベンドの矢印が上向き、装飾音は休符を飛ばして次の音符の左）、連符、従来の楽譜の描画が変わらないこと（リズムのみのサンプルは `origin/main@62fec74`、メロディのあるサンプルは Issue #70 で目視確認した描画とのハッシュ一致）
@@ -340,7 +345,7 @@
 - **テストファイル**: `tests/e2e/extension.test.ts`
 - **検証項目**:
   - 拡張機能のアクティベーション確認
-  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeYouTube`, `guitardsl.transcribeAudio`, `guitardsl.setGeminiApiKey`, `guitardsl.clearGeminiApiKey`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.openInspector`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認
+  - `guitardsl.showPreview`, `guitardsl.exportPdf`, `guitardsl.importGuitarPro`, `guitardsl.exportGuitarPro`, `guitardsl.editChordDiagram`, `guitardsl.editScoreSettings`, `guitardsl.editCapo`, `guitardsl.transcribeAudio`, `guitardsl.applyStrummingPattern`, `guitardsl.suggestChordProgression`, `guitardsl.openHelp`, `guitardsl.openInspector`, `guitardsl.newDocumentFromTemplate`, `guitardsl.openSample` コマンドの登録確認。YouTube/Geminiコマンドが未登録であることはIssue #164のE2Eで確認する
   - サイドバー: ビュー `guitardsl.sidebar` にフォーカスできること
   - Issue #133 Inspector: 単一の Secondary Sidebar Webview View、コマンドによる明示表示、再実行の冪等性、GuitarDSL 以外がアクティブな場合の空状態、編集も他の開いているファイルへのフォールバックも起きないこと
   - Issue #134 progression Inspector: CodeLens 起点の既定4小節・末尾追加、4/8/16小節と置換/追加の再計算、候補選択と Preview A/B、未確認候補/連続適用/`applyEdit=false` のソース不変、Apply 後の1回 Undo、古い Inspector message の拒否、選択時に再生しないこと
@@ -433,5 +438,5 @@
 
 - [ ] **プレビューからエディタへの逆引きジャンプ (Source Mapping)**: プレビュー上の小節をクリックした際に、エディタ側の該当行へカーソルを同期移動する機能。
 - [ ] **変則チューニング・7 弦のコードダイアグラム**: `chord` 定義と自動判定は 6 弦の標準チューニングのみ対応。
-- [ ] **採譜での高度な記譜の推定**: YouTube 採譜・Audio MIR は転調・テンポ変化・拍子・奏法・強弱を推定しない（従来の範囲の DSL を出力する）。
+- [ ] **Audio MIRでの高度な記譜の推定**: ローカルAudio MIRは転調・テンポ変化・拍子・奏法・強弱を推定しない（従来の範囲の DSL を出力する）。
 - [ ] **Guitar Pro 8 TAB 意味論の拡張**: 声部2〜4、長い音価、複雑な連符、部分カポ、追加奏法を既存の共有モデル階層へ追加する。

@@ -49,8 +49,9 @@ describe('GuitarDslSidebarProvider', () => {
     ]);
     assert.deepStrictEqual(commandsOf(section(p, 'openImport')), [
       navigation.SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND, 'guitardsl.importGuitarPro',
-      navigation.SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND
+      'guitardsl.transcribeAudio'
     ]);
+    assert.strictEqual(section(p, 'openImport')[2].label, m.sidebarTranscribeAudio);
     assert.strictEqual((p.getTreeItem(section(p, 'openImport')[1]) as any).iconPath.id, 'music', 'Import Guitar Pro uses a supported Codicon');
     assert.deepStrictEqual(commandsOf(section(p, 'editAssist')), [
       navigation.SIDEBAR_SHOW_PREVIEW_ACTIVE_COMMAND, 'guitardsl.openInspector'
@@ -117,11 +118,13 @@ describe('Sidebar package contributions', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const nls = ['package.nls.json', 'package.nls.ja.json'].map(f => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8')));
 
-  it('uses the exact Experimental command titles and Gemini model descriptions in both locales', () => {
-    assert.strictEqual(nls[0]['command.transcribeYouTube.title'], 'GuitarDSL: Transcribe from YouTube (Experimental)');
-    assert.strictEqual(nls[1]['command.transcribeYouTube.title'], 'GuitarDSL: YouTubeから採譜（実験的）');
-    assert.strictEqual(nls[0]['config.geminiModel.description'], 'Gemini model to use for experimental YouTube audio transcription.');
-    assert.strictEqual(nls[1]['config.geminiModel.description'], 'YouTube 音源の実験的な自動採譜に使用する Gemini モデル。');
+  it('removes retired public commands and Gemini settings in both locales', () => {
+    for (const table of nls) {
+      assert.ok(!('command.transcribeYouTube.title' in table));
+      assert.ok(!('command.setGeminiApiKey.title' in table));
+      assert.ok(!('command.clearGeminiApiKey.title' in table));
+      assert.ok(!('config.geminiModel.description' in table));
+    }
   });
 
   it('contributes the activation event, commands, a single Tree View and the Activity Bar container', () => {
@@ -130,6 +133,10 @@ describe('Sidebar package contributions', () => {
     const commands = pkg.contributes.commands.map((c: { command: string }) => c.command);
     assert.ok(commands.includes('guitardsl.newDocumentFromTemplate'));
     assert.ok(commands.includes('guitardsl.openSample'));
+    assert.ok(commands.includes('guitardsl.transcribeAudio'));
+    for (const retired of ['guitardsl.transcribeYouTube', 'guitardsl.setGeminiApiKey', 'guitardsl.clearGeminiApiKey']) {
+      assert.ok(!commands.includes(retired), `${retired} is not contributed`);
+    }
     assert.ok(!commands.some((command: string) => command.startsWith('guitardsl.navigation.')));
 
     const containers = pkg.contributes.viewsContainers.activitybar;

@@ -22,7 +22,7 @@
 | ドキュメント | 概要 |
 |---|---|
 | [拡張機能仕様](extension.md) | コマンド、エディタ連携、プレビュー、PDFエクスポート、アウトライン、採譜、AI 連携 |
-| [GUI 画面仕様](gui_design.md) | 現行のサイドバー、Preview、Inspector、コード図エディタ、採譜パネルの画面構成 |
+| [GUI 画面仕様](gui_design.md) | 現行のサイドバー、Preview、Inspector、コード図エディタ、ローカル WAV 採譜導線の画面構成 |
 | [GuitarDSL 言語構文仕様](guitardsl-syntax.md) | メタデータ、セクション、小節線、コード、リズム、歌詞、スコアイベント、描画規則 |
 | [Guitar Pro GPIF ファイル形式仕様](guitar-pro-file-format.md) | Guitar Pro 7/8 の `.gp` コンテナ、GPIF 参照構造、GP8.1.5 歌詞配置と import 対応 |
 
@@ -36,7 +36,7 @@
 
 ## Security and privacy
 
-拡張機能のキー管理、外部サービス、ローカル処理の境界は [拡張機能仕様](extension.md) に記載します。言語構文の規則は [言語構文仕様](guitardsl-syntax.md) に記載します。
+拡張機能のローカル WAV 処理と VS Code 所有モデルの境界は [拡張機能仕様](extension.md) に記載します。言語構文の規則は [言語構文仕様](guitardsl-syntax.md) に記載します。
 
 ## Verification strategy
 

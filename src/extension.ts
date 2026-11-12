@@ -32,7 +32,6 @@ import { registerProgressionAssistant, type ProgressionAssistantController, type
 import { planProgressionEdit } from './progressionSourceEdits';
 import { ProgressionAudioLeaseCoordinator } from './progressionAudioLease';
 
-export const GEMINI_API_KEY_SECRET = 'guitardsl.geminiApiKey';
 export const progressionAudioLeaseProbe: { coordinator?: ProgressionAudioLeaseCoordinator } = {};
 
 export interface ExportPdfOptions {
@@ -133,6 +132,12 @@ export function computeDocumentDiagnostics(doc: vscode.TextDocument, locale: Sup
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Remove the retired Gemini credential once, without allowing SecretStorage failures to block activation.
+  try {
+    void Promise.resolve(context.secrets.delete('guitardsl.geminiApiKey')).catch(() => undefined);
+  } catch {
+    // Best effort only; never read or expose the old value.
+  }
   let currentPanel: vscode.WebviewPanel | undefined = undefined;
   let lastActiveGuitarDslDoc: vscode.TextDocument | undefined = undefined;
   let progressionAssistantController: ProgressionAssistantController | undefined;
@@ -1500,28 +1505,6 @@ export function activate(context: vscode.ExtensionContext) {
     new ChordDefinitionCodeLensProvider(chordMsgs)
   );
 
-  const setApiKeyDisposable = vscode.commands.registerCommand('guitardsl.setGeminiApiKey', async () => {
-    const key = await vscode.window.showInputBox({
-      password: true,
-      prompt: msgs.msgPromptApiKey,
-      ignoreFocusOut: true
-    });
-    if (key !== undefined && key.trim() !== '') {
-      await context.secrets.store(GEMINI_API_KEY_SECRET, key.trim());
-      vscode.window.showInformationMessage(msgs.msgApiKeySaved);
-    }
-  });
-
-  const clearApiKeyDisposable = vscode.commands.registerCommand('guitardsl.clearGeminiApiKey', async () => {
-    await context.secrets.delete(GEMINI_API_KEY_SECRET);
-    vscode.window.showInformationMessage(msgs.msgApiKeyCleared);
-  });
-
-  const transcribeYouTubeDisposable = vscode.commands.registerCommand('guitardsl.transcribeYouTube', async () => {
-    const { TranscribePanel } = await import('./transcription/transcribePanel');
-    TranscribePanel.createOrShow(context.extensionUri, context.secrets, currentLocale);
-  });
-
   // Local Audio MIR (experimental): the controller, worker and WASM are loaded on first use.
   // The controller is disposed with the extension, which terminates any active worker.
   let audioMirController: Promise<import('./audioMir/controller').AudioMirController> | undefined;
@@ -1589,9 +1572,6 @@ export function activate(context: vscode.ExtensionContext) {
     symbolDisposable,
     editChordDisposable,
     codeLensDisposable,
-    setApiKeyDisposable,
-    clearApiKeyDisposable,
-    transcribeYouTubeDisposable,
     transcribeAudioDisposable,
     strummingCodeLensDisposable,
     applyStrummingDisposable,

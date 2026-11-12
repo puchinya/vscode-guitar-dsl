@@ -9,6 +9,7 @@
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #145](https://github.com/puchinya/vscode-guitar-dsl/issues/145)
 - Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
+- Related Issue: [Issue #164](https://github.com/puchinya/vscode-guitar-dsl/issues/164)
 - Related design: [Design index](../design/README.md), [VS Code editor experience](../design/vscode-editor-experience.md), [AI integration](../design/ai-integration.md), [Preview, rendering, and export](../design/preview-rendering-and-export.md), [Score editing](../design/score-editing.md), [Audio transcription](../design/audio-transcription.md), [TAB notation](../design/tab-notation.md)
 
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の機能仕様、コマンド、エディタ統合、プレビュー画面およびPDFエクスポート等の外部振る舞いを定義する規範的仕様書（Normative Public Contract）である。
@@ -34,7 +35,7 @@
 
 ### Normative requirements
 
-本書の既存各節に記載されたコマンド、入力制約、出力、エラー、境界条件を規範要件とする。この Schema 2 化では、それらの要件、例、および既存の番号付きトップレベル節を変更しない。
+本書に記載されたコマンド、入力制約、出力、エラー、境界条件を規範要件とする。承認済み Issue による機能の追加・撤去では、関連する契約を更新し、無関係な節番号は変更しない。
 
 ### Observable behavior
 
@@ -42,11 +43,11 @@
 
 ### Error and boundary behavior
 
-診断と入力境界は §5A、コマンドおよびプレビューの失敗時動作は各コマンド・機能節に定義する。YouTube 採譜、ローカル音声採譜、AI 連携の外部境界と失敗条件はそれぞれ §3.4、§3.8、§8 が所有する。
+診断と入力境界は §5A、コマンドおよびプレビューの失敗時動作は各コマンド・機能節に定義する。ローカル音声採譜と AI 連携の境界および失敗条件はそれぞれ §3.8 と §8 が所有する。
 
 ### Security and privacy
 
-外部サービス、資格情報、およびモデル利用の境界は §3.4–§3.8 と §8 に定義する。YouTube 採譜の API キー管理、ローカル音声処理、および VS Code が所有するモデル実行の責務を各節の契約に従って扱う。
+拡張機能は音声採譜やキー管理のための外部サービスを呼び出さない。ローカル音声処理と VS Code が所有するモデル実行の責務は §3.8 と §8 の契約に従って扱う。
 
 ### Verification strategy
 
@@ -100,7 +101,7 @@
 
 ## 3. コマンド仕様 (Commands)
 
-拡張機能は以下の34のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
+拡張機能は以下の31のコマンドを提供する（`package.json` の `contributes.commands` と一致しなければならない。§7.3）。
 
 | コマンドID | コマンドタイトル | 実行可能コンテキスト | アイコン |
 |---|---|---|---|
@@ -114,9 +115,6 @@
 | `guitardsl.editChordDiagram` | `GuitarDSL: Edit Chord Diagram` | コマンドパレット、`chord` 行の CodeLens、プレビューのダイアグラムクリック | - |
 | `guitardsl.editScoreSettings` | `GuitarDSL: Edit Score Settings` | コマンドパレット | - |
 | `guitardsl.editCapo` | `GuitarDSL: Edit Capo / Playability` | コマンドパレット、共通 Inspector の Capo / Playability セクション | - |
-| `guitardsl.transcribeYouTube` | `GuitarDSL: Transcribe from YouTube (Experimental)` | コマンドパレット | - |
-| `guitardsl.setGeminiApiKey` | `GuitarDSL: Set Gemini API Key` | コマンドパレット | - |
-| `guitardsl.clearGeminiApiKey` | `GuitarDSL: Clear Gemini API Key` | コマンドパレット | - |
 | `guitardsl.transcribeAudio` | `GuitarDSL: Transcribe Local Audio (Experimental)` | コマンドパレット | - |
 | `guitardsl.applyStrummingPattern` | `GuitarDSL: Change Accompaniment Pattern (Strumming / Arpeggio)` | コマンドパレット、セクション見出し行の CodeLens | - |
 | `guitardsl.openHelp` | `GuitarDSL: Open Help` | コマンドパレット、プレビュー内ツールバー、サイドバー | - |
@@ -188,56 +186,11 @@ GuitarDSLファイルのスコアプレビューをエディタ横（`ViewColumn
 - **CodeLens**: 構文が正しい各 `chord` 定義行の上に「ダイアグラムを編集」を表示し、そのキーでこのコマンドを実行する。構文エラーの行には表示しない。
 - **プレビュー**: プレビューのダイアグラムをクリックすると、そのダイアグラムのキーでこのコマンドを実行する。
 
-### 3.4 `guitardsl.transcribeYouTube`（実験的）
-Gemini API の動画理解機能を活用し、YouTube の公開動画 URL から GuitarDSL 楽譜（コード、リズム、メロディ）を自動採譜して YouTube パネル内の読み取り専用プレビューに表示する。生成結果はコピーして通常の GuitarDSL エディターへ貼り付けられる。
-
-この機能は実験的な機能として提供する。出力は必ず下書きとして扱い、利用前に人が確認・修正する。構造検証の成功は、採譜内容が音楽的に正しいことを意味しない。実音に対する精度保証や品質 SLA は設けない。実験的の分類を変更するには、受け入れ可能な実音評価の証拠と基準を定める別の承認済み要件が必要となる。
-
-- **パネルを開く**:
-  1. コマンドは singleton の `TranscribePanel` Webview を開くか、既存パネルを再表示する。
-  2. パネルを開いただけでは Gemini を呼び出さず、GuitarDSL ドキュメントも作成・変更しない。
-  3. YouTube URL、マスキングされた API キー、BPM、カポ、ビート種別、伴奏パターン、リピート圧縮、Gemini モデルの各操作は Webview が提供する。伴奏は「自動」（既定）または正規プリセットカタログのうち 4/4 でストレートのフィールに対応（`feelCompatibility` が `any` または `straight` を含む）するプリセットを、ファミリー → パターンの 2 段階で選ぶ。採譜結果には `feel:` を出力しない。
-- **設定パネル**: タイトル、実験的な注意、URL、キー状態とキー管理、詳細設定、開始、進捗 / エラーの順に表示する。キー値は status / log / HTML に含めず、未設定か保存済みかだけを表示する。キーの入力欄はキー管理を開いた時だけ表示し、保存後に空へ戻す。詳細は BPM（自動または 30–300）、カポ（自動または 0–12）、ビート（自動 / 8 / 16）、伴奏ファミリー / プリセット、`compressRepeats`、モデルの順で表示する。既定値・選択肢・既存の message 名と option 形状は維持する。URL が空でなく、保存済みキーまたは入力キーがある場合に限り Webview の開始ボタンを有効にし、URL の最終検証はホストが行う。開始中の二重実行を抑止し、エラー後は再操作できる。ネイティブな `details` / `summary` のような開閉を使い、閉じた領域の入力は Tab 順に含めない。YouTube の実処理キャンセルは追加しない。
-- **API キー**:
-  1. 保存済みキーは `ExtensionContext.secrets` の `guitardsl.geminiApiKey` から読み出す。キーの値を Webview HTML に埋め込まず、保存済みかどうかだけを Webview に渡す。
-  2. Webview の保存操作、または採譜開始時に入力された空でない置換キーによって SecretStorage に保存する。削除操作は SecretStorage の値を削除する。
-  3. 保存済みキーも入力キーもない場合は、パネルにエラーを送り、Gemini を呼び出さない。
-  4. 初期表示時の SecretStorage 読み取りが失敗した場合もパネルを表示し、キー状態をローカライズした「確認できない」として示す。保存済み / 未設定と断定せず、キーの再入力・保存を可能にする。
-  5. Start 時の SecretStorage 読み取りが失敗した場合はローカライズしたエラーを表示して開始を復旧し、Gemini を呼び出さず、文書を生成しない。読み取り失敗時は入力キーでも処理を続けない。
-- **URL**:
-  1. URL は Webview に入力する。
-  2. `isValidYouTubeUrl` はパイプライン開始前に HTTPS かつ `youtube.com`、`www.youtube.com`、`youtu.be` の URL であることを検証する。
-  3. 不正な URL はパネルにエラーを送り、Gemini を呼び出さない。
-- **採譜と進捗**:
-  1. 開始操作は `runTranscriptionPipeline` を実行する。ベースラインの後にハーモニー精緻化を行い、曖昧な場合だけ検証を行う。伴奏が自動の場合はグルーヴ精緻化とローカル最適化を行い、明示プリセットの場合はグルーヴ呼び出しを省略する。最後にカポ等を確定して最終検証する。
-  2. パイプラインの `onStage` は `baseline`、`harmony`、任意の `verification`、自動伴奏時の `groove`、`finalizing` を通知する。`TranscribePanel` はローカライズされた進捗を `postMessage` で Webview のステータス欄に表示する。
-  3. 採譜中は開始ボタンを無効にし、完了またはエラー時に再度有効にする。
-  4. 採譜中にパネルを閉じても、実行中の処理はキャンセルしない。処理が終わるまではパネルを再表示しても開始ボタンを無効にし、進行中の状態を示す。閉じたパネルが所有していた処理の結果は破棄し、未保存ドキュメントを作成・表示しない。処理終了後は再表示中のパネルで再試行できる。
-  5. Webview は message listener を登録してから現在の採譜ジョブ状態を Host に要求する。Host は要求時点の状態、job ID、単調増加する state revision を返信する。採譜中の通知、結果、エラー、状態 snapshot は job ID と revision を持ち、Webview は古い revision または現在の job と一致しない完了通知を無視する。Close→Reopen後の開始可否は一度きりの release 通知に依存しない。
-  6. ベースラインの失敗、および認証・クォータ・ネットワーク・API の例外は自動再試行しない。ハーモニー／グルーヴの API 呼び出しが成功して返した IR が、ベースラインとの形状または構造検証に失敗した場合に限り、同じ Schema で 1 回だけ再要求する。再要求は不正応答の interaction ID を `previous_interaction_id` に指定して連結し、構造エラーとベースラインの骨格をプロンプトに含める。2 回目も不正なら採譜を失敗させる。
-  7. 曖昧コードの検証は再試行しない。検証呼び出しが失敗するか、有効な候補選択が得られない場合は、そのイベントの最上位ハーモニー候補を使う。
-- **検証と出力**:
-  1. 対応する曲は 4/4 拍子のみとする。BPM（30..300）、各小節の合計 4 拍、コード名・音高、カポ、歌詞・音節等を既存の構造・セマンティック制約で検証し、決定論的に GuitarDSL へシリアライズする。推奨カポ（`capo:`）、同一パターンの繰り返し（`%`）、メロディ音符ごとの音節歌詞（`lyr:`）を使う。コードやリズムの内容を自動補修して成功扱いにはしない。
-     - 明示された伴奏プリセットはカタログに存在し、4/4 かつストレートのフィールに対応する必要がある。未知 ID や拍子・フィール不一致はエラーとし、別パターンへ自動置換しない。
-  2. `parseGuitarDsl` のエラー診断が 0 件であることを確認した後、シリアライズ済み DSL を所有 Panel の成功メッセージで送る。Panel はそれを読み取り専用プレビューに表示し、ローカライズされたコピー操作を提供する。成功時も `workspace.openTextDocument` / `showTextDocument` を呼び出さず、新しい文書を自動作成しない。Panel を閉じるとプレビュー内容は破棄する。
-  3. キー、URL、Gemini 呼び出し、構造検証、シリアライズ、DSL 検証のいずれかが失敗した場合は、エラーを Webview に送り、結果プレビューや文書を作成しない。エラー表示やログに API キー、SecretStorage 例外の本文、モデルの生レスポンス、スタックトレースを含めない。
-
-### 3.5 `guitardsl.setGeminiApiKey`
-Gemini API キーを設定・更新する。
-
-- **実行コンテキスト**: コマンドパレットのみ。
-- **処理フロー**: マスキングされた入力ボックスを表示し、入力された文字列を `ExtensionContext.secrets`（`guitardsl.geminiApiKey`）に保存する。設定値（VS Code settings）には保存しない。キャンセル時は何もしない。
-
-### 3.6 `guitardsl.clearGeminiApiKey`
-保存された Gemini API キーを削除する。
-
-- **実行コンテキスト**: コマンドパレットのみ。
-- **処理フロー**: `ExtensionContext.secrets` から `guitardsl.geminiApiKey` を削除し、完了メッセージを表示する。次回の採譜実行時には API キーの入力が求められる。
-
 ### 3.8 `guitardsl.transcribeAudio`（実験的）
-ローカルの PCM WAV ファイルをネットワーク・API キーなしで解析し（ローカル Audio MIR）、コード進行とストローク位置を推定して、GuitarDSL を新しい未保存エディタに開く。Gemini 採譜（§3.4）とは独立している。
+ローカルの PCM WAV ファイルをネットワーク・API キーなしで解析し（ローカル Audio MIR）、コード進行とストローク位置を推定して、GuitarDSL を新しい未保存エディタに開く。ローカル Audio MIR の結果だけを生成する。
+activation 時には旧専用 SecretStorage key `guitardsl.geminiApiKey` の削除を一度だけ開始する。値は読み取らず、Promise の拒否は捕捉して無視する。削除失敗は起動、WAV 採譜、Preview に影響せず、値や例外本文を表示・記録しない。ユーザー設定は変更しない。
 
-- **実行コンテキスト**: コマンドパレット、または Sidebar の採譜元選択から実行できる。デスクトップ版 VS Code のローカル拡張ホストのみ対応。Web 拡張（vscode.dev）とリモート環境には対応しない。
+- **実行コンテキスト**: コマンドパレット、または Sidebar の「ローカル WAV から採譜」項目から直接実行できる。デスクトップ版 VS Code のローカル拡張ホストのみ対応。Web 拡張（vscode.dev）とリモート環境には対応しない。
 - **入力制限**: `showOpenDialog` で WAV を 1 つだけ選択する。選択した URI のスキームが `file` 以外の場合は、未対応環境のメッセージを表示して中止する。受け付ける形式は次のとおり。
   - RIFF/WAVE の非圧縮整数 PCM
   - 16 bit または 24 bit
@@ -271,8 +224,6 @@ Gemini API キーを設定・更新する。
 
 | 設定キー | 型 | デフォルト値 | 説明 |
 |---|---|---|---|
-| `guitardsl.gemini.model` | `string` | `"gemini-3.8-flash"` | YouTube 音源の実験的な自動採譜に使用する Gemini モデル。 |
-| `guitardsl.transcription.compressRepeats` | `boolean` | `false` | YouTube 自動採譜パネルの「反復の圧縮」オプションの初期値。有効にすると、コードとメロディが一致する連続セクションを反復記号（`\|: :\|`）と複数行歌詞に圧縮して出力する。 |
 | `guitardsl.expandPageBreakRepeats` | `boolean` | `true` | プレビューおよび PDF 出力で、ページ先頭の小節が小節リピート記号（`%`）の場合に展開して前小節の内容を表示する。 |
 
 設定キーの集合は `package.json` の `contributes.configuration.properties` と一致しなければならない（§7.3）。
@@ -469,7 +420,7 @@ Preview 上部には高さ 48 px の再生バーを固定表示し、その直�
 
 ヘッダーのコードダイアグラムはクリックでき（ポインタ表示、ホバー時に薄くハイライト）、クリックするとそのダイアグラムをコードダイアグラムエディタで開く（§3.3）。
 
-Practice を有効にすると、既存の再生行・楽譜設定行・Practice 操作行を保ったまま、下端固定の練習ガイドを表示する。ガイドは演奏順の現在位置に追従し、メロディ、歌詞、奏法、コード名、コード図と次のコードを示す。メロディの表示切替はガイド内のメロディ行だけに適用する。コンパクト／詳細グリッド、ペア更新／連続スクロール、容量、奏法 SVG、ページ交差切替の規範は §4.6「Practice guide pages and SVG strokes」を参照する。ガイド表示と表示グリッドは Preview 文書別の一時状態であり、DSL、`PlaybackTimeline`、音源、通常譜面 SVG、PDF を変更しない。
+Practice を有効にすると既存の再生行・楽譜設定行・Practice 操作行を保ち、下端固定のCompact練習ガイドを表示する。ガイドは演奏順の現在位置に追従し、メロディ、歌詞、奏法、コード名、コード図と次のコードを示す。メロディの表示切替はメロディ行だけに適用する。Compact 4小節、前後ページ、グリッド、折りたたみ、奏法SVGの規範は §4.6「Practice guide pages and SVG strokes」に従う。旧詳細表示を含む復元状態でもCompactに固定し、view modeを今後のWebview stateへ保存しない。ガイド表示と設定はPreview文書別の一時状態であり、DSL、PlaybackTimeline、音源、通常譜面SVG、PDFを変更しない。
 
 ### 4.3 楽譜レンダリング仕様
 - **ページ SVG**: 各シート（物理ページ）を用紙サイズの単一 SVG として描画する。ヘッダー、コードダイアグラム、楽譜本体、ランニングヘッダー、フッターはすべて SVG 内に描画し、プレビューと PDF は同一の SVG から生成される。
@@ -556,44 +507,23 @@ Preview の HTML には Playback 操作と Practice Mode を表示する。操�
 
 `.m` は同じ Preview のギター伴奏バスで発音中の voice と短い release tail を即時停止し、新しい attack を作らない。メロディ、メトロノーム、他セッションには作用しない。休符 `rN` は伴奏を停止しない。`.m` と同時刻のイベントは消音を先に処理し、その後に他の新規攻撃を予約する。Seek、Loop、速度変更、Pause、Stop、再構築と破棄では現在の Webview generation が予約音を cancel または短く fade し、voice を解放する。
 
-#### Practice guide pages and SVG strokes (Issues #155, #162)
+#### Practice guide pages and SVG strokes (Issues #155, #162, #164)
 
-Practice ON では既存 Preview の下端固定ガイドを使い、メロディ、歌詞、奏法、コード名、コード図の順に置く。コンパクト表示は常に4小節容量で、実在する演奏出現だけを表示する。左ラベルレールはコンパクトと詳細グリッドの両方で非表示にして幅を割り当てない。詳細グリッドはタイムラインを左列、次コード欄を右列に置き、幅600 CSS px以下では `minmax(0, 1fr) 96px`、それより広い場合は `minmax(0, 1fr) 112px` とする。480 CSS px以下のCompactは次コード名と図を上段に置き、481–600 pxでは `minmax(0, 1fr) 96px`、601 px以上では `minmax(0, 1fr) 112px` の右欄に置く。詳細グリッド、設定UI、文書別の一時状態は維持し、音源、`PlaybackTimeline`、通常譜面 SVG、PDF を変更しない。
+Practice ON では既存 Preview の下端固定ガイドを使い、メロディ、歌詞、奏法、コード名、コード図の順に置く。Compact は常に4小節容量で実在するPlayback occurrenceだけを表示し、左ラベルレールは設けない。表示モード選択UIや旧詳細タイムラインDOMは作らない。guideCollapsed（42 px）、guideGrid（auto / 4 / 8 / 16）、メロディ・コード図表示、ページ前後移動は維持する。旧stateのdetailed値は無視してCompactを表示する。guideViewModeは以後のsetStateへ含めない。
 
-コンパクト4小節の音楽情報は1小節1枚のSVGに置き、外側の操作 UI と次コード帯はHTML/CSSに残す。各SVGの拍座標は `x = 2 + beat / measureBeats * (slotWidth - 4)` とし、viewBox幅と実測CSS幅を合わせる。実ページ幅 `W` に対して4slotの幅を `[W/4, W/4, W/4, W-3*(W/4)]` とし、端数は最後のslotに配分して総幅を正確に `W` にする。小節カード間、bank間、Compactレイアウトの行/列gapは0 pxとし、隣接カードは接する。文字や図の内容でカード幅を増やさず、横overflowを1 CSS px以下にする。320 / 360 / 400 / 421 / 480 / 481 / 600 / 601 / 840 / 1100 / 1600 CSS pxで4小節を同時に可視にする。詳細グリッドのテキスト衝突は縦行で解消する。Compactの歌詞は選択中verseだけを各小節に一段表示し、レーン高さ28 px、baseline y=19、data-guide-row=0を固定する。表示中のメロディlaneは24 px ruler直後から64 pxとし、歌詞の有無・verse・現在テキストでlane位置、高さ、pitch mapping、barのy座標を変えない。各セル幅は次の異なる歌詞開始位置、小節端、歌詞の有効durationに対応する音価幅を上限とし、音節とeventIndexで対応するメロディ音の最短横幅を考慮する。同拍歌詞は等分し、melismaでは拡張後durationを使う。同じ曲のCompact歌詞は全演奏出現で一つの共通font-sizeを使う。サイズは全メロディpitch-barの最短幅 `durationBeats / measureBeats * (slotWidth - 10)` を基準にし、0.25 pxのセル安全余白を引いて4～13 pxに収める。歌詞文字列、音節、verse、bank/pageでは変えず、slot幅変更時に曲全体を再計算する。各セルは共通サイズのまま収まる先頭grapheme prefixを表示する。textLength、lengthAdjust=spacingAndGlyphs、scaleX、非等方transformは禁止する。一文字graphemeはセルに収まる限り実文字を表示し、複数graphemeは4 pxで収まる最大の先頭文字列を表示する。共通サイズでも先頭graphemeがセルに収まらない場合は、その位置に時間位置マーカーを置く。元の全文、title、ARIA名、event順、beat/Fractionを保持し、他verseは非表示DOMに残す。ヘッダーに現在歌詞の重複ラベルやテキスト欄を置かない。選択verseの歌詞はメロディ下の固定28 px lyrics laneに一段で表示し、全source text、title、ARIA名、event順、beat/Fractionを保持する。ガイド本体は横スクロールしない。奏法の矢印とwaveは一つの横一段に置き、正確な拍/Fractionとxアンカーを保持する。CompactのPMは矢印の下に独立した9 px太字SVG注記として置き、PMの有無でattackのpath、x/y、自然幅を変えない。同一小節でPM attackのeventEndと次のeventStartが正確に一致する区間を一つのPM runにまとめ、非PM attack、rest、小節境界で分割する。runラベルは区間中央へ置き、ラベル間に2 px未満の衝突があれば注記だけを安定順で縦に段組みする。注記行数とlane高は全演奏出現の最大値から決め、page/bank/fade中に固定する。元event、Fraction、ARIAとplayback stateを保持する。Compact奏法SVGは詳細グリッドと別のgeometryを使う。DOWN/UP attackとgrid4/8/16継続waveは、後述のContract v24に定める共通15×47 SVG masterを使う。DOWN shaft/headは `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、UPは `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、waveは `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` とし、headはcurrentColorで塗りつぶす。waveはarrow上端からY=21pxへ置き、描画順はwaves→attacks→PMを保つ。密な区間では `translate(x,y) scale(s,s)` でSVG全体を縦横同率に縮小し、path、Fraction、event、ARIA/titleを保つ。縮小後に最低の幅・高さ・stroke幅は要求しない。v22の3px以上のpainted wave/arrow clearance、20pxのtechnique-lane gutter、10px以上のpainted technique/chord-name clearance、4小節と全コード図表示を維持する。以前の4×30 attack、5.6×30 wave、grid16三段階path、shaft 26px・stroke 1pxの表示下限は歴史的仕様であり、v24に適用しない。Compactのコード名はrender時の不変な自然幅metadataからresizeごとに再割当し、狭幅後の広幅で元の幅へ戻す。必要な場合だけ省略記号で表示し、全文を `title` とARIAに残す。歌詞全文はdata、`title`、ARIA名に保持し、密度超過時はセル内表示だけを省略できる。現在歌詞をヘッダーに重複表示しない。音符、奏法、wave、コード図は省略しない。Compactのメロディ休符はglyphやDOM/SVG要素を出力せず、その時間幅を空白に保ち、後続pitch barの拍位置とdurationを維持する。詳細グリッド、通常譜面SVG/PDF、DSL、playbackの休符表示・意味と奏法restの意味は変えない。Compact奏法の通常/past/next/current色は `#1f2937` / `#475569` / `#37465e` / `#005f85` とし、白背景で4.5:1以上のcontrastを保つ。past/nextのopacityは下げず、currentは色相や太さでも区別する。
+コンパクト4小節の音楽情報は1小節1枚のSVGに置き、外側の操作 UI と次コード帯はHTML/CSSに残す。各SVGの拍座標は `x = 2 + beat / measureBeats * (slotWidth - 4)` とし、viewBox幅と実測CSS幅を合わせる。実ページ幅 `W` に対して4slotの幅を `[W/4, W/4, W/4, W-3*(W/4)]` とし、端数は最後のslotに配分して総幅を正確に `W` にする。小節カード間、bank間、Compactレイアウトの行/列gapは0 pxとし、隣接カードは接する。文字や図の内容でカード幅を増やさず、横overflowを1 CSS px以下にする。320 / 360 / 400 / 421 / 480 / 481 / 600 / 601 / 840 / 1100 / 1600 CSS pxで4小節を同時に可視にする。Compactの歌詞は選択中verseだけを各小節に一段表示し、レーン高さ28 px、baseline y=19、data-guide-row=0を固定する。表示中のメロディlaneは24 px ruler直後から64 pxとし、歌詞の有無・verse・現在テキストでlane位置、高さ、pitch mapping、barのy座標を変えない。各セル幅は次の異なる歌詞開始位置、小節端、歌詞の有効durationに対応する音価幅を上限とし、音節とeventIndexで対応するメロディ音の最短横幅を考慮する。同拍歌詞は等分し、melismaでは拡張後durationを使う。同じ曲のCompact歌詞は全演奏出現で一つの共通font-sizeを使う。サイズは全メロディpitch-barの最短幅 `durationBeats / measureBeats * (slotWidth - 10)` を基準にし、0.25 pxのセル安全余白を引いて4～13 pxに収める。歌詞文字列、音節、verse、bank/pageでは変えず、slot幅変更時に曲全体を再計算する。各セルは共通サイズのまま収まる先頭grapheme prefixを表示する。textLength、lengthAdjust=spacingAndGlyphs、scaleX、非等方transformは禁止する。一文字graphemeはセルに収まる限り実文字を表示し、複数graphemeは4 pxで収まる最大の先頭文字列を表示する。共通サイズでも先頭graphemeがセルに収まらない場合は、その位置に時間位置マーカーを置く。元の全文、title、ARIA名、event順、beat/Fractionを保持し、他verseは非表示DOMに残す。ヘッダーに現在歌詞の重複ラベルやテキスト欄を置かない。選択verseの歌詞はメロディ下の固定28 px lyrics laneに一段で表示し、全source text、title、ARIA名、event順、beat/Fractionを保持する。ガイド本体は横スクロールしない。奏法の矢印とwaveは一つの横一段に置き、正確な拍/Fractionとxアンカーを保持する。CompactのPMは矢印の下に独立した9 px太字SVG注記として置き、PMの有無でattackのpath、x/y、自然幅を変えない。同一小節でPM attackのeventEndと次のeventStartが正確に一致する区間を一つのPM runにまとめ、非PM attack、rest、小節境界で分割する。runラベルは区間中央へ置き、ラベル間に2 px未満の衝突があれば注記だけを安定順で縦に段組みする。注記行数とlane高は全演奏出現の最大値から決め、page/bank/fade中に固定する。元event、Fraction、ARIAとplayback stateを保持する。Compact奏法SVGは同じCompact geometryに従う。DOWN/UP attackとgrid4/8/16継続waveは、Issue #162で定めた共通15×47 SVG masterを使う。DOWN shaft/headは `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、UPは `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、waveは `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` とし、headはcurrentColorで塗りつぶす。waveはarrow上端からY=21pxへ置き、描画順はwaves→attacks→PMを保つ。密な区間では `translate(x,y) scale(s,s)` でSVG全体を縦横同率に縮小し、path、Fraction、event、ARIA/titleを保つ。縮小後に最低の幅・高さ・stroke幅は要求しない。v22の3px以上のpainted wave/arrow clearance、20pxのtechnique-lane gutter、10px以上のpainted technique/chord-name clearance、4小節と全コード図表示を維持する。以前の4×30 attack、5.6×30 wave、grid16三段階path、shaft 26px・stroke 1pxの表示下限は歴史的仕様であり、v24に適用しない。Compactのコード名はrender時の不変な自然幅metadataからresizeごとに再割当し、狭幅後の広幅で元の幅へ戻す。必要な場合だけ省略記号で表示し、全文を `title` とARIAに残す。歌詞全文はdata、`title`、ARIA名に保持し、密度超過時はセル内表示だけを省略できる。現在歌詞をヘッダーに重複表示しない。音符、奏法、wave、コード図は省略しない。Compactのメロディ休符はglyphやDOM/SVG要素を出力せず、その時間幅を空白に保ち、後続pitch barの拍位置とdurationを維持する。通常譜面SVG/PDF、DSL、playbackの休符表示・意味と奏法restの意味は変えない。Compact奏法の通常/past/next/current色は `#1f2937` / `#475569` / `#37465e` / `#005f85` とし、白背景で4.5:1以上のcontrastを保つ。past/nextのopacityは下げず、currentは色相や太さでも区別する。
 
-幅480 px以下では次コード欄を上段にし、下段は4小節の1列にする。Compact時は4小節列と次コード欄の間を0 pxにし、境界は0.5 CSS px以内で接続する。境界を示す1 px線は維持し、次コード欄の内部paddingは変えない。上段配置ではページ上端の8 px余白をなくす。Compact 481–600 pxは4小節と96 pxの次コード欄、601 px以上は4小節と112 pxの次コード欄を使う。各slot幅は最終ページの実 `clientWidth` を4等分し、`[W/4, W/4, W/4, W-3*(W/4)]` とする。端数は最後のslotに配分し、合計幅を `W` に一致させる。2bank内とbank間のCSS gapは0 pxで、隣接カードは端で接する。小節線はslot端に置き、拍の内側5 px insetは保つ。コード図は共有voicingを使った144×144 viewBoxのネストSVGで、測定slot幅ごとに全演奏出現で同じ正方形サイズを使う。サイズは全コード区間の最小利用幅を上限にし、各区間中央へ置く。図lane内に上下4 px以上を確保して全体を表示し、crop/omitしない。次コード図は44～52 pxの正方形にする。コード名と図は各コード区間の中点で揃える。幅、grid、表示切替、文書変更時の再計測と高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFで行う。
+幅480 px以下では次コード欄を上段にし、下段は4小節の1列にする。Compact時は4小節列と次コード欄の間を0 pxにし、境界は0.5 CSS px以内で接続する。境界を示す1 px線は維持し、次コード欄の内部paddingは変えない。上段配置ではページ上端の8 px余白をなくす。Compact 481–600 pxは4小節と96 pxの次コード欄、601 px以上は4小節と112 pxの次コード欄を使う。各slot幅は最終ページの実 `clientWidth` を4等分し、`[W/4, W/4, W/4, W-3*(W/4)]` とする。端数は最後のslotに配分し、合計幅を `W` に一致させる。2bank内とbank間のCSS gapは0 pxで、隣接カードは端で接する。小節線はslot端に置き、拍の内側2 px insetは保つ。コード図は共有voicingを使った144×144 viewBoxのネストSVGで、測定slot幅ごとに全演奏出現で同じ正方形サイズを使う。サイズは全コード区間の最小利用幅を上限にし、各区間中央へ置く。図lane内に上下4 px以上を確保して全体を表示し、crop/omitしない。次コード図は44～52 pxの正方形にする。コード名と図は各コード区間の中点で揃える。幅、grid、メロディ・図表示、文書変更時の再計測と高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFで行う。
 
 奏法waveは選択gridに一致する継続Fractionごとに独立したSVG pathを1個ずつ描く。attackのイベント開始位置ではなく各継続拍に配置し、`data-guide-wave-grid`、拍、Fraction、eventを保持する。同じ小節・event・grid・Fractionを重複させない。休符、mute、ghost/brush等の打音、staccatoは継続なし。tie開始は再attackを描かずwaveを1つ描き、後続grid位置にもwaveを描く。通常の持続音は記譜音価の有効な後続grid位置ごとに1つとし、grid4 / 8 / 16でそれぞれ再評価する。TAB tieとrhythm tieに適用し、音源の再attack意味論は変えない。奏法とwaveは同じ横一段に保持する。Compact tieとgrid4/8/16 continuation waveはContract v26の共通15×47 SVG masterを使い、grid8/16では参照小節幅366/400に対する `referenceScale=min(1,slotWidth/referenceMeasureWidth)` で縦横同率に縮小する。grid8/16のFraction anchorは参照track inset 34/32、trackWidth 324を保って配置し、grid4は既存の区間fitを使う。waveはFraction anchorより `5*referenceScale` 左を基準に置き、隣接するattackとのstroke込み間隔が1pxを下回る場合だけ視覚offsetを減らす。各Fractionのpath形状、stroke比率、イベントと意味上の拍アンカーを保ち、隣接wave間は0.25 CSS px以上とする。矢印はwaveの前、PM注記は矢印の前に描く。
 
 4小節は `[01, 02] [03, 04]` から開始する。演奏順、repeat、volta、arrangement、lyricVerseは `PlaybackTimeline.occurrences` の既存projectionを使い、存在しない小節を補わない。交替時は更新対象bankだけをフェードする。遷移開始時の `fadeMs` は遷移先 `tempoBpm × effectiveSpeed()` から `clamp(round(60000 / effectiveBpm), 450, 900)`、不正時600 msとし、そのfade中は速度変更でdurationを変えない。opacityは更新対象bankの旧新二層で同じdurationとし、fallback cleanupは `fadeMs + 80 ms`。seek、loop、resize、mode切替、disposeは古いgenerationを無効化して即時再投影する。初回表示、手動ページ移動、reduced motionは0 ms。Pause/Resumeは交替を起こさず、音声時間やvolumeにも影響しない。
 
-歌詞の通常/current/past色は白背景に対して4.5:1以上とし、currentとpastを明度差だけで区別しない。実画面の受入は最終HEADで400/421/600/1100 CSS px × 日英 × Light/Dark × melody ON/OFF（32枚）、400 CSS px × grid4/8/16 × 日英 × Light/Dark（12枚）、および上記幅系列の実測DOM幅を確認する。コントラスト、奏法SVGのscreen上X/Y同率倍率・正確な拍アンカー、BPM/練習速度別fadeも検査する。通常のPreview SVG、PDF、詳細グリッド、DSL、Playbackへの変更を認めない。
+歌詞の通常/current/past色は白背景に対して4.5:1以上とし、currentとpastを明度差だけで区別しない。実画面の受入は最終HEADで400/421/600/1100 CSS px × 日英 × Light/Dark × melody ON/OFF（32枚）、400 CSS px × grid4/8/16 × 日英 × Light/Dark（12枚）、および上記幅系列の実測DOM幅を確認する。コントラスト、奏法SVGのscreen上X/Y同率倍率・正確な拍アンカー、BPM/練習速度別fadeも検査する。通常のPreview SVG、PDF、DSL、Playbackへの変更を認めない。
 
-**Issue #162 Contract v14:** compactの左右時間insetは2 px。曲全体の全Playback occurrenceにpitch event / lyric eventがないlaneだけを0 pxにし、イベントが一つでもあればページ・verse・bankによらず固定高を保つ。1コード小節の名前は24 px太字、複数コードは実測区間に最大適合する24 / 22 / 20 / 18 / 16 / 14 pxを選び、14 pxで収まらない表示だけをgrapheme単位で省略する。元の名前はARIAとtitleに残す。Grid8 / grid16の継続waveはFractionごとの独立nodeと共通wide SVG masterを保ち、`max(2.8, cell-0.9)`幅へX方向だけ伸ばしてattackの背面に置く。矢印を前面、PMを最前面にし、wave-waveの実画面gapは0.25 px以上とする。旧grid16の3幅variantと1 px gapはv14で置き換える。通常譜面、詳細グリッド、DSL、音源、PDFの動作は変えない。
+#### Issue #162 compact geometry (current contract)
 
-**Issue #162 Contract v15:** v14のコンパクト表示規則を継承し、grid8/grid16継続waveの描画左端を`anchorX-0.90*cell`とする。幅は`max(2.8,cell-0.9)`のまま、Fraction、攻撃path、wave共通shape、表示高さ、stroke幅、card端clampは変えない。grid8の400 px / 600 pxでwaveと自然幅4 pxの矢印が横bounds上で重なり、矢印はwave前面に表示される。Grid16のwave間隔や非重複対象（PM・コード・barline）を守り、通常譜面、詳細グリッド、DSL、音源、PDFへ変更を波及させない。
-
-**Issue #162 Contract v16:** v15のwave originとwave/arrow重なり条件を置き換え、grid8/grid16継続waveの描画左端を`anchorX-0.10*cell`とする。幅は`max(2.8,cell-0.9)`のまま、Fraction、攻撃path、wave共通shape、表示高さ、stroke幅、card端clampは変えない。400 px / 600 pxのgrid8/grid16すべてで、stroke込みwave境界と攻撃矢印境界を実画面上で測定し、最小1 CSS px以上離す。Waveは攻撃記号の背面レイヤーを保つが、横方向に接触・交差させない。PM・コード名・小節線にも重ねず、通常譜面、詳細グリッド、DSL、音源、PDFへ変更を波及させない。
-
-**Issue #162 Contract v17:** v16の`anchorX-0.10*cell`と、grid8/grid16のwave・attack非接触を維持する。400 px / 600 pxではstroke込み描画境界間に1 CSS px以上を確保し、320 px / 421 px / 480 px / 840 px / 1100 px / 1600 pxの幅系列でも接触・交差を許さない。実幅テストに挿入する同時発音用テスト記号は独立した配置assertionで検査し、実データ由来のwave・attack間隔の測定対象からは除外する。Waveは攻撃記号の背面レイヤーに置くが、横方向には離す。
-
-**Issue #162 Contract v18:** compactで奏法laneとコード名laneの間に6 CSS pxの縦余白を設ける。奏法laneの高さは維持し、コード名・図のlaneと以降のlaneを6 px下げ、カード総高も6 px増やす。template/live bank、ページ、grid、メロディ・歌詞表示の切替で余白を変えない。図の正方形サイズ、コード名の適合サイズと図全体の可視性を維持する。詳細timeline、通常譜面、DSL、音源、PDFへ変更を波及させない。
-
-**Issue #162 Contract v19:** compactのgrid8/grid16継続waveは各Fractionと意味上の拍アンカーを保ち、`cell=max(0,slotWidth-4)/(measureBeats*(grid/4))`、`displayWidth=min(cell,max(2.4,cell-3.8))`、`visualLeft=anchorX+0.325*cell-displayWidth/2` を使いカード内へclampする。stroke込みwave/attack境界は400/600 pxで3 CSS px以上離し、320/421/480/840/1100/1600 pxでも接触させない。wave path・高さ・stroke、矢印の位置と自然サイズ、Fractionと再生状態、描画順は維持する。Grid4、tie、詳細grid、譜面SVG/PDF、DSL、音声には波及させない。v18の奏法laneとコード名laneの6 px縦余白を維持する。
-
-**Issue #162 Contract v20:** v19の暫定的なwave幅・位置を置き換え、`cell=max(0,slotWidth-4)/(measureBeats*(grid/4))`、`displayWidth=min(cell,max(2.2,cell-3.8))`、`visualLeft=anchorX+cell/3-displayWidth/2` を使いカード内へclampする。stroke込みwave/attack境界は400/600 pxで3 CSS px以上離し、320/421/480/840/1100/1600 pxでは正の値を確保する。Fraction、path形状・高さ・stroke、矢印位置と自然サイズ、再生状態、描画順は維持する。Grid4、tie、詳細grid、譜面SVG/PDF、DSL、音声には波及させず、v18の6 px縦余白も維持する。
-
-**Issue #162 Contract v21:** compactの奏法記号とコード名の間に、painted boundsで最低10 CSS pxの縦間隔を設ける。実装は12 CSS pxのlane gutterを予約し、コード名lane・図laneとカード総高を同量だけ下げる。4小節、grid4/8/16、viewport 320/400/421/480/600/1100/1600 px、melody/lyric/page/bank状態で間隔を測定し、コード名とコード図を切らさない。Detailed timeline、通常譜面SVG/PDF、DSL、音源には変更を波及させない。
-
-**Issue #162 Contract v22:** v21の12 px gutterでは実画面の奏法・コード名間隔が3.65 pxだったため、compactのlane gutterを20 CSS pxに変更する。最終描画後の実測でstroke込み奏法記号とコード名文字の間を最低10 CSS px確保する。幅320/400/421/480/600/1100/1600 px、grid4/8/16、melody/lyric/page/bank状態で4小節・完全なコード図を維持して検査する。詳細timeline、通常譜面SVG/PDF、DSL、音源に波及させない。
-
-**Issue #162 Contract v24（responsive fitはv26で置換）:** Compactの奏法記号は参考画像をトレースした15×47のSVG masterを使う。下向きはshaft `M0 0 V31` と塗りつぶし矢尻 `M-7.5 30 L7.5 30 L0 47 Z`、上向きはshaft `M0 47 V17` と矢尻 `M-7.5 17 L0 0 L7.5 17 Z`。shaft strokeは2.65px。S波線 `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` は矢印上端からY=21px、stroke2.35pxで置く。幅不足時もY方向を縮小せずX方向のみ適合させる。PM annotationは矢印下に置き、必要行数を含むlane高を全小節・両bankで共有する。v22の4小節、Fraction、3px painted wave/arrow間隔、20px gutterと10px painted technique/chord間隔、完全なコード図、再生状態を維持する。8/16拍の例示SVG座標は形状比較にだけ使い、実データはGuitarDSLイベントから生成する。パネルの縦幅が足りない場合は小節カード領域だけを縦スクロールし、次コード欄を残したままコード図全体を見られるようにする。詳細grid、通常譜面SVG/PDF、DSL、音源は変更しない。
-
-**Issue #162 Contract v25（responsive fitはv26で置換）:** v24の15×47 master pathはそのまま使い、SVG全体を縦横同率に縮小する。自然サイズ未満の最低表示寸法は設けず、元path、Fraction、event、ARIA/titleを保持する。
-
-**Issue #162 Contract v26（v27で同拍配置を明確化）:** 参照用SVGの基準寸法から縮小率を求めるため、奏法の共通down/up/waveはイベントごとのgrid cell幅から倍率を決めず、参照画像の小節幅を基準に同じ倍率で縮小する。grid8の参照用SVG小節幅は366、grid16は400 SVG unitsとし、`referenceScale=min(1,slotWidth/referenceMeasureWidth)`、記号の自然幅15に対し表示幅を`15*referenceScale`とする。小節内の描画領域は参照用SVG specimenの内側余白も維持し、grid8は`trackInset=34`、grid16は`trackInset=32`、どちらも`trackWidth=324`とする。Fraction anchorは`(trackInset + beat / measureBeats * trackWidth) * referenceScale`で求める。grid4は既存の区間fitを維持する。waveの描画中心は `5*referenceScale` だけFraction anchorより左へ置き、cell幅は `trackWidth*referenceScale/(measureBeats*(grid/4))` として、足りない場合だけ視覚offsetを減らしstroke込みboundsを1px以上離す。offset上限は `max(0,cell-1-17.4*referenceScale)` とする。path、比率、stroke、イベント順、意味上のFraction、playback stateは変更しない。同拍群と自然幅15を超えるbrush/both合成記号は共有区間に合わせて追加縮小する。固定cell余白は使わず、隣接wave間を0.25px以上保つ。20px technique gutter、10px painted technique/chord clearance、4小節、全コード図、next-chord表示、resize復元を維持する。詳細grid、通常譜面SVG/PDF、DSL、音声には波及させない。
-**Issue #162 Contract v28（同拍配置と参照根拠）:** 同じ小節の奏法項目でbeat差が0.000001未満の項目は、beat・event index・安定したsource orderで並べる。意味上の共通anchorから次の異なる拍、または参照trackの終端までを等分し、各項目の基本視覚中心をrank順に置く。幅は共有区間に合わせてSVG全体を同率縮小し、一横段・順序・非重なりを保つ。隣接する実描画boundsが重なる場合は両記号を同率縮小して衝突を解消する。視覚移動やwave offset、カード端clampはeventのbeat、Fraction、ID、再生状態を変更しない。ユーザー提供cropとv24のvector specimensは独立した証拠であり、正確なパターン・間隔の対応は確認済みとみなさない。詳細はIssue #162の契約v28とreference provenance記録に従う。
+Compact は共通15×47 SVG masterを使い、grid8 / grid16では参照小節幅366 / 400に対する referenceScale で path と stroke を縦横同率に縮小する。各イベントのFraction anchor、event identity、ARIA / titleを保つ。現在のカード寸法、歌詞配置、次コード欄、bank fadeはこの節の前段落を正本とし、過去の試行値は規範にしない。
 
 ### 4.7 TAB プレビュー、レイアウト、PDF
 
@@ -755,7 +685,7 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 2. **Open / Import**
    1. `Open GuitarDSL File` → 内部コマンド `guitardsl.navigation.openGuitarDslFile`
    2. `Import Guitar Pro 7/8` → `guitardsl.importGuitarPro`
-   3. `Transcribe from Audio (Experimental)` → 内部コマンド `guitardsl.navigation.chooseTranscriptionSource`
+   3. `Transcribe Local WAV (Experimental)` → `guitardsl.transcribeAudio`
 3. **Edit Assist**
    1. `Open Score Preview` → 内部コマンド `guitardsl.navigation.showPreviewActive`
    2. `Open Inspector` → `guitardsl.openInspector`
@@ -770,7 +700,7 @@ Practice ON では既存 Preview の下端固定ガイドを使い、メロデ�
 ### 4C.3 Current File
 - 対象行は `window.activeTextEditor?.document` のみを表示する。アクティブな無題 GuitarDSL 文書はローカライズ名で示し、GuitarDSL 文書がない場合は「対象なし」とする。アクティブな GuitarDSL 文書がない時も 5 区分と文書不要の操作を表示し、ほかの開いている文書へ切り替えない。
 - `guitardsl.navigation.openGuitarDslFile` は `.guitardsl` / `.gdsl` をフィルターにした `showOpenDialog` を開き、選択後に拡張子を再検査して `openTextDocument(uri)` と `showTextDocument` を呼ぶ。キャンセル、非対応拡張子、読み込み失敗では新しい Untitled 文書を作らず、失敗をローカライズして通知する。
-- `guitardsl.navigation.chooseTranscriptionSource` は YouTube とローカル WAV の `showQuickPick` を開く。選択した場合だけ既存の `guitardsl.transcribeYouTube` または `guitardsl.transcribeAudio` を一度呼び、キャンセルではどちらも実行しない。
+- サイドバーの「ローカル WAV から採譜」は `guitardsl.transcribeAudio` を直接呼び出す。既存の WAV ファイル選択、進捗、キャンセル、エラー処理を使い、採譜元 Quick Pick は表示しない。
 - Preview / PDF / Guitar Pro の内部コマンドは実行時の `window.activeTextEditor?.document` を §2.1 の GuitarDSL 文書として確認し、その URI を既存コマンドへ明示して渡す。対象なしでは警告だけを表示し、他文書や古い TreeItem の URI を使わない。Inspector は `guitardsl.openInspector` の既存空状態を維持する。
 - アクティブエディタとテキスト文書の open / close イベントで表示を更新し、定期的なポーリングを行わない。
 
@@ -912,9 +842,6 @@ Code Action の計画は VS Code API に依存しない純粋変換として実�
   - `%command.editChordDiagram.title%`
   - `%command.editScoreSettings.title%`
   - `%command.editCapo.title%`
-  - `%command.transcribeYouTube.title%`
-  - `%command.setGeminiApiKey.title%`
-  - `%command.clearGeminiApiKey.title%`
   - `%command.transcribeAudio.title%`
   - `%command.applyStrummingPattern.title%`
   - `%command.openHelp.title%`
@@ -922,8 +849,6 @@ Code Action の計画は VS Code API に依存しない純粋変換として実�
   - `%command.openSample.title%`
   - `%viewsContainer.guitardslSidebar.title%`（サイドバーのビューコンテナタイトル）
   - `%view.sidebar.name%`（サイドバーのビュー名）
-  - `%config.geminiModel.description%`
-  - `%config.compressRepeats.description%`
   - `%config.expandPageBreakRepeats.description%`
 - `package.json` が NLS キーで参照するすべてのコマンドタイトル・設定説明・ビューコンテナタイトル・ビュー名は、`package.nls.json` と `package.nls.ja.json` の両方に定義しなければならない（§7.3）。
 
@@ -945,10 +870,6 @@ Code Action の計画は VS Code API に依存しない純粋変換として実�
 
 ### 6.5A カポ / 弾きやすさ・楽譜設定エディタのローカライズ
 - 共通 Inspector の Capo / Playability・Beginner Mode・Transpose セクションの全ラベル・ボタン、変更・移調できない理由、一時変更解除・適用結果・未使用定義の通知をロケールに従ってローカライズする。Preview と PDF の有効 DSL は編集 UI と別に表示する。
-
-### 6.6 YouTube 自動採譜メッセージのローカライズ
-- コマンドパレット、サイドバー、パネルタイトルと HTML title、パネル見出しに Experimental の分類を日本語・英語で表示する。パネルの説明直後に、音楽的な詳細が誤る可能性と下書きの確認・修正を伝える、常時表示・非ブロッキングの警告をローカライズして表示する。
-- YouTube URL 入力ボックス、API キー入力プロンプト、進捗メッセージ、および各種エラー通知メッセージ（API エラー、URL 不正、バリデーション失敗等）をロケールに従ってローカライズする。
 
 ### 6.7 ヘルプのローカライズ
 - `guitardsl.openHelp` のコマンドタイトル（`%command.openHelp.title%`）、プレビューのヘルプボタンのラベル・ツールチップ・アクセシブル名、ヘルプを開けなかったときのエラーメッセージをロケールに従ってローカライズする。
@@ -993,7 +914,7 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 - GitHub Copilot などの特定の AI 拡張機能に依存しない（`extensionDependencies` に含めない）。AI モデルやチャットプロバイダがなくても、拡張機能は起動し、§2〜§7 の機能はすべて動作する。
 - ツールは既存の機能（パーサー、カポ推論、カポ変更、初心者モード、実音移調、伴奏エンジン（§8.7））をそのまま呼び出す。ツール独自の変換規則は持たない。
 - 伴奏では、曲調・セクションの役割・エネルギー・密度・シンコペーションなどの音楽的な判断をモデルが行う。拍数・ダウン / アップ・拍子・構文・編集の安全性は拡張機能の伴奏エンジンが保証する（§8.7）。
-- YouTube 採譜・ローカル音源の採譜・プレビュー・PDF・コードダイアグラムエディタ・ヘルプはツールとして公開しない。
+- ローカル WAV 採譜・プレビュー・PDF・コードダイアグラムエディタ・ヘルプはツールとして公開しない。
 
 ### 8.2 Skill と指示
 - **Skill** `guitardsl-language`（`ai/skills/guitardsl-language/SKILL.md`）: GuitarDSL の構文・意味を必要なときに参照するための Skill。frontmatter の `description` は、既存スコアの読み書きに加えて、新しい曲・スコアをゼロから作る（作曲する）ことと伴奏のアレンジを対象に含め、ファイルがまだない依頼でも関連する Skill として選ばれるようにする。参照資料 `references/guitardsl-syntax.md` は `docs/specs/guitardsl-syntax.md` をバイト単位でそのままコピーした生成物であり、手で編集しない。`SKILL.md` は仕様を複製せず、必要な見出しだけを参照資料から読むこと、生成・編集した DSL を `guitardsl_validate_dsl` で検証することを指示する。伴奏を作る・変えるときは、手で書いた伴奏ガイド `references/accompaniment.md`（生成物ではなく、仕様の複製でもない）を先に読むよう指示する。このガイドは §8.7 のツールの使い方（計画モードの選び方、`replace` / `adapt`、`directionPolicy: literal` を自分から選ばないこと、セクションとジャンルの目安、セクション切替とエンディングの候補の出し方）を説明する。
@@ -1081,7 +1002,7 @@ VS Code 標準の Agent / Chat が GuitarDSL の言語仕様と既存の決定�
 - **後処理なし**: ツールはバックグラウンド処理・タイマー・ネットワーク通信を持たない。
 
 ### 8.7 伴奏（ストローク／アルペジオ）の生成
-伴奏エンジン（`src/accompaniment.ts`）は、モデル（または §3.10 のクイックピック）が決めた音楽的な意図を、拍子・ダウン / アップ・拍数・構文・編集の安全性を保証したリズムに変換する。エンジンは言語モデル・YouTube / ローカル音源の採譜・Audio MIR に依存しない。乱数を使わず、同じ入力と同じソースからは常に同じ結果を返す。
+伴奏エンジン（`src/accompaniment.ts`）は、モデル（または §3.10 のクイックピック）が決めた音楽的な意図を、拍子・ダウン / アップ・拍数・構文・編集の安全性を保証したリズムに変換する。エンジンは言語モデル・ローカル Audio MIR に依存しない。乱数を使わず、同じ入力と同じソースからは常に同じ結果を返す。
 
 #### 8.7.1 正規プリセットカタログ
 - カタログは次の 58 件だけで、別名や旧 ID の対応表は持たない。宣言順は下表の順で、選択の同点はこの順で決める。

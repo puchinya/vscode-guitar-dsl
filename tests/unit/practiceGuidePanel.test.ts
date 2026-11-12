@@ -11,13 +11,10 @@ describe('Practice guide panel renderer', () => {
     const data: Parameters<typeof renderPracticeGuidePanel>[0] = {
       automaticGrid: 16,
       automaticFill: false,
-      totalBeats: frac(16),
-      lyricsHeight: 38,
       pitchMinMidi: 60,
       pitchMaxMidi: 72,
       measures: Array.from({ length: 4 }, (_, index) => ({
         number: index + 1,
-        startBeat: frac(index * 4),
         beats: frac(4),
         chords: [],
         melody: index === 0 ? melody : [],
@@ -43,7 +40,7 @@ describe('Practice guide panel renderer', () => {
       'the redundant current-lyric header is absent while per-measure lyric lanes remain');
   });
 
-  it('omits compact melody-rest nodes while preserving later pitch timing and detailed rests', () => {
+  it('omits melody-rest nodes while preserving later pitch timing in the Compact guide', () => {
     const html = render([], [
       { at: frac(0), durationBeats: frac(1), duration: '4', label: 'Rest', pitches: [], isRest: true, eventIndex: 0, restBase: 4 },
       { at: frac(1), durationBeats: frac(2), duration: '2', label: 'C4', pitches: [{ label: 'C4', midi: 60 }], isRest: false, eventIndex: 1 }
@@ -56,7 +53,8 @@ describe('Practice guide panel renderer', () => {
     assert.match(compactHtml, /class="practice-guide-compact-pitch-bar"[^>]*data-guide-duration-beats="2"/);
     assert.match(compactHtml, /class="practice-guide-compact-pitch-bar"[^>]*rx="0" ry="0"/,
       'compact melody pitch bars use square corners');
-    assert.match(html, /class="practice-guide-rest-symbol"/, 'the detailed guide still renders melody rests');
+    assert.doesNotMatch(html, /class="practice-guide-rest-symbol"/, 'melody rests are absent from the Compact guide');
+    assert.doesNotMatch(html, /practice-guide-timeline|practice-guide-scroll/);
   });
 
   it('renders each continuation Fraction as its own wave path at the matching grid and event', () => {

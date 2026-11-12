@@ -3,7 +3,6 @@ import { EXPLICIT_URI_ONLY_RESOLUTION, isGuitarDslDocument } from './documentRes
 import { Messages } from './i18n';
 
 export const SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND = 'guitardsl.navigation.openGuitarDslFile';
-export const SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND = 'guitardsl.navigation.chooseTranscriptionSource';
 export const SIDEBAR_SHOW_PREVIEW_ACTIVE_COMMAND = 'guitardsl.navigation.showPreviewActive';
 export const SIDEBAR_EXPORT_PDF_ACTIVE_COMMAND = 'guitardsl.navigation.exportPdfActive';
 export const SIDEBAR_EXPORT_GUITAR_PRO_ACTIVE_COMMAND = 'guitardsl.navigation.exportGuitarProActive';
@@ -56,16 +55,6 @@ export function createSidebarNavigationCommands(
       } catch {
         api.window.showErrorMessage(msgs.msgGuitarDslFileOpenFailed);
       }
-    }),
-    api.commands.registerCommand(SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND, async () => {
-      const options = [
-        { label: msgs.sidebarTranscriptionSourceYouTube, command: 'guitardsl.transcribeYouTube' },
-        { label: msgs.sidebarTranscriptionSourceAudio, command: 'guitardsl.transcribeAudio' }
-      ];
-      const selected = await api.window.showQuickPick(options, {
-        placeHolder: msgs.sidebarTranscriptionSourcePrompt
-      });
-      if (selected) await api.commands.executeCommand(selected.command);
     }),
     api.commands.registerCommand(SIDEBAR_SHOW_PREVIEW_ACTIVE_COMMAND, () =>
       runForActiveGuitarDslDocument(api, msgs, 'guitardsl.showPreview')),

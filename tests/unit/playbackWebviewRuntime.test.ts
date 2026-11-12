@@ -138,7 +138,7 @@ async function assertPlayheadAlignsWithOnsets(runtime: FakePlaybackWebview): Pro
 }
 
 describe('Preview production Webview runtime', () => {
-  it('Issue #155 keeps the detailed scroll guide and Practice-only SVG diagram geometry in the Preview runtime', async () => {
+  it('Issue #164 renders only the Compact guide while keeping Practice playback and chord diagram geometry', async () => {
     const score = [
       'bpm: 120',
       'chord C = x32010',
@@ -151,12 +151,11 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(runtime.playbackData.practiceGuide.measures.length, 1);
     assert.ok(html.includes('id="practice-guide-panel"'));
     assert.ok(html.includes('body.guide-melody-hidden .practice-guide-melody { display: none; }'));
-    assert.ok(html.includes('id="practice-guide-timeline"'));
-    assert.ok(html.includes('class="practice-guide-lane practice-guide-melody"'));
-    assert.ok(html.includes('class="practice-guide-lane practice-guide-technique"'));
+    assert.ok(html.includes('id="practice-guide-compact"'));
+    assert.ok(html.includes('class="practice-guide-compact-measure"'));
+    assert.doesNotMatch(html, /practice-guide-timeline|practice-guide-scroll|practice-guide-view|guideViewMode/);
     assert.ok(html.includes('class="practice-guide-next-chord" id="practice-guide-next-chord"'));
-    assert.ok(html.includes('id="practice-guide-pair-page"'), 'compact mode has a fixed two-bank page');
-    assert.ok(html.includes('value="compact"') || html.includes('<option value="compact">'), 'compact mode is the default');
+    assert.ok(html.includes('id="practice-guide-pair-page"'), 'the guide always uses the fixed two-bank page');
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].durationBeats.n, 4);
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].melody[0].pitches[0].midi, 60);
     assert.strictEqual(runtime.playbackData.practiceGuide.measures[0].lyrics.length, 0);
@@ -166,7 +165,7 @@ describe('Preview production Webview runtime', () => {
       'the square diagram has six horizontal string lines');
     assert.strictEqual((diagram.match(/x1="[\d.]+" y1="18" x2="[\d.]+" y2="126"/g) ?? []).length, 6,
       'the square diagram has vertical fret marks and keeps the first string above the sixth');
-    assert.ok(html.includes('.practice-guide-diagram-event { position: absolute;'));
+    assert.ok(html.includes('.practice-guide-compact-diagram-event { color: #405268; }'));
     assert.ok(html.includes('viewBox="0 0 144 144"'));
     assert.ok(html.includes('width: 144px; height: 144px;'));
 
@@ -185,6 +184,37 @@ describe('Preview production Webview runtime', () => {
     runtime.runSchedulerTicks();
     assert.strictEqual(melody!.stopCalls.length, 1, 'mute does not cancel the melody voice');
     closeEnough(rhythm!.stopAt ?? NaN, Number(mute.timeSeconds) + 0.033, 0.001);
+  });
+
+  it('Issue #164 ignores a saved Detailed mode while restoring remaining guide state', async () => {
+    const savedState = {
+      currentMode: 'single',
+      guideViewMode: 'detailed',
+      guideGrid: '16',
+      guideMelodyVisible: false,
+      guideDiagramsVisible: true,
+      guideCompactStartOccurrence: 2
+    };
+    const html = compileGuitarDslToHtml([
+      '| C | 4.d 4.d 4.d 4.d |',
+      '| G | 4.d 4.d 4.d 4.d |',
+      '| Am | 4.d 4.d 4.d 4.d |',
+      '| F | 4.d 4.d 4.d 4.d |',
+      '| Dm | 4.d 4.d 4.d 4.d |',
+      '| Em | 4.d 4.d 4.d 4.d |'
+    ].join('\n'));
+    const runtime = createFakePlaybackWebview(html, savedState);
+    await runtime.click('practice-guide-melody-toggle');
+    assert.strictEqual(runtime.element('practice-guide-grid').value, '16');
+    assert.strictEqual(runtime.element('practice-guide-melody-toggle').getAttribute('aria-pressed'), 'true',
+      'the melody action toggles from its saved OFF state');
+    assert.strictEqual(runtime.element('practice-guide-diagrams-toggle').getAttribute('aria-pressed'), 'true');
+    const persisted = runtime.savedWebviewState as Record<string, unknown>;
+    assert.strictEqual(persisted.guideGrid, '16');
+    assert.strictEqual(persisted.guideMelodyVisible, true);
+    assert.strictEqual(persisted.guideCompactStartOccurrence, 2);
+    assert.ok(!('guideViewMode' in persisted), 'new state never writes the retired mode field');
+    assert.doesNotMatch(html, /practice-guide-view|practice-guide-timeline|practice-guide-scroll|guideViewMode/);
   });
 
   it('Issue #153 adds a short accompaniment release tail only for new techniques, which mute cancels and rest keeps', async () => {
@@ -236,7 +266,7 @@ describe('Preview production Webview runtime', () => {
     assert.strictEqual(legacyGhostAttack.releaseTailSeconds, undefined, 'the legacy .g spelling keeps its existing envelope');
   });
 
-  it('Issue #155 preserves timed chord placements in the detailed guide and compact measure templates', () => {
+  it('Issue #164 preserves timed chord placements in Compact measure templates', () => {
     const score = '| C 4.d G 4.d C 4.d C 4.d |';
     const html = compileGuitarDslToHtml(score);
     const runtime = createFakePlaybackWebview(html);
@@ -244,8 +274,8 @@ describe('Preview production Webview runtime', () => {
     assert.deepStrictEqual(chords.map((chord: any) => [chord.name, chord.beat]), [
       ['C', 0], ['G', 1], ['C', 2], ['C', 3]
     ]);
-    assert.strictEqual((html.match(/class="practice-guide-chord-name"/g) ?? []).length, 4);
-    assert.strictEqual((html.match(/class="practice-guide-diagram-event"/g) ?? []).length, 4);
+    assert.strictEqual((html.match(/class="practice-guide-chord-name"/g) ?? []).length, 0);
+    assert.strictEqual((html.match(/class="practice-guide-diagram-event"/g) ?? []).length, 0);
     assert.strictEqual((html.match(/class="practice-guide-compact-chord-name"/g) ?? []).length, 4);
     assert.strictEqual((html.match(/class="practice-guide-compact-diagram-event"/g) ?? []).length, 4);
   });
@@ -283,8 +313,7 @@ describe('Preview production Webview runtime', () => {
     const html = compileGuitarDslToHtml('| C | r4 r8 r16 r2 r16 |');
     const symbols = [...html.matchAll(/<svg class="practice-guide-rest-symbol"[^>]*data-guide-rest-base="(\d+)"[^>]*>[\s\S]*?<\/svg>/g)];
     const bases = symbols.map(match => match[1]);
-    assert.deepStrictEqual(bases.slice(0, 5), ['4', '8', '16', '2', '16'], 'the detailed timeline keeps each duration-specific rest');
-    assert.deepStrictEqual(bases.slice(5), ['4', '8', '16', '2', '16'], 'the compact templates preserve the same duration-specific rests');
+    assert.deepStrictEqual(bases, ['4', '8', '16', '2', '16'], 'the Compact templates preserve each duration-specific rhythm rest');
     assert.ok(symbols.every(match => /<(?:path|rect|circle)\b/.test(match[0])), 'every rest contains a vector path or shape');
     assert.ok(symbols.every(match => !/<text\b/.test(match[0])), 'rest rendering does not depend on installed music fonts');
   });

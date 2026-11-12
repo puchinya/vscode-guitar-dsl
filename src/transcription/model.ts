@@ -1,9 +1,11 @@
-// Music IR v1 data models, JSON schema and semantic validation for transcription.
-// Pure module independent of VS Code APIs and Gemini SDK.
+// Music IR v1 data model and semantic validation for transcription.
+// Pure module independent of VS Code APIs and network services.
 
-import { Fraction, NoteValuePart, ZERO, decomposeBeats, fadd, fcmp, feq, fnum, frac, fsub, TRIPLET, parseNoteValue, parseRhythmDuration } from '../duration';
+import { Fraction, ZERO, decomposeBeats, fadd, feq, fnum, frac, fsub, parseNoteValue, parseRhythmDuration } from '../duration';
 import { parseKeySignature } from '../compiler';
 import { isValidChordName } from '../chordDefinition';
+
+const FOUR_BEATS = frac(4);
 
 export interface TranscribedSong {
   title?: string;
@@ -48,109 +50,12 @@ export interface MelodyEvent {
   lyric?: string;
 }
 
-/** Schema of the baseline pass. Chords and rhythm are context only: the refinement passes replace them. */
-export const MUSIC_IR_JSON_SCHEMA = {
-  type: 'object',
-  properties: {
-    title: { type: 'string', description: 'Song title' },
-    artist: { type: 'string', description: 'Artist name' },
-    key: { type: 'string', description: 'Sounding (concert) key of the song, e.g. C, Am, G, F#m, Bb' },
-    bpm: { type: 'integer', description: 'Tempo in BPM (30..300). For upbeat 8-beat rock/pop songs, use the true full-time tempo (e.g. 160-220, where snare hits on beats 2 and 4), not half-time.' },
-    timeSignature: {
-      type: 'object',
-      properties: {
-        numerator: { type: 'integer', enum: [4] },
-        denominator: { type: 'integer', enum: [4] }
-      },
-      required: ['numerator', 'denominator']
-    },
-    sections: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Section name (e.g. Intro, Verse, Chorus)' },
-          measures: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                lyrics: { type: 'string', description: 'Lyrics sung or spoken in this measure, if any' },
-                chords: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string', description: 'Sounding chord name (e.g. C, Am, G/B)' },
-                      duration: { type: 'string', description: 'Note value duration, e.g. 1, 2, 4' }
-                    },
-                    required: ['name', 'duration']
-                  }
-                },
-                rhythm: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      duration: { type: 'string', description: 'Rhythm duration (e.g. 4, 8, 16, 8t, 4+8, r4)' },
-                      direction: { type: 'string', enum: ['d', 'u'] }
-                    },
-                    required: ['duration']
-                  }
-                },
-                melody: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      pitch: { type: 'string', description: 'Melody pitch in lowercase with octave, e.g. c4, d#4, eb4, or r for rest' },
-                      duration: { type: 'string', description: 'Note value duration, e.g. 4, 8, 16, 8t, 4.' },
-                      tieToNext: { type: 'boolean' },
-                      lyric: { type: 'string', description: 'Syllable lyric sung on this note, e.g. あ, さ, の, Play, me' }
-                    },
-                    required: ['pitch', 'duration']
-                  }
-                }
-              }
-            }
-          }
-        },
-        required: ['name', 'measures']
-      }
-    }
-  },
-  required: ['key', 'bpm', 'timeSignature', 'sections']
-};
-
 export type ValidationResult =
   | { valid: true; song: TranscribedSong }
   | { valid: false; error: string };
 
-const FOUR_BEATS = frac(4, 1);
 const MELODY_PITCH_RE = /^(?:r|[a-g][b#]?[0-9])$/;
 export const MAX_CAPO = 12;
-
-function durationPartToString(p: NoteValuePart): string {
-  if (p.tuplet) return `${p.base}t`;
-  if (p.dotted) return `${p.base}.`;
-  return `${p.base}`;
-}
-
-function decomposeToBeatsOrTriplets(beats: Fraction): NoteValuePart[] | null {
-  const parts = decomposeBeats(beats);
-  if (parts && parts.length > 0) {
-    return parts;
-  }
-  if (beats.d === 3 && beats.n > 0) {
-    const res: NoteValuePart[] = [];
-    let remN = beats.n;
-    while (remN >= 4) { res.push({ base: 2, dotted: false, tuplet: TRIPLET }); remN -= 4; }
-    while (remN >= 2) { res.push({ base: 4, dotted: false, tuplet: TRIPLET }); remN -= 2; }
-    while (remN >= 1) { res.push({ base: 8, dotted: false, tuplet: TRIPLET }); remN -= 1; }
-    return res;
-  }
-  return null;
-}
 
 /**
  * Converts a positive beat count into a GuitarDSL note value without dots, joined with '+'
@@ -192,70 +97,12 @@ function hasDyadicDenominator(value: Fraction): boolean {
 }
 
 /**
- * Melody-only timing repair: pads a short measure with rests or trims a slight excess so that the
- * melody sums to exactly 4 beats. Chords and rhythm are never repaired.
- */
-export function repairMelodyTiming(melody: MelodyEvent[]): MelodyEvent[] {
-  const repaired = melody.map(m => ({ ...m }));
-  let beats = ZERO;
-  for (const m of repaired) {
-    const v = parseNoteValue(m.duration);
-    if (!v) return repaired;
-    beats = fadd(beats, v.beats);
-  }
-  if (fcmp(beats, FOUR_BEATS) < 0) {
-    const parts = decomposeToBeatsOrTriplets(fsub(FOUR_BEATS, beats));
-    if (parts) {
-      for (const p of parts) {
-        repaired.push({ pitch: 'r', duration: durationPartToString(p) });
-      }
-    }
-  } else if (fcmp(beats, FOUR_BEATS) > 0) {
-    let excess = fsub(beats, FOUR_BEATS);
-    while (fcmp(excess, ZERO) > 0 && repaired.length > 0) {
-      const last = repaired[repaired.length - 1];
-      const lastVal = parseNoteValue(last.duration);
-      if (!lastVal) break;
-      if (fcmp(lastVal.beats, excess) <= 0) {
-        repaired.pop();
-        excess = fsub(excess, lastVal.beats);
-      } else {
-        const parts = decomposeToBeatsOrTriplets(fsub(lastVal.beats, excess));
-        if (parts && parts.length > 0) {
-          last.duration = durationPartToString(parts[0]);
-          for (let i = 1; i < parts.length; i++) {
-            repaired.push({ pitch: last.pitch, duration: durationPartToString(parts[i]), tieToNext: last.tieToNext });
-          }
-        }
-        break;
-      }
-    }
-  }
-  return repaired;
-}
-
-type Mode = 'strict' | 'baseline';
-
-/**
  * Validates a parsed JSON payload into a semantically valid TranscribedSong.
  * Rejects invalid meters (non-4/4), out-of-range BPM, invalid chord names/durations,
  * and measures whose chord, rhythm or melody durations do not sum to exactly 4 beats.
  * Nothing is repaired: impossible data is rejected.
  */
 export function validateTranscribedSong(data: unknown): ValidationResult {
-  return validateSong(data, 'strict');
-}
-
-/**
- * Validates the baseline pass. Metadata, section/measure structure, melody and lyrics are checked;
- * melody timing is repaired with repairMelodyTiming. Baseline chords and rhythm are context only
- * (the refinement passes replace them), so they are dropped and every measure gets empty arrays.
- */
-export function validateBaselineSong(data: unknown): ValidationResult {
-  return validateSong(data, 'baseline');
-}
-
-function validateSong(data: unknown, mode: Mode): ValidationResult {
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Transcription data must be an object' };
   }
@@ -310,16 +157,12 @@ function validateSong(data: unknown, mode: Mode): ValidationResult {
       }
       const measObj = rawMeasure as Record<string, unknown>;
 
-      let normalizedChords: ChordEvent[] = [];
-      let normalizedRhythm: RhythmEvent[] = [];
-      if (mode === 'strict') {
-        const chords = validateChords(measObj.chords, name, mIdx);
-        if (typeof chords === 'string') return { valid: false, error: chords };
-        normalizedChords = chords;
-        const rhythm = validateRhythm(measObj.rhythm, name, mIdx);
-        if (typeof rhythm === 'string') return { valid: false, error: rhythm };
-        normalizedRhythm = rhythm;
-      }
+      const chords = validateChords(measObj.chords, name, mIdx);
+      if (typeof chords === 'string') return { valid: false, error: chords };
+      const normalizedChords = chords;
+      const rhythm = validateRhythm(measObj.rhythm, name, mIdx);
+      if (typeof rhythm === 'string') return { valid: false, error: rhythm };
+      const normalizedRhythm = rhythm;
 
       // Melody: optional
       let normalizedMelody: MelodyEvent[] | undefined = undefined;
@@ -350,10 +193,6 @@ function validateSong(data: unknown, mode: Mode): ValidationResult {
             melEvent.lyric = melObj.lyric.trim();
           }
           normalizedMelody.push(melEvent);
-        }
-
-        if (mode === 'baseline') {
-          normalizedMelody = repairMelodyTiming(normalizedMelody);
         }
 
         let melodyBeats = ZERO;
@@ -394,7 +233,7 @@ function validateSong(data: unknown, mode: Mode): ValidationResult {
     sections: normalizedSections
   };
 
-  if (mode === 'strict' && typeof raw.capo === 'number' && Number.isInteger(raw.capo) && raw.capo >= 0 && raw.capo <= MAX_CAPO) {
+  if (typeof raw.capo === 'number' && Number.isInteger(raw.capo) && raw.capo >= 0 && raw.capo <= MAX_CAPO) {
     song.capo = raw.capo;
   }
   if (typeof raw.title === 'string' && raw.title.trim()) {

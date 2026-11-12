@@ -117,7 +117,7 @@ export function renderPracticeGuideCompactWavePathSvg(
   return `<svg class="practice-guide-stroke-icon practice-guide-compact-wave-icon" data-guide-wave-variant="${selectedVariant}" width="${width}" height="${COMPACT_ATTACK_HEIGHT}" viewBox="0 0 ${width} ${COMPACT_ATTACK_HEIGHT}" aria-hidden="true" focusable="false"><title>${safeLabel}</title><g transform="translate(0 ${COMPACT_WAVE_OFFSET_Y})"><path class="practice-guide-wave-path" data-guide-stroke="wave" data-guide-wave-width="${width.toFixed(2)}" data-guide-wave-offset-y="${COMPACT_WAVE_OFFSET_Y}" data-guide-wave-variant="${selectedVariant}" d="${geometry.path}" fill="none" stroke="currentColor" stroke-width="${COMPACT_WAVE_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
 }
 
-/** Renders compact-only path geometry; detailed-grid SVGs keep their existing renderer. */
+/** Renders the Practice guide's fixed Compact path geometry. */
 export function renderPracticeGuideCompactStrokeSvgElement(spec: PracticeGuideStrokeSpec): string {
   const label = escapeAttribute(spec.label);
   if (spec.kind === 'tie') {

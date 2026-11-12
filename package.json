@@ -92,20 +92,8 @@
         "title": "%command.editCapo.title%"
       },
       {
-        "command": "guitardsl.transcribeYouTube",
-        "title": "%command.transcribeYouTube.title%"
-      },
-      {
         "command": "guitardsl.transcribeAudio",
         "title": "%command.transcribeAudio.title%"
-      },
-      {
-        "command": "guitardsl.setGeminiApiKey",
-        "title": "%command.setGeminiApiKey.title%"
-      },
-      {
-        "command": "guitardsl.clearGeminiApiKey",
-        "title": "%command.clearGeminiApiKey.title%"
       },
       {
         "command": "guitardsl.applyStrummingPattern",
@@ -223,16 +211,6 @@
     "configuration": {
       "title": "GuitarDSL",
       "properties": {
-        "guitardsl.gemini.model": {
-          "type": "string",
-          "default": "gemini-3.8-flash",
-          "description": "%config.geminiModel.description%"
-        },
-        "guitardsl.transcription.compressRepeats": {
-          "type": "boolean",
-          "default": false,
-          "description": "%config.compressRepeats.description%"
-        },
         "guitardsl.expandPageBreakRepeats": {
           "type": "boolean",
           "default": true,
@@ -998,7 +976,6 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@google/genai": "^2.24.0",
     "fast-xml-parser": "5.11.2",
     "fflate": "0.8.3",
     "pdfkit": "^0.20.2",

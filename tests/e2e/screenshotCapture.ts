@@ -111,59 +111,6 @@ async function waitForPreviewTarget(port: number, expectedDocumentUri?: string):
   throw new Error(`Expected one GuitarDSL Preview webview target; available targets: ${available || '(none)'}`);
 }
 
-async function waitForTranscriptionTarget(port: number): Promise<DevToolsTarget> {
-  let lastTargets: DevToolsTarget[] = [];
-  for (let attempt = 0; attempt < 50; attempt++) {
-    lastTargets = await getTargets(port);
-    const candidates = lastTargets.filter(item => item.type === 'iframe'
-      && item.url.startsWith('vscode-webview://')
-      && item.url.includes('extensionId=puchinya.vscode-guitar-dsl')
-      && !item.url.includes('purpose=webviewView'));
-    const transcriptionTargets: DevToolsTarget[] = [];
-    for (const candidate of candidates) {
-      try {
-        const containsTranscriptionDom = await withDevToolsTarget(candidate, async send => {
-          await send('Runtime.enable');
-          const tree = await send('Page.getFrameTree');
-          const frameTree = tree.frameTree as Record<string, unknown> | undefined;
-          let frameId: string | undefined;
-          const visit = (node: Record<string, unknown>): void => {
-            const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
-            if (frame?.name === 'active-frame') frameId = frame.id;
-            if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-          };
-          if (frameTree) {
-            visit(frameTree);
-            if (!frameId) {
-              const root = frameTree.frame as { id?: string; url?: string } | undefined;
-              if (root?.url?.startsWith('vscode-webview://')) frameId = root.id;
-            }
-          }
-          if (!frameId) return false;
-          const isolated = await send('Page.createIsolatedWorld', { frameId, worldName: 'guitardsl-transcription-target-check' });
-          if (typeof isolated.executionContextId !== 'number') return false;
-          const result = await send('Runtime.evaluate', {
-            contextId: isolated.executionContextId,
-            expression: `!!document.querySelector('#keyManagement summary')`,
-            returnByValue: true
-          });
-          return (result.result as { value?: unknown } | undefined)?.value === true;
-        });
-        if (containsTranscriptionDom) transcriptionTargets.push(candidate);
-      } catch {
-        // A stale or not-yet-loaded panel target can disappear during workspace restoration.
-      }
-    }
-    if (transcriptionTargets.length === 1) return transcriptionTargets[0];
-    if (transcriptionTargets.length > 1) {
-      throw new Error(`Expected one GuitarDSL transcription webview target, found ${transcriptionTargets.length}: ${transcriptionTargets.map(item => item.title).join(', ')}`);
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  const available = lastTargets.map(item => `${item.type}:${item.url.slice(0, 180)}`).join(' | ');
-  throw new Error(`Could not find the GuitarDSL transcription webview target: ${available || '(none)'}`);
-}
-
 /** Captures the selected VS Code workbench page through its local DevTools target. */
 export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134, viewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
@@ -437,42 +384,6 @@ export async function resetPreviewWebviewViewport(): Promise<void> {
   previewViewportWasOverridden = false;
 }
 
-/** Captures the active YouTube transcription Webview at its real CSS viewport size. */
-export async function captureTranscriptionWebviewScreenshot(filename: string, issueNumber = 137): Promise<void> {
-  if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
-  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  await waitForTranscriptionTarget(port);
-  const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
-  await withWorkbenchDevTools(async send => {
-    const boundsResult = await send('Runtime.evaluate', {
-      expression: `JSON.stringify([...document.querySelectorAll('iframe')].map(frame => {
-        const rect = frame.getBoundingClientRect();
-        return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
-          x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
-      }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')))` ,
-      returnByValue: true
-    });
-    const boundsValue = (boundsResult.result as { value?: unknown } | undefined)?.value;
-    if (typeof boundsValue !== 'string') throw new Error('Could not locate the visible transcription Webview in the workbench');
-    const visibleFrames = JSON.parse(boundsValue) as Array<{ x: number; y: number; width: number; height: number }>;
-    if (visibleFrames.length !== 1) {
-      throw new Error(`Expected one visible transcription Webview iframe for capture, found ${visibleFrames.length}`);
-    }
-    const frame = visibleFrames[0];
-    await send('Page.enable');
-    const result = await send('Page.captureScreenshot', {
-      format: 'png',
-      fromSurface: true,
-      captureBeyondViewport: true,
-      clip: { x: frame.x, y: frame.y, width: frame.width, height: frame.height, scale: 1 }
-    });
-    const data = result.data;
-    if (typeof data !== 'string') throw new Error('DevTools did not return a transcription screenshot');
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
-  });
-}
-
 export async function scrollInspectorToControls(): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   await withWorkbenchDevTools(async send => {
@@ -648,92 +559,6 @@ export async function withPreviewReducedMotion<T>(reduced: boolean, run: () => P
     }
   });
   return withTarget(0);
-}
-
-/** Evaluates an expression in the singleton YouTube transcription webview. */
-export async function evaluateTranscriptionWebview<T>(expression: string): Promise<T> {
-  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
-  return withDevToolsTarget(target, async send => {
-    await send('Runtime.enable');
-    const tree = await send('Page.getFrameTree');
-    let activeFrameId: string | undefined;
-    const frameSummaries: string[] = [];
-    const visit = (node: Record<string, unknown>): void => {
-      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
-      if (frame) frameSummaries.push(`${frame.name ?? '(unnamed)'}:${frame.url ?? '(no url)'}`);
-      if (frame?.name === 'active-frame') activeFrameId = frame.id;
-      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-    };
-    if (tree.frameTree) {
-      const frameTree = tree.frameTree as Record<string, unknown>;
-      visit(frameTree);
-      if (!activeFrameId) {
-        const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
-        if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
-      }
-    }
-    if (!activeFrameId) throw new Error('Could not find the active transcription webview frame');
-    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-transcription-evaluation' });
-    const contextId = isolated.executionContextId;
-    if (typeof contextId !== 'number') throw new Error('Could not create a transcription webview evaluation context');
-    const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
-    if (response.exceptionDetails) {
-      const details = response.exceptionDetails as { text?: string; exception?: { description?: string; value?: string } };
-      throw new Error(`Transcription Webview evaluation raised an exception (${details.exception?.description ?? details.exception?.value ?? details.text ?? 'unknown'}): ${target.url}; frames=${frameSummaries.join(' | ')}`);
-    }
-    const value = (response.result as { value?: unknown } | undefined)?.value;
-    return value as T;
-  });
-}
-
-/** Reads the browser accessibility role and name for a transcription control. */
-export async function inspectTranscriptionWebviewAccessibility(selector: string): Promise<{ role: string; name: string; focused: boolean }> {
-  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
-  return withDevToolsTarget(target, async send => {
-    await send('Runtime.enable');
-    const tree = await send('Page.getFrameTree');
-    let activeFrameId: string | undefined;
-    const visit = (node: Record<string, unknown>): void => {
-      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
-      if (frame?.name === 'active-frame') activeFrameId = frame.id;
-      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>));
-    };
-    if (tree.frameTree) {
-      const frameTree = tree.frameTree as Record<string, unknown>;
-      visit(frameTree);
-      if (!activeFrameId) {
-        const rootFrame = frameTree.frame as { id?: string; url?: string } | undefined;
-        if (rootFrame?.url?.startsWith('vscode-webview://')) activeFrameId = rootFrame.id;
-      }
-    }
-    if (!activeFrameId) throw new Error('Could not find the active transcription webview frame');
-    const isolated = await send('Page.createIsolatedWorld', { frameId: activeFrameId, worldName: 'guitardsl-transcription-accessibility' });
-    if (typeof isolated.executionContextId !== 'number') throw new Error('Could not create a transcription accessibility context');
-    const resolved = await send('Runtime.evaluate', {
-      contextId: isolated.executionContextId,
-      expression: `document.querySelector(${JSON.stringify(selector)})`,
-      returnByValue: false
-    });
-    const objectId = (resolved.result as { objectId?: unknown } | undefined)?.objectId;
-    if (typeof objectId !== 'string') throw new Error(`Could not find transcription control ${selector}`);
-    await send('DOM.enable');
-    await send('Accessibility.enable');
-    const described = await send('DOM.describeNode', { objectId });
-    const backendNodeId = (described.node as { backendNodeId?: unknown } | undefined)?.backendNodeId;
-    if (typeof backendNodeId !== 'number') throw new Error(`Could not describe transcription control ${selector}`);
-    const response = await send('Accessibility.getPartialAXTree', { backendNodeId, fetchRelatives: false });
-    const nodes = Array.isArray(response.nodes) ? response.nodes as Array<Record<string, unknown>> : [];
-    const node = nodes[0];
-    if (!node) throw new Error(`No accessibility node exists for transcription control ${selector}`);
-    const role = (node.role as { value?: unknown } | undefined)?.value;
-    const name = (node.name as { value?: unknown } | undefined)?.value;
-    const properties = Array.isArray(node.properties) ? node.properties as Array<Record<string, unknown>> : [];
-    const focused = properties.some(property => {
-      const value = property.value as { value?: unknown } | undefined;
-      return property.name === 'focused' && value?.value === true;
-    });
-    return { role: typeof role === 'string' ? role : '', name: typeof name === 'string' ? name : '', focused };
-  });
 }
 
 export async function waitForPreviewDocument(): Promise<void> {
@@ -1113,12 +938,6 @@ async function dispatchKey(send: SendDevToolsCommand, key: WorkbenchKey, shift =
 /** Sends a real DevTools keyboard event to the Extension Development Host. */
 export async function dispatchWorkbenchKey(key: WorkbenchKey, shift = false): Promise<void> {
   await withWorkbenchDevTools(send => dispatchKey(send, key, shift));
-}
-
-/** Sends a real DevTools keyboard event to the transcription Webview renderer. */
-export async function dispatchTranscriptionWebviewKey(key: WorkbenchKey, shift = false): Promise<void> {
-  const target = await waitForTranscriptionTarget(Number(process.env.GUITARDSL_E2E_CDP_PORT));
-  await withDevToolsTarget(target, send => dispatchKey(send, key, shift));
 }
 
 /** Resizes the native Primary Sidebar through its real sash. */
