@@ -4,7 +4,7 @@
 
 - **現在のバージョン**: `0.1.0`
 - **最終更新日**: 2026-11-13
-- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 は承認済みContractに基づき実装中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+- **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
 ## Issue #164: YouTube採譜の撤去と練習ガイドのCompact固定
 
@@ -12,7 +12,7 @@
 - **実装・文書**: Help、仕様、設計、ステータス、パッケージ寄与、ユニット/E2Eを同期済み。旧 `guitardsl.geminiApiKey` はactivation時に一度だけ SecretStorage.delete を試み、値を読まず、同期throwとPromise rejectionを無視する。
 - **画面証拠**: [Issue #164のPractice Guide画面一覧](evidence/issue-164/README.md)。VS Code Extension Development Host（macOS arm64 / VS Code 1.146.0）で400/421/600/1100 CSS px × JA/EN × Light/Dark × Melody ON/OFF（32枚）、400px × grid4/8/16 × JA/EN × Light/Dark（12枚）を取得し、全44枚のPNG寸法を検査した。
 - **検証**: `npm run compile:all`、`npm run check:help`、`npm run check:ai`、`npm run test:unit`（1,135 PASS）、サンドボックス外の `npm run test:e2e`（131 PASS / 6 pending）、`npm test`（同じHelp/AI・unit・E2E gate PASS）、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,147項目、YouTube/Gemini旧実装なし）、`validate-docs --issue 164`（9 owner files）、`verify-implementation-contract 164`（26,561 bytes / SHA-256 `c64987d34b8e49a8fe1a1fc6d54bfb5b94a78cc9216e4a3a2257a82f33146543`）、`git diff --check` はPASS。VSIXには共有 `out/transcription/model.js` と `serializer.js` のみ含まれる。6件のpendingは既存のcapture/audio依存E2E。Windows/Linux、VoiceOver/NVDAは未検証。
-- **Delivery**: PR作成と `phase:review` 遷移を実施予定。
+- **Delivery**: [PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165) はopen。Issue #164 は `phase:review` へ遷移し、C01–C13の自己レビューをPRへ公開済み。
 
 ---
 
