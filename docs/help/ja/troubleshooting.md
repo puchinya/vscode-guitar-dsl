@@ -58,19 +58,6 @@ PDF は常に現在のプレビュー（カポの一時変更や初心者モー�
 
 使われなくなる可能性のある `chord` 定義は通知されますが、削除はされません。
 
-### YouTube 自動採譜
-<!-- help-sources: extension:3 -->
-
-- **API キー**: 初回実行時に Gemini API キーの入力を求められます。変更は **GuitarDSL: Gemini API キーを設定**、削除は **GuitarDSL: Gemini API キーを削除** で行います。
-- 受け付ける URL は、`youtube.com`・`www.youtube.com`・`youtu.be` の公開動画の `https://` URL だけです。
-- 次の場合はエラーメッセージを表示します。
-  - ネットワーク・利用上限・認証の問題
-  - 非公開の動画
-  - 不正な結果
-  - 4/4 以外の曲
-
-  エラーのときはドキュメントを作成せず、既存のファイルも変更しません。
-
 ### ローカル音源の採譜（実験的）
 <!-- help-sources: extension:3 -->
 

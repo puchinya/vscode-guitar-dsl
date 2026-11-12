@@ -2,7 +2,7 @@
 // The AI (or the manual QuickPick) chooses the musical intent; this module owns everything that must be
 // exact: meter compatibility, preset selection, physical down/up phase, syncopation semantics, duration
 // generation, chord-interval articulation, phrase / transition / ending arrangement and the
-// source-preserving edit. Pure module: no VS Code, Gemini, transcription or Audio MIR dependency.
+// source-preserving edit. Pure module: no VS Code or audio-analysis dependency.
 
 import { MeasureData, ParsedScore, RhythmItem, parseGuitarDsl, rhythmItemBeats } from './compiler';
 import { scanArrangementBlockLines } from './arrangement';

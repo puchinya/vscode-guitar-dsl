@@ -7,6 +7,7 @@
 - Owning Issue: [Issue #118](https://github.com/puchinya/vscode-guitar-dsl/issues/118)
 - Related Issue: [Issue #133](https://github.com/puchinya/vscode-guitar-dsl/issues/133)
 - Related Issue: [Issue #135](https://github.com/puchinya/vscode-guitar-dsl/issues/135)
+- Related Issue: [Issue #164](https://github.com/puchinya/vscode-guitar-dsl/issues/164)
 - Related specification: [Extension specification](../specs/extension.md), [GuitarDSL syntax specification](../specs/guitardsl-syntax.md)
 
 ## Context and goals
@@ -40,7 +41,7 @@ flowchart LR
     Render --> Pdf["PDF exporter"]
     Core --> Symbols["Document symbols"]
     Core --> Editors["Feature editors and commands"]
-    Core --> Audio["Optional transcription adapters"]
+    Core --> Audio["Local audio transcription adapter"]
     Core --> AI["VS Code AI tool adapters"]
     Core --> GPCommands["GP file commands: I/O and UI"]
     Editors --> Compiler
@@ -53,7 +54,7 @@ flowchart LR
     Serializer --> Compiler
 ```
 
-依存の基本方向は `Extension Core → feature adapters / render / PDF → compiler` である。ドメイン処理のうち純粋な変換は VS Code API から分離し、ホスト側は入出力とエディター統合を担う。採譜の2方式は別の入力アダプターだが、Music IR の検証と DSL シリアライザーを共有する。Guitar Pro コマンドもファイル操作とユーザー確認だけを Extension Core に置き、GPIF archive / XML の解釈と書出しは `src/gp78/` の純粋なアダプターに委譲する。GPアダプターは公開 `src/interchange/index.ts` を介して DSL シリアライザーと意味モデルを共有し、Compiler の内部型へ依存しない。AI ツールは既存ドメイン API の薄いアダプターであり、モデルの選択・実行は VS Code 側の責務である。
+依存の基本方向は `Extension Core → feature adapters / render / PDF → compiler` である。ドメイン処理のうち純粋な変換は VS Code API から分離し、ホスト側は入出力とエディター統合を担う。ローカル Audio MIR adapter は Music IR の検証と DSL シリアライザーを共有する。Guitar Pro コマンドもファイル操作とユーザー確認だけを Extension Core に置き、GPIF archive / XML の解釈と書出しは `src/gp78/` の純粋なアダプターに委譲する。GPアダプターは公開 `src/interchange/index.ts` を介して DSL シリアライザーと意味モデルを共有し、Compiler の内部型へ依存しない。AI ツールは既存ドメイン API の薄いアダプターであり、モデルの選択・実行は VS Code 側の責務である。
 
 TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Compiler が `ParsedScore` 内の TAB モデルへ解決し、通常音の実音は `InstrumentModel.pitchAt()` から得る。Renderer はコンパイル済み位置を表示し、調弦・カポから独自に音高を再計算しない。将来の再生・交換形式も同じ TAB モデルを読む。
 
@@ -75,7 +76,7 @@ TAB もこの境界に従う。`tab:` の弦・相対フレット・効果は Co
 | ページ / SVG / HTML | layout・Renderer | Preview Webview、PDF exporter |
 | Inspector progression audition | Extension Core session と canonical `PlaybackTimeline` events | Inspector Webview は一時再生のみを実行。Extension Core が Preview 停止確認付きの exclusive audio lease を管理する |
 | Preview playback / Practice | `ParsedScore.playOrder` と `PlaybackTimeline` | Preview Webview が通常再生と Practice を実行。Inspector lease 中は Host が開始操作をロックする |
-| Music IR (`TranscribedSong`) | 採譜アダプター | validator、serializer、文書挿入フロー |
+| Music IR (`TranscribedSong`) | ローカル Audio MIR adapter | strict validator、serializer、新規未保存文書の作成 |
 | AI tool 入出力 | VS Code Agent / Chat と tool adapter | 既存のドメイン API。会話・モデル選択は拡張機能外が所有する |
 
 `src/interchange/` は GuitarDSL テキストを既存 Compiler で検証して意味スナップショットへ写し、逆変換では型付き値から DSL を書いて Compiler に再解析させる純粋な境界である。形式アダプターは公開 barrel を消費し、Compiler の内部型や元の文書テキストを保存先として扱わない。Guitar Pro adapter は GP archive の検査・GPIF parsing・参照解決を純粋な値変換として行い、URI、QuickPick、save dialog、排他的ファイル公開を含めない。演奏順は既存 resolver、再生時間は `buildPlaybackTimeline()` が引き続き所有する。詳細は [Guitar Pro 7/8 interchange](gp78-interchange.md) を参照する。
@@ -86,7 +87,7 @@ PDF は `src/pdf.ts` 内でページ SVG からブラウザーを使わずプロ
 
 ## Failure handling
 
-エラーは発生した層で型付き結果、診断、または VS Code のユーザー向けエラー経路として扱う。コンパイル診断、PDF 生成、Webview メッセージ、採譜 API / WASM、編集差分、AI tool の失敗を一つの共通成功値へ丸めない。個別の失敗条件と境界はそれぞれの機能設計書と規範仕様が所有する。
+エラーは発生した層で型付き結果、診断、または VS Code のユーザー向けエラー経路として扱う。コンパイル診断、PDF 生成、Webview メッセージ、Audio MIR Worker / WASM、編集差分、AI tool の失敗を一つの共通成功値へ丸めない。個別の失敗条件と境界はそれぞれの機能設計書と規範仕様が所有する。
 
 ## Alternatives considered
 

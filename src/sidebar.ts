@@ -65,7 +65,7 @@ export class GuitarDslSidebarProvider implements vscode.TreeDataProvider<GuitarD
         return [
           cmd(m.sidebarOpenGuitarDslFile, 'guitardsl.navigation.openGuitarDslFile', 'folder-opened'),
           cmd(m.sidebarImportGuitarPro, 'guitardsl.importGuitarPro', 'music'),
-          cmd(m.sidebarChooseTranscriptionSource, 'guitardsl.navigation.chooseTranscriptionSource', 'play-circle')
+          cmd(m.sidebarTranscribeAudio, 'guitardsl.transcribeAudio', 'play-circle')
         ];
       case 'editAssist':
         return [

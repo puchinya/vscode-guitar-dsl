@@ -3,7 +3,6 @@ import { getMessages } from '../../src/i18n';
 import { EXPLICIT_URI_ONLY_RESOLUTION } from '../../src/documentResolver';
 import {
   createSidebarNavigationCommands,
-  SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND,
   SIDEBAR_EXPORT_GUITAR_PRO_ACTIVE_COMMAND,
   SIDEBAR_EXPORT_PDF_ACTIVE_COMMAND,
   SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND,
@@ -91,11 +90,10 @@ describe('Sidebar navigation command handlers', () => {
     return value!;
   };
 
-  it('registers each internal command once and returns owned disposables', () => {
-    assert.strictEqual(disposables.length, 5);
+  it('registers each remaining internal command once and returns owned disposables', () => {
+    assert.strictEqual(disposables.length, 4);
     assert.deepStrictEqual([...harness.handlers.keys()], [
       SIDEBAR_OPEN_GUITAR_DSL_FILE_COMMAND,
-      SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND,
       SIDEBAR_SHOW_PREVIEW_ACTIVE_COMMAND,
       SIDEBAR_EXPORT_PDF_ACTIVE_COMMAND,
       SIDEBAR_EXPORT_GUITAR_PRO_ACTIVE_COMMAND
@@ -130,20 +128,6 @@ describe('Sidebar navigation command handlers', () => {
     assert.strictEqual(harness.opened.length, 1);
     assert.deepStrictEqual(harness.shown, []);
     assert.deepStrictEqual(harness.errors, [msgs.msgGuitarDslFileOpenFailed]);
-  });
-
-  it('dispatches only the selected transcription source and cancels without running either command', async () => {
-    const choose = handler(SIDEBAR_CHOOSE_TRANSCRIPTION_SOURCE_COMMAND);
-    await choose();
-    assert.deepStrictEqual(harness.executed, []);
-    assert.deepStrictEqual(harness.quickPickOptions[0].map(item => item.command), [
-      'guitardsl.transcribeYouTube', 'guitardsl.transcribeAudio'
-    ]);
-    harness.selectedSource = harness.quickPickOptions[0][0];
-    await choose();
-    harness.selectedSource = harness.quickPickOptions[0][1];
-    await choose();
-    assert.deepStrictEqual(harness.executed, [['guitardsl.transcribeYouTube'], ['guitardsl.transcribeAudio']]);
   });
 
   it('uses the active editor at invocation and ignores stale item URIs or plaintext fallback', async () => {

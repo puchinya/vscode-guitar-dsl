@@ -53,13 +53,6 @@ These tools show a reason when a change is not possible. Common reasons:
 
 Chord definitions that may become unused are reported but never deleted.
 
-### YouTube Transcription
-<!-- help-sources: extension:3 -->
-
-- **API key**: you are asked for a Gemini API key on first use. Run **GuitarDSL: Set Gemini API Key** to change it, or **GuitarDSL: Clear Gemini API Key** to remove it.
-- Only public `https://` URLs from `youtube.com`, `www.youtube.com` and `youtu.be` are accepted.
-- Network, quota or authentication problems, private videos, invalid results and songs not in 4/4 cause an error message. No document is created and existing files are not changed.
-
 ### Local Audio Transcription (Experimental)
 <!-- help-sources: extension:3 -->
 

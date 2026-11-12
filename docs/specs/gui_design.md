@@ -7,6 +7,7 @@
 - Owning Issue: [Issue #150](https://github.com/puchinya/vscode-guitar-dsl/issues/150)
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
+- Related Issue: [Issue #164](https://github.com/puchinya/vscode-guitar-dsl/issues/164)
 - Related specification: [拡張機能仕様](extension.md)
 
 ## Purpose
@@ -15,7 +16,7 @@
 
 ## Scope
 
-対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、YouTube 採譜パネルである。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
+対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、およびローカル WAV 採譜の導線である。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
 
 各 SVG は対象画面だけを描く独立したベクター図であり、スクリーンショットを貼り込んだものではない。矩形、線、パス、円、文字などで画面を表現する。画面内に縦スクロールがある場合は、図の高さをスクロール内容の末尾まで延ばして、その代表状態の全項目・全操作を含める。横幅からはみ出す操作列も図の幅に含める。表示領域の端で対象要素を切らない。
 
@@ -38,9 +39,6 @@
 | Inspector・移調 | [inspector-transpose.svg](gui_design/inspector-transpose.svg) | 293 × 1050 px | コード対応表と「適用」「閉じる」 |
 | Inspector・コード進行候補 | [inspector-progression.svg](gui_design/inspector-progression.svg) | 480 × 1360 px | 試聴設定、適用、閉じる |
 | コード図エディタ | [chord-editor.svg](gui_design/chord-editor.svg) | 548 × 1260 px | DSL 行と保存操作一式 |
-| YouTube 採譜パネル・設定を閉じた状態 | [youtube-transcription.svg](gui_design/youtube-transcription.svg) | 548 × 528 px | 採譜を開始するボタンと未入力時の状態表示 |
-| YouTube 採譜パネル・詳細設定を展開 | [youtube-transcription-advanced.svg](gui_design/youtube-transcription-advanced.svg) | 548 × 1000 px | AI モデルと採譜開始ボタン |
-| YouTube 採譜パネル・結果プレビュー | [youtube-transcription-result.svg](gui_design/youtube-transcription-result.svg) | 548 × 800 px | 読み取り専用 GuitarDSL とコピー操作 |
 
 ## Normative requirements
 
@@ -74,7 +72,7 @@
 | 新規作成・サンプルから作成 | `guitardsl.openSample` | 選択した同梱サンプルから新しい未保存文書を作成する |
 | 開く・取り込む・GuitarDSL ファイルを開く | `guitardsl.navigation.openGuitarDslFile`（内部コマンド） | `.guitardsl` / `.gdsl` だけを選び、通常の TextEditor で開く |
 | 開く・取り込む・Guitar Pro 7/8 を取り込む | `guitardsl.importGuitarPro` | 既存の Guitar Pro 取り込み処理を使う |
-| 開く・取り込む・音源から採譜 | `guitardsl.navigation.chooseTranscriptionSource`（内部コマンド） | YouTube またはローカル WAV を選ぶ。Esc ではどちらも実行しない |
+| 開く・取り込む・ローカル WAV から採譜 | `guitardsl.transcribeAudio` | ローカル WAV のファイル選択を直接開く。取消時は解析を開始しない |
 | 編集支援・楽譜 Preview を開く | `guitardsl.navigation.showPreviewActive`（内部コマンド） | 実行時にアクティブな GuitarDSL 文書を明示する。対象なしでは何も出力しない |
 | 編集支援・Inspector を開く | `guitardsl.openInspector` | 既存 Inspector の対象解決と空状態を使う |
 | 書き出す・PDF に書き出す | `guitardsl.navigation.exportPdfActive`（内部コマンド） | 実行時にアクティブな GuitarDSL 文書だけを `guitardsl.exportPdf` に渡す |
@@ -116,13 +114,13 @@ Preview は、再生操作、楽譜設定、譜面の順に表示する。ペー
 
 #### 2.4 弾き語り練習ガイド (Issues #153, #155, #162)
 
-Practice が有効なときは既存の再生行、楽譜設定行、42 px Practice 操作行、ページ表示を維持し、Preview 下端に練習ガイドを置く。音楽レーン順はメロディ、歌詞、奏法、コード名、コード図とする。コンパクト表示では次コードの名前と図を常時表示し、実際のガイド幅が480 CSS px以下なら上段帯、481 px以上なら右欄へ置く。左ラベルレールはコンパクト／詳細グリッドの両方で非表示とし、幅を割り当てない。詳細グリッドはタイムラインを左列、次コード欄を右列に置く。メロディを OFF にする設定はメロディ行だけに作用し、歌詞との時間関係を保つ。
+Practice が有効なときは既存の再生行、楽譜設定行、42 px Practice 操作行、ページ表示を維持し、Preview 下端に練習ガイドを置く。音楽レーン順はメロディ、歌詞、奏法、コード名、コード図とする。コンパクト表示では次コードの名前と図を常時表示し、実際のガイド幅が480 CSS px以下なら上段帯、481 px以上なら右欄へ置く。左ラベルレールは設けず、幅を割り当てない。メロディを OFF にする設定はメロディ行だけに作用し、歌詞との時間関係を保つ。
 
-既存設定 UI の「コンパクト」（既定）/「詳細グリッド」と「ペア更新」（既定）/「連続スクロール」を保つ。詳細グリッドは Issue #153 の Fraction 配置、全曲密度判定、タイムライン表示を維持する。練習ガイドの外側操作 UI は HTML/CSS のままにし、コンパクト4小節の番号、メロディ、歌詞、奏法、コード名、コード図、小節線、playhead は各小節1枚のSVGに描く。レーンは `<g data-guide-lane="...">` で分け、拍位置は `x = 2 + beat / measureBeats * (slotWidth - 4)` の共通変換を使う。SVG の viewBox 幅とCSS幅を実測slot幅へ合わせ、1 SVG単位を1 CSS pxにする。DSL、音源、`PlaybackTimeline`、通常譜面SVG、PDFは変更しない。
+練習ガイドは Compact 専用とし、表示モード切替 UI、詳細タイムライン DOM、横スクロールを設けない。保存状態に旧詳細モードが残っていても Compact を表示し、今後の state には表示モードを保存しない。ページは前後ボタンで切り替える。練習ガイドの外側操作 UI は HTML/CSS のままにし、コンパクト4小節の番号、メロディ、歌詞、奏法、コード名、コード図、小節線、playhead は各小節1枚のSVGに描く。レーンは `<g data-guide-lane="...">` で分け、拍位置は `x = 2 + beat / measureBeats * (slotWidth - 4)` の共通変換を使う。SVG の viewBox 幅とCSS幅を実測slot幅へ合わせ、1 SVG単位を1 CSS pxにする。DSL、音源、`PlaybackTimeline`、通常譜面SVG、PDFは変更しない。
 
 コンパクト表示は常に4小節容量を保ち、実際にある演奏出現だけを表示する。各slot幅はページ実幅 `W` を4等分し、`[W/4, W/4, W/4, W-3*(W/4)]` とする。端数は最後のslotに配分し、4slotの合計を正確に `W` とする。2bank内とbank間のCSS gapはすべて0 pxで、隣接カードは端で接する。文字列長、奏法数、コード図で幅を増やさない。小節線のみをslotの `x=0` / `x=slotWidth` に置き、拍用の内側2 px insetは保つ。320 / 360 / 400 / 421 / 480 / 481 / 600 / 601 / 840 / 1100 / 1600 CSS pxの全幅で4slotを同じ可視範囲へ収め、横overflowは1 px以下とする。コンパクト表示に横スクロールを設けない。次コード帯の名前と正方形図を含め、400 pxでも番号と全5レーンの情報を視認可能にする。
 
-幅480 CSS px以下のCompactは次コード帯を上段に置き、下段を4小節の1列にする。幅481–600 pxは `minmax(0, 1fr) 96px`、601 px以上は `minmax(0, 1fr) 112px` とし、次コード欄を右列に置く。Compactでは4小節列と次コード欄の空白を0 pxとし、境界を0.5 CSS px以内で接続する。区切りの1 px borderは維持する。上段配置では次コード帯の下辺と4小節ページ上辺を接続し、ページ上端の8 px insetを設けない。次コード欄の内部paddingと図の寸法は維持する。詳細グリッドも左レールなしで、幅600 px以下は `minmax(0, 1fr) 96px`、601 px以上は `minmax(0, 1fr) 112px` とする。固定スケールでストリップ全体を縮小せず、各カード内コード図は全演奏出現で同じ正方形サイズにする。サイズはその測定slot幅における全コード区間の最小利用幅と144 px viewBoxを上限にし、各区間中央へ置く。図laneは上下4 px以上を予約し、図全体を表示する。次コード図は44～52 pxの正方形にする。詳細グリッドでは歌詞など重なりを避けるレーンに縦行を追加し、候補小節の最大行数を共有する。Compactの歌詞は演奏出現で選択されたverseだけを表示し、小節ごとに高さ28 pxの一段、baseline y=19、data-guide-row=0を固定する。メロディlaneは表示中に24 px ruler直後から64 pxで、歌詞有無・verse・現在歌詞テキストによって位置、高さ、pitch mapping、barのy座標を変えない。各セル幅は次の異なる歌詞開始位置、小節端、歌詞の有効durationに対応する音価幅を上限とし、音節とeventIndexで対応するメロディ音の最短横幅を考慮する。同拍の歌詞はセルを等分し、melismaでは拡張後durationを使う。同じ曲の全演奏出現で一つの歌詞font-sizeを共有する。サイズは全メロディpitch-barの最短幅 `durationBeats / measureBeats * (slotWidth - 10)` を基準にし、既存セルの安全余白0.25 pxを引いて4～13 pxへクランプする。歌詞文字列・音節・verse・bank/pageでは変えず、実slot幅が変わったときに曲全体を再計算する。各セルでは共通サイズのまま収まる先頭grapheme prefixを表示し、最初のgraphemeも収まらない場合だけ時間位置マーカーを使う。文字のtextLength、lengthAdjust=spacingAndGlyphs、scaleX、非等方transformは禁止する。一文字graphemeはセルに収まる限り実文字を表示し、複数graphemeは4 pxで収まる最大の先頭文字列を表示する。全文、ARIA名、title、event順、beat/Fractionを保持し、他verseは非表示DOMに残す。上部ヘッダーに現在歌詞の重複ラベルやテキスト欄を置かない。選択verseの歌詞はメロディ下のlyrics laneに一段で表示し、各イベントのsource text、title、ARIA名、event順、beat/Fractionを保持する。ガイド本体には横スクロールを設けない。奏法の矢印とwaveは一段の時間順で横に並べ、拍/Fractionとxアンカーを保持する。CompactのPMは矢印の下に独立した9 px太字SVG注記として置き、PMの有無で矢印のpath、x/y、自然幅を変えない。同一小節でPM attackのeventEndと次のeventStartが正確に一致する区間は一つのPM runにまとめ、非PM attack、rest、小節境界で分割する。runラベルは区間中央に置き、ラベル間に2 px未満の衝突があれば注記だけを安定順で縦に段組みする。注記行数とlane高は全演奏出現の最大値から先に決め、bank/page/fade中に変化させない。runの参加event、Fraction、ARIAとplayback stateは保持する。Compact奏法は詳細グリッドと別のSVG geometryを使う。DOWN/UP attackとgrid4/8/16継続waveは、Contract v27に定める共通15×47 SVG masterを使う。DOWN shaft/headは `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、UPは `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、waveは `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` とし、headはcurrentColorで塗りつぶす。waveはarrow上端からY=21pxへ置き、描画順はwaves→attacks→PMを保つ。grid8/16では参照小節幅366/400に対する `referenceScale=min(1,slotWidth/referenceMeasureWidth)` を使い、参照trackのinsetとtrackWidth=324を保ったFraction anchorへ記号を置く。SVG全体を `translate(x,y) scale(s,s)` で縮小し、path、stroke比率、Fraction、event、ARIA/titleを保ち、最小描画サイズは設けない。painted wave/arrow clearanceは1px以上、20pxのtechnique-lane gutter、10px以上のpainted technique/chord-name clearance、4小節と全コード図表示を維持する。以前の4×30 attack、5.6×30 wave、grid16三段階path、shaft 26px・stroke 1pxの表示下限は歴史的仕様であり、v24に適用しない。Compact奏法の通常/past/next/current色は順に `#1f2937` / `#475569` / `#37465e` / `#005f85` とし、白背景で4.5:1以上のcontrastを保つ。past/nextのopacityは下げず、currentは色相や太さでも区別する。歌詞の通常/current/past色は白背景に対してそれぞれ4.5:1以上のコントラストを保ち、currentとpastは明度差だけでなく色相や太字でも区別する。コード名と図は各コード区間の中央で横一列に対応させる。Compactのコード名幅はrender時の自然幅metadataからresizeごとに再計算し、狭幅から広幅へ戻す。Compactの歌詞・コード名は元の全文をデータ、`title`、ARIA名に保持する。密度超過時はセル内の表示文字だけを省略でき、現在歌詞をヘッダーに重複表示しない。音符、奏法、継続記号、コード図は省略しない。Compactメロディ休符はglyphやDOM/SVG要素を出力せず、その時間幅を空白に保ち、後続pitch barの拍位置とdurationを維持する。全compact pitch-barは直角の矩形（`rx="0" ry="0"`）にし、高さ・音高・音価・色は維持する。詳細グリッド、通常譜面SVG/PDF、DSL、playbackの休符表示・意味は変えない。
+幅480 CSS px以下のCompactは次コード帯を上段に置き、下段を4小節の1列にする。幅481–600 pxは `minmax(0, 1fr) 96px`、601 px以上は `minmax(0, 1fr) 112px` とし、次コード欄を右列に置く。Compactでは4小節列と次コード欄の空白を0 pxとし、境界を0.5 CSS px以内で接続する。区切りの1 px borderは維持する。上段配置では次コード帯の下辺と4小節ページ上辺を接続し、ページ上端の8 px insetを設けない。次コード欄の内部paddingと図の寸法は維持する。固定スケールでストリップ全体を縮小せず、各カード内コード図は全演奏出現で同じ正方形サイズにする。サイズはその測定slot幅における全コード区間の最小利用幅と144 px viewBoxを上限にし、各区間中央へ置く。図laneは上下4 px以上を予約し、図全体を表示する。次コード図は44～52 pxの正方形にする。Compactの歌詞は演奏出現で選択されたverseだけを表示し、小節ごとに高さ28 pxの一段、baseline y=19、data-guide-row=0を固定する。メロディlaneは表示中に24 px ruler直後から64 pxで、歌詞有無・verse・現在歌詞テキストによって位置、高さ、pitch mapping、barのy座標を変えない。各セル幅は次の異なる歌詞開始位置、小節端、歌詞の有効durationに対応する音価幅を上限とし、音節とeventIndexで対応するメロディ音の最短横幅を考慮する。同拍の歌詞はセルを等分し、melismaでは拡張後durationを使う。同じ曲の全演奏出現で一つの歌詞font-sizeを共有する。サイズは全メロディpitch-barの最短幅 `durationBeats / measureBeats * (slotWidth - 10)` を基準にし、既存セルの安全余白0.25 pxを引いて4～13 pxへクランプする。歌詞文字列・音節・verse・bank/pageでは変えず、実slot幅が変わったときに曲全体を再計算する。各セルでは共通サイズのまま収まる先頭grapheme prefixを表示し、最初のgraphemeも収まらない場合だけ時間位置マーカーを使う。文字のtextLength、lengthAdjust=spacingAndGlyphs、scaleX、非等方transformは禁止する。一文字graphemeはセルに収まる限り実文字を表示し、複数graphemeは4 pxで収まる最大の先頭文字列を表示する。全文、ARIA名、title、event順、beat/Fractionを保持し、他verseは非表示DOMに残す。上部ヘッダーに現在歌詞の重複ラベルやテキスト欄を置かない。選択verseの歌詞はメロディ下のlyrics laneに一段で表示し、各イベントのsource text、title、ARIA名、event順、beat/Fractionを保持する。ガイド本体には横スクロールを設けない。奏法の矢印とwaveは一段の時間順で横に並べ、拍/Fractionとxアンカーを保持する。CompactのPMは矢印の下に独立した9 px太字SVG注記として置き、PMの有無で矢印のpath、x/y、自然幅を変えない。同一小節でPM attackのeventEndと次のeventStartが正確に一致する区間は一つのPM runにまとめ、非PM attack、rest、小節境界で分割する。runラベルは区間中央に置き、ラベル間に2 px未満の衝突があれば注記だけを安定順で縦に段組みする。注記行数とlane高は全演奏出現の最大値から先に決め、bank/page/fade中に変化させない。runの参加event、Fraction、ARIAとplayback stateは保持する。Compact奏法はCompact 専用の SVG geometry を使う。DOWN/UP attackとgrid4/8/16継続waveは、Contract v27に定める共通15×47 SVG masterを使う。DOWN shaft/headは `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、UPは `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、waveは `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` とし、headはcurrentColorで塗りつぶす。waveはarrow上端からY=21pxへ置き、描画順はwaves→attacks→PMを保つ。grid8/16では参照小節幅366/400に対する `referenceScale=min(1,slotWidth/referenceMeasureWidth)` を使い、参照trackのinsetとtrackWidth=324を保ったFraction anchorへ記号を置く。SVG全体を `translate(x,y) scale(s,s)` で縮小し、path、stroke比率、Fraction、event、ARIA/titleを保ち、最小描画サイズは設けない。painted wave/arrow clearanceは1px以上、20pxのtechnique-lane gutter、10px以上のpainted technique/chord-name clearance、4小節と全コード図表示を維持する。以前の4×30 attack、5.6×30 wave、grid16三段階path、shaft 26px・stroke 1pxの表示下限は歴史的仕様であり、v24に適用しない。Compact奏法の通常/past/next/current色は順に `#1f2937` / `#475569` / `#37465e` / `#005f85` とし、白背景で4.5:1以上のcontrastを保つ。past/nextのopacityは下げず、currentは色相や太さでも区別する。歌詞の通常/current/past色は白背景に対してそれぞれ4.5:1以上のコントラストを保ち、currentとpastは明度差だけでなく色相や太字でも区別する。コード名と図は各コード区間の中央で横一列に対応させる。Compactのコード名幅はrender時の自然幅metadataからresizeごとに再計算し、狭幅から広幅へ戻す。Compactの歌詞・コード名は元の全文をデータ、`title`、ARIA名に保持する。密度超過時はセル内の表示文字だけを省略でき、現在歌詞をヘッダーに重複表示しない。音符、奏法、継続記号、コード図は省略しない。Compactメロディ休符はglyphやDOM/SVG要素を出力せず、その時間幅を空白に保ち、後続pitch barの拍位置とdurationを維持する。全compact pitch-barは直角の矩形（`rx="0" ry="0"`）にし、高さ・音高・音価・色は維持する。通常譜面SVG/PDF、DSL、playbackの休符表示・意味は変えない。
 
 各小節SVGは小節番号、メロディ、歌詞、奏法、コード名、コード図、小節線、playheadを拍のFractionと共通x変換で描く。コード名と図はコードの有効区間の中点に揃え、同じ共有voicingから作った144×144 viewBoxの図をネストSVGで縮小する。各要素は演奏UIが必要とする小節、event、beat、verse、chordの `data-*` を維持する。幅、grid、表示切替、文書更新後の計測・SVG配置・高さ同期は、既存 `syncPracticeGuidePanelGeometry()` のRAFへまとめる。
 
@@ -130,7 +128,7 @@ Practice が有効なときは既存の再生行、楽譜設定行、42 px Pract
 
 初期表示 `[01, 02] [03, 04]`、左右2bank、演奏順 `PlaybackTimeline.occurrences`、repeat / volta / arrangement / lyricVerse、手動previous/nextは維持する。bank交替時は再生済みbankのみを同座標でopacity交差させ、現在bankのDOMとhighlightは動かさない。遷移先 `tempoBpm × effectiveSpeed()` から `fadeMs = clamp(round(60000 / effectiveBpm), 450, 900)` を開始時に計算し、不正時600 msとする。旧220 ms固定を使わず、fallback cleanupは `fadeMs + 80 ms` とする。進行中のfadeは速度変更で変えず、seek / loop / resize / mode変更 / disposeではgeneration管理で即時再投影する。reduced motion、初回表示、手動ページ移動、seek、復元、resizeは0 msとする。音声時刻・再生には影響しない。
 
-奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保つ。Contract v24は、以前のv5で使った4×30攻撃と5.6×30 / 3種grid16 waveを置き換える。Compactは下向きshaft/head `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、上向き `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、S波線 `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` の15×47 SVG masterを使う。矢尻はcurrentColorで塗りつぶし、波線はmaster上端から21pxに置く。密な幅では各記号のSVG全体を縦横同じ倍率で縮小し、Fraction別のwaveと意味上のeventを保持する。v26の参照小節比例fit、stroke込みwave/arrow 1px以上、隣接wave 0.25px以上の間隔を検査し、波線・矢印の最低表示サイズは設けない。compact pitch-barは直角矩形にする。実画面検収は400/421/600/1100 px × 日英 × Light/Dark × melody ON/OFF（32枚）、400 px × grid4/8/16 × 日英 × Light/Dark（12枚）、幅400/600 pxのcompact lyric/header表示も日英×Light/Darkで撮影し、DOMRect、画面CTM、横overflow、拍アンカー/視覚位置、歌詞コントラスト、レーン位置、voicing、fade時刻を測定する。通常譜面SVG、PDF、詳細grid、DSL、音源にはcompact変更を漏らさない。
+奏法とwaveはSVG `path` 等のベクトルで描き、可視の `↓` / `↑` / `〜` をUnicode・CSS content・フォントglyphで代用しない。矢印、PM、弦番号、休符、mute、brushの既存意味は保つ。Contract v24は、以前のv5で使った4×30攻撃と5.6×30 / 3種grid16 waveを置き換える。Compactは下向きshaft/head `M0 0 V31` / `M-7.5 30 L7.5 30 L0 47 Z`、上向き `M0 47 V17` / `M-7.5 17 L0 0 L7.5 17 Z`、S波線 `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` の15×47 SVG masterを使う。矢尻はcurrentColorで塗りつぶし、波線はmaster上端から21pxに置く。密な幅では各記号のSVG全体を縦横同じ倍率で縮小し、Fraction別のwaveと意味上のeventを保持する。v26の参照小節比例fit、stroke込みwave/arrow 1px以上、隣接wave 0.25px以上の間隔を検査し、波線・矢印の最低表示サイズは設けない。compact pitch-barは直角矩形にする。実画面検収は400/421/600/1100 px × 日英 × Light/Dark × melody ON/OFF（32枚）、400 px × grid4/8/16 × 日英 × Light/Dark（12枚）、幅400/600 pxのcompact lyric/header表示も日英×Light/Darkで撮影し、DOMRect、画面CTM、横overflow、拍アンカー/視覚位置、歌詞コントラスト、レーン位置、voicing、fade時刻を測定する。通常譜面SVG、PDF、練習ガイド、DSL、音源にはcompact変更を漏らさない。
 
 
 
@@ -138,7 +136,7 @@ Practice が有効なときは既存の再生行、楽譜設定行、42 px Pract
 
 Compact chord nameは太字で、1 chord / measureでは400 CSS pxでも24 pxを使う。複数chordでは各区間の実測可能幅に対して24 / 22 / 20 / 18 / 16 / 14 pxから最大の適合サイズを選び、14 pxでも全文が入らない場合だけgrapheme境界で省略記号を付ける。元の全文をARIAとtitleに残し、各名と図を同じ区間中央へ揃える。`400 → 600 → 400 → 1100`の再配置では元の全文とサイズ候補から再計測する。
 
-Grid8 / grid16の各継続Fractionは独立したsemantic SVG nodeを保ち、共通wide master pathをX方向だけ伸縮して描く。`cell=(slotWidth-4)/(measureBeats*(grid/4))`、SVG表示幅は`max(2.8, cell-0.9)`、描画左端は`fractionAnchorX-0.72*cell`とし、card内に収める。Waveはattackの背面、矢印は前面、PMは最前面に置く。waveとattackの横bounds重なりを許可し、wave同士は画面上0.25 px以上離す。高さと実効stroke幅は縮小しない。Grid4およびtie waveと詳細グリッドの既存規則は変えない。
+Grid8 / grid16の各継続Fractionは独立したsemantic SVG nodeを保つ。共通15×47 SVG masterは参照小節幅366 / 400に対する referenceScale で縦横同率に縮小する。Fraction anchorは参照track inset 34 / 32、trackWidth 324から計算し、waveはanchorより5×referenceScale左を基準に置く。waveとattackのstroke込み間隔は1 px以上、隣接waveは0.25 px以上とする。密な場合だけoffsetを調整し、path、stroke比率、拍、event、ARIA/titleを保つ。Grid4とtieはCompactの既存Fraction配置を維持する。
 
 **Contract v15（Issue #162）更新:** 上記v14規則のうち、grid8/grid16 waveの描画左端だけを`fractionAnchorX-0.90*cell`へ変更する。SVG表示幅、共通path、stroke、Fraction、card内clamp、wave同士の間隔は維持する。grid8の400 px / 600 px両方で、実画面上のwave painted boundsが自然幅4 pxの攻撃矢印boundsと交差することを検証する。Waveは背面に描き、矢印を完全に隠さず、PM・コード名・小節線には重ねない。音楽上の拍と意味上のanchorは変更しない。
 
@@ -146,16 +144,16 @@ Grid8 / grid16の各継続Fractionは独立したsemantic SVG nodeを保ち、�
 
 **Contract v17（Issue #162）更新:** v16の`anchorX-0.10*cell`と波線・矢印の非接触を維持する。400 px / 600 pxではgrid8/grid16ともstroke込み描画境界間に1 CSS px以上を確保する。320 px / 421 px / 480 px / 840 px / 1100 px / 1600 pxの実幅系列でも接触・交差を許さない。実幅テストにだけ挿入する同時発音用のテスト記号は、専用の配置検査を保ち、実データ由来の波線・矢印間隔測定から除く。
 
-**Contract v18（Issue #162）更新:** compactで奏法laneとコード名laneの両方を表示するとき、奏法laneの下端からコード名文字の上端まで6 CSS px以上を確保する。余白はtemplate/live bank、ページ、grid、メロディ・歌詞の表示状態にかかわらず維持する。コード名サイズ・図の正方形寸法・図全体の表示は変えず、カード総高に6 pxを加える。詳細timelineと通常譜面には影響させない。
+**Contract v18（Issue #162）更新:** compactで奏法laneとコード名laneの両方を表示するとき、奏法laneの下端からコード名文字の上端まで6 CSS px以上を確保する。余白はtemplate/live bank、ページ、grid、メロディ・歌詞の表示状態にかかわらず維持する。コード名サイズ・図の正方形寸法・図全体の表示は変えず、カード総高に6 pxを加える。練習ガイドと通常譜面には影響させない。
 
 **Contract v19（Issue #162）更新:** compactのgrid8/grid16継続waveは、各Fractionと意味上の拍アンカーを維持したまま、表示幅を `min(cell, max(2.4, cell - 3.8))` とし、各cell内で左端を `anchorX + 0.325*cell - displayWidth/2` に置く。カード内にclampする。stroke込みのwave/attack境界は400 px / 600 pxで最低3 CSS px離し、320 / 421 / 480 / 840 / 1100 / 1600 pxでも接触させない。Waveのpath形状・高さ・stroke、矢印位置、painter order、歌詞・コード・図の各lane、v18の6 px gutterは維持する。
 **Contract v20（Issue #162）更新:** v19の暫定的なwave表示幅と配置を置き換える。Grid8/grid16の波線幅は `min(cell, max(2.2, cell - 3.8))`、左端は `anchorX + cell/3 - displayWidth/2` とし、カード内にclampする。stroke込みwave/attack間隔は400 px / 600 pxで3 CSS px以上、320 / 421 / 480 / 840 / 1100 / 1600 pxでは正の値を確保する。Fraction、path形状・高さ・stroke、自然サイズ矢印と描画順、v18の6 px gutterは維持する。
 
-**Contract v21（Issue #162）更新:** compactの奏法laneとコード名laneの間に12 CSS pxのlayout gutterを予約し、記号とコード名の実描画bounds（stroke込み）の間に最低10 CSS pxを確保する。4小節、grid4/8/16、幅320/400/421/480/600/1100/1600 px、メロディ・歌詞、bank/page/fadeで間隔を維持する。コード名・図laneとカード下端を12 px下げ、コード名適合、図寸法・完全表示、奏法高さ、時刻/Fractionと再生挙動は保つ。詳細timeline、通常譜面、DSL、PDF、音源には影響させない。
+**Contract v21（Issue #162）更新:** compactの奏法laneとコード名laneの間に12 CSS pxのlayout gutterを予約し、記号とコード名の実描画bounds（stroke込み）の間に最低10 CSS pxを確保する。4小節、grid4/8/16、幅320/400/421/480/600/1100/1600 px、メロディ・歌詞、bank/page/fadeで間隔を維持する。コード名・図laneとカード下端を12 px下げ、コード名適合、図寸法・完全表示、奏法高さ、時刻/Fractionと再生挙動は保つ。練習ガイド、通常譜面、DSL、PDF、音源には影響させない。
 
-**Contract v22（Issue #162）更新:** v21の12 px gutterは、実画面で描画端間が3.65 pxに留まったため置き換える。Compactは20 CSS pxの奏法lane後余白を設け、最終描画後のstroke込み奏法boundsとコード名text boundsの間を最低10 CSS pxにする。幅320/400/421/480/600/1100/1600 px、grid4/8/16、歌詞・メロディ、ページ・bank・fadeを通じて確認し、コード図を完全表示する。詳細timeline等はv21どおり変更しない。
+**Contract v22（Issue #162）更新:** v21の12 px gutterは、実画面で描画端間が3.65 pxに留まったため置き換える。Compactは20 CSS pxの奏法lane後余白を設け、最終描画後のstroke込み奏法boundsとコード名text boundsの間を最低10 CSS pxにする。幅320/400/421/480/600/1100/1600 px、grid4/8/16、歌詞・メロディ、ページ・bank・fadeを通じて確認し、コード図を完全表示する。練習ガイド等はv21どおり変更しない。
 
-**Contract v24（Issue #162、responsive fitはv26で置換）:** 以前のv5およびv23の4×30矢印見本を受入基準から外し、参考画像をトレースした15×47の共通SVG masterをCompact奏法記号の正本にする。下向き矢印はshaft `M0 0 V31`（2.65px stroke）とfilled head `M-7.5 30 L7.5 30 L0 47 Z`、上向きはshaft `M0 47 V17` とfilled head `M-7.5 17 L0 0 L7.5 17 Z`。短いS波線は `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` を矢印上端からY=21pxへ置き、stroke幅2.35pxにする。400px等の密な幅ではX方向だけ縮小し、高さ47pxを保つ。Grid8/16はセル幅に基づく従来の配置・圧縮を維持し、15幅masterの端点で3px要件を割らないよう視覚X位置を0.3 CSS px補正する。PM文字は矢印下へ置き、奏法lane高とPM位置は両bankの全カードで同じにする。v22のFraction/event、4小節、painted wave/arrow 3px以上、奏法/コード名10px以上の間隔、20px lane後余白、全コード図表示、演奏状態色を維持する。パネルの縦幅が足りない場合は小節カード領域だけを縦スクロールし、次コード欄を残したまま図全体を見られるようにする。詳細timeline、通常譜面、PDF、DSL、音源には変更を波及させない。
+**Contract v24（Issue #162、responsive fitはv26で置換）:** 以前のv5およびv23の4×30矢印見本を受入基準から外し、参考画像をトレースした15×47の共通SVG masterをCompact奏法記号の正本にする。下向き矢印はshaft `M0 0 V31`（2.65px stroke）とfilled head `M-7.5 30 L7.5 30 L0 47 Z`、上向きはshaft `M0 47 V17` とfilled head `M-7.5 17 L0 0 L7.5 17 Z`。短いS波線は `M0 0 C3.2 -3.35 5.2 -3.35 7.5 0 S12.4 3.35 15 0` を矢印上端からY=21pxへ置き、stroke幅2.35pxにする。400px等の密な幅ではX方向だけ縮小し、高さ47pxを保つ。Grid8/16はセル幅に基づく従来の配置・圧縮を維持し、15幅masterの端点で3px要件を割らないよう視覚X位置を0.3 CSS px補正する。PM文字は矢印下へ置き、奏法lane高とPM位置は両bankの全カードで同じにする。v22のFraction/event、4小節、painted wave/arrow 3px以上、奏法/コード名10px以上の間隔、20px lane後余白、全コード図表示、演奏状態色を維持する。パネルの縦幅が足りない場合は小節カード領域だけを縦スクロールし、次コード欄を残したまま図全体を見られるようにする。練習ガイド、通常譜面、PDF、DSL、音源には変更を波及させない。
 
 **Contract v25（Issue #162、Contract v26でsuperseded）:** v24の15×47 master pathはそのまま使い、responsive fitを縦横同率にする。各記号の自然幅 `naturalWidth` と配置可能幅 `usableWidth` から `s=min(1,max(0,usableWidth)/naturalWidth)` を求め、`translate(x,y) scale(s,s)` でSVG全体（strokeを含む）を縮小する。自然サイズ未満の最低描画サイズは設けず、判別できない大きさでも形状比率、拍/Fraction、event、ARIA/titleを保持する。縮小後の外接枠は同じ47px帯の中央に置く。400/600pxのwave/arrow 3px以上のpainted clearance、隣接wave 0.25px clearance、20px奏法lane余白、10px technique/chord clearance、4小節・完全なコード図を維持する。
 
@@ -280,24 +278,6 @@ Preview で変数参照を編集するときは「定義を編集（全参照）
 フレットボードは6本の弦と複数のフレット位置を直交線で表す。押弦は黒丸と指番号、ミュート弦は ×、開放弦は ○ で表す。開始フレットの値はボード直下に置く。コード名・ラベル・プレビュー・DSL はフレットボードの後に続け、保存操作はすべての編集情報の後にまとめる。
 
 コード図の編集動作と DSL 表記は [拡張機能仕様 §3.3](extension.md) を参照する。
-
-### 5. YouTube 採譜パネル
-
-画面はタイトル、実験的な注意、YouTube URL、キー状態とキー管理の開閉、詳細設定の開閉、開始ボタン、進捗またはエラーの順に並べる。採譜処理の境界は [拡張機能仕様 §3.4](extension.md) に従う。
-
-![設定を閉じた YouTube 採譜パネル](gui_design/youtube-transcription.svg)
-
-![詳細設定を展開した YouTube 採譜パネル](gui_design/youtube-transcription-advanced.svg)
-
-![採譜結果プレビューを表示した YouTube パネル](gui_design/youtube-transcription-result.svg)
-
-初期図はキー管理と詳細設定の両方を閉じ、URL とキーが未設定で開始ボタンを無効にした状態を示す。キー欄は管理を開いた場合だけ表示し、保存後は入力値を空に戻す。通常は未設定 / 保存済みの状態を示すが、SecretStorage の読み取りに失敗した場合はローカライズした「キー状態を確認できない」と表示し、どちらとも断定しない。キーの値は画面の状態表示、ログ、HTML に含めない。
-
-詳細設定は BPM（自動 / 30–300 の手動値）、カポ（自動 / 0–12 の手動値）、ビート（自動 / 8 / 16）、伴奏ファミリーとプリセット、繰り返し圧縮、AI モデルの順に表示する。選択肢、既定値、既存コマンドへ渡す値は変えない。閉じた開閉領域の操作部品はキーボードフォーカス順に含めない。
-
-開始ボタンは URL が空でなく、保存済みキーまたは入力キーがある場合だけ有効にする。URL の検証は拡張機能ホストが引き続き行う。開始後は二重実行を抑え、既存の段階進捗とエラーを同じパネルに表示する。Start 時の SecretStorage 読み取り失敗はローカライズしたエラーを表示して開始を復旧し、Gemini 呼び出しと文書生成を行わない。YouTube の実行中キャンセル操作は表示しない。
-
-構造検証に成功した GuitarDSL は、このパネル内の読み取り専用欄に表示する。**コピー** 操作で通常の GuitarDSL エディターへ貼り付けて編集できる。採譜成功時にエディター文書は自動作成しない。パネルを閉じるとプレビューは破棄する。プレビュー表示、コピー操作、処理状態の同期は、Extension host からの message と Webview の応答に従う。
 
 ## Observable behavior
 

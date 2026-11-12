@@ -34,7 +34,7 @@ describe('practice guide stroke SVG', () => {
     assert.strictEqual(practiceGuideStrokeVisualWidth({ kind: 'brush', palmMute: true, label: 'PM brush' }), 34);
   });
 
-  it('keeps the detailed-grid wave renderer compatible with its existing SVG box', () => {
+  it('keeps the legacy general-purpose wave renderer compatible with its existing SVG box', () => {
     const wave = renderPracticeGuideWaveSvg('Duration', 56);
     assert.match(wave, /viewBox="0 0 20 16"/);
     assert.match(wave, /d="M2 9Q6 3 10 9T18 9"/);

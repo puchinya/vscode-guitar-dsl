@@ -155,8 +155,6 @@ export interface Messages {
   uiPracticeLoopSet: string;
   uiPracticeLoopCleared: string;
   uiPracticeGuideTitle: string;
-  uiPracticeGuideView: string;
-  uiPracticeGuideDetailed: string;
   uiPracticeGuideCompact: string;
   uiPracticeGuidePrevious: string;
   uiPracticeGuideNext: string;
@@ -250,10 +248,6 @@ export interface Messages {
   sidebarOpenInspector: string;
   sidebarOpenGuitarDslFile: string;
   sidebarImportGuitarPro: string;
-  sidebarChooseTranscriptionSource: string;
-  sidebarTranscriptionSourcePrompt: string;
-  sidebarTranscriptionSourceYouTube: string;
-  sidebarTranscriptionSourceAudio: string;
   sidebarGuitarDslFileFilter: string;
   sidebarOpenHelp: string;
   sidebarEditChordDiagram: string;
@@ -263,7 +257,6 @@ export interface Messages {
   sidebarExportPdf: string;
   sidebarExportGuitarPro: string;
   sidebarOpenGuitarDslHelp: string;
-  sidebarTranscribeYouTube: string;
   sidebarTranscribeAudio: string;
   inspectorHeading: string;
   inspectorRegionLabel: string;
@@ -364,15 +357,6 @@ export interface Messages {
   msgTransposeApplied: (semitones: number, key: string) => string;
   msgTransposeApplyFailed: (reason: string) => string;
   msgNoCapoRecommendation: string;
-
-  // YouTube transcription messages
-  msgPromptApiKey: string;
-  msgApiKeySaved: string;
-  msgApiKeyCleared: string;
-  msgPromptYouTubeUrl: string;
-  msgYouTubeUrlPlaceholder: string;
-  msgInvalidYouTubeUrl: string;
-  msgTranscribingProgress: string;
 
   // Local Audio MIR transcription messages
   audioMirDialogTitle: string;
@@ -522,8 +506,6 @@ export const MESSAGES_JA: Messages = {
   uiPracticeLoopSet: 'ループを設定しました。',
   uiPracticeLoopCleared: 'ループを解除しました。',
   uiPracticeGuideTitle: '弾き語り練習パネル',
-  uiPracticeGuideView: '表示',
-  uiPracticeGuideDetailed: '詳細タイムライン',
   uiPracticeGuideCompact: 'コンパクト4小節表示',
   uiPracticeGuidePrevious: '前へ',
   uiPracticeGuideNext: '次へ',
@@ -616,10 +598,6 @@ export const MESSAGES_JA: Messages = {
   sidebarOpenInspector: 'Inspector を開く',
   sidebarOpenGuitarDslFile: 'GuitarDSL ファイルを開く',
   sidebarImportGuitarPro: 'Guitar Pro 7/8 を取り込む',
-  sidebarChooseTranscriptionSource: '音源から採譜（実験的）',
-  sidebarTranscriptionSourcePrompt: '採譜する音源を選択',
-  sidebarTranscriptionSourceYouTube: 'YouTube から採譜（実験的）',
-  sidebarTranscriptionSourceAudio: 'ローカル WAV から採譜（実験的）',
   sidebarGuitarDslFileFilter: 'GuitarDSL ファイル',
   sidebarOpenHelp: 'ヘルプを開く',
   sidebarEditChordDiagram: 'コードダイアグラムを編集',
@@ -629,8 +607,7 @@ export const MESSAGES_JA: Messages = {
   sidebarExportPdf: 'PDF に書き出す',
   sidebarExportGuitarPro: 'Guitar Pro 7 に書き出す',
   sidebarOpenGuitarDslHelp: 'GuitarDSL ヘルプを見る',
-  sidebarTranscribeYouTube: 'YouTubeから採譜（実験的）',
-  sidebarTranscribeAudio: 'ローカル音源から採譜（実験的）',
+  sidebarTranscribeAudio: 'ローカルWAVから採譜（実験的）',
   inspectorHeading: 'GuitarDSL Inspector',
   inspectorRegionLabel: 'GuitarDSL Inspector',
   inspectorTablistLabel: 'Inspector の表示',
@@ -764,14 +741,6 @@ export const MESSAGES_JA: Messages = {
   msgTransposeApplied: (semitones: number, key: string) => `${semitones > 0 ? '+' : ''}${semitones} 半音移調しました（キー ${key}）`,
   msgTransposeApplyFailed: (reason: string) => `移調を適用できません: ${reason}`,
   msgNoCapoRecommendation: 'コードがないため推奨カポを決められません。カポはそのままにします。',
-
-  msgPromptApiKey: 'Gemini API キーを入力してください',
-  msgApiKeySaved: 'Gemini API キーを保存しました。',
-  msgApiKeyCleared: 'Gemini API キーを削除しました。',
-  msgPromptYouTubeUrl: '採譜するYouTube動画のURLを入力してください',
-  msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
-  msgInvalidYouTubeUrl: '有効なYouTube動画のURL（https://...）を入力してください。',
-  msgTranscribingProgress: 'GeminiでYouTube音源を自動採譜中...',
 
   audioMirDialogTitle: '採譜するWAVファイルを選択（実験的）',
   audioMirWavFilter: 'WAV音声',
@@ -931,8 +900,6 @@ export const MESSAGES_EN: Messages = {
   uiPracticeLoopSet: 'Loop set.',
   uiPracticeLoopCleared: 'Loop cleared.',
   uiPracticeGuideTitle: 'Practice guide',
-  uiPracticeGuideView: 'View',
-  uiPracticeGuideDetailed: 'Detailed timeline',
   uiPracticeGuideCompact: 'Compact 4-measure overview',
   uiPracticeGuidePrevious: 'Previous',
   uiPracticeGuideNext: 'Next',
@@ -1025,10 +992,6 @@ export const MESSAGES_EN: Messages = {
   sidebarOpenInspector: 'Open Inspector',
   sidebarOpenGuitarDslFile: 'Open GuitarDSL File',
   sidebarImportGuitarPro: 'Import Guitar Pro 7/8',
-  sidebarChooseTranscriptionSource: 'Transcribe from Audio (Experimental)',
-  sidebarTranscriptionSourcePrompt: 'Choose an audio transcription source',
-  sidebarTranscriptionSourceYouTube: 'Transcribe from YouTube (Experimental)',
-  sidebarTranscriptionSourceAudio: 'Transcribe local WAV (Experimental)',
   sidebarGuitarDslFileFilter: 'GuitarDSL Files',
   sidebarOpenHelp: 'Open Help',
   sidebarEditChordDiagram: 'Edit Chord Diagram',
@@ -1038,8 +1001,7 @@ export const MESSAGES_EN: Messages = {
   sidebarExportPdf: 'Export PDF',
   sidebarExportGuitarPro: 'Export Guitar Pro 7',
   sidebarOpenGuitarDslHelp: 'Open GuitarDSL Help',
-  sidebarTranscribeYouTube: 'Transcribe from YouTube (Experimental)',
-  sidebarTranscribeAudio: 'Transcribe Local Audio (Experimental)',
+  sidebarTranscribeAudio: 'Transcribe Local WAV (Experimental)',
   inspectorHeading: 'GuitarDSL Inspector',
   inspectorRegionLabel: 'GuitarDSL Inspector',
   inspectorTablistLabel: 'Inspector views',
@@ -1173,14 +1135,6 @@ export const MESSAGES_EN: Messages = {
   msgTransposeApplied: (semitones: number, key: string) => `Transposed by ${semitones > 0 ? '+' : ''}${semitones} semitones (key ${key})`,
   msgTransposeApplyFailed: (reason: string) => `Cannot apply the transposition: ${reason}`,
   msgNoCapoRecommendation: 'No chords to recommend a capo from; the capo is kept.',
-
-  msgPromptApiKey: 'Enter your Gemini API key',
-  msgApiKeySaved: 'Gemini API key has been saved.',
-  msgApiKeyCleared: 'Gemini API key has been cleared.',
-  msgPromptYouTubeUrl: 'Enter the YouTube video URL to transcribe',
-  msgYouTubeUrlPlaceholder: 'https://www.youtube.com/watch?v=...',
-  msgInvalidYouTubeUrl: 'Please enter a valid YouTube video URL (https://...).',
-  msgTranscribingProgress: 'Transcribing YouTube audio with Gemini...',
 
   audioMirDialogTitle: 'Select a WAV file to transcribe (experimental)',
   audioMirWavFilter: 'WAV audio',
