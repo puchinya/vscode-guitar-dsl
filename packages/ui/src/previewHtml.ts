@@ -4394,7 +4394,7 @@ ${options?.hostStyle ? `<style${nonceAttribute}>${options.hostStyle}</style>` : 
         savePdfBtn.addEventListener('click', () => {
           if (host) {
             host.postMessage({
-              command: 'savePdf',
+              ...previewEditIdentity(), command: 'savePdf',
               pageSize: currentPageSize,
               orientation: currentOrientation
             });
@@ -4414,7 +4414,7 @@ ${options?.hostStyle ? `<style${nonceAttribute}>${options.hostStyle}</style>` : 
       document.addEventListener('click', (e) => {
         const diagram = e.target.closest && e.target.closest('.chord-diagram');
         if (diagram && host) {
-          host.postMessage({ command: 'editChord', key: diagram.getAttribute('data-chord-key') });
+          host.postMessage({ ...previewEditIdentity(), command: 'editChord', key: diagram.getAttribute('data-chord-key') });
         }
       });
 
