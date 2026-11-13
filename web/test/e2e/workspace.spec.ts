@@ -39,6 +39,79 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Draft restored.guitardsl' })).toHaveCount(0);
 });
 
+test('accepts browser IME composition events in the native source editor', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.evaluate(element => {
+    const input = element as HTMLTextAreaElement;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }));
+    input.value += '日本語';
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true, data: '日本語', inputType: 'insertCompositionText', isComposing: true
+    }));
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本語' }));
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true, data: '日本語', inputType: 'insertText', isComposing: false
+    }));
+  });
+  await expect(editor).toHaveValue(/日本語$/);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+});
+
+test('keeps native text editing undoable', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const initial = await editor.inputValue();
+  await editor.focus();
+  await editor.press('ControlOrMeta+End');
+  await editor.pressSequentially('!');
+  await expect(editor).toHaveValue(`${initial}!`);
+  await editor.press('ControlOrMeta+z');
+  await expect(editor).toHaveValue(initial);
+});
+
+test('shows compiler diagnostics and moves the source selection to one', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  const diagnostic = page.locator('#diagnostics button').filter({ hasText: 'L5:' });
+  await expect(diagnostic).toBeVisible();
+  await diagnostic.click();
+  const selection = await editor.evaluate(element => ({
+    start: (element as HTMLTextAreaElement).selectionStart,
+    end: (element as HTMLTextAreaElement).selectionEnd
+  }));
+  expect(selection.start).toBeGreaterThan(0);
+  expect(selection.end).toBeGreaterThan(selection.start);
+});
+
+test('applies Preview edits to source and rerenders the edited score', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = '[Verse]\nD | G | Am | F |\n';
+  await editor.fill(source);
+  const preview = page.frameLocator('#score-frame');
+  const target = preview.locator('#preview-edit-target');
+  await expect(target.locator('option').filter({ hasText: 'chord · D' })).toHaveCount(1);
+  await expect(preview.locator('#preview-mode-select')).toBeVisible();
+  const initialGeneration = await preview.locator('body').getAttribute('data-preview-generation');
+  await preview.locator('#preview-mode-select').selectOption('edit');
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-ui-mode', 'edit');
+  await expect.poll(() => preview.locator('body').getAttribute('data-preview-generation'))
+    .not.toBe(initialGeneration);
+  await expect(target).toBeVisible();
+  const chordOption = target.locator('option').filter({ hasText: 'chord · D' });
+  await expect(chordOption).toHaveCount(1);
+  await target.selectOption(await chordOption.getAttribute('value') ?? '');
+  await preview.locator('#preview-edit-value').fill('E');
+  await preview.locator('#preview-edit-apply').click();
+  await expect(preview.locator('#preview-edit-status')).toHaveText('The change was applied.');
+  await expect(editor).toHaveValue('[Verse]\nE | G | Am | F |\n');
+  await expect(preview.locator('#preview-edit-target option').filter({ hasText: 'chord · E' })).toHaveCount(1);
+});
+
 test('keeps separate local documents in tabs and supports file export', async ({ page }) => {
   await page.goto('/');
   page.once('dialog', dialog => dialog.accept('Second.guitardsl'));

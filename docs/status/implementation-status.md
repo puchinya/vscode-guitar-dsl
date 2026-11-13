@@ -8,12 +8,12 @@
 
 ## Issue #166: Web SPA 版 GuitarDSL
 
-- **状態**: 承認済み Implementation Contract に基づく実装完了。PR は作成準備中。Milestone `0.1.0` を維持し、VS Code 拡張の TextEditor と既存配布経路を保持する。
+- **状態**: 承認済み Implementation Contract に基づく実装完了。PR [#167](https://github.com/puchinya/vscode-guitar-dsl/pull/167) を作成し、レビュー準備中。Milestone `0.1.0` を維持し、VS Code 拡張の TextEditor と既存配布経路を保持する。
 - **契約**: Issue #166 comment `6839476196`、16,832 bytes、SHA-256 `8a8d70cbb2a9b8fcbef47abdacee8840fb7a3f51ba1431db533891347bd41330`（approved、verify-implementation-contract で再検証済み）。
-- **実装**: `packages/{core,ui,document,pdf}` を npm workspaces として共有し、`web/` に Vite + Vanilla TypeScript SPA を追加。IndexedDB のローカル文書・下書き・セッション、ブラウザー用 Preview/Inspector、Google Identity Services と `drive.file` の明示的 Drive 操作、競合・移動回復、PDF ダウンロードを実装。VS Code の Preview と Inspector はホストアダプター経由で共通 UI を利用する。テスト時はモジュール境界を保ち、VSIX prepublish 時に拡張コードをバンドルする。
+- **実装**: `packages/{core,ui,document,pdf}` を npm workspaces として共有し、`web/` に Vite + Vanilla TypeScript SPA を追加。IndexedDB のローカル文書・下書き・セッション、ブラウザー用 Preview/Inspector、Google Identity Services と `drive.file` の明示的 Drive 操作、競合・移動回復、PDF ダウンロードを実装。Preview 編集メッセージは Web ホストで検証済みの共有編集操作へ変換し、ソース revision/generation と照合して適用する。VS Code の Preview と Inspector はホストアダプター経由で共通 UI を利用する。テスト時はモジュール境界を保ち、VSIX prepublish 時に拡張コードをバンドルする。
 - **画面証拠**: [Web SPA の画面と取得手順](evidence/issue-166/README.md)。macOS arm64 / Chromium、1600 × 1000 CSS px。ローカル文書の重複行がないこと、Inspector の4タブが横スクロールなしで収まることも E2E で確認。
-- **検証**: `npm test` **PASS**（Help/AI同期、unit 1,138 PASS、VS Code E2E 130 PASS / 6 pending、Web E2E 12 PASS）。Web E2E は Chromium と Firefox で実施。`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`npm run check:help`、`npm run check:ai`、`validate-docs --issue 166`、`git diff --check` はPASS。VSIX 一覧には runtime、日英Help、AI assets、5 curated samples を含み、`docs/`、`web/`、`packages/`、`tests/` は含まれない。Web 本番ビルドには5.3 MBの日本語フォントと500 KB超のchunkに関する警告がある。`vscode:prepublish` は wasm-pack が wasm-bindgen の手動導入へ fallback したが成功。Google Live API、Safari、Windows/Linux、VoiceOver/NVDAは未検証。VS Code/Electron は macOS arm64 / 1.146.0。
-- **PR / Completion Report**: PR URL と current-HEAD self-review / required check は作成後に記録する。Issue #166 は open。
+- **検証**: `npm test` **PASS**（Help/AI同期、unit 1,138 PASS、VS Code E2E 130 PASS / 6 pending、Web E2E 20 PASS）。Web E2E は Chromium と Firefox で実施し、ネイティブ textarea の IME composition event、Undo、診断選択、Preview 編集からソースへの反映と再描画を確認。OS の実 IME 操作は未実施。`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`npm run check:help`、`npm run check:ai`、`validate-docs --issue 166`、`git diff --check` はPASS。VSIX 一覧には runtime、日英Help、AI assets、5 curated samples を含み、`docs/`、`web/`、`packages/`、`tests/` は含まれない。Web 本番ビルドには5.3 MBの日本語フォントと500 KB超のchunkに関する警告がある。`vscode:prepublish` は wasm-pack が wasm-bindgen の手動導入へ fallback したが成功。実 Google OAuth/Drive 資格情報、Safari、Windows/Linux、VoiceOver/NVDAは未検証。VS Code/Electron は macOS arm64 / 1.146.0。
+- **PR / Completion Report**: PR #167。最新 HEAD のセルフレビューと required check 状態は公開後にここへ記録する。Issue #166 は open。
 
 ## Issue #164: YouTube採譜の撤去と練習ガイドのCompact固定
 

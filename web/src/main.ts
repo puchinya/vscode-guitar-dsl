@@ -1113,6 +1113,54 @@ function isCurrentPreviewIdentity(tab: OpenTab, identity: PreviewModeDraftCheck[
     && tab.revision === identity.documentVersion && state.previewGeneration === identity.previewGeneration;
 }
 
+function visualEditOperationFromMessage(
+  score: ParsedScore, message: Record<string, unknown>, visualElementId: string
+): VisualEditOperation | undefined {
+  const binding = score.visualSourceBindings?.find(item => item.id === visualElementId);
+  const payload = typeof message.payload === 'object' && message.payload !== null
+    ? message.payload as Record<string, unknown> : undefined;
+  if (!binding || !payload) return undefined;
+  const text = typeof payload.text === 'string' && payload.text.length <= 256 && !/[\r\n\0]/.test(payload.text)
+    ? payload.text : undefined;
+  if (binding.kind === 'chord' && message.operation === 'replaceChord'
+    && typeof payload.name === 'string' && payload.name.length <= 64 && !/[\r\n\0]/.test(payload.name)) {
+    return { kind: 'replaceChord', bindingId: binding.id, name: payload.name };
+  }
+  if (message.operation === 'insertToken' && text !== undefined) return { kind: 'insertToken', bindingId: binding.id, text };
+  if (message.operation === 'deleteToken') return { kind: 'deleteToken', bindingId: binding.id };
+  if (['melodyNote', 'melodyGroup', 'melodyRest', 'noteGroup', 'inlineNote'].includes(binding.kind)
+    && message.operation === 'replaceMelodyToken' && text !== undefined) {
+    return { kind: 'replaceMelodyToken', bindingId: binding.id, text };
+  }
+  if (binding.kind === 'melodyNote' && message.operation === 'transposeMelody'
+    && Number.isSafeInteger(payload.semitones) && payload.semitones !== 0 && Math.abs(payload.semitones as number) <= 11) {
+    return { kind: 'transposeMelody', bindingId: binding.id, semitones: payload.semitones as number };
+  }
+  if (['melodyNote', 'melodyGroup', 'melodyRest', 'rhythm', 'noteGroup', 'inlineNote'].includes(binding.kind)
+    && message.operation === 'changeDuration' && (payload.direction === 'longer' || payload.direction === 'shorter')) {
+    return { kind: 'changeDuration', bindingId: binding.id, direction: payload.direction };
+  }
+  if (['rhythm', 'noteGroup', 'inlineNote'].includes(binding.kind)
+    && message.operation === 'replaceRhythmToken' && text !== undefined) {
+    return { kind: 'replaceRhythmToken', bindingId: binding.id, text };
+  }
+  if (binding.kind === 'tab' && message.operation === 'replaceTabToken' && text !== undefined) {
+    return { kind: 'replaceTabToken', bindingId: binding.id, text };
+  }
+  if (binding.kind === 'tab' && message.operation === 'addTabChordNote'
+    && typeof payload.note === 'string' && payload.note.length <= 64 && !/[\r\n\0]/.test(payload.note)) {
+    return { kind: 'addTabChordNote', bindingId: binding.id, note: payload.note };
+  }
+  if (binding.kind === 'tab' && message.operation === 'deleteTabChordNote'
+    && typeof payload.note === 'string' && payload.note.length <= 64 && !/[\r\n\0]/.test(payload.note)) {
+    return { kind: 'deleteTabChordNote', bindingId: binding.id, note: payload.note };
+  }
+  if (binding.kind === 'lyric' && message.operation === 'replaceLyric' && text !== undefined) {
+    return { kind: 'replaceLyric', bindingId: binding.id, text };
+  }
+  return undefined;
+}
+
 async function transitionPreviewUiMode(
   tab: OpenTab, mode: PreviewMode, identity: PreviewModeDraftCheck['identity'],
   postToFrame: (payload: Record<string, unknown>) => void
@@ -1170,12 +1218,12 @@ function handlePreviewMessage(event: MessageEvent): void {
   if (message.command === 'previewVisualEdit' && isCurrent && tab.previewMode === 'edit') {
     const visualElementId = String(message.visualElementId ?? '');
     const selectedVisualElementId = String(message.selectedVisualElementId ?? '');
-    const operation = message.operation as VisualEditOperation | undefined;
+    const score = currentScore(tab.source);
+    const operation = score ? visualEditOperationFromMessage(score, message, visualElementId) : undefined;
     const resultIdentity = { documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration };
     if (!operation || operation.bindingId !== visualElementId || (selectedVisualElementId && selectedVisualElementId !== visualElementId)) {
       postToFrame({ command: 'previewVisualEditResult', ...resultIdentity, success: false, reason: 'staleContext' }); return;
     }
-    const score = currentScore(tab.source);
     const result = score ? planVisualEdit(tab.source, score, operation) : { ok: false as const, code: 'staleSource' as const };
     if (!result.ok) { postToFrame({ command: 'previewVisualEditResult', ...resultIdentity, success: false, reason: result.code }); return; }
     const nextSource = result.resultingSource;
