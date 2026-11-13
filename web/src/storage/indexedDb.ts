@@ -189,7 +189,7 @@ export const indexedDb = {
     const saved = await idbRequest<StoredDocument & { key: string } | undefined>(store.get(key));
     const draft = await idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key));
     const current = draft && saved && draft.revision >= saved.revision ? draft : saved;
-    if (!current || expected && (current.revision !== expected.revision || current.source !== expected.source)
+    if (!saved || !current || expected && (current.revision !== expected.revision || current.source !== expected.source)
       || snapshot.revision < current.revision
       || snapshot.revision === current.revision && snapshot.source !== current.source) {
       tx.abort();
