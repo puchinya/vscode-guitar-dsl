@@ -105,6 +105,31 @@ test('finalizes a local-to-Drive move atomically only when no newer IndexedDB dr
   expect(result.driveSource).toBe('title: Newer draft\n');
 });
 
+test('preserves a committed document against another tab with a stale same-revision or higher-revision snapshot', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const local = await indexedDb.createLocal('Concurrent edits.guitardsl', 'title: Original\n');
+    const base = { revision: local.revision, source: local.source };
+    // Both editors have the same base. Local revision is not a CAS token.
+    const writerA = { identity: local.identity, revision: 1, source: 'title: Writer A\n' };
+    const writerB = { identity: local.identity, revision: 1, source: 'title: Writer B\n' };
+    const firstDraft = await indexedDb.saveDraft(writerA, undefined, base);
+    const staleDraft = await indexedDb.saveDraft(writerB, undefined, base);
+    const committedA = await indexedDb.commitLocal(writerA, undefined, { revision: 1, source: writerA.source });
+    const staleCommit = await indexedDb.commitLocal(writerB, undefined, base);
+    const staleHigher = await indexedDb.saveDraft(
+      { ...writerB, revision: 3 }, undefined, base
+    );
+    const after = await indexedDb.getDocument(local.identity);
+    return { firstDraft, staleDraft, committed: !!committedA, staleCommit: !!staleCommit, staleHigher, source: after?.source };
+  });
+  expect(result).toEqual({
+    firstDraft: true, staleDraft: false, committed: true,
+    staleCommit: false, staleHigher: false, source: 'title: Writer A\n'
+  });
+});
+
 test('keeps source export available when browser storage is blocked', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: undefined });
