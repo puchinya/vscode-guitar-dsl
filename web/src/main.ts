@@ -519,7 +519,17 @@ function stopWebAuditionAudio(leaseId: string, requestId: string): void {
 
 async function startWebAuditionAudio(message: ProgressionAudioStartMessage): Promise<boolean> {
   const resume = audioResumePromises.get(message.requestId);
-  const ready = resume ? await resume : false;
+  // Firefox (including headless/OS audio without an output device) can leave resume()
+  // unresolved. Bound startup so the audio lease fails closed instead of staying in
+  // the "Starting" state indefinitely while Preview is locked.
+  let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+  const ready = resume ? await Promise.race([
+    resume,
+    new Promise<false>(resolve => {
+      resumeTimer = window.setTimeout(() => resolve(false), 2000);
+    })
+  ]) : false;
+  if (resumeTimer !== undefined) window.clearTimeout(resumeTimer);
   const context = auditionAudioContext;
   if (!ready || !context || context.state !== 'running' || progressionAudioLease.activeLeaseId !== message.leaseId) {
     audioResumePromises.delete(message.requestId);
