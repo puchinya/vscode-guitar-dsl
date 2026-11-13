@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { planBeginnerTransform } from '@guitardsl/core/beginnerMode';
+import { planCapoTransform } from '@guitardsl/core/capo';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
@@ -23,8 +25,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     && page.context().browser()?.browserType().name() === 'chromium') {
     await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
     await page.getByRole('tab', { name: 'Progression' }).click();
-    await page.getByRole('button', { name: 'Suggest next chords' }).click();
-    await expect(page.locator('.progression-card').first()).toBeVisible();
+    await expect(page.locator('#candidate-list li').first()).toBeVisible();
     const evidencePath = resolve(process.cwd(), '../docs/status/evidence/issue-166/web-spa-en-desktop.png');
     await mkdir(dirname(evidencePath), { recursive: true });
     await page.screenshot({ path: evidencePath, fullPage: false });
@@ -56,6 +57,75 @@ test('shows syntax highlighting while keeping the native textarea as the source 
   await editor.fill(Array.from({ length: 80 }, (_, index) => `[Verse${index}]\nC | G |\n`).join(''));
   await editor.evaluate(element => { (element as HTMLTextAreaElement).scrollTop = 200; });
   await expect.poll(() => layer.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+});
+
+test('applies a selected progression through the shared source-preserving planner', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await page.getByRole('tab', { name: 'Progression' }).click();
+  await page.getByRole('button', { name: 'Replace target measures' }).click();
+  const candidate = page.locator('#candidate-list li').first();
+  await expect(candidate).toBeVisible();
+  const candidateLabel = await candidate.locator('.candidate-chords').textContent();
+  const proposedChords = candidateLabel?.split(' — ').at(-1)?.trim();
+  expect(proposedChords).toBeTruthy();
+  await page.getByRole('button', { name: 'Apply candidate…' }).click();
+  await expect(editor).toHaveValue(new RegExp(`\\[Verse\\][\\s\\S]*${proposedChords?.split(' | ').at(0)}`));
+  await expect(editor).toHaveValue(/key: C/);
+});
+
+test('uses the shared score-settings model to apply one transposition edit', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Transpose' }).click();
+  await page.getByRole('combobox', { name: 'Shift (semitones)' }).selectOption('2');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Apply to DSL' }).click();
+  await expect(editor).toHaveValue(/key: D/);
+  await expect(editor).toHaveValue(/D \| A \| Bm \| G \|/);
+});
+
+test('applies the shared Capo section through the common settings renderer', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'key: C\ncapo: 0\n\n[Verse]\nC | F | G | C |\n';
+  await editor.fill(source);
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  const candidate = page.locator('#settings-content .settings-candidate[data-inspector-key="2"]');
+  await expect(candidate).toBeVisible();
+  await candidate.click();
+  await expect(page.getByRole('button', { name: 'Apply to DSL' })).toBeEnabled();
+
+  const planned = planCapoTransform(source, 2);
+  expect(planned.ok).toBe(true);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Apply to DSL' }).click();
+  await expect(editor).toHaveValue(planned.ok ? planned.text : source);
+});
+
+test('applies the shared Beginner section through the common settings renderer', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'key: C\ncapo: 0\n\n[Verse]\nC | F |\n';
+  await editor.fill(source);
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.locator('#settings-tabs [data-inspector-key="beginner"]').click();
+  await expect(page.locator('#settings-content .settings-candidates')).toBeVisible();
+  await expect(page.locator('#settings-content .settings-table tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Apply to DSL' })).toBeEnabled();
+
+  const planned = planBeginnerTransform(source, { barrePolicy: 'forbid' });
+  expect(planned.ok).toBe(true);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Apply to DSL' }).click();
+  await expect(editor).toHaveValue(planned.ok ? planned.text : source);
 });
 
 test('restores the latest local draft and commits it on Save', async ({ page }) => {
@@ -187,10 +257,9 @@ test('localizes the Inspector, honors its theme, and supports keyboard tabs', as
 
   await page.getByRole('textbox', { name: 'GuitarDSL ソースエディター' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
   await page.getByRole('tab', { name: 'コード進行' }).click();
-  await page.getByRole('button', { name: '次のコードを提案' }).click();
-  const candidate = page.locator('.progression-card').first();
+  const candidate = page.locator('#candidate-list li').first();
   await expect(candidate).toBeVisible();
-  await expect(candidate.getByRole('button', { name: '試聴' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '試聴' })).toBeVisible();
 });
 
 test('accepts browser IME composition events in the native source editor', async ({ page }) => {
@@ -326,10 +395,9 @@ test('serializes Inspector audition with Preview playback', async ({ page }) => 
     .toBeGreaterThan(priorRevision);
   await expect(readyPreview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
   await page.getByRole('tab', { name: 'Progression' }).click();
-  await page.getByRole('button', { name: 'Suggest next chords' }).click();
-  const candidate = page.locator('.progression-card').first();
+  const candidate = page.locator('#candidate-list li').first();
   await expect(candidate).toBeVisible();
-  await candidate.getByRole('button', { name: 'Audition' }).click();
+  await page.getByRole('button', { name: 'Audition' }).click();
 
   const preview = page.frameLocator('#score-frame');
   const previewBody = preview.locator('body');
@@ -341,7 +409,7 @@ test('serializes Inspector audition with Preview playback', async ({ page }) => 
   if (await audioStatus.textContent() === 'Audition playing.') {
     await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'true');
     await expect(preview.locator('#btn-play')).toBeDisabled();
-    await page.getByRole('button', { name: 'Stop audition' }).click();
+    await page.locator('#progression-stop').click();
     await expect(audioStatus).toHaveText('Audition stopped.');
   }
   await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'false');

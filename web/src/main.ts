@@ -1,12 +1,21 @@
 import './style.css';
+import inspectorSettingsSource from '../../packages/ui/src/inspectorSettings.js?raw';
 import { parseGuitarDsl, type ParsedScore } from '@guitardsl/core/compiler';
-import { formatDiagnostic } from '@guitardsl/core/i18n';
+import { formatDiagnostic, getMessages, getScoreSettingsEditorMessages } from '@guitardsl/core/i18n';
+import { planBeginnerTransform } from '@guitardsl/core/beginnerMode';
+import { planCapoTransform } from '@guitardsl/core/capo';
+import { planTransposeWithCapo } from '@guitardsl/core/transpose';
+import { BeginnerSection, CapoSection, TransposeSection } from '@guitardsl/core/scoreSettingsSections';
+import type { BeginnerSectionModel, CapoSectionModel, ScoreSettingsSectionContext, TransposeSectionModel } from '@guitardsl/core/scoreSettingsSections';
 import { planVisualEdit } from '@guitardsl/core/visualEditing/planners';
 import type { VisualEditOperation } from '@guitardsl/core/visualEditing/model';
-import { suggestNextChords } from '@guitardsl/core/progressionSuggestions';
+import { suggestProgressions } from '@guitardsl/core/progressionSuggestions';
+import type { ProgressionBars, ProgressionCandidate, ProgressionTarget } from '@guitardsl/core/progressionSuggestions';
+import { planProgressionEdit, type ProgressionEditOperation } from '@guitardsl/core/progressionSourceEdits';
 import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml } from '@guitardsl/ui/previewHtml';
 import { ProgressionAudioLeaseCoordinator, type ProgressionAudioStartMessage } from '@guitardsl/ui/progressionAudioLease';
 import { renderInspectorTabsMarkup, type InspectorTabId } from '@guitardsl/ui/inspectorTabs';
+import { renderProgressionInspectorMarkup } from '@guitardsl/ui/progressionInspectorMarkup';
 import type { PageOrientation, PageSize } from '@guitardsl/pdf';
 import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
 import { createSourceEditorMarkup, SourceEditorSurface } from './editor/sourceEditor';
@@ -23,6 +32,7 @@ import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveCon
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
+type ScoreSettingsSectionId = 'capo' | 'beginner' | 'transpose';
 type MobilePane = 'source' | 'preview';
 
 interface WorkspaceSession {
@@ -62,7 +72,19 @@ interface AppState {
   previewGeneration: number;
   splitRatio: number;
   authExpired: boolean;
-  lastProgression?: unknown;
+  lastProgression?: {
+    target: ProgressionTarget; operation: ProgressionEditOperation; bars: ProgressionBars;
+    candidates: ProgressionCandidate[]; source: string; revision: number;
+  };
+  progressionBars: ProgressionBars;
+  progressionOperation: ProgressionEditOperation;
+  progressionStartMeasure?: number;
+  progressionCandidateId?: string;
+  progressionError?: string;
+  progressionAuditionMode: 'chord' | 'bars' | 'melody' | 'song';
+  progressionSide: 'A' | 'B';
+  progressionSpeed: 50 | 75 | 100 | 125 | 150;
+  scoreSettingsSection: ScoreSettingsSectionId;
   audioCandidateId?: string;
   audioStatus: string;
 }
@@ -83,6 +105,7 @@ const STRINGS = {
     draft: 'Local draft saved', saving: 'Saving draft…', unsaved: 'Unsaved changes', downloadPdf: 'Download PDF',
     exportFile: 'Export .guitardsl', moveDrive: 'Move to Drive', closeTab: 'Close', language: 'Language',
     theme: 'Theme', pageSize: 'Page size', orientation: 'Orientation', portrait: 'Portrait', landscape: 'Landscape',
+    targetMeasure: 'Target measure',
     narrowSource: 'Source', narrowPreview: 'Score', createFirst: 'Create a score to get started.',
     connectHint: 'Connect Google Drive to show files that this app can access.', noFolder: 'Choose or create a GuitarDSL folder.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
@@ -102,6 +125,7 @@ const STRINGS = {
     draft: '下書きを保存済み', saving: '下書きを保存中…', unsaved: '未保存の変更', downloadPdf: 'PDF をダウンロード',
     exportFile: '.guitardsl を書き出す', moveDrive: 'Drive に移動', closeTab: 'タブを閉じる', language: '言語',
     theme: 'テーマ', pageSize: '用紙サイズ', orientation: '向き', portrait: '縦', landscape: '横',
+    targetMeasure: '対象の小節',
     narrowSource: 'ソース', narrowPreview: '譜面', createFirst: '新しい楽譜を作成してください。',
     connectHint: 'Drive に接続すると、このアプリがアクセスできるファイルを表示します。', noFolder: 'GuitarDSL フォルダーを選択または作成してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
@@ -123,8 +147,13 @@ const state: AppState = {
   tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'document', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
     orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
+    progressionBars: 4, progressionOperation: 'append', progressionAuditionMode: 'bars', progressionSide: 'B', progressionSpeed: 100,
+  scoreSettingsSection: 'capo',
     audioStatus: '',
     splitRatio: 0.48, authExpired: false
+};
+const webScoreSettingsSections = {
+  capo: new CapoSection(), beginner: new BeginnerSection(), transpose: new TransposeSection()
 };
 const auth = new GoogleOAuth();
 const draftWrites = new Map<string, Promise<void>>();
@@ -183,6 +212,20 @@ app.innerHTML = `
         <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="collapse-inspector" aria-label="Collapse Inspector">⌄</button></div>
         <div id="inspector-tabs-host"></div>
         <div class="inspector-content" id="inspector-content" role="tabpanel" tabindex="0"></div>
+        <div id="inspector-settings-parking" hidden>
+          <div id="shared-inspector-settings">
+            <section id="inspector-state">
+              <h2 id="settings-heading" tabindex="-1"></h2>
+              <div class="settings-tabs" id="settings-tabs"></div>
+              <div id="settings-content"></div>
+              <div class="inspector-actions" id="settings-actions">
+                <button id="settings-apply" type="button"></button>
+                <button id="settings-cancel" type="button"></button>
+              </div>
+            </section>
+            <script type="application/json" id="settings-labels">${JSON.stringify(getScoreSettingsEditorMessages(navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en'))}</script>
+          </div>
+        </div>
       </aside>
     </div>
     <footer class="statusbar"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Local storage ready</span><span class="status-spacer"></span>
@@ -193,11 +236,18 @@ app.innerHTML = `
   </main>
 `;
 
+const sharedSettingsScript = document.createElement('script');
+sharedSettingsScript.textContent = inspectorSettingsSource;
+document.body.append(sharedSettingsScript);
+sharedSettingsScript.remove();
+
 const editor = app.querySelector<HTMLTextAreaElement>('textarea[aria-label="GuitarDSL source editor"]')!;
 const sourceEditor = new SourceEditorSurface(editor, app.querySelector<HTMLElement>('.editor-highlight')!);
 const tabsElement = app.querySelector<HTMLDivElement>('#open-tabs')!;
 const scoreFrame = app.querySelector<HTMLIFrameElement>('#score-frame')!;
 const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')!;
+const sharedSettingsHost = app.querySelector<HTMLDivElement>('#shared-inspector-settings')!;
+const sharedSettingsParking = app.querySelector<HTMLDivElement>('#inspector-settings-parking')!;
 const diagnosticsElement = app.querySelector<HTMLDivElement>('#diagnostics')!;
 const appMessage = app.querySelector<HTMLDivElement>('#app-message')!;
 const inspectorTabsHost = app.querySelector<HTMLDivElement>('#inspector-tabs-host')!;
@@ -273,6 +323,7 @@ function currentScore(source: string): ParsedScore | undefined {
 async function setActive(key: string): Promise<void> {
   const next = state.tabs.find(tab => tabKey(tab) === key);
   if (!next) return;
+  if (state.activeKey !== key) resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri && progressionAudioLease.activeSessionUri !== activeIdentityLabel(next)) {
     await stopCandidateAudition();
   }
@@ -600,30 +651,40 @@ async function startWebAuditionAudio(message: ProgressionAudioStartMessage): Pro
   progressionAudioLease.acknowledge({ command: 'progressionAudioStarted', leaseId: message.leaseId, requestId: message.requestId });
   renderInspector();
   auditionCompletionTimer = window.setTimeout(() => stopWebAuditionAudio(message.leaseId, message.requestId),
-    Math.max(1, message.playback.durationSeconds * 1000 / speed + 100));
+    Math.max(1, message.playback.durationSeconds * 100_000 / speed + 100));
   return true;
 }
 
-function startCandidateAudition(tab: OpenTab, candidate: { chords: string[] }, candidateIndex: number): void {
+function startCandidateAudition(tab: OpenTab, candidate: ProgressionCandidate, _candidateIndex: number): void {
   if (progressionAudioLease.activeLeaseId) {
-    if (state.audioCandidateId === `${candidateIndex}:${candidate.chords.join('|')}`) void stopCandidateAudition();
+    if (state.audioCandidateId === candidate.id) void stopCandidateAudition();
     return;
   }
   const score = currentScore(tab.source);
-  if (!score) return;
-  const metadata = tab.source.split(/\r?\n/).filter(line =>
-    /^\s*(?:title|artist|bpm|tempo|key|capo|tuning|time|feel|pickup|style_[A-Za-z0-9_]+)\s*:/i.test(line));
-  const auditionSource = [...metadata, '', '[Audition]', `| ${candidate.chords.join(' | ')} |`].join('\n');
+  const progression = state.lastProgression;
+  if (!score || !progression || activeTab() !== tab || progression.source !== tab.source || progression.revision !== tab.revision) return;
+  let auditionSource = tab.source;
+  let startMeasure = progression.target.startMeasure;
+  if (state.progressionSide === 'B') {
+    const plan = planProgressionEdit(tab.source, score, {
+      startMeasure, bars: progression.bars, operation: progression.operation
+    }, candidate);
+    if (!plan.ok) { state.audioStatus = getMessages(state.locale).progressionApplyFailed; renderInspector(); return; }
+    auditionSource = plan.previewSource;
+  } else if (progression.operation === 'append') {
+    startMeasure = Math.max(0, score.measures.length - progression.bars);
+  }
   const playback = buildProgressionAuditionPlaybackData(auditionSource, {
-    startMeasure: 0, bars: candidate.chords.length, mode: 'bars', locale: state.locale
+    startMeasure, bars: progression.bars, mode: state.progressionAuditionMode, locale: state.locale
   });
   if (!playback.ok) { state.audioStatus = playback.message; renderInspector(); return; }
-  const candidateId = `${candidateIndex}:${candidate.chords.join('|')}`;
+  const candidateId = candidate.id;
   const requestId = `web-audition-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const generation = ++progressionSessionGeneration;
   const request = {
     requestId, generation, sessionUri: activeIdentityLabel(tab), sessionVersion: tab.revision,
-    sessionGeneration: generation, candidateId, side: 'B' as const, mode: 'bars' as const, speed: 100 as const
+    sessionGeneration: generation, candidateId, side: state.progressionSide,
+    mode: state.progressionAuditionMode, speed: state.progressionSpeed
   };
   void prepareWebAudioFromGesture(requestId);
   state.audioCandidateId = candidateId;
@@ -658,6 +719,7 @@ function renderInspector(): void {
     active: state.inspectorTab, labels: tabLabels, controlsId: 'inspector-content', disabled: tab ? [] : ['document', 'variables', 'settings', 'progression']
   });
   inspectorContent.setAttribute('aria-labelledby', `inspector-tab-${state.inspectorTab}`);
+  if (sharedSettingsHost.parentElement === inspectorContent) sharedSettingsParking.append(sharedSettingsHost);
   inspectorContent.replaceChildren();
   if (!tab) { inspectorContent.textContent = t.createFirst; return; }
   const score = currentScore(tab.source);
@@ -715,34 +777,103 @@ function renderInspector(): void {
     checkbox.addEventListener('change', () => { state.expandPageBreakRepeats = checkbox.checked; savePreferences(); renderPreview(tab); renderInspector(); });
     label.append(checkbox, document.createTextNode(state.locale === 'ja' ? '改ページリピートを展開' : 'Expand page-break repeats'));
     inspectorContent.append(label);
+    renderWebScoreSettings(tab, inspectorContent);
   } else {
-    addInspectorHeading(inspectorContent, t.progression);
-    const button = actionButton(t.suggest, () => suggestProgression(tab)); inspectorContent.append(button);
-    const scoreResult = state.lastProgression as { candidates?: Array<{ chords: string[]; romanNumerals: string[]; rationale: string }> } | undefined;
-    if (scoreResult?.candidates?.length) {
-      for (const [index, candidate] of scoreResult.candidates.entries()) {
-        const candidateId = `${index}:${candidate.chords.join('|')}`;
-        const card = document.createElement('article'); card.className = 'progression-card';
-        const title = document.createElement('strong'); title.textContent = candidate.romanNumerals.join(' · ');
-        const chords = document.createElement('p'); chords.textContent = candidate.chords.join(' | ');
-        const rationale = document.createElement('p'); rationale.textContent = candidate.rationale;
-        const audition = actionButton(progressionAudioLease.activeLeaseId && state.audioCandidateId === candidateId
-          ? t.stopAudition : t.audition, () => {
-          if (progressionAudioLease.activeLeaseId) void stopCandidateAudition();
-          else startCandidateAudition(tab, candidate, index);
-        });
-        audition.disabled = Boolean(progressionAudioLease.activeLeaseId && state.audioCandidateId !== candidateId);
-        const apply = actionButton(state.locale === 'ja' ? '楽譜に追加' : 'Add to score', () => appendSuggestion(tab, candidate.chords));
-        apply.disabled = Boolean(progressionAudioLease.activeLeaseId);
-        const actions = document.createElement('div'); actions.className = 'inspector-actions';
-        actions.append(audition, apply);
-        card.append(title, chords, rationale, actions); inspectorContent.append(card);
-      }
-    }
-    const audioStatus = document.createElement('p'); audioStatus.id = 'progression-audio-status';
-    audioStatus.setAttribute('role', 'status'); audioStatus.setAttribute('aria-live', 'polite');
-    audioStatus.textContent = state.audioStatus; inspectorContent.append(audioStatus);
+    const messages = getMessages(state.locale);
+    inspectorContent.innerHTML = renderProgressionInspectorMarkup(messages, {
+      hidden: false, repeatNoticeVisible: state.progressionBars > 4
+    });
+    renderWebProgressionInspector(tab, score, messages);
   }
+}
+
+function renderWebProgressionInspector(tab: OpenTab, score: ParsedScore | undefined, messages: ReturnType<typeof getMessages>): void {
+  const barsContainer = inspectorContent.querySelector<HTMLDivElement>('#bars-options')!;
+  const operationContainer = inspectorContent.querySelector<HTMLDivElement>('#operation-options')!;
+  const candidateList = inspectorContent.querySelector<HTMLUListElement>('#candidate-list')!;
+  const error = inspectorContent.querySelector<HTMLParagraphElement>('#progression-error')!;
+  const status = inspectorContent.querySelector<HTMLParagraphElement>('#progression-audio-status')!;
+  const repeatNotice = inspectorContent.querySelector<HTMLParagraphElement>('#progression-repeat-notice')!;
+  repeatNotice.textContent = messages.uiProgressionRepeatNotice;
+  repeatNotice.hidden = state.progressionBars <= 4;
+  const progression = state.lastProgression?.source === tab.source && state.lastProgression.revision === tab.revision
+    ? state.lastProgression : undefined;
+  const choices = (parent: HTMLElement, values: Array<{ value: string; label: string; disabled?: boolean }>, selected: string,
+    select: (value: string) => void, group: 'bars' | 'operation') => {
+    parent.replaceChildren();
+    for (const item of values) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = item.label;
+      button.dataset.inspectorControl = group; button.dataset.inspectorKey = item.value;
+      button.disabled = item.disabled === true; button.setAttribute('aria-pressed', String(item.value === selected));
+      button.addEventListener('click', () => select(item.value)); parent.append(button);
+    }
+  };
+  choices(barsContainer, [
+    { value: '4', label: messages.progressionLengthFour, disabled: state.progressionOperation === 'replace' && (score?.measures.length ?? 0) < 4 },
+    { value: '8', label: messages.progressionLengthEight, disabled: state.progressionOperation === 'replace' && (score?.measures.length ?? 0) < 8 },
+    { value: '16', label: messages.progressionLengthSixteen, disabled: state.progressionOperation === 'replace' && (score?.measures.length ?? 0) < 16 }
+  ], String(state.progressionBars), value => {
+    state.progressionBars = Number(value) as ProgressionBars; state.lastProgression = undefined;
+    void suggestProgression(tab);
+  }, 'bars');
+  choices(operationContainer, [
+    { value: 'replace', label: messages.progressionReplace, disabled: (score?.measures.length ?? 0) < state.progressionBars },
+    { value: 'append', label: messages.progressionAppend }
+  ], state.progressionOperation, value => {
+    state.progressionOperation = value as ProgressionEditOperation; state.progressionStartMeasure = undefined;
+    state.lastProgression = undefined; void suggestProgression(tab);
+  }, 'operation');
+  candidateList.replaceChildren();
+  for (const candidate of progression?.candidates ?? []) {
+    const item = document.createElement('li');
+    const button = document.createElement('button'); button.type = 'button'; button.dataset.inspectorControl = 'candidate';
+    button.dataset.inspectorKey = candidate.id; button.setAttribute('aria-pressed', String(candidate.id === state.progressionCandidateId));
+    const chords = document.createElement('span'); chords.className = 'candidate-chords';
+    chords.textContent = `${candidate.romanNumerals.join(' · ')} · ${messages.progressionCompletionDetail(candidate.score.total)} — ${candidate.chords.join(' | ')}`;
+    const rationale = document.createElement('span'); rationale.className = 'candidate-rationale';
+    rationale.textContent = messages.progressionScoreBreakdown(candidate.score.followsPreviousRoot, candidate.score.identicalOpeningChord,
+      candidate.score.tonicEnding, candidate.melodyEvaluated ? `${candidate.score.melody >= 0 ? '+' : ''}${candidate.score.melody}` : 'not evaluated');
+    button.append(chords, rationale);
+    button.addEventListener('click', () => { state.progressionCandidateId = candidate.id; renderInspector(); });
+    item.append(button); candidateList.append(item);
+  }
+  const selected = progression?.candidates.find(candidate => candidate.id === state.progressionCandidateId) ?? progression?.candidates[0];
+  error.hidden = !state.progressionError;
+  error.textContent = state.progressionError ?? (score && progression && !progression.candidates.length ? messages.progressionNoSafeCandidates : '');
+  if (!score) { error.hidden = false; error.textContent = messages.progressionSourceErrors; }
+  const play = inspectorContent.querySelector<HTMLButtonElement>('#progression-play')!;
+  const stop = inspectorContent.querySelector<HTMLButtonElement>('#progression-stop')!;
+  const apply = inspectorContent.querySelector<HTMLButtonElement>('#progression-apply')!;
+  const cancel = inspectorContent.querySelector<HTMLButtonElement>('#progression-cancel')!;
+  const mode = inspectorContent.querySelector<HTMLSelectElement>('#progression-audition-mode')!;
+  const speed = inspectorContent.querySelector<HTMLSelectElement>('#progression-speed')!;
+  const sideA = inspectorContent.querySelector<HTMLButtonElement>('#progression-side-a')!;
+  const sideB = inspectorContent.querySelector<HTMLButtonElement>('#progression-side-b')!;
+  const active = Boolean(progressionAudioLease.activeLeaseId);
+  play.disabled = !selected || (active && state.audioCandidateId !== selected?.id);
+  stop.disabled = !active;
+  apply.disabled = !selected || active;
+  play.addEventListener('click', () => {
+    if (!selected) return;
+    if (progressionAudioLease.activeLeaseId) void stopCandidateAudition();
+    else startCandidateAudition(tab, selected, 0);
+  });
+  stop.addEventListener('click', () => void stopCandidateAudition());
+  apply.addEventListener('click', () => { if (selected) applyProgressionCandidate(tab, selected); });
+  cancel.addEventListener('click', () => {
+    if (progressionAudioLease.activeLeaseId) void stopCandidateAudition();
+    state.lastProgression = undefined; state.progressionCandidateId = undefined;
+    state.inspectorTab = 'document'; renderInspector();
+  });
+  mode.value = state.progressionAuditionMode;
+  mode.addEventListener('change', () => { state.progressionAuditionMode = mode.value as AppState['progressionAuditionMode']; });
+  speed.value = String(state.progressionSpeed);
+  speed.addEventListener('change', () => { state.progressionSpeed = Number(speed.value) as AppState['progressionSpeed']; });
+  sideA.setAttribute('aria-pressed', String(state.progressionSide === 'A'));
+  sideB.setAttribute('aria-pressed', String(state.progressionSide === 'B'));
+  sideA.addEventListener('click', () => { state.progressionSide = 'A'; renderInspector(); });
+  sideB.addEventListener('click', () => { state.progressionSide = 'B'; renderInspector(); });
+  status.textContent = state.audioStatus;
 }
 
 function applySplitRatio(): void {
@@ -771,6 +902,124 @@ function addInspectorSelect(parent: HTMLElement, label: string, values: string[]
   const select = document.createElement('select');
   for (const value of values) { const option = document.createElement('option'); option.value = value; option.textContent = value; option.selected = value === selected; select.append(option); }
   select.addEventListener('change', () => onChange(select.value)); wrapper.append(name, select); parent.append(wrapper);
+}
+
+function addProgressionSelect(
+  parent: HTMLElement, label: string, values: Array<{ value: string; label: string }>, selected: string,
+  onChange: (value: string) => void, disabled = false
+): void {
+  const wrapper = document.createElement('label'); wrapper.className = 'inspector-field';
+  const name = document.createElement('span'); name.textContent = label;
+  const select = document.createElement('select'); select.disabled = disabled;
+  for (const item of values) {
+    const option = document.createElement('option'); option.value = item.value; option.textContent = item.label;
+    option.selected = item.value === selected; select.append(option);
+  }
+  select.addEventListener('change', () => onChange(select.value)); wrapper.append(name, select); parent.append(wrapper);
+}
+
+function webSettingsContext(tab: OpenTab): ScoreSettingsSectionContext {
+  return {
+    source: tab.source, messages: getMessages(state.locale), editorMessages: getScoreSettingsEditorMessages(state.locale),
+    refresh: () => {}, status: () => {}
+  };
+}
+
+function resetWebScoreSettings(): void {
+  Object.values(webScoreSettingsSections).forEach(section => section.reset());
+  state.scoreSettingsSection = 'capo';
+}
+
+function renderWebScoreSettings(tab: OpenTab, parent: HTMLElement): void {
+  const labels = getScoreSettingsEditorMessages(state.locale);
+  const section = webScoreSettingsSections[state.scoreSettingsSection];
+  const sections = [
+    { id: 'capo', title: labels.sectionCapo },
+    { id: 'beginner', title: labels.sectionBeginner },
+    { id: 'transpose', title: labels.sectionTranspose }
+  ];
+  const context = {
+    kind: 'settings', uri: activeIdentityLabel(tab), version: tab.revision,
+    sessionGeneration: tab.revision + 1, revision: tab.revision, section: state.scoreSettingsSection,
+    sections, model: section.buildModel(webSettingsContext(tab)),
+    status: labels.panelTitle, description: ''
+  };
+  const labelsNode = document.getElementById('settings-labels');
+  const heading = document.getElementById('settings-heading');
+  if (labelsNode) labelsNode.textContent = JSON.stringify(labels);
+  if (heading) heading.textContent = context.status;
+  if (sharedSettingsHost.parentElement !== parent) parent.append(sharedSettingsHost);
+  sharedSettingsHost.hidden = false;
+  const host = window as Window & {
+    guitarDslInspectorContext?: unknown;
+    guitarDslInspectorPostSettings?: (command: string, extra?: Record<string, unknown>) => void;
+    renderSettingsInspector?: (nextContext: typeof context, nextLabels?: typeof labels) => void;
+  };
+  host.guitarDslInspectorContext = context;
+  const source = tab.source;
+  const revision = tab.revision;
+  host.guitarDslInspectorPostSettings = (command, extra = {}) => handleWebSettingsMessage(tab, source, revision, command, extra);
+  host.renderSettingsInspector?.(context, labels);
+}
+
+function handleWebSettingsMessage(
+  tab: OpenTab, expectedSource: string, expectedRevision: number, command: string, extra: Record<string, unknown>
+): void {
+  if (activeTab() !== tab || tab.source !== expectedSource || tab.revision !== expectedRevision || moveToDriveInProgress) {
+    showMessage(getScoreSettingsEditorMessages(state.locale).staleDocument, 'error');
+    return;
+  }
+  switch (command) {
+    case 'settingsSelectSection':
+      if (extra.nextSection === 'capo' || extra.nextSection === 'beginner' || extra.nextSection === 'transpose') state.scoreSettingsSection = extra.nextSection;
+      break;
+    case 'settingsSelectCapo':
+      if (typeof extra.capo === 'number') webScoreSettingsSections.capo.selectCapo(extra.capo);
+      break;
+    case 'settingsSetBarrePolicy':
+      if (extra.policy === 'allow' || extra.policy === 'forbid') webScoreSettingsSections.beginner.setBarrePolicy(extra.policy);
+      break;
+    case 'settingsSelectBeginnerCapo':
+      if (extra.capo === 'auto') webScoreSettingsSections.beginner.selectCapo(undefined);
+      else if (typeof extra.capo === 'number') webScoreSettingsSections.beginner.selectCapo(extra.capo);
+      break;
+    case 'settingsSetSemitones':
+      if (typeof extra.semitones === 'number') webScoreSettingsSections.transpose.setSemitones(extra.semitones);
+      break;
+    case 'settingsSetTransposeCapoMode':
+      if ((extra.mode === 'keep' || extra.mode === 'recommended') && webScoreSettingsSections.transpose.setCapoMode(extra.mode)) break;
+      if (extra.mode === 'explicit' && typeof extra.capo === 'number') webScoreSettingsSections.transpose.setCapoMode('explicit', extra.capo);
+      break;
+    case 'settingsApply':
+      applyWebScoreSettings(tab, state.scoreSettingsSection);
+      return;
+    case 'settingsCancel':
+      resetWebScoreSettings();
+      break;
+    default:
+      return;
+  }
+  renderInspector();
+}
+
+function applyWebScoreSettings(tab: OpenTab, sectionId: ScoreSettingsSectionId): void {
+  const messages = getScoreSettingsEditorMessages(state.locale);
+  const section = webScoreSettingsSections[sectionId];
+  const model = section.buildModel(webSettingsContext(tab)) as CapoSectionModel | BeginnerSectionModel | TransposeSectionModel;
+  if (!model.canApply || !window.confirm(messages.confirmApply)) return;
+  const source = tab.source; const revision = tab.revision;
+  const plan = sectionId === 'capo'
+    ? planCapoTransform(source, (model as CapoSectionModel).selectedCapo)
+    : sectionId === 'beginner'
+      ? planBeginnerTransform(source, webScoreSettingsSections.beginner.getOptions())
+      : planTransposeWithCapo(source, (model as TransposeSectionModel).semitones,
+        webScoreSettingsSections.transpose.request((model as TransposeSectionModel).sourceCapo).capoMode);
+  if (!plan.ok) { showMessage(messages.staleDocument, 'error'); return; }
+  if (activeTab() !== tab || tab.source !== source || tab.revision !== revision || moveToDriveInProgress) {
+    showMessage(messages.staleDocument, 'error'); return;
+  }
+  resetWebScoreSettings();
+  replaceEditorSourceWithUndo(plan.text);
 }
 
 function renderAll(): void {
@@ -828,6 +1077,7 @@ async function openDocument(documentRow: StoredDocument, source = documentRow.so
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
   if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
+  resetWebScoreSettings();
   state.tabs.push(tab);
   state.activeKey = tabKey(tab);
   state.activeStorage = tab.document.identity.storage;
@@ -886,6 +1136,10 @@ async function saveDraftNow(tab: OpenTab): Promise<boolean> {
 function onEditorInput(): void {
   const tab = activeTab();
   if (!tab) return;
+  state.lastProgression = undefined;
+  state.progressionCandidateId = undefined;
+  state.progressionError = undefined;
+  resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
   tab.source = sourceEditor.acceptInput();
   tab.revision += 1;
@@ -1325,20 +1579,69 @@ async function restoreLocalSession(): Promise<void> {
   }
 }
 
+function progressionStartAtCaret(score: ParsedScore, offset: number): number {
+  const before = editor.value.slice(0, Math.max(0, offset));
+  const line = before.split('\n').length - 1;
+  const column = before.length - before.lastIndexOf('\n') - 1;
+  const tokens = (score.codeActionTokens ?? []).filter(token => token.kind === 'chord'
+    && token.measureIndex !== undefined && token.line === line);
+  const exact = tokens.find(token => token.startCol <= column && column <= token.endCol);
+  const nearest = [...tokens].reverse().find(token => token.startCol <= column) ?? tokens[0];
+  return (exact ?? nearest)?.measureIndex ?? score.measures.length;
+}
+
+function progressionFailureMessage(code: string): string {
+  const messages = getMessages(state.locale);
+  switch (code) {
+    case 'sourceHasErrors': return messages.progressionSourceErrors;
+    case 'keyNotDeclared': return messages.progressionKeyRequired;
+    case 'invalidKey': return messages.progressionInvalidKey;
+    case 'invalidCapo': return messages.progressionInvalidCapo;
+    case 'unsupportedQuality': return messages.progressionUnsupportedQuality;
+    case 'ambiguousHarmony': return messages.progressionAmbiguousHarmony;
+    case 'keyBoundary': return messages.progressionKeyBoundary;
+    default: return messages.progressionNoSafeCandidates;
+  }
+}
+
 async function suggestProgression(tab: OpenTab): Promise<void> {
   const score = currentScore(tab.source);
-  if (!score) return;
-  const result = suggestNextChords(score, { startMeasure: score.measures.length });
-  state.lastProgression = result.ok ? result : undefined;
-  if (!result.ok) showMessage(strings().noSuggestions, 'info');
+  if (!score || activeTab() !== tab) return;
+  const startMeasure = state.progressionOperation === 'append'
+    ? score.measures.length
+    : Math.min(state.progressionStartMeasure ?? progressionStartAtCaret(score, editor.selectionStart), Math.max(0, score.measures.length - state.progressionBars));
+  state.progressionStartMeasure = state.progressionOperation === 'append' ? undefined : startMeasure;
+  const target = { startMeasure };
+  const result = suggestProgressions(score, target, state.progressionBars);
+  state.lastProgression = result.ok ? {
+    target, operation: state.progressionOperation, bars: state.progressionBars,
+    candidates: result.candidates, source: tab.source, revision: tab.revision
+  } : undefined;
+  state.progressionCandidateId = result.ok ? result.candidates[0]?.id : undefined;
+  state.progressionError = !result.ok ? progressionFailureMessage(result.code)
+    : !result.candidates.length ? getMessages(state.locale).progressionNoSafeCandidates : undefined;
   renderInspector();
 }
 
-function appendSuggestion(tab: OpenTab, chords: string[]): void {
-  const sectionName = state.locale === 'ja' ? 'Next' : 'Next';
-  const source = `${tab.source.trimEnd()}\n\n[${sectionName}]\n${chords.join(' | ')} |\n`;
-  editor.value = source;
-  if (activeTab() === tab) onEditorInput();
+function applyProgressionCandidate(tab: OpenTab, candidate: ProgressionCandidate): void {
+  const progression = state.lastProgression;
+  const score = currentScore(tab.source);
+  if (!progression || !score || moveToDriveInProgress || activeTab() !== tab
+    || tab.source !== progression.source || tab.revision !== progression.revision
+    || !progression.candidates.some(item => item.id === candidate.id)) {
+    showMessage(getMessages(state.locale).progressionApplyFailed, 'error');
+    return;
+  }
+  const plan = planProgressionEdit(tab.source, score, {
+    startMeasure: progression.target.startMeasure, bars: progression.bars, operation: progression.operation
+  }, candidate);
+  if (!plan.ok) {
+    showMessage(getMessages(state.locale).progressionApplyFailed, 'error');
+    return;
+  }
+  state.lastProgression = undefined;
+  state.progressionCandidateId = undefined;
+  replaceEditorSourceWithUndo(plan.previewSource);
 }
 
 function requestPreviewDraftCheck(
@@ -1580,7 +1883,11 @@ inspectorTabsHost.addEventListener('click', event => {
   if (button && button.dataset.inspectorTab) {
     const nextTab = button.dataset.inspectorTab as InspectorTab;
     if (nextTab !== 'progression' && progressionAudioLease.activeLeaseId) void stopCandidateAudition();
-    state.inspectorTab = nextTab; renderInspector();
+    state.inspectorTab = nextTab;
+    const tab = activeTab();
+    if (nextTab === 'progression' && tab && (!state.lastProgression || state.lastProgression.source !== tab.source || state.lastProgression.revision !== tab.revision)) {
+      void suggestProgression(tab);
+    } else renderInspector();
   }
 });
 const splitDivider = app.querySelector<HTMLDivElement>('.split-divider')!;

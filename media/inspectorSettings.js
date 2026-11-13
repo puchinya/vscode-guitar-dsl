@@ -4,7 +4,7 @@
   const tabs = document.getElementById('settings-tabs');
   const content = document.getElementById('settings-content');
   const actions = document.getElementById('settings-actions');
-  const L = JSON.parse(document.getElementById('settings-labels').textContent);
+  let L = JSON.parse(document.getElementById('settings-labels').textContent);
 
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
@@ -196,7 +196,8 @@
     warnings(parent, model);
   }
 
-  window.renderSettingsInspector = function (context) {
+  window.renderSettingsInspector = function (context, nextLabels) {
+    L = nextLabels || JSON.parse(document.getElementById('settings-labels').textContent);
     const focused = document.activeElement;
     const control = focused && focused.dataset ? focused.dataset.inspectorControl : '';
     const key = focused && focused.dataset ? focused.dataset.inspectorKey : '';

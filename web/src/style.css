@@ -109,6 +109,41 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inspector-list { padding-left: 18px; line-height: 1.6; overflow-wrap: anywhere; }
 .progression-card { margin: 12px 0; padding: 10px; border: 1px solid #e0e3ea; border-radius: 7px; background: #fafbfc; }
 .progression-card p { margin: 7px 0; }
+.progression-controls { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e0e3ea; }
+.progression-audition-controls { margin-top: 12px; padding: 8px; border-radius: 6px; background: #f0f2f6; }
+.progression-heuristic { color: #737c89; font-size: 12px; }
+.settings-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 14px 0 10px; border-bottom: 1px solid #e0e3ea; }
+.settings-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: inherit; }
+.settings-tab[aria-selected="true"] { border-bottom-color: #6877eb; font-weight: 600; }
+.settings-panel { margin-top: 10px; }
+.settings-facts, .settings-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 8px; margin: 12px 0; }
+.settings-fact { display: grid; gap: 2px; min-width: 0; padding: 8px; border: 1px solid #e0e3ea; overflow-wrap: anywhere; }
+.settings-fact span, .settings-panel h3 { color: #737c89; }
+.settings-panel h3 { margin: 16px 0 6px; font-size: 13px; }
+.settings-control-grid label { display: grid; gap: 4px; min-width: 0; color: #66707d; }
+.settings-control-grid select { width: 100%; }
+.settings-candidates { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 6px; max-height: 220px; overflow: auto; margin: 10px 0; }
+.settings-candidate { min-height: 36px; padding: 6px; border: 1px solid #d9dde5; border-radius: 5px; background: #fff; color: #333a45; text-align: left; }
+.settings-candidate[aria-pressed="true"] { outline: 2px solid #6877eb; }
+.settings-candidate:disabled { opacity: .55; }
+.settings-table-scroll { max-width: 100%; overflow-x: auto; margin: 10px 0; }
+.settings-table { width: 100%; border-collapse: collapse; }
+.settings-table th, .settings-table td { padding: 5px 7px; border-bottom: 1px solid #e0e3ea; text-align: left; overflow-wrap: anywhere; }
+.settings-warning { color: #747c88; }
+#progression-state fieldset { min-width: 0; margin: 0 0 14px; padding: 0; border: 0; }
+#progression-state legend { margin-bottom: 6px; color: #737c89; font-weight: 600; }
+#progression-state .choice-row, #progression-state .toolbar, #progression-state .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#progression-state .choice-row button, #progression-state .toolbar button, #progression-state .actions button { min-height: 32px; padding: 5px 9px; border: 1px solid #d9dde5; border-radius: 5px; background: #fff; }
+#progression-state button[aria-pressed="true"] { outline: 2px solid #6877eb; outline-offset: -2px; }
+#progression-state .candidate-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+#progression-state .candidate-list button { display: grid; width: 100%; gap: 4px; min-height: 52px; padding: 9px 10px; border: 1px solid #d9dde5; border-radius: 5px; text-align: left; background: #fafbfc; color: inherit; }
+#progression-state .candidate-chords { font-weight: 600; overflow-wrap: anywhere; }
+#progression-state .candidate-rationale { color: #737c89; font-size: 12px; overflow-wrap: anywhere; }
+#progression-state .toolbar { align-items: center; min-height: 0; margin-top: 14px; padding: 0; background: transparent; border: 0; }
+#progression-state .mode-control, #progression-state .speed-control { display: inline-grid; gap: 4px; }
+#progression-state .mode-control select, #progression-state .speed-control select { min-height: 32px; padding: 5px; border: 1px solid #d9dde5; border-radius: 5px; background: #fff; }
+#progression-state .side-group { display: flex; gap: 4px; }
+#progression-state .actions { margin-top: 14px; }
 .statusbar { display: flex; align-items: center; gap: 8px; min-height: 27px; padding: 0 12px; background: #eceef3; color: #68717d; font-size: 11px; }
 .status-select select { border: 0; background: transparent; color: inherit; font-size: 11px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #44a979; }
@@ -160,6 +195,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .inspector-value { border-color: #3a3f4a; }
   .inspector-value strong { color: #d1d5de; }
   .progression-card { background: #272c34; border-color: #3a3f4a; }
+  .progression-controls { border-color: #3a3f4a; }
+  .progression-audition-controls { background: #292e37; }
+  .progression-heuristic { color: #aeb5c2; }
+  .settings-tabs { border-color: #3a3f4a; }
+  .settings-candidate { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
+  .settings-table th, .settings-table td { border-color: #3a3f4a; }
+  .settings-warning { color: #aeb5c2; }
+  .settings-fact { border-color: #3a3f4a; }
+  .settings-fact span, .settings-panel h3, #progression-state legend, #progression-state .candidate-rationale { color: #aeb5c2; }
+  #progression-state .choice-row button, #progression-state .toolbar button, #progression-state .actions button,
+  #progression-state .candidate-list button, #progression-state .mode-control select, #progression-state .speed-control select { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
   .status-select select { color: #aeb5c2; }
 }
 .app-shell[data-theme="light"] { color-scheme: light; color: #20242b; background: #f7f8fa; }

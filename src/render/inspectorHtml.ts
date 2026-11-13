@@ -1,6 +1,7 @@
 import { getMessages, getScoreSettingsEditorMessages, type SupportedLocale } from '../i18n';
 import type { InspectorContext } from '../inspector/inspectorController';
 import { renderInspectorTabsMarkup } from '@guitardsl/ui/inspectorTabs';
+import { renderProgressionInspectorMarkup } from '@guitardsl/ui/progressionInspectorMarkup';
 import { renderVariableEditorMarkup } from '@guitardsl/ui/variableEditor';
 
 export function renderInspectorHtml(
@@ -100,7 +101,6 @@ export function renderInspectorHtml(
     variablesError: messages.inspectorVariableError
   };
   const webviewContext = context.kind === 'document' ? { kind: 'document' } : context;
-  const repeatNoticeVisibility = context.kind === 'progression' && context.target.bars > 4 ? '' : ' hidden';
   const initial = { context: webviewContext, status, description };
   const safeLabels = escapeJsonForHtml(JSON.stringify(labels));
   const safeSettingsLabels = escapeJsonForHtml(JSON.stringify(getScoreSettingsEditorMessages(locale)));
@@ -233,38 +233,9 @@ export function renderInspectorHtml(
       detachLocal: messages.inspectorVariableDetach, jump: messages.inspectorVariableJump,
       apply: messages.inspectorVariableApply, cancel: messages.inspectorVariableCancel
     }),
-    '    <section id="progression-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-progression" hidden>',
-    '      <h2 id="progression-heading"></h2>',
-    '      <p id="progression-description" class="description"></p>',
-    '      <fieldset><legend id="bars-legend"></legend><div class="choice-row" id="bars-options"></div></fieldset>',
-    '      <fieldset><legend id="operation-legend"></legend><div class="choice-row" id="operation-options"></div></fieldset>',
-    '      <h2 id="candidate-heading"></h2>',
-    '      <p id="progression-repeat-notice" class="description repeat-notice"' + repeatNoticeVisibility + '></p>',
-    '      <ul id="candidate-list" class="candidate-list"></ul>',
-    '      <p id="progression-error" class="error" role="alert" hidden></p>',
-    '      <div class="toolbar">',
-    '        <button id="progression-play" type="button" data-inspector-control="play" data-inspector-key="play"></button>',
-    '        <button id="progression-stop" type="button" data-inspector-control="stop" data-inspector-key="stop" disabled></button>',
-    '        <label class="mode-control"><span id="audition-mode-label"></span><select id="progression-audition-mode">',
-    '          <option value="chord">' + escapeHtml(messages.uiProgressionChord) + '</option>',
-    '          <option value="bars">' + escapeHtml(messages.uiProgressionBars) + '</option>',
-    '          <option value="melody">' + escapeHtml(messages.uiProgressionWithMelody) + '</option>',
-    '          <option value="song">' + escapeHtml(messages.uiProgressionFullSong) + '</option>',
-    '        </select></label>',
-    '        <div class="side-group" role="group" aria-label="' + escapeHtml(messages.uiProgressionTitle) + '">',
-    '          <button id="progression-side-a" type="button" aria-pressed="false"></button>',
-    '          <button id="progression-side-b" type="button" aria-pressed="false"></button>',
-    '        </div>',
-    '        <label class="speed-control"><span id="speed-label"></span><select id="progression-speed">',
-    '          <option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option>',
-    '        </select></label>',
-    '      </div>',
-    '      <p id="progression-audio-status" class="description" role="status" aria-live="polite"></p>',
-    '      <div class="actions">',
-    '        <button id="progression-apply" type="button"></button>',
-    '        <button id="progression-cancel" type="button"></button>',
-    '      </div>',
-    '    </section>',
+    '    ' + renderProgressionInspectorMarkup(messages, {
+      repeatNoticeVisible: context.kind === 'progression' && context.target.bars > 4
+    }),
     '  </main>',
     '  <script nonce="' + safeNonce + '">',
     '    (() => {',

@@ -42,12 +42,14 @@ The design follows the approved Issue contract. It does not add a backend, authe
 
 | Package | Owns | Must not own |
 |---|---|---|
-| `packages/core` | Compiler, parsed score, score transforms, SVG/layout, play order, timeline, shared edit planners and validation | VS Code APIs, browser DOM, storage, OAuth, filesystem APIs, a second AST or timing model |
-| `packages/ui` | Host-independent Preview, Inspector, chord UI, shared markup/styles, playback and practice controls | File persistence, application storage, `acquireVsCodeApi`, OAuth, direct host file I/O |
+| `packages/core` | Compiler, parsed score, score transforms, SVG/layout, play order, timeline, shared progression source planner, host-independent Capo/Beginner/Transpose section models and validation | VS Code APIs, browser DOM, storage, OAuth, filesystem APIs, a second AST or timing model |
+| `packages/ui` | Host-independent Preview, Inspector, chord and variable editors, shared settings renderer and progression markup, styles, playback and practice controls | File persistence, application storage, `acquireVsCodeApi`, OAuth, direct host file I/O |
 | `packages/document` | Document identity, revision, session identity, source-preserving change sets, save requests and change event contracts | Host-specific `TextDocument`, IndexedDB or Drive API calls |
 | `packages/pdf` | `renderPdfBytes(dsl, options, fontBytes): Promise<Uint8Array>` and shared page selection/render contract | Node `fs`, `path`, or `Buffer` in common code; separate score-page SVG rendering |
 
 Each app supplies adapters for its host boundary. The VS Code extension adapts `TextDocument` and `WorkspaceEdit`, Webview messaging, Node PDF save dialogs, CSP, and theme values. The Web app adapts the mutable browser buffer, DOM events, IndexedDB, Google Drive, browser fonts, Blob downloads, and browser theme/locale preferences.
+
+The shared settings sections consume a plain source snapshot and return display models; host adapters own source identity/revision checks, messages, confirmation, and the single undoable apply. The Web and VS Code Inspector use the same settings renderer from `packages/ui/src/inspectorSettings.js` and the same progression-panel markup from `packages/ui/src/progressionInspectorMarkup.ts`. Progression candidates are applied through the source-preserving planner in `packages/core/src/progressionSourceEdits.ts`. The UI build synchronizes the canonical settings script to `media/inspectorSettings.js` for the VS Code Webview.
 
 ### Web application composition
 
@@ -74,7 +76,7 @@ Each app supplies adapters for its host boundary. The VS Code extension adapts `
 - The browser session stores open-tab identity and recoverable drafts in IndexedDB. Draft persistence and user-visible saved state are updated only after IndexedDB confirms the write.
 - Local documents and Drive documents remain separate identities even when names match. Switching the file-list storage source changes only the list, not open tabs.
 - The Drive adapter keeps account-scoped metadata separate and uses only explicitly authorized files. OAuth access tokens remain in memory. The selected folder ID is configuration, not a credential.
-- Drive update requests carry the last-read remote version. A mismatch stops the write before content replacement and is returned as a conflict to the UI.
+- Drive update performs a preflight read of the last-seen remote version and returns an observed mismatch as a conflict. The read and upload PATCH are separate requests; server-enforced conditional-write behavior for this Drive v3 route is not established, so a concurrent update between them remains an unresolved race.
 
 ### Google Drive transfer protocol
 
@@ -114,7 +116,7 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 - IndexedDB errors do not clear the in-memory source. The UI reports unsaved state and enables file download.
 - A stale change set or mismatched document ID is rejected before applying any source edit. One rejected operation cannot partially modify the document.
 - Drive authentication, permission, rate-limit, network, and server failures retain local source and drafts. The UI reports the operation that failed and exposes explicit retry where safe.
-- Drive version conflicts never fall back to unconditional overwrite. User options are reload, save as a separate name, or cancel.
+- An observed Drive version conflict offers reload, save as a separate file, or cancel. Because the Drive v3 conditional-write guarantee is unverified, the current implementation does not prove the contract's no-destructive-overwrite behavior for a concurrent update between the preflight read and PATCH; keep this delivery blocked until the API behavior is established or the contract is revised.
 - Transfer recovery is keyed by account and returned Drive file ID. Upload success is not enough to delete the local original; remote readback and validation are required.
 - Preview and Inspector audio share an exclusive lease. On view disposal, document switch, or host shutdown, listeners and audio resources are released and outstanding operations cannot mutate a newer document revision.
 - Untrusted DSL and metadata are rendered through escaped text and constructed SVG attributes. CSP and host-specific Webview security continue to be enforced by the respective adapters.

@@ -24,6 +24,6 @@
     "@guitardsl/document": "0.1.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node scripts/sync-inspector-script.mjs"
   }
 }
