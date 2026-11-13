@@ -8,6 +8,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 1000 });
   }
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
@@ -32,6 +33,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
 
 test('shows syntax highlighting while keeping the native textarea as the source buffer', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const source = 'title: Song\n\n[Verse]\nC | G | Am | F | # comment\n';
   await editor.fill(source);
@@ -58,6 +60,7 @@ test('shows syntax highlighting while keeping the native textarea as the source 
 
 test('restores the latest local draft and commits it on Save', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const source = 'title: Draft restored\n\ntempo: 104\n\n[Verse]\nAm | F | C | G |\n';
   await editor.fill(source);
@@ -71,6 +74,7 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
 
 test('finalizes a local-to-Drive move atomically only when no newer IndexedDB draft exists', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const result = await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     const local = await indexedDb.createLocal('Atomic move.guitardsl', 'title: Original\n');
@@ -107,6 +111,7 @@ test('finalizes a local-to-Drive move atomically only when no newer IndexedDB dr
 
 test('preserves a committed document against another tab with a stale same-revision or higher-revision snapshot', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const result = await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     const local = await indexedDb.createLocal('Concurrent edits.guitardsl', 'title: Original\n');
@@ -135,6 +140,7 @@ test('keeps source export available when browser storage is blocked', async ({ p
     Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: undefined });
   });
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.locator('#saved-state')).toContainText('Local storage is unavailable');
   const source = 'title: Keep this source\n\n[Verse]\nC | G | Am | F |\n';
@@ -147,6 +153,7 @@ test('keeps source export available when browser storage is blocked', async ({ p
 
 test('preserves original CRLF line endings when editing and exporting an imported score', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const source = 'title: Song\r\n[Verse]\r\nC | G | Am | F |\r\n';
   await page.locator('#file-input').setInputFiles({
     name: 'Line endings.guitardsl', mimeType: 'text/plain', buffer: Buffer.from(source, 'utf8')
@@ -165,6 +172,7 @@ test('preserves original CRLF line endings when editing and exporting an importe
 
 test('localizes the Inspector, honors its theme, and supports keyboard tabs', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   await page.getByLabel('Language').selectOption('ja');
   await page.getByLabel('テーマ').selectOption('dark');
   await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
@@ -187,6 +195,7 @@ test('localizes the Inspector, honors its theme, and supports keyboard tabs', as
 
 test('accepts browser IME composition events in the native source editor', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.evaluate(element => {
     const input = element as HTMLTextAreaElement;
@@ -208,6 +217,7 @@ test('accepts browser IME composition events in the native source editor', async
 
 test('keeps native text editing undoable', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(editor).toHaveValue(/^title: My song/m);
   const initial = await editor.inputValue();
@@ -221,6 +231,7 @@ test('keeps native text editing undoable', async ({ page }) => {
 
 test('shows compiler diagnostics and moves the source selection to one', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
   const diagnostic = page.locator('#diagnostics button').filter({ hasText: 'L5:' });
@@ -236,6 +247,7 @@ test('shows compiler diagnostics and moves the source selection to one', async (
 
 test('applies Preview edits to source and rerenders the edited score', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const source = '[Verse]\nD | G | Am | F |\n';
   await editor.fill(source);
@@ -261,6 +273,7 @@ test('applies Preview edits to source and rerenders the edited score', async ({ 
 
 test('edits and renames let variables through the same shared Inspector controls and planner', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.fill('let riff = 4.d 4.d\nkey: C\n| C $riff |\n');
   await page.getByRole('tab', { name: 'Variables' }).click();
@@ -283,12 +296,14 @@ test('edits and renames let variables through the same shared Inspector controls
 
 test('opens the shared chord diagram editor from a Preview diagram', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await editor.fill('title: Chord editor\n\n[Verse]\n| C | G |\n');
   const preview = page.frameLocator('#score-frame');
-  // Wait for the new document revision, not the old score that remains visible
-  // until the deferred Preview render completes.
-  await expect(preview.locator('body')).toHaveAttribute('data-preview-document-version', '1');
+  const priorRevision = Number(await preview.locator('body').getAttribute('data-preview-document-version'));
+  await editor.fill('title: Chord editor\n\n[Verse]\n| C | G |\n');
+  // Wait for the new document revision rather than a stale visible Preview.
+  await expect.poll(async () => Number(await preview.locator('body').getAttribute('data-preview-document-version')))
+    .toBeGreaterThan(priorRevision);
   await expect(preview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
   await expect(preview.locator('.chord-diagram').first()).toBeVisible();
   await preview.locator('.chord-diagram').first().click();
@@ -303,9 +318,12 @@ test('opens the shared chord diagram editor from a Preview diagram', async ({ pa
 
 test('serializes Inspector audition with Preview playback', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const readyPreview = page.frameLocator('#score-frame');
-  await expect(readyPreview.locator('body')).toHaveAttribute('data-preview-document-version', '1');
+  const priorRevision = Number(await readyPreview.locator('body').getAttribute('data-preview-document-version'));
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await expect.poll(async () => Number(await readyPreview.locator('body').getAttribute('data-preview-document-version')))
+    .toBeGreaterThan(priorRevision);
   await expect(readyPreview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
   await page.getByRole('tab', { name: 'Progression' }).click();
   await page.getByRole('button', { name: 'Suggest next chords' }).click();
@@ -328,6 +346,7 @@ test('serializes Inspector audition with Preview playback', async ({ page }) => 
 
 test('keeps separate local documents in tabs and supports file export', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   page.once('dialog', dialog => dialog.accept('Second.guitardsl'));
   await page.getByRole('button', { name: 'New score' }).click();
   await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toBeVisible();
@@ -340,6 +359,7 @@ test('keeps separate local documents in tabs and supports file export', async ({
 
 test('downloads a PDF from the shared score SVG renderer', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download PDF' }).click();
   const download = await downloadPromise;
@@ -348,6 +368,7 @@ test('downloads a PDF from the shared score SVG renderer', async ({ page }) => {
 
 test('preserves a pending Preview edit when changing modes', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const preview = page.frameLocator('#score-frame');
   const initialGeneration = await preview.locator('body').getAttribute('data-preview-generation');
   await preview.locator('#preview-mode-select').selectOption('edit');
@@ -367,6 +388,7 @@ test('preserves a pending Preview edit when changing modes', async ({ page }) =>
 test('keeps a narrow workspace usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
