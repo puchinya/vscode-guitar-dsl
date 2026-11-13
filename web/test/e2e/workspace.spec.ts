@@ -43,6 +43,43 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Draft restored.guitardsl' })).toHaveCount(0);
 });
 
+test('keeps source export available when browser storage is blocked', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: undefined });
+  });
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(page.locator('#saved-state')).toContainText('Local storage is unavailable');
+  const source = 'title: Keep this source\n\n[Verse]\nC | G | Am | F |\n';
+  await editor.fill(source);
+  await expect(editor).toHaveValue(source);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('Untitled.guitardsl');
+});
+
+test('localizes the Inspector, honors its theme, and supports keyboard tabs', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Language').selectOption('ja');
+  await page.getByLabel('テーマ').selectOption('dark');
+  await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('button', { name: '新しい楽譜' })).toBeVisible();
+
+  await page.getByRole('tab', { name: '文書' }).focus();
+  await page.keyboard.press('ArrowRight');
+  const variablesTab = page.getByRole('tab', { name: '変数' });
+  await expect(variablesTab).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(variablesTab).toHaveAttribute('aria-selected', 'true');
+
+  await page.getByRole('textbox', { name: 'GuitarDSL ソースエディター' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await page.getByRole('tab', { name: 'コード進行' }).click();
+  await page.getByRole('button', { name: '次のコードを提案' }).click();
+  const candidate = page.locator('.progression-card').first();
+  await expect(candidate).toBeVisible();
+  await expect(candidate.getByRole('button', { name: '試聴' })).toBeVisible();
+});
+
 test('accepts browser IME composition events in the native source editor', async ({ page }) => {
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });

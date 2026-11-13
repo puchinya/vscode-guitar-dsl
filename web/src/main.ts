@@ -214,6 +214,7 @@ const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')
 const diagnosticsElement = app.querySelector<HTMLDivElement>('#diagnostics')!;
 const appMessage = app.querySelector<HTMLDivElement>('#app-message')!;
 const driveScopeNote = app.querySelector<HTMLParagraphElement>('#drive-scope-note')!;
+const inspectorTabsHost = app.querySelector<HTMLDivElement>('#inspector-tabs-host')!;
 interface ActiveWebAudioRun {
   leaseId: string;
   requestId: string;
@@ -1541,7 +1542,27 @@ app.querySelector('#theme-select')!.addEventListener('change', event => {
   state.theme = (event.currentTarget as HTMLSelectElement).value as AppState['theme']; void savePreferences(); renderAll();
 });
 app.querySelector('#collapse-inspector')!.addEventListener('click', () => app.querySelector('.workspace')!.classList.toggle('inspector-collapsed'));
-app.querySelector('#inspector-tabs-host')!.addEventListener('click', event => {
+inspectorTabsHost.addEventListener('focusin', event => {
+  const focused = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
+  if (!focused) return;
+  for (const tab of inspectorTabsHost.querySelectorAll<HTMLButtonElement>('[data-inspector-tab]')) {
+    tab.tabIndex = tab === focused ? 0 : -1;
+  }
+});
+inspectorTabsHost.addEventListener('keydown', event => {
+  const focused = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
+  if (!focused) return;
+  const enabled = Array.from(inspectorTabsHost.querySelectorAll<HTMLButtonElement>('[data-inspector-tab]'))
+    .filter(tab => !tab.disabled);
+  const index = enabled.indexOf(focused);
+  if (index < 0) return;
+  const next = event.key === 'ArrowRight' ? enabled[(index + 1) % enabled.length]
+    : event.key === 'ArrowLeft' ? enabled[(index - 1 + enabled.length) % enabled.length]
+      : event.key === 'Home' ? enabled[0]
+        : event.key === 'End' ? enabled[enabled.length - 1] : undefined;
+  if (next) { event.preventDefault(); next.focus(); }
+});
+inspectorTabsHost.addEventListener('click', event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
   if (button && button.dataset.inspectorTab) {
     const nextTab = button.dataset.inspectorTab as InspectorTab;
