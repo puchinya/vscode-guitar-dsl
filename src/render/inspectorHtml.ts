@@ -1,6 +1,7 @@
 import { getMessages, getScoreSettingsEditorMessages, type SupportedLocale } from '../i18n';
 import type { InspectorContext } from '../inspector/inspectorController';
 import { renderInspectorTabsMarkup } from '@guitardsl/ui/inspectorTabs';
+import { renderVariableEditorMarkup } from '@guitardsl/ui/variableEditor';
 
 export function renderInspectorHtml(
   locale: SupportedLocale,
@@ -222,33 +223,16 @@ export function renderInspectorHtml(
     '        <button id="settings-cancel" type="button" data-inspector-control="action" data-inspector-key="close"></button>',
     '      </div>',
     '    </section>',
-    '    <section id="variables-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-variables" hidden>',
-    '      <h2 id="variables-heading"></h2>',
-    '      <p id="variables-description" class="description"></p>',
-    '      <ul id="variables-list" class="variable-list" aria-label="' + escapeHtml(messages.inspectorVariablesTitle) + '"></ul>',
-    '      <p id="variables-meta" class="variable-meta" role="status"></p>',
-    '      <ul id="variables-usages" class="variable-usage-list" aria-label="' + escapeHtml(messages.inspectorVariableUsage) + '"></ul>',
-    '      <div class="variable-form">',
-    '        <label><span id="variables-name-label"></span><input id="variables-name" type="text" maxlength="64" autocomplete="off"></label>',
-    '        <label><span id="variables-value-label"></span><textarea id="variables-value" rows="3" maxlength="2048" spellcheck="false"></textarea></label>',
-    '        <label><span id="variables-reference-label"></span><select id="variables-reference"></select></label>',
-    '        <label><span>' + escapeHtml(messages.inspectorVariableUsage) + '</span><select id="variables-operation">',
-    '          <option value="chooseReference">' + escapeHtml(messages.inspectorVariableChoose) + '</option>',
-    '          <option value="add">' + escapeHtml(messages.inspectorVariableAdd) + '</option>',
-    '          <option value="editGlobal">' + escapeHtml(messages.inspectorVariableEditGlobal) + '</option>',
-    '          <option value="rename">' + escapeHtml(messages.inspectorVariableRename) + '</option>',
-    '          <option value="clone">' + escapeHtml(messages.inspectorVariableClone) + '</option>',
-    '          <option value="deleteUnused">' + escapeHtml(messages.inspectorVariableDelete) + '</option>',
-    '          <option value="detachLocal">' + escapeHtml(messages.inspectorVariableDetach) + '</option>',
-    '        </select></label>',
-    '        <div class="variable-actions">',
-    '          <button id="variables-jump" type="button"></button>',
-    '          <button id="variables-apply" type="button"></button>',
-    '          <button id="variables-cancel" type="button"></button>',
-    '        </div>',
-    '        <p id="variables-error" class="error" role="alert" hidden></p>',
-    '      </div>',
-    '    </section>',
+    '    ' + renderVariableEditorMarkup({
+      title: messages.inspectorVariablesTitle, description: messages.inspectorVariablesDescription,
+      name: messages.inspectorVariableName, value: messages.inspectorVariableValue,
+      reference: messages.inspectorVariableReference, usage: messages.inspectorVariableUsage,
+      choose: messages.inspectorVariableChoose, add: messages.inspectorVariableAdd,
+      editGlobal: messages.inspectorVariableEditGlobal, rename: messages.inspectorVariableRename,
+      clone: messages.inspectorVariableClone, deleteUnused: messages.inspectorVariableDelete,
+      detachLocal: messages.inspectorVariableDetach, jump: messages.inspectorVariableJump,
+      apply: messages.inspectorVariableApply, cancel: messages.inspectorVariableCancel
+    }),
     '    <section id="progression-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-progression" hidden>',
     '      <h2 id="progression-heading"></h2>',
     '      <p id="progression-description" class="description"></p>',
