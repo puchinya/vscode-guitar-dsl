@@ -37,6 +37,8 @@ interface OpenTab {
   pageSize: PageSize;
   orientation: PageOrientation;
   persistable: boolean;
+  persistedBase: { revision: number; source: string };
+  saveStatus: 'local-saved' | 'drive-saved' | 'saving' | 'draft' | 'error';
 }
 
 interface AppState {
@@ -296,32 +298,39 @@ async function persistSessions(): Promise<void> {
 }
 
 function renderStorageStatus(text?: string): void {
-  const message = text ?? (state.storageReady ? strings().ready : strings().unavailable);
+  const t = strings();
+  const tab = activeTab();
+  const message = text ?? (state.storageReady ? t.ready : t.unavailable);
   app.querySelector('#storage-status')!.textContent = message;
-  app.querySelector('#saved-state')!.textContent = state.storageReady ? strings().saved : strings().unavailable;
+  const savedMessage = !state.storageReady ? t.unavailable : !tab ? t.ready
+    : tab.saveStatus === 'local-saved' ? t.saved
+      : tab.saveStatus === 'drive-saved' ? (state.locale === 'ja' ? 'Drive に保存済み' : 'Saved to Drive')
+        : tab.saveStatus === 'draft' ? t.draft
+          : tab.saveStatus === 'saving' ? t.saving : t.unsaved;
+  app.querySelector('#saved-state')!.textContent = savedMessage;
   app.querySelector('.status-dot')!.classList.toggle('unavailable', !state.storageReady);
 }
 
 function scheduleDraft(tab: OpenTab): void {
   const key = tabKey(tab);
-  app.querySelector('#saved-state')!.textContent = strings().saving;
+  tab.saveStatus = 'saving';
+  renderStorageStatus();
   const edit = snapshot(tab);
   const previous = draftWrites.get(key) ?? Promise.resolve();
   const write = previous.catch(() => undefined).then(async () => {
     try {
       if (!tab.persistable || !state.storageReady) throw new DOMException('Local storage is unavailable', 'NotSupportedError');
-      const saved = await indexedDb.saveDraft(edit, tab.accountId);
-      if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
-      if (state.activeKey === key && tab.revision === edit.revision) {
-        app.querySelector('#saved-state')!.textContent = strings().draft;
-      }
+      const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
+      if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
+      tab.persistedBase = { revision: edit.revision, source: edit.source };
+      tab.saveStatus = tab.revision === edit.revision ? 'draft' : 'saving';
+      if (state.activeKey === key) renderStorageStatus();
       if (state.activeStorage === 'local') void renderExplorer();
     } catch (error) {
-      if (state.storageReady) {
-        state.storageReady = false;
-        renderStorageStatus(strings().unavailable);
-      }
-      showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
+      tab.saveStatus = 'error';
+      if (error instanceof DOMException && error.name === 'NotSupportedError') state.storageReady = false;
+      if (state.activeKey === key) renderStorageStatus();
+      showMessage(shortError(error), 'error');
     }
   });
   draftWrites.set(key, write);
@@ -762,7 +771,7 @@ function renderAll(): void {
   const tab = activeTab();
   if (tab) {
     sourceEditor.setSource(tab.source);
-    app.querySelector('#saved-state')!.textContent = state.storageReady ? t.saved : t.unavailable;
+    renderStorageStatus();
     app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = tab.document.identity.storage !== 'local' || !state.account || !state.folderId;
     renderPreview(tab);
   } else {
@@ -781,6 +790,8 @@ async function openDocument(documentRow: StoredDocument, source = documentRow.so
   if (match) { await setActive(tabKey(match)); return match; }
   const tab: OpenTab = {
     document: documentRow, source, revision: documentRow.revision, accountId, persistable,
+    persistedBase: { revision: documentRow.revision, source },
+    saveStatus: documentRow.identity.storage === 'drive' ? 'drive-saved' : 'local-saved',
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
   if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
@@ -800,12 +811,12 @@ async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
-async function closeTab(tab: OpenTab): Promise<void> {
+async function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
   const key = tabKey(tab);
   const index = state.tabs.indexOf(tab);
   if (index < 0) return;
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
-  await saveDraftNow(tab);
+  if (!skipDraft && !await saveDraftNow(tab)) return;
   state.tabs.splice(index, 1);
   if (state.activeKey === key) {
     const next = state.tabs[Math.max(0, index - 1)] ?? state.tabs[0];
@@ -815,14 +826,23 @@ async function closeTab(tab: OpenTab): Promise<void> {
   await persistSessions();
 }
 
-async function saveDraftNow(tab: OpenTab): Promise<void> {
-  if (!tab.persistable || !state.storageReady) return;
+async function saveDraftNow(tab: OpenTab): Promise<boolean> {
+  if (!tab.persistable || !state.storageReady) return false;
   try {
     await draftWrites.get(tabKey(tab));
-    const saved = await indexedDb.saveDraft(snapshot(tab), tab.accountId);
-    if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
+    const edit = snapshot(tab);
+    const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
+    if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
+    tab.persistedBase = { revision: edit.revision, source: edit.source };
+    tab.saveStatus = 'draft';
+    if (activeTab() === tab) renderStorageStatus();
+    return true;
+  } catch (error) {
+    tab.saveStatus = 'error';
+    if (activeTab() === tab) renderStorageStatus();
+    showMessage(shortError(error), 'error');
+    return false;
   }
-  catch (error) { showMessage(shortError(error), 'error'); }
 }
 
 function onEditorInput(): void {
@@ -848,13 +868,16 @@ async function saveActiveDocument(): Promise<void> {
   const tab = activeTab();
   if (!tab) return;
   if (!tab.persistable || !state.storageReady) { showMessage(strings().unavailable, 'error'); return; }
-  await saveDraftNow(tab);
+  if (!await saveDraftNow(tab)) return;
   if (tab.document.identity.storage === 'local') {
     try {
-      const saved = await indexedDb.commitLocal(snapshot(tab));
+      const edit = snapshot(tab);
+      const saved = await indexedDb.commitLocal(edit, undefined, tab.persistedBase);
       if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
       tab.document = saved;
-      app.querySelector('#saved-state')!.textContent = strings().saved;
+      tab.persistedBase = { revision: saved.revision, source: saved.source };
+      tab.saveStatus = 'local-saved';
+      renderStorageStatus();
       showMessage(strings().saved);
       void renderExplorer();
     } catch (error) { showMessage(shortError(error), 'error'); }
@@ -872,24 +895,30 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
     ...(tab.document.driveFolderId ? { parents: [tab.document.driveFolderId] } : {})
   };
   try {
-    const result = await state.drive.updateFile(file, tab.source, tab.document.driveEtag);
+    const submitted = snapshot(tab);
+    const result = await state.drive.updateFile(file, submitted.source, tab.document.driveEtag);
     if (result.kind === 'conflict') {
       await handleDriveConflict(tab, result.latest);
       return;
     }
     if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
     const verified = await state.drive.getFile(result.file.id);
-    if (verified.source !== tab.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
+    if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
+    if (tab.revision !== submitted.revision || tab.source !== submitted.source) {
+      throw new Error('Drive saved an earlier version; newer local edits remain in the draft.');
+    }
     const updated: StoredDocument = {
-      ...tab.document, source: verified.source, revision: tab.revision,
+      ...tab.document, source: verified.source, revision: submitted.revision,
       driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime,
       driveRevisionId: verified.file.headRevisionId,
       driveEtag: verified.etag, updatedAt: Date.now()
     };
-    const committed = await indexedDb.commitDriveDocument(updated, snapshot(tab));
+    const committed = await indexedDb.commitDriveDocument(updated, submitted);
     if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
     tab.document = updated;
-    app.querySelector('#saved-state')!.textContent = state.locale === 'ja' ? 'Drive に保存済み' : 'Saved to Drive';
+    tab.persistedBase = { revision: updated.revision, source: updated.source };
+    tab.saveStatus = 'drive-saved';
+    renderStorageStatus();
     showMessage(state.locale === 'ja' ? 'Drive に保存しました。' : 'Saved to Google Drive.');
     void renderExplorer();
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
@@ -985,7 +1014,7 @@ async function deleteLocal(tab: OpenTab): Promise<void> {
   if (!window.confirm(strings().confirmDelete)) return;
   try {
     await indexedDb.deleteDocument(tab.document.identity);
-    await closeTab(tab);
+    await closeTab(tab, true);
     await renderExplorer();
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
@@ -1000,7 +1029,8 @@ async function createNewScore(): Promise<void> {
   } catch (error) {
     state.storageReady = false;
     const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: name || 'Untitled.guitardsl', source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
-    const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false };
+    const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
+      persistedBase: { revision: 0, source: DEFAULT_SOURCE }, saveStatus: 'error' };
     state.tabs.push(tab); state.activeKey = tabKey(tab); renderAll();
     showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
   }
@@ -1165,9 +1195,10 @@ async function moveToDrive(): Promise<void> {
   let resultMessage: { text: string; kind: 'info' | 'error' } | undefined;
   try {
     await stopCandidateAudition();
-    await saveDraftNow(tab);
+    if (!await saveDraftNow(tab)) throw new Error('Could not preserve the local draft; transfer cancelled.');
     const remote = await moveLocalDocumentToDrive(snapshot(tab), tab.document.name, state.folderId, state.account.accountId, state.drive);
-    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId: state.account.accountId };
+    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId: state.account.accountId,
+      persistedBase: { revision: 0, source: remote.source }, saveStatus: 'drive-saved' };
     const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, state.account!.accountId));
     if (existing) { state.tabs.splice(state.tabs.indexOf(tab), 1); existing.document = remote; existing.source = remote.source; state.activeKey = tabKey(existing); }
     else { state.tabs[state.tabs.indexOf(tab)] = replacement; state.activeKey = tabKey(replacement); }
@@ -1182,6 +1213,8 @@ async function moveToDrive(): Promise<void> {
           tab.document = latest;
           tab.source = latest.source;
           tab.revision = latest.revision;
+          tab.persistedBase = { revision: latest.revision, source: latest.source };
+          tab.saveStatus = 'draft';
           renderAll();
           await persistSessions();
           latestLoaded = true;
