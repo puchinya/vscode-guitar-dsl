@@ -1,5 +1,6 @@
 import { getMessages, getScoreSettingsEditorMessages, type SupportedLocale } from '../i18n';
 import type { InspectorContext } from '../inspector/inspectorController';
+import { renderInspectorTabsMarkup } from '@guitardsl/ui/inspectorTabs';
 
 export function renderInspectorHtml(
   locale: SupportedLocale,
@@ -27,6 +28,20 @@ export function renderInspectorHtml(
   const contextSessionGeneration = context.kind === 'empty' || context.kind === 'document' ? '' : String(context.sessionGeneration);
   const activeTab = context.kind === 'settings' ? 'settings' : context.kind === 'variables' ? 'variables'
     : context.kind === 'progression' ? 'progression' : 'document';
+  const inspectorTabsHtml = renderInspectorTabsMarkup({
+    listLabel: messages.inspectorTablistLabel,
+    active: activeTab,
+    labels: {
+      document: { full: messages.inspectorTabDocument, compact: messages.inspectorTabDocumentCompact },
+      variables: { full: messages.inspectorTabVariables, compact: messages.inspectorTabVariablesCompact },
+      settings: { full: messages.inspectorTabSettings, compact: messages.inspectorTabSettingsCompact },
+      progression: { full: messages.inspectorTabProgression, compact: messages.inspectorTabProgressionCompact }
+    },
+    disabled: [
+      ...(context.kind === 'empty' ? ['document', 'variables', 'settings'] as const : []),
+      ...(!progressionTabAvailable ? ['progression'] as const : [])
+    ]
+  });
   const labels = {
     heading: messages.inspectorHeading,
     inspectorTablistLabel: messages.inspectorTablistLabel,
@@ -193,12 +208,7 @@ export function renderInspectorHtml(
     '<body>',
     '  <main id="inspector-state" data-generation="' + safeGeneration + '" data-context-kind="' + context.kind + '" data-document-uri="' + escapeHtml(contextUri) + '" data-document-version="' + escapeHtml(contextVersion) + '" data-session-generation="' + escapeHtml(contextSessionGeneration) + '" data-progression-tab-available="' + String(progressionTabAvailable) + '" data-audio-state="idle" aria-label="' + escapeHtml(messages.inspectorRegionLabel) + '" aria-labelledby="inspector-heading">',
     '    <h1 id="inspector-heading">' + escapeHtml(messages.inspectorHeading) + '</h1>',
-    '    <div class="inspector-context-tabs" id="inspector-context-tabs" role="tablist" aria-label="' + escapeHtml(messages.inspectorTablistLabel) + '">',
-    '      <button id="inspector-tab-document" type="button" role="tab" data-inspector-tab="document" aria-label="' + escapeHtml(messages.inspectorTabDocument) + '" title="' + escapeHtml(messages.inspectorTabDocument) + '" aria-controls="document-state" aria-selected="' + String(activeTab === 'document') + '" tabindex="' + (activeTab === 'document' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabDocument) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabDocumentCompact) + '</span></button>',
-    '      <button id="inspector-tab-variables" type="button" role="tab" data-inspector-tab="variables" aria-label="' + escapeHtml(messages.inspectorTabVariables) + '" title="' + escapeHtml(messages.inspectorTabVariables) + '" aria-controls="variables-state" aria-selected="' + String(activeTab === 'variables') + '" tabindex="' + (activeTab === 'variables' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabVariables) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabVariablesCompact) + '</span></button>',
-    '      <button id="inspector-tab-settings" type="button" role="tab" data-inspector-tab="settings" aria-label="' + escapeHtml(messages.inspectorTabSettings) + '" title="' + escapeHtml(messages.inspectorTabSettings) + '" aria-controls="settings-state" aria-selected="' + String(activeTab === 'settings') + '" tabindex="' + (activeTab === 'settings' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabSettings) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabSettingsCompact) + '</span></button>',
-    '      <button id="inspector-tab-progression" type="button" role="tab" data-inspector-tab="progression" aria-label="' + escapeHtml(messages.inspectorTabProgression) + '" title="' + escapeHtml(messages.inspectorTabProgression) + '" aria-controls="progression-state" aria-selected="' + String(activeTab === 'progression') + '" tabindex="' + (activeTab === 'progression' ? '0' : '-1') + '"' + (!progressionTabAvailable ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabProgression) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabProgressionCompact) + '</span></button>',
-    '    </div>',
+    '    ' + inspectorTabsHtml,
     '    <div id="document-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-document">',
     '      <p id="inspector-status" class="status" role="status" aria-live="polite">' + escapeHtml(status) + '</p>',
     '      <p id="inspector-description" class="description">' + escapeHtml(description) + '</p>',

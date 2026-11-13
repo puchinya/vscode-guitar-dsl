@@ -6570,7 +6570,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const interchangeModule = require(path.resolve(__dirname, '../../../out/interchange/toGuitarDsl.js')) as {
       interchangeToGuitarDsl: (score: unknown, loss: unknown) => SerializeResult;
     };
-    const compilerModule = require(path.resolve(__dirname, '../../../out/compiler.js')) as {
+    const compilerModule = require('@guitardsl/core/compiler') as {
       parseGuitarDsl: (source: string) => ParseResult;
     };
     const gp78Module = require(path.resolve(__dirname, '../../../out/gp78/index.js')) as {

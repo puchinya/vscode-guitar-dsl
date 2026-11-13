@@ -11,6 +11,9 @@
 .gitignore
 
 # Sources, tests and build helpers (the extension runs from out/)
+web/**
+packages/**
+node_modules/@guitardsl/**
 src/**
 tests/**
 out/tests/**

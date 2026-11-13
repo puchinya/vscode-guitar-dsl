@@ -44,6 +44,7 @@
 | [Audio transcription](audio-transcription.md) | ローカル Audio MIR、Music IR、GuitarDSL への直列化 |
 | [VS Code editor experience](vscode-editor-experience.md) | 言語貢献、コマンド、Outline、診断、Help、サイドバー、ローカライズ |
 | [AI integration](ai-integration.md) | AI tool 境界、文書対象の解決、変換アダプター |
+| [Web application](web-app.md) | Browser SPA, shared packages, document contracts, IndexedDB, Google Drive, and PDF boundary |
 
 ## Data flow and ownership
 

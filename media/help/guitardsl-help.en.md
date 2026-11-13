@@ -75,6 +75,12 @@ The Inspector is a shared place for document-aware assistance as features move i
 - **Diagnostics**: errors and warnings appear as you type (see **Troubleshooting**).
 - **Code Actions**: transpose selected chord names or notes by sounding pitch, toggle enharmonic spelling, double or halve durations, normalize pitch names, and extract or inline rhythm `let` fragments. An unused chord definition offers a Quick Fix, and a repeated-pattern Hint can extract one occurrence. Select complete editable tokens; comments and formatting outside the selection are preserved.
 
+### GuitarDSL Web app
+
+The standalone GuitarDSL Web app opens in a browser and works with local scores before you connect Google Drive. Choose **New score** to edit a `.guitardsl` or `.gdsl` document. When browser storage is available, drafts are kept in the browser; if storage is blocked, export your source to keep a copy. The source editor, score Preview, Inspector, playback, and PDF download use the shared GuitarDSL score engine. Open tabs stay attached to their document when you change the file-list source.
+
+To use Drive, choose **Connect Drive** and authorize the app. Drive is available only when the site deployment has Google OAuth and Picker configured. The Drive list contains files created by the app or individually selected through Google Picker; it may not show every existing file in a folder. Save Drive changes explicitly. If a remote version changed, reload it, save your local draft as a new Drive file, or cancel. **Move to Drive** keeps the local original until the uploaded file has been read back and verified.
+
 ### Score Preview
 
 **GuitarDSL: Open Preview to the Side** shows the rendered score next to the editor. The preview follows your edits and the active GuitarDSL editor. Its 48 px playback row keeps Play, Pause, Stop, seek, and elapsed/total time visible. A dedicated 44 px Score settings row sits directly below it at every width, with directly operable Capo, colored Playability, and Beginner controls. At 840 CSS px and wider it also shows barre policy, capo selection mode, and Inspector links; below that width, use **More** for those supplemental controls. When playback is unavailable, the controls remain visible with a reason.

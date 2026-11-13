@@ -53,7 +53,7 @@ describe('Preview Help control', () => {
       const actions = html.slice(html.indexOf('class="toolbar-actions"'));
       assert.ok(actions.indexOf('id="btn-help"') >= 0, 'Help remains in the toolbar actions');
       assert.ok(html.slice(html.indexOf('id="view-export-panel"')).includes('id="btn-save-pdf"'), 'PDF remains in View & Export');
-      assert.ok(/vscode\.postMessage\(\{ command: 'openHelp' \}\)/.test(html), 'posts only the openHelp intent');
+      assert.ok(/host\.postMessage\(\{ command: 'openHelp' \}\)/.test(html), 'posts only the openHelp intent through the host adapter');
     }
   });
 
