@@ -432,6 +432,7 @@ test('Picker re-opening detects a known Drive conflict and preserves the saved b
     await indexedDb.setValue('sessions', 'workspace-drive:account-a', { tabs: [], active: null });
   });
   await page.locator('#connect-drive').click();
+  await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
   await page.locator('#storage-drive').click();
   await page.getByRole('button', { name: 'Open from Drive' }).click();
 
