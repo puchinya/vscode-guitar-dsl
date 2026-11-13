@@ -334,12 +334,16 @@ test('serializes Inspector audition with Preview playback', async ({ page }) => 
   const preview = page.frameLocator('#score-frame');
   const previewBody = preview.locator('body');
   const audioStatus = page.locator('#progression-audio-status');
-  await expect(audioStatus).toHaveText('Audition playing.');
-  await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'true');
-  await expect(preview.locator('#btn-play')).toBeDisabled();
-
-  await page.getByRole('button', { name: 'Stop audition' }).click();
-  await expect(audioStatus).toHaveText('Audition stopped.');
+  // In CI a browser may lack an audio output device. In that case the lease
+  // must fail closed and unlock Preview rather than hanging in "Starting".
+  await expect.poll(() => audioStatus.textContent(), { timeout: 10000 })
+    .toMatch(/^(Audition playing\.|Audio audition is unavailable\.)$/);
+  if (await audioStatus.textContent() === 'Audition playing.') {
+    await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'true');
+    await expect(preview.locator('#btn-play')).toBeDisabled();
+    await page.getByRole('button', { name: 'Stop audition' }).click();
+    await expect(audioStatus).toHaveText('Audition stopped.');
+  }
   await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'false');
   await expect(preview.locator('#btn-play')).toBeEnabled();
 });
