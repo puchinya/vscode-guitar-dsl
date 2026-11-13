@@ -30,3 +30,18 @@ test('uses the surrounding source line ending for a newly inserted line', () => 
 
   assert.equal(preserveLineEndings(source, previousText, nextText), `${source}lyr: | hello |\r\n`);
 });
+
+test('highlights mel, tab and lyr as DSL directives rather than generic headers', () => {
+  const source = [
+    'mel: | c4/4 d4/4 |',
+    'tab: | 6f3/4 5f2/4 |',
+    'lyr: | は る |'
+  ].join('\n');
+  const markup = renderGuitarDslHighlight(source);
+  assert.match(markup, /<span class="gds-keyword">mel<\/span>/);
+  assert.match(markup, /<span class="gds-note">c4\/4<\/span>/);
+  assert.match(markup, /<span class="gds-keyword">tab<\/span>/);
+  assert.match(markup, /<span class="gds-tab-note">6f3<\/span>/);
+  assert.match(markup, /<span class="gds-keyword">lyr<\/span>/);
+  assert.doesNotMatch(markup, /<span class="gds-key">(?:mel|tab|lyr)<\/span>/);
+});
