@@ -57,10 +57,6 @@ function highlightBody(line: string): string {
   if (directive) return escapeHtml(directive[1]) + token('directive', directive[2]) + escapeHtml(directive[3])
     + token('punctuation', directive[4]) + token('value', directive[5]);
 
-  const header = /^(\s*)([\p{L}_][\p{L}\p{N}_-]*)(\s*)(:)(.*)$/u.exec(line);
-  if (header) return escapeHtml(header[1]) + token('key', header[2]) + escapeHtml(header[3])
-    + token('punctuation', header[4]) + token('value', header[5]);
-
   const prefix = /^(\s*)(tab(?:\[[1-4]\])?|mel|lyr)(:)(.*)$/u.exec(line);
   if (prefix) {
     const body = prefix[2] === 'tab'
@@ -70,6 +66,10 @@ function highlightBody(line: string): string {
         : markMatches(prefix[4], /\|/gu, 'bar');
     return escapeHtml(prefix[1]) + token('keyword', prefix[2]) + token('punctuation', prefix[3]) + body;
   }
+
+  const header = /^(\s*)([\p{L}_][\p{L}\p{N}_-]*)(\s*)(:)(.*)$/u.exec(line);
+  if (header) return escapeHtml(header[1]) + token('key', header[2]) + escapeHtml(header[3])
+    + token('punctuation', header[4]) + token('value', header[5]);
 
   const definition = /^(\s*)(chord|let)\b(.*)$/u.exec(line);
   if (definition) return escapeHtml(definition[1]) + token('keyword', definition[2])
