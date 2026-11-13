@@ -34,3 +34,9 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:unit
+
+      - name: Build and typecheck Web SPA
+        run: npm run build:web
+
+      - name: Run Web unit tests
+        run: npm run test:unit --workspace web
