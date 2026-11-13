@@ -116,6 +116,9 @@ const STRINGS = {
 } as const;
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+// Do not accept edits or create documents until the persisted workspace has loaded.
+app.inert = true;
+app.setAttribute('aria-busy', 'true');
 const state: AppState = {
   tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'document', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
@@ -1611,4 +1614,4 @@ async function init(): Promise<void> {
   renderAll();
 }
 
-void init();
+void init().finally(() => { app.inert = false; app.removeAttribute('aria-busy'); });
