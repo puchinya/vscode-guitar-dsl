@@ -286,6 +286,10 @@ test('opens the shared chord diagram editor from a Preview diagram', async ({ pa
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.fill('title: Chord editor\n\n[Verse]\n| C | G |\n');
   const preview = page.frameLocator('#score-frame');
+  // Wait for the new document revision, not the old score that remains visible
+  // until the deferred Preview render completes.
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-document-version', '1');
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
   await expect(preview.locator('.chord-diagram').first()).toBeVisible();
   await preview.locator('.chord-diagram').first().click();
   const dialog = page.locator('dialog.web-chord-editor');
@@ -300,6 +304,9 @@ test('opens the shared chord diagram editor from a Preview diagram', async ({ pa
 test('serializes Inspector audition with Preview playback', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  const readyPreview = page.frameLocator('#score-frame');
+  await expect(readyPreview.locator('body')).toHaveAttribute('data-preview-document-version', '1');
+  await expect(readyPreview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
   await page.getByRole('tab', { name: 'Progression' }).click();
   await page.getByRole('button', { name: 'Suggest next chords' }).click();
   const candidate = page.locator('.progression-card').first();
