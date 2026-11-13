@@ -11,6 +11,7 @@ import type { PageOrientation, PageSize } from '@guitardsl/pdf';
 import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
 import { createSourceEditorMarkup, SourceEditorSurface } from './editor/sourceEditor';
 import { showChordDiagramEditor } from './editor/chordDiagramEditor';
+import { renderVariablesEditor } from './editor/variableInspector';
 import { activeTab as findActiveTab, renderDocumentTabs, sameTabIdentity, tabKey } from './tabs/documentTabs';
 import { downloadScorePdf, scoreFontUrls } from './pdfExporter';
 import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type PreviewMessage, type PreviewPostMessage } from './adapters/previewBridge';
@@ -40,6 +41,7 @@ interface OpenTab {
   persistable: boolean;
   persistedBase: { revision: number; source: string };
   saveStatus: 'local-saved' | 'drive-saved' | 'saving' | 'draft' | 'error';
+  variableSelectedName?: string;
 }
 
 interface AppState {
@@ -664,14 +666,31 @@ function renderInspector(): void {
     }
     inspectorContent.append(actions);
   } else if (state.inspectorTab === 'variables') {
-    addInspectorHeading(inspectorContent, t.variables);
-    const definitions = score?.letDefinitions ?? [];
-    if (!definitions.length) { addInspectorParagraph(inspectorContent, state.locale === 'ja' ? '変数定義はありません。' : 'No variable definitions.'); return; }
-    const list = document.createElement('ul'); list.className = 'inspector-list';
-    for (const definition of definitions) {
-      const item = document.createElement('li'); item.textContent = `$${definition.name} = ${definition.value ?? ''}`; list.append(item);
-    }
-    inspectorContent.append(list);
+    if (!score) { inspectorContent.textContent = t.noDiagnostics; return; }
+    const sourceRevision = tab.revision;
+    const sourceAtOpen = tab.source;
+    renderVariablesEditor({
+      root: inspectorContent, score, source: sourceAtOpen, locale: state.locale,
+      selectedName: tab.variableSelectedName,
+      onSelect: name => {
+        if (activeTab() !== tab) return;
+        tab.variableSelectedName = name;
+        renderInspector();
+      },
+      onApply: (nextSource, expectedSource) => {
+        if (moveToDriveInProgress || activeTab() !== tab || tab.source !== expectedSource
+          || tab.revision !== sourceRevision) return false;
+        replaceEditorSourceWithUndo(nextSource);
+        return tab.source === nextSource;
+      },
+      onJump: (line, startCol, endCol) => {
+        if (activeTab() !== tab) return;
+        const lines = editor.value.split('\n');
+        const offset = lines.slice(0, line).reduce((total, value) => total + value.length + 1, 0);
+        editor.focus();
+        editor.setSelectionRange(offset + startCol, offset + endCol);
+      }
+    });
   } else if (state.inspectorTab === 'settings') {
     addInspectorHeading(inspectorContent, t.settings);
     addInspectorSelect(inspectorContent, t.pageSize, ['A4', 'A3', 'A5', 'B4', 'B5', 'Letter'], tab.pageSize,
