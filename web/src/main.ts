@@ -10,6 +10,7 @@ import { renderInspectorTabsMarkup, type InspectorTabId } from '@guitardsl/ui/in
 import type { PageOrientation, PageSize } from '@guitardsl/pdf';
 import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
 import { createSourceEditorMarkup, SourceEditorSurface } from './editor/sourceEditor';
+import { showChordDiagramEditor } from './editor/chordDiagramEditor';
 import { activeTab as findActiveTab, renderDocumentTabs, sameTabIdentity, tabKey } from './tabs/documentTabs';
 import { downloadScorePdf, scoreFontUrls } from './pdfExporter';
 import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type PreviewMessage, type PreviewPostMessage } from './adapters/previewBridge';
@@ -1470,7 +1471,22 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
     void downloadPdf(tab); return;
   }
   if (message.command === 'openScoreSettingsFromPreview') { state.inspectorTab = 'settings'; renderInspector(); return; }
-  if (message.command === 'editChord') { state.inspectorTab = 'variables'; renderInspector(); return; }
+  if (message.command === 'editChord' && isCurrent && typeof message.key === 'string') {
+    const originalSource = tab.source;
+    const originalRevision = tab.revision;
+    try {
+      showChordDiagramEditor({
+        source: originalSource, key: message.key, locale: state.locale,
+        apply: (nextSource, expectedSource) => {
+          if (moveToDriveInProgress || activeTab() !== tab || tab.revision !== originalRevision
+            || tab.source !== expectedSource) return false;
+          replaceEditorSourceWithUndo(nextSource);
+          return tab.source === nextSource;
+        }
+      });
+    } catch (error) { showMessage(shortError(error), 'error'); }
+    return;
+  }
   if (message.command === 'temporarySettingsChanged') showMessage(state.locale === 'ja' ? '一時的な楽譜変換はソースで編集してください。' : 'Edit the source to change score transformations.', 'info');
 }
 
