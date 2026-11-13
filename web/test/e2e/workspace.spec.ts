@@ -259,6 +259,44 @@ test('applies Preview edits to source and rerenders the edited score', async ({ 
   await expect(preview.locator('#preview-edit-target option').filter({ hasText: 'chord · E' })).toHaveCount(1);
 });
 
+test('edits and renames let variables through the same shared Inspector controls and planner', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('let riff = 4.d 4.d\nkey: C\n| C $riff |\n');
+  await page.getByRole('tab', { name: 'Variables' }).click();
+  await expect(page.locator('#variables-list button')).toHaveText('riff');
+  await page.locator('#variables-operation').selectOption('rename');
+  await page.locator('#variables-name').fill('pulse');
+  await page.locator('#variables-apply').click();
+  await expect(editor).toHaveValue('let pulse = 4.d 4.d\nkey: C\n| C $pulse |\n');
+
+  await page.locator('#variables-operation').selectOption('add');
+  await page.locator('#variables-name').fill('unused');
+  await page.locator('#variables-value').fill('4.d');
+  await page.locator('#variables-apply').click();
+  await expect(editor).toHaveValue(/let unused = 4\.d/);
+  await page.locator('#variables-list button').filter({ hasText: 'unused' }).click();
+  await page.locator('#variables-operation').selectOption('deleteUnused');
+  await page.locator('#variables-apply').click();
+  await expect(editor).not.toHaveValue(/let unused = 4\.d/);
+});
+
+test('opens the shared chord diagram editor from a Preview diagram', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('title: Chord editor\n\n[Verse]\n| C | G |\n');
+  const preview = page.frameLocator('#score-frame');
+  await expect(preview.locator('.chord-diagram').first()).toBeVisible();
+  await preview.locator('.chord-diagram').first().click();
+  const dialog = page.locator('dialog.web-chord-editor');
+  await expect(dialog).toBeVisible();
+  const chordFrame = page.frameLocator('dialog.web-chord-editor iframe');
+  await expect(chordFrame.locator('#btn-save')).toBeVisible();
+  await chordFrame.locator('#btn-save').click();
+  await expect(editor).toHaveValue(/chord C\s*=/);
+  await expect(dialog).toHaveCount(0);
+});
+
 test('serializes Inspector audition with Preview playback', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
