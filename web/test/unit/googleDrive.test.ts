@@ -175,8 +175,43 @@ test('a Drive server error keeps an unknown result after one readback and does n
       id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
     }, 'submitted source');
     assert.equal(result.kind, 'unknown');
-    if (result.kind === 'unknown') assert.equal(result.latest?.source, 'old remote source');
+    if (result.kind === 'unknown') {
+      assert.equal(result.status, 500);
+      assert.equal(result.latest?.source, 'old remote source');
+    }
     assert.equal(patchCalls, 1);
+    assert.equal(mediaReads, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a Drive 401 remains an unknown save result with its status after one readback and no retry', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let patchCalls = 0;
+  let metadataReads = 0;
+  let mediaReads = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname.startsWith('/upload/drive/v3/files')) {
+      patchCalls += 1;
+      return new Response('', { status: 401 });
+    }
+    if (url.searchParams.get('alt') === 'media') {
+      mediaReads += 1;
+      return new Response('', { status: 401 });
+    }
+    metadataReads += 1;
+    return new Response(JSON.stringify({
+      id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const result = await api.updateFile({
+      id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
+    }, 'submitted source');
+    assert.deepEqual(result, { kind: 'unknown', status: 401 });
+    assert.equal(patchCalls, 1);
+    assert.equal(metadataReads, 2);
     assert.equal(mediaReads, 1);
   } finally { globalThis.fetch = originalFetch; }
 });

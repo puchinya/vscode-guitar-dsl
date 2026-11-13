@@ -22,7 +22,7 @@ export interface DriveFile {
 export type DriveSaveResult =
   | { kind: 'saved'; file: DriveFile; readback?: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'conflict'; latest: DriveFile }
-  | { kind: 'unknown'; latest?: { file: DriveFile; source: string; etag?: string } }
+  | { kind: 'unknown'; status?: number; latest?: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'unavailable'; message: string };
 
 export class DriveApiError extends Error {
@@ -155,7 +155,8 @@ export class GoogleDriveApi {
     if ([401, 403, 429].includes(response.status) || response.status >= 500) {
       // These responses may not reveal whether Drive applied the media update. Observe once;
       // callers retain the draft and must never retry this PATCH automatically.
-      return { kind: 'unknown', ...(await this.readAfterUncertainWrite(file.id).then(latest => latest ? { latest } : {})) };
+      const latest = await this.readAfterUncertainWrite(file.id);
+      return { kind: 'unknown', status: response.status, ...(latest ? { latest } : {}) };
     }
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive save failed (${response.status}).`);
 

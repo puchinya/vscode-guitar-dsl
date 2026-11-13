@@ -112,6 +112,8 @@ const STRINGS = {
     driveOverwriteWarning: 'A save from another device at nearly the same time may overwrite its changes.',
     driveSaveUnknown: 'Drive could not confirm the save. Your local draft is kept and no automatic retry was sent. Check Drive before saving again.',
     driveSaveUnknownApplied: 'Drive currently contains the submitted source, but the response was not confirmed. Your local draft is kept; check Drive before saving again. No automatic retry was sent.',
+    driveSaveUnauthorized: 'Drive authorization expired before the save could be confirmed. Your local draft is kept. Reconnect Drive, review the file, and retry manually; the PATCH was not resent.',
+    driveSaveForbidden: 'Drive denied the save due to access permissions. Your local draft is kept and no automatic retry was sent. Check file access before retrying.',
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
@@ -136,6 +138,8 @@ const STRINGS = {
     driveOverwriteWarning: '別の端末からほぼ同時に保存すると、その端末の編集が上書きされることがあります。',
     driveSaveUnknown: 'Drive の保存結果を確認できませんでした。下書きは保持し、自動再送していません。Drive の状態を確認してから再度保存してください。',
     driveSaveUnknownApplied: 'Drive には送信内容が見つかりましたが、応答を確認できないため下書きを保持しました。内容を確認してください。自動再送はしていません。',
+    driveSaveUnauthorized: 'Drive の認証が失効したため保存を確認できません。下書きは保持しました。Drive に再接続し、ファイルの状態を確認してから手動で再試行してください。PATCH の自動再送はしていません。',
+    driveSaveForbidden: 'Drive が保存を拒否しました（ファイルのアクセス権を確認してください）。下書きは保持し、自動再送していません。権限を確認してから手動で再試行してください。',
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
@@ -1268,7 +1272,10 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
       }
       if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
       if (result.kind === 'unknown') {
-        const message = result.latest?.source === submitted.source ? strings().driveSaveUnknownApplied : strings().driveSaveUnknown;
+        if (result.status === 401) markDriveAuthState(new DriveApiError(401, 'Drive authorization expired.'));
+        const message = result.status === 401 ? strings().driveSaveUnauthorized
+          : result.status === 403 ? strings().driveSaveForbidden
+            : result.latest?.source === submitted.source ? strings().driveSaveUnknownApplied : strings().driveSaveUnknown;
         showMessage(message, 'error');
         return;
       }
@@ -1552,18 +1559,11 @@ async function openFromDrivePicker(): Promise<void> {
     const selection = await state.drive.pickFile();
     if (!selection) return;
     if (!isSupportedDriveFile(selection.name)) throw new Error('Choose a .guitardsl or .gdsl file.');
-    const downloaded = await state.drive.getFile(selection.id);
-    const doc: StoredDocument = {
-      identity: driveIdentity(downloaded.file.id), accountId: state.account.accountId,
-      name: downloaded.file.name, source: downloaded.source, revision: 0, createdAt: Date.now(), updatedAt: Date.now(),
-      driveVersion: downloaded.file.version, driveModifiedTime: downloaded.file.modifiedTime, driveRevisionId: downloaded.file.headRevisionId, driveEtag: downloaded.etag,
-      driveFolderId: downloaded.file.parents?.[0] ?? state.folderId
-    };
-    await indexedDb.upsertDriveDocument(doc); await openDocument(doc, doc.source, state.account.accountId);
+    await openDriveDocument({ id: selection.id });
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
 }
 
-async function openDriveDocument(file: DriveFile): Promise<void> {
+async function openDriveDocument(file: Pick<DriveFile, 'id'>): Promise<void> {
   if (!state.drive || !state.account) return;
   const identity = driveIdentity(file.id);
   const open = state.tabs.find(tab => sameTabIdentity(tab, identity, state.account!.accountId));

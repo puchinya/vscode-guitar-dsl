@@ -14,15 +14,22 @@ interface DriveSeed {
   folderId?: string;
 }
 
-async function installDriveBrowserMock(page: Page, accountSequence: string[]): Promise<void> {
-  await page.addInitScript((accounts: string[]) => {
-    const tokens = [...accounts];
-    (window as unknown as { google: unknown }).google = {
+interface DriveBrowserMockOptions {
+  pickerSelection?: { id: string; name: string };
+  remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+}
+
+async function installDriveBrowserMock(page: Page, accountSequence: string[], options: DriveBrowserMockOptions = {}): Promise<{
+  patchCalls: { fileId: string; source: string }[];
+}> {
+  await page.addInitScript((config: { accounts: string[]; pickerSelection?: { id: string; name: string } }) => {
+    const tokens = [...config.accounts];
+    const google: Record<string, unknown> = {
       accounts: {
         oauth2: {
-          initTokenClient: (options: { callback: (result: { access_token: string; expires_in: number }) => void }) => ({
-            requestAccessToken: () => options.callback({
-              access_token: `test-token-${tokens.shift() ?? accounts.at(-1) ?? 'account-a'}`,
+          initTokenClient: (tokenOptions: { callback: (result: { access_token: string; expires_in: number }) => void }) => ({
+            requestAccessToken: () => tokenOptions.callback({
+              access_token: `test-token-${tokens.shift() ?? config.accounts.at(-1) ?? 'account-a'}`,
               expires_in: 3600
             })
           }),
@@ -30,7 +37,42 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[]): P
         }
       }
     };
-  }, accountSequence);
+    if (config.pickerSelection) {
+      const actionKey = 'action';
+      const documentsKey = 'documents';
+      class DocsView {
+        constructor(_view?: string) {}
+        setIncludeFolders(_value: boolean): void {}
+        setSelectFolderEnabled(_value: boolean): void {}
+        setMimeTypes(_value: string): void {}
+      }
+      class PickerBuilder {
+        private callback?: (data: Record<string, unknown>) => void;
+        addView(_view: unknown): this { return this; }
+        setDeveloperKey(_value: string): this { return this; }
+        setAppId(_value: string): this { return this; }
+        setOAuthToken(_value: string): this { return this; }
+        setOrigin(_value: string): this { return this; }
+        enableFeature(_value: string): this { return this; }
+        setCallback(callback: (data: Record<string, unknown>) => void): this { this.callback = callback; return this; }
+        build(): { setVisible(value: boolean): void } {
+          const callback = this.callback;
+          return { setVisible: visible => {
+            if (visible) callback?.({ [actionKey]: 'picked', [documentsKey]: [config.pickerSelection] });
+          } };
+        }
+      }
+      google.picker = {
+        ViewId: { FOLDERS: 'folders', DOCS: 'docs' }, DocsView,
+        Feature: { NAV_HIDDEN: 'nav-hidden', MULTISELECT_ENABLED: 'multi-select' },
+        Action: { PICKED: 'picked', CANCEL: 'cancel' },
+        Response: { ACTION: actionKey, DOCUMENTS: documentsKey }, PickerBuilder
+      };
+      (window as unknown as { gapi: unknown }).gapi = { load: (_name: string, callbacks: { callback(): void }) => callbacks.callback() };
+    }
+    (window as unknown as { google: unknown }).google = google;
+  }, { accounts: accountSequence, pickerSelection: options.pickerSelection });
+  const patchCalls: { fileId: string; source: string }[] = [];
   await page.route('https://www.googleapis.com/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -51,14 +93,19 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[]): P
     }
     if (url.pathname.startsWith('/drive/v3/files/')) {
       const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      const remote = options.remoteFiles?.[fileId];
+      const version = remote?.version ?? '1';
       if (url.searchParams.get('alt') === 'media') {
-        return route.fulfill({ headers, body: `title: ${fileId}\n` });
+        return route.fulfill({ headers, body: remote?.source ?? `title: ${fileId}\n` });
       }
       return route.fulfill({ headers, json: {
-        id: fileId, name: `${fileId}.guitardsl`, version: '1', modifiedTime: 't1', headRevisionId: 'r1', parents: [`folder-${accountId}`]
+        id: fileId, name: remote?.name ?? `${fileId}.guitardsl`, version, modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: [`folder-${accountId}`]
       } });
     }
     if (url.pathname.startsWith('/upload/drive/v3/files')) {
+      if (request.method() === 'PATCH') {
+        patchCalls.push({ fileId: url.pathname.split('/').at(-1) ?? '', source: request.postData() ?? '' });
+      }
       return route.fulfill({ headers, json: {
         id: 'created-drive-copy', name: 'Song (local copy).guitardsl', version: '1', modifiedTime: 't-copy',
         headRevisionId: 'r-copy', parents: [`folder-${accountId}`]
@@ -66,6 +113,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[]): P
     }
     return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
   });
+  return { patchCalls };
 }
 
 async function installStatefulDriveSaveMock(
@@ -369,6 +417,43 @@ test('restores a Drive draft as a local draft, not as remotely saved', async ({ 
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
 });
 
+test('Picker re-opening detects a known Drive conflict and preserves the saved baseline and draft', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'picker-conflict', name: 'Picker conflict.guitardsl' },
+    remoteFiles: { 'picker-conflict': { name: 'Picker conflict.guitardsl', source: 'title: Remote v2\n', version: '2' } }
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'picker-conflict', name: 'Picker conflict.guitardsl',
+    source: 'title: Remote v1\n', draftSource: 'title: Local draft from v1\n', version: '1'
+  }]);
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('sessions', 'workspace-drive:account-a', { tabs: [], active: null });
+  });
+  await page.locator('#connect-drive').click();
+  await page.locator('#storage-drive').click();
+  await page.getByRole('button', { name: 'Open from Drive' }).click();
+
+  const conflict = page.getByRole('dialog');
+  await expect(conflict).toBeVisible();
+  await expect(conflict.getByRole('heading', { name: 'Drive version conflict' })).toBeVisible();
+  const state = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const identity = { storage: 'drive' as const, fileId: 'picker-conflict' };
+    return {
+      saved: await indexedDb.getSavedDocument(identity, 'account-a'),
+      draft: await indexedDb.getDraft(identity, 'account-a')
+    };
+  });
+  expect(state.saved?.driveVersion).toBe('1');
+  expect(state.saved?.source).toBe('title: Remote v1\n');
+  expect(state.draft?.source).toBe('title: Local draft from v1\n');
+  expect(drive.patchCalls).toHaveLength(0);
+  await conflict.getByRole('button', { name: 'Cancel' }).click();
+  await expect(conflict).toHaveCount(0);
+});
+
 test('Drive saves keep the same file, retain edits made during a save, and do not create save copies', async ({ page }) => {
   const drive = await installStatefulDriveSaveMock(page, { holdPatch: true });
   await page.goto('/');
@@ -420,6 +505,52 @@ test('an unconfirmed Drive save keeps its draft and never sends an automatic ret
   await expect(editor).toHaveValue(draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await expect(page.locator('#app-message')).toContainText('no automatic retry');
+  expect(drive.patchCalls).toHaveLength(1);
+  expect(drive.createCount).toBe(0);
+});
+
+test('a Drive 401 keeps the draft and offers explicit reconnection without retrying the PATCH', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { patchStatus: 401 });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const draft = 'title: Preserve after unauthorized save\n';
+  await editor.fill(draft);
+  await page.locator('#save-document').click();
+
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await expect(page.locator('#app-message')).toContainText('Reconnect Drive');
+  await expect(page.locator('#connect-drive')).toHaveText('Reconnect Drive');
+  expect(drive.patchCalls).toHaveLength(1);
+  expect(drive.createCount).toBe(0);
+
+  await page.locator('#connect-drive').click();
+  await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
+  await expect(editor).toHaveValue(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  expect(drive.patchCalls).toHaveLength(1);
+});
+
+test('a Drive 403 keeps the draft and reports a permission problem without an auth reconnect loop', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { patchStatus: 403 });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const draft = 'title: Preserve after permission denial\n';
+  await editor.fill(draft);
+  await page.locator('#save-document').click();
+
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await expect(page.locator('#app-message')).toContainText('access permissions');
+  await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
   expect(drive.patchCalls).toHaveLength(1);
   expect(drive.createCount).toBe(0);
 });
