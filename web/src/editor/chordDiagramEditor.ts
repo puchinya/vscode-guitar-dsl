@@ -1,4 +1,4 @@
-import chordEditorScriptUrl from '../../../media/chordEditor.js?url';
+import chordEditorScript from '../../../media/chordEditor.js?raw';
 import { renderChordEditorHtml } from '@guitardsl/ui/chordEditorHtml';
 import { buildChordLine, createEditorSession, planChordSave, stateFromVoicing, type ChordEditorState } from '@guitardsl/core/chordEditorModel';
 import { getChordEditorMessages, formatChordDefinitionError, type SupportedLocale } from '@guitardsl/core/i18n';
@@ -75,9 +75,12 @@ export function showChordDiagramEditor(options: ChordEditorOptions): void {
   frame.style.cssText = 'width:min(90vw,1040px);height:min(78vh,780px);border:0;display:block;background:white';
   const themeStyle = `<style>:root{--vscode-font-family:system-ui,sans-serif;--vscode-foreground:#242933;--vscode-editor-background:white;--vscode-descriptionForeground:#555f6d;--vscode-button-background:#4158c9;--vscode-button-foreground:white;--vscode-button-secondaryBackground:#e9edf3;--vscode-button-secondaryForeground:#263247;--vscode-focusBorder:#526ee8;--vscode-input-background:white;--vscode-input-foreground:#242933;--vscode-textCodeBlock-background:#eef1f5;--vscode-errorForeground:#b71935}</style>`;
   const bridge = `<script>window.acquireVsCodeApi=()=>({postMessage:message=>parent.postMessage({channel:'${CHANNEL}',message},'*'),getState:()=>null,setState:()=>{}});</script>`;
-  const html = renderChordEditorHtml(labels, chordEditorScriptUrl, options.locale)
+  // Inline the same shipped VS Code script: the sandboxed srcdoc has an opaque origin,
+  // so a relative external script may not match inherited self-only CSP rules.
+  const html = renderChordEditorHtml(labels, '__GUITARDSL_CHORD_SCRIPT__', options.locale)
     .replace('</head>', themeStyle + '</head>')
-    .replace('<script id="l10n"', bridge + '<script id="l10n"');
+    .replace('<script id="l10n"', bridge + '<script id="l10n"')
+    .replace('<script src="__GUITARDSL_CHORD_SCRIPT__"></script>', `<script>${chordEditorScript}</script>`);
   frame.srcdoc = html;
   dialog.append(frame);
   document.body.append(dialog);
