@@ -1,4 +1,4 @@
-import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
+import { documentIdentityKey, type DocumentIdentity, type DocumentSnapshot, type StorageKind } from '@guitardsl/document';
 
 const DATABASE_NAME = 'guitardsl-workspace';
 const DATABASE_VERSION = 1;
@@ -29,7 +29,7 @@ interface DraftRecord extends DocumentSnapshot { key: string; updatedAt: number 
 interface KeyValueRecord<T = unknown> { key: string; value: T }
 
 function identityKey(identity: DocumentIdentity, accountId?: string): string {
-  return `${identity.storage}:${identity.storage === 'drive' ? accountId ?? '' : ''}:${identity.fileId}`;
+  return documentIdentityKey(identity, accountId);
 }
 
 function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
@@ -206,6 +206,30 @@ export const indexedDb = {
     const done = transactionDone(tx);
     tx.objectStore(DOCUMENTS).put(record(document));
     await done;
+  },
+
+  async completeLocalMove(snapshot: DocumentSnapshot, expectedName: string, remote: StoredDocument): Promise<boolean> {
+    if (snapshot.identity.storage !== 'local' || remote.identity.storage !== 'drive') {
+      throw new TypeError('A local document and verified Drive document are required');
+    }
+    const db = await openDatabase();
+    const tx = db.transaction([DOCUMENTS, DRAFTS], 'readwrite');
+    const done = transactionDone(tx);
+    const localKey = identityKey(snapshot.identity);
+    const documents = tx.objectStore(DOCUMENTS);
+    const local = await idbRequest<StoredDocument & { key: string } | undefined>(documents.get(localKey));
+    const draft = await idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(localKey));
+    if (!local || local.name !== expectedName || local.revision !== snapshot.revision || local.source !== snapshot.source
+      || draft && (draft.revision !== snapshot.revision || draft.source !== snapshot.source)) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return false;
+    }
+    documents.put(record(remote));
+    documents.delete(localKey);
+    tx.objectStore(DRAFTS).delete(localKey);
+    await done;
+    return true;
   },
 
   async commitDriveDocument(document: StoredDocument, snapshot: DocumentSnapshot): Promise<boolean> {

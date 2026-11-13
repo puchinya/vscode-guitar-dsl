@@ -1,6 +1,4 @@
 import './style.css';
-import regularFontUrl from '../../media/fonts/NotoSansJP-Regular.ttf?url';
-import boldFontUrl from '../../media/fonts/NotoSansJP-Bold.ttf?url';
 import { parseGuitarDsl, type ParsedScore } from '@guitardsl/core/compiler';
 import { formatDiagnostic } from '@guitardsl/core/i18n';
 import { planVisualEdit } from '@guitardsl/core/visualEditing/planners';
@@ -11,10 +9,15 @@ import { ProgressionAudioLeaseCoordinator, type ProgressionAudioStartMessage } f
 import { renderInspectorTabsMarkup, type InspectorTabId } from '@guitardsl/ui/inspectorTabs';
 import type { PageOrientation, PageSize } from '@guitardsl/pdf';
 import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
+import { createSourceEditorMarkup, SourceEditorSurface } from './editor/sourceEditor';
+import { activeTab as findActiveTab, renderDocumentTabs, sameTabIdentity, tabKey } from './tabs/documentTabs';
+import { downloadScorePdf, scoreFontUrls } from './pdfExporter';
+import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type PreviewMessage, type PreviewPostMessage } from './adapters/previewBridge';
+import { ExplorerController } from './explorer/explorerController';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
 import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile } from './storage/googleDrive';
-import { indexedDb, keyForDocument, type StoredDocument } from './storage/indexedDb';
-import { downloadSource, importLocalFile, moveLocalDocumentToDrive, MoveRecoveryError } from './storage/fileTransfer';
+import { indexedDb, type StoredDocument } from './storage/indexedDb';
+import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
@@ -43,7 +46,6 @@ interface AppState {
   account?: GoogleAccount;
   drive?: GoogleDriveApi;
   folderId?: string;
-  driveFiles: DriveFile[];
   inspectorTab: InspectorTab;
   mobilePane: MobilePane;
   locale: 'en' | 'ja';
@@ -66,28 +68,6 @@ interface PreviewModeDraftCheck {
 }
 
 const DEFAULT_SOURCE = 'title: My song\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
-const WEB_PREVIEW_BRIDGE = `window.guitarDslHost = {
-  postMessage: message => window.parent.postMessage({ channel: 'guitardsl-preview', message }, '*'),
-  getState: () => null,
-  setState: () => {}
-};`;
-const WEB_PREVIEW_STYLE = `
-  :root { color-scheme: light; --vscode-editorWidget-background:#fff; --vscode-editorWidget-border:#dfe2e7;
-    --vscode-foreground:#20242b; --vscode-descriptionForeground:#68717e; --vscode-widget-border:#d9dde5;
-    --vscode-input-background:#fff; --vscode-input-foreground:#20242b; --vscode-button-background:#5364d9;
-    --vscode-button-border:#5364d9; --vscode-button-secondaryBackground:#f2f3f6;
-    --vscode-button-secondaryForeground:#343a46; --vscode-button-secondaryHoverBackground:#e7e9f0;
-    --vscode-focusBorder:#5364d9; }
-  body { padding-top: 102px; background:#f4f5f7; color:#20242b; }
-  .toolbar-container,.score-settings-row { box-shadow:none; }
-  @media(prefers-color-scheme:dark) { :root { color-scheme:dark; --vscode-editorWidget-background:#242830;
-    --vscode-editorWidget-border:#3a3f4a; --vscode-foreground:#e4e7ee; --vscode-descriptionForeground:#aeb5c2;
-    --vscode-widget-border:#454c59; --vscode-input-background:#1e2127; --vscode-input-foreground:#e4e7ee;
-    --vscode-button-background:#6877eb; --vscode-button-border:#6877eb; --vscode-button-secondaryBackground:#2e333d;
-    --vscode-button-secondaryForeground:#e4e7ee; --vscode-button-secondaryHoverBackground:#3b424e;
-    --vscode-focusBorder:#8792ea; }
-    body { background:#1e2127; color:#e4e7ee; } }
-`;
 
 const STRINGS = {
   en: {
@@ -103,7 +83,7 @@ const STRINGS = {
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
     suggest: 'Suggest next chords', reload: 'Reload latest', saveCopy: 'Save local version as a new Drive file', cancel: 'Cancel',
-    ready: 'Local storage ready', unavailable: 'Local storage is unavailable. Download your work to keep a copy.',
+    ready: 'Local storage ready', unavailable: 'Local storage is unavailable. Download your work to keep a copy.', loadingDrive: 'Loading Drive files…',
     previewEditGuard: 'Apply the pending Preview edit before changing modes.', noSuggestions: 'No suggestion is available for this score.',
     confirmDelete: 'Delete this local score and its draft?',
     audition: 'Audition', stopAudition: 'Stop audition', audioStarting: 'Starting audition…',
@@ -122,7 +102,7 @@ const STRINGS = {
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
     suggest: '次のコードを提案', reload: '最新の内容を読み込む', saveCopy: 'ローカル版を新しい Drive ファイルとして保存', cancel: 'キャンセル',
-    ready: 'ローカル保存を利用できます', unavailable: 'ローカル保存を利用できません。作業内容を残すにはダウンロードしてください。',
+    ready: 'ローカル保存を利用できます', unavailable: 'ローカル保存を利用できません。作業内容を残すにはダウンロードしてください。', loadingDrive: 'Drive のファイルを読み込み中…',
     previewEditGuard: 'Preview の編集中の内容を適用してからモードを切り替えてください。', noSuggestions: 'この楽譜では提案できません。',
     confirmDelete: 'このローカル楽譜と下書きを削除しますか？',
     audition: '試聴', stopAudition: '試聴を停止', audioStarting: '試聴を開始しています…',
@@ -132,7 +112,7 @@ const STRINGS = {
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const state: AppState = {
-  tabs: [], activeKey: null, activeStorage: 'local', driveFiles: [], inspectorTab: 'document', mobilePane: 'source',
+  tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'document', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
     orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
     audioStatus: '',
@@ -142,7 +122,7 @@ const auth = new GoogleOAuth();
 const draftWrites = new Map<string, Promise<void>>();
 const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
-let explorerRenderGeneration = 0;
+let moveToDriveInProgress = false;
 
 app.innerHTML = `
   <main class="app-shell" aria-label="GuitarDSL">
@@ -181,7 +161,7 @@ app.innerHTML = `
         <div class="split-view">
           <section class="source-pane" aria-label="GuitarDSL source" id="source-pane">
             <div class="pane-heading"><span>Source</span><span class="language-chip">GuitarDSL</span></div>
-            <textarea spellcheck="false" aria-label="GuitarDSL source editor" placeholder="title: My song&#10;&#10;[Verse]&#10;C | G | Am | F |"></textarea>
+            ${createSourceEditorMarkup()}
             <div class="diagnostics" id="diagnostics" aria-live="polite"></div>
           </section>
           <div class="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize source and score panes" tabindex="0"></div>
@@ -206,14 +186,12 @@ app.innerHTML = `
 `;
 
 const editor = app.querySelector<HTMLTextAreaElement>('textarea[aria-label="GuitarDSL source editor"]')!;
-const fileItems = app.querySelector<HTMLDivElement>('#file-items')!;
-const fileActions = app.querySelector<HTMLDivElement>('#file-actions')!;
+const sourceEditor = new SourceEditorSurface(editor, app.querySelector<HTMLElement>('.editor-highlight')!);
 const tabsElement = app.querySelector<HTMLDivElement>('#open-tabs')!;
 const scoreFrame = app.querySelector<HTMLIFrameElement>('#score-frame')!;
 const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')!;
 const diagnosticsElement = app.querySelector<HTMLDivElement>('#diagnostics')!;
 const appMessage = app.querySelector<HTMLDivElement>('#app-message')!;
-const driveScopeNote = app.querySelector<HTMLParagraphElement>('#drive-scope-note')!;
 const inspectorTabsHost = app.querySelector<HTMLDivElement>('#inspector-tabs-host')!;
 interface ActiveWebAudioRun {
   leaseId: string;
@@ -252,14 +230,7 @@ progressionAudioLease = new ProgressionAudioLeaseCoordinator({
 });
 
 function strings() { return STRINGS[state.locale]; }
-function activeTab(): OpenTab | undefined { return state.tabs.find(tab => tabKey(tab) === state.activeKey); }
-function tabKey(tab: Pick<OpenTab, 'document' | 'accountId'>): string {
-  return `${keyForDocument(tab.document.identity)}:${tab.document.identity.storage === 'drive' ? tab.accountId ?? '' : ''}`;
-}
-function sameTabIdentity(tab: OpenTab, identity: DocumentIdentity, accountId?: string): boolean {
-  return tab.document.identity.storage === identity.storage && tab.document.identity.fileId === identity.fileId
-    && (identity.storage !== 'drive' || tab.accountId === accountId);
-}
+function activeTab(): OpenTab | undefined { return findActiveTab(state.tabs, state.activeKey); }
 function esc(value: string): string {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
@@ -392,10 +363,10 @@ function previewHtml(tab: OpenTab, score: ParsedScore): string {
     visualBindings: score.visualSourceBindings ?? [],
     documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: generation,
     expandPageBreakRepeats: state.expandPageBreakRepeats,
-    fontUris: { regular: regularFontUrl, bold: boldFontUrl },
+    fontUris: scoreFontUrls,
     nonce: crypto.randomUUID().replace(/-/g, ''),
     progressionAudioLeaseId: progressionAudioLease.activeLeaseId,
-    cspSource: `${new URL(regularFontUrl, location.href).origin} data: blob:`,
+    cspSource: `${new URL(scoreFontUrls.regular, location.href).origin} data: blob:`,
     hostBootstrapScript: WEB_PREVIEW_BRIDGE,
     hostStyle: WEB_PREVIEW_STYLE
   });
@@ -422,120 +393,49 @@ function renderPreview(tab: OpenTab | undefined): void {
 }
 
 function renderTabs(): void {
-  tabsElement.replaceChildren();
-  for (const tab of state.tabs) {
-    const key = tabKey(tab);
-    const wrapper = document.createElement('div');
-    wrapper.className = `tab${key === state.activeKey ? ' active' : ''}`;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute('role', 'tab');
-    button.setAttribute('aria-selected', String(key === state.activeKey));
-    button.textContent = tab.document.name;
-    button.title = tab.document.identity.storage === 'drive' ? `Google Drive · ${tab.document.name}` : tab.document.name;
-    button.addEventListener('click', () => setActive(key));
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'tab-close';
-    close.setAttribute('aria-label', `${strings().closeTab} ${tab.document.name}`);
-    close.textContent = '×';
-    close.addEventListener('click', event => {
-      event.stopPropagation();
-      closeTab(tab);
-    });
-    wrapper.append(button, close);
-    tabsElement.append(wrapper);
-  }
+  renderDocumentTabs(tabsElement, state.tabs, state.activeKey, strings().closeTab, setActive, closeTab);
 }
 
-function renderExplorer(): Promise<void> {
-  const renderGeneration = ++explorerRenderGeneration;
-  const t = strings();
-  const localButton = app.querySelector<HTMLButtonElement>('#storage-local')!;
-  const driveButton = app.querySelector<HTMLButtonElement>('#storage-drive')!;
-  localButton.textContent = t.local;
-  driveButton.textContent = t.drive;
-  app.querySelector('#files-heading')!.textContent = t.files;
-  localButton.classList.toggle('selected', state.activeStorage === 'local');
-  driveButton.classList.toggle('selected', state.activeStorage === 'drive');
-  driveScopeNote.hidden = state.activeStorage !== 'drive' || !state.account;
-  driveScopeNote.textContent = t.driveAccess;
-  fileActions.replaceChildren();
-  fileItems.replaceChildren();
-
-  if (state.activeStorage === 'local') {
-    const add = actionButton(t.addFile, () => app.querySelector<HTMLInputElement>('#file-input')!.click());
-    fileActions.append(add);
-    void indexedDb.listDocuments('local').then(async documents => {
-      if (renderGeneration !== explorerRenderGeneration || state.activeStorage !== 'local') return;
-      if (documents.length === 0) {
-        const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = t.createFirst; fileItems.append(empty); return;
-      }
-      for (const documentRow of documents) {
-        const current = await indexedDb.getDocument(documentRow.identity);
-        if (renderGeneration !== explorerRenderGeneration || state.activeStorage !== 'local') return;
-        appendFileButton(fileItems, current ?? documentRow, () => void openLocalDocument(documentRow.identity));
-      }
-    }).catch(error => {
-      if (renderGeneration !== explorerRenderGeneration || state.activeStorage !== 'local') return;
-      state.storageReady = false; renderStorageStatus(strings().unavailable);
-      fileItems.textContent = shortError(error);
-    });
-    const selected = activeTab();
-    app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = !selected || selected.document.identity.storage !== 'local' || !state.account || !state.folderId;
-    return Promise.resolve();
-  }
-
-  app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = true;
-  if (!state.account || !state.drive) {
-    const hint = document.createElement('div'); hint.className = 'empty-state'; hint.textContent = t.connectHint; fileItems.append(hint);
-    return Promise.resolve();
-  }
-  const folderButton = actionButton(t.folder, () => void chooseDriveFolder());
-  const createFolderButton = actionButton(t.createFolder, () => void createDriveFolder());
-  const openPickerButton = actionButton(t.openDrive, () => void openFromDrivePicker());
-  fileActions.append(folderButton, createFolderButton, openPickerButton);
-  if (!state.folderId) {
-    const hint = document.createElement('div'); hint.className = 'empty-state'; hint.textContent = t.noFolder; fileItems.append(hint);
-    return Promise.resolve();
-  }
-  const loading = document.createElement('div'); loading.className = 'empty-state'; loading.textContent = 'Loading Drive files…'; fileItems.append(loading);
-  return state.drive.listFiles(state.folderId).then(files => {
-    if (renderGeneration !== explorerRenderGeneration || state.activeStorage !== 'drive' || !state.account) return;
-    state.driveFiles = files;
-    fileItems.replaceChildren();
-    if (files.length === 0) {
-      const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = t.createFirst; fileItems.append(empty);
-    }
-    for (const file of files) {
-      const cached = document.createElement('div');
-      const button = document.createElement('button');
-      button.type = 'button'; button.className = 'file-item'; button.textContent = file.name;
-      button.addEventListener('click', () => void openDriveDocument(file));
-      const stamp = document.createElement('span'); stamp.className = 'file-subtitle'; stamp.textContent = new Date(file.modifiedTime).toLocaleString(state.locale);
-      cached.append(button, stamp); fileItems.append(cached);
-    }
-  }).catch(error => {
-    if (renderGeneration !== explorerRenderGeneration || state.activeStorage !== 'drive') return;
-    markDriveAuthState(error);
-    fileItems.replaceChildren();
-    const message = document.createElement('div'); message.className = 'empty-state'; message.textContent = shortError(error); fileItems.append(message);
+const explorerController = new ExplorerController({
+  root: app,
+  getSnapshot: () => ({
+    storage: state.activeStorage, locale: state.locale, account: state.account, drive: state.drive,
+    folderId: state.folderId, activeDocumentStorage: activeTab()?.document.identity.storage
+  }),
+  getLabels: () => {
+    const t = strings();
+    return {
+      files: t.files, local: t.local, drive: t.drive, addFile: t.addFile, chooseFolder: t.folder,
+      createFolder: t.createFolder, openDrive: t.openDrive, createFirst: t.createFirst,
+      connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess, loading: t.loadingDrive
+    };
+  },
+  listLocalDocuments: () => indexedDb.listDocuments('local'),
+  getLocalDocument: identity => indexedDb.getDocument(identity),
+  onStorageChange: storage => { state.activeStorage = storage; void renderExplorer(); },
+  onImport: () => app.querySelector<HTMLInputElement>('#file-input')!.click(),
+  onChooseFolder: () => { void chooseDriveFolder(); },
+  onCreateFolder: () => { void createDriveFolder(); },
+  onOpenDrivePicker: () => { void openFromDrivePicker(); },
+  onOpenLocal: identity => { void openLocalDocument(identity); },
+  onOpenDrive: file => { void openDriveDocument(file); },
+  onLocalError: error => {
+    state.storageReady = false;
+    renderStorageStatus(strings().unavailable);
     showMessage(shortError(error), 'error');
-  });
-}
+  },
+  onDriveError: error => { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+});
+
+function renderExplorer(): Promise<void> { return explorerController.render(); }
 
 function actionButton(label: string, callback: () => void): HTMLButtonElement {
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'quiet-button file-action';
-  button.textContent = label; button.addEventListener('click', callback); return button;
-}
-
-function appendFileButton(container: HTMLElement, documentRow: StoredDocument, open: () => void): void {
-  const wrapper = document.createElement('div');
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'file-item';
-  button.textContent = documentRow.name; button.addEventListener('click', open);
-  const subtitle = document.createElement('span'); subtitle.className = 'file-subtitle';
-  subtitle.textContent = documentRow.updatedAt ? new Date(documentRow.updatedAt).toLocaleDateString(state.locale) : '';
-  wrapper.append(button, subtitle); container.append(wrapper);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'quiet-button file-action';
+  button.textContent = label;
+  button.addEventListener('click', callback);
+  return button;
 }
 
 function prepareWebAudioFromGesture(requestId: string): Promise<boolean> {
@@ -861,16 +761,17 @@ function renderAll(): void {
   app.querySelector('#score-pane')!.classList.toggle('mobile-hidden', state.mobilePane !== 'preview');
   const tab = activeTab();
   if (tab) {
-    editor.value = tab.source;
+    sourceEditor.setSource(tab.source);
     app.querySelector('#saved-state')!.textContent = state.storageReady ? t.saved : t.unavailable;
     app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = tab.document.identity.storage !== 'local' || !state.account || !state.folderId;
     renderPreview(tab);
   } else {
-    editor.value = '';
+    sourceEditor.setSource('');
     renderPreview(undefined);
     app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = true;
   }
   app.dataset.theme = state.theme;
+  app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = state.theme;
   app.querySelector('#connect-drive')!.textContent = state.authExpired ? (state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive') : state.account ? t.disconnect : t.connect;
   applySplitRatio();
 }
@@ -928,7 +829,7 @@ function onEditorInput(): void {
   const tab = activeTab();
   if (!tab) return;
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
-  tab.source = editor.value;
+  tab.source = sourceEditor.acceptInput();
   tab.revision += 1;
   scheduleDraft(tab);
   const score = currentScore(tab.source);
@@ -1066,18 +967,10 @@ async function saveDriveCopy(tab: OpenTab, folderId?: string): Promise<void> {
 async function downloadPdf(tab = activeTab()): Promise<void> {
   if (!tab) return;
   try {
-    const { renderPdfBytes } = await import('@guitardsl/pdf');
-    const regular = new Uint8Array(await (await fetch(regularFontUrl)).arrayBuffer());
-    const bold = new Uint8Array(await (await fetch(boldFontUrl)).arrayBuffer());
-    const bytes = await renderPdfBytes(tab.source, {
+    await downloadScorePdf(tab.source, tab.document.name, {
       pageSize: tab.pageSize, orientation: tab.orientation, expandPageBreakRepeats: state.expandPageBreakRepeats
-    }, { regular, bold });
-    const pdfBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const blobUrl = URL.createObjectURL(new Blob([pdfBuffer], { type: 'application/pdf' }));
-    const link = document.createElement('a'); link.href = blobUrl;
-    link.download = `${tab.document.name.replace(/\.(guitardsl|gdsl)$/i, '') || 'score'}.pdf`;
-    link.click(); window.setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
-  } catch (error) { showMessage(`PDF export failed: ${shortError(error)}`, 'error'); }
+    });
+  } catch (error) { showMessage(`${state.locale === 'ja' ? 'PDFの書き出しに失敗しました: ' : 'PDF export failed: '}${shortError(error)}`, 'error'); }
 }
 
 async function renameLocal(tab: OpenTab, name: string): Promise<void> {
@@ -1125,7 +1018,7 @@ async function connectDrive(): Promise<void> {
   if (state.account && !state.authExpired) {
     await persistSessions();
     try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
-    state.account = undefined; state.drive = undefined; state.folderId = undefined; state.driveFiles = [];
+    state.account = undefined; state.drive = undefined; state.folderId = undefined;
     renderAll(); await persistSessions(); return;
   }
   try {
@@ -1137,7 +1030,7 @@ async function connectDrive(): Promise<void> {
       state.tabs = state.tabs.filter(tab => tab.document.identity.storage !== 'drive' || tab.accountId === account.accountId);
       const localActive = state.tabs.find(tab => tab.document.identity.storage === 'local');
       if (!state.tabs.some(tab => tabKey(tab) === state.activeKey)) state.activeKey = localActive ? tabKey(localActive) : null;
-      state.folderId = undefined; state.driveFiles = [];
+      state.folderId = undefined;
     }
     state.account = account; state.drive = new GoogleDriveApi(auth);
     state.authExpired = false;
@@ -1265,8 +1158,13 @@ async function restoreDriveSession(accountId: string): Promise<void> {
 
 async function moveToDrive(): Promise<void> {
   const tab = activeTab();
-  if (!tab || tab.document.identity.storage !== 'local' || !state.drive || !state.account || !state.folderId) return;
+  if (moveToDriveInProgress || !tab || tab.document.identity.storage !== 'local' || !state.drive || !state.account || !state.folderId) return;
+  moveToDriveInProgress = true;
+  app.inert = true;
+  app.setAttribute('aria-busy', 'true');
+  let resultMessage: { text: string; kind: 'info' | 'error' } | undefined;
   try {
+    await stopCandidateAudition();
     await saveDraftNow(tab);
     const remote = await moveLocalDocumentToDrive(snapshot(tab), tab.document.name, state.folderId, state.account.accountId, state.drive);
     const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId: state.account.accountId };
@@ -1274,13 +1172,41 @@ async function moveToDrive(): Promise<void> {
     if (existing) { state.tabs.splice(state.tabs.indexOf(tab), 1); existing.document = remote; existing.source = remote.source; state.activeKey = tabKey(existing); }
     else { state.tabs[state.tabs.indexOf(tab)] = replacement; state.activeKey = tabKey(replacement); }
     renderAll(); await persistSessions();
-    showMessage(state.locale === 'ja' ? 'Drive への移動が完了しました。' : 'Moved the score to Google Drive.');
+    resultMessage = { text: state.locale === 'ja' ? 'Drive への移動が完了しました。' : 'Moved the score to Google Drive.', kind: 'info' };
   } catch (error) {
-    if (error instanceof MoveRecoveryError) showMessage(state.locale === 'ja'
+    if (error instanceof LocalMoveConflictError) {
+      let latestLoaded = false;
+      try {
+        const latest = await indexedDb.getDocument(tab.document.identity);
+        if (latest) {
+          tab.document = latest;
+          tab.source = latest.source;
+          tab.revision = latest.revision;
+          renderAll();
+          await persistSessions();
+          latestLoaded = true;
+        }
+      } catch { /* Preserve the transfer error and the local source. */ }
+      resultMessage = { text: state.locale === 'ja'
+        ? latestLoaded
+          ? 'Drive には転送開始時点の版が保存されています。転送中に更新されたローカル版を読み込みました。両方を確認し、必要な版を保存してください。'
+          : 'Drive には転送開始時点の版が保存されています。ローカル原本も残っています。両方を確認し、必要な版を保存してください。'
+        : latestLoaded
+          ? 'Drive contains the version captured at transfer start. The newer local version is loaded. Review both and save the version you need.'
+          : 'Drive contains the version captured at transfer start. The local original remains. Review both and save the version you need.', kind: 'error' };
+    } else if (error instanceof MoveVerificationError) resultMessage = { text: state.locale === 'ja'
+      ? 'Drive 上のファイルがローカル原本と一致しません。ローカル原本は保持されています。Drive とローカルの内容を確認してください。'
+      : 'The Drive file does not match the local original. The local original is kept. Review both versions before continuing.', kind: 'error' };
+    else if (error instanceof MoveRecoveryError) resultMessage = { text: state.locale === 'ja'
       ? 'Drive 側のコピーは検証済みですが、ローカル原本は残っています。もう一度「Drive に移動」を選ぶと、重複作成せずに完了できます。'
-      : 'The Drive copy is verified and the local original remains. Retry Move to Drive to finish without creating a duplicate.', 'error');
-    else { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+      : 'The Drive copy is verified and the local original remains. Retry Move to Drive to finish without creating a duplicate.', kind: 'error' };
+    else { markDriveAuthState(error); resultMessage = { text: shortError(error), kind: 'error' }; }
+  } finally {
+    app.inert = false;
+    app.removeAttribute('aria-busy');
+    moveToDriveInProgress = false;
   }
+  if (resultMessage) showMessage(resultMessage.text, resultMessage.kind);
 }
 
 async function savePreferences(): Promise<void> {
@@ -1433,17 +1359,14 @@ async function transitionPreviewUiMode(
   window.setTimeout(() => { if (isCurrentPreviewIdentity(tab, identity)) renderPreview(tab); }, 60);
 }
 
-function handlePreviewMessage(event: MessageEvent): void {
+function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostMessage): void {
   const tab = activeTab();
-  if (!tab || event.source !== scoreFrame.contentWindow) return;
-  const envelope = event.data as { channel?: string; message?: Record<string, unknown> } | undefined;
-  if (envelope?.channel !== 'guitardsl-preview' || !envelope.message) return;
-  const message = envelope.message;
+  if (!tab) return;
   if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
     progressionAudioLease.acknowledgePreviewStopped(message.leaseId);
     return;
   }
-  const postToFrame = (payload: Record<string, unknown>) => scoreFrame.contentWindow?.postMessage(payload, '*');
+  if (moveToDriveInProgress) return;
   const isCurrent = message.documentUri === activeIdentityLabel(tab)
     && message.documentVersion === tab.revision && message.previewGeneration === state.previewGeneration;
   if (message.command === 'previewUiModeRequest' && isCurrent) {
@@ -1531,8 +1454,6 @@ app.querySelector('#file-input')!.addEventListener('change', event => {
   const input = event.currentTarget as HTMLInputElement; void importFile(input.files?.[0]); input.value = '';
 });
 app.querySelector('#import-file')!.addEventListener('click', () => app.querySelector<HTMLInputElement>('#file-input')!.click());
-app.querySelector('#storage-local')!.addEventListener('click', () => { state.activeStorage = 'local'; void renderExplorer(); });
-app.querySelector('#storage-drive')!.addEventListener('click', () => { state.activeStorage = 'drive'; void renderExplorer(); });
 app.querySelector('#mobile-source')!.addEventListener('click', () => { state.mobilePane = 'source'; renderAll(); });
 app.querySelector('#mobile-preview')!.addEventListener('click', () => { state.mobilePane = 'preview'; renderAll(); });
 app.querySelector('#locale-select')!.addEventListener('change', event => {
@@ -1591,7 +1512,7 @@ splitDivider.addEventListener('keydown', event => {
   if (delta) { event.preventDefault(); state.splitRatio = Math.max(0.25, Math.min(0.75, state.splitRatio + delta)); applySplitRatio(); persistSplitRatioSoon(); }
 });
 window.addEventListener('resize', applySplitRatio);
-window.addEventListener('message', handlePreviewMessage);
+listenForPreviewMessages(scoreFrame, handlePreviewMessage);
 window.addEventListener('beforeunload', () => {
   progressionAudioLease.dispose();
   for (const tab of state.tabs) void saveDraftNow(tab);

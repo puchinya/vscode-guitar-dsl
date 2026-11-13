@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { GoogleOAuth } from '../../src/auth/googleOAuth';
-import { GoogleDriveApi, type DriveFile } from '../../src/storage/googleDrive';
+import { DriveApiError, GoogleDriveApi, type DriveFile } from '../../src/storage/googleDrive';
 
 function createApi() {
   const auth = { tokenForRequest: () => 'test-token' } as unknown as GoogleOAuth;
@@ -31,6 +31,17 @@ test('Drive listing paginates, scopes to the selected folder, and filters unsupp
     assert.match(calls[0].searchParams.get('q')!, /'folder-id' in parents and trashed=false/);
     assert.equal(calls[1].searchParams.get('pageToken'), 'page-2');
     assert.doesNotMatch(calls[0].href, /test-token/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Drive list surfaces authorization and access-scope errors without hiding their status', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const status of [401, 403]) {
+      globalThis.fetch = async () => new Response('', { status });
+      await assert.rejects(api.listFiles('folder-id'), error => error instanceof DriveApiError && error.status === status);
+    }
   } finally { globalThis.fetch = originalFetch; }
 });
 

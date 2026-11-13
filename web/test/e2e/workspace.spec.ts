@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 test('opens a local-first GuitarDSL workspace', async ({ page }) => {
@@ -30,6 +30,32 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
   }
 });
 
+test('shows syntax highlighting while keeping the native textarea as the source buffer', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'title: Song\n\n[Verse]\nC | G | Am | F | # comment\n';
+  await editor.fill(source);
+
+  const layer = page.locator('.editor-highlight');
+  await expect(layer.locator('.gds-key')).toHaveText('title');
+  await expect(layer.locator('.gds-section')).toHaveText('[Verse]');
+  await expect(layer.locator('.gds-chord')).toHaveText(['C', 'G', 'Am', 'F']);
+  await expect(layer.locator('.gds-comment')).toHaveText('# comment');
+  expect(await layer.evaluate(element => element.textContent)).toBe(source);
+  await expect(editor).toHaveValue(source);
+
+  await page.getByLabel('Theme').selectOption('light');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'light');
+  const lightChordColor = await layer.locator('.gds-chord').first().evaluate(element => getComputedStyle(element).color);
+  await page.getByLabel('Theme').selectOption('dark');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
+  const darkChordColor = await layer.locator('.gds-chord').first().evaluate(element => getComputedStyle(element).color);
+  expect(darkChordColor).not.toBe(lightChordColor);
+  await editor.fill(Array.from({ length: 80 }, (_, index) => `[Verse${index}]\nC | G |\n`).join(''));
+  await editor.evaluate(element => { (element as HTMLTextAreaElement).scrollTop = 200; });
+  await expect.poll(() => layer.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+});
+
 test('restores the latest local draft and commits it on Save', async ({ page }) => {
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
@@ -41,6 +67,42 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#saved-state')).toHaveText('Saved locally');
   await expect(page.getByRole('button', { name: 'Draft restored.guitardsl' })).toHaveCount(0);
+});
+
+test('finalizes a local-to-Drive move atomically only when no newer IndexedDB draft exists', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const local = await indexedDb.createLocal('Atomic move.guitardsl', 'title: Original\n');
+    const stale = { identity: local.identity, revision: 0, source: local.source };
+    const latest = { identity: local.identity, revision: 1, source: 'title: Newer draft\n' };
+    await indexedDb.saveDraft(latest);
+    const remote = {
+      identity: { storage: 'drive' as const, fileId: 'drive-atomic-move' }, accountId: 'account-atomic-move',
+      name: local.name, source: stale.source, revision: 0, createdAt: local.createdAt, updatedAt: Date.now()
+    };
+
+    const staleMoveCompleted = await indexedDb.completeLocalMove(stale, local.name, remote);
+    const preserved = await indexedDb.getDocument(local.identity);
+    const driveCountAfterStale = (await indexedDb.listDocuments('drive', 'account-atomic-move')).length;
+    const current = await indexedDb.commitLocal(latest, local.name);
+    const completed = current
+      ? await indexedDb.completeLocalMove(latest, local.name, { ...remote, source: latest.source })
+      : false;
+    const localAfterCompletion = await indexedDb.getDocument(local.identity);
+    const driveDocuments = await indexedDb.listDocuments('drive', 'account-atomic-move');
+    return {
+      staleMoveCompleted, preservedSource: preserved?.source, driveCountAfterStale,
+      completed, localAfterCompletion, driveSource: driveDocuments[0]?.source
+    };
+  });
+
+  expect(result.staleMoveCompleted).toBe(false);
+  expect(result.preservedSource).toBe('title: Newer draft\n');
+  expect(result.driveCountAfterStale).toBe(0);
+  expect(result.completed).toBe(true);
+  expect(result.localAfterCompletion).toBeUndefined();
+  expect(result.driveSource).toBe('title: Newer draft\n');
 });
 
 test('keeps source export available when browser storage is blocked', async ({ page }) => {
@@ -56,6 +118,24 @@ test('keeps source export available when browser storage is blocked', async ({ p
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export .guitardsl' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe('Untitled.guitardsl');
+});
+
+test('preserves original CRLF line endings when editing and exporting an imported score', async ({ page }) => {
+  await page.goto('/');
+  const source = 'title: Song\r\n[Verse]\r\nC | G | Am | F |\r\n';
+  await page.locator('#file-input').setInputFiles({
+    name: 'Line endings.guitardsl', mimeType: 'text/plain', buffer: Buffer.from(source, 'utf8')
+  });
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(editor).toHaveValue(source.replace(/\r\n/gu, '\n'));
+  await editor.fill(source.replace(/\r\n/gu, '\n').replace('Song', 'Track'));
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  expect(await readFile(path!, 'utf8')).toBe('title: Track\r\n[Verse]\r\nC | G | Am | F |\r\n');
 });
 
 test('localizes the Inspector, honors its theme, and supports keyboard tabs', async ({ page }) => {
@@ -104,6 +184,7 @@ test('accepts browser IME composition events in the native source editor', async
 test('keeps native text editing undoable', async ({ page }) => {
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(editor).toHaveValue(/^title: My song/m);
   const initial = await editor.inputValue();
   await editor.focus();
   await editor.press('ControlOrMeta+End');

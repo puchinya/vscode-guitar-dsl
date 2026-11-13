@@ -35,11 +35,11 @@ The Inspector is a shared place for document-aware assistance as features move i
 ### GuitarDSL Web app
 <!-- help-sources: web:2 web:3 web:4 web:5 web:6 -->
 
-The standalone GuitarDSL Web app opens in a browser and works with local scores before you connect Google Drive. Choose **New score** to edit a `.guitardsl` or `.gdsl` document. When browser storage is available, drafts are kept in the browser; if storage is blocked, export your source to keep a copy. The source editor, score Preview, Inspector, playback, and PDF download use the shared GuitarDSL score engine. Open tabs stay attached to their document when you change the file-list source.
+The standalone GuitarDSL Web app opens in a browser and works with local scores before you connect Google Drive. Choose **New score** to edit a `.guitardsl` or `.gdsl` document. The source editor highlights GuitarDSL headers, sections, chords, melody and TAB tokens, and comments while keeping browser-native text input and undo. When browser storage is available, drafts are kept in the browser; if storage is blocked, export your source to keep a copy. The score Preview, Inspector, playback, and PDF download use the shared GuitarDSL score engine. Open tabs stay attached to their document when you change the file-list source.
 
 In the Web Inspector's **Progression** tab, choose **Suggest next chords** and use **Audition** to hear a candidate. An audition pauses Preview playback and Practice; Preview playback controls become available again when the audition stops or finishes.
 
-To use Drive, choose **Connect Drive** and authorize the app. Drive is available only when the site deployment has Google OAuth and Picker configured. The Drive list contains files created by the app or individually selected through Google Picker; it may not show every existing file in a folder. Save Drive changes explicitly. If a remote version changed, reload it, save your local draft as a new Drive file, or cancel. **Move to Drive** keeps the local original until the uploaded file has been read back and verified.
+To use Drive, choose **Connect Drive** and authorize the app. Drive is available only when the site deployment has Google OAuth and Picker configured. The Drive list contains files created by the app or individually selected through Google Picker; it may not show every existing file in a folder. Save Drive changes explicitly. If a remote version changed, reload it, save your local draft as a new Drive file, or cancel. **Move to Drive** keeps the local original until the uploaded file has been read back and verified. If another tab changes the local document during a move, both versions are kept for you to review.
 
 ### Score Preview
 <!-- help-sources: extension:3 extension:4 syntax:11 -->

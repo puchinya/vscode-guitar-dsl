@@ -37,6 +37,14 @@ export function sameDocumentIdentity(a: DocumentIdentity, b: DocumentIdentity): 
   return a.storage === b.storage && a.fileId === b.fileId;
 }
 
+export function documentIdentityKey(identity: DocumentIdentity, accountId?: string): string {
+  return `${identity.storage}:${identity.storage === 'drive' ? accountId ?? '' : ''}:${identity.fileId}`;
+}
+
+export function documentTabKey(identity: DocumentIdentity, accountId?: string): string {
+  return `${documentIdentityKey(identity)}:${identity.storage === 'drive' ? accountId ?? '' : ''}`;
+}
+
 /** Apply a sorted set of non-overlapping edits only to the requested document revision. */
 export function applyChangeSet(snapshot: DocumentSnapshot, change: DocumentChangeSet): ChangeApplyResult {
   if (!sameDocumentIdentity(snapshot.identity, change.documentId)) {

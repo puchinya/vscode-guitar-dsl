@@ -54,7 +54,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .source-pane { flex-basis: 48%; }
 .score-pane { flex-basis: 52%; background: #f4f5f7; }
 .source-pane .pane-heading, .score-pane .pane-heading { flex: 0 0 auto; background: #fff; }
-.source-pane textarea { flex: 1; width: 100%; min-height: 160px; padding: 18px; resize: none; border: 0; outline: none; color: #282d36; background: #fff; font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
+.editor-surface { position: relative; flex: 1; min-height: 160px; overflow: hidden; background: #fff; }
+.editor-surface textarea, .editor-highlight { position: absolute; inset: 0; box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 18px; border: 0; font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; white-space: pre-wrap; overflow-wrap: break-word; }
+.editor-highlight { --gds-key:#7c3aed; --gds-directive:#b45309; --gds-section:#0f766e; --gds-chord:#2563eb; --gds-note:#7c3aed; --gds-comment:#8a929e; --gds-operator:#b45309; --gds-bar:#8a929e; --gds-value:#20242b; --gds-symbol:#0f766e; --gds-tab:#2563eb; --gds-effect:#b45309; --gds-punctuation:#68717e; z-index: 0; overflow: hidden; color: var(--gds-value); pointer-events: none; user-select: none; }
+.editor-surface textarea { z-index: 1; resize: none; outline: none; color: transparent; -webkit-text-fill-color: transparent; caret-color: #5364d9; background: transparent; }
+.editor-surface textarea::selection { color: transparent; -webkit-text-fill-color: transparent; background: rgb(83 100 217 / 24%); }
+.editor-surface textarea::placeholder { color: #89919d; -webkit-text-fill-color: #89919d; opacity: 1; }
+.gds-key, .gds-directive, .gds-section, .gds-chord, .gds-note, .gds-comment, .gds-operator, .gds-bar, .gds-symbol, .gds-tab-note, .gds-effect, .gds-duration, .gds-variable, .gds-section-reference, .gds-punctuation, .gds-value, .gds-keyword { color: inherit; }
+.gds-key { color: var(--gds-key); font-weight: 600; }
+.gds-directive, .gds-keyword { color: var(--gds-directive); font-weight: 600; }
+.gds-section, .gds-section-reference { color: var(--gds-section); font-weight: 600; }
+.gds-chord, .gds-tab-note { color: var(--gds-chord); font-weight: 600; }
+.gds-note, .gds-variable { color: var(--gds-note); }
+.gds-comment { color: var(--gds-comment); font-style: italic; }
+.gds-operator, .gds-effect, .gds-duration { color: var(--gds-operator); }
+.gds-bar { color: var(--gds-bar); }
+.gds-symbol { color: var(--gds-symbol); }
+.gds-punctuation { color: var(--gds-punctuation); }
+.gds-value { color: var(--gds-value); }
+.app-shell[data-theme="dark"] .editor-surface { background: #242830; }
+.app-shell[data-theme="dark"] .editor-highlight { --gds-key:#c4a7ff; --gds-directive:#f0b36b; --gds-section:#75d6c3; --gds-chord:#91b8ff; --gds-note:#c4a7ff; --gds-comment:#929aa8; --gds-operator:#f0b36b; --gds-bar:#858e9d; --gds-value:#e4e7ee; --gds-symbol:#75d6c3; --gds-tab:#91b8ff; --gds-effect:#f0b36b; --gds-punctuation:#aeb5c2; }
+.app-shell[data-theme="dark"] .editor-surface textarea { caret-color: #a9b3ff; }
 .split-divider { width: 5px; flex: 0 0 5px; cursor: col-resize; background: #e8eaf0; outline-offset: -2px; }
 .split-divider:hover, .split-divider:focus-visible { background: #8792ea; }
 #score-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #f4f5f7; }
@@ -117,20 +137,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .split-view { position: relative; display: block; min-height: 0; }
   .source-pane, .score-pane { position: absolute; inset: 0; width: 100%; height: 100%; }
   .source-pane.mobile-hidden, .score-pane.mobile-hidden { display: none; }
-  .source-pane textarea { min-height: 0; padding: 12px; }
+  .editor-surface { min-height: 0; }
+  .editor-surface textarea, .editor-highlight { padding: 12px; }
   #score-frame { height: calc(100% - 42px); }
   .statusbar { padding: 0 7px; gap: 6px; }
   .inspector-collapsed { grid-template-columns: 1fr; }
 }
 @media (prefers-color-scheme: dark) {
   :root { color-scheme: dark; color: #e4e7ee; background: #1f2228; }
-  .app-shell, .file-list, .inspector, .topbar, .toolbar, .source-pane, .source-pane textarea, .pane-heading, .tab.active { background: #242830; color: #e4e7ee; }
+  .app-shell, .file-list, .inspector, .topbar, .toolbar, .source-pane, .editor-surface, .pane-heading, .tab.active { background: #242830; color: #e4e7ee; }
+  .app-shell[data-theme="system"] .editor-highlight { --gds-key:#c4a7ff; --gds-directive:#f0b36b; --gds-section:#75d6c3; --gds-chord:#91b8ff; --gds-note:#c4a7ff; --gds-comment:#929aa8; --gds-operator:#f0b36b; --gds-bar:#858e9d; --gds-value:#e4e7ee; --gds-symbol:#75d6c3; --gds-tab:#91b8ff; --gds-effect:#f0b36b; --gds-punctuation:#aeb5c2; }
   .workspace-name, .storage-switch button, .inspector-tabs button, .saved-state, .preview-state, .language-chip, .file-items, .file-subtitle, .inspector-content, .drive-scope-note { color: #aeb5c2; }
   .tabs, .score-pane, .statusbar { background: #1e2127; }
   .pane-heading, .file-list, .inspector, .tabs, .tab, .toolbar, .diagnostics { border-color: #3a3f4a; }
   .quiet-button, .pane-heading button, .inspector-field select { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
   .primary-button { background: #6877eb; border-color: #6877eb; color: #fff; }
-  .source-pane textarea { color: #e4e7ee; }
   .file-item:hover, .file-item:focus-visible { background: #303641; }
   .inspector-tabs [aria-selected="true"], .storage-switch .selected { background: #343b6f; color: #dce0ff; }
   .shared-inspector-tabs { border-color: #3a3f4a; }
@@ -143,4 +164,5 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .app-shell[data-theme="light"] { color-scheme: light; color: #20242b; background: #f7f8fa; }
 .app-shell[data-theme="dark"] { color-scheme: dark; color: #e4e7ee; background: #1f2228; }
-@media (max-width: 680px) { .app-shell[data-theme="dark"] .topbar, .app-shell[data-theme="dark"] .toolbar, .app-shell[data-theme="dark"] .source-pane, .app-shell[data-theme="dark"] .source-pane textarea { background: #242830; color: #e4e7ee; } }
+.app-shell[data-theme="light"] .editor-surface { background: #fff; }
+@media (max-width: 680px) { .app-shell[data-theme="dark"] .topbar, .app-shell[data-theme="dark"] .toolbar, .app-shell[data-theme="dark"] .source-pane, .app-shell[data-theme="dark"] .editor-surface { background: #242830; color: #e4e7ee; } }

@@ -23,8 +23,11 @@ function setup() {
       if (!local) throw new Error('missing local');
       local = { ...local, pendingDriveFileId: driveFileId, pendingDriveFolderId: folderId };
     },
-    async upsertDriveDocument() {},
-    async deleteDocument() { local = undefined; }
+    async completeLocalMove(snapshot, expectedName) {
+      if (!local || local.name !== expectedName || local.revision !== snapshot.revision || local.source !== snapshot.source) return false;
+      local = undefined;
+      return true;
+    }
   };
   let createCount = 0;
   const drive: TransferDrivePort = {
@@ -50,7 +53,11 @@ function setup() {
     store, drive, remote,
     get local() { return local; },
     get createCount() { return createCount; },
-    removeLocal() { local = undefined; }
+    removeLocal() { local = undefined; },
+    changeLocal(snapshot: DocumentSnapshot) {
+      if (!local) throw new Error('missing local');
+      local = { ...local, revision: snapshot.revision, source: snapshot.source };
+    }
   };
 }
 
@@ -78,6 +85,29 @@ test('a response lost after upload is recovered by the local ID without a duplic
   assert.equal(moved.identity.fileId, 'drive-1');
 });
 
+test('deduplicates concurrent move requests for the same document snapshot', async () => {
+  const context = setup();
+  const first = moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store);
+  const second = moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store);
+
+  assert.equal(second, first);
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.identity.fileId, secondResult.identity.fileId);
+  assert.equal(context.createCount, 1);
+  assert.equal(context.local, undefined);
+});
+
+test('rejects a conflicting concurrent move snapshot before a second upload starts', async () => {
+  const context = setup();
+  const first = moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store);
+  const newer = { ...sourceSnapshot, revision: sourceSnapshot.revision + 1, source: `${sourceSnapshot.source}lyr: | newer |\n` };
+
+  await assert.rejects(moveLocalDocumentToDrive(newer, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store), /already in progress/);
+  await first;
+  assert.equal(context.createCount, 1);
+  assert.equal(context.local, undefined);
+});
+
 test('readback mismatch keeps the local source and transfer marker', async () => {
   const context = setup();
   const read = context.drive.getFile.bind(context.drive);
@@ -87,16 +117,35 @@ test('readback mismatch keeps the local source and transfer marker', async () =>
   assert.equal(context.local?.pendingDriveFileId, 'drive-1');
 });
 
-test('a local deletion failure can be retried against the same Drive file', async () => {
+test('keeps a newer cross-tab draft when the verified upload finishes', async () => {
   const context = setup();
-  let failDelete = true;
-  context.store.deleteDocument = async () => {
-    if (failDelete) throw new Error('local store unavailable');
-    context.removeLocal();
+  const complete = context.store.completeLocalMove.bind(context.store);
+  context.store.completeLocalMove = async (snapshot, expectedName, remote) => {
+    context.changeLocal({ ...snapshot, revision: snapshot.revision + 1, source: `${snapshot.source}lyr: | newer draft |\n` });
+    return complete(snapshot, expectedName, remote);
+  };
+
+  await assert.rejects(
+    moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store),
+    /changed during transfer and was kept/
+  );
+  assert.equal(context.local?.revision, sourceSnapshot.revision + 1);
+  assert.equal(context.local?.source, `${sourceSnapshot.source}lyr: | newer draft |\n`);
+  assert.equal(context.local?.pendingDriveFileId, 'drive-1');
+  assert.equal(context.createCount, 1);
+});
+
+test('a local finalization failure can be retried against the same Drive file', async () => {
+  const context = setup();
+  let failFinalization = true;
+  const complete = context.store.completeLocalMove.bind(context.store);
+  context.store.completeLocalMove = async (snapshot, expectedName, remote) => {
+    if (failFinalization) throw new Error('local store unavailable');
+    return complete(snapshot, expectedName, remote);
   };
   await assert.rejects(moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store), /Drive copy is verified/);
   assert.equal(context.local?.pendingDriveFileId, 'drive-1');
-  failDelete = false;
+  failFinalization = false;
   const moved = await moveLocalDocumentToDrive(sourceSnapshot, 'Song.guitardsl', 'folder-1', 'account-1', context.drive, context.store);
   assert.equal(context.createCount, 1);
   assert.equal(context.local, undefined);

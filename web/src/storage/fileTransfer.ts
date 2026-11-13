@@ -10,6 +10,10 @@ export class MoveRecoveryError extends Error {
   constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'MoveRecoveryError'; }
 }
 
+export class LocalMoveConflictError extends MoveRecoveryError {
+  constructor(message: string) { super(message); this.name = 'LocalMoveConflictError'; }
+}
+
 export interface TransferDrivePort {
   getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }>;
   findMoveUpload(folderId: string, localFileId: string): Promise<DriveFile | undefined>;
@@ -19,18 +23,53 @@ export interface TransferDrivePort {
 export interface LocalTransferStore {
   commitLocal(snapshot: DocumentSnapshot, name?: string): Promise<StoredDocument | undefined>;
   setPendingDriveFile(identity: DocumentIdentity, driveFileId: string, folderId: string): Promise<void>;
-  upsertDriveDocument(document: StoredDocument): Promise<void>;
-  deleteDocument(identity: DocumentIdentity): Promise<void>;
+  completeLocalMove(snapshot: DocumentSnapshot, expectedName: string, remote: StoredDocument): Promise<boolean>;
 }
 
+interface ActiveMove {
+  revision: number;
+  source: string;
+  folderId: string;
+  accountId: string;
+  promise: Promise<StoredDocument>;
+}
+
+const activeMoves = new Map<string, ActiveMove>();
+
 /** Local-to-Drive move is restartable: Drive appProperties identify a prior upload after a crash. */
-export async function moveLocalDocumentToDrive(
+export function moveLocalDocumentToDrive(
   snapshot: DocumentSnapshot,
   name: string,
   folderId: string,
   accountId: string,
   drive: TransferDrivePort,
   store: LocalTransferStore = indexedDb
+): Promise<StoredDocument> {
+  if (snapshot.identity.storage !== 'local') return Promise.reject(new TypeError('Only a local document can be moved'));
+  const key = snapshot.identity.fileId;
+  const active = activeMoves.get(key);
+  if (active) {
+    if (active.revision === snapshot.revision && active.source === snapshot.source
+      && active.folderId === folderId && active.accountId === accountId) return active.promise;
+    return Promise.reject(new DOMException('A move for this document is already in progress', 'InvalidStateError'));
+  }
+
+  const promise = performLocalDocumentMove(snapshot, name, folderId, accountId, drive, store);
+  activeMoves.set(key, { revision: snapshot.revision, source: snapshot.source, folderId, accountId, promise });
+  void promise.then(
+    () => { if (activeMoves.get(key)?.promise === promise) activeMoves.delete(key); },
+    () => { if (activeMoves.get(key)?.promise === promise) activeMoves.delete(key); }
+  );
+  return promise;
+}
+
+async function performLocalDocumentMove(
+  snapshot: DocumentSnapshot,
+  name: string,
+  folderId: string,
+  accountId: string,
+  drive: TransferDrivePort,
+  store: LocalTransferStore
 ): Promise<StoredDocument> {
   if (snapshot.identity.storage !== 'local') throw new TypeError('Only a local document can be moved');
   const local = await store.commitLocal(snapshot, name);
@@ -63,10 +102,13 @@ export async function moveLocalDocumentToDrive(
     driveEtag: downloaded.etag, driveFolderId: folderId
   };
   try {
-    await store.upsertDriveDocument(remote);
-    // The local original is deleted only after the remote bytes and metadata have been verified.
-    await store.deleteDocument(local.identity);
+    // Check the source and remove the local row in one IndexedDB transaction. Another tab may
+    // have saved a newer draft while the upload and readback were in flight.
+    if (!await store.completeLocalMove(snapshot, local.name, remote)) {
+      throw new LocalMoveConflictError('The Drive copy is verified, but the local document changed during transfer and was kept.');
+    }
   } catch (error) {
+    if (error instanceof MoveRecoveryError) throw error;
     throw new MoveRecoveryError('The Drive copy is verified, but the local original remains. Retry the move to finish without creating another copy.', { cause: error });
   }
   return remote;
