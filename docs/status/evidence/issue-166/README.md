@@ -4,7 +4,7 @@
 
 ![GuitarDSL Web SPA desktop workspace](web-spa-en-desktop.png)
 
-Captured from the Chromium production E2E suite at 1600 × 1000 CSS pixels on macOS arm64. The image shows the local-first workspace, source editor, rendered score, playback controls, and all four compact Inspector tabs. The test also verifies the initial local file appears once and all Inspector tabs fit without horizontal scrolling.
+Captured from the Chromium production E2E suite at 1600 × 1000 CSS pixels on macOS arm64. The image shows the local-first workspace, source editor, rendered score, playback controls, and the Progression Inspector with candidate audition controls. The tests also verify the initial local file appears once, all four compact Inspector tabs fit without horizontal scrolling, and Preview playback remains locked during an Inspector audition.
 
 Recreate with:
 

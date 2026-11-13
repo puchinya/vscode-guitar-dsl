@@ -6,7 +6,8 @@ import { formatDiagnostic } from '@guitardsl/core/i18n';
 import { planVisualEdit } from '@guitardsl/core/visualEditing/planners';
 import type { VisualEditOperation } from '@guitardsl/core/visualEditing/model';
 import { suggestNextChords } from '@guitardsl/core/progressionSuggestions';
-import { compileGuitarDslToHtml } from '@guitardsl/ui/previewHtml';
+import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml } from '@guitardsl/ui/previewHtml';
+import { ProgressionAudioLeaseCoordinator, type ProgressionAudioStartMessage } from '@guitardsl/ui/progressionAudioLease';
 import { renderInspectorTabsMarkup, type InspectorTabId } from '@guitardsl/ui/inspectorTabs';
 import type { PageOrientation, PageSize } from '@guitardsl/pdf';
 import type { DocumentIdentity, DocumentSnapshot, StorageKind } from '@guitardsl/document';
@@ -55,6 +56,8 @@ interface AppState {
   splitRatio: number;
   authExpired: boolean;
   lastProgression?: unknown;
+  audioCandidateId?: string;
+  audioStatus: string;
 }
 
 interface PreviewModeDraftCheck {
@@ -103,6 +106,8 @@ const STRINGS = {
     ready: 'Local storage ready', unavailable: 'Local storage is unavailable. Download your work to keep a copy.',
     previewEditGuard: 'Apply the pending Preview edit before changing modes.', noSuggestions: 'No suggestion is available for this score.',
     confirmDelete: 'Delete this local score and its draft?',
+    audition: 'Audition', stopAudition: 'Stop audition', audioStarting: 'Starting audition…',
+    audioPlaying: 'Audition playing.', audioStopped: 'Audition stopped.', audioUnavailable: 'Audio audition is unavailable.',
   },
   ja: {
     files: 'ファイル', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続',
@@ -120,6 +125,8 @@ const STRINGS = {
     ready: 'ローカル保存を利用できます', unavailable: 'ローカル保存を利用できません。作業内容を残すにはダウンロードしてください。',
     previewEditGuard: 'Preview の編集中の内容を適用してからモードを切り替えてください。', noSuggestions: 'この楽譜では提案できません。',
     confirmDelete: 'このローカル楽譜と下書きを削除しますか？',
+    audition: '試聴', stopAudition: '試聴を停止', audioStarting: '試聴を開始しています…',
+    audioPlaying: '試聴中です。', audioStopped: '試聴を停止しました。', audioUnavailable: '試聴を利用できません。',
   }
 } as const;
 
@@ -127,7 +134,8 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 const state: AppState = {
   tabs: [], activeKey: null, activeStorage: 'local', driveFiles: [], inspectorTab: 'document', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
-  orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
+    orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
+    audioStatus: '',
     splitRatio: 0.48, authExpired: false
 };
 const auth = new GoogleOAuth();
@@ -206,6 +214,41 @@ const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')
 const diagnosticsElement = app.querySelector<HTMLDivElement>('#diagnostics')!;
 const appMessage = app.querySelector<HTMLDivElement>('#app-message')!;
 const driveScopeNote = app.querySelector<HTMLParagraphElement>('#drive-scope-note')!;
+interface ActiveWebAudioRun {
+  leaseId: string;
+  requestId: string;
+  nodes: Set<{ oscillator: OscillatorNode; gain: GainNode }>;
+}
+const audioResumePromises = new Map<string, Promise<boolean>>();
+let auditionAudioContext: AudioContext | undefined;
+let auditionMasterGain: GainNode | undefined;
+let activeWebAudioRun: ActiveWebAudioRun | undefined;
+let auditionCompletionTimer = 0;
+const pendingAudioStopTimers = new Map<string, number>();
+let progressionAudioLease: ProgressionAudioLeaseCoordinator;
+let progressionSessionGeneration = 0;
+
+progressionAudioLease = new ProgressionAudioLeaseCoordinator({
+  hasPreview: () => Boolean(activeTab() && scoreFrame.contentWindow),
+  lockPreview: async leaseId => {
+    const frame = scoreFrame.contentWindow;
+    if (!frame) return false;
+    frame.postMessage({ command: 'progressionAudioLock', leaseId }, '*');
+    return true;
+  },
+  unlockPreview: leaseId => scoreFrame.contentWindow?.postMessage({ command: 'progressionAudioUnlock', leaseId }, '*'),
+  startInspector: message => startWebAuditionAudio(message),
+  stopInspector: (leaseId, requestId) => {
+    stopWebAuditionAudio(leaseId, requestId);
+    return Promise.resolve(true);
+  },
+  reportStartError: requestId => {
+    audioResumePromises.delete(requestId);
+    state.audioStatus = strings().audioUnavailable;
+    state.audioCandidateId = undefined;
+    renderInspector();
+  }
+});
 
 function strings() { return STRINGS[state.locale]; }
 function activeTab(): OpenTab | undefined { return state.tabs.find(tab => tabKey(tab) === state.activeKey); }
@@ -247,7 +290,12 @@ function currentScore(source: string): ParsedScore | undefined {
   try { return parseGuitarDsl(source, { expandPageBreakRepeats: state.expandPageBreakRepeats }); }
   catch { return undefined; }
 }
-function setActive(key: string): void {
+async function setActive(key: string): Promise<void> {
+  const next = state.tabs.find(tab => tabKey(tab) === key);
+  if (!next) return;
+  if (progressionAudioLease.activeSessionUri && progressionAudioLease.activeSessionUri !== activeIdentityLabel(next)) {
+    await stopCandidateAudition();
+  }
   state.activeKey = key;
   const tab = activeTab();
   if (!tab) return;
@@ -345,6 +393,7 @@ function previewHtml(tab: OpenTab, score: ParsedScore): string {
     expandPageBreakRepeats: state.expandPageBreakRepeats,
     fontUris: { regular: regularFontUrl, bold: boldFontUrl },
     nonce: crypto.randomUUID().replace(/-/g, ''),
+    progressionAudioLeaseId: progressionAudioLease.activeLeaseId,
     cspSource: `${new URL(regularFontUrl, location.href).origin} data: blob:`,
     hostBootstrapScript: WEB_PREVIEW_BRIDGE,
     hostStyle: WEB_PREVIEW_STYLE
@@ -488,6 +537,187 @@ function appendFileButton(container: HTMLElement, documentRow: StoredDocument, o
   wrapper.append(button, subtitle); container.append(wrapper);
 }
 
+function prepareWebAudioFromGesture(requestId: string): Promise<boolean> {
+  const AudioContextConstructor = window.AudioContext;
+  if (!AudioContextConstructor) {
+    const unavailable = Promise.resolve(false);
+    audioResumePromises.set(requestId, unavailable);
+    return unavailable;
+  }
+  try {
+    if (!auditionAudioContext || auditionAudioContext.state === 'closed') {
+      auditionAudioContext = new AudioContextConstructor();
+      auditionMasterGain = auditionAudioContext.createGain();
+      auditionMasterGain.gain.value = 0.5;
+      auditionMasterGain.connect(auditionAudioContext.destination);
+    }
+    const resume = auditionAudioContext.resume().then(() => auditionAudioContext?.state === 'running').catch(() => false);
+    audioResumePromises.set(requestId, resume);
+    return resume;
+  } catch {
+    const unavailable = Promise.resolve(false);
+    audioResumePromises.set(requestId, unavailable);
+    return unavailable;
+  }
+}
+
+function stopWebAuditionAudio(leaseId: string, requestId: string): void {
+  const stopKey = `${leaseId}:${requestId}`;
+  if (pendingAudioStopTimers.has(stopKey)) return;
+  const run = activeWebAudioRun;
+  if (run?.leaseId === leaseId && run.requestId === requestId) {
+    if (auditionCompletionTimer) window.clearTimeout(auditionCompletionTimer);
+    auditionCompletionTimer = 0;
+    const needsFadeOut = run.nodes.size > 0;
+    if (auditionAudioContext) {
+      const now = auditionAudioContext.currentTime;
+      for (const node of run.nodes) {
+        try {
+          node.gain.gain.cancelScheduledValues(now);
+          node.gain.gain.setValueAtTime(Math.max(0, node.gain.gain.value), now);
+          node.gain.gain.linearRampToValueAtTime(0, now + 0.02);
+          node.oscillator.stop(now + 0.025);
+        } catch { try { node.oscillator.stop(now); } catch { /* already ended */ } }
+      }
+    }
+    run.nodes.clear();
+    activeWebAudioRun = undefined;
+    state.audioStatus = strings().audioStopped;
+    state.audioCandidateId = undefined;
+    const finishStop = () => {
+      pendingAudioStopTimers.delete(stopKey);
+      audioResumePromises.delete(requestId);
+      progressionAudioLease.acknowledge({ command: 'progressionAudioStopped', leaseId, requestId });
+      renderInspector();
+    };
+    if (needsFadeOut) {
+      const timer = window.setTimeout(finishStop, 35);
+      pendingAudioStopTimers.set(stopKey, timer);
+    } else finishStop();
+    return;
+  }
+  audioResumePromises.delete(requestId);
+  progressionAudioLease.acknowledge({ command: 'progressionAudioStopped', leaseId, requestId });
+  window.setTimeout(() => renderInspector(), 0);
+}
+
+async function startWebAuditionAudio(message: ProgressionAudioStartMessage): Promise<boolean> {
+  const resume = audioResumePromises.get(message.requestId);
+  const ready = resume ? await resume : false;
+  const context = auditionAudioContext;
+  if (!ready || !context || context.state !== 'running' || progressionAudioLease.activeLeaseId !== message.leaseId) {
+    audioResumePromises.delete(message.requestId);
+    state.audioStatus = strings().audioUnavailable;
+    state.audioCandidateId = undefined;
+    renderInspector();
+    progressionAudioLease.acknowledge({ command: 'progressionAudioFailed', leaseId: message.leaseId, requestId: message.requestId });
+    return false;
+  }
+  const run: ActiveWebAudioRun = { leaseId: message.leaseId, requestId: message.requestId, nodes: new Set() };
+  activeWebAudioRun = run;
+  const speed = message.speed / 100;
+  const audioStart = context.currentTime + 0.04;
+  try {
+    for (const event of message.playback.events) {
+      if (!event || !Array.isArray(event.midiNotes) || event.midiNotes.length === 0) continue;
+      const chord = event.kind === 'rhythmAttack';
+      const volume = (chord ? 0.34 : 0.24) / event.midiNotes.length;
+      const when = audioStart + Math.max(0, Number(event.timeSeconds) || 0) / speed;
+      const duration = Math.max(0, Number(event.durationSeconds) || 0) / speed;
+      if (!duration) continue;
+      for (const midi of event.midiNotes) {
+        if (!Number.isFinite(midi)) continue;
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const attack = Math.min(0.008, duration / 3);
+        const release = Math.min(0.04, duration / 3);
+        const releaseStart = Math.max(when + attack, when + duration - release);
+        oscillator.type = chord ? 'triangle' : 'sine';
+        oscillator.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), when);
+        gain.gain.setValueAtTime(0, when);
+        gain.gain.linearRampToValueAtTime(volume, when + attack);
+        gain.gain.setValueAtTime(volume, releaseStart);
+        gain.gain.linearRampToValueAtTime(0, when + duration);
+        oscillator.connect(gain);
+        gain.connect(auditionMasterGain!);
+        const node = { oscillator, gain };
+        run.nodes.add(node);
+        oscillator.onended = () => {
+          run.nodes.delete(node);
+          try { oscillator.disconnect(); gain.disconnect(); } catch { /* already disconnected */ }
+        };
+        oscillator.start(when);
+        oscillator.stop(when + duration + 0.002);
+      }
+    }
+  } catch {
+    if (auditionAudioContext) {
+      const now = auditionAudioContext.currentTime;
+      for (const node of run.nodes) {
+        try {
+          node.gain.gain.cancelScheduledValues(now);
+          node.gain.gain.setValueAtTime(0, now);
+          node.oscillator.stop(now);
+        } catch { try { node.oscillator.stop(now); } catch { /* already ended */ } }
+      }
+    }
+    run.nodes.clear();
+    activeWebAudioRun = undefined;
+    state.audioStatus = strings().audioUnavailable;
+    state.audioCandidateId = undefined;
+    renderInspector();
+    progressionAudioLease.acknowledge({ command: 'progressionAudioFailed', leaseId: message.leaseId, requestId: message.requestId });
+    return false;
+  }
+  audioResumePromises.delete(message.requestId);
+  state.audioStatus = strings().audioPlaying;
+  progressionAudioLease.acknowledge({ command: 'progressionAudioStarted', leaseId: message.leaseId, requestId: message.requestId });
+  renderInspector();
+  auditionCompletionTimer = window.setTimeout(() => stopWebAuditionAudio(message.leaseId, message.requestId),
+    Math.max(1, message.playback.durationSeconds * 1000 / speed + 100));
+  return true;
+}
+
+function startCandidateAudition(tab: OpenTab, candidate: { chords: string[] }, candidateIndex: number): void {
+  if (progressionAudioLease.activeLeaseId) {
+    if (state.audioCandidateId === `${candidateIndex}:${candidate.chords.join('|')}`) void stopCandidateAudition();
+    return;
+  }
+  const score = currentScore(tab.source);
+  if (!score) return;
+  const metadata = tab.source.split(/\r?\n/).filter(line =>
+    /^\s*(?:title|artist|bpm|tempo|key|capo|tuning|time|feel|pickup|style_[A-Za-z0-9_]+)\s*:/i.test(line));
+  const auditionSource = [...metadata, '', '[Audition]', `| ${candidate.chords.join(' | ')} |`].join('\n');
+  const playback = buildProgressionAuditionPlaybackData(auditionSource, {
+    startMeasure: 0, bars: candidate.chords.length, mode: 'bars', locale: state.locale
+  });
+  if (!playback.ok) { state.audioStatus = playback.message; renderInspector(); return; }
+  const candidateId = `${candidateIndex}:${candidate.chords.join('|')}`;
+  const requestId = `web-audition-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const generation = ++progressionSessionGeneration;
+  const request = {
+    requestId, generation, sessionUri: activeIdentityLabel(tab), sessionVersion: tab.revision,
+    sessionGeneration: generation, candidateId, side: 'B' as const, mode: 'bars' as const, speed: 100 as const
+  };
+  void prepareWebAudioFromGesture(requestId);
+  state.audioCandidateId = candidateId;
+  state.audioStatus = strings().audioStarting;
+  renderInspector();
+  void progressionAudioLease.start(request, playback.data, () => activeTab() === tab
+    && tab.revision === request.sessionVersion && progressionSessionGeneration === generation,
+  strings().audioUnavailable);
+}
+
+async function stopCandidateAudition(): Promise<void> {
+  if (!progressionAudioLease.activeLeaseId) return;
+  const stopped = await progressionAudioLease.stop();
+  if (stopped) {
+    state.audioStatus = strings().audioStopped;
+    state.audioCandidateId = undefined;
+    renderInspector();
+  }
+}
+
 function renderInspector(): void {
   const tab = activeTab();
   const t = strings();
@@ -547,15 +777,28 @@ function renderInspector(): void {
     const button = actionButton(t.suggest, () => suggestProgression(tab)); inspectorContent.append(button);
     const scoreResult = state.lastProgression as { candidates?: Array<{ chords: string[]; romanNumerals: string[]; rationale: string }> } | undefined;
     if (scoreResult?.candidates?.length) {
-      for (const candidate of scoreResult.candidates) {
+      for (const [index, candidate] of scoreResult.candidates.entries()) {
+        const candidateId = `${index}:${candidate.chords.join('|')}`;
         const card = document.createElement('article'); card.className = 'progression-card';
         const title = document.createElement('strong'); title.textContent = candidate.romanNumerals.join(' · ');
         const chords = document.createElement('p'); chords.textContent = candidate.chords.join(' | ');
         const rationale = document.createElement('p'); rationale.textContent = candidate.rationale;
+        const audition = actionButton(progressionAudioLease.activeLeaseId && state.audioCandidateId === candidateId
+          ? t.stopAudition : t.audition, () => {
+          if (progressionAudioLease.activeLeaseId) void stopCandidateAudition();
+          else startCandidateAudition(tab, candidate, index);
+        });
+        audition.disabled = Boolean(progressionAudioLease.activeLeaseId && state.audioCandidateId !== candidateId);
         const apply = actionButton(state.locale === 'ja' ? '楽譜に追加' : 'Add to score', () => appendSuggestion(tab, candidate.chords));
-        card.append(title, chords, rationale, apply); inspectorContent.append(card);
+        apply.disabled = Boolean(progressionAudioLease.activeLeaseId);
+        const actions = document.createElement('div'); actions.className = 'inspector-actions';
+        actions.append(audition, apply);
+        card.append(title, chords, rationale, actions); inspectorContent.append(card);
       }
     }
+    const audioStatus = document.createElement('p'); audioStatus.id = 'progression-audio-status';
+    audioStatus.setAttribute('role', 'status'); audioStatus.setAttribute('aria-live', 'polite');
+    audioStatus.textContent = state.audioStatus; inspectorContent.append(audioStatus);
   }
 }
 
@@ -633,11 +876,12 @@ function renderAll(): void {
 
 async function openDocument(documentRow: StoredDocument, source = documentRow.source, accountId?: string, persistable = true): Promise<OpenTab> {
   const match = state.tabs.find(tab => sameTabIdentity(tab, documentRow.identity, accountId));
-  if (match) { setActive(tabKey(match)); return match; }
+  if (match) { await setActive(tabKey(match)); return match; }
   const tab: OpenTab = {
     document: documentRow, source, revision: documentRow.revision, accountId, persistable,
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
+  if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
   state.tabs.push(tab);
   state.activeKey = tabKey(tab);
   state.activeStorage = tab.document.identity.storage;
@@ -658,6 +902,7 @@ async function closeTab(tab: OpenTab): Promise<void> {
   const key = tabKey(tab);
   const index = state.tabs.indexOf(tab);
   if (index < 0) return;
+  if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
   await saveDraftNow(tab);
   state.tabs.splice(index, 1);
   if (state.activeKey === key) {
@@ -681,6 +926,7 @@ async function saveDraftNow(tab: OpenTab): Promise<void> {
 function onEditorInput(): void {
   const tab = activeTab();
   if (!tab) return;
+  if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
   tab.source = editor.value;
   tab.revision += 1;
   scheduleDraft(tab);
@@ -1192,6 +1438,10 @@ function handlePreviewMessage(event: MessageEvent): void {
   const envelope = event.data as { channel?: string; message?: Record<string, unknown> } | undefined;
   if (envelope?.channel !== 'guitardsl-preview' || !envelope.message) return;
   const message = envelope.message;
+  if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
+    progressionAudioLease.acknowledgePreviewStopped(message.leaseId);
+    return;
+  }
   const postToFrame = (payload: Record<string, unknown>) => scoreFrame.contentWindow?.postMessage(payload, '*');
   const isCurrent = message.documentUri === activeIdentityLabel(tab)
     && message.documentVersion === tab.revision && message.previewGeneration === state.previewGeneration;
@@ -1293,7 +1543,11 @@ app.querySelector('#theme-select')!.addEventListener('change', event => {
 app.querySelector('#collapse-inspector')!.addEventListener('click', () => app.querySelector('.workspace')!.classList.toggle('inspector-collapsed'));
 app.querySelector('#inspector-tabs-host')!.addEventListener('click', event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
-  if (button && button.dataset.inspectorTab) { state.inspectorTab = button.dataset.inspectorTab as InspectorTab; renderInspector(); }
+  if (button && button.dataset.inspectorTab) {
+    const nextTab = button.dataset.inspectorTab as InspectorTab;
+    if (nextTab !== 'progression' && progressionAudioLease.activeLeaseId) void stopCandidateAudition();
+    state.inspectorTab = nextTab; renderInspector();
+  }
 });
 const splitDivider = app.querySelector<HTMLDivElement>('.split-divider')!;
 const splitView = app.querySelector<HTMLDivElement>('.split-view')!;
@@ -1318,6 +1572,7 @@ splitDivider.addEventListener('keydown', event => {
 window.addEventListener('resize', applySplitRatio);
 window.addEventListener('message', handlePreviewMessage);
 window.addEventListener('beforeunload', () => {
+  progressionAudioLease.dispose();
   for (const tab of state.tabs) void saveDraftNow(tab);
 });
 

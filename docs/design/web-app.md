@@ -64,7 +64,7 @@ Each app supplies adapters for its host boundary. The VS Code extension adapts `
 2. An edit changes the buffer once and advances its revision. A derived source snapshot is sent to the shared compiler and render pipeline.
 3. The core produces a `ParsedScore`, diagnostics, and SVG pages. The shared UI consumes these derived values; the editor buffer remains authoritative.
 4. Preview and Inspector planners create source-preserving change sets against `{documentId, expectedRevision}`. The host validates both values at apply time. A stale or invalid change is rejected with zero source edits, after which derived UI is rebuilt from the current buffer.
-5. Playback order and timeline are resolved through the shared core functions. Preview/practice and Inspector audition request the existing exclusive audio lease; lifecycle disposal releases playback and listeners.
+5. Playback order and timeline are resolved through the shared core functions. `packages/ui` owns the `ProgressionAudioLeaseCoordinator`; the VS Code and Web host adapters provide Preview locking and Inspector playback ports. Preview/practice and Inspector audition use this exclusive lease, and lifecycle disposal releases playback and listeners.
 6. PDF export uses the same page SVG renderer. The host-specific layer only supplies font bytes, chooses page options, and delivers the resulting bytes.
 
 ### Document and storage ownership

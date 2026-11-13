@@ -20,6 +20,10 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
   if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
     && page.context().browser()?.browserType().name() === 'chromium') {
+    await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+    await page.getByRole('tab', { name: 'Progression' }).click();
+    await page.getByRole('button', { name: 'Suggest next chords' }).click();
+    await expect(page.locator('.progression-card').first()).toBeVisible();
     const evidencePath = resolve(process.cwd(), '../docs/status/evidence/issue-166/web-spa-en-desktop.png');
     await mkdir(dirname(evidencePath), { recursive: true });
     await page.screenshot({ path: evidencePath, fullPage: false });
@@ -110,6 +114,28 @@ test('applies Preview edits to source and rerenders the edited score', async ({ 
   await expect(preview.locator('#preview-edit-status')).toHaveText('The change was applied.');
   await expect(editor).toHaveValue('[Verse]\nE | G | Am | F |\n');
   await expect(preview.locator('#preview-edit-target option').filter({ hasText: 'chord · E' })).toHaveCount(1);
+});
+
+test('serializes Inspector audition with Preview playback', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await page.getByRole('tab', { name: 'Progression' }).click();
+  await page.getByRole('button', { name: 'Suggest next chords' }).click();
+  const candidate = page.locator('.progression-card').first();
+  await expect(candidate).toBeVisible();
+  await candidate.getByRole('button', { name: 'Audition' }).click();
+
+  const preview = page.frameLocator('#score-frame');
+  const previewBody = preview.locator('body');
+  const audioStatus = page.locator('#progression-audio-status');
+  await expect(audioStatus).toHaveText('Audition playing.');
+  await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'true');
+  await expect(preview.locator('#btn-play')).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Stop audition' }).click();
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
 });
 
 test('keeps separate local documents in tabs and supports file export', async ({ page }) => {

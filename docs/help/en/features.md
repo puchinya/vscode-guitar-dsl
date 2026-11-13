@@ -37,6 +37,8 @@ The Inspector is a shared place for document-aware assistance as features move i
 
 The standalone GuitarDSL Web app opens in a browser and works with local scores before you connect Google Drive. Choose **New score** to edit a `.guitardsl` or `.gdsl` document. When browser storage is available, drafts are kept in the browser; if storage is blocked, export your source to keep a copy. The source editor, score Preview, Inspector, playback, and PDF download use the shared GuitarDSL score engine. Open tabs stay attached to their document when you change the file-list source.
 
+In the Web Inspector's **Progression** tab, choose **Suggest next chords** and use **Audition** to hear a candidate. An audition pauses Preview playback and Practice; Preview playback controls become available again when the audition stops or finishes.
+
 To use Drive, choose **Connect Drive** and authorize the app. Drive is available only when the site deployment has Google OAuth and Picker configured. The Drive list contains files created by the app or individually selected through Google Picker; it may not show every existing file in a folder. Save Drive changes explicitly. If a remote version changed, reload it, save your local draft as a new Drive file, or cancel. **Move to Drive** keeps the local original until the uploaded file has been read back and verified.
 
 ### Score Preview
