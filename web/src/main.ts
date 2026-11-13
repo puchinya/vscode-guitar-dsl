@@ -108,6 +108,7 @@ const STRINGS = {
     targetMeasure: 'Target measure',
     narrowSource: 'Source', narrowPreview: 'Score', createFirst: 'Create a score to get started.',
     connectHint: 'Connect Google Drive to show files that this app can access.', noFolder: 'Choose or create a GuitarDSL folder.',
+    reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
     suggest: 'Suggest next chords', reload: 'Reload latest', saveCopy: 'Save local version as a new Drive file', cancel: 'Cancel',
@@ -128,6 +129,7 @@ const STRINGS = {
     targetMeasure: '対象の小節',
     narrowSource: 'ソース', narrowPreview: '譜面', createFirst: '新しい楽譜を作成してください。',
     connectHint: 'Drive に接続すると、このアプリがアクセスできるファイルを表示します。', noFolder: 'GuitarDSL フォルダーを選択または作成してください。',
+    reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
     suggest: '次のコードを提案', reload: '最新の内容を読み込む', saveCopy: 'ローカル版を新しい Drive ファイルとして保存', cancel: 'キャンセル',
@@ -160,6 +162,7 @@ const draftWrites = new Map<string, Promise<void>>();
 const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
+let activeDriveOperations = 0;
 
 app.innerHTML = `
   <main class="app-shell" aria-label="GuitarDSL">
@@ -289,6 +292,42 @@ progressionAudioLease = new ProgressionAudioLeaseCoordinator({
 
 function strings() { return STRINGS[state.locale]; }
 function activeTab(): OpenTab | undefined { return findActiveTab(state.tabs, state.activeKey); }
+
+function tabOperationSnapshot(tab: OpenTab): DocumentSnapshot & { accountId?: string } {
+  return { ...snapshot(tab), accountId: tab.accountId };
+}
+
+function tabMatchesSnapshot(tab: OpenTab, expected: DocumentSnapshot & { accountId?: string }): boolean {
+  return state.tabs.includes(tab)
+    && sameTabIdentity(tab, expected.identity, expected.accountId)
+    && tab.revision === expected.revision
+    && tab.source === expected.source;
+}
+
+function renderDriveOperationControls(): void {
+  const connect = app.querySelector<HTMLButtonElement>('#connect-drive');
+  const save = app.querySelector<HTMLButtonElement>('#save-document');
+  if (connect) connect.disabled = activeDriveOperations > 0;
+  if (save) {
+    const tab = activeTab();
+    const wrongAccount = tab?.document.identity.storage === 'drive'
+      && tab.accountId !== state.account?.accountId;
+    save.disabled = activeDriveOperations > 0 || !!wrongAccount;
+    save.title = wrongAccount
+      ? (state.locale === 'ja' ? 'このタブの Google アカウントに再接続すると保存できます。' : 'Reconnect the Google account used by this tab to save.')
+      : '';
+  }
+}
+
+async function withDriveOperation<T>(operation: () => Promise<T>): Promise<T> {
+  activeDriveOperations += 1;
+  renderDriveOperationControls();
+  try { return await operation(); }
+  finally {
+    activeDriveOperations = Math.max(0, activeDriveOperations - 1);
+    renderDriveOperationControls();
+  }
+}
 function esc(value: string): string {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
@@ -336,7 +375,18 @@ async function setActive(key: string): Promise<void> {
   void persistSessions();
 }
 
-async function persistSessions(): Promise<void> {
+async function persistDriveSession(accountId: string): Promise<void> {
+  const remoteTabs = state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId);
+  const remoteActive = remoteTabs.find(tab => tabKey(tab) === state.activeKey);
+  const previous = await indexedDb.getValue<WorkspaceSession>('sessions', `workspace-drive:${accountId}`).catch(() => undefined);
+  const active = remoteActive?.document.identity.fileId
+    ?? (previous?.active && remoteTabs.some(tab => tab.document.identity.fileId === previous.active) ? previous.active : null);
+  await indexedDb.setValue('sessions', `workspace-drive:${accountId}`, {
+    tabs: remoteTabs.map(tab => tab.document.identity.fileId), active
+  } satisfies WorkspaceSession);
+}
+
+async function persistSessions(additionalDriveAccounts: string[] = []): Promise<void> {
   if (!state.storageReady) return;
   const localTabs = state.tabs.filter(tab => tab.document.identity.storage === 'local');
   const localActive = localTabs.find(tab => tabKey(tab) === state.activeKey);
@@ -344,13 +394,10 @@ async function persistSessions(): Promise<void> {
     await indexedDb.setValue('sessions', 'workspace-local', {
       tabs: localTabs.map(tab => tab.document.identity.fileId), active: localActive?.document.identity.fileId ?? null
     } satisfies WorkspaceSession);
-    if (state.account) {
-      const remoteTabs = state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === state.account!.accountId);
-      const remoteActive = remoteTabs.find(tab => tabKey(tab) === state.activeKey);
-      await indexedDb.setValue('sessions', `workspace-drive:${state.account.accountId}`, {
-        tabs: remoteTabs.map(tab => tab.document.identity.fileId), active: remoteActive?.document.identity.fileId ?? null
-      } satisfies WorkspaceSession);
-    }
+    const accountIds = new Set(additionalDriveAccounts);
+    for (const tab of state.tabs) if (tab.document.identity.storage === 'drive' && tab.accountId) accountIds.add(tab.accountId);
+    if (state.account) accountIds.add(state.account.accountId);
+    for (const accountId of accountIds) await persistDriveSession(accountId);
   } catch { state.storageReady = false; renderStorageStatus(); }
 }
 
@@ -651,7 +698,7 @@ async function startWebAuditionAudio(message: ProgressionAudioStartMessage): Pro
   progressionAudioLease.acknowledge({ command: 'progressionAudioStarted', leaseId: message.leaseId, requestId: message.requestId });
   renderInspector();
   auditionCompletionTimer = window.setTimeout(() => stopWebAuditionAudio(message.leaseId, message.requestId),
-    Math.max(1, message.playback.durationSeconds * 100_000 / speed + 100));
+    Math.max(1, message.playback.durationSeconds * 1_000 / speed + 100));
   return true;
 }
 
@@ -1065,15 +1112,23 @@ function renderAll(): void {
   app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = state.theme;
   app.querySelector('#connect-drive')!.textContent = state.authExpired ? (state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive') : state.account ? t.disconnect : t.connect;
   applySplitRatio();
+  renderDriveOperationControls();
 }
 
 async function openDocument(documentRow: StoredDocument, source = documentRow.source, accountId?: string, persistable = true): Promise<OpenTab> {
   const match = state.tabs.find(tab => sameTabIdentity(tab, documentRow.identity, accountId));
   if (match) { await setActive(tabKey(match)); return match; }
+  let savedDocument: StoredDocument | undefined;
+  if (persistable) {
+    try { savedDocument = await indexedDb.getSavedDocument(documentRow.identity, accountId); }
+    catch { state.storageReady = false; }
+  }
+  const hasDraft = persistable && (!savedDocument
+    || savedDocument.revision !== documentRow.revision || savedDocument.source !== source);
   const tab: OpenTab = {
     document: documentRow, source, revision: documentRow.revision, accountId, persistable,
     persistedBase: { revision: documentRow.revision, source },
-    saveStatus: documentRow.identity.storage === 'drive' ? 'drive-saved' : 'local-saved',
+    saveStatus: hasDraft ? 'draft' : documentRow.identity.storage === 'drive' ? 'drive-saved' : 'local-saved',
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
   if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
@@ -1088,14 +1143,9 @@ async function openDocument(documentRow: StoredDocument, source = documentRow.so
 
 async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   try {
-    const [documentRow, saved] = await Promise.all([
-      indexedDb.getDocument(identity), indexedDb.getSavedDocument(identity)
-    ]);
+    const documentRow = await indexedDb.getDocument(identity);
     if (!documentRow) throw new DOMException('Document was deleted', 'NotFoundError');
-    const opened = await openDocument(documentRow, documentRow.source);
-    if (saved && (saved.revision !== documentRow.revision || saved.source !== documentRow.source)) {
-      opened.saveStatus = 'draft'; renderStorageStatus();
-    }
+    await openDocument(documentRow, documentRow.source);
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
@@ -1111,7 +1161,7 @@ async function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
     state.activeKey = next ? tabKey(next) : null;
   }
   renderAll();
-  await persistSessions();
+  await persistSessions(tab.accountId ? [tab.accountId] : []);
 }
 
 async function saveDraftNow(tab: OpenTab): Promise<boolean> {
@@ -1175,28 +1225,36 @@ async function saveActiveDocument(): Promise<void> {
     } catch (error) { showMessage(shortError(error), 'error'); }
     return;
   }
+  if (tab.accountId !== state.account?.accountId) {
+    showMessage(strings().reconnectOwner, 'error');
+    return;
+  }
   await saveDriveDocument(tab);
 }
 
 async function saveDriveDocument(tab: OpenTab): Promise<void> {
-  if (!state.drive || !state.account) { showMessage(strings().connectHint, 'error'); return; }
+  const drive = state.drive;
+  const accountId = state.account?.accountId;
+  if (!drive || !accountId) { showMessage(strings().connectHint, 'error'); return; }
+  if (tab.accountId !== accountId) { showMessage(strings().reconnectOwner, 'error'); return; }
   const file: DriveFile = {
     id: tab.document.identity.fileId, name: tab.document.name,
     version: tab.document.driveVersion ?? '', modifiedTime: tab.document.driveModifiedTime ?? '',
     headRevisionId: tab.document.driveRevisionId,
     ...(tab.document.driveFolderId ? { parents: [tab.document.driveFolderId] } : {})
   };
+  const submitted = tabOperationSnapshot(tab);
   try {
-    const submitted = snapshot(tab);
-    const result = await state.drive.updateFile(file, submitted.source, tab.document.driveEtag);
+    await withDriveOperation(async () => {
+    const result = await drive.updateFile(file, submitted.source, tab.document.driveEtag);
     if (result.kind === 'conflict') {
-      await handleDriveConflict(tab, result.latest);
+      await handleDriveConflict(tab, result.latest, drive, accountId);
       return;
     }
     if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
-    const verified = await state.drive.getFile(result.file.id);
+    const verified = await drive.getFile(result.file.id);
     if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
-    if (tab.revision !== submitted.revision || tab.source !== submitted.source) {
+    if (!tabMatchesSnapshot(tab, submitted)) {
       throw new Error('Drive saved an earlier version; newer local edits remain in the draft.');
     }
     const updated: StoredDocument = {
@@ -1207,42 +1265,90 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
     };
     const committed = await indexedDb.commitDriveDocument(updated, submitted);
     if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
+    if (!tabMatchesSnapshot(tab, submitted)) {
+      await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
+      showMessage(state.locale === 'ja'
+        ? 'Drive には保存しましたが、保存中に行った新しい編集は下書きとして保持しました。'
+        : 'Drive saved the submitted version. Newer edits made during the save remain as a local draft.');
+      return;
+    }
     tab.document = updated;
     tab.persistedBase = { revision: updated.revision, source: updated.source };
     tab.saveStatus = 'drive-saved';
     renderStorageStatus();
     showMessage(state.locale === 'ja' ? 'Drive に保存しました。' : 'Saved to Google Drive.');
     void renderExplorer();
+    });
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
 }
 
-async function handleDriveConflict(tab: OpenTab, latest: DriveFile): Promise<void> {
+async function preserveNewerTabDraftAfterRemoteCommit(tab: OpenTab, saved: StoredDocument): Promise<void> {
+  if (!state.tabs.includes(tab) || !sameTabIdentity(tab, saved.identity, saved.accountId)) return;
+  const source = tab.source;
+  const revision = tab.revision;
+  tab.document = saved;
+  tab.persistedBase = { revision: saved.revision, source: saved.source };
+  if (source === saved.source) {
+    tab.revision = Math.max(revision, saved.revision);
+    tab.saveStatus = 'drive-saved';
+    if (activeTab() === tab) renderStorageStatus();
+    return;
+  }
+  tab.revision = Math.max(revision, saved.revision) + 1;
+  tab.saveStatus = 'saving';
+  await saveDraftNow(tab);
+}
+
+async function handleDriveConflict(
+  tab: OpenTab, latest: DriveFile, drive = state.drive, accountId = state.account?.accountId
+): Promise<void> {
+  if (!drive || !accountId) return;
   const choice = await conflictDialog();
   if (choice === 'cancel') return;
-  if (!state.drive || !state.account) return;
+  if (state.drive !== drive || state.account?.accountId !== accountId) {
+    showMessage(strings().reconnectOwner, 'error');
+    return;
+  }
   if (choice === 'reload') {
     try {
-      const remote = await state.drive.getFile(latest.id);
+      const expected = tabOperationSnapshot(tab);
+      const remote = await withDriveOperation(() => drive.getFile(latest.id));
+      if (!tabMatchesSnapshot(tab, expected)) {
+        if (!state.tabs.includes(tab) || !sameTabIdentity(tab, expected.identity, expected.accountId)) {
+          showMessage(state.locale === 'ja'
+            ? 'タブの内容が変わったため再読み込みを中止しました。ドラフトは保持されています。'
+            : 'Reload was cancelled because this tab changed identity; its draft was kept.', 'error');
+          return;
+        }
+        await saveDraftNow(tab);
+        await handleDriveConflict(tab, remote.file, drive, accountId);
+        return;
+      }
       const updated: StoredDocument = {
         ...tab.document, name: remote.file.name, source: remote.source,
-        revision: tab.revision + 1, driveVersion: remote.file.version,
+        revision: expected.revision + 1, driveVersion: remote.file.version,
         driveRevisionId: remote.file.headRevisionId,
         driveModifiedTime: remote.file.modifiedTime, driveEtag: remote.etag,
         driveFolderId: remote.file.parents?.[0] ?? tab.document.driveFolderId, updatedAt: Date.now()
       };
       const committed = await indexedDb.commitDriveDocument(updated, {
-        identity: tab.document.identity, revision: updated.revision, source: remote.source
+        identity: expected.identity, revision: expected.revision, source: expected.source
       });
       if (!committed) throw new Error('A newer local draft exists. It was kept.');
+      if (!tabMatchesSnapshot(tab, expected)) {
+        await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
+        await handleDriveConflict(tab, remote.file, drive, accountId);
+        return;
+      }
       tab.document = updated; tab.source = remote.source; tab.revision = updated.revision;
       tab.persistedBase = { revision: updated.revision, source: updated.source };
       tab.saveStatus = 'drive-saved';
-      editor.value = tab.source; renderAll();
+      renderAll();
       showMessage(state.locale === 'ja' ? 'Drive の最新内容を読み込みました。' : 'Reloaded the latest Drive version.');
     } catch (error) { showMessage(shortError(error), 'error'); }
     return;
   }
-  try { await saveDriveCopy(tab, latest.parents?.[0] ?? tab.document.driveFolderId ?? state.folderId); }
+  try { await saveDriveCopy(tab, latest.parents?.[0] ?? tab.document.driveFolderId ?? state.folderId, drive, accountId); }
   catch (error) { showMessage(shortError(error), 'error'); }
 }
 
@@ -1263,32 +1369,52 @@ function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
   });
 }
 
-async function saveDriveCopy(tab: OpenTab, folderId?: string): Promise<void> {
-  if (!state.drive || !state.account || !folderId) throw new Error(strings().noFolder);
+async function saveDriveCopy(tab: OpenTab, folderId?: string, drive = state.drive, accountId = state.account?.accountId): Promise<void> {
+  if (!drive || !accountId || !folderId) throw new Error(strings().noFolder);
+  if (tab.document.identity.storage === 'drive' && tab.accountId !== accountId) throw new Error(strings().reconnectOwner);
+  const submitted = tabOperationSnapshot(tab);
   const copyName = `${tab.document.name.replace(/\.(guitardsl|gdsl)$/i, '')} (local copy).guitardsl`;
-  const file = await state.drive.createFile(folderId, copyName, tab.source);
-  const verified = await state.drive.getFile(file.id);
-  if (verified.source !== tab.source) throw new Error('Drive copy verification failed; the original draft was kept.');
-  const doc: StoredDocument = {
-    identity: driveIdentity(file.id), accountId: state.account.accountId, name: file.name,
-    source: verified.source, revision: tab.revision, createdAt: Date.now(), updatedAt: Date.now(),
-    driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime, driveRevisionId: verified.file.headRevisionId,
-    driveEtag: verified.etag, driveFolderId: verified.file.parents?.[0] ?? folderId
-  };
-  await indexedDb.upsertDriveDocument(doc);
-  const currentIndex = state.tabs.indexOf(tab);
-  const existing = state.tabs.find(other => sameTabIdentity(other, doc.identity, state.account!.accountId));
-  if (existing) {
-    existing.source = verified.source; existing.revision = doc.revision; existing.document = doc;
-    existing.persistedBase = { revision: doc.revision, source: doc.source }; existing.saveStatus = 'drive-saved';
-    state.tabs.splice(currentIndex, 1); state.activeKey = tabKey(existing);
-  } else {
-    tab.document = doc; tab.accountId = state.account.accountId; tab.source = verified.source;
-    tab.persistedBase = { revision: doc.revision, source: doc.source }; tab.saveStatus = 'drive-saved';
-    state.activeKey = tabKey(tab);
-  }
-  renderAll(); await persistSessions();
-  showMessage(state.locale === 'ja' ? 'ローカル版を別の Drive ファイルとして保存しました。' : 'Saved the local version as a new Drive file.');
+  await withDriveOperation(async () => {
+    const file = await drive.createFile(folderId, copyName, submitted.source);
+    const verified = await drive.getFile(file.id);
+    if (verified.source !== submitted.source) throw new Error('Drive copy verification failed; the original draft was kept.');
+    const doc: StoredDocument = {
+      identity: driveIdentity(file.id), accountId, name: file.name,
+      source: verified.source, revision: submitted.revision, createdAt: Date.now(), updatedAt: Date.now(),
+      driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime, driveRevisionId: verified.file.headRevisionId,
+      driveEtag: verified.etag, driveFolderId: verified.file.parents?.[0] ?? folderId
+    };
+    await indexedDb.upsertDriveDocument(doc);
+    if (!tabMatchesSnapshot(tab, submitted)) {
+      if (state.tabs.includes(tab)) await saveDraftNow(tab);
+      const activeBeforeCopy = state.activeKey;
+      await openDocument(doc, doc.source, accountId);
+      if (activeBeforeCopy && state.tabs.some(item => tabKey(item) === activeBeforeCopy)) {
+        state.activeKey = activeBeforeCopy;
+        state.activeStorage = activeTab()?.document.identity.storage ?? state.activeStorage;
+      }
+      renderAll();
+      await persistSessions([accountId]);
+      showMessage(state.locale === 'ja'
+        ? 'Drive のコピーを保存しました。保存中に行った新しい編集は元のタブに保持しています。'
+        : 'Saved the Drive copy. Newer edits made during upload remain in the original tab.');
+      return;
+    }
+    const currentIndex = state.tabs.indexOf(tab);
+    const existing = state.tabs.find(other => sameTabIdentity(other, doc.identity, accountId));
+    if (existing) {
+      existing.source = verified.source; existing.revision = doc.revision; existing.document = doc;
+      existing.persistedBase = { revision: doc.revision, source: doc.source }; existing.saveStatus = 'drive-saved';
+      if (currentIndex >= 0 && existing !== tab) state.tabs.splice(currentIndex, 1);
+      state.activeKey = tabKey(existing);
+    } else {
+      tab.document = doc; tab.accountId = accountId; tab.source = verified.source;
+      tab.persistedBase = { revision: doc.revision, source: doc.source }; tab.saveStatus = 'drive-saved';
+      state.activeKey = tabKey(tab);
+    }
+    renderAll(); await persistSessions([accountId]);
+    showMessage(state.locale === 'ja' ? 'ローカル版を別の Drive ファイルとして保存しました。' : 'Saved the local version as a new Drive file.');
+  });
 }
 
 async function downloadPdf(tab = activeTab()): Promise<void> {
@@ -1355,9 +1481,6 @@ async function connectDrive(): Promise<void> {
     if (previousAccount && previousAccount.accountId !== account.accountId
       || !previousAccount && state.tabs.some(tab => tab.document.identity.storage === 'drive' && tab.accountId !== account.accountId)) {
       await persistSessions();
-      state.tabs = state.tabs.filter(tab => tab.document.identity.storage !== 'drive' || tab.accountId === account.accountId);
-      const localActive = state.tabs.find(tab => tab.document.identity.storage === 'local');
-      if (!state.tabs.some(tab => tabKey(tab) === state.activeKey)) state.activeKey = localActive ? tabKey(localActive) : null;
       state.folderId = undefined;
     }
     state.account = account; state.drive = new GoogleDriveApi(auth);

@@ -75,7 +75,8 @@ The shared settings sections consume a plain source snapshot and return display 
 - An open document has one mutable source buffer. A compiler or Preview snapshot is derived state and cannot independently become the saved source.
 - The browser session stores open-tab identity and recoverable drafts in IndexedDB. Draft persistence and user-visible saved state are updated only after IndexedDB confirms the write.
 - Local documents and Drive documents remain separate identities even when names match. Switching the file-list storage source changes only the list, not open tabs.
-- The Drive adapter keeps account-scoped metadata separate and uses only explicitly authorized files. OAuth access tokens remain in memory. The selected folder ID is configuration, not a credential.
+- The Drive adapter keeps account-scoped metadata and open-tab sessions separate and uses only explicitly authorized files. Switching or disconnecting accounts retains each account's open tabs and drafts; Drive writes are enabled only when the connected account owns the active Drive tab. OAuth access tokens remain in memory. The selected folder ID is configuration, not a credential.
+- Opening a restored document compares its current source and revision with the last committed record. A recovered draft is shown as a local draft until a successful local or Drive commit advances that saved baseline.
 - Drive update performs a preflight read of the last-seen remote version and returns an observed mismatch as a conflict. The read and upload PATCH are separate requests; server-enforced conditional-write behavior for this Drive v3 route is not established, so a concurrent update between them remains an unresolved race.
 
 ### Google Drive transfer protocol
@@ -117,8 +118,9 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 - A stale change set or mismatched document ID is rejected before applying any source edit. One rejected operation cannot partially modify the document.
 - Drive authentication, permission, rate-limit, network, and server failures retain local source and drafts. The UI reports the operation that failed and exposes explicit retry where safe.
 - An observed Drive version conflict offers reload, save as a separate file, or cancel. Because the Drive v3 conditional-write guarantee is unverified, the current implementation does not prove the contract's no-destructive-overwrite behavior for a concurrent update between the preflight read and PATCH; keep this delivery blocked until the API behavior is established or the contract is revised.
+- Conflict reload and save-as capture the tab identity, source, and revision before their asynchronous Drive requests. Before applying a response, the host checks that the same tab still has that snapshot. A newer edit remains a local draft; reload asks the user to choose again, while a save-as upload opens the submitted snapshot separately and leaves the newer edit in its original tab.
 - Transfer recovery is keyed by account and returned Drive file ID. Upload success is not enough to delete the local original; remote readback and validation are required.
-- Preview and Inspector audio share an exclusive lease. On view disposal, document switch, or host shutdown, listeners and audio resources are released and outstanding operations cannot mutate a newer document revision.
+- Preview and Inspector audio share an exclusive lease. The Inspector's fallback completion timer uses playback duration in seconds and playback speed, then stops the audio and releases the Preview lock at natural completion. On view disposal, document switch, or host shutdown, listeners and audio resources are released and outstanding operations cannot mutate a newer document revision.
 - Untrusted DSL and metadata are rendered through escaped text and constructed SVG attributes. CSP and host-specific Webview security continue to be enforced by the respective adapters.
 
 ## Alternatives considered
@@ -133,7 +135,7 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 ## Verification strategy
 
 - Build and unit-test the shared packages independently. Compare representative SVG pages and PDFs from VS Code and Web using the same Japanese, TAB, chord-diagram, and multi-page fixtures.
-- Browser tests use mocked IndexedDB and Drive APIs for persistence failures, pagination, scope-limited listing, version conflicts, interrupted moves, account separation, and duplicate retry.
-- Browser E2E runs in Chromium and Firefox cover local-first startup, editor IME/undo, source and Preview edits, tabs, refresh recovery, responsive layout, localization, light/dark theme, accessibility attributes, audio exclusivity, and PDF download.
+- Browser tests use mocked IndexedDB and Drive APIs for persistence failures, pagination, scope-limited listing, version conflicts, edits during delayed conflict reload/save-as requests, restored-draft status, account separation and reconnect, interrupted moves, and duplicate retry.
+- Browser E2E runs in Chromium and Firefox cover local-first startup, editor IME/undo, source and Preview edits, tabs, refresh recovery and restored-draft status, account switching, edits during delayed Drive requests, responsive layout, localization, light/dark theme, accessibility attributes, audio exclusivity and natural lease release, and PDF download.
 - Existing extension compile, unit, E2E, VSIX prepublish, package-content, Help, and AI checks protect the current product boundary.
 - `python -m agent_workflow validate-docs --issue 166`, `npm run check:help`, `npm run check:ai`, and `git diff --check` validate documentation and derived assets. Browser/OS combinations not actually run remain unverified.

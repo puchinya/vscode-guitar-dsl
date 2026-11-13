@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+process.env.VITE_GOOGLE_CLIENT_ID ??= 'playwright-test-client';
+
 export default defineConfig({
   testDir: './test/e2e',
   fullyParallel: true,

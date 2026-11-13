@@ -1,8 +1,136 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { planBeginnerTransform } from '@guitardsl/core/beginnerMode';
 import { planCapoTransform } from '@guitardsl/core/capo';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+
+interface DriveSeed {
+  accountId: string;
+  fileId: string;
+  name: string;
+  source: string;
+  draftSource?: string;
+  version?: string;
+  folderId?: string;
+}
+
+async function installDriveBrowserMock(page: Page, accountSequence: string[]): Promise<void> {
+  await page.addInitScript((accounts: string[]) => {
+    const tokens = [...accounts];
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        oauth2: {
+          initTokenClient: (options: { callback: (result: { access_token: string; expires_in: number }) => void }) => ({
+            requestAccessToken: () => options.callback({
+              access_token: `test-token-${tokens.shift() ?? accounts.at(-1) ?? 'account-a'}`,
+              expires_in: 3600
+            })
+          }),
+          revoke: (_token: string, callback?: () => void) => callback?.()
+        }
+      }
+    };
+  }, accountSequence);
+  await page.route('https://www.googleapis.com/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const headers = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+      'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const token = request.headers().authorization?.replace(/^Bearer test-token-/u, '');
+    const accountId = token || 'account-a';
+    if (url.pathname === '/drive/v3/about') {
+      return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
+    }
+    if (url.pathname === '/drive/v3/files') return route.fulfill({ headers, json: { files: [] } });
+    if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
+      return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
+    }
+    if (url.pathname.startsWith('/drive/v3/files/')) {
+      const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      if (url.searchParams.get('alt') === 'media') {
+        return route.fulfill({ headers, body: `title: ${fileId}\n` });
+      }
+      return route.fulfill({ headers, json: {
+        id: fileId, name: `${fileId}.guitardsl`, version: '1', modifiedTime: 't1', headRevisionId: 'r1', parents: [`folder-${accountId}`]
+      } });
+    }
+    if (url.pathname.startsWith('/upload/drive/v3/files')) {
+      return route.fulfill({ headers, json: {
+        id: 'created-drive-copy', name: 'Song (local copy).guitardsl', version: '1', modifiedTime: 't-copy',
+        headRevisionId: 'r-copy', parents: [`folder-${accountId}`]
+      } });
+    }
+    return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
+  });
+}
+
+async function seedDriveSessions(page: Page, documents: DriveSeed[]): Promise<void> {
+  await page.evaluate(async (seeds: DriveSeed[]) => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const byAccount = new Map<string, string[]>();
+    for (const seed of seeds) {
+      const identity = { storage: 'drive' as const, fileId: seed.fileId };
+      const row = {
+        identity, accountId: seed.accountId, name: seed.name, source: seed.source, revision: 0,
+        createdAt: 1, updatedAt: 1, driveVersion: seed.version ?? '1',
+        driveModifiedTime: 't1', driveRevisionId: 'r1', driveFolderId: seed.folderId ?? `folder-${seed.accountId}`
+      };
+      await indexedDb.upsertDriveDocument(row);
+      if (seed.draftSource !== undefined) {
+        await indexedDb.saveDraft({ identity, revision: 1, source: seed.draftSource }, seed.accountId, { revision: 0, source: seed.source });
+      }
+      const tabs = byAccount.get(seed.accountId) ?? [];
+      tabs.push(seed.fileId);
+      byAccount.set(seed.accountId, tabs);
+      await indexedDb.setValue('settings', `drive-folder:${seed.accountId}`, seed.folderId ?? `folder-${seed.accountId}`);
+    }
+    for (const [accountId, tabs] of byAccount) {
+      await indexedDb.setValue('sessions', `workspace-drive:${accountId}`, { tabs, active: tabs[0] ?? null });
+    }
+  }, documents);
+}
+
+async function installFakeAudio(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    class FakeParam {
+      value = 0;
+      setValueAtTime(value: number, _when?: number): void { this.value = value; }
+      linearRampToValueAtTime(value: number, _when?: number): void { this.value = value; }
+      cancelScheduledValues(_when?: number): void {}
+    }
+    class FakeGain {
+      gain = new FakeParam();
+      connect(_destination?: unknown): void {}
+      disconnect(): void {}
+    }
+    class FakeOscillator {
+      type = 'sine';
+      frequency = new FakeParam();
+      onended: (() => void) | null = null;
+      constructor(private context: FakeAudioContext) {}
+      connect(_destination?: unknown): void {}
+      disconnect(): void {}
+      start(_when?: number): void {}
+      stop(when = 0): void {
+        window.setTimeout(() => this.onended?.(), Math.max(0, when - this.context.currentTime) * 1000);
+      }
+    }
+    class FakeAudioContext {
+      currentTime = 0;
+      state: AudioContextState = 'running';
+      destination = {};
+      createGain(): FakeGain { return new FakeGain(); }
+      createOscillator(): FakeOscillator { return new FakeOscillator(this); }
+      resume(): Promise<void> { return Promise.resolve(); }
+      close(): Promise<void> { this.state = 'closed'; return Promise.resolve(); }
+    }
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext });
+  });
+}
 
 test('opens a local-first GuitarDSL workspace', async ({ page }) => {
   if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
@@ -137,9 +265,212 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.reload();
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toHaveValue(source);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#saved-state')).toHaveText('Saved locally');
   await expect(page.getByRole('button', { name: 'Draft restored.guitardsl' })).toHaveCount(0);
+});
+
+test('restores a Drive draft as a local draft, not as remotely saved', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a']);
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-draft', name: 'Drive draft.guitardsl',
+    source: 'title: Remote saved\n', draftSource: 'title: Local draft\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(page.getByRole('tab', { name: 'Drive draft.guitardsl' })).toBeVisible();
+  await expect(editor).toHaveValue('title: Local draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.reload();
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Drive draft.guitardsl' })).toBeVisible();
+  await expect(editor).toHaveValue('title: Local draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+});
+
+test('keeps account-scoped Drive tabs and drafts when switching accounts', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a', 'account-b', 'account-a']);
+  let accountASource = 'title: Account A\n';
+  let accountAVersion = '1';
+  const headers = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+    'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+  };
+  await page.route('**/upload/drive/v3/files/drive-a*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    accountASource = route.request().postData() ?? accountASource;
+    accountAVersion = '2';
+    return route.fulfill({ headers, json: {
+      id: 'drive-a', name: 'Account A.guitardsl', version: accountAVersion, modifiedTime: 't2',
+      headRevisionId: 'r2', parents: ['folder-account-a']
+    } });
+  });
+  await page.route('https://www.googleapis.com/drive/v3/files/drive-a*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers, body: accountASource });
+    return route.fulfill({ headers, json: {
+      id: 'drive-a', name: 'Account A.guitardsl', version: accountAVersion,
+      modifiedTime: accountAVersion === '1' ? 't1' : 't2', headRevisionId: accountAVersion === '1' ? 'r1' : 'r2',
+      parents: ['folder-account-a']
+    } });
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [
+    { accountId: 'account-a', fileId: 'drive-a', name: 'Account A.guitardsl', source: 'title: Account A\n' },
+    { accountId: 'account-b', fileId: 'drive-b', name: 'Account B.guitardsl', source: 'title: Account B\n' }
+  ]);
+  const connect = page.locator('#connect-drive');
+  await connect.click();
+  await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
+  await connect.click();
+  await connect.click();
+  await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account B.guitardsl' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Account A.guitardsl' }).click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(editor).toHaveValue('title: Account A\n');
+  await expect(page.locator('#save-document')).toBeDisabled();
+  await editor.fill('title: Account A draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await connect.click();
+  await connect.click();
+  await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Account A.guitardsl' }).click();
+  await expect(editor).toHaveValue('title: Account A draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await expect(page.locator('#save-document')).toBeEnabled();
+  await page.locator('#save-document').click();
+  await expect(page.locator('#saved-state')).toHaveText('Saved to Drive');
+  expect(accountASource).toBe('title: Account A draft\n');
+});
+
+test('re-prompts on Drive conflict reload if the tab changes while the remote read is pending', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a']);
+  let releaseMedia!: () => void;
+  let markMediaStarted!: () => void;
+  const mediaStarted = new Promise<void>(resolve => { markMediaStarted = resolve; });
+  const mediaGate = new Promise<void>(resolve => { releaseMedia = resolve; });
+  const headers = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+    'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+  };
+  await page.route('**/drive/v3/files/drive-conflict*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('alt') === 'media') {
+      markMediaStarted();
+      await mediaGate;
+      return route.fulfill({ headers, body: 'title: Remote latest\n' });
+    }
+    return route.fulfill({ headers, json: {
+      id: 'drive-conflict', name: 'Conflict.guitardsl', version: '2', modifiedTime: 't2',
+      headRevisionId: 'r2', parents: ['folder-account-a']
+    } });
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-conflict', name: 'Conflict.guitardsl', source: 'title: Base\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(page.getByRole('tab', { name: 'Conflict.guitardsl' })).toBeVisible();
+  await editor.fill('title: Before reload\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload latest' }).click();
+  await mediaStarted;
+
+  const newSource = 'title: Typed during remote reload\n';
+  await editor.fill(newSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  releaseMedia();
+  await expect(editor).toHaveValue(newSource);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  const stored = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      current: await indexedDb.getDocument({ storage: 'drive', fileId: 'drive-conflict' }, 'account-a'),
+      saved: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'drive-conflict' }, 'account-a')
+    };
+  });
+  expect(stored.current?.source).toBe(newSource);
+  expect(stored.saved?.source).toBe('title: Base\n');
+});
+
+test('keeps edits made during Save as upload in the original tab', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a']);
+  let releaseUpload!: () => void;
+  let markUploadStarted!: () => void;
+  const uploadStarted = new Promise<void>(resolve => { markUploadStarted = resolve; });
+  const uploadGate = new Promise<void>(resolve => { releaseUpload = resolve; });
+  const headers = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+    'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+  };
+  const uploadedSource = 'title: Local version\n';
+  await page.route('**/drive/v3/files/drive-conflict*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    return route.fulfill({ headers, json: {
+      id: 'drive-conflict', name: 'Song.guitardsl', version: '2', modifiedTime: 't2',
+      headRevisionId: 'r2', parents: ['folder-account-a']
+    } });
+  });
+  await page.route('**/upload/drive/v3/files*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    markUploadStarted();
+    await uploadGate;
+    return route.fulfill({ headers, json: {
+      id: 'created-drive-copy', name: 'Song (local copy).guitardsl', version: '1', modifiedTime: 't-copy',
+      headRevisionId: 'r-copy', parents: ['folder-account-a']
+    } });
+  });
+  await page.route('**/drive/v3/files/created-drive-copy*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers, body: uploadedSource });
+    return route.fulfill({ headers, json: {
+      id: 'created-drive-copy', name: 'Song (local copy).guitardsl', version: '1', modifiedTime: 't-copy',
+      headRevisionId: 'r-copy', parents: ['folder-account-a']
+    } });
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-conflict', name: 'Song.guitardsl', source: 'title: Remote base\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  await editor.fill(uploadedSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Save local version as a new Drive file' }).click();
+  await uploadStarted;
+
+  const newerSource = 'title: Newer local changes\n';
+  await editor.fill(newerSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  releaseUpload();
+  await expect(page.getByRole('tab', { name: 'Song (local copy).guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await expect(editor).toHaveValue(newerSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const stored = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      original: await indexedDb.getDocument({ storage: 'drive', fileId: 'drive-conflict' }, 'account-a'),
+      copy: await indexedDb.getDocument({ storage: 'drive', fileId: 'created-drive-copy' }, 'account-a')
+    };
+  });
+  expect(stored.original?.source).toBe(newerSource);
+  expect(stored.copy?.source).toBe(uploadedSource);
 });
 
 test('finalizes a local-to-Drive move atomically only when no newer IndexedDB draft exists', async ({ page }) => {
@@ -413,6 +744,30 @@ test('serializes Inspector audition with Preview playback', async ({ page }) => 
     await expect(audioStatus).toHaveText('Audition stopped.');
   }
   await expect(previewBody).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
+});
+
+test('naturally ends a short Inspector audition and unlocks Preview without pressing Stop', async ({ page }) => {
+  await installFakeAudio(page);
+  await page.clock.install();
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const preview = page.frameLocator('#score-frame');
+  const initialVersion = Number(await preview.locator('body').getAttribute('data-preview-document-version'));
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await expect.poll(async () => Number(await preview.locator('body').getAttribute('data-preview-document-version')))
+    .toBeGreaterThan(initialVersion);
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
+  await page.getByRole('tab', { name: 'Progression' }).click();
+  await expect(page.locator('#candidate-list li').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Audition' }).click();
+  const audioStatus = page.locator('#progression-audio-status');
+  await expect(audioStatus).toHaveText('Audition playing.');
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+
+  await page.clock.runFor(30_000);
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
   await expect(preview.locator('#btn-play')).toBeEnabled();
 });
 
