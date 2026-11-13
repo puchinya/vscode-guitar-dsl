@@ -68,6 +68,85 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[]): P
   });
 }
 
+async function installStatefulDriveSaveMock(
+  page: Page,
+  options: { holdPatch?: boolean; patchStatus?: number; readbackMismatch?: boolean } = {}
+): Promise<{
+  patchCalls: { fileId: string; source: string }[];
+  patchStarted: Promise<void>;
+  releasePatch(): void;
+  get createCount(): number;
+}> {
+  await page.addInitScript(() => {
+    (window as unknown as { google: unknown }).google = {
+      accounts: { oauth2: { initTokenClient: (value: { callback(result: { access_token: string; expires_in: number }): void }) => ({
+        requestAccessToken: () => value.callback({ access_token: 'test-token-account-a', expires_in: 3600 }),
+        revoke: (_token: string, callback?: () => void) => callback?.()
+      }) } }
+    };
+  });
+  let remoteSource = 'title: Drive saved\n';
+  let version = 1;
+  let createCount = 0;
+  const patchCalls: { fileId: string; source: string }[] = [];
+  let startPatch!: () => void;
+  const patchStarted = new Promise<void>(resolve => { startPatch = resolve; });
+  let releasePatch!: () => void;
+  const patchGate = new Promise<void>(resolve => { releasePatch = resolve; });
+  const headers = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+    'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+  };
+  await page.route('https://www.googleapis.com/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (url.pathname === '/drive/v3/about') {
+      return route.fulfill({ headers, json: { user: { permissionId: 'account-a', emailAddress: 'account-a@example.test' } } });
+    }
+    if (url.pathname === '/drive/v3/files') {
+      if (request.method() === 'POST') createCount += 1;
+      return route.fulfill({ headers, json: { files: [] } });
+    }
+    if (url.pathname === '/drive/v3/files/folder-account-a') {
+      return route.fulfill({ headers, json: { id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
+    }
+    if (url.pathname === '/drive/v3/files/drive-save') {
+      const metadata = {
+        id: 'drive-save', name: 'Song.guitardsl', mimeType: 'text/plain', version: String(version),
+        modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a']
+      };
+      return url.searchParams.get('alt') === 'media'
+        ? route.fulfill({ headers, body: remoteSource })
+        : route.fulfill({ headers, json: metadata });
+    }
+    if (url.pathname.startsWith('/upload/drive/v3/files')) {
+      if (request.method() === 'POST') {
+        createCount += 1;
+        return route.fulfill({ headers, json: { id: 'unexpected-create', name: 'copy.guitardsl', version: '1', modifiedTime: 'tc' } });
+      }
+      if (request.method() === 'PATCH') {
+        patchCalls.push({ fileId: url.pathname.split('/').at(-1) ?? '', source: request.postData() ?? '' });
+        startPatch();
+        if (options.holdPatch) await patchGate;
+        if (options.patchStatus) return route.fulfill({ status: options.patchStatus, headers, body: 'Drive save error' });
+        if (!options.readbackMismatch) remoteSource = request.postData() ?? remoteSource;
+        version += 1;
+        return route.fulfill({ headers, json: {
+          id: 'drive-save', name: 'Song.guitardsl', mimeType: 'text/plain', version: String(version),
+          modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a']
+        } });
+      }
+    }
+    return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
+  });
+  return {
+    patchCalls, patchStarted, releasePatch,
+    get createCount() { return createCount; }
+  };
+}
+
 async function seedDriveSessions(page: Page, documents: DriveSeed[]): Promise<void> {
   await page.evaluate(async (seeds: DriveSeed[]) => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
@@ -288,6 +367,81 @@ test('restores a Drive draft as a local draft, not as remotely saved', async ({ 
   await expect(page.getByRole('tab', { name: 'Drive draft.guitardsl' })).toBeVisible();
   await expect(editor).toHaveValue('title: Local draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+});
+
+test('Drive saves keep the same file, retain edits made during a save, and do not create save copies', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { holdPatch: true });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect(page.locator('#drive-overwrite-note')).toBeVisible();
+  if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    const evidencePath = resolve(process.cwd(), '../docs/status/evidence/issue-166/drive-save-warning.png');
+    await mkdir(dirname(evidencePath), { recursive: true });
+    await page.screenshot({ path: evidencePath, fullPage: false });
+  }
+
+  await editor.fill('title: Submitted version\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('#save-document').click();
+  await drive.patchStarted;
+  await editor.fill('title: Newer local draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  drive.releasePatch();
+  await expect(editor).toHaveValue('title: Newer local draft\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await editor.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
+  await expect(page.locator('#saved-state')).toHaveText('Saved to Drive');
+  expect(drive.patchCalls.map(call => call.fileId)).toEqual(['drive-save', 'drive-save']);
+  expect(drive.patchCalls.map(call => call.source)).toEqual(['title: Submitted version\n', 'title: Newer local draft\n']);
+  expect(drive.createCount).toBe(0);
+});
+
+test('an unconfirmed Drive save keeps its draft and never sends an automatic retry', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { patchStatus: 500 });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const draft = 'title: Keep this draft\n';
+  await editor.fill(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('#save-document').click();
+  await expect(editor).toHaveValue(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await expect(page.locator('#app-message')).toContainText('no automatic retry');
+  expect(drive.patchCalls).toHaveLength(1);
+  expect(drive.createCount).toBe(0);
+});
+
+test('a Drive readback mismatch keeps the local draft and reports the save as unconfirmed', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { readbackMismatch: true });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await page.locator('#connect-drive').click();
+  await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const draft = 'title: Keep after readback mismatch\n';
+  await editor.fill(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('#save-document').click();
+  await expect(editor).toHaveValue(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await expect(page.locator('#app-message')).toContainText('Drive did not return the saved source');
+  expect(drive.patchCalls).toHaveLength(1);
+  expect(drive.createCount).toBe(0);
 });
 
 test('keeps account-scoped Drive tabs and drafts when switching accounts', async ({ page }) => {

@@ -14,6 +14,7 @@ export interface ExplorerLabels {
   connectHint: string;
   noFolder: string;
   driveAccess: string;
+  driveOverwriteWarning: string;
   loading: string;
 }
 
@@ -48,6 +49,7 @@ export class ExplorerController {
   private readonly fileActions: HTMLElement;
   private readonly fileItems: HTMLElement;
   private readonly driveScopeNote: HTMLElement;
+  private readonly driveOverwriteNote: HTMLElement;
   private readonly moveButton: HTMLButtonElement;
 
   constructor(private readonly dependencies: ExplorerDependencies) {
@@ -55,6 +57,7 @@ export class ExplorerController {
     this.fileActions = root.querySelector<HTMLElement>('#file-actions')!;
     this.fileItems = root.querySelector<HTMLElement>('#file-items')!;
     this.driveScopeNote = root.querySelector<HTMLElement>('#drive-scope-note')!;
+    this.driveOverwriteNote = root.querySelector<HTMLElement>('#drive-overwrite-note')!;
     this.moveButton = root.querySelector<HTMLButtonElement>('#move-drive')!;
     root.querySelector<HTMLButtonElement>('#storage-local')!.addEventListener('click', () => onStorageChange('local'));
     root.querySelector<HTMLButtonElement>('#storage-drive')!.addEventListener('click', () => onStorageChange('drive'));
@@ -73,6 +76,8 @@ export class ExplorerController {
     driveButton.classList.toggle('selected', state.storage === 'drive');
     this.driveScopeNote.hidden = state.storage !== 'drive' || !state.account;
     this.driveScopeNote.textContent = labels.driveAccess;
+    this.driveOverwriteNote.hidden = state.storage !== 'drive';
+    this.driveOverwriteNote.textContent = labels.driveOverwriteWarning;
     this.fileActions.replaceChildren();
     this.fileItems.replaceChildren();
 

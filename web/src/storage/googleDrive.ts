@@ -1,5 +1,5 @@
 import type { DocumentIdentity } from '@guitardsl/document';
-import { GoogleAuthError, GoogleOAuth, loadGooglePicker } from '../auth/googleOAuth';
+import { GoogleOAuth, loadGooglePicker } from '../auth/googleOAuth';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
@@ -20,8 +20,9 @@ export interface DriveFile {
 }
 
 export type DriveSaveResult =
-  | { kind: 'saved'; file: DriveFile }
+  | { kind: 'saved'; file: DriveFile; readback?: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'conflict'; latest: DriveFile }
+  | { kind: 'unknown'; latest?: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'unavailable'; message: string };
 
 export class DriveApiError extends Error {
@@ -129,29 +130,46 @@ export class GoogleDriveApi {
   }
 
   async updateFile(file: DriveFile, source: string, expectedEtag?: string): Promise<DriveSaveResult> {
+    const metadataPath = `/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`;
+    const current = await this.request<DriveFile>(metadataPath);
+    if (current.version !== file.version || current.modifiedTime !== file.modifiedTime
+      || current.headRevisionId !== file.headRevisionId) return { kind: 'conflict', latest: current };
+
+    const token = this.auth.tokenForRequest();
+    let response: Response;
     try {
-      const current = await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`);
-      if (current.version !== file.version || current.modifiedTime !== file.modifiedTime
-        || current.headRevisionId !== file.headRevisionId) return { kind: 'conflict', latest: current };
-      const token = this.auth.tokenForRequest();
-      const response = await fetch(`${UPLOAD_API}/files/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name,mimeType,version,modifiedTime,parents,appProperties`, {
+      response = await fetch(`${UPLOAD_API}/files/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name,mimeType,version,modifiedTime,parents,appProperties`, {
         method: 'PATCH', headers: {
           Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=UTF-8',
+          // Best-effort only. The preflight comparison is the app's observable conflict check.
           ...(expectedEtag ? { 'If-Match': expectedEtag } : {})
         }, body: source
       });
-      if (response.status === 412) {
-        return { kind: 'conflict', latest: await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`) };
-      }
-      if (!response.ok) throw new DriveApiError(response.status, `Google Drive save failed (${response.status}).`);
-      return { kind: 'saved', file: await response.json() as DriveFile };
-    } catch (error) {
-      if (error instanceof GoogleAuthError) throw error;
-      if (error instanceof DriveApiError && error.status === 412) {
-        return { kind: 'conflict', latest: await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`) };
-      }
-      throw error;
+    } catch {
+      const readback = await this.readAfterUncertainWrite(file.id);
+      if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
+      return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
     }
+
+    if (response.status === 412) return { kind: 'conflict', latest: await this.request<DriveFile>(metadataPath) };
+    if ([401, 403, 429].includes(response.status) || response.status >= 500) {
+      // These responses may not reveal whether Drive applied the media update. Observe once;
+      // callers retain the draft and must never retry this PATCH automatically.
+      return { kind: 'unknown', ...(await this.readAfterUncertainWrite(file.id).then(latest => latest ? { latest } : {})) };
+    }
+    if (!response.ok) throw new DriveApiError(response.status, `Google Drive save failed (${response.status}).`);
+
+    try { return { kind: 'saved', file: await response.json() as DriveFile }; }
+    catch {
+      const readback = await this.readAfterUncertainWrite(file.id);
+      if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
+      return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
+    }
+  }
+
+  private async readAfterUncertainWrite(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string } | undefined> {
+    try { return await this.getFile(fileId); }
+    catch { return undefined; }
   }
 
   async pickFolder(): Promise<DrivePickerSelection | undefined> {

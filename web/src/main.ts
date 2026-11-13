@@ -27,6 +27,7 @@ import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type P
 import { ExplorerController } from './explorer/explorerController';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
 import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile } from './storage/googleDrive';
+import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
 
@@ -108,6 +109,9 @@ const STRINGS = {
     targetMeasure: 'Target measure',
     narrowSource: 'Source', narrowPreview: 'Score', createFirst: 'Create a score to get started.',
     connectHint: 'Connect Google Drive to show files that this app can access.', noFolder: 'Choose or create a GuitarDSL folder.',
+    driveOverwriteWarning: 'A save from another device at nearly the same time may overwrite its changes.',
+    driveSaveUnknown: 'Drive could not confirm the save. Your local draft is kept and no automatic retry was sent. Check Drive before saving again.',
+    driveSaveUnknownApplied: 'Drive currently contains the submitted source, but the response was not confirmed. Your local draft is kept; check Drive before saving again. No automatic retry was sent.',
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
@@ -129,6 +133,9 @@ const STRINGS = {
     targetMeasure: '対象の小節',
     narrowSource: 'ソース', narrowPreview: '譜面', createFirst: '新しい楽譜を作成してください。',
     connectHint: 'Drive に接続すると、このアプリがアクセスできるファイルを表示します。', noFolder: 'GuitarDSL フォルダーを選択または作成してください。',
+    driveOverwriteWarning: '別の端末からほぼ同時に保存すると、その端末の編集が上書きされることがあります。',
+    driveSaveUnknown: 'Drive の保存結果を確認できませんでした。下書きは保持し、自動再送していません。Drive の状態を確認してから再度保存してください。',
+    driveSaveUnknownApplied: 'Drive には送信内容が見つかりましたが、応答を確認できないため下書きを保持しました。内容を確認してください。自動再送はしていません。',
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
@@ -185,6 +192,7 @@ app.innerHTML = `
         <div class="file-actions" id="file-actions"></div>
         <div class="file-items" id="file-items"></div>
         <p class="drive-scope-note" id="drive-scope-note" hidden></p>
+        <p class="drive-overwrite-note" id="drive-overwrite-note" role="note" hidden></p>
       </aside>
       <section class="editor-workspace" aria-label="Score workspace">
         <div class="tabs" role="tablist" aria-label="Open documents" id="open-tabs"></div>
@@ -520,7 +528,8 @@ const explorerController = new ExplorerController({
     return {
       files: t.files, local: t.local, drive: t.drive, addFile: t.addFile, chooseFolder: t.folder,
       createFolder: t.createFolder, openDrive: t.openDrive, createFirst: t.createFirst,
-      connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess, loading: t.loadingDrive
+      connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess,
+      driveOverwriteWarning: t.driveOverwriteWarning, loading: t.loadingDrive
     };
   },
   listLocalDocuments: () => indexedDb.listDocuments('local'),
@@ -1237,66 +1246,79 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
   const accountId = state.account?.accountId;
   if (!drive || !accountId) { showMessage(strings().connectHint, 'error'); return; }
   if (tab.accountId !== accountId) { showMessage(strings().reconnectOwner, 'error'); return; }
-  const file: DriveFile = {
-    id: tab.document.identity.fileId, name: tab.document.name,
-    version: tab.document.driveVersion ?? '', modifiedTime: tab.document.driveModifiedTime ?? '',
-    headRevisionId: tab.document.driveRevisionId,
-    ...(tab.document.driveFolderId ? { parents: [tab.document.driveFolderId] } : {})
-  };
-  const submitted = tabOperationSnapshot(tab);
+  const queuedFileId = tab.document.identity.fileId;
+  let identityChanged = false;
   try {
-    await withDriveOperation(async () => {
-    const result = await drive.updateFile(file, submitted.source, tab.document.driveEtag);
-    if (result.kind === 'conflict') {
-      await handleDriveConflict(tab, result.latest, drive, accountId);
-      return;
-    }
-    if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
-    const verified = await drive.getFile(result.file.id);
-    if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
-    if (!tabMatchesSnapshot(tab, submitted)) {
-      throw new Error('Drive saved an earlier version; newer local edits remain in the draft.');
-    }
-    const updated: StoredDocument = {
-      ...tab.document, source: verified.source, revision: submitted.revision,
-      driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime,
-      driveRevisionId: verified.file.headRevisionId,
-      driveEtag: verified.etag, updatedAt: Date.now()
-    };
-    const committed = await indexedDb.commitDriveDocument(updated, submitted);
-    if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
-    if (!tabMatchesSnapshot(tab, submitted)) {
-      await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
-      showMessage(state.locale === 'ja'
-        ? 'Drive には保存しましたが、保存中に行った新しい編集は下書きとして保持しました。'
-        : 'Drive saved the submitted version. Newer edits made during the save remain as a local draft.');
-      return;
-    }
-    tab.document = updated;
-    tab.persistedBase = { revision: updated.revision, source: updated.source };
-    tab.saveStatus = 'drive-saved';
-    renderStorageStatus();
-    showMessage(state.locale === 'ja' ? 'Drive に保存しました。' : 'Saved to Google Drive.');
-    void renderExplorer();
-    });
+    await withDriveOperation(() => serializeDriveSave(accountId, queuedFileId, async () => {
+      if (tab.document.identity.fileId !== queuedFileId || tab.accountId !== accountId) {
+        identityChanged = true;
+        return;
+      }
+      const file: DriveFile = {
+        id: queuedFileId, name: tab.document.name,
+        version: tab.document.driveVersion ?? '', modifiedTime: tab.document.driveModifiedTime ?? '',
+        headRevisionId: tab.document.driveRevisionId,
+        ...(tab.document.driveFolderId ? { parents: [tab.document.driveFolderId] } : {})
+      };
+      const submitted = tabOperationSnapshot(tab);
+      const result = await drive.updateFile(file, submitted.source, tab.document.driveEtag);
+      if (result.kind === 'conflict') {
+        await handleDriveConflict(tab, result.latest, drive, accountId);
+        return;
+      }
+      if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
+      if (result.kind === 'unknown') {
+        const message = result.latest?.source === submitted.source ? strings().driveSaveUnknownApplied : strings().driveSaveUnknown;
+        showMessage(message, 'error');
+        return;
+      }
+      const verified = result.readback ?? await drive.getFile(result.file.id);
+      if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
+      const updated: StoredDocument = {
+        ...tab.document, source: verified.source, revision: submitted.revision,
+        driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime,
+        driveRevisionId: verified.file.headRevisionId,
+        driveEtag: verified.etag, updatedAt: Date.now()
+      };
+      const committed = await indexedDb.commitDriveDocument(updated, submitted, true);
+      if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
+      if (!tabMatchesSnapshot(tab, submitted)) {
+        await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
+        showMessage(state.locale === 'ja'
+          ? 'Drive には保存しましたが、保存中に行った新しい編集は下書きとして保持しました。'
+          : 'Drive saved the submitted version. Newer edits made during the save remain as a local draft.');
+        return;
+      }
+      tab.document = updated;
+      tab.persistedBase = { revision: updated.revision, source: updated.source };
+      tab.saveStatus = 'drive-saved';
+      renderStorageStatus();
+      showMessage(state.locale === 'ja' ? 'Drive に保存しました。' : 'Saved to Google Drive.');
+      void renderExplorer();
+    }));
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  if (identityChanged && state.tabs.includes(tab) && tab.document.identity.storage === 'drive'
+    && tab.saveStatus !== 'drive-saved') await saveDriveDocument(tab);
 }
 
 async function preserveNewerTabDraftAfterRemoteCommit(tab: OpenTab, saved: StoredDocument): Promise<void> {
   if (!state.tabs.includes(tab) || !sameTabIdentity(tab, saved.identity, saved.accountId)) return;
+  await draftWrites.get(tabKey(tab));
   const source = tab.source;
   const revision = tab.revision;
   tab.document = saved;
   tab.persistedBase = { revision: saved.revision, source: saved.source };
   if (source === saved.source) {
     tab.revision = Math.max(revision, saved.revision);
+    tab.persistedBase = { revision: tab.revision, source };
     tab.saveStatus = 'drive-saved';
     if (activeTab() === tab) renderStorageStatus();
     return;
   }
-  tab.revision = Math.max(revision, saved.revision) + 1;
-  tab.saveStatus = 'saving';
-  await saveDraftNow(tab);
+  tab.revision = Math.max(revision, saved.revision + 1);
+  tab.persistedBase = { revision: tab.revision, source };
+  tab.saveStatus = 'draft';
+  if (activeTab() === tab) renderStorageStatus();
 }
 
 async function handleDriveConflict(
@@ -1964,6 +1986,12 @@ function replaceEditorSourceWithUndo(source: string): void {
 editor.addEventListener('input', onEditorInput);
 app.querySelector('#new-score')!.addEventListener('click', () => void createNewScore());
 app.querySelector('#save-document')!.addEventListener('click', () => void saveActiveDocument());
+app.addEventListener('keydown', event => {
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    void saveActiveDocument();
+  }
+});
 app.querySelector('#download-pdf')!.addEventListener('click', () => void downloadPdf());
 app.querySelector('#export-file')!.addEventListener('click', () => { const tab = activeTab(); if (tab) downloadSource(tab.document.name, tab.source); });
 app.querySelector('#move-drive')!.addEventListener('click', () => void moveToDrive());

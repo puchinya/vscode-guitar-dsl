@@ -39,6 +39,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .file-item:hover, .file-item:focus-visible { background: #f0f2f7; }
 .file-subtitle { display: block; padding: 0 9px 8px; color: #89919d; font-size: 10px; }
 .drive-scope-note { margin: 0 12px 14px; color: #79818e; font-size: 11px; line-height: 1.45; }
+.drive-overwrite-note { margin: 0 12px 14px; padding: 8px; border-left: 3px solid #d19a29; background: #fff8e7; color: #684b12; font-size: 11px; line-height: 1.45; }
 .editor-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .tabs { display: flex; align-items: stretch; min-height: 42px; overflow: auto hidden; background: #f1f2f5; border-bottom: 1px solid #dfe2e7; }
 .tab { display: flex; align-items: center; min-width: 0; border-right: 1px solid #dfe2e7; }
@@ -183,6 +184,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .app-shell, .file-list, .inspector, .topbar, .toolbar, .source-pane, .editor-surface, .pane-heading, .tab.active { background: #242830; color: #e4e7ee; }
   .app-shell[data-theme="system"] .editor-highlight { --gds-key:#c4a7ff; --gds-directive:#f0b36b; --gds-section:#75d6c3; --gds-chord:#91b8ff; --gds-note:#c4a7ff; --gds-comment:#929aa8; --gds-operator:#f0b36b; --gds-bar:#858e9d; --gds-value:#e4e7ee; --gds-symbol:#75d6c3; --gds-tab:#91b8ff; --gds-effect:#f0b36b; --gds-punctuation:#aeb5c2; }
   .workspace-name, .storage-switch button, .inspector-tabs button, .saved-state, .preview-state, .language-chip, .file-items, .file-subtitle, .inspector-content, .drive-scope-note { color: #aeb5c2; }
+  .drive-overwrite-note { background: #382f1c; color: #f0d18c; }
   .tabs, .score-pane, .statusbar { background: #1e2127; }
   .pane-heading, .file-list, .inspector, .tabs, .tab, .toolbar, .diagnostics { border-color: #3a3f4a; }
   .quiet-button, .pane-heading button, .inspector-field select { background: #2e333d; color: #e4e7ee; border-color: #454c59; }

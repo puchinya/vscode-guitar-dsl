@@ -77,7 +77,8 @@ The shared settings sections consume a plain source snapshot and return display 
 - Local documents and Drive documents remain separate identities even when names match. Switching the file-list storage source changes only the list, not open tabs.
 - The Drive adapter keeps account-scoped metadata and open-tab sessions separate and uses only explicitly authorized files. Switching or disconnecting accounts retains each account's open tabs and drafts; Drive writes are enabled only when the connected account owns the active Drive tab. OAuth access tokens remain in memory. The selected folder ID is configuration, not a credential.
 - Opening a restored document compares its current source and revision with the last committed record. A recovered draft is shown as a local draft until a successful local or Drive commit advances that saved baseline.
-- Drive update performs a preflight read of the last-seen remote version and returns an observed mismatch as a conflict. The read and upload PATCH are separate requests; server-enforced conditional-write behavior for this Drive v3 route is not established, so a concurrent update between them remains an unresolved race.
+- A normal Drive save updates the existing `fileId` with media PATCH. Before the PATCH, the adapter compares `version`, `modifiedTime`, and `headRevisionId` with the last-read values; a mismatch returns without writing. Saves are serialized by `{accountId, fileId}` in this app instance. After PATCH, the host reads the source back before committing the remote baseline. A network-unknown PATCH is reconciled with one readback; an unresolved result or HTTP 401/403/429/5xx keeps the draft and is never automatically resent.
+- A live Google OAuth/Drive test on 2026-11-14 could not read ETag from metadata or `alt=media`, so the probe did not send `If-Match`. This does not block normal saves: the app does not treat ETag as the concurrency guarantee. GET→PATCH remains non-atomic, and another device's write in that interval may be overwritten. This residual race is accepted by the Issue #166 Architecture Decision Addendum (`6860479905`) and is disclosed in the Drive UI and Help.
 
 ### Google Drive transfer protocol
 
@@ -109,7 +110,7 @@ The PDF package consumes the common score-page SVG output and returns bytes. Bro
 | OAuth access token | In-memory auth adapter | Authorized Drive requests only |
 | PDF bytes | `packages/pdf` | VS Code save adapter or browser Blob download |
 
-The local source buffer is the only editable source. A Drive-backed tab also keeps a recoverable local draft, while remote version metadata remains separate from that draft. A successful save advances the remote version only after the remote write succeeds. A failed write leaves both the last-known remote version and local draft available for explicit conflict handling.
+The local source buffer is the only editable source. A Drive-backed tab also keeps a recoverable local draft, while remote version metadata remains separate from that draft. A verified save advances the remote version only after readback matches the submitted source. A failed or unresolved write leaves the local draft available; an unresolved result does not silently advance the known remote baseline.
 
 ## Failure handling
 
@@ -117,7 +118,8 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 - IndexedDB errors do not clear the in-memory source. The UI reports unsaved state and enables file download.
 - A stale change set or mismatched document ID is rejected before applying any source edit. One rejected operation cannot partially modify the document.
 - Drive authentication, permission, rate-limit, network, and server failures retain local source and drafts. The UI reports the operation that failed and exposes explicit retry where safe.
-- An observed Drive version conflict offers reload, save as a separate file, or cancel. Because the Drive v3 conditional-write guarantee is unverified, the current implementation does not prove the contract's no-destructive-overwrite behavior for a concurrent update between the preflight read and PATCH; keep this delivery blocked until the API behavior is established or the contract is revised.
+- An observed Drive version conflict offers reload, save as a separate file, or cancel and sends no PATCH. A concurrent update after preflight is an accepted residual race; the UI and Help disclose that another device's nearly simultaneous write may be overwritten.
+- A network failure or malformed PATCH response is followed by one Drive readback. If that readback matches the submitted source, the write is verified; otherwise the app keeps the draft, reports an unconfirmed outcome, and does not retry automatically. HTTP 401/403/429/5xx also keep the draft and never trigger an automatic write retry.
 - Conflict reload and save-as capture the tab identity, source, and revision before their asynchronous Drive requests. Before applying a response, the host checks that the same tab still has that snapshot. A newer edit remains a local draft; reload asks the user to choose again, while a save-as upload opens the submitted snapshot separately and leaves the newer edit in its original tab.
 - Transfer recovery is keyed by account and returned Drive file ID. Upload success is not enough to delete the local original; remote readback and validation are required.
 - Preview and Inspector audio share an exclusive lease. The Inspector's fallback completion timer uses playback duration in seconds and playback speed, then stops the audio and releases the Preview lock at natural completion. On view disposal, document switch, or host shutdown, listeners and audio resources are released and outstanding operations cannot mutate a newer document revision.
@@ -129,7 +131,7 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 - **React/Vue, Monaco, or CodeMirror:** rejected by the contract. A native `textarea` provides the browser's IME, selection, and undo behavior while a separate layer supplies GuitarDSL highlighting.
 - **A second compiler, score model, play-order engine, or renderer:** rejected because it would allow the VS Code and Web products to interpret the same source differently.
 - **OAuth refresh-token persistence or full Drive scope:** rejected. The browser token model and `drive.file` keep credentials short-lived and access limited to user-authorized content.
-- **Automatic bidirectional sync or implicit move:** rejected. Local and Drive identities are distinct; Drive writes and local-to-Drive moves are explicit and conflict checked.
+- **Automatic bidirectional sync or implicit move:** rejected. Local and Drive identities are distinct; Drive writes and local-to-Drive moves are explicit. Drive preflight detects known version changes, while the accepted GET→PATCH race remains possible across devices.
 - **A Node-only shared PDF implementation in browser code:** rejected. The common API exchanges byte arrays and SVG page inputs, while host bundling is verified independently.
 
 ## Verification strategy

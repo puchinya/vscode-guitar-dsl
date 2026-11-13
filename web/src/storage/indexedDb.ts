@@ -239,7 +239,7 @@ export const indexedDb = {
     return true;
   },
 
-  async commitDriveDocument(document: StoredDocument, snapshot: DocumentSnapshot): Promise<boolean> {
+  async commitDriveDocument(document: StoredDocument, snapshot: DocumentSnapshot, preserveNewerDraft = false): Promise<boolean> {
     if (document.identity.storage !== 'drive' || snapshot.identity.storage !== 'drive'
       || !sameIdentity(document.identity, snapshot.identity)) throw new TypeError('Drive document identities do not match');
     const db = await openDatabase();
@@ -248,14 +248,15 @@ export const indexedDb = {
     const key = identityKey(document.identity, document.accountId);
     const current = await idbRequest<StoredDocument & { key: string } | undefined>(tx.objectStore(DOCUMENTS).get(key));
     const draft = await idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key));
-    if (draft && (draft.revision > snapshot.revision || draft.revision === snapshot.revision && draft.source !== snapshot.source)
-      || current && current.revision > snapshot.revision) {
+    const newerDraft = !!draft && (draft.revision > snapshot.revision
+      || draft.revision === snapshot.revision && draft.source !== snapshot.source);
+    if ((newerDraft && !preserveNewerDraft) || current && current.revision > snapshot.revision) {
       tx.abort();
       await done.catch(() => undefined);
       return false;
     }
     tx.objectStore(DOCUMENTS).put(record(document));
-    tx.objectStore(DRAFTS).delete(key);
+    if (!newerDraft) tx.objectStore(DRAFTS).delete(key);
     await done;
     return true;
   },
