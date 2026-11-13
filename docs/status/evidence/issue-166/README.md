@@ -4,7 +4,7 @@
 
 ![GuitarDSL Web SPA desktop workspace](web-spa-en-desktop.png)
 
-Captured from the Chromium production E2E suite at 1600 × 1000 CSS pixels on macOS arm64. The image shows the local-first workspace, syntax-highlighted source editor, rendered score, playback controls, and the Progression Inspector with candidate audition controls. The tests also verify that highlighting leaves the native textarea as the source buffer, local edits preserve imported CRLF line endings, the initial local file appears once, all four compact Inspector tabs fit without horizontal scrolling, and Preview playback remains locked during an Inspector audition.
+Captured from the Chromium production E2E suite at 1600 × 1000 CSS pixels on macOS arm64 on 2026-11-13 at PR head `c2a5f25`. The image shows the local-first workspace, syntax-highlighted source editor, rendered score, playback controls, and the Progression Inspector with candidate audition controls. The tests also verify that highlighting leaves the native textarea as the source buffer, local edits preserve imported CRLF line endings, the initial local file appears once, all four compact Inspector tabs fit without horizontal scrolling, and Preview playback remains locked during an Inspector audition. Additional E2E cases cover shared variable editing and reference navigation, the shared chord diagram editor, per-tab Drive save state, and stale IndexedDB writers.
 
 Recreate with:
 
