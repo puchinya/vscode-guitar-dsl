@@ -25,6 +25,7 @@ export interface StoredDocument {
   pendingDriveFolderId?: string;
 }
 
+export interface PersistenceBase { revision: number; source: string }
 interface DraftRecord extends DocumentSnapshot { key: string; updatedAt: number }
 interface KeyValueRecord<T = unknown> { key: string; value: T }
 
@@ -150,7 +151,7 @@ export const indexedDb = {
     return document;
   },
 
-  async saveDraft(snapshot: DocumentSnapshot, accountId?: string): Promise<boolean> {
+  async saveDraft(snapshot: DocumentSnapshot, accountId?: string, expected?: PersistenceBase): Promise<boolean> {
     const db = await openDatabase();
     const tx = db.transaction([DOCUMENTS, DRAFTS], 'readwrite');
     const done = transactionDone(tx);
@@ -163,8 +164,12 @@ export const indexedDb = {
       return false;
     }
     const existingDraft = await idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key));
-    if (snapshot.revision < Math.max(row.revision, existingDraft?.revision ?? -1)
-      || existingDraft?.revision === snapshot.revision && existingDraft.source !== snapshot.source) {
+    // CAS against the latest committed document OR draft, not merely its edit revision.
+    // Separate browser tabs can independently reach the same (or a larger) edit revision.
+    const current = existingDraft && existingDraft.revision >= row.revision ? existingDraft : row;
+    if (expected && (current.revision !== expected.revision || current.source !== expected.source)
+      || snapshot.revision < current.revision
+      || snapshot.revision === current.revision && snapshot.source !== current.source) {
       tx.abort();
       await done.catch(() => undefined);
       return false;
@@ -174,7 +179,7 @@ export const indexedDb = {
     return true;
   },
 
-  async commitLocal(snapshot: DocumentSnapshot, name?: string): Promise<StoredDocument | undefined> {
+  async commitLocal(snapshot: DocumentSnapshot, name?: string, expected?: PersistenceBase): Promise<StoredDocument | undefined> {
     if (snapshot.identity.storage !== 'local') return undefined;
     const db = await openDatabase();
     const tx = db.transaction([DOCUMENTS, DRAFTS], 'readwrite');
@@ -183,8 +188,10 @@ export const indexedDb = {
     const store = tx.objectStore(DOCUMENTS);
     const saved = await idbRequest<StoredDocument & { key: string } | undefined>(store.get(key));
     const draft = await idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key));
-    if (!saved || snapshot.revision < Math.max(saved.revision, draft?.revision ?? -1)
-      || draft?.revision === snapshot.revision && draft.source !== snapshot.source) {
+    const current = draft && saved && draft.revision >= saved.revision ? draft : saved;
+    if (!current || expected && (current.revision !== expected.revision || current.source !== expected.source)
+      || snapshot.revision < current.revision
+      || snapshot.revision === current.revision && snapshot.source !== current.source) {
       tx.abort();
       await done.catch(() => undefined);
       return undefined;
