@@ -166,3 +166,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] { color-scheme: dark; color: #e4e7ee; background: #1f2228; }
 .app-shell[data-theme="light"] .editor-surface { background: #fff; }
 @media (max-width: 680px) { .app-shell[data-theme="dark"] .topbar, .app-shell[data-theme="dark"] .toolbar, .app-shell[data-theme="dark"] .source-pane, .app-shell[data-theme="dark"] .editor-surface { background: #242830; color: #e4e7ee; } }
+
+
+/* Shared Inspector variables UI: matches the existing VS Code control structure. */
+.variable-list, .variable-usage-list { display: grid; gap: 4px; margin: 7px 0; padding: 0; list-style: none; max-height: 165px; overflow-y: auto; }
+.variable-list button, .variable-usage-list button { width: 100%; padding: 6px 7px; border: 1px solid transparent; border-radius: 5px; text-align: left; background: transparent; color: inherit; cursor: pointer; }
+.variable-list button[aria-pressed="true"] { border-color: #7687e9; background: #e9edff; color: #2b3ea5; }
+.variable-list button:focus-visible, .variable-usage-list button:focus-visible { outline: 2px solid #5364d9; }
+.variable-form { display: grid; gap: 10px; padding-top: 8px; }
+.variable-form label { display: grid; gap: 4px; color: inherit; }
+.variable-form input, .variable-form textarea, .variable-form select {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 7px;
+  border: 1px solid #ccd2dd; border-radius: 5px; font: inherit; background: #fff; color: #20242b;
+}
+.variable-meta { margin: 6px 0; overflow-wrap: anywhere; font-size: 12px; }
+.variable-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.variable-actions button { padding: 6px 9px; border: 1px solid #cbd1df; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.variable-actions button:disabled { cursor: default; opacity: .5; }
+#variables-error { color: #af2634; font-size: 12px; }
+.web-chord-editor { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
+  padding: 0; border: 1px solid #aeb6c5; border-radius: 10px; box-shadow: 0 16px 70px #0005; overflow: auto; }
+.web-chord-editor::backdrop { background: #1014229c; }
+.app-shell[data-theme="dark"] .variable-form input, .app-shell[data-theme="dark"] .variable-form textarea,
+.app-shell[data-theme="dark"] .variable-form select { background: #262c37; color: #e4e7ee; border-color: #58616f; }
+.app-shell[data-theme="dark"] .variable-list button[aria-pressed="true"] { background: #343b6f; color: #e8eaff; }
