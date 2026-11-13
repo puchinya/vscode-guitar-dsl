@@ -805,9 +805,14 @@ async function openDocument(documentRow: StoredDocument, source = documentRow.so
 
 async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   try {
-    const documentRow = await indexedDb.getDocument(identity);
+    const [documentRow, saved] = await Promise.all([
+      indexedDb.getDocument(identity), indexedDb.getSavedDocument(identity)
+    ]);
     if (!documentRow) throw new DOMException('Document was deleted', 'NotFoundError');
-    await openDocument(documentRow, documentRow.source);
+    const opened = await openDocument(documentRow, documentRow.source);
+    if (saved && (saved.revision !== documentRow.revision || saved.source !== documentRow.source)) {
+      opened.saveStatus = 'draft'; renderStorageStatus();
+    }
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
@@ -943,6 +948,8 @@ async function handleDriveConflict(tab: OpenTab, latest: DriveFile): Promise<voi
       });
       if (!committed) throw new Error('A newer local draft exists. It was kept.');
       tab.document = updated; tab.source = remote.source; tab.revision = updated.revision;
+      tab.persistedBase = { revision: updated.revision, source: updated.source };
+      tab.saveStatus = 'drive-saved';
       editor.value = tab.source; renderAll();
       showMessage(state.locale === 'ja' ? 'Drive の最新内容を読み込みました。' : 'Reloaded the latest Drive version.');
     } catch (error) { showMessage(shortError(error), 'error'); }
@@ -985,9 +992,13 @@ async function saveDriveCopy(tab: OpenTab, folderId?: string): Promise<void> {
   const currentIndex = state.tabs.indexOf(tab);
   const existing = state.tabs.find(other => sameTabIdentity(other, doc.identity, state.account!.accountId));
   if (existing) {
-    existing.source = tab.source; existing.revision = tab.revision; existing.document = doc; state.tabs.splice(currentIndex, 1); state.activeKey = tabKey(existing);
+    existing.source = verified.source; existing.revision = doc.revision; existing.document = doc;
+    existing.persistedBase = { revision: doc.revision, source: doc.source }; existing.saveStatus = 'drive-saved';
+    state.tabs.splice(currentIndex, 1); state.activeKey = tabKey(existing);
   } else {
-    tab.document = doc; tab.accountId = state.account.accountId; tab.source = verified.source; state.activeKey = tabKey(tab);
+    tab.document = doc; tab.accountId = state.account.accountId; tab.source = verified.source;
+    tab.persistedBase = { revision: doc.revision, source: doc.source }; tab.saveStatus = 'drive-saved';
+    state.activeKey = tabKey(tab);
   }
   renderAll(); await persistSessions();
   showMessage(state.locale === 'ja' ? 'ローカル版を別の Drive ファイルとして保存しました。' : 'Saved the local version as a new Drive file.');
