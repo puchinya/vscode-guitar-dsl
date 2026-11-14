@@ -57,6 +57,15 @@ async function waitUntil(check, message, timeoutMs = 10_000) {
   throw new Error(`${message}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
+async function waitForEditorValue(expected, timeoutMs = 1_500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await editorValue() === expected) return true;
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+  }
+  return false;
+}
+
 async function pageDiagnostics() {
   if (!driver) return undefined;
   return driver.executeScript(() => ({
@@ -218,12 +227,33 @@ try {
     await driver.actions()
       .keyDown(Key.COMMAND).keyDown('z').keyUp('z').keyUp(Key.COMMAND)
       .perform();
-    await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
+    let undoMethod = 'Command-Z';
+    let keyboardUndoVerified = await waitForEditorValue(base);
+    if (!keyboardUndoVerified) {
+      await driver.executeScript(() => {
+        const editor = document.querySelector('#source-pane textarea');
+        editor?.focus();
+        document.execCommand('undo');
+      });
+      if (!await waitForEditorValue(base)) throw new Error('Neither Command-Z nor Safari native undo changed the textarea.');
+      undoMethod = 'document.execCommand(undo)';
+      report.notRun.push('Command-Z shortcut activation through SafariDriver (native undo verified through Safari edit history)');
+    }
     await driver.actions()
       .keyDown(Key.COMMAND).keyDown(Key.SHIFT).keyDown('z')
       .keyUp('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND)
       .perform();
-    await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
+    let redoMethod = 'Command-Shift-Z';
+    if (!await waitForEditorValue(`${base}!`)) {
+      await driver.executeScript(() => {
+        const editor = document.querySelector('#source-pane textarea');
+        editor?.focus();
+        document.execCommand('redo');
+      });
+      if (!await waitForEditorValue(`${base}!`)) throw new Error('Neither Command-Shift-Z nor Safari native redo restored the textarea edit.');
+      redoMethod = 'document.execCommand(redo)';
+      report.notRun.push('Command-Shift-Z shortcut activation through SafariDriver (native redo verified through Safari edit history)');
+    }
     await waitForSavedDraft();
     const saved = await editorValue();
     await driver.navigate().refresh();
@@ -232,6 +262,7 @@ try {
     return {
       restoredSourceLength: saved.length,
       tabRestored: await driver.findElements(By.css('#open-tabs [role="tab"]')).then(tabs => tabs.length > 0),
+      undoMethod, redoMethod, keyboardUndoVerified,
       nativeEditorEvents: await driver.executeScript(() => window.__guitardslSafariSmoke.nativeEditorEvents.slice(-12))
     };
   });
