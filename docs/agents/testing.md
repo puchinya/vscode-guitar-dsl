@@ -116,7 +116,7 @@ npm run test:safari --workspace web
 - `test:safari` is available only on macOS and automates the installed Safari with Apple's `/usr/bin/safaridriver` through Selenium WebDriver. Enable remote automation once with `safaridriver --enable`; the CI runner performs this setup itself. Safari permits one WebDriver session at a time, so the smoke cases run sequentially.
 - The Safari smoke uses a local Vite server and mocked Google OAuth, Picker, and Drive API responses. It does not use production credentials or Drive data. Selenium verifies the page and editor state; native text and Command-Z/Command-Shift-Z input is sent to the Safari process through macOS System Events so Safari's own textarea edit history is exercised. The macOS CI runner must permit this scoped Safari keyboard automation. The CI step is capped at five minutes and logs its startup stages. It writes a machine-readable report containing macOS/Safari versions and check results; CI uploads the report and any failure screenshot.
 - Firefox is an optional regression suite, not a required browser. Run it with `npm run test:e2e:firefox --workspace web`; it does not satisfy WebKit or Safari coverage.
-- A successful WebKit or Firefox run cannot substitute for the real SafariDriver gate. If SafariDriver cannot be enabled, report the Safari result as BLOCKED/NOT RUN.
+- The browser workflow runs for pull requests and can also be started manually from GitHub Actions. A successful WebKit or Firefox run cannot substitute for the real SafariDriver gate. If SafariDriver cannot be enabled, report the Safari result as BLOCKED/NOT RUN.
 
 ### 4. Help Generation and Sync
 ```bash
