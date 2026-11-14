@@ -28,7 +28,10 @@
       "out"
     ],
     "required_checks": [
-      "agent-required-check"
+      "agent-required-check",
+      "web-spa-chromium",
+      "web-spa-webkit",
+      "safari-smoke"
     ]
   },
   "milestones": {

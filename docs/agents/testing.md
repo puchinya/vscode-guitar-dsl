@@ -100,6 +100,24 @@ npm test
 ```
 - Run `npm test` outside the command sandbox because it launches the VS Code E2E suite.
 
+### Web SPA browser verification
+
+The required pull-request browser checks are independent: `web-spa-chromium`, `web-spa-webkit`, and `safari-smoke`. They run for every pull request because all three are protected status checks.
+
+```bash
+npm run build:web
+npm run test:unit --workspace web
+npm run test:e2e --workspace web -- --project=chromium
+npm run test:e2e --workspace web -- --project=webkit
+npm run test:safari --workspace web
+```
+
+- Chromium runs Playwright on Linux. WebKit runs Playwright on macOS and is not Apple Safari.
+- `test:safari` is available only on macOS and automates the installed Safari with Apple's `/usr/bin/safaridriver` through Selenium WebDriver. Enable remote automation once with `safaridriver --enable`; the CI runner performs this setup itself. Safari permits one WebDriver session at a time, so the smoke cases run sequentially.
+- The Safari smoke uses a local Vite server and mocked Google OAuth, Picker, and Drive API responses. It does not use production credentials or Drive data. It tests trusted input and local create/edit/draft/refresh/restore, but it does not automate or gate on native Undo/Redo or OS-level file persistence. The macOS Playwright WebKit E2E suite tests native editor Undo and Redo on each pull request. Safari smoke verifies the PDF Blob `%PDF-` signature and page count, plus invocation of the download anchor; it never writes to or renames the ordinary Downloads directory. The Safari report records native Safari UI Undo/Redo and actual file saving as NOT RUN; separate normal-window Safari evidence is not required for Issue #166 acceptance. The Safari smoke uses no live Google credentials or Drive data. A parent supervisor writes a `RUNNING` JSON report before starting the Safari worker, enforces an absolute runner deadline separately from the per-command deadline, records each check and WebDriver command, and reports `SAFARI_RUNNER_TIMEOUT` or `WEBDRIVER_HANG` with the active step and OS/Safari versions. The `if: always()` artifact upload retains machine-readable evidence. The smoke does not send keys through System Events or `osascript`. The CI step is capped at five minutes. The report and any failure screenshot are uploaded as artifacts.
+- Firefox is an optional regression suite, not a required browser. Run it with `npm run test:e2e:firefox --workspace web`; it does not satisfy WebKit or Safari coverage.
+- The browser and `agent-required-check` workflows run for pull requests and can also be started manually from GitHub Actions. A successful WebKit or Firefox run cannot substitute for the real SafariDriver gate. If SafariDriver cannot be enabled, report the Safari result as BLOCKED/NOT RUN.
+
 ### 4. Help Generation and Sync
 ```bash
 npm run generate:help   # regenerate media/help/guitardsl-help.{ja,en}.md (runs automatically as precompile)
