@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Safari native textarea WebDriver probe</title>
+  </head>
+  <body>
+    <label for="native-textarea-probe">Native textarea probe</label>
+    <textarea id="native-textarea-probe">seed</textarea>
+    <script>
+      const editor = document.querySelector('#native-textarea-probe');
+      window.__nativeTextareaProbe = { events: [] };
+      for (const type of ['beforeinput', 'input']) {
+        editor.addEventListener(type, event => window.__nativeTextareaProbe.events.push({
+          type,
+          inputType: event.inputType,
+          data: event.data,
+          trusted: event.isTrusted
+        }), true);
+      }
+    </script>
+  </body>
+</html>
