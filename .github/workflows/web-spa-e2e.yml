@@ -9,6 +9,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/web-spa-e2e.yml"
+      - ".github/workflows/cloudflare-pages.yml"
 
 permissions:
   contents: read
