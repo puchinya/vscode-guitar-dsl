@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "guitardsl",
+  "compatibility_date": "2026-11-14",
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "guitardsl.app",
+      "custom_domain": true,
+      "previews_enabled": true
+    }
+  ],
+  "previews": {}
+}
