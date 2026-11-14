@@ -3,8 +3,16 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-14
+- **最終更新日**: 2026-11-15
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+
+## Issue #172: Web Compact IDE
+
+- **状態**: Contractに沿った compact workspace を実装し、PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) でレビュー中。ソース編集を CodeMirror 6 に置き換え、Source/Preview、Explorer、Inspector、Problems の配置、4 splitter、狭幅時のパネル折りたたみ、IndexedDBレイアウト保存、SVGアイコン、Help/Settings/Google Accountメニューを追加した。最新レビューのレイアウト、Explorerルート、各コンテキストメニュー、編集publishに関する指摘を反映し、アカウント別Driveタブ、編集source/revision、CRLF、IME、タブ別Undo履歴を保持する。
+- **Contract**: Issue #172 comment `6876057443`、SHA-256 `dc51abf1cb7492d7ea5fef24675858a0f6cf2fd498e38906ed4e0fbe1aa49d21`。`verify-implementation-contract 172` で照合済み。
+- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、Explorer/タブ/Problems/Previewメニュー、Source-only/Score-only、およびroot・entry・view controls・Problems columns・header actionsのDOMRect計測を更新し、4つの提案SVGと照合。
+- **ブラウザー検証**: Playwright Chromium 48/48 PASS、Playwright WebKit 48/48 PASS、SafariDriver 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
+- **最終ゲート**: `npm test`（VS Code E2E 131 passing / 6 pending、Web Playwright 96 passing を含む）、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合はPASS。Web buildは500 kB超のchunk警告、prepublishはwasm-bindgenのprebuilt取得に失敗してcargo経由へfallbackする警告とextension bundleのサイズ警告があったが成功した。`git diff --check` と最新HEADに結び付くセルフレビュー、GitHub Required Checksはhandoff前に再確認し、その状況は[PR #173](https://github.com/puchinya/vscode-guitar-dsl/pull/173)を参照。
 
 ## Issue #166: Web SPA 版 GuitarDSL
 

@@ -1,4 +1,5 @@
 import { documentTabKey, sameDocumentIdentity, type DocumentIdentity } from '@guitardsl/document';
+import { createWebIcon } from '../icons';
 
 export interface DocumentTabView {
   document: { identity: DocumentIdentity; name: string };
@@ -31,6 +32,7 @@ export function renderDocumentTabs<T extends DocumentTabView>(
     const key = tabKey(tab);
     const wrapper = document.createElement('div');
     wrapper.className = `tab${key === activeKey ? ' active' : ''}`;
+    wrapper.dataset.documentTabKey = key;
     const button = document.createElement('button');
     button.type = 'button';
     button.setAttribute('role', 'tab');
@@ -42,7 +44,8 @@ export function renderDocumentTabs<T extends DocumentTabView>(
     close.type = 'button';
     close.className = 'tab-close';
     close.setAttribute('aria-label', `${closeLabel} ${tab.document.name}`);
-    close.textContent = '×';
+    close.title = `${closeLabel} ${tab.document.name}`;
+    close.append(createWebIcon('close'));
     close.addEventListener('click', event => {
       event.stopPropagation();
       void onClose(tab);

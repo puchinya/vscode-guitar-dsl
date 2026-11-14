@@ -2,7 +2,36 @@ export const WEB_PREVIEW_BRIDGE = `window.guitarDslHost = {
   postMessage: message => window.parent.postMessage({ channel: 'guitardsl-preview', message }, '*'),
   getState: () => null,
   setState: () => {}
-};`;
+};
+const postContextMenu = (event, keyboard = false) => {
+  const identity = document.body.dataset;
+  const element = event.target instanceof Element ? event.target : document.activeElement;
+  const target = element instanceof Element ? element.closest('[data-visual-binding]') : null;
+  const focusedBindingId = target?.getAttribute('data-visual-binding') || '';
+  const visualElementId = focusedBindingId || (keyboard && document.activeElement === document.body ? lastVisualElementId : '');
+  const rect = keyboard && element instanceof Element ? element.getBoundingClientRect() : null;
+  window.parent.postMessage({ channel: 'guitardsl-preview', message: {
+    command: 'contextMenu', clientX: rect ? rect.left + 12 : event.clientX, clientY: rect ? rect.bottom : event.clientY,
+    visualElementId,
+    documentUri: identity.previewDocumentUri || '',
+    documentVersion: Number(identity.previewDocumentVersion),
+    previewGeneration: Number(identity.previewGeneration)
+  } }, '*');
+};
+let lastVisualElementId = '';
+document.addEventListener('click', event => {
+  const element = event.target instanceof Element ? event.target : null;
+  lastVisualElementId = element?.closest('[data-visual-binding]')?.getAttribute('data-visual-binding') || '';
+});
+document.addEventListener('contextmenu', event => {
+  event.preventDefault();
+  postContextMenu(event);
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  event.preventDefault();
+  postContextMenu(event, true);
+});`;
 
 export const WEB_PREVIEW_STYLE = `
   :root { color-scheme: light; --vscode-editorWidget-background:#fff; --vscode-editorWidget-border:#dfe2e7;

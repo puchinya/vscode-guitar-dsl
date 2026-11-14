@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { planBeginnerTransform } from '@guitardsl/core/beginnerMode';
 import { planCapoTransform } from '@guitardsl/core/capo';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 interface DriveSeed {
@@ -14,11 +14,30 @@ interface DriveSeed {
   folderId?: string;
 }
 
+async function readEditorSource(page: Page): Promise<string> {
+  return page.evaluate(() => (window as Window & { __guitarDslReadSource?: () => string }).__guitarDslReadSource?.() ?? '');
+}
+
+async function expectEditorSource(page: Page, expected: string | RegExp): Promise<void> {
+  if (typeof expected === 'string') await expect.poll(() => readEditorSource(page)).toBe(expected);
+  else await expect.poll(() => readEditorSource(page)).toMatch(expected);
+}
+
+async function performAccountAction(page: Page): Promise<void> {
+  const control = page.locator('#connect-drive');
+  const action = (await control.textContent())?.trim();
+  if (!action) throw new Error('Google Account control did not expose its current action.');
+  await control.click();
+  await page.getByRole('menuitem', { name: action, exact: true }).click();
+  await expect(control).toHaveText(action === 'Disconnect' ? 'Connect Drive' : 'Disconnect');
+}
+
 interface DriveBrowserMockOptions {
   pickerSelection?: { id: string; name: string };
   holdPickerSelection?: boolean;
   holdFileReadId?: string;
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+  unauthorizedList?: boolean;
 }
 
 async function installDriveBrowserMock(page: Page, accountSequence: string[], options: DriveBrowserMockOptions = {}): Promise<{
@@ -110,7 +129,10 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     if (url.pathname === '/drive/v3/about') {
       return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
     }
-    if (url.pathname === '/drive/v3/files') return route.fulfill({ headers, json: { files: [] } });
+    if (url.pathname === '/drive/v3/files') {
+      if (options.unauthorizedList) return route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
+      return route.fulfill({ headers, json: { files: [] } });
+    }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
       return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
     }
@@ -344,33 +366,544 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await mkdir(dirname(evidencePath), { recursive: true });
     await page.screenshot({ path: evidencePath, fullPage: false });
   }
+  if (process.env.GUITARDSL_CAPTURE_ISSUE172 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-172');
+    await mkdir(evidenceDir, { recursive: true });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const layouts: Record<string, unknown> = {};
+    const capture = async (name: string): Promise<void> => {
+      await page.screenshot({ path: resolve(evidenceDir, name), fullPage: false });
+      layouts[name] = await page.evaluate(() => {
+        const selectors = {
+          header: '.topbar', accountAction: '#connect-drive', helpAction: '#help-button', settingsAction: '#settings-button',
+          activityBar: '.activity-bar', explorer: '.file-list', explorerSplitter: '#explorer-splitter',
+          localRoot: '[data-storage-section="local"] .storage-root-row', localRootLabel: '#storage-local',
+          localActions: '#file-actions', localFile: '#file-items .file-item',
+          driveRoot: '[data-storage-section="drive"] .storage-root-row', driveRootLabel: '#storage-drive',
+          driveActions: '#drive-file-actions', driveFile: '#drive-file-items .file-item',
+          tabs: '.tabs', tabViewControls: '.view-mode-controls', viewSource: '#view-source',
+          viewSplit: '#view-split', viewScore: '#view-score', source: '#source-pane', centerSplitter: '#center-splitter', score: '#score-pane',
+          inspectorSplitter: '#inspector-splitter', inspector: '.inspector', problemsSplitter: '#problems-splitter',
+          problems: '#problems-panel', toolWindowBar: '.tool-window-bar', status: '.statusbar'
+        };
+        const rects = Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
+          const element = document.querySelector(selector);
+          if (!element) return [name, null];
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return [name, Object.fromEntries(Object.entries({ x, y, width, height }).map(([key, value]) => [key, Math.round(value * 100) / 100]))];
+        }));
+        const problemsColumns = Array.from(document.querySelector('.problem-row')?.children ?? []).map(element => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { className: (element as HTMLElement).className, x, y, width, height };
+        });
+        const topActions = ['#save-document', '#download-pdf', '#connect-drive', '#help-button', '#settings-button'].map(selector => {
+          const element = document.querySelector(selector)!;
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { id: element.id, x, y, width, height };
+        });
+        const fileEntries = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector)).map(element => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { name: element.textContent?.trim(), x, y, width, height };
+        });
+        const splitters = Array.from(document.querySelectorAll<HTMLElement>('[role="separator"]')).map(element => ({
+          name: element.getAttribute('aria-label'), orientation: element.getAttribute('aria-orientation'),
+          min: element.getAttribute('aria-valuemin'), max: element.getAttribute('aria-valuemax'), now: element.getAttribute('aria-valuenow')
+        }));
+        const modes = Array.from(document.querySelectorAll<HTMLButtonElement>('.view-mode-button')).map(button => ({
+          label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed')
+        }));
+        const menu = document.querySelector<HTMLElement>('#context-menu:not([hidden]), #settings-menu:not([hidden])');
+        const menuItems = menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>('button')).map(button => ({
+          label: button.textContent, disabled: button.disabled,
+          rect: (() => { const { x, y, width, height } = button.getBoundingClientRect(); return { x, y, width, height }; })()
+        })) : [];
+        return { viewport: { width: innerWidth, height: innerHeight }, rects, problemsColumns, topActions,
+          localFileEntries: fileEntries('#file-items .file-item'), driveFileEntries: fileEntries('#drive-file-items .file-item'),
+          splitters, modes, menu: menu ? (() => { const { x, y, width, height } = menu.getBoundingClientRect(); return { x, y, width, height }; })() : null,
+          menuItems,
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth };
+      });
+    };
+    const chooseSetting = async (locale: 'en' | 'ja', item: string): Promise<void> => {
+      await page.getByRole('button', { name: locale === 'ja' ? '設定' : 'Settings' }).click();
+      await page.getByRole('menuitemradio', { name: item }).click();
+    };
+    for (const locale of ['en', 'ja'] as const) {
+      if (locale === 'ja') await chooseSetting('en', 'Language: 日本語');
+      for (const theme of ['light', 'dark'] as const) {
+        const setting = locale === 'ja' ? `テーマ: ${theme === 'light' ? 'ライト' : 'ダーク'}` : `Theme: ${theme === 'light' ? 'Light' : 'Dark'}`;
+        await chooseSetting(locale, setting);
+        await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', theme);
+        await capture(`desktop-1600x900-${locale}-${theme}.png`);
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await capture('desktop-1280x800-ja-dark.png');
+
+    await page.getByRole('button', { name: '設定' }).click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    await capture('menu-settings-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.locator('#storage-local').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '新しい楽譜' })).toBeVisible();
+    await capture('menu-local-root-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.locator('#storage-drive').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Drive に接続' })).toBeVisible();
+    await capture('menu-drive-root-ja.png');
+    await page.keyboard.press('Escape');
+
+    const file = page.locator('#file-items .file-item').first();
+    await expect(file).toBeVisible();
+    await file.click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await capture('menu-explorer-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'このタブを開く' })).toBeVisible();
+    await capture('menu-tab-ja.png');
+    await page.keyboard.press('Escape');
+
+    const editorName = 'GuitarDSL ソースエディター';
+    await page.getByRole('textbox', { name: editorName }).fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+    const problem = page.locator('#diagnostics .problem-row').first();
+    await expect(problem).toBeVisible();
+    await capture('problems-ja.png');
+    await problem.click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await capture('menu-problems-ja.png');
+    await page.keyboard.press('Escape');
+
+    const score = page.frameLocator('#score-frame').locator('.spread-sheet svg').first();
+    await score.click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'PDF をダウンロード' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'ソース位置へ移動' })).toBeDisabled();
+    await capture('menu-preview-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('textbox', { name: editorName }).fill('title: Preview context\n\n[Verse]\nC | G | Am | F |\n');
+    await expect.poll(async () => {
+      const revision = await page.evaluate(() => (window as Window & {
+        __guitarDslReadTabs?: () => Array<{ revision: number }>;
+      }).__guitarDslReadTabs?.()[0]?.revision);
+      return await page.frameLocator('#score-frame').locator('body').getAttribute('data-preview-document-version') === String(revision);
+    }).toBe(true);
+    const bound = page.frameLocator('#score-frame').locator('.spread-sheet [data-visual-binding]').first();
+    await expect(bound).toBeVisible();
+    await bound.click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'ソース位置へ移動' })).toBeEnabled();
+    await capture('menu-preview-binding-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'ソース表示' }).click();
+    await capture('source-only-ja-dark.png');
+    await page.getByRole('button', { name: '譜面表示' }).click();
+    await capture('score-only-ja-dark.png');
+    await writeFile(resolve(evidenceDir, 'layout-domrect.json'), `${JSON.stringify(layouts, null, 2)}\n`, 'utf8');
+  }
 });
 
-test('shows syntax highlighting while keeping the native textarea as the source buffer', async ({ page }) => {
+test('uses CodeMirror for source editing and GuitarDSL syntax highlighting', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const source = 'title: Song\n\n[Verse]\nC | G | Am | F | # comment\n';
   await editor.fill(source);
 
-  const layer = page.locator('.editor-highlight');
+  const layer = page.locator('.cm-content');
   await expect(layer.locator('.gds-key')).toHaveText('title');
   await expect(layer.locator('.gds-section')).toHaveText('[Verse]');
   await expect(layer.locator('.gds-chord')).toHaveText(['C', 'G', 'Am', 'F']);
-  await expect(layer.locator('.gds-comment')).toHaveText('# comment');
-  expect(await layer.evaluate(element => element.textContent)).toBe(source);
-  await expect(editor).toHaveValue(source);
+  await expect.poll(() => layer.locator('.gds-comment').allTextContents().then(parts => parts.join(''))).toBe('# comment');
+  await expectEditorSource(page, source);
 
-  await page.getByLabel('Theme').selectOption('light');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitemradio', { name: 'Theme: Light' }).click();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'light');
   const lightChordColor = await layer.locator('.gds-chord').first().evaluate(element => getComputedStyle(element).color);
-  await page.getByLabel('Theme').selectOption('dark');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitemradio', { name: 'Theme: Dark' }).click();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
   const darkChordColor = await layer.locator('.gds-chord').first().evaluate(element => getComputedStyle(element).color);
   expect(darkChordColor).not.toBe(lightChordColor);
   await editor.fill(Array.from({ length: 80 }, (_, index) => `[Verse${index}]\nC | G |\n`).join(''));
-  await editor.evaluate(element => { (element as HTMLTextAreaElement).scrollTop = 200; });
-  await expect.poll(() => layer.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await page.locator('.cm-scroller').evaluate(element => { element.scrollTop = 200; });
+  await expect.poll(() => page.locator('.cm-scroller').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+});
+
+test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'let riff = e4/8 g a g\n\ntitle: Song\n\n[Verse]\nC | G | Am | F |\n';
+  await editor.fill(source);
+  await expect(page.locator('.cm-lineNumbers .cm-gutterElement:visible').first()).toBeVisible();
+
+  await editor.press('ControlOrMeta+f');
+  const find = page.getByRole('textbox', { name: 'Find' });
+  const replace = page.getByRole('textbox', { name: 'Replace' });
+  await expect(find).toBeVisible();
+  await find.fill('Song');
+  await replace.fill('Track');
+  await page.locator('.cm-search button[name="replaceAll"]').click();
+  await expectEditorSource(page, source.replace('Song', 'Track'));
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, source);
+  const redoShortcut = await page.evaluate(() => /Mac/u.test(navigator.platform) ? 'Meta+Shift+z' : 'Control+y');
+  await editor.press(redoShortcut);
+  await expectEditorSource(page, source.replace('Song', 'Track'));
+  await page.keyboard.press('Escape');
+
+  await editor.fill('let riff = C | G |\n\n');
+  await editor.press('ControlOrMeta+End');
+  await editor.pressSequentially('$');
+  const completion = page.locator('.cm-tooltip-autocomplete [role="option"]').filter({ hasText: '$riff' });
+  await expect(completion).toBeVisible();
+  await completion.click();
+  await expectEditorSource(page, 'let riff = C | G |\n\n$riff');
+
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+  await expect(page.locator('.cm-lintRange-error').first()).toBeVisible();
+});
+
+test('renders the compact workspace geometry and preserves the Preview across view modes', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const bounds = document.querySelector(selector)!.getBoundingClientRect();
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    };
+    return {
+      header: rect('.topbar'), activity: rect('.activity-bar'), explorer: rect('.file-list'),
+      explorerSplitter: rect('#explorer-splitter'), tabs: rect('.tabs'), inspector: rect('.inspector'),
+      source: rect('#source-pane'), viewControls: rect('.view-mode-controls'),
+      localRoot: rect('[data-storage-section="local"] .storage-root-row'),
+      driveRoot: rect('[data-storage-section="drive"] .storage-root-row'),
+      problems: rect('#problems-panel'), toolWindow: rect('.tool-window-bar'), status: rect('.statusbar'),
+      account: rect('#connect-drive'), help: rect('#help-button'), settings: rect('#settings-button')
+    };
+  });
+  expect(geometry.header.height).toBe(40);
+  expect(geometry.activity.width).toBe(40);
+  expect(geometry.explorer.width).toBe(220);
+  expect(geometry.explorerSplitter.width).toBe(6);
+  expect(geometry.tabs.height).toBe(36);
+  expect(geometry.tabs.y).toBe(40);
+  expect(geometry.source.y).toBe(76);
+  expect(geometry.viewControls.y).toBe(40);
+  expect(geometry.viewControls.height).toBe(35); // 36 px tab row minus the 1 px bottom border.
+  expect(geometry.viewControls.x + geometry.viewControls.width).toBe(geometry.tabs.x + geometry.tabs.width);
+  expect(geometry.localRoot.y).toBeLessThan(geometry.driveRoot.y);
+  expect(geometry.account.x).toBeLessThan(geometry.help.x);
+  expect(geometry.help.x).toBeLessThan(geometry.settings.x);
+  await expect(page.locator('[data-storage-section]')).toHaveCount(2);
+  await expect(page.locator('[data-storage-section="local"]')).toBeVisible();
+  await expect(page.locator('[data-storage-section="drive"]')).toBeVisible();
+  await expect(page.locator('.editor-workspace > .toolbar')).toHaveCount(0);
+  expect(geometry.inspector.width).toBe(300);
+  expect(geometry.problems.height).toBe(200);
+  expect(geometry.toolWindow.width).toBe(36);
+  expect(geometry.toolWindow.x).toBe(1564);
+  expect(geometry.status.height).toBe(24);
+  await expect(page.locator('.top-actions .web-icon')).toHaveCount(5);
+  await expect(page.locator('.view-mode-button .web-icon')).toHaveCount(3);
+  await expect(page.locator('#status-cursor')).toHaveText('Ln 1, Col 1');
+  await expect(page.locator('#status-problems')).toContainText('Errors 0 / Warnings 0');
+  await expect(page.locator('#locale-select, #theme-select')).toHaveCount(0);
+  const frame = page.locator('#score-frame');
+  await page.evaluate(() => {
+    (window as Window & { __previewWindow?: Window | null }).__previewWindow = document.querySelector<HTMLIFrameElement>('#score-frame')!.contentWindow;
+  });
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  const problemColumns = await page.locator('.problem-row').first().evaluate(element =>
+    Array.from(element.children).map(child => {
+      const bounds = child.getBoundingClientRect();
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    }));
+  expect(problemColumns).toHaveLength(4);
+  expect(problemColumns[0].x).toBeLessThan(problemColumns[1].x);
+  expect(problemColumns[1].x).toBeLessThan(problemColumns[2].x);
+  expect(problemColumns[2].x).toBeLessThan(problemColumns[3].x);
+  await page.getByRole('button', { name: 'Source view' }).click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-source/);
+  await expect(page.locator('#score-pane')).toBeHidden();
+  await page.getByRole('button', { name: 'Score view' }).click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-score/);
+  await page.getByRole('button', { name: 'Split view' }).click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-split/);
+  expect(await frame.evaluate(element => (window.parent as Window & { __previewWindow?: Window | null }).__previewWindow === element.contentWindow)).toBe(true);
+});
+
+test('resizes all panes with keyboard and pointer and restores layout without editing source', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
+  const initialSource = await readEditorSource(page);
+  const explorer = page.getByRole('separator', { name: 'Resize Explorer' });
+  await explorer.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(explorer).toHaveAttribute('aria-valuenow', '230');
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(explorer).toHaveAttribute('aria-valuenow', '280');
+  await page.keyboard.press('Home');
+  await expect(explorer).toHaveAttribute('aria-valuenow', '180');
+  await page.keyboard.press('End');
+  await expect(explorer).toHaveAttribute('aria-valuenow', '420');
+
+  const inspector = page.getByRole('separator', { name: 'Resize Inspector' });
+  await inspector.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(inspector).toHaveAttribute('aria-valuenow', '310');
+  const center = page.getByRole('separator', { name: 'Resize source and score panes' });
+  await center.focus();
+  await page.keyboard.press('ArrowRight');
+  expect(Number(await center.getAttribute('aria-valuenow'))).toBeGreaterThan(40);
+  const problems = page.getByRole('separator', { name: 'Resize Problems' });
+  await problems.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(problems).toHaveAttribute('aria-valuenow', '210');
+
+  const explorerSplitter = page.locator('#explorer-splitter');
+  await explorer.dblclick();
+  await expect(explorer).toHaveAttribute('aria-valuenow', '220');
+  const box = await explorerSplitter.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 2, box!.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 22, box!.y + 10);
+  await page.mouse.up();
+  await expect(explorer).toHaveAttribute('aria-valuenow', '240');
+  await page.waitForTimeout(300);
+  await page.reload();
+  await expect(page.getByRole('separator', { name: 'Resize Explorer' })).toHaveAttribute('aria-valuenow', '240');
+  await expect(page.getByRole('separator', { name: 'Resize Inspector' })).toHaveAttribute('aria-valuenow', '310');
+  await expect(page.getByRole('separator', { name: 'Resize Problems' })).toHaveAttribute('aria-valuenow', '210');
+  await expectEditorSource(page, initialSource);
+});
+
+test('temporarily collapses side panels on narrow viewports without changing manual preferences', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await page.setViewportSize({ width: 500, height: 800 });
+  await expect(page.locator('#workspace')).toHaveClass(/inspector-auto-hidden/);
+  await expect(page.locator('#workspace')).toHaveClass(/explorer-auto-hidden/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.locator('#activity-explorer')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#activity-inspector')).toHaveAttribute('aria-pressed', 'true');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#workspace')).not.toHaveClass(/inspector-auto-hidden/);
+  await expect(page.locator('#workspace')).not.toHaveClass(/explorer-auto-hidden/);
+});
+
+test('opens Help, Settings, and host-owned context menus from workspace surfaces', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Help' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.locator('#help-toc button')).toHaveCount(5);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Help' })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.getByRole('menuitemradio', { name: 'Theme: Dark' }).click();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
+
+  const file = page.locator('#file-items .file-item').first();
+  await expect(file).toBeVisible();
+  await file.click({ button: 'right' });
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(file).toBeFocused();
+
+  const sourceBody = page.locator('.cm-content');
+  await sourceBody.click({ button: 'right' });
+  await expect(page.locator('#context-menu')).toBeHidden();
+  await page.locator('.cm-gutters').click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: /Line \d+/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  const previewScore = page.frameLocator('#score-frame').locator('.spread-sheet svg').first();
+  await previewScore.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
+});
+
+test('shows both Explorer roots and opens root and tab menus from Shift+F10', async ({ page }) => {
+  await page.goto('/');
+  const localSection = page.locator('[data-storage-section="local"]');
+  const driveSection = page.locator('[data-storage-section="drive"]');
+  await expect(localSection).toBeVisible();
+  await expect(driveSection).toBeVisible();
+  await page.getByRole('button', { name: 'Collapse On this device' }).click();
+  await expect(page.locator('#local-storage-content')).toBeHidden();
+  await expect(driveSection).toBeVisible();
+  await page.getByRole('button', { name: 'Expand On this device' }).click();
+  await expect(page.locator('#local-storage-content')).toBeVisible();
+
+  const localRoot = page.locator('#storage-local');
+  await localRoot.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'New score' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Import file' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(localRoot).toBeFocused();
+
+  const driveRoot = page.locator('#storage-drive');
+  await driveRoot.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Connect Drive' })).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(driveRoot).toBeFocused();
+
+  const file = page.locator('#file-items .file-item').first();
+  await file.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Export source' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Copy name' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Move to Drive' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const tab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await tab.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Open this tab' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Close', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Close other tabs' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Export source' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tab).toBeFocused();
+});
+
+test('connects and reconnects from the Google Drive root menu', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL' }, unauthorizedList: true
+  });
+  await page.goto('/');
+  const driveRoot = page.locator('#storage-drive');
+  await driveRoot.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Connect Drive' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' })).toBeVisible();
+
+  await driveRoot.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Choose folder' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Create GuitarDSL folder' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Open from Drive' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+  await driveRoot.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Reconnect Drive' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+});
+
+test('exports and deletes a local file from its Explorer menu after confirmation', async ({ page }) => {
+  await page.goto('/');
+  const namePrompt = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.accept('Delete me.guitardsl');
+    return type;
+  });
+  await page.getByRole('button', { name: 'New score' }).click();
+  expect(await namePrompt).toBe('prompt');
+  const file = page.locator('#file-items .file-item').filter({ hasText: 'Delete me.guitardsl' });
+  await expect(file).toBeVisible();
+
+  await file.click({ button: 'right' });
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('Delete me.guitardsl');
+
+  await file.click({ button: 'right' });
+  const firstConfirmation = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.dismiss();
+    return type;
+  });
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  expect(await firstConfirmation).toBe('confirm');
+  await expect(file).toBeVisible();
+
+  await file.click({ button: 'right' });
+  const secondConfirmation = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.accept();
+    return type;
+  });
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  expect(await secondConfirmation).toBe('confirm');
+  await expect(file).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Delete me.guitardsl' })).toHaveCount(0);
+});
+
+test('uses Preview bindings for source navigation and rejects a stale menu target', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('title: Preview menu\n\n[Verse]\nC | G | Am | F |\n');
+  const preview = page.frameLocator('#score-frame');
+  await expect.poll(async () => {
+    const revision = await page.evaluate(() => (window as Window & {
+      __guitarDslReadTabs?: () => Array<{ revision: number }>;
+    }).__guitarDslReadTabs?.()[0]?.revision);
+    return await preview.locator('body').getAttribute('data-preview-document-version') === String(revision);
+  }).toBe(true);
+  const boundElement = preview.locator('.spread-sheet [data-visual-binding]').first();
+  await expect(boundElement).toBeVisible();
+
+  await boundElement.click({ button: 'right' });
+  const goToSource = page.getByRole('menuitem', { name: 'Go to source position' });
+  await expect(goToSource).toBeEnabled();
+  await goToSource.click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-source/);
+  const selectedRange = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  expect(selectedRange).toBeTruthy();
+  expect(selectedRange!.to).toBeGreaterThan(selectedRange!.from);
+
+  await page.getByRole('button', { name: 'Split view' }).click();
+  await preview.locator('body').click({ button: 'right', position: { x: 2, y: 110 } });
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await boundElement.click();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeEnabled();
+  const pdfDownload = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Download PDF' }).click();
+  expect((await pdfDownload).suggestedFilename()).toBe('Untitled.pdf');
+
+  await boundElement.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeEnabled();
+  const staleSelection = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  await page.evaluate(() => {
+    const testWindow = window as Window & {
+      __guitarDslReadSource?: () => string;
+      __guitarDslDispatchSourceEdit?: (source: string, userEvent?: string) => boolean;
+    };
+    const source = testWindow.__guitarDslReadSource?.() ?? '';
+    testWindow.__guitarDslDispatchSourceEdit?.(source.replace('C | G', 'D | G'), 'input.replace');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#context-menu button'))
+      .find(button => button.textContent === 'Go to source position')?.click();
+  });
+  await expect(page.locator('#app-message')).toContainText('target changed');
+  const selectionAfterStaleAction = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  expect(selectionAfterStaleAction).toEqual(staleSelection);
 });
 
 test('applies a selected progression through the shared source-preserving planner', async ({ page }) => {
@@ -386,8 +919,8 @@ test('applies a selected progression through the shared source-preserving planne
   const proposedChords = candidateLabel?.split(' — ').at(-1)?.trim();
   expect(proposedChords).toBeTruthy();
   await page.getByRole('button', { name: 'Apply candidate…' }).click();
-  await expect(editor).toHaveValue(new RegExp(`\\[Verse\\][\\s\\S]*${proposedChords?.split(' | ').at(0)}`));
-  await expect(editor).toHaveValue(/key: C/);
+  await expectEditorSource(page, new RegExp(`\\[Verse\\][\\s\\S]*${proposedChords?.split(' | ').at(0)}`));
+  await expectEditorSource(page, /key: C/);
 });
 
 test('uses the shared score-settings model to apply one transposition edit', async ({ page }) => {
@@ -400,8 +933,8 @@ test('uses the shared score-settings model to apply one transposition edit', asy
   await page.getByRole('combobox', { name: 'Shift (semitones)' }).selectOption('2');
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Apply to DSL' }).click();
-  await expect(editor).toHaveValue(/key: D/);
-  await expect(editor).toHaveValue(/D \| A \| Bm \| G \|/);
+  await expectEditorSource(page, /key: D/);
+  await expectEditorSource(page, /D \| A \| Bm \| G \|/);
 });
 
 test('applies the shared Capo section through the common settings renderer', async ({ page }) => {
@@ -420,7 +953,7 @@ test('applies the shared Capo section through the common settings renderer', asy
   expect(planned.ok).toBe(true);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Apply to DSL' }).click();
-  await expect(editor).toHaveValue(planned.ok ? planned.text : source);
+  await expectEditorSource(page, planned.ok ? planned.text : source);
 });
 
 test('applies the shared Beginner section through the common settings renderer', async ({ page }) => {
@@ -439,7 +972,7 @@ test('applies the shared Beginner section through the common settings renderer',
   expect(planned.ok).toBe(true);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Apply to DSL' }).click();
-  await expect(editor).toHaveValue(planned.ok ? planned.text : source);
+  await expectEditorSource(page, planned.ok ? planned.text : source);
 });
 
 test('restores the latest local draft and commits it on Save', async ({ page }) => {
@@ -456,7 +989,7 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   });
   await page.reload();
   expect(promptedBeforeUnload).toBe(false);
-  await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toHaveValue(source);
+  await expectEditorSource(page, source);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#saved-state')).toHaveText('Saved locally');
@@ -478,7 +1011,7 @@ test('shows a browser confirmation before leaving while a local draft write is p
     await page.evaluate(() => (window as unknown as { __releaseDraftSave?: () => void }).__releaseDraftSave?.());
     await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
     await page.reload();
-    await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toHaveValue(source);
+    await expectEditorSource(page, source);
   }
 });
 
@@ -495,7 +1028,7 @@ test('warns before leaving when IndexedDB draft persistence fails', async ({ pag
   expect(await attemptReloadAndAcceptBeforeUnload(page)).toBe('beforeunload');
   const stayedOnPage = await page.evaluate(() => (window as unknown as { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
   if (stayedOnPage) {
-    await expect(editor).toHaveValue(source);
+    await expectEditorSource(page, source);
     await expect(page.locator('#saved-state')).toHaveText('Unsaved changes');
   }
 });
@@ -507,22 +1040,24 @@ test('drops a Drive read that finishes after switching accounts', async ({ page 
     remoteFiles: { 'account-a-private': { name: 'Account A private.guitardsl', source: 'title: Account A private source\n', version: '1' } }
   });
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const initialSource = await readEditorSource(page);
   const connect = page.locator('#connect-drive');
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
   await page.locator('#storage-drive').click();
   await page.getByRole('button', { name: 'Open from Drive' }).click();
   await drive.fileReadStarted;
 
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Connect Drive');
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
   drive.releaseFileRead();
 
   await expect(page.getByRole('tab', { name: 'Account A private.guitardsl' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Account A private.guitardsl' })).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).not.toHaveValue('title: Account A private source\n');
+  await expectEditorSource(page, initialSource);
   expect(drive.mediaAccountIds).toEqual(['account-a']);
   const cached = await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
@@ -548,15 +1083,15 @@ test('drops a Picker result returned after switching accounts without reading or
   });
   await page.goto('/');
   const connect = page.locator('#connect-drive');
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
   await page.locator('#storage-drive').click();
   await page.getByRole('button', { name: 'Open from Drive' }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __pickerOpened?: boolean }).__pickerOpened)).toBe(true);
 
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Connect Drive');
-  await connect.click();
+  await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
   await page.evaluate(() => (window as unknown as { __releasePickerSelection?: () => void }).__releasePickerSelection?.());
 
@@ -581,15 +1116,15 @@ test('restores a Drive draft as a local draft, not as remotely saved', async ({ 
     accountId: 'account-a', fileId: 'drive-draft', name: 'Drive draft.guitardsl',
     source: 'title: Remote saved\n', draftSource: 'title: Local draft\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.getByRole('tab', { name: 'Drive draft.guitardsl' })).toBeVisible();
-  await expect(editor).toHaveValue('title: Local draft\n');
+  await expectEditorSource(page, 'title: Local draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.reload();
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Drive draft.guitardsl' })).toBeVisible();
-  await expect(editor).toHaveValue('title: Local draft\n');
+  await expectEditorSource(page, 'title: Local draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
 });
 
@@ -607,7 +1142,7 @@ test('Picker re-opening detects a known Drive conflict and preserves the saved b
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     await indexedDb.setValue('sessions', 'workspace-drive:account-a', { tabs: [], active: null });
   });
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
   await page.locator('#storage-drive').click();
   await page.getByRole('button', { name: 'Open from Drive' }).click();
@@ -637,7 +1172,7 @@ test('Drive saves keep the same file, retain edits made during a save, and do no
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.locator('#drive-overwrite-note')).toBeVisible();
@@ -656,7 +1191,7 @@ test('Drive saves keep the same file, retain edits made during a save, and do no
   await editor.fill('title: Newer local draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   drive.releasePatch();
-  await expect(editor).toHaveValue('title: Newer local draft\n');
+  await expectEditorSource(page, 'title: Newer local draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
 
   await editor.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
@@ -672,14 +1207,14 @@ test('an unconfirmed Drive save keeps its draft and never sends an automatic ret
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const draft = 'title: Keep this draft\n';
   await editor.fill(draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.locator('#save-document').click();
-  await expect(editor).toHaveValue(draft);
+  await expectEditorSource(page, draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await expect(page.locator('#app-message')).toContainText('no automatic retry');
   expect(drive.patchCalls).toHaveLength(1);
@@ -692,7 +1227,7 @@ test('a Drive 401 keeps the draft and offers explicit reconnection without retry
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const draft = 'title: Preserve after unauthorized save\n';
@@ -705,9 +1240,9 @@ test('a Drive 401 keeps the draft and offers explicit reconnection without retry
   expect(drive.patchCalls).toHaveLength(1);
   expect(drive.createCount).toBe(0);
 
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
-  await expect(editor).toHaveValue(draft);
+  await expectEditorSource(page, draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   expect(drive.patchCalls).toHaveLength(1);
 });
@@ -718,7 +1253,7 @@ test('a Drive 403 keeps the draft and reports a permission problem without an au
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const draft = 'title: Preserve after permission denial\n';
@@ -738,14 +1273,14 @@ test('a Drive readback mismatch keeps the local draft and reports the save as un
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const draft = 'title: Keep after readback mismatch\n';
   await editor.fill(draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.locator('#save-document').click();
-  await expect(editor).toHaveValue(draft);
+  await expectEditorSource(page, draft);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await expect(page.locator('#app-message')).toContainText('Drive did not return the saved source');
   expect(drive.patchCalls).toHaveLength(1);
@@ -786,24 +1321,24 @@ test('keeps account-scoped Drive tabs and drafts when switching accounts', async
     { accountId: 'account-b', fileId: 'drive-b', name: 'Account B.guitardsl', source: 'title: Account B\n' }
   ]);
   const connect = page.locator('#connect-drive');
-  await connect.click();
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
-  await connect.click();
-  await connect.click();
+  await performAccountAction(page);
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Account B.guitardsl' })).toBeVisible();
   await page.getByRole('tab', { name: 'Account A.guitardsl' }).click();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await expect(editor).toHaveValue('title: Account A\n');
+  await expectEditorSource(page, 'title: Account A\n');
   await expect(page.locator('#save-document')).toBeDisabled();
   await editor.fill('title: Account A draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
 
-  await connect.click();
-  await connect.click();
+  await performAccountAction(page);
+  await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Account A.guitardsl' })).toBeVisible();
   await page.getByRole('tab', { name: 'Account A.guitardsl' }).click();
-  await expect(editor).toHaveValue('title: Account A draft\n');
+  await expectEditorSource(page, 'title: Account A draft\n');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await expect(page.locator('#save-document')).toBeEnabled();
   await page.locator('#save-document').click();
@@ -839,7 +1374,7 @@ test('re-prompts on Drive conflict reload if the tab changes while the remote re
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-conflict', name: 'Conflict.guitardsl', source: 'title: Base\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.getByRole('tab', { name: 'Conflict.guitardsl' })).toBeVisible();
   await editor.fill('title: Before reload\n');
@@ -852,7 +1387,7 @@ test('re-prompts on Drive conflict reload if the tab changes while the remote re
   await editor.fill(newSource);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   releaseMedia();
-  await expect(editor).toHaveValue(newSource);
+  await expectEditorSource(page, newSource);
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
   const stored = await page.evaluate(async () => {
@@ -907,7 +1442,7 @@ test('keeps edits made during Save as upload in the original tab', async ({ page
   await seedDriveSessions(page, [{
     accountId: 'account-a', fileId: 'drive-conflict', name: 'Song.guitardsl', source: 'title: Remote base\n'
   }]);
-  await page.locator('#connect-drive').click();
+  await performAccountAction(page);
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   await editor.fill(uploadedSource);
@@ -922,7 +1457,7 @@ test('keeps edits made during Save as upload in the original tab', async ({ page
   releaseUpload();
   await expect(page.getByRole('tab', { name: 'Song (local copy).guitardsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toHaveAttribute('aria-selected', 'true');
-  await expect(editor).toHaveValue(newerSource);
+  await expectEditorSource(page, newerSource);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   const stored = await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
@@ -1008,9 +1543,10 @@ test('keeps source export available when browser storage is blocked', async ({ p
   await expect(page.locator('#saved-state')).toContainText('Local storage is unavailable');
   const source = 'title: Keep this source\n\n[Verse]\nC | G | Am | F |\n';
   await editor.fill(source);
-  await expect(editor).toHaveValue(source);
+  await expectEditorSource(page, source);
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe('Untitled.guitardsl');
 });
 
@@ -1022,11 +1558,12 @@ test('preserves original CRLF line endings when editing and exporting an importe
     name: 'Line endings.guitardsl', mimeType: 'text/plain', buffer: Buffer.from(source, 'utf8')
   });
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await expect(editor).toHaveValue(source.replace(/\r\n/gu, '\n'));
+  await expectEditorSource(page, source);
   await editor.fill(source.replace(/\r\n/gu, '\n').replace('Song', 'Track'));
 
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Line endings.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -1036,8 +1573,10 @@ test('preserves original CRLF line endings when editing and exporting an importe
 test('localizes the Inspector, honors its theme, and supports keyboard tabs', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
-  await page.getByLabel('Language').selectOption('ja');
-  await page.getByLabel('テーマ').selectOption('dark');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await page.getByRole('button', { name: '設定' }).click();
+  await page.getByRole('menuitemradio', { name: 'テーマ: ダーク' }).click();
   await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByRole('button', { name: '新しい楽譜' })).toBeVisible();
 
@@ -1055,42 +1594,56 @@ test('localizes the Inspector, honors its theme, and supports keyboard tabs', as
   await expect(page.getByRole('button', { name: '試聴' })).toBeVisible();
 });
 
-test('accepts browser IME composition events in the native source editor', async ({ page }) => {
+test('holds a composing source edit until the IME commits it', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await editor.evaluate(element => {
-    const input = element as HTMLTextAreaElement;
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
-    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }));
-    input.value += '日本語';
-    input.dispatchEvent(new InputEvent('input', {
-      bubbles: true, data: '日本語', inputType: 'insertCompositionText', isComposing: true
-    }));
-    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本語' }));
-    input.dispatchEvent(new InputEvent('input', {
-      bubbles: true, data: '日本語', inputType: 'insertText', isComposing: false
-    }));
+  const initial = await readEditorSource(page);
+  await expect(page.locator('#saved-state')).toHaveText('Saved locally');
+  const savedBeforeComposition = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getDocument({ storage: 'local', fileId: (await indexedDb.listDocuments('local'))[0].identity.fileId }))?.source;
   });
-  await expect(editor).toHaveValue(/日本語$/);
+  await editor.evaluate(element => {
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }));
+  });
+  await editor.press('ControlOrMeta+End');
+  await editor.pressSequentially('日本語');
+  await expect.poll(() => readEditorSource(page)).toBe(initial + '日本語');
+  const savedDuringComposition = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.listDocuments('local'))[0].identity.fileId;
+  });
+  expect(savedDuringComposition).toBeTruthy();
+  const draftDuringComposition = await page.evaluate(async fileId => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getDocument({ storage: 'local', fileId }))?.source;
+  }, savedDuringComposition);
+  expect(draftDuringComposition).toBe(savedBeforeComposition);
+  await editor.evaluate(element => element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本語' })));
+  await expectEditorSource(page, initial + '日本語');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const savedAfterComposition = await page.evaluate(async fileId => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getDocument({ storage: 'local', fileId }))?.source;
+  }, savedDuringComposition);
+  expect(savedAfterComposition).toBe(initial + '日本語');
 });
 
 test('keeps native text editing undoable', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await expect(editor).toHaveValue(/^title: My song/m);
-  const initial = await editor.inputValue();
+  await expectEditorSource(page, /^title: My song/m);
+  const initial = await readEditorSource(page);
   await editor.focus();
   await editor.press('ControlOrMeta+End');
   await editor.pressSequentially('!');
-  await expect(editor).toHaveValue(`${initial}!`);
+  await expectEditorSource(page, `${initial}!`);
   await editor.press('ControlOrMeta+z');
-  await expect(editor).toHaveValue(initial);
+  await expectEditorSource(page, initial);
   await editor.press('ControlOrMeta+Shift+z');
-  await expect(editor).toHaveValue(`${initial}!`);
+  await expectEditorSource(page, `${initial}!`);
 });
 
 test('shows compiler diagnostics and moves the source selection to one', async ({ page }) => {
@@ -1098,15 +1651,12 @@ test('shows compiler diagnostics and moves the source selection to one', async (
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
-  const diagnostic = page.locator('#diagnostics button').filter({ hasText: 'L5:' });
+  const diagnostic = page.locator('#diagnostics .problem-row').first();
   await expect(diagnostic).toBeVisible();
-  await diagnostic.click();
-  const selection = await editor.evaluate(element => ({
-    start: (element as HTMLTextAreaElement).selectionStart,
-    end: (element as HTMLTextAreaElement).selectionEnd
-  }));
-  expect(selection.start).toBeGreaterThan(0);
-  expect(selection.end).toBeGreaterThan(selection.start);
+  await diagnostic.locator('.problem-message').click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-source/);
+  const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(selectedText.length).toBeGreaterThan(0);
 });
 
 test('applies Preview edits to source and rerenders the edited score', async ({ page }) => {
@@ -1131,7 +1681,7 @@ test('applies Preview edits to source and rerenders the edited score', async ({ 
   await preview.locator('#preview-edit-value').fill('E');
   await preview.locator('#preview-edit-apply').click();
   await expect(preview.locator('#preview-edit-status')).toHaveText('The change was applied.');
-  await expect(editor).toHaveValue('[Verse]\nE | G | Am | F |\n');
+  await expectEditorSource(page, '[Verse]\nE | G | Am | F |\n');
   await expect(preview.locator('#preview-edit-target option').filter({ hasText: 'chord · E' })).toHaveCount(1);
 });
 
@@ -1145,17 +1695,18 @@ test('edits and renames let variables through the same shared Inspector controls
   await page.locator('#variables-operation').selectOption('rename');
   await page.locator('#variables-name').fill('pulse');
   await page.locator('#variables-apply').click();
-  await expect(editor).toHaveValue('let pulse = 4.d 4.d\nkey: C\n| C $pulse |\n');
+  await expectEditorSource(page, 'let pulse = 4.d 4.d\nkey: C\n| C $pulse |\n');
 
   await page.locator('#variables-operation').selectOption('add');
   await page.locator('#variables-name').fill('unused');
   await page.locator('#variables-value').fill('4.d');
   await page.locator('#variables-apply').click();
-  await expect(editor).toHaveValue(/let unused = 4\.d/);
+  await expectEditorSource(page, /let unused = 4\.d/);
   await page.locator('#variables-list button').filter({ hasText: 'unused' }).click();
   await page.locator('#variables-operation').selectOption('deleteUnused');
   await page.locator('#variables-apply').click();
-  await expect(editor).not.toHaveValue(/let unused = 4\.d/);
+  await expect.poll(() => readEditorSource(page)).not.toContain('let unused = 4.d');
+  await expectEditorSource(page, /let pulse = 4\.d 4\.d/);
 });
 
 test('opens the shared chord diagram editor from a Preview diagram', async ({ page }) => {
@@ -1176,7 +1727,7 @@ test('opens the shared chord diagram editor from a Preview diagram', async ({ pa
   const chordFrame = page.frameLocator('dialog.web-chord-editor iframe');
   await expect(chordFrame.locator('#btn-save')).toBeVisible();
   await chordFrame.locator('#btn-save').click();
-  await expect(editor).toHaveValue(/chord C\s*=/);
+  await expectEditorSource(page, /chord C\s*=/);
   await expect(dialog).toHaveCount(0);
 });
 
@@ -1243,9 +1794,103 @@ test('keeps separate local documents in tabs and supports file export', async ({
   await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Second.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('Second.guitardsl');
+});
+
+test('flushes same-task CodeMirror edits before redraw and tab switches without sharing undo history', async ({ page }) => {
+  await page.goto('/');
+  const firstTab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await expect(firstTab).toBeVisible();
+  const readTabs = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+  }).__guitarDslReadTabs?.() ?? []);
+  const initialFirst = (await readTabs())[0];
+  const initialFirstSource = await readEditorSource(page);
+  const redrawEdit = `${initialFirstSource}\n# same-task renderAll\n`;
+  const afterRedraw = await page.evaluate(source => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslRenderAll?: () => void;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    testWindow.__guitarDslRenderAll?.();
+    return testWindow.__guitarDslReadTabs?.();
+  }, redrawEdit);
+  expect(afterRedraw?.find(tab => tab.key === initialFirst.key)).toMatchObject({
+    source: redrawEdit, revision: initialFirst.revision + 1
+  });
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const firstDraft = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const row = (await indexedDb.listDocuments('local')).find(document => document.name === 'Untitled.guitardsl');
+    return row ? (await indexedDb.getDraft(row.identity))?.source : undefined;
+  });
+  expect(firstDraft).toBe(redrawEdit);
+
+  const secondSource = 'title: Second tab\n\n[Verse]\nD | G |\n';
+  await page.locator('#file-input').setInputFiles({
+    name: 'Second.guitardsl', mimeType: 'text/plain', buffer: Buffer.from(secondSource, 'utf8')
+  });
+  const secondTab = page.getByRole('tab', { name: 'Second.guitardsl' });
+  await expect(secondTab).toBeVisible();
+  const originalSecond = (await readTabs()).find(tab => tab.key !== initialFirst.key)!;
+  await firstTab.click();
+  await expectEditorSource(page, redrawEdit);
+
+  const switchEdit = `${redrawEdit}\n# same-task tab switch\n`;
+  const afterSwitch = await page.evaluate(({ source, tabName }) => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(tab => tab.textContent === tabName)?.click();
+    return testWindow.__guitarDslReadTabs?.();
+  }, { source: switchEdit, tabName: 'Second.guitardsl' });
+  expect(afterSwitch?.find(tab => tab.key === initialFirst.key)).toMatchObject({
+    source: switchEdit, revision: initialFirst.revision + 2
+  });
+  await expectEditorSource(page, secondSource);
+
+  const secondEdit = `${secondSource}\n# same-task second redraw\n`;
+  const afterSecondRedraw = await page.evaluate(source => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslRenderAll?: () => void;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    testWindow.__guitarDslRenderAll?.();
+    return testWindow.__guitarDslReadTabs?.();
+  }, secondEdit);
+  expect(afterSecondRedraw?.find(tab => tab.key === originalSecond.key)).toMatchObject({
+    source: secondEdit, revision: originalSecond.revision + 1
+  });
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const secondDraft = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const row = (await indexedDb.listDocuments('local')).find(document => document.name === 'Second.guitardsl');
+    return row ? (await indexedDb.getDraft(row.identity))?.source : undefined;
+  });
+  expect(secondDraft).toBe(secondEdit);
+
+  await firstTab.click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, redrawEdit);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === initialFirst.key)?.source).toBe(redrawEdit);
+  expect((await readTabs()).find(tab => tab.key === originalSecond.key)?.source).toBe(secondEdit);
+
+  await secondTab.click();
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, secondSource);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === originalSecond.key)?.source).toBe(secondSource);
+  expect((await readTabs()).find(tab => tab.key === initialFirst.key)?.source).toBe(redrawEdit);
 });
 
 test('downloads a PDF from the shared score SVG renderer', async ({ page }) => {
@@ -1268,12 +1913,13 @@ test('preserves a pending Preview edit when changing modes', async ({ page }) =>
   await preview.locator('#preview-edit-target').selectOption({ index: 0 });
   const editValue = preview.locator('#preview-edit-value');
   await expect(editValue).toBeEnabled();
-  const pendingValue = `${await editValue.inputValue()}m`;
+  const sourceBeforePendingEdit = await readEditorSource(page);
+  const pendingValue = 'pending edit';
   await editValue.fill(pendingValue);
   await preview.locator('#preview-mode-select').selectOption('normal');
   await expect(preview.locator('#preview-edit-status')).toHaveText('Apply the pending Preview edit before changing modes.');
   await expect(editValue).toHaveValue(pendingValue);
-  await expect(preview.locator('#preview-mode-select')).toHaveValue('edit');
+  await expectEditorSource(page, sourceBeforePendingEdit);
 });
 
 test('keeps a narrow workspace usable', async ({ page }) => {
@@ -1283,7 +1929,7 @@ test('keeps a narrow workspace usable', async ({ page }) => {
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.getByRole('button', { name: 'Score', exact: true }).click();
+  await page.getByRole('button', { name: 'Score view' }).click();
   await expect(page.locator('#source-pane')).toBeHidden();
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
 });

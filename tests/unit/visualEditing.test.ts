@@ -384,6 +384,10 @@ describe('source-preserving visual and variable planners', () => {
       documentUri: 'file:///song.guitardsl', documentVersion: 1, previewGeneration: 2,
       previewEditMode: true, previewEditAvailable: true, visualBindings: score.visualSourceBindings
     });
+    const contextMenuHtml = compileGuitarDslToHtml(source, {
+      documentUri: 'local:test', documentVersion: 1, previewGeneration: 2,
+      previewEditAvailable: true, includeVisualBindingsForContextMenu: true, visualBindings: score.visualSourceBindings
+    });
     assert.match(html, /id="preview-edit-row"[^>]* hidden/);
     assert.match(html, /data-preview-edit-mode="false"/);
     assert.match(html, /id="preview-mode-edit"[^>]*aria-pressed="false"[^>]*aria-label=/);
@@ -408,6 +412,10 @@ describe('source-preserving visual and variable planners', () => {
     assert.match(editHtml, /document\.addEventListener\('pointerup'/);
     assert.match(editHtml, /document\.addEventListener\('pointercancel'/);
     assert.match(editHtml, /id="preview-edit-open-source"/);
+    assert.match(contextMenuHtml, /id="preview-edit-row"[^>]* hidden/);
+    assert.match(contextMenuHtml, /data-preview-edit-mode="false"/);
+    assert.match(contextMenuHtml, /data-visual-binding="source-/,
+      'the Web host can route normal-mode notation context menus to source without enabling Preview editing');
   });
 
   it('rejects invalid or duplicate definitions without changing source', () => {
