@@ -167,10 +167,11 @@ export class SourceEditorSurface {
   private suppressUpdate = false;
   private compositionActive = false;
   private pendingComposition = false;
+  private publishPending = false;
   private publishTimer = 0;
   private readonly onSelectionChange: () => void;
 
-  constructor(readonly host: HTMLElement, private readonly onChange: (source: string) => void, onSelectionChange: () => void = () => {}) {
+  constructor(readonly host: HTMLElement, private readonly onChange: (source: string, documentKey: string) => void, onSelectionChange: () => void = () => {}) {
     this.onSelectionChange = onSelectionChange;
     this.view = new EditorView({ state: createEditorState('', source => this.onEditorUpdate(source), onSelectionChange), parent: host });
     this.view.dom.setAttribute('aria-label', 'GuitarDSL source editor');
@@ -181,16 +182,22 @@ export class SourceEditorSurface {
     });
   }
 
-  setDocument(key: string, source: string): void {
+  setDocument(key: string, source: string): boolean {
     if (this.activeKey === key) {
+      if (this.publishPending) {
+        if (!this.flushPendingEdit()) return false;
+        return true;
+      }
+      if ((this.compositionActive || this.pendingComposition || this.view.composing) && this.activeSource !== source) return false;
       if (this.activeSource !== source && this.view.state.doc.toString() !== source.replace(/\r\n?/gu, '\n')) {
         this.activeSource = source;
         this.suppressUpdate = true;
         this.view.setState(createEditorState(source, value => this.onEditorUpdate(value), this.onSelectionChange));
         this.suppressUpdate = false;
       } else this.activeSource = source;
-      return;
+      return true;
     }
+    if (this.activeKey && !this.flushPendingEdit()) return false;
     if (this.activeKey) this.documents.set(this.activeKey, { state: this.view.state, source: this.activeSource, scrollTop: this.view.scrollDOM.scrollTop, scrollLeft: this.view.scrollDOM.scrollLeft });
     this.activeKey = key;
     let document = this.documents.get(key);
@@ -207,6 +214,7 @@ export class SourceEditorSurface {
     this.suppressUpdate = false;
     this.onSelectionChange();
     requestAnimationFrame(() => { this.view.scrollDOM.scrollTop = document!.scrollTop; this.view.scrollDOM.scrollLeft = document!.scrollLeft; });
+    return true;
   }
 
   getSource(): string { return this.activeSource; }
@@ -233,6 +241,10 @@ export class SourceEditorSurface {
     this.view.dispatch(setDiagnostics(this.view.state, diagnostics));
   }
   replaceSource(source: string, userEvent = 'input.replace'): boolean {
+    if (!this.dispatchSourceEdit(source, userEvent)) return false;
+    return this.flushPendingEdit();
+  }
+  dispatchSourceEdit(source: string, userEvent = 'input.type'): boolean {
     const previous = this.view.state.doc.toString();
     const next = source.replace(/\r\n?/gu, '\n');
     if (previous === next) return false;
@@ -241,11 +253,19 @@ export class SourceEditorSurface {
     let suffix = 0;
     while (suffix < previous.length - prefix && suffix < next.length - prefix && previous[previous.length - suffix - 1] === next[next.length - suffix - 1]) suffix++;
     this.view.dispatch({ changes: { from: prefix, to: previous.length - suffix, insert: next.slice(prefix, next.length - suffix) }, annotations: Transaction.userEvent.of(userEvent), effects: EditorView.scrollIntoView(prefix) });
-    this.publish();
     return true;
   }
   forgetDocument(key: string): void { this.documents.delete(key); }
   destroy(): void { window.clearTimeout(this.publishTimer); this.view.destroy(); }
+
+  /** Flush a completed CodeMirror transaction before a synchronous redraw or document switch. */
+  flushPendingEdit(): boolean {
+    if (this.compositionActive || this.view.composing) return false;
+    window.clearTimeout(this.publishTimer);
+    this.publishTimer = 0;
+    if (this.publishPending) this.publish();
+    return true;
+  }
 
   private onEditorUpdate(normalized: string): void {
     if (!this.activeKey || this.suppressUpdate) return;
@@ -258,8 +278,10 @@ export class SourceEditorSurface {
 
   private previousText(): string { return this.activeSource.replace(/\r\n?/gu, '\n'); }
   private schedulePublish(): void {
+    this.publishPending = true;
     window.clearTimeout(this.publishTimer);
     this.publishTimer = window.setTimeout(() => {
+      this.publishTimer = 0;
       if (!this.activeKey || this.compositionActive || this.view.composing) { this.pendingComposition = true; return; }
       this.publish();
     }, 0);
@@ -267,8 +289,12 @@ export class SourceEditorSurface {
   private publish(): void {
     if (!this.activeKey) return;
     window.clearTimeout(this.publishTimer);
+    this.publishTimer = 0;
+    this.publishPending = false;
+    this.pendingComposition = false;
+    const key = this.activeKey;
     this.documents.set(this.activeKey, { state: this.view.state, source: this.activeSource, scrollTop: this.view.scrollDOM.scrollTop, scrollLeft: this.view.scrollDOM.scrollLeft });
-    this.onChange(this.activeSource);
+    this.onChange(this.activeSource, key);
   }
 }
 

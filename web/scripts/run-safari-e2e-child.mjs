@@ -421,7 +421,7 @@ try {
     await waitUntil(async () => await driver.executeScript(() => window.innerWidth <= 600), 'Safari viewport did not enter the narrow layout.');
     const width = await driver.executeScript(() => window.innerWidth);
     const focusTarget = await driver.executeScript(() => {
-      const candidates = ['#download-pdf', '#file-actions .file-action', '#export-file', '#connect-drive'];
+      const candidates = ['#download-pdf', '#file-actions .file-action', '#connect-drive'];
       return candidates.find(selector => {
         const element = document.querySelector(selector);
         return element instanceof HTMLElement && element.getClientRects().length > 0 && !element.hidden;
@@ -458,14 +458,27 @@ try {
       window.__guitardslSafariSmoke.download = undefined;
       return window.__guitardslSafariSmoke.downloadInvocationCount;
     });
-    await click('#export-file');
+    const activeTab = await driver.findElement(By.css('#open-tabs [role="tab"][aria-selected="true"]'));
+    await driver.executeScript(target => {
+      target.focus();
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', code: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+    }, activeTab);
+    await waitUntil(async () => await driver.executeScript(() => {
+      const menu = document.querySelector('#context-menu');
+      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Export source')));
+    }), 'The active tab source-export menu did not open.');
+    const exportMenuItem = await driver.findElements(By.css('#context-menu button')).then(async buttons => {
+      for (const button of buttons) if ((await button.getText()).includes('Export source')) return button;
+      throw new Error('Export source action was not rendered in the active tab menu.');
+    });
+    await exportMenuItem.click();
     let activationMethod = 'WebDriver click';
     try {
       await waitUntil(async () => await driver.executeScript(start => window.__guitardslSafariSmoke?.downloadInvocationCount > start, downloadInvocationStart),
         'Source export did not invoke a download after storage failed.', 1_000);
     } catch {
       activationMethod = 'WebDriver Enter';
-      await driver.findElement(By.css('#export-file')).sendKeys(Key.ENTER);
+      await exportMenuItem.sendKeys(Key.ENTER);
       await waitUntil(async () => await driver.executeScript(start => window.__guitardslSafariSmoke?.downloadInvocationCount > start, downloadInvocationStart),
         'Source export did not invoke a download after storage failed.');
     }
@@ -489,15 +502,24 @@ try {
       const menu = document.querySelector('#account-menu');
       return Boolean(menu && !menu.hidden && menu.querySelector('button'));
     }), 'Google Account menu did not open.');
-    await click('#account-menu button');
+    const connectMenuAction = await driver.findElement(By.css('#account-menu button'));
+    await driver.executeScript(action => action.click(), connectMenuAction);
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
-      'Mock Google OAuth connection did not complete.');
+      'Mock Google OAuth connection did not complete.', 10_000).catch(async error => {
+        const details = await driver.executeScript(() => ({
+          accountMenuHidden: document.querySelector('#account-menu')?.hidden,
+          accountMenuText: document.querySelector('#account-menu')?.textContent?.trim(),
+          tokenRequests: window.__guitardslSafariSmoke?.tokenRequests,
+          appMessage: document.querySelector('#app-message')?.textContent?.trim()
+        }));
+        throw new Error(`${error.message} State: ${JSON.stringify(details)}`);
+      });
     await click('#storage-drive');
     const driveSelected = await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected'));
     if (!driveSelected) await driver.findElement(By.css('#storage-drive')).sendKeys(Key.ENTER);
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected')),
       'Google Drive storage did not become selected.');
-    const openPicker = await driver.findElements(By.css('#file-actions button')).then(async buttons => {
+    const openPicker = await driver.findElements(By.css('#drive-file-actions button')).then(async buttons => {
       for (const button of buttons) if ((await button.getText()).includes('Open from Drive')) return button;
       throw new Error('Open from Drive action was not rendered.');
     });

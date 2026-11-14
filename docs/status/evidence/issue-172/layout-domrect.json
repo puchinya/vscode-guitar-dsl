@@ -11,6 +11,24 @@
         "width": 1600,
         "height": 40
       },
+      "accountAction": {
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -29,29 +47,96 @@
         "width": 6,
         "height": 630
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 79,
+        "width": 184,
+        "height": 26
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 992,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 394.41,
-        "height": 558
+        "height": 594
       },
       "centerSplitter": {
         "x": 660.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 558
+        "height": 594
       },
       "score": {
         "x": 666.41,
-        "y": 112,
+        "y": 76,
         "width": 591.59,
-        "height": 558
+        "height": 594
       },
       "inspectorSplitter": {
         "x": 1258,
@@ -90,6 +175,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1414,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1450,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -134,6 +267,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "desktop-1600x900-en-dark.png": {
@@ -148,6 +283,24 @@
         "width": 1600,
         "height": 40
       },
+      "accountAction": {
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -166,29 +319,96 @@
         "width": 6,
         "height": 630
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 79,
+        "width": 184,
+        "height": 26
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 992,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 394.41,
-        "height": 558
+        "height": 594
       },
       "centerSplitter": {
         "x": 660.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 558
+        "height": 594
       },
       "score": {
         "x": 666.41,
-        "y": 112,
+        "y": 76,
         "width": 591.59,
-        "height": 558
+        "height": 594
       },
       "inspectorSplitter": {
         "x": 1258,
@@ -227,6 +447,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1414,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1450,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -271,6 +539,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "desktop-1600x900-ja-light.png": {
@@ -285,6 +555,24 @@
         "width": 1600,
         "height": 40
       },
+      "accountAction": {
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -303,29 +591,96 @@
         "width": 6,
         "height": 630
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 992,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 394.41,
-        "height": 558
+        "height": 594
       },
       "centerSplitter": {
         "x": 660.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 558
+        "height": 594
       },
       "score": {
         "x": 666.41,
-        "y": 112,
+        "y": 76,
         "width": 591.59,
-        "height": 558
+        "height": 594
       },
       "inspectorSplitter": {
         "x": 1258,
@@ -364,6 +719,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1414,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1450,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -408,6 +811,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "desktop-1600x900-ja-dark.png": {
@@ -422,6 +827,24 @@
         "width": 1600,
         "height": 40
       },
+      "accountAction": {
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -440,29 +863,96 @@
         "width": 6,
         "height": 630
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 992,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 394.41,
-        "height": 558
+        "height": 594
       },
       "centerSplitter": {
         "x": 660.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 558
+        "height": 594
       },
       "score": {
         "x": 666.41,
-        "y": 112,
+        "y": 76,
         "width": 591.59,
-        "height": 558
+        "height": 594
       },
       "inspectorSplitter": {
         "x": 1258,
@@ -501,6 +991,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1414,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1450,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1486,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1522,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1558,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -545,6 +1083,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "desktop-1280x800-ja-dark.png": {
@@ -559,6 +1099,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -577,29 +1135,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -638,6 +1263,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -682,6 +1355,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "menu-settings-ja.png": {
@@ -696,6 +1371,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -714,29 +1407,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -775,6 +1535,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -817,6 +1625,660 @@
       {
         "label": "譜面表示",
         "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 1084,
+      "y": 37.5,
+      "width": 190,
+      "height": 202
+    },
+    "menuItems": [
+      {
+        "label": "テーマ: システム",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 42.5,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "テーマ: ライト",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 74.5,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "テーマ: ダーク",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 106.5,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "Language: English",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 138.5,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "Language: 日本語",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 170.5,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "レイアウトをリセット",
+        "disabled": false,
+        "rect": {
+          "x": 1089,
+          "y": 202.5,
+          "width": 180,
+          "height": 32
+        }
+      }
+    ],
+    "horizontalOverflow": false
+  },
+  "menu-local-root-ja.png": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 736
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 530
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 672,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 266.41,
+        "height": 494
+      },
+      "centerSplitter": {
+        "x": 532.41,
+        "y": 76,
+        "width": 6,
+        "height": 494
+      },
+      "score": {
+        "x": 538.41,
+        "y": 76,
+        "width": 399.59,
+        "height": 494
+      },
+      "inspectorSplitter": {
+        "x": 938,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "inspector": {
+        "x": 944,
+        "y": 40,
+        "width": 300,
+        "height": 530
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 570,
+        "width": 1204,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 576,
+        "width": 1204,
+        "height": 200
+      },
+      "toolWindowBar": {
+        "x": 1244,
+        "y": 40,
+        "width": 36,
+        "height": 736
+      },
+      "status": {
+        "x": 0,
+        "y": 776,
+        "width": 1280,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "36",
+        "max": "52",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "360",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 162,
+      "y": 92,
+      "width": 190,
+      "height": 74
+    },
+    "menuItems": [
+      {
+        "label": "新しい楽譜",
+        "disabled": false,
+        "rect": {
+          "x": 167,
+          "y": 97,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "ファイルを読み込む",
+        "disabled": false,
+        "rect": {
+          "x": 167,
+          "y": 129,
+          "width": 180,
+          "height": 32
+        }
+      }
+    ],
+    "horizontalOverflow": false
+  },
+  "menu-drive-root-ja.png": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 736
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 530
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 672,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 266.41,
+        "height": 494
+      },
+      "centerSplitter": {
+        "x": 532.41,
+        "y": 76,
+        "width": 6,
+        "height": 494
+      },
+      "score": {
+        "x": 538.41,
+        "y": 76,
+        "width": 399.59,
+        "height": 494
+      },
+      "inspectorSplitter": {
+        "x": 938,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "inspector": {
+        "x": 944,
+        "y": 40,
+        "width": 300,
+        "height": 530
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 570,
+        "width": 1204,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 576,
+        "width": 1204,
+        "height": 200
+      },
+      "toolWindowBar": {
+        "x": 1244,
+        "y": 40,
+        "width": 36,
+        "height": 736
+      },
+      "status": {
+        "x": 0,
+        "y": 776,
+        "width": 1280,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "36",
+        "max": "52",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "360",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 162,
+      "y": 231,
+      "width": 190,
+      "height": 42
+    },
+    "menuItems": [
+      {
+        "label": "Drive に接続",
+        "disabled": false,
+        "rect": {
+          "x": 167,
+          "y": 236,
+          "width": 180,
+          "height": 32
+        }
       }
     ],
     "horizontalOverflow": false
@@ -833,6 +2295,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -851,29 +2331,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -912,6 +2459,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -954,6 +2549,372 @@
       {
         "label": "譜面表示",
         "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 150,
+      "y": 164,
+      "width": 190,
+      "height": 138
+    },
+    "menuItems": [
+      {
+        "label": "開く",
+        "disabled": false,
+        "rect": {
+          "x": 155,
+          "y": 169,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "名前をコピー",
+        "disabled": false,
+        "rect": {
+          "x": 155,
+          "y": 201,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "ソースを書き出す",
+        "disabled": false,
+        "rect": {
+          "x": 155,
+          "y": 233,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "削除",
+        "disabled": false,
+        "rect": {
+          "x": 155,
+          "y": 265,
+          "width": 180,
+          "height": 32
+        }
+      }
+    ],
+    "horizontalOverflow": false
+  },
+  "menu-tab-ja.png": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 736
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 530
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 672,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 266.41,
+        "height": 494
+      },
+      "centerSplitter": {
+        "x": 532.41,
+        "y": 76,
+        "width": 6,
+        "height": 494
+      },
+      "score": {
+        "x": 538.41,
+        "y": 76,
+        "width": 399.59,
+        "height": 494
+      },
+      "inspectorSplitter": {
+        "x": 938,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "inspector": {
+        "x": 944,
+        "y": 40,
+        "width": 300,
+        "height": 530
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 570,
+        "width": 1204,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 576,
+        "width": 1204,
+        "height": 200
+      },
+      "toolWindowBar": {
+        "x": 1244,
+        "y": 40,
+        "width": 36,
+        "height": 736
+      },
+      "status": {
+        "x": 0,
+        "y": 776,
+        "width": 1280,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "36",
+        "max": "52",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "360",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 327,
+      "y": 58,
+      "width": 190,
+      "height": 138
+    },
+    "menuItems": [
+      {
+        "label": "このタブを開く",
+        "disabled": false,
+        "rect": {
+          "x": 332,
+          "y": 63,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "閉じる",
+        "disabled": false,
+        "rect": {
+          "x": 332,
+          "y": 95,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "ほかのタブを閉じる",
+        "disabled": false,
+        "rect": {
+          "x": 332,
+          "y": 127,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "ソースを書き出す",
+        "disabled": false,
+        "rect": {
+          "x": 332,
+          "y": 159,
+          "width": 180,
+          "height": 32
+        }
       }
     ],
     "horizontalOverflow": false
@@ -970,6 +2931,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -988,29 +2967,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -1049,6 +3095,83 @@
         "height": 24
       }
     },
+    "problemsColumns": [
+      {
+        "className": "problem-severity",
+        "x": 60,
+        "y": 622,
+        "width": 74,
+        "height": 15
+      },
+      {
+        "className": "problem-file",
+        "x": 142,
+        "y": 623,
+        "width": 251.5,
+        "height": 13
+      },
+      {
+        "className": "problem-location",
+        "x": 401.5,
+        "y": 623,
+        "width": 60,
+        "height": 13
+      },
+      {
+        "className": "problem-message",
+        "x": 469.5,
+        "y": 618,
+        "width": 754.5,
+        "height": 23
+      }
+    ],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -1093,6 +3216,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "menu-problems-ja.png": {
@@ -1107,6 +3232,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -1125,29 +3268,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -1186,6 +3396,83 @@
         "height": 24
       }
     },
+    "problemsColumns": [
+      {
+        "className": "problem-severity",
+        "x": 60,
+        "y": 622,
+        "width": 74,
+        "height": 15
+      },
+      {
+        "className": "problem-file",
+        "x": 142,
+        "y": 623,
+        "width": 251.5,
+        "height": 13
+      },
+      {
+        "className": "problem-location",
+        "x": 401.5,
+        "y": 623,
+        "width": 60,
+        "height": 13
+      },
+      {
+        "className": "problem-message",
+        "x": 469.5,
+        "y": 618,
+        "width": 754.5,
+        "height": 23
+      }
+    ],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -1228,6 +3515,34 @@
       {
         "label": "譜面表示",
         "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 642,
+      "y": 630,
+      "width": 190,
+      "height": 74
+    },
+    "menuItems": [
+      {
+        "label": "ソースで表示",
+        "disabled": false,
+        "rect": {
+          "x": 647,
+          "y": 635,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "メッセージをコピー",
+        "disabled": false,
+        "rect": {
+          "x": 647,
+          "y": 667,
+          "width": 180,
+          "height": 32
+        }
       }
     ],
     "horizontalOverflow": false
@@ -1244,6 +3559,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -1262,29 +3595,96 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 266.41,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 532.41,
-        "y": 112,
+        "y": 76,
         "width": 6,
-        "height": 458
+        "height": 494
       },
       "score": {
         "x": 538.41,
-        "y": 112,
+        "y": 76,
         "width": 399.59,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -1323,6 +3723,83 @@
         "height": 24
       }
     },
+    "problemsColumns": [
+      {
+        "className": "problem-severity",
+        "x": 60,
+        "y": 622,
+        "width": 74,
+        "height": 15
+      },
+      {
+        "className": "problem-file",
+        "x": 142,
+        "y": 623,
+        "width": 251.5,
+        "height": 13
+      },
+      {
+        "className": "problem-location",
+        "x": 401.5,
+        "y": 623,
+        "width": 60,
+        "height": 13
+      },
+      {
+        "className": "problem-message",
+        "x": 469.5,
+        "y": 618,
+        "width": 754.5,
+        "height": 23
+      }
+    ],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -1365,6 +3842,332 @@
       {
         "label": "譜面表示",
         "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 737.40625,
+      "y": 336,
+      "width": 190,
+      "height": 74
+    },
+    "menuItems": [
+      {
+        "label": "ソース位置へ移動",
+        "disabled": true,
+        "rect": {
+          "x": 742.40625,
+          "y": 341,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "PDF をダウンロード",
+        "disabled": false,
+        "rect": {
+          "x": 742.40625,
+          "y": 373,
+          "width": 180,
+          "height": 32
+        }
+      }
+    ],
+    "horizontalOverflow": false
+  },
+  "menu-preview-binding-ja.png": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 736
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 530
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 672,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 266.41,
+        "height": 494
+      },
+      "centerSplitter": {
+        "x": 532.41,
+        "y": 76,
+        "width": 6,
+        "height": 494
+      },
+      "score": {
+        "x": 538.41,
+        "y": 76,
+        "width": 399.59,
+        "height": 494
+      },
+      "inspectorSplitter": {
+        "x": 938,
+        "y": 40,
+        "width": 6,
+        "height": 530
+      },
+      "inspector": {
+        "x": 944,
+        "y": 40,
+        "width": 300,
+        "height": 530
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 570,
+        "width": 1204,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 576,
+        "width": 1204,
+        "height": 200
+      },
+      "toolWindowBar": {
+        "x": 1244,
+        "y": 40,
+        "width": 36,
+        "height": 736
+      },
+      "status": {
+        "x": 0,
+        "y": 776,
+        "width": 1280,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "36",
+        "max": "52",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "360",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": {
+      "x": 613.40625,
+      "y": 276,
+      "width": 190,
+      "height": 74
+    },
+    "menuItems": [
+      {
+        "label": "ソース位置へ移動",
+        "disabled": false,
+        "rect": {
+          "x": 618.40625,
+          "y": 281,
+          "width": 180,
+          "height": 32
+        }
+      },
+      {
+        "label": "PDF をダウンロード",
+        "disabled": false,
+        "rect": {
+          "x": 618.40625,
+          "y": 313,
+          "width": 180,
+          "height": 32
+        }
       }
     ],
     "horizontalOverflow": false
@@ -1381,6 +4184,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -1399,17 +4220,84 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
       },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
       "source": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 672,
-        "height": 458
+        "height": 494
       },
       "centerSplitter": {
         "x": 0,
@@ -1460,6 +4348,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -1504,6 +4440,8 @@
         "pressed": "false"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   },
   "score-only-ja-dark.png": {
@@ -1518,6 +4456,24 @@
         "width": 1280,
         "height": 40
       },
+      "accountAction": {
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
       "activityBar": {
         "x": 0,
         "y": 40,
@@ -1536,11 +4492,78 @@
         "width": 6,
         "height": 530
       },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 70,
+        "y": 78,
+        "width": 184,
+        "height": 28
+      },
+      "localActions": {
+        "x": 40,
+        "y": 108,
+        "width": 220,
+        "height": 38
+      },
+      "localFile": {
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 215,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 70,
+        "y": 218,
+        "width": 184,
+        "height": 26
+      },
+      "driveActions": {
+        "x": 40,
+        "y": 247,
+        "width": 220,
+        "height": 38
+      },
+      "driveFile": null,
       "tabs": {
         "x": 266,
         "y": 40,
         "width": 672,
         "height": 36
+      },
+      "tabViewControls": {
+        "x": 829,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 835,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 868,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 901,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
       },
       "source": {
         "x": 0,
@@ -1556,9 +4579,9 @@
       },
       "score": {
         "x": 266,
-        "y": 112,
+        "y": 76,
         "width": 672,
-        "height": 458
+        "height": 494
       },
       "inspectorSplitter": {
         "x": 938,
@@ -1597,6 +4620,54 @@
         "height": 24
       }
     },
+    "problemsColumns": [],
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1094,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1130,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1166,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1202,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1238,
+        "y": 4.5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 50,
+        "y": 148,
+        "width": 200,
+        "height": 32
+      }
+    ],
+    "driveFileEntries": [],
     "splitters": [
       {
         "name": "Resize Explorer",
@@ -1641,6 +4712,8 @@
         "pressed": "true"
       }
     ],
+    "menu": null,
+    "menuItems": [],
     "horizontalOverflow": false
   }
 }

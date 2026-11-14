@@ -305,6 +305,8 @@ The tab row holds the active document name and three icon-only workspace control
 
 The Activity Bar is 40 px wide and the Tool Window Bar is 36 px wide. Icon geometry comes from the 24 × 24 SVG paths in [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg). Icons must not rely on emoji, icon fonts, raster images, or externally hosted assets. Icon-only controls have Japanese and English accessible names and titles. Selected and hover states follow the reference icon sheet.
 
+The Explorer content shows two storage roots at once: “On this device” and “Google Drive”. Each root has an independent disclosure control, its own action row, and its own file tree. Local creation and import remain available without a Drive connection; Drive connection and folder actions stay with the Drive root. Selecting one root does not hide the other tree.
+
 ### 5.3 Splitters and narrow layouts
 
 There are exactly four workspace splitters: the Explorer boundary, Source/Score boundary, Inspector boundary, and top of Problems. Each divider is 1 px with a 6 px pointer hit area. Pointer dragging uses capture and releases it on pointer-up or pointer-cancel. Double-click restores only that splitter's default. A focused splitter has a visible focus ring, uses `role="separator"`, exposes the orientation and current/minimum/maximum values, and accepts Arrow keys (10 px), Shift+Arrow keys (50 px), Home (minimum), and End (maximum). Bounds prevent negative or non-finite sizes and horizontal page overflow.

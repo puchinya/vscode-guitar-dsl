@@ -37,6 +37,7 @@ interface DriveBrowserMockOptions {
   holdPickerSelection?: boolean;
   holdFileReadId?: string;
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+  unauthorizedList?: boolean;
 }
 
 async function installDriveBrowserMock(page: Page, accountSequence: string[], options: DriveBrowserMockOptions = {}): Promise<{
@@ -128,7 +129,10 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     if (url.pathname === '/drive/v3/about') {
       return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
     }
-    if (url.pathname === '/drive/v3/files') return route.fulfill({ headers, json: { files: [] } });
+    if (url.pathname === '/drive/v3/files') {
+      if (options.unauthorizedList) return route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
+      return route.fulfill({ headers, json: { files: [] } });
+    }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
       return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
     }
@@ -372,15 +376,36 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
       await page.screenshot({ path: resolve(evidenceDir, name), fullPage: false });
       layouts[name] = await page.evaluate(() => {
         const selectors = {
-          header: '.topbar', activityBar: '.activity-bar', explorer: '.file-list', explorerSplitter: '#explorer-splitter',
-          tabs: '.tabs', source: '#source-pane', centerSplitter: '#center-splitter', score: '#score-pane',
+          header: '.topbar', accountAction: '#connect-drive', helpAction: '#help-button', settingsAction: '#settings-button',
+          activityBar: '.activity-bar', explorer: '.file-list', explorerSplitter: '#explorer-splitter',
+          localRoot: '[data-storage-section="local"] .storage-root-row', localRootLabel: '#storage-local',
+          localActions: '#file-actions', localFile: '#file-items .file-item',
+          driveRoot: '[data-storage-section="drive"] .storage-root-row', driveRootLabel: '#storage-drive',
+          driveActions: '#drive-file-actions', driveFile: '#drive-file-items .file-item',
+          tabs: '.tabs', tabViewControls: '.view-mode-controls', viewSource: '#view-source',
+          viewSplit: '#view-split', viewScore: '#view-score', source: '#source-pane', centerSplitter: '#center-splitter', score: '#score-pane',
           inspectorSplitter: '#inspector-splitter', inspector: '.inspector', problemsSplitter: '#problems-splitter',
           problems: '#problems-panel', toolWindowBar: '.tool-window-bar', status: '.statusbar'
         };
         const rects = Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
-          const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
+          const element = document.querySelector(selector);
+          if (!element) return [name, null];
+          const { x, y, width, height } = element.getBoundingClientRect();
           return [name, Object.fromEntries(Object.entries({ x, y, width, height }).map(([key, value]) => [key, Math.round(value * 100) / 100]))];
         }));
+        const problemsColumns = Array.from(document.querySelector('.problem-row')?.children ?? []).map(element => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { className: (element as HTMLElement).className, x, y, width, height };
+        });
+        const topActions = ['#save-document', '#download-pdf', '#connect-drive', '#help-button', '#settings-button'].map(selector => {
+          const element = document.querySelector(selector)!;
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { id: element.id, x, y, width, height };
+        });
+        const fileEntries = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector)).map(element => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { name: element.textContent?.trim(), x, y, width, height };
+        });
         const splitters = Array.from(document.querySelectorAll<HTMLElement>('[role="separator"]')).map(element => ({
           name: element.getAttribute('aria-label'), orientation: element.getAttribute('aria-orientation'),
           min: element.getAttribute('aria-valuemin'), max: element.getAttribute('aria-valuemax'), now: element.getAttribute('aria-valuenow')
@@ -388,7 +413,15 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         const modes = Array.from(document.querySelectorAll<HTMLButtonElement>('.view-mode-button')).map(button => ({
           label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed')
         }));
-        return { viewport: { width: innerWidth, height: innerHeight }, rects, splitters, modes,
+        const menu = document.querySelector<HTMLElement>('#context-menu:not([hidden]), #settings-menu:not([hidden])');
+        const menuItems = menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>('button')).map(button => ({
+          label: button.textContent, disabled: button.disabled,
+          rect: (() => { const { x, y, width, height } = button.getBoundingClientRect(); return { x, y, width, height }; })()
+        })) : [];
+        return { viewport: { width: innerWidth, height: innerHeight }, rects, problemsColumns, topActions,
+          localFileEntries: fileEntries('#file-items .file-item'), driveFileEntries: fileEntries('#drive-file-items .file-item'),
+          splitters, modes, menu: menu ? (() => { const { x, y, width, height } = menu.getBoundingClientRect(); return { x, y, width, height }; })() : null,
+          menuItems,
           horizontalOverflow: document.documentElement.scrollWidth > innerWidth };
       });
     };
@@ -413,11 +446,26 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await capture('menu-settings-ja.png');
     await page.keyboard.press('Escape');
 
+    await page.locator('#storage-local').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '新しい楽譜' })).toBeVisible();
+    await capture('menu-local-root-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.locator('#storage-drive').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Drive に接続' })).toBeVisible();
+    await capture('menu-drive-root-ja.png');
+    await page.keyboard.press('Escape');
+
     const file = page.locator('#file-items .file-item').first();
     await expect(file).toBeVisible();
     await file.click({ button: 'right' });
     await expect(page.getByRole('menu')).toBeVisible();
     await capture('menu-explorer-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'このタブを開く' })).toBeVisible();
+    await capture('menu-tab-ja.png');
     await page.keyboard.press('Escape');
 
     const editorName = 'GuitarDSL ソースエディター';
@@ -432,8 +480,23 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
 
     const score = page.frameLocator('#score-frame').locator('.spread-sheet svg').first();
     await score.click({ button: 'right' });
-    await expect(page.getByRole('menuitem', { name: '譜面表示' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'PDF をダウンロード' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'ソース位置へ移動' })).toBeDisabled();
     await capture('menu-preview-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('textbox', { name: editorName }).fill('title: Preview context\n\n[Verse]\nC | G | Am | F |\n');
+    await expect.poll(async () => {
+      const revision = await page.evaluate(() => (window as Window & {
+        __guitarDslReadTabs?: () => Array<{ revision: number }>;
+      }).__guitarDslReadTabs?.()[0]?.revision);
+      return await page.frameLocator('#score-frame').locator('body').getAttribute('data-preview-document-version') === String(revision);
+    }).toBe(true);
+    const bound = page.frameLocator('#score-frame').locator('.spread-sheet [data-visual-binding]').first();
+    await expect(bound).toBeVisible();
+    await bound.click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'ソース位置へ移動' })).toBeEnabled();
+    await capture('menu-preview-binding-ja.png');
     await page.keyboard.press('Escape');
 
     await page.getByRole('button', { name: 'ソース表示' }).click();
@@ -484,7 +547,11 @@ test('renders the compact workspace geometry and preserves the Preview across vi
     return {
       header: rect('.topbar'), activity: rect('.activity-bar'), explorer: rect('.file-list'),
       explorerSplitter: rect('#explorer-splitter'), tabs: rect('.tabs'), inspector: rect('.inspector'),
-      problems: rect('#problems-panel'), toolWindow: rect('.tool-window-bar'), status: rect('.statusbar')
+      source: rect('#source-pane'), viewControls: rect('.view-mode-controls'),
+      localRoot: rect('[data-storage-section="local"] .storage-root-row'),
+      driveRoot: rect('[data-storage-section="drive"] .storage-root-row'),
+      problems: rect('#problems-panel'), toolWindow: rect('.tool-window-bar'), status: rect('.statusbar'),
+      account: rect('#connect-drive'), help: rect('#help-button'), settings: rect('#settings-button')
     };
   });
   expect(geometry.header.height).toBe(40);
@@ -492,6 +559,18 @@ test('renders the compact workspace geometry and preserves the Preview across vi
   expect(geometry.explorer.width).toBe(220);
   expect(geometry.explorerSplitter.width).toBe(6);
   expect(geometry.tabs.height).toBe(36);
+  expect(geometry.tabs.y).toBe(40);
+  expect(geometry.source.y).toBe(76);
+  expect(geometry.viewControls.y).toBe(40);
+  expect(geometry.viewControls.height).toBe(35); // 36 px tab row minus the 1 px bottom border.
+  expect(geometry.viewControls.x + geometry.viewControls.width).toBe(geometry.tabs.x + geometry.tabs.width);
+  expect(geometry.localRoot.y).toBeLessThan(geometry.driveRoot.y);
+  expect(geometry.account.x).toBeLessThan(geometry.help.x);
+  expect(geometry.help.x).toBeLessThan(geometry.settings.x);
+  await expect(page.locator('[data-storage-section]')).toHaveCount(2);
+  await expect(page.locator('[data-storage-section="local"]')).toBeVisible();
+  await expect(page.locator('[data-storage-section="drive"]')).toBeVisible();
+  await expect(page.locator('.editor-workspace > .toolbar')).toHaveCount(0);
   expect(geometry.inspector.width).toBe(300);
   expect(geometry.problems.height).toBe(200);
   expect(geometry.toolWindow.width).toBe(36);
@@ -506,6 +585,17 @@ test('renders the compact workspace geometry and preserves the Preview across vi
   await page.evaluate(() => {
     (window as Window & { __previewWindow?: Window | null }).__previewWindow = document.querySelector<HTMLIFrameElement>('#score-frame')!.contentWindow;
   });
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  const problemColumns = await page.locator('.problem-row').first().evaluate(element =>
+    Array.from(element.children).map(child => {
+      const bounds = child.getBoundingClientRect();
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    }));
+  expect(problemColumns).toHaveLength(4);
+  expect(problemColumns[0].x).toBeLessThan(problemColumns[1].x);
+  expect(problemColumns[1].x).toBeLessThan(problemColumns[2].x);
+  expect(problemColumns[2].x).toBeLessThan(problemColumns[3].x);
   await page.getByRole('button', { name: 'Source view' }).click();
   await expect(page.locator('#workspace')).toHaveClass(/view-source/);
   await expect(page.locator('#score-pane')).toBeHidden();
@@ -607,8 +697,175 @@ test('opens Help, Settings, and host-owned context menus from workspace surfaces
 
   const previewScore = page.frameLocator('#score-frame').locator('.spread-sheet svg').first();
   await previewScore.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: 'Score view' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Copy selected text' })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
+});
+
+test('shows both Explorer roots and opens root and tab menus from Shift+F10', async ({ page }) => {
+  await page.goto('/');
+  const localSection = page.locator('[data-storage-section="local"]');
+  const driveSection = page.locator('[data-storage-section="drive"]');
+  await expect(localSection).toBeVisible();
+  await expect(driveSection).toBeVisible();
+  await page.getByRole('button', { name: 'Collapse On this device' }).click();
+  await expect(page.locator('#local-storage-content')).toBeHidden();
+  await expect(driveSection).toBeVisible();
+  await page.getByRole('button', { name: 'Expand On this device' }).click();
+  await expect(page.locator('#local-storage-content')).toBeVisible();
+
+  const localRoot = page.locator('#storage-local');
+  await localRoot.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'New score' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Import file' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(localRoot).toBeFocused();
+
+  const driveRoot = page.locator('#storage-drive');
+  await driveRoot.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Connect Drive' })).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(driveRoot).toBeFocused();
+
+  const file = page.locator('#file-items .file-item').first();
+  await file.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Export source' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Copy name' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Move to Drive' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  const tab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await tab.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Open this tab' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Close', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Close other tabs' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Export source' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tab).toBeFocused();
+});
+
+test('connects and reconnects from the Google Drive root menu', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL' }, unauthorizedList: true
+  });
+  await page.goto('/');
+  const driveRoot = page.locator('#storage-drive');
+  await driveRoot.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Connect Drive' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' })).toBeVisible();
+
+  await driveRoot.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Choose folder' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Create GuitarDSL folder' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Open from Drive' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+  await driveRoot.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Reconnect Drive' }).click();
+  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+});
+
+test('exports and deletes a local file from its Explorer menu after confirmation', async ({ page }) => {
+  await page.goto('/');
+  const namePrompt = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.accept('Delete me.guitardsl');
+    return type;
+  });
+  await page.getByRole('button', { name: 'New score' }).click();
+  expect(await namePrompt).toBe('prompt');
+  const file = page.locator('#file-items .file-item').filter({ hasText: 'Delete me.guitardsl' });
+  await expect(file).toBeVisible();
+
+  await file.click({ button: 'right' });
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe('Delete me.guitardsl');
+
+  await file.click({ button: 'right' });
+  const firstConfirmation = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.dismiss();
+    return type;
+  });
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  expect(await firstConfirmation).toBe('confirm');
+  await expect(file).toBeVisible();
+
+  await file.click({ button: 'right' });
+  const secondConfirmation = page.waitForEvent('dialog').then(async dialog => {
+    const type = dialog.type();
+    await dialog.accept();
+    return type;
+  });
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  expect(await secondConfirmation).toBe('confirm');
+  await expect(file).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Delete me.guitardsl' })).toHaveCount(0);
+});
+
+test('uses Preview bindings for source navigation and rejects a stale menu target', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('title: Preview menu\n\n[Verse]\nC | G | Am | F |\n');
+  const preview = page.frameLocator('#score-frame');
+  await expect.poll(async () => {
+    const revision = await page.evaluate(() => (window as Window & {
+      __guitarDslReadTabs?: () => Array<{ revision: number }>;
+    }).__guitarDslReadTabs?.()[0]?.revision);
+    return await preview.locator('body').getAttribute('data-preview-document-version') === String(revision);
+  }).toBe(true);
+  const boundElement = preview.locator('.spread-sheet [data-visual-binding]').first();
+  await expect(boundElement).toBeVisible();
+
+  await boundElement.click({ button: 'right' });
+  const goToSource = page.getByRole('menuitem', { name: 'Go to source position' });
+  await expect(goToSource).toBeEnabled();
+  await goToSource.click();
+  await expect(page.locator('#workspace')).toHaveClass(/view-source/);
+  const selectedRange = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  expect(selectedRange).toBeTruthy();
+  expect(selectedRange!.to).toBeGreaterThan(selectedRange!.from);
+
+  await page.getByRole('button', { name: 'Split view' }).click();
+  await preview.locator('body').click({ button: 'right', position: { x: 2, y: 110 } });
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await boundElement.click();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeEnabled();
+  const pdfDownload = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Download PDF' }).click();
+  expect((await pdfDownload).suggestedFilename()).toBe('Untitled.pdf');
+
+  await boundElement.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeEnabled();
+  const staleSelection = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  await page.evaluate(() => {
+    const testWindow = window as Window & {
+      __guitarDslReadSource?: () => string;
+      __guitarDslDispatchSourceEdit?: (source: string, userEvent?: string) => boolean;
+    };
+    const source = testWindow.__guitarDslReadSource?.() ?? '';
+    testWindow.__guitarDslDispatchSourceEdit?.(source.replace('C | G', 'D | G'), 'input.replace');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#context-menu button'))
+      .find(button => button.textContent === 'Go to source position')?.click();
+  });
+  await expect(page.locator('#app-message')).toContainText('target changed');
+  const selectionAfterStaleAction = await page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number }
+  }).__guitarDslReadSelection?.());
+  expect(selectionAfterStaleAction).toEqual(staleSelection);
 });
 
 test('applies a selected progression through the shared source-preserving planner', async ({ page }) => {
@@ -1250,7 +1507,8 @@ test('keeps source export available when browser storage is blocked', async ({ p
   await editor.fill(source);
   await expectEditorSource(page, source);
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe('Untitled.guitardsl');
 });
 
@@ -1266,7 +1524,8 @@ test('preserves original CRLF line endings when editing and exporting an importe
   await editor.fill(source.replace(/\r\n/gu, '\n').replace('Song', 'Track'));
 
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Line endings.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   const download = await downloadPromise;
   const path = await download.path();
   expect(path).not.toBeNull();
@@ -1497,9 +1756,103 @@ test('keeps separate local documents in tabs and supports file export', async ({
   await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export .guitardsl' }).click();
+  await page.getByRole('tab', { name: 'Second.guitardsl' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Export source' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('Second.guitardsl');
+});
+
+test('flushes same-task CodeMirror edits before redraw and tab switches without sharing undo history', async ({ page }) => {
+  await page.goto('/');
+  const firstTab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await expect(firstTab).toBeVisible();
+  const readTabs = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+  }).__guitarDslReadTabs?.() ?? []);
+  const initialFirst = (await readTabs())[0];
+  const initialFirstSource = await readEditorSource(page);
+  const redrawEdit = `${initialFirstSource}\n# same-task renderAll\n`;
+  const afterRedraw = await page.evaluate(source => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslRenderAll?: () => void;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    testWindow.__guitarDslRenderAll?.();
+    return testWindow.__guitarDslReadTabs?.();
+  }, redrawEdit);
+  expect(afterRedraw?.find(tab => tab.key === initialFirst.key)).toMatchObject({
+    source: redrawEdit, revision: initialFirst.revision + 1
+  });
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const firstDraft = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const row = (await indexedDb.listDocuments('local')).find(document => document.name === 'Untitled.guitardsl');
+    return row ? (await indexedDb.getDraft(row.identity))?.source : undefined;
+  });
+  expect(firstDraft).toBe(redrawEdit);
+
+  const secondSource = 'title: Second tab\n\n[Verse]\nD | G |\n';
+  await page.locator('#file-input').setInputFiles({
+    name: 'Second.guitardsl', mimeType: 'text/plain', buffer: Buffer.from(secondSource, 'utf8')
+  });
+  const secondTab = page.getByRole('tab', { name: 'Second.guitardsl' });
+  await expect(secondTab).toBeVisible();
+  const originalSecond = (await readTabs()).find(tab => tab.key !== initialFirst.key)!;
+  await firstTab.click();
+  await expectEditorSource(page, redrawEdit);
+
+  const switchEdit = `${redrawEdit}\n# same-task tab switch\n`;
+  const afterSwitch = await page.evaluate(({ source, tabName }) => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(tab => tab.textContent === tabName)?.click();
+    return testWindow.__guitarDslReadTabs?.();
+  }, { source: switchEdit, tabName: 'Second.guitardsl' });
+  expect(afterSwitch?.find(tab => tab.key === initialFirst.key)).toMatchObject({
+    source: switchEdit, revision: initialFirst.revision + 2
+  });
+  await expectEditorSource(page, secondSource);
+
+  const secondEdit = `${secondSource}\n# same-task second redraw\n`;
+  const afterSecondRedraw = await page.evaluate(source => {
+    const testWindow = window as Window & {
+      __guitarDslDispatchSourceEdit?: (value: string, userEvent?: string) => boolean;
+      __guitarDslRenderAll?: () => void;
+      __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: string }>;
+    };
+    testWindow.__guitarDslDispatchSourceEdit?.(source, 'input.replace');
+    testWindow.__guitarDslRenderAll?.();
+    return testWindow.__guitarDslReadTabs?.();
+  }, secondEdit);
+  expect(afterSecondRedraw?.find(tab => tab.key === originalSecond.key)).toMatchObject({
+    source: secondEdit, revision: originalSecond.revision + 1
+  });
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const secondDraft = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const row = (await indexedDb.listDocuments('local')).find(document => document.name === 'Second.guitardsl');
+    return row ? (await indexedDb.getDraft(row.identity))?.source : undefined;
+  });
+  expect(secondDraft).toBe(secondEdit);
+
+  await firstTab.click();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, redrawEdit);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === initialFirst.key)?.source).toBe(redrawEdit);
+  expect((await readTabs()).find(tab => tab.key === originalSecond.key)?.source).toBe(secondEdit);
+
+  await secondTab.click();
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, secondSource);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === originalSecond.key)?.source).toBe(secondSource);
+  expect((await readTabs()).find(tab => tab.key === initialFirst.key)?.source).toBe(redrawEdit);
 });
 
 test('downloads a PDF from the shared score SVG renderer', async ({ page }) => {

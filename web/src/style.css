@@ -28,9 +28,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inspector { border-left: 1px solid #dfe2e7; overflow: auto; container-type: inline-size; }
 .pane-heading { min-height: 42px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; font-weight: 600; border-bottom: 1px solid #eceef2; }
 .pane-heading button { padding: 3px 8px; }
-.storage-switch { display: flex; padding: 10px; gap: 4px; }
-.storage-switch button, .inspector-tabs button { border: 0; background: transparent; border-radius: 5px; color: #68717f; padding: 7px 8px; }
-.storage-switch .selected, .inspector-tabs [aria-selected="true"] { color: #3444b8; background: #eef0ff; }
+.storage-section { flex: 0 0 auto; border-bottom: 1px solid #eceef2; }
+.storage-root-row { display: flex; align-items: center; min-height: 32px; padding: 0 6px; gap: 2px; }
+.storage-expander { display: grid; place-items: center; width: 22px; height: 26px; flex: 0 0 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #68717f; }
+.storage-expander .web-icon { width: 14px; height: 14px; transition: transform 100ms ease; }
+.storage-expander[aria-expanded="false"] .web-icon { transform: rotate(-90deg); }
+.storage-root-label { flex: 1 1 auto; min-width: 0; padding: 5px 7px; border: 0; border-radius: 4px; background: transparent; color: #4d5664; text-align: left; font-weight: 600; }
+.storage-root-label.selected { color: #3444b8; background: #eef0ff; }
+.storage-content[hidden] { display: none; }
+.storage-content .file-actions { padding-top: 2px; }
+.storage-content .file-items { padding-top: 2px; }
+.inspector-tabs button { border: 0; background: transparent; border-radius: 5px; color: #68717f; padding: 7px 8px; }
+.inspector-tabs [aria-selected="true"] { color: #3444b8; background: #eef0ff; }
 .file-actions { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 10px 8px; }
 .file-action { padding: 5px 7px; font-size: 11px; }
 .file-action { display: inline-flex; align-items: center; gap: 6px; }
@@ -43,7 +52,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .drive-scope-note { margin: 0 12px 14px; color: #79818e; font-size: 11px; line-height: 1.45; }
 .drive-overwrite-note { margin: 0 12px 14px; padding: 8px; border-left: 3px solid #d19a29; background: #fff8e7; color: #684b12; font-size: 11px; line-height: 1.45; }
 .editor-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.tabs { display: flex; align-items: stretch; min-height: 42px; overflow: auto hidden; background: #f1f2f5; border-bottom: 1px solid #dfe2e7; }
+.tabs { display: flex; align-items: stretch; min-height: 36px; height: 36px; overflow: hidden; background: #f1f2f5; border-bottom: 1px solid #dfe2e7; }
+.document-tabs { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow: hidden auto; }
+.view-mode-controls { display: flex; align-items: center; flex: 0 0 auto; gap: 3px; padding: 0 7px 0 5px; border-left: 1px solid #dfe2e7; }
 .tab { display: flex; align-items: center; min-width: 0; border-right: 1px solid #dfe2e7; }
 .tab > [role="tab"] { min-width: 0; max-width: 220px; padding: 0 12px; border: 0; background: transparent; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; color: #69717e; }
 .tab.active { background: #fff; border-top: 2px solid #5364d9; }
@@ -185,14 +196,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   :root { color-scheme: dark; color: #e4e7ee; background: #1f2228; }
   .app-shell, .file-list, .inspector, .topbar, .toolbar, .source-pane, .editor-surface, .pane-heading, .tab.active { background: #242830; color: #e4e7ee; }
   .app-shell[data-theme="system"] .editor-highlight { --gds-key:#c4a7ff; --gds-directive:#f0b36b; --gds-section:#75d6c3; --gds-chord:#91b8ff; --gds-note:#c4a7ff; --gds-comment:#929aa8; --gds-operator:#f0b36b; --gds-bar:#858e9d; --gds-value:#e4e7ee; --gds-symbol:#75d6c3; --gds-tab:#91b8ff; --gds-effect:#f0b36b; --gds-punctuation:#aeb5c2; }
-  .workspace-name, .storage-switch button, .inspector-tabs button, .saved-state, .preview-state, .language-chip, .file-items, .file-subtitle, .inspector-content, .drive-scope-note { color: #aeb5c2; }
+  .workspace-name, .storage-root-label, .storage-expander, .inspector-tabs button, .saved-state, .preview-state, .language-chip, .file-items, .file-subtitle, .inspector-content, .drive-scope-note { color: #aeb5c2; }
   .drive-overwrite-note { background: #382f1c; color: #f0d18c; }
   .tabs, .score-pane, .statusbar { background: #1e2127; }
   .pane-heading, .file-list, .inspector, .tabs, .tab, .toolbar, .diagnostics { border-color: #3a3f4a; }
   .quiet-button, .pane-heading button, .inspector-field select { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
   .primary-button { background: #6877eb; border-color: #6877eb; color: #fff; }
   .file-item:hover, .file-item:focus-visible { background: #303641; }
-  .inspector-tabs [aria-selected="true"], .storage-switch .selected { background: #343b6f; color: #dce0ff; }
+  .inspector-tabs [aria-selected="true"], .storage-root-label.selected { background: #343b6f; color: #dce0ff; }
   .shared-inspector-tabs { border-color: #3a3f4a; }
   .shared-inspector-tabs button { color: #aeb5c2; }
   .shared-inspector-tabs button[aria-selected="true"] { background: #343b6f; color: #dce0ff; }
@@ -266,7 +277,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #explorer-splitter { grid-column: 3; }
 .workspace-splitter:hover, .workspace-splitter:focus-visible, .problems-splitter:hover, .problems-splitter:focus-visible { background: #8290eb; outline: 2px solid #6574e5; outline-offset: -2px; }
 .editor-workspace { grid-column: 4; grid-row: 1; min-width: 0; }
-.tabs { min-height: 36px; flex: 0 0 36px; }
+.tabs { min-height: 36px; height: 36px; flex: 0 0 36px; }
+.document-tabs { overflow-x: auto; overflow-y: hidden; }
 .tab > [role="tab"] { padding: 0 9px; }
 .toolbar { min-height: 36px; flex: 0 0 36px; padding: 0 7px; gap: 4px; }
 .toolbar > button { min-height: 26px; padding: 3px 7px; }

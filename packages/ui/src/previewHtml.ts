@@ -58,6 +58,8 @@ export interface CompileHtmlOptions {
   previewUiMode?: 'normal' | 'edit' | 'practice';
   /** Source identity must be literal TextDocument text for editable Preview bindings. */
   previewEditAvailable?: boolean;
+  /** Keep source binding attributes available for host-owned context menus outside Edit mode. */
+  includeVisualBindingsForContextMenu?: boolean;
   /** Parser-owned authored token bindings, never inferred from SVG coordinates. */
   visualBindings?: readonly VisualSourceBinding[];
   /** Host messages and state are supplied by the owning application's adapter. */
@@ -275,12 +277,13 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     ? renderCspMeta(options.cspSource, options.nonce)
     : '';
 
-  const sheets = renderScoreSheets(score, pageSize, orientation, previewEditMode && previewEditAvailable);
+  const includeVisualBindings = previewEditAvailable && (previewEditMode || options?.includeVisualBindingsForContextMenu === true);
+  const sheets = renderScoreSheets(score, pageSize, orientation, includeVisualBindings);
   const spreadGroups: string[] = [];
   for (let i = 0; i < sheets.length; i += 2) {
     spreadGroups.push(`<div class="spread-sheet">${sheets.slice(i, i + 2).join('\n')}</div>`);
   }
-  const continuousSvg = renderContinuousSvg(score, pageSize, previewEditMode && previewEditAvailable);
+  const continuousSvg = renderContinuousSvg(score, pageSize, includeVisualBindings);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const previewIdentityJson = escapeJsonForHtml(JSON.stringify({
