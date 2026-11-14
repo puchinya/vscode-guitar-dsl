@@ -17,10 +17,13 @@
     "build": "vite build",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --import tsx --test test/unit/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:firefox": "playwright test --config playwright.firefox.config.ts",
+    "test:safari": "node scripts/run-safari-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
+    "selenium-webdriver": "^4.51.0",
     "vite": "^8.3.8"
   }
 }

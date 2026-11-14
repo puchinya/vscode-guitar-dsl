@@ -100,6 +100,24 @@ npm test
 ```
 - Run `npm test` outside the command sandbox because it launches the VS Code E2E suite.
 
+### Web SPA browser verification
+
+The required pull-request browser checks are independent: `web-spa-chromium`, `web-spa-webkit`, and `safari-smoke`. They run for every pull request because all three are protected status checks.
+
+```bash
+npm run build:web
+npm run test:unit --workspace web
+npm run test:e2e --workspace web -- --project=chromium
+npm run test:e2e --workspace web -- --project=webkit
+npm run test:safari --workspace web
+```
+
+- Chromium runs Playwright on Linux. WebKit runs Playwright on macOS and is not Apple Safari.
+- `test:safari` is available only on macOS and automates the installed Safari with Apple's `/usr/bin/safaridriver` through Selenium WebDriver. Enable remote automation once with `safaridriver --enable`; the CI runner performs this setup itself. Safari permits one WebDriver session at a time, so the smoke cases run sequentially.
+- The Safari smoke uses a local Vite server and mocked Google OAuth, Picker, and Drive API responses. It does not use production credentials or Drive data. It writes a machine-readable report containing macOS/Safari versions and check results; CI uploads the report and any failure screenshot.
+- Firefox is an optional regression suite, not a required browser. Run it with `npm run test:e2e:firefox --workspace web`; it does not satisfy WebKit or Safari coverage.
+- A successful WebKit or Firefox run cannot substitute for the real SafariDriver gate. If SafariDriver cannot be enabled, report the Safari result as BLOCKED/NOT RUN.
+
 ### 4. Help Generation and Sync
 ```bash
 npm run generate:help   # regenerate media/help/guitardsl-help.{ja,en}.md (runs automatically as precompile)

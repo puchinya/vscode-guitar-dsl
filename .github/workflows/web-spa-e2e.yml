@@ -2,19 +2,12 @@ name: Web SPA browser E2E
 
 on:
   pull_request:
-    paths:
-      - "web/**"
-      - "packages/**"
-      - "media/chordEditor.js"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/web-spa-e2e.yml"
 
 permissions:
   contents: read
 
 jobs:
-  web-spa-e2e:
+  web-spa-chromium:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,11 +20,63 @@ jobs:
         run: npm ci
       - name: Build shared packages
         run: npm run build:packages
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox
-      - name: Run Chromium and Firefox E2E
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run Chromium E2E
         env:
           VITE_GOOGLE_CLIENT_ID: playwright-test-client
           VITE_GOOGLE_API_KEY: playwright-test-api-key
           VITE_GOOGLE_APP_ID: "123456789"
-        run: npm run test:e2e --workspace web
+        run: npm run test:e2e --workspace web -- --project=chromium
+
+  web-spa-webkit:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build shared packages
+        run: npm run build:packages
+      - name: Install Playwright WebKit
+        run: npx playwright install webkit
+      - name: Run WebKit E2E on macOS
+        env:
+          VITE_GOOGLE_CLIENT_ID: playwright-test-client
+          VITE_GOOGLE_API_KEY: playwright-test-api-key
+          VITE_GOOGLE_APP_ID: "123456789"
+        run: npm run test:e2e --workspace web -- --project=webkit
+
+  safari-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build shared packages
+        run: npm run build:packages
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Run Safari smoke E2E
+        env:
+          CI: "true"
+          VITE_GOOGLE_CLIENT_ID: safari-test-client
+          VITE_GOOGLE_API_KEY: safari-test-api-key
+          VITE_GOOGLE_APP_ID: "123456789"
+        run: npm run test:safari --workspace web
+      - name: Upload Safari smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-smoke-evidence
+          path: web/test-results/safari/
+          if-no-files-found: error
