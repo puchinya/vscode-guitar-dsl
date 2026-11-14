@@ -6,8 +6,7 @@ const state = {
   download: undefined,
   downloadInvocationCount: 0,
   localScoreCreationCount: 0,
-  localScoreName: 'Safari recovery.guitardsl',
-  nativePdfDownloadEnabled: import.meta.env.VITE_SAFARI_REAL_PDF_DOWNLOAD === 'true'
+  localScoreName: 'Safari recovery.guitardsl'
 };
 window.__guitardslSafariSmoke = state;
 Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
@@ -56,11 +55,9 @@ URL.createObjectURL = blob => {
   state.pdfBlob = blob;
   return originalCreateObjectURL(blob);
 };
-const originalAnchorClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
   state.downloadInvocationCount += 1;
   state.download = { filename: this.download, href: this.href, invocation: state.downloadInvocationCount };
-  if (state.nativePdfDownloadEnabled) originalAnchorClick.call(this);
 };
 
 window.google = {

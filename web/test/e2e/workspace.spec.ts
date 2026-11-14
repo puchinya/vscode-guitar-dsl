@@ -1089,6 +1089,8 @@ test('keeps native text editing undoable', async ({ page }) => {
   await expect(editor).toHaveValue(`${initial}!`);
   await editor.press('ControlOrMeta+z');
   await expect(editor).toHaveValue(initial);
+  await editor.press('ControlOrMeta+Shift+z');
+  await expect(editor).toHaveValue(`${initial}!`);
 });
 
 test('shows compiler diagnostics and moves the source selection to one', async ({ page }) => {

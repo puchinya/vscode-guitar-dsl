@@ -44,7 +44,14 @@ const initialReport = {
   safariDriverVersion,
   safariVersion,
   browserVersion: null,
-  notRun: ['iOS/iPadOS Safari', 'production Google OAuth', 'production Google Drive', 'physical audio output']
+  notRun: [
+    'Apple Safari UI native Undo/Redo (NOT RUN; not an acceptance gate)',
+    'actual OS PDF file saving (NOT RUN; not an acceptance gate)',
+    'iOS/iPadOS Safari',
+    'production Google OAuth',
+    'production Google Drive',
+    'physical audio output'
+  ]
 };
 
 const { exitCode } = await runSafariSmokeSupervisor({

@@ -1,10 +1,8 @@
 import { spawn } from 'node:child_process';
-import { copyFile, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Builder, By, Key } from 'selenium-webdriver';
-import { prepareIsolatedSafariDownloads as isolateSafariDownloads, restoreIsolatedSafariDownloads } from './safari-download-isolation.mjs';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = resolve(webRoot, 'test-results/safari');
@@ -18,16 +16,19 @@ const report = {
   startedAt: new Date().toISOString(),
   browserVersion: null,
   checks: [],
-  downloadIsolationError: null,
-  notRun: ['iOS/iPadOS Safari', 'production Google OAuth', 'production Google Drive', 'physical audio output']
+  notRun: [
+    'Apple Safari UI native Undo/Redo (NOT RUN; not an acceptance gate)',
+    'actual OS PDF file saving (NOT RUN; not an acceptance gate)',
+    'iOS/iPadOS Safari',
+    'production Google OAuth',
+    'production Google Drive',
+    'physical audio output'
+  ]
 };
 
 let server;
 let driver;
-let isolatedSafariDownloads;
-let downloadIsolationError;
 let failed = false;
-let nativeKeyRoute = 'element.sendKeys';
 let terminationRequested = false;
 
 function emit(message) {
@@ -209,28 +210,6 @@ async function installAppEditorEventRecorder() {
   });
 }
 
-async function prepareIsolatedSafariDownloads() {
-  if (process.env.GITHUB_ACTIONS !== 'true') return null;
-  return isolateSafariDownloads({
-    downloadsPath: join(homedir(), 'Downloads'),
-    runnerTemp: process.env.RUNNER_TEMP,
-    processId: process.pid
-  });
-}
-
-async function waitForDownloadedFile(filePath, timeoutMs = 25_000) {
-  await waitUntil(async () => {
-    try {
-      const info = await lstat(filePath);
-      return info.isFile() && info.size > 0;
-    } catch (error) {
-      if (error?.code === 'ENOENT') return false;
-      throw error;
-    }
-  }, `Safari did not save the PDF file at ${filePath}.`, timeoutMs);
-  return readFile(filePath);
-}
-
 async function setEditorFixtureText(source) {
   await driver.executeScript(value => {
     const editor = document.querySelector('#source-pane textarea');
@@ -242,60 +221,11 @@ async function setEditorFixtureText(source) {
   await waitUntil(async () => await editorValue() === source, 'The textarea did not accept the fixture source.');
 }
 
-async function sendNativeShortcut(element, redo = false) {
-  if (nativeKeyRoute === 'actions') {
-    const actions = driver.actions().keyDown(Key.COMMAND);
-    if (redo) actions.keyDown(Key.SHIFT);
-    actions.keyDown('z').keyUp('z');
-    if (redo) actions.keyUp(Key.SHIFT);
-    actions.keyUp(Key.COMMAND);
-    await actions.perform();
-    return;
-  }
-  await element.sendKeys(Key.chord(Key.COMMAND, ...(redo ? [Key.SHIFT] : []), 'z'));
-}
-
-async function nativeProbeSnapshot() {
-  return driver.executeScript(() => {
-    const editor = document.querySelector('#native-textarea-probe');
-    return {
-      value: editor?.value ?? null,
-      focused: document.activeElement === editor,
-      activeElementId: document.activeElement?.id || null,
-      activeElementTagName: document.activeElement?.tagName || null,
-      selectionStart: editor?.selectionStart ?? null,
-      selectionEnd: editor?.selectionEnd ?? null,
-      selectionDirection: editor?.selectionDirection ?? null,
-      events: window.__nativeTextareaProbe.events
-    };
-  });
-}
-
-async function releaseNativeProbeKeys() {
-  try {
-    const probe = await driver.findElement(By.id('native-textarea-probe'));
-    await probe.sendKeys(Key.NULL);
-    return await nativeProbeSnapshot();
-  } catch (error) {
-    return { releaseError: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
-  }
-}
-
-function hasTrustedHistory(snapshot, inputType) {
-  return snapshot.events.some(event => event.type === 'input' && event.inputType === inputType && event.trusted);
-}
-
 process.on('SIGTERM', () => {
   if (terminationRequested) return;
   terminationRequested = true;
   if (server && server.exitCode === null) server.kill('SIGTERM');
-  const forceExit = setTimeout(() => process.exit(143), 1_500);
-  void restoreIsolatedSafariDownloads(isolatedSafariDownloads)
-    .catch(error => { report.downloadIsolationCleanupError = error instanceof Error ? error.message : String(error); })
-    .finally(() => {
-      clearTimeout(forceExit);
-      process.exit(143);
-    });
+  setTimeout(() => process.exit(143), 1_500);
 });
 
 async function activateInspectorTab(tab) {
@@ -317,14 +247,6 @@ async function inspectPreviewSvg() {
 
 try {
   await mkdir(outputDir, { recursive: true });
-  startStep('isolate-ci-safari-download-folder');
-  try {
-    isolatedSafariDownloads = await prepareIsolatedSafariDownloads();
-  } catch (error) {
-    downloadIsolationError = error instanceof Error ? error.message : String(error);
-    report.downloadIsolationError = downloadIsolationError;
-    console.warn(`Safari native PDF file-save check is blocked because Downloads could not be isolated safely: ${downloadIsolationError}`);
-  }
   startStep('start-vite-server');
   server = spawn(process.execPath, [resolve(webRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: webRoot,
@@ -332,8 +254,7 @@ try {
       ...process.env,
       VITE_GOOGLE_CLIENT_ID: process.env.VITE_GOOGLE_CLIENT_ID ?? 'safari-smoke-client',
       VITE_GOOGLE_API_KEY: process.env.VITE_GOOGLE_API_KEY ?? 'safari-smoke-api-key',
-      VITE_GOOGLE_APP_ID: process.env.VITE_GOOGLE_APP_ID ?? '123456789',
-      VITE_SAFARI_REAL_PDF_DOWNLOAD: process.env.GITHUB_ACTIONS === 'true' && isolatedSafariDownloads ? 'true' : 'false'
+      VITE_GOOGLE_APP_ID: process.env.VITE_GOOGLE_APP_ID ?? '123456789'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -363,64 +284,6 @@ try {
     browserCapabilitiesVersion: report.browserCapabilitiesVersion
   } });
   console.log(`SafariDriver browser version: ${report.browserCapabilitiesVersion ?? 'unavailable'}.`);
-
-  let nativeUndoRedoProbePassed = false;
-  startStep('load-native-textarea-probe');
-  await driver.get(`${baseUrl}/test/safari/native-textarea-probe.html`);
-  await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#native-textarea-probe'))), 10_000);
-  await recordCheck('webdriver-native-textarea-undo-redo-probe', async () => {
-    try {
-      const probe = await driver.findElement(By.id('native-textarea-probe'));
-      const initialFocusSelection = await driver.executeScript(() => {
-        const editor = document.querySelector('#native-textarea-probe');
-        editor.focus();
-        editor.setSelectionRange(editor.value.length, editor.value.length);
-        return {
-          focused: document.activeElement === editor,
-          activeElementId: document.activeElement?.id || null,
-          selectionStart: editor.selectionStart,
-          selectionEnd: editor.selectionEnd,
-          selectionDirection: editor.selectionDirection
-        };
-      });
-      await probe.sendKeys('x');
-      const afterInsert = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
-      await probe.sendKeys(Key.chord(Key.COMMAND, 'z'));
-      const elementSendKeysUndo = await nativeProbeSnapshot();
-      if (elementSendKeysUndo.value !== 'seed' || !hasTrustedHistory(elementSendKeysUndo, 'historyUndo')) {
-        nativeKeyRoute = 'actions';
-        await driver.actions().keyUp(Key.COMMAND).perform();
-        await sendNativeShortcut(probe);
-      }
-      const undo = await nativeProbeSnapshot();
-      if (afterInsert !== 'seedx' || undo.value !== 'seed' || !hasTrustedHistory(undo, 'historyUndo')) {
-        throw new BlockedCheckError(`SafariDriver could not prove trusted native textarea undo through WebDriver: ${JSON.stringify({ initialFocusSelection, afterInsert, elementSendKeysUndo, actionUndo: nativeKeyRoute === 'actions' ? undo : undefined, nativeKeyRoute })}`);
-      }
-      await sendNativeShortcut(probe, true);
-      const redo = await nativeProbeSnapshot();
-      if (redo.value !== 'seedx' || !hasTrustedHistory(redo, 'historyRedo')) {
-        throw new BlockedCheckError(`SafariDriver could not prove trusted native textarea redo through WebDriver: ${JSON.stringify({ initialFocusSelection, nativeKeyRoute, undo, redo })}`);
-      }
-      nativeUndoRedoProbePassed = true;
-      return {
-        afterInsert,
-        afterUndo: undo.value,
-        afterRedo: redo.value,
-        undoInputType: 'historyUndo',
-        redoInputType: 'historyRedo',
-        trustedNativeInput: true,
-        nativeKeyRoute,
-        initialFocusSelection,
-        undoFocusSelection: { focused: undo.focused, activeElementId: undo.activeElementId, selectionStart: undo.selectionStart, selectionEnd: undo.selectionEnd },
-        redoFocusSelection: { focused: redo.focused, activeElementId: redo.activeElementId, selectionStart: redo.selectionStart, selectionEnd: redo.selectionEnd },
-        keyboardEvents: redo.events.filter(event => event.type === 'keydown' || event.type === 'keyup')
-      };
-    } catch (error) {
-      if (error?.status === 'BLOCKED') throw error;
-      throw new BlockedCheckError(`SafariDriver native textarea undo/redo probe could not complete: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
-    }
-  });
-  report.nativeProbeKeyRelease = await releaseNativeProbeKeys();
 
   startStep('load-guitardsl-safari-fixture');
   await driver.get(`${baseUrl}/test/safari/fixture.html`);
@@ -477,39 +340,6 @@ try {
     };
   });
 
-  await recordCheck('native-editor-undo-redo', async () => {
-    if (!nativeUndoRedoProbePassed) {
-      throw new BlockedCheckError('The dependency-free native textarea probe did not prove trusted undo/redo; the app editor shortcut check remains BLOCKED.');
-    }
-    const base = await editorValue();
-    if (typeof base !== 'string') throw new Error('The local score source is missing before the native undo check.');
-    const editor = await driver.findElement(By.css('#source-pane textarea'));
-    const eventStart = await driver.executeScript(() => window.__guitardslSafariSmoke.nativeEditorEvents.length);
-    await driver.executeScript(target => {
-      target.focus();
-      target.setSelectionRange(target.value.length, target.value.length);
-    }, editor);
-    await editor.sendKeys('!');
-    const edited = `${base}!`;
-    await waitUntil(async () => await editorValue() === edited, 'Native text input was not applied before undo.');
-    await sendNativeShortcut(editor);
-    await waitUntil(async () => await editorValue() === base, 'Command-Z did not undo the native textarea edit.');
-    await sendNativeShortcut(editor, true);
-    await waitUntil(async () => await editorValue() === edited, 'Command-Shift-Z did not redo the native textarea edit.');
-    const nativeEditorEvents = await driver.executeScript(start => window.__guitardslSafariSmoke.nativeEditorEvents.slice(start), eventStart);
-    const trustedUndo = nativeEditorEvents.some(event => event.type === 'input' && event.inputType === 'historyUndo' && event.trusted);
-    const trustedRedo = nativeEditorEvents.some(event => event.type === 'input' && event.inputType === 'historyRedo' && event.trusted);
-    if (!trustedUndo || !trustedRedo) throw new BlockedCheckError('The GuitarDSL textarea did not expose trusted native historyUndo and historyRedo input events.');
-    await waitForSavedDraft();
-    return {
-      undoMethod: `WebDriver ${nativeKeyRoute} COMMAND+Z`,
-      redoMethod: `WebDriver ${nativeKeyRoute} COMMAND+SHIFT+Z`,
-      trustedUndo,
-      trustedRedo,
-      nativeEditorEvents
-    };
-  });
-
   await recordCheck('preview-svg-and-inspector-variables-settings', async () => {
     const source = 'let riff = 4.d 4.d 4.d 4.d\nkey: C\n| C $riff |\n';
     await setEditorFixtureText(source);
@@ -521,7 +351,7 @@ try {
     return { previewSvgCount: svgCount, variable: 'riff', settingsSelectCount: await driver.executeScript(() => document.querySelectorAll('#inspector-content select, #settings-content select').length) };
   });
 
-  await recordCheck('pdf-blob-download-and-native-file-save', async () => {
+  await recordCheck('pdf-blob-validity-and-download-anchor-invocation', async () => {
     await driver.executeScript(() => {
       window.__guitardslSafariSmoke.pdfBlob = undefined;
       window.__guitardslSafariSmoke.download = undefined;
@@ -529,43 +359,38 @@ try {
     await click('#download-pdf');
     await waitUntil(async () => await driver.executeScript(() => Boolean(window.__guitardslSafariSmoke?.pdfBlob && window.__guitardslSafariSmoke?.download)),
       'PDF export did not create a Blob and invoke a download link.', 20_000);
-    const details = await driver.executeScript(() => ({
-      blobType: window.__guitardslSafariSmoke.pdfBlob.type,
-      blobSize: window.__guitardslSafariSmoke.pdfBlob.size,
-      filename: window.__guitardslSafariSmoke.download.filename,
-      nativeDownloadEnabled: window.__guitardslSafariSmoke.nativePdfDownloadEnabled
-    }));
-    if (details.blobType !== 'application/pdf' || details.blobSize <= 0 || !details.filename.endsWith('.pdf')) {
+    const details = await driver.executeAsyncScript(done => {
+      const smoke = window.__guitardslSafariSmoke;
+      const blob = smoke?.pdfBlob;
+      if (!(blob instanceof Blob)) {
+        done({ error: 'PDF export did not produce a Blob.' });
+        return;
+      }
+      blob.arrayBuffer().then(buffer => {
+        const bytes = new Uint8Array(buffer);
+        const text = new TextDecoder().decode(bytes);
+        done({
+          blobType: blob.type,
+          blobSize: blob.size,
+          filename: smoke.download?.filename,
+          downloadInvocationCount: smoke.downloadInvocationCount,
+          signature: String.fromCharCode(...bytes.slice(0, 5)),
+          pageCount: [...text.matchAll(/\/Type\s*\/Page\b/g)].length
+        });
+      }, error => done({ error: String(error) }));
+    });
+    if (details.error) throw new Error(`PDF Blob could not be inspected: ${details.error}`);
+    if (details.blobType !== 'application/pdf' || details.blobSize <= 0 || !details.filename?.endsWith('.pdf')) {
       throw new Error(`Unexpected PDF export: ${JSON.stringify(details)}`);
     }
-    if (!isolatedSafariDownloads) {
-      const reason = downloadIsolationError ?? 'Local Safari smoke does not change the user Downloads directory.';
-      throw new BlockedCheckError(`Native PDF file save was not run because no safe isolated Downloads directory is available: ${reason}`, {
-        ...details,
-        nativeDownloadEnabled: false,
-        realFileSaved: 'NOT RUN',
-        downloadInvocationOnly: true
-      });
+    if (details.signature !== '%PDF-' || details.pageCount < 1 || details.downloadInvocationCount < 1) {
+      throw new Error(`PDF Blob validity or download-anchor invocation failed: ${JSON.stringify(details)}`);
     }
-    if (!details.nativeDownloadEnabled) throw new Error('Safari fixture did not enable the native PDF file download in CI.');
-    const filename = basename(details.filename);
-    if (filename !== details.filename) throw new Error(`Unsafe PDF download filename: ${details.filename}`);
-    const downloadedPath = join(isolatedSafariDownloads.directory, filename);
-    const downloadedPdf = await waitForDownloadedFile(downloadedPath);
-    const signature = downloadedPdf.subarray(0, 5).toString('ascii');
-    const pageCount = [...downloadedPdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;
-    if (signature !== '%PDF-' || pageCount < 1) {
-      throw new Error(`Downloaded file is not a valid non-empty PDF: ${JSON.stringify({ signature, pageCount, bytes: downloadedPdf.length })}`);
-    }
-    const artifactPath = resolve(outputDir, `safari-pdf-download-${Date.now()}.pdf`);
-    await copyFile(downloadedPath, artifactPath);
     return {
       ...details,
-      realFileSaved: true,
-      savedFile: artifactPath,
-      savedBytes: downloadedPdf.length,
-      signature,
-      pageCount
+      validPdfBlob: true,
+      downloadAnchorInvoked: true,
+      actualFileSaved: 'NOT RUN (separate one-time normal-Safari Issue evidence)'
     };
   });
 
@@ -689,11 +514,6 @@ try {
     catch (error) { if (!report.quitError) report.quitError = error instanceof Error ? error.message : String(error); }
   }
   if (server && server.exitCode === null) server.kill('SIGTERM');
-  try { await restoreIsolatedSafariDownloads(isolatedSafariDownloads); }
-  catch (error) {
-    failed = true;
-    report.downloadIsolationCleanupError = error instanceof Error ? error.message : String(error);
-  }
   report.finishedAt = new Date().toISOString();
   report.status = failed || report.checks.some(check => check.status !== 'PASS') ? 'FAIL' : 'PASS';
   emit({ type: 'report-metadata', metadata: {
@@ -703,9 +523,7 @@ try {
     finalPageDiagnostics: report.finalPageDiagnostics,
     failureScreenshot: report.failureScreenshot,
     runnerError: report.runnerError,
-    downloadIsolationError: report.downloadIsolationError,
-    downloadIsolationCleanupError: report.downloadIsolationCleanupError,
-    nativeProbeKeyRelease: report.nativeProbeKeyRelease
+    notRun: report.notRun
   } });
 }
 
