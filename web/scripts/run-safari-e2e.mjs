@@ -62,12 +62,27 @@ async function pageDiagnostics() {
   return driver.executeScript(() => ({
     url: location.href,
     language: navigator.language,
+    documentTitle: document.title,
+    visibilityState: document.visibilityState,
+    bodyText: document.body?.innerText?.slice(0, 1200),
     appMessage: document.querySelector('#app-message')?.textContent?.trim(),
     savedState: document.querySelector('#saved-state')?.textContent?.trim(),
+    previewState: document.querySelector('#preview-state')?.textContent?.trim(),
+    diagnostics: document.querySelector('#diagnostics')?.textContent?.trim(),
     editorFound: Boolean(document.querySelector('#source-pane textarea')),
     editorValue: document.querySelector('#source-pane textarea')?.value,
     appInert: document.querySelector('#app')?.inert,
     ariaBusy: document.querySelector('#app')?.getAttribute('aria-busy'),
+    previewFrame: (() => {
+      const frame = document.querySelector('#score-frame');
+      try {
+        return {
+          srcdocLength: frame?.srcdoc?.length ?? 0,
+          readyState: frame?.contentDocument?.readyState,
+          svgCount: frame?.contentDocument?.querySelectorAll('.spread-sheet svg').length ?? null
+        };
+      } catch (error) { return { error: String(error) }; }
+    })(),
     activeElement: document.activeElement?.id || document.activeElement?.tagName,
     inspectorTabs: Array.from(document.querySelectorAll('#inspector-tabs-host [role="tab"]'), tab => ({
       id: tab.id, label: tab.textContent?.trim(), selected: tab.getAttribute('aria-selected')
@@ -108,7 +123,7 @@ async function click(selector) {
   const element = await driver.findElement(By.css(selector));
   await driver.wait(async () => element.isDisplayed().catch(() => false), 10_000);
   await driver.executeScript(target => target.scrollIntoView({ block: 'center', inline: 'center' }), element);
-  await element.sendKeys(Key.ENTER);
+  await element.click();
   return element;
 }
 
@@ -139,11 +154,14 @@ async function activateInspectorTab(tab) {
 }
 
 async function inspectPreviewSvg() {
-  await driver.wait(async () => await driver.executeScript(() => {
-    const frame = document.querySelector('#score-frame');
-    return Boolean(frame?.contentDocument?.querySelector('.spread-sheet svg'));
-  }), 15_000);
-  return driver.executeScript(() => document.querySelector('#score-frame')?.contentDocument?.querySelectorAll('.spread-sheet svg').length ?? 0);
+  await driver.switchTo().frame(await driver.findElement(By.css('#score-frame')));
+  try {
+    await waitUntil(async () => (await driver.findElements(By.css('.spread-sheet svg'))).length > 0,
+      'The Preview iframe did not render its score SVG.', 15_000);
+    return (await driver.findElements(By.css('.spread-sheet svg'))).length;
+  } finally {
+    await driver.switchTo().defaultContent();
+  }
 }
 
 try {
@@ -169,6 +187,18 @@ try {
   report.browserCapabilitiesVersion = capabilities.get('browserVersion') ?? null;
   await driver.get(`${baseUrl}/test/safari/fixture.html`);
   await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane textarea'))), 20_000);
+  await driver.executeScript(() => {
+    const editor = document.querySelector('#source-pane textarea');
+    if (!editor) throw new Error('Source textarea is missing before smoke checks.');
+    const events = [];
+    for (const type of ['beforeinput', 'input', 'keydown', 'keyup']) {
+      editor.addEventListener(type, event => events.push({
+        type, inputType: event.inputType, data: event.data, key: event.key,
+        metaKey: event.metaKey, shiftKey: event.shiftKey
+      }), true);
+    }
+    window.__guitardslSafariSmoke.nativeEditorEvents = events;
+  });
   report.initialPageDiagnostics = await driver.executeScript(() => ({
     language: navigator.language,
     appLoaded: Boolean(document.querySelector('#saved-state')),
@@ -180,18 +210,23 @@ try {
     const base = 'title: Safari smoke\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
     await setEditorText(base);
     const editor = await driver.findElement(By.css('#source-pane textarea'));
-    await editor.sendKeys('!');
+    await editor.click();
+    await driver.actions().keyDown(Key.SHIFT).sendKeys('1').keyUp(Key.SHIFT).perform();
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    await editor.sendKeys(Key.META, 'z');
+    await driver.actions().keyDown(Key.COMMAND).sendKeys('z').keyUp(Key.COMMAND).perform();
     await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
-    await editor.sendKeys(Key.META, Key.SHIFT, 'z');
+    await driver.actions().keyDown(Key.COMMAND).keyDown(Key.SHIFT).sendKeys('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND).perform();
     await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
     await waitForSavedDraft();
     const saved = await editorValue();
     await driver.navigate().refresh();
     await waitUntil(async () => await editorValue() === saved, 'IndexedDB draft and open tab were not restored after refresh.', 20_000);
     await waitForSavedDraft();
-    return { restoredSourceLength: saved.length, tabRestored: await driver.findElements(By.css('#open-tabs [role="tab"]')).then(tabs => tabs.length > 0) };
+    return {
+      restoredSourceLength: saved.length,
+      tabRestored: await driver.findElements(By.css('#open-tabs [role="tab"]')).then(tabs => tabs.length > 0),
+      nativeEditorEvents: await driver.executeScript(() => window.__guitardslSafariSmoke.nativeEditorEvents.slice(-12))
+    };
   });
 
   await recordCheck('preview-svg-and-inspector-variables-settings', async () => {
@@ -274,7 +309,7 @@ try {
     await driver.executeScript(() => { window.__guitardslSafariSmoke.download = undefined; });
     await click('#export-file');
     await waitUntil(async () => await driver.executeScript(() => Boolean(window.__guitardslSafariSmoke?.download?.filename)), 'Source export did not invoke a download after storage failed.');
-    const result = await driver.executeScript(() => ({ filename: window.__guitardslSafariSmoke.download.filename, status: document.querySelector('#saved-state')?.textContent?.trim() }));
+    const result = await driver.executeScript(() => ({ filename: window.__guitardslSafariSmoke.download.filename, savedState: document.querySelector('#saved-state')?.textContent?.trim() }));
     if (!result.filename.endsWith('.guitardsl')) throw new Error(`Unexpected source export name: ${result.filename}`);
     return result;
   });
@@ -307,6 +342,8 @@ try {
   console.error(error instanceof Error ? error.stack ?? error.message : String(error));
 } finally {
   if (driver) {
+    try { report.finalPageDiagnostics = await pageDiagnostics(); }
+    catch (error) { report.finalDiagnosticsError = error instanceof Error ? error.message : String(error); }
     if (failed) {
       try { await writeFile(screenshotPath, Buffer.from(await driver.takeScreenshot(), 'base64')); report.failureScreenshot = screenshotPath; }
       catch (error) { report.screenshotError = error instanceof Error ? error.message : String(error); }
