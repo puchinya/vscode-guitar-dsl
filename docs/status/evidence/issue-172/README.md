@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. The Chromium and WebKit suites each passed 47/47 while the screenshots and DOMRect measurements were captured.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Chromium and WebKit each passed 48/48.
 
 Capture command:
 
@@ -45,7 +45,7 @@ Browser automation verifies initial geometry, the four keyboard- and pointer-res
 
 ## Browser checks
 
-- Playwright Chromium: 47/47 PASS on macOS arm64.
-- Playwright WebKit: 47/47 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
+- Playwright Chromium: 48/48 PASS on macOS arm64.
+- Playwright WebKit: 48/48 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive, and physical audio output are NOT RUN per the Safari acceptance contract.

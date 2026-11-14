@@ -535,6 +535,40 @@ test('uses CodeMirror for source editing and GuitarDSL syntax highlighting', asy
   await expect.poll(() => page.locator('.cm-scroller').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 });
 
+test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'let riff = e4/8 g a g\n\ntitle: Song\n\n[Verse]\nC | G | Am | F |\n';
+  await editor.fill(source);
+  await expect(page.locator('.cm-lineNumbers .cm-gutterElement:visible').first()).toBeVisible();
+
+  await editor.press('ControlOrMeta+f');
+  const find = page.getByRole('textbox', { name: 'Find' });
+  const replace = page.getByRole('textbox', { name: 'Replace' });
+  await expect(find).toBeVisible();
+  await find.fill('Song');
+  await replace.fill('Track');
+  await page.locator('.cm-search button[name="replaceAll"]').click();
+  await expectEditorSource(page, source.replace('Song', 'Track'));
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, source);
+  await editor.press('ControlOrMeta+Shift+z');
+  await expectEditorSource(page, source.replace('Song', 'Track'));
+  await page.keyboard.press('Escape');
+
+  await editor.fill('let riff = C | G |\n\n');
+  await editor.press('ControlOrMeta+End');
+  await editor.pressSequentially('$');
+  const completion = page.locator('.cm-tooltip-autocomplete [role="option"]').filter({ hasText: '$riff' });
+  await expect(completion).toBeVisible();
+  await completion.click();
+  await expectEditorSource(page, 'let riff = C | G |\n\n$riff');
+
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+  await expect(page.locator('.cm-lintRange-error').first()).toBeVisible();
+});
+
 test('renders the compact workspace geometry and preserves the Preview across view modes', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/');
