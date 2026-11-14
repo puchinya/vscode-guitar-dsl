@@ -9,6 +9,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/web-spa-e2e.yml"
+      - ".github/workflows/cloudflare-workers.yml"
+      - "wrangler.jsonc"
 
 permissions:
   contents: read
