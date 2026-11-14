@@ -34,7 +34,26 @@ function commandVersion(command, args) {
 function sendSafariKeystroke(character, modifiers = []) {
   const using = modifiers.length ? ` using {${modifiers.join(', ')}}` : '';
   const script = `tell application "Safari" to activate\ndelay 0.15\ntell application "System Events"\n  tell process "Safari"\n    keystroke "${character}"${using}\n  end tell\nend tell`;
-  return execFileSync('/usr/bin/osascript', ['-e', script], { encoding: 'utf8', timeout: 5_000 }).trim();
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('/usr/bin/osascript', ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 1_000).unref();
+    }, 5_000);
+    child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+    child.once('error', error => {
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
+    child.once('close', (code, signal) => {
+      clearTimeout(timeout);
+      if (code === 0) resolvePromise(stdout.trim());
+      else rejectPromise(new Error(`Safari keyboard automation exited with ${signal ?? `code ${code}`}: ${stderr.trim()}`));
+    });
+  });
 }
 
 async function waitForServer() {
@@ -221,17 +240,23 @@ try {
 
   await recordCheck('local-create-edit-native-undo-redo-refresh-restore', async () => {
     const base = 'title: Safari smoke\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
+    console.log('Safari native edit: seed textarea.');
     await setEditorText(base);
+    console.log('Safari native edit: focus textarea.');
     await driver.executeScript(() => {
       const editor = document.querySelector('#source-pane textarea');
       editor?.focus();
       editor?.setSelectionRange(editor.value.length, editor.value.length);
     });
-    sendSafariKeystroke('1', ['shift down']);
+    console.log('Safari native edit: send Shift-1 through System Events.');
+    await sendSafariKeystroke('1', ['shift down']);
+    console.log('Safari native edit: verify inserted text.');
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    sendSafariKeystroke('z', ['command down']);
+    console.log('Safari native edit: send Command-Z through System Events.');
+    await sendSafariKeystroke('z', ['command down']);
     await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
-    sendSafariKeystroke('z', ['command down', 'shift down']);
+    console.log('Safari native edit: send Command-Shift-Z through System Events.');
+    await sendSafariKeystroke('z', ['command down', 'shift down']);
     await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
     const undoMethod = 'macOS native keyboard shortcut sent to Safari';
     const redoMethod = 'macOS native keyboard shortcut sent to Safari';
