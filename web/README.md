@@ -16,32 +16,31 @@ npm run test:web
 
 `build:web` type-checks the Web TypeScript before producing `web/dist/`. Drive and Picker credentials are deployment configuration and must not be committed.
 
-## Cloudflare Workers Static Assets deployment
+## Cloudflare Workers Static Assets deployment (one Worker + Previews)
 
-`.github/workflows/cloudflare-workers.yml` runs Node 22, `npm ci`, and the root `npm run build:web` command on GitHub Actions, then publishes the same `web/dist/` static artifact with Wrangler. `wrangler.jsonc` configures Workers Static Assets with single-page-application fallback; no server-side Worker request handler or application backend is added.
+GitHub Actions owns automated deployment. `.github/workflows/cloudflare-workers.yml` runs Node 22, `npm ci`, `npm run build:web`, then uploads `web/dist/` with Wrangler 4.160.0 or later. `wrangler.jsonc` configures the existing Worker `guitardsl` with SPA fallback and Workers Previews. No server-side request handler or backend is added.
 
-| Trigger | GitHub environment | Worker name | Custom domain | Wrangler command |
+| Trigger | GitHub environment | Cloudflare target | Public URL | Wrangler command |
 | --- | --- | --- | --- | --- |
-| Push to `main` (including merged PRs) | `development` | `guitardsl-dev` | `dev.guitardsl.app` | `wrangler deploy --config wrangler.jsonc --env development` |
-| Push a Git tag whose commit is reachable from `main` | `production` | `guitardsl` (existing) | `guitardsl.app` | `wrangler deploy --config wrangler.jsonc` |
+| Push to `main` (including merges) | `development` | Named Preview `dev` of **`guitardsl`** | `dev.guitardsl.app` | `wrangler preview --config wrangler.jsonc --name dev` |
+| Push any tag whose commit is reachable from `main` | `production` | Existing `guitardsl` production deployment | `guitardsl.app` | `wrangler deploy --config wrangler.jsonc` |
 
-Pull requests and pushes to other branches never deploy. Before a tag deployment, full history and the latest `origin/main` are fetched and `git merge-base --is-ancestor HEAD origin/main` enforces the release guard for lightweight and annotated tags. A tag on a previously merged `main` commit can intentionally release that older version. The workflow currently accepts all pushed tags; protect tag creation or require production environment reviewers if only authorized releases should publish.
+The Preview named `dev` has a stable URL that points to its latest build and does **not** replace the production deployment. Distinct builds may bake in distinct public Google credentials. Pushing a PR or a non-main branch never publishes; a tag outside the `main` history fails before building or uploading. A tag of an older commit already reachable from `main` can intentionally release it. Production deployments are never automatically canceled; obsolete dev Preview updates may be canceled.
 
 ### One-time Cloudflare and GitHub setup
 
-1. Keep the existing production Worker **`guitardsl`** bound to **`guitardsl.app`**. Do **not** delete or overwrite its current production version during initial setup. Its first replacement must come from an intentionally pushed tag after the PR has merged.
-2. The development Worker is `guitardsl-dev`. Its custom domain `dev.guitardsl.app` is declared in `wrangler.jsonc`; if it does not exist yet, the first authorized `main` deployment creates it and attempts to bind the domain. Distinct Workers must serve development and production. Do not attach the development hostname to the production Worker.
-3. GitHub Actions, **not Cloudflare Workers Builds**, is the automated deploy owner. Do not configure a second Git-connected build pipeline.
-4. Retain the repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token must have **Workers Edit / Workers Scripts Edit** permission for the account and **Zone → Workers Routes → Write** for `guitardsl.app` if the domain routes are created or changed. The previous Pages Edit-only token is insufficient. Never commit token contents or pass them through `VITE_` variables.
-5. In GitHub **Settings → Environments**, configure `development` and `production` with appropriate deployment restrictions. Production tag workflows must not be blocked by branch-only filters. The optional environment-scoped public build variables are `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, and `VITE_GOOGLE_APP_ID`. Omitting them retains local documents but disables Drive integration.
-6. When enabling Google Drive, authorize `https://dev.guitardsl.app` and `https://guitardsl.app` as Web OAuth JavaScript origins. Restrict each browser API key by intended HTTP referrers and enabled Google APIs. These are public browser credentials; **never** supply an OAuth client secret.
-7. Any prior experimental Cloudflare Pages projects are **not** used for publishing. Only clean them up after confirming they hold no deployments/data, and keep the existing production Worker mapping, Email Routing MX/TXT and unrelated DNS intact.
+1. Reuse the existing Worker **`guitardsl`**, which currently owns `guitardsl.app`. Configure its `guitardsl.app` custom domain with `enabled: true` and `previews_enabled: true`. This preserves the production endpoint and also enables Preview aliases under `*.guitardsl.app`. The named Preview `dev` then resolves at **`dev.guitardsl.app`**. Do not create a second Worker for development.
+2. Remove any conflicting explicit `dev.guitardsl.app` record or disabled Worker custom-domain association that predates Previews, after verifying it is unused. Preview routing generates DNS/certificate automatically; protect unrelated `guitardsl.app` MX/TXT Email Routing DNS and other subdomains.
+3. Existing experimental Cloudflare Pages projects are **not** deployment targets. Delete them only after confirming that they contain no deployments/data and their custom-domain claims are no longer required.
+4. Retain repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Require Cloudflare Workers Edit / Workers Scripts Edit on the account; to manage custom domains require Zone → Workers Routes → Write on `guitardsl.app`. Previous Pages-only permission is not sufficient. Do not commit tokens or pass secrets in `VITE_` variables.
+5. Keep separate GitHub environments `development` and `production` for approval/tag restrictions and the optional build-time public values `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, and `VITE_GOOGLE_APP_ID`. Without the Google values, local documents still work but Google Drive integration is disabled. Authorize both `https://guitardsl.app` and `https://dev.guitardsl.app` as Web OAuth JavaScript origins; restrict browser API keys to their appropriate referrers/APIs. Do not use an OAuth client secret.
+6. Do not enable Cloudflare Workers Builds / Git auto deployment: GitHub Actions remains the single publish owner. Workers Previews requires Wrangler 4.135.0 or later; CI pins a supported version.
 
 ### Release and verification
 
-After merging the PR, inspect the `Deploy Web to Cloudflare Workers` GitHub Action, then check `https://dev.guitardsl.app` and verify that direct navigation to a nested SPA path returns the app shell. Check the Worker named `guitardsl-dev` receives the deployment; the production Worker remains unchanged.
+After merging this PR into `main`, check the development job and `https://dev.guitardsl.app`, including direct navigation to a deep SPA route. Verify the Worker `guitardsl` **production deployment/version remains unchanged** after the Preview upload.
 
-For production, create and push a tag on a commit in `main`:
+To publish production, explicitly create and push a tag on a `main` commit:
 
 ```sh
 git switch main
@@ -50,4 +49,6 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Inspect the production workflow status, the `guitardsl` Worker deployment version, and `https://guitardsl.app`. A failed build, missing secret, missing permission, failed domain binding, or off-main tag stops that deployment; there is **no fallback** to the other Worker. Production rollbacks should be made with an intentionally approved release tag on the desired prior commit (or with explicit Cloudflare version rollback procedures), not by pushing an unreviewed tag. No production tag is pushed by the deployment setup itself.
+Only then inspect `Deploy Web to Cloudflare Workers`, the production version of `guitardsl` and `https://guitardsl.app`. Build/auth/permission/tag validation failures stop deployment without a fallback. Avoid environment rules that reject the intended release tags. The workflow matches all pushed tags: protect tag creation or require production reviewers to authorize releases.
+
+**Operational caveat:** Workers Previews uses the same named Worker with separate Preview versions; runtime settings/bindings must be assessed independently if server-side resources are ever added. The current Web SPA does not add such resources.
