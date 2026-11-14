@@ -86,8 +86,8 @@ async function pageDiagnostics() {
     savedState: document.querySelector('#saved-state')?.textContent?.trim(),
     previewState: document.querySelector('#preview-state')?.textContent?.trim(),
     diagnostics: document.querySelector('#diagnostics')?.textContent?.trim(),
-    editorFound: Boolean(document.querySelector('#source-pane textarea')),
-    editorValue: document.querySelector('#source-pane textarea')?.value,
+    editorFound: Boolean(document.querySelector('#source-pane .cm-content')),
+    editorValue: window.__guitarDslReadSource?.() ?? null,
     appInert: document.querySelector('#app')?.inert,
     ariaBusy: document.querySelector('#app')?.getAttribute('aria-busy'),
     previewFrame: (() => {
@@ -175,7 +175,7 @@ async function click(selector) {
 }
 
 async function editorValue() {
-  return driver.executeScript(() => document.querySelector('#source-pane textarea')?.value ?? null);
+  return driver.executeScript(() => window.__guitarDslReadSource?.() ?? null);
 }
 
 async function waitForSavedDraft() {
@@ -198,7 +198,7 @@ async function installAppEditorEventRecorder() {
     smoke.nativeEditorEvents = [];
     for (const type of ['beforeinput', 'input', 'keydown', 'keyup']) {
       document.addEventListener(type, event => {
-        if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches('#source-pane textarea')) return;
+        if (!(event.target instanceof HTMLElement) || !event.target.closest('#source-pane .cm-content')) return;
         smoke.nativeEditorEvents.push({
           type, inputType: event.inputType, data: event.data, key: event.key,
           metaKey: event.metaKey, shiftKey: event.shiftKey,
@@ -211,14 +211,19 @@ async function installAppEditorEventRecorder() {
 }
 
 async function setEditorFixtureText(source) {
-  await driver.executeScript(value => {
-    const editor = document.querySelector('#source-pane textarea');
-    if (!editor) throw new Error('Source textarea is missing.');
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-    setter?.call(editor, value);
-    editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: value, inputType: 'insertText' }));
+  const changed = await driver.executeScript(value => {
+    if (typeof window.__guitarDslReplaceSource !== 'function') throw new Error('CodeMirror source test hook is missing.');
+    return window.__guitarDslReplaceSource(value);
   }, source);
-  await waitUntil(async () => await editorValue() === source, 'The textarea did not accept the fixture source.');
+  if (!changed && await editorValue() !== source) throw new Error('CodeMirror did not accept the fixture source.');
+  await waitUntil(async () => await editorValue() === source, 'CodeMirror did not accept the fixture source.');
+}
+
+async function setEditorCursor(offset) {
+  await driver.executeScript(position => {
+    if (typeof window.__guitarDslSetCursor !== 'function') throw new Error('CodeMirror cursor test hook is missing.');
+    window.__guitarDslSetCursor(position);
+  }, offset);
 }
 
 process.on('SIGTERM', () => {
@@ -288,33 +293,31 @@ try {
   startStep('load-guitardsl-safari-fixture');
   await driver.get(`${baseUrl}/test/safari/fixture.html`);
   console.log('Safari smoke fixture loaded.');
-  await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane textarea'))), 20_000);
+  await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane .cm-content'))), 20_000);
   await driver.manage().window().setRect({ width: 1280, height: 900, x: 0, y: 0 });
   await waitUntil(async () => await driver.executeScript(() => window.innerWidth >= 1200), 'Safari smoke did not enter the wide layout.');
   await installAppEditorEventRecorder();
   report.initialPageDiagnostics = await driver.executeScript(() => ({
     language: navigator.language,
     appLoaded: Boolean(document.querySelector('#saved-state')),
-    editorSelectorFound: Boolean(document.querySelector('#source-pane textarea')),
+    editorSelectorFound: Boolean(document.querySelector('#source-pane .cm-content')),
     ids: Array.from(document.querySelectorAll('[id]'), element => element.id)
   }));
 
   await recordCheck('local-create-edit-draft-refresh-restore', async () => {
     const priorTabs = await appTabSnapshot();
-    await click('#new-score');
+    await click('#file-actions .file-action');
     await waitUntil(async () => await driver.executeScript(() => window.__guitardslSafariSmoke?.localScoreCreationCount === 1)
       && (await appTabSnapshot()).some(tab => tab.name === 'Safari recovery.guitardsl' && tab.selected),
     'A new local score was not created and selected.');
     const initialSource = await editorValue();
     if (typeof initialSource !== 'string') throw new Error('The newly created local score source is missing.');
-    const editor = await driver.findElement(By.css('#source-pane textarea'));
+    const editor = await driver.findElement(By.css('#source-pane .cm-content'));
     const eventStart = await driver.executeScript(() => window.__guitardslSafariSmoke.nativeEditorEvents.length);
-    await driver.executeScript(target => {
-      target.focus();
-      target.setSelectionRange(target.value.length, target.value.length);
-    }, editor);
-    await editor.sendKeys('\n');
-    const saved = `${initialSource}\n`;
+    await driver.executeScript(target => target.focus(), editor);
+    await setEditorCursor(initialSource.length);
+    await editor.sendKeys('x');
+    const saved = `${initialSource}x`;
     await waitUntil(async () => await editorValue() === saved, 'Trusted WebDriver text input was not applied to the new local score.');
     const nativeEditorEvents = await driver.executeScript(start => window.__guitardslSafariSmoke.nativeEditorEvents.slice(start), eventStart);
     const trustedInput = nativeEditorEvents.some(event => event.type === 'input' && event.trusted);
@@ -418,7 +421,7 @@ try {
     await waitUntil(async () => await driver.executeScript(() => window.innerWidth <= 600), 'Safari viewport did not enter the narrow layout.');
     const width = await driver.executeScript(() => window.innerWidth);
     const focusTarget = await driver.executeScript(() => {
-      const candidates = ['#download-pdf', '#new-score', '#export-file', '#connect-drive'];
+      const candidates = ['#download-pdf', '#file-actions .file-action', '#export-file', '#connect-drive'];
       return candidates.find(selector => {
         const element = document.querySelector(selector);
         return element instanceof HTMLElement && element.getClientRects().length > 0 && !element.hidden;
@@ -443,11 +446,11 @@ try {
     await driver.executeAsyncScript(done => {
       window.__failLocalDraftWrites().then(() => done({ ok: true }), error => done({ error: String(error) }));
     });
-    const editor = await driver.findElement(By.css('#source-pane textarea'));
-    await driver.executeScript(target => {
-      target.focus();
-      target.setSelectionRange(target.value.length, target.value.length);
-    }, editor);
+    const editor = await driver.findElement(By.css('#source-pane .cm-content'));
+    await driver.executeScript(target => target.focus(), editor);
+    const currentSource = await editorValue();
+    if (typeof currentSource !== 'string') throw new Error('CodeMirror source is missing before the storage failure edit.');
+    await setEditorCursor(currentSource.length);
     await editor.sendKeys('\n# export after storage failure');
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Injected Safari smoke storage failure')),
       'Injected local storage failure was not surfaced.', 10_000);
@@ -477,15 +480,29 @@ try {
 
   await recordCheck('mocked-google-oauth-picker-drive-api', async () => {
     await click('#connect-drive');
+    const menuOpened = await driver.executeScript(() => {
+      const menu = document.querySelector('#account-menu');
+      return Boolean(menu && !menu.hidden && menu.querySelector('button'));
+    });
+    if (!menuOpened) await driver.findElement(By.css('#connect-drive')).sendKeys(Key.ENTER);
+    await waitUntil(async () => await driver.executeScript(() => {
+      const menu = document.querySelector('#account-menu');
+      return Boolean(menu && !menu.hidden && menu.querySelector('button'));
+    }), 'Google Account menu did not open.');
+    await click('#account-menu button');
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
       'Mock Google OAuth connection did not complete.');
     await click('#storage-drive');
+    const driveSelected = await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected'));
+    if (!driveSelected) await driver.findElement(By.css('#storage-drive')).sendKeys(Key.ENTER);
+    await waitUntil(async () => await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected')),
+      'Google Drive storage did not become selected.');
     const openPicker = await driver.findElements(By.css('#file-actions button')).then(async buttons => {
       for (const button of buttons) if ((await button.getText()).includes('Open from Drive')) return button;
       throw new Error('Open from Drive action was not rendered.');
     });
     await openPicker.sendKeys(Key.ENTER);
-    await waitUntil(async () => await driver.executeScript(() => document.querySelector('#source-pane textarea')?.value.includes('Safari Drive mock')),
+    await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),
       'Mock Picker result did not open the Drive document.');
     const details = await driver.executeScript(() => ({
       tokenRequests: window.__guitardslSafariSmoke.tokenRequests,

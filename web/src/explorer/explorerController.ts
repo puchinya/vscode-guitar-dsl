@@ -1,12 +1,16 @@
 import type { DocumentIdentity, StorageKind } from '@guitardsl/document';
 import type { DriveFile, GoogleDriveApi } from '../storage/googleDrive';
 import type { StoredDocument } from '../storage/indexedDb';
+import { createWebIcon } from '../icons';
 
 export interface ExplorerLabels {
   files: string;
   local: string;
   drive: string;
-  addFile: string;
+  newScore: string;
+  connectDrive: string;
+  reconnectDrive: string;
+  connecting: string;
   chooseFolder: string;
   createFolder: string;
   openDrive: string;
@@ -25,6 +29,8 @@ export interface ExplorerSnapshot {
   drive?: Pick<GoogleDriveApi, 'listFiles'>;
   folderId?: string;
   activeDocumentStorage?: StorageKind;
+  authExpired?: boolean;
+  connecting?: boolean;
 }
 
 export interface ExplorerDependencies {
@@ -34,7 +40,8 @@ export interface ExplorerDependencies {
   listLocalDocuments(): Promise<StoredDocument[]>;
   getLocalDocument(identity: DocumentIdentity): Promise<StoredDocument | undefined>;
   onStorageChange(storage: StorageKind): void;
-  onImport(): void;
+  onNewScore(): void;
+  onConnectDrive(): void;
   onChooseFolder(): void;
   onCreateFolder(): void;
   onOpenDrivePicker(): void;
@@ -69,11 +76,13 @@ export class ExplorerController {
     const labels = this.dependencies.getLabels();
     const localButton = this.dependencies.root.querySelector<HTMLButtonElement>('#storage-local')!;
     const driveButton = this.dependencies.root.querySelector<HTMLButtonElement>('#storage-drive')!;
+    const importButton = this.dependencies.root.querySelector<HTMLButtonElement>('#import-file')!;
     localButton.textContent = labels.local;
     driveButton.textContent = labels.drive;
     this.dependencies.root.querySelector('#files-heading')!.textContent = labels.files;
     localButton.classList.toggle('selected', state.storage === 'local');
     driveButton.classList.toggle('selected', state.storage === 'drive');
+    importButton.hidden = state.storage !== 'local';
     this.driveScopeNote.hidden = state.storage !== 'drive' || !state.account;
     this.driveScopeNote.textContent = labels.driveAccess;
     this.driveOverwriteNote.hidden = state.storage !== 'drive';
@@ -82,7 +91,7 @@ export class ExplorerController {
     this.fileItems.replaceChildren();
 
     if (state.storage === 'local') {
-      this.fileActions.append(this.actionButton(labels.addFile, () => this.dependencies.onImport()));
+      this.fileActions.append(this.actionButton(labels.newScore, () => this.dependencies.onNewScore(), 'fileplus'));
       void this.renderLocalFiles(generation, state.locale, labels);
       this.moveButton.hidden = state.activeDocumentStorage !== 'local' || !state.account || !state.folderId;
       return Promise.resolve();
@@ -90,6 +99,10 @@ export class ExplorerController {
 
     this.moveButton.hidden = true;
     if (!state.account || !state.drive) {
+      const label = state.connecting ? labels.connecting : state.authExpired ? labels.reconnectDrive : labels.connectDrive;
+      const connect = this.actionButton(label, () => this.dependencies.onConnectDrive(), 'cloud');
+      connect.disabled = Boolean(state.connecting);
+      this.fileActions.append(connect);
       this.appendHint(labels.connectHint);
       return Promise.resolve();
     }
@@ -129,7 +142,7 @@ export class ExplorerController {
       if (!this.isCurrent(generation, 'drive')) return;
       this.fileItems.replaceChildren();
       if (files.length === 0) this.appendHint(labels.createFirst);
-      for (const file of files) this.appendDriveFile(file, state.locale);
+      for (const file of files) this.appendDriveFile(file, state.locale, state.account?.accountId);
     } catch (error) {
       if (!this.isCurrent(generation, 'drive')) return;
       this.fileItems.replaceChildren();
@@ -149,11 +162,14 @@ export class ExplorerController {
     this.fileItems.append(hint);
   }
 
-  private actionButton(label: string, callback: () => void): HTMLButtonElement {
+  private actionButton(label: string, callback: () => void, iconName?: 'fileplus' | 'cloud'): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'quiet-button file-action';
-    button.textContent = label;
+    if (iconName) button.append(createWebIcon(iconName));
+    const text = document.createElement('span');
+    text.textContent = label;
+    button.append(text);
     button.addEventListener('click', callback);
     return button;
   }
@@ -164,6 +180,9 @@ export class ExplorerController {
     button.type = 'button';
     button.className = 'file-item';
     button.textContent = documentRow.name;
+    button.dataset.storage = 'local';
+    button.dataset.fileId = documentRow.identity.fileId;
+    button.dataset.revision = String(documentRow.revision);
     button.addEventListener('click', onOpen);
     const subtitle = document.createElement('span');
     subtitle.className = 'file-subtitle';
@@ -172,12 +191,15 @@ export class ExplorerController {
     this.fileItems.append(wrapper);
   }
 
-  private appendDriveFile(file: DriveFile, locale: string): void {
+  private appendDriveFile(file: DriveFile, locale: string, accountId?: string): void {
     const wrapper = document.createElement('div');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'file-item';
     button.textContent = file.name;
+    button.dataset.storage = 'drive';
+    button.dataset.fileId = file.id;
+    if (accountId) button.dataset.accountId = accountId;
     button.addEventListener('click', () => this.dependencies.onOpenDrive(file));
     const subtitle = document.createElement('span');
     subtitle.className = 'file-subtitle';

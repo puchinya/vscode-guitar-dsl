@@ -30,11 +30,13 @@ import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, typ
 import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
+import { setIconButton, WEB_ICON_SPRITE } from './icons';
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
 type ScoreSettingsSectionId = 'capo' | 'beginner' | 'transpose';
 type MobilePane = 'source' | 'preview';
+type WorkspaceViewMode = 'source' | 'split' | 'score';
 
 interface WorkspaceSession {
   tabs: string[];
@@ -72,6 +74,13 @@ interface AppState {
   storageReady: boolean;
   previewGeneration: number;
   splitRatio: number;
+  viewMode: WorkspaceViewMode;
+  explorerOpen: boolean;
+  inspectorOpen: boolean;
+  explorerWidth: number;
+  inspectorWidth: number;
+  problemsOpen: boolean;
+  problemsHeight: number;
   authExpired: boolean;
   lastProgression?: {
     target: ProgressionTarget; operation: ProgressionEditOperation; bars: ProgressionBars;
@@ -100,7 +109,8 @@ const DEFAULT_SOURCE = 'title: My song\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |
 const STRINGS = {
   en: {
     files: 'Files', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect Drive',
-    disconnect: 'Disconnect', folder: 'Choose folder', createFolder: 'Create GuitarDSL folder', openDrive: 'Open from Drive',
+    reconnect: 'Reconnect Drive', connecting: 'Connecting…', connectedAs: 'Connected as', disconnect: 'Disconnect',
+    folder: 'Choose folder', createFolder: 'Create GuitarDSL folder', openDrive: 'Open from Drive',
     addFile: 'Import file', source: 'Source', preview: 'Preview', inspector: 'Inspector', document: 'Document',
     variables: 'Variables', settings: 'Settings', progression: 'Progression', save: 'Save', saved: 'Saved locally',
     draft: 'Local draft saved', saving: 'Saving draft…', unsaved: 'Unsaved changes', downloadPdf: 'Download PDF',
@@ -123,10 +133,16 @@ const STRINGS = {
     confirmDelete: 'Delete this local score and its draft?',
     audition: 'Audition', stopAudition: 'Stop audition', audioStarting: 'Starting audition…',
     audioPlaying: 'Audition playing.', audioStopped: 'Audition stopped.', audioUnavailable: 'Audio audition is unavailable.',
+    problems: 'Problems', noProblems: 'No problems', previewEmpty: 'No score', previewInvalid: 'Unable to parse source',
+    previewCheck: 'Check diagnostics', previewReady: 'Preview ready', previewFailed: 'Preview failed', resetLayout: 'Reset layout',
+    sourceView: 'Source view', splitView: 'Split view', scoreView: 'Score view',
+    explorer: 'Explorer', toggleExplorer: 'Toggle Explorer', toggleInspector: 'Toggle Inspector',
+    help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
   },
   ja: {
     files: 'ファイル', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続',
-    disconnect: '接続を解除', folder: 'フォルダーを選択', createFolder: 'GuitarDSL フォルダーを作成', openDrive: 'Drive から開く',
+    reconnect: 'Drive に再接続', connecting: '接続中…', connectedAs: '接続中のアカウント', disconnect: '接続を解除',
+    folder: 'フォルダーを選択', createFolder: 'GuitarDSL フォルダーを作成', openDrive: 'Drive から開く',
     addFile: 'ファイルを読み込む', source: 'ソース', preview: 'プレビュー', inspector: 'インスペクター', document: '文書',
     variables: '変数', settings: '設定', progression: 'コード進行', save: '保存', saved: 'ローカルに保存済み',
     draft: '下書きを保存済み', saving: '下書きを保存中…', unsaved: '未保存の変更', downloadPdf: 'PDF をダウンロード',
@@ -149,6 +165,11 @@ const STRINGS = {
     confirmDelete: 'このローカル楽譜と下書きを削除しますか？',
     audition: '試聴', stopAudition: '試聴を停止', audioStarting: '試聴を開始しています…',
     audioPlaying: '試聴中です。', audioStopped: '試聴を停止しました。', audioUnavailable: '試聴を利用できません。',
+    problems: '問題', noProblems: '問題はありません', previewEmpty: '譜面がありません', previewInvalid: 'ソースを解析できません',
+    previewCheck: '診断を確認してください', previewReady: 'プレビューを表示中', previewFailed: 'プレビューを表示できません', resetLayout: 'レイアウトをリセット',
+    sourceView: 'ソース表示', splitView: '分割表示', scoreView: '譜面表示',
+    explorer: 'エクスプローラー', toggleExplorer: 'Explorer の表示を切り替え', toggleInspector: 'Inspector の表示を切り替え',
+    help: 'ヘルプ', close: '閉じる', resetLayoutConfirm: 'ワークスペースのレイアウトを初期状態に戻しますか？',
   }
 } as const;
 
@@ -163,7 +184,8 @@ const state: AppState = {
     progressionBars: 4, progressionOperation: 'append', progressionAuditionMode: 'bars', progressionSide: 'B', progressionSpeed: 100,
   scoreSettingsSection: 'capo',
     audioStatus: '',
-    splitRatio: 0.48, authExpired: false
+    splitRatio: 0.4, viewMode: 'split', explorerOpen: true, inspectorOpen: true,
+    explorerWidth: 220, inspectorWidth: 300, problemsOpen: true, problemsHeight: 200, authExpired: false
 };
 const webScoreSettingsSections = {
   capo: new CapoSection(), beginner: new BeginnerSection(), transpose: new TransposeSection()
@@ -173,22 +195,30 @@ const draftWrites = new Map<string, Promise<void>>();
 const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
+let driveConnectInProgress = false;
 let activeDriveOperations = 0;
 
 app.innerHTML = `
   <main class="app-shell" aria-label="GuitarDSL">
+    ${WEB_ICON_SPRITE}
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">♪</span><strong>GuitarDSL</strong></div>
+      <div class="brand"><svg class="web-icon brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#ic-music"></use></svg><strong>GuitarDSL</strong></div>
       <div class="workspace-name" id="workspace-name">My songs</div>
       <div class="top-actions">
-        <button type="button" class="quiet-button" id="connect-drive">Connect Drive</button>
-        <button type="button" class="quiet-button" id="save-document">Save</button>
-        <button type="button" class="primary-button" id="new-score">New score</button>
+        <button type="button" class="quiet-button icon-action" id="save-document" aria-label="Save" title="Save"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg><span class="sr-only">Save</span></button>
+        <button type="button" class="quiet-button icon-action" id="download-pdf" aria-label="Download PDF" title="Download PDF"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-pdf"></use></svg><span class="sr-only">Download PDF</span></button>
+        <button type="button" class="quiet-button icon-action" id="connect-drive" aria-label="Connect Drive" title="Connect Drive" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-account"></use></svg><span class="sr-only">Connect Drive</span></button>
+        <button type="button" class="quiet-button icon-action" id="help-button" aria-label="Help" title="Help"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-help"></use></svg><span class="sr-only">Help</span></button>
+        <button type="button" class="quiet-button icon-action" id="settings-button" aria-label="Settings" title="Settings"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg><span class="sr-only">Settings</span></button>
       </div>
     </header>
-    <div class="workspace">
+    <div class="workspace" id="workspace">
+      <nav class="activity-bar" aria-label="Workspace tools">
+        <button type="button" id="activity-explorer" aria-label="Toggle Explorer" title="Toggle Explorer" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg></button>
+        <button type="button" id="activity-inspector" aria-label="Toggle Inspector" title="Toggle Inspector" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-inspector"></use></svg></button>
+      </nav>
       <aside class="file-list" aria-label="Files">
-        <div class="pane-heading"><span id="files-heading">Files</span><button type="button" id="import-file" aria-label="Import file">＋</button></div>
+        <div class="pane-heading"><span id="files-heading">Files</span><button type="button" id="import-file" class="icon-action" aria-label="Import file" title="Import file"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-import"></use></svg><span class="sr-only">Import file</span></button></div>
         <div class="storage-switch" role="group" aria-label="File storage">
           <button type="button" data-storage="local" class="selected" id="storage-local">On this device</button>
           <button type="button" data-storage="drive" id="storage-drive">Google Drive</button>
@@ -198,33 +228,32 @@ app.innerHTML = `
         <p class="drive-scope-note" id="drive-scope-note" hidden></p>
         <p class="drive-overwrite-note" id="drive-overwrite-note" role="note" hidden></p>
       </aside>
+      <div class="workspace-splitter" id="explorer-splitter" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="180" aria-valuemax="420" aria-valuenow="220" tabindex="0"></div>
       <section class="editor-workspace" aria-label="Score workspace">
         <div class="tabs" role="tablist" aria-label="Open documents" id="open-tabs"></div>
         <div class="toolbar">
-          <button type="button" class="quiet-button" id="mobile-source">Source</button>
-          <button type="button" class="quiet-button" id="mobile-preview">Score</button>
+          <button type="button" class="view-mode-button" id="view-source" aria-label="Source view" title="Source view" aria-pressed="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-code"></use></svg><span class="sr-only">Source view</span></button>
+          <button type="button" class="view-mode-button" id="view-split" aria-label="Split view" title="Split view" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-split"></use></svg><span class="sr-only">Split view</span></button>
+          <button type="button" class="view-mode-button" id="view-score" aria-label="Score view" title="Score view" aria-pressed="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"></use></svg><span class="sr-only">Score view</span></button>
+          <span class="preview-state" id="preview-state">Loading score</span>
           <span class="toolbar-spacer"></span>
-          <span class="saved-state" id="saved-state">Local storage ready</span>
           <button type="button" class="quiet-button" id="export-file">Export .guitardsl</button>
           <button type="button" class="quiet-button" id="move-drive" hidden>Move to Drive</button>
-          <button type="button" class="primary-button" id="download-pdf">Download PDF</button>
         </div>
         <div class="app-message" id="app-message" role="status" hidden></div>
         <div class="split-view">
           <section class="source-pane" aria-label="GuitarDSL source" id="source-pane">
-            <div class="pane-heading"><span>Source</span><span class="language-chip">GuitarDSL</span></div>
             ${createSourceEditorMarkup()}
-            <div class="diagnostics" id="diagnostics" aria-live="polite"></div>
           </section>
-          <div class="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize source and score panes" tabindex="0"></div>
+          <div class="split-divider" id="center-splitter" role="separator" aria-orientation="vertical" aria-label="Resize source and score panes" aria-valuemin="24" aria-valuemax="76" aria-valuenow="40" tabindex="0"></div>
           <section class="score-pane" aria-label="Score preview" id="score-pane">
-            <div class="pane-heading"><span>Preview</span><span class="preview-state" id="preview-state">Loading score</span></div>
             <iframe id="score-frame" title="GuitarDSL score preview" sandbox="allow-scripts"></iframe>
           </section>
         </div>
       </section>
+      <div class="workspace-splitter" id="inspector-splitter" role="separator" aria-orientation="vertical" aria-label="Resize Inspector" aria-valuemin="260" aria-valuemax="480" aria-valuenow="300" tabindex="0"></div>
       <aside class="inspector" aria-label="Inspector">
-        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="collapse-inspector" aria-label="Collapse Inspector">⌄</button></div>
+        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="collapse-inspector" class="icon-action" aria-label="Collapse Inspector" title="Collapse Inspector"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button></div>
         <div id="inspector-tabs-host"></div>
         <div class="inspector-content" id="inspector-content" role="tabpanel" tabindex="0"></div>
         <div id="inspector-settings-parking" hidden>
@@ -242,12 +271,19 @@ app.innerHTML = `
           </div>
         </div>
       </aside>
+      <div class="problems-splitter" id="problems-splitter" role="separator" aria-orientation="horizontal" aria-label="Resize Problems" aria-valuemin="140" aria-valuemax="360" aria-valuenow="200" tabindex="0"></div>
+      <section class="problems-panel" id="problems-panel" aria-label="Problems">
+        <header class="problems-heading"><strong id="problems-title">Problems</strong><span id="problem-counts" aria-live="polite">Errors 0 / Warnings 0</span><span class="toolbar-spacer"></span><button type="button" id="collapse-problems" class="icon-action" aria-label="Collapse Problems" title="Collapse Problems"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button></header>
+        <div class="diagnostics" id="diagnostics" role="list" aria-live="polite"></div>
+      </section>
+      <div class="tool-window-bar"><button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button></div>
     </div>
-    <footer class="statusbar"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Local storage ready</span><span class="status-spacer"></span>
-      <label class="status-select"><span class="sr-only">Language</span><select id="locale-select" aria-label="Language"><option value="en">English</option><option value="ja">日本語</option></select></label>
-      <label class="status-select"><span class="sr-only">Theme</span><select id="theme-select" aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-    </footer>
+    <footer class="statusbar" aria-label="Workspace status"><span id="status-problems">Errors 0 / Warnings 0</span><span id="status-cursor">Ln 1, Col 1</span><span class="status-spacer"></span><span class="status-dot" aria-hidden="true"></span><span class="saved-state" id="saved-state">Saved locally</span></footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden />
+    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
+    <div id="account-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="settings-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="context-menu" class="context-menu" role="menu" hidden></div>
   </main>
 `;
 
@@ -256,8 +292,18 @@ sharedSettingsScript.textContent = inspectorSettingsSource;
 document.body.append(sharedSettingsScript);
 sharedSettingsScript.remove();
 
-const editor = app.querySelector<HTMLTextAreaElement>('textarea[aria-label="GuitarDSL source editor"]')!;
-const sourceEditor = new SourceEditorSurface(editor, app.querySelector<HTMLElement>('.editor-highlight')!);
+const editor = app.querySelector<HTMLElement>('.editor-surface')!;
+const sourceEditor = new SourceEditorSurface(editor, onEditorInput, renderCursorPosition);
+if (import.meta.env.DEV) {
+  const testWindow = window as Window & {
+    __guitarDslReadSource?: () => string;
+    __guitarDslReplaceSource?: (source: string) => boolean;
+    __guitarDslSetCursor?: (offset: number) => void;
+  };
+  testWindow.__guitarDslReadSource = () => sourceEditor.getSource();
+  testWindow.__guitarDslReplaceSource = source => sourceEditor.replaceSource(source);
+  testWindow.__guitarDslSetCursor = offset => sourceEditor.setSelection(offset);
+}
 const tabsElement = app.querySelector<HTMLDivElement>('#open-tabs')!;
 const scoreFrame = app.querySelector<HTMLIFrameElement>('#score-frame')!;
 const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')!;
@@ -383,7 +429,6 @@ async function setActive(key: string, isCurrent?: () => boolean): Promise<void> 
   const tab = activeTab();
   if (!tab) return;
   state.activeStorage = tab.document.identity.storage;
-  editor.value = tab.source;
   renderAll();
   void persistSessions();
 }
@@ -417,15 +462,22 @@ async function persistSessions(additionalDriveAccounts: string[] = []): Promise<
 function renderStorageStatus(text?: string): void {
   const t = strings();
   const tab = activeTab();
-  const message = text ?? (state.storageReady ? t.ready : t.unavailable);
-  app.querySelector('#storage-status')!.textContent = message;
-  const savedMessage = !state.storageReady ? t.unavailable : !tab ? t.ready
+  const savedMessage = text ?? (!state.storageReady ? t.unavailable : !tab ? t.ready
     : tab.saveStatus === 'local-saved' ? t.saved
       : tab.saveStatus === 'drive-saved' ? (state.locale === 'ja' ? 'Drive に保存済み' : 'Saved to Drive')
         : tab.saveStatus === 'draft' ? t.draft
-          : tab.saveStatus === 'saving' ? t.saving : t.unsaved;
+          : tab.saveStatus === 'saving' ? t.saving : t.unsaved);
   app.querySelector('#saved-state')!.textContent = savedMessage;
   app.querySelector('.status-dot')!.classList.toggle('unavailable', !state.storageReady);
+}
+
+function renderCursorPosition(): void {
+  const cursor = sourceEditor.selection().head;
+  const lines = sourceEditor.getText().slice(0, cursor).split('\n');
+  const row = lines.length;
+  const column = (lines.at(-1)?.length ?? 0) + 1;
+  app.querySelector('#status-cursor')!.textContent = state.locale === 'ja'
+    ? `行 ${row}, 列 ${column}` : `Ln ${row}, Col ${column}`;
 }
 
 function scheduleDraft(tab: OpenTab): void {
@@ -461,28 +513,52 @@ function hasUnpersistedDraft(tab: OpenTab): boolean {
 function renderDiagnostics(score: ParsedScore | undefined): void {
   diagnosticsElement.replaceChildren();
   const diagnostics = score?.diagnostics ?? [];
+  sourceEditor.setDiagnostics(diagnostics.map(item => ({
+    message: formatDiagnostic(item.code, item.args, state.locale), line: item.line,
+    startCol: item.startCol, endCol: item.endCol, severity: item.severity
+  })));
+  const errors = diagnostics.filter(item => item.severity === 'error').length;
+  const warnings = diagnostics.length - errors;
+  const summary = state.locale === 'ja'
+    ? `エラー ${errors} / 警告 ${warnings}` : `Errors ${errors} / Warnings ${warnings}`;
+  app.querySelector('#problem-counts')!.textContent = summary;
+  app.querySelector('#status-problems')!.textContent = summary;
+  app.querySelector('#tool-window-count')!.textContent = String(diagnostics.length);
   if (!diagnostics.length) {
-    diagnosticsElement.textContent = strings().noDiagnostics;
+    const empty = document.createElement('p');
+    empty.className = 'problems-empty';
+    empty.textContent = strings().noProblems;
+    diagnosticsElement.append(empty);
     diagnosticsElement.dataset.kind = 'ok';
     return;
   }
   diagnosticsElement.dataset.kind = diagnostics.some(item => item.severity === 'error') ? 'error' : 'warning';
-  const list = document.createElement('ul');
   for (const diagnostic of diagnostics) {
-    const item = document.createElement('li');
+    const item = document.createElement('div');
+    item.className = `problem-row problem-${diagnostic.severity}`;
+    item.setAttribute('role', 'listitem');
+    const severity = document.createElement('span');
+    severity.className = 'problem-severity';
+    severity.textContent = diagnostic.severity === 'error' ? (state.locale === 'ja' ? 'エラー' : 'Error') : (state.locale === 'ja' ? '警告' : 'Warning');
+    const file = document.createElement('span');
+    file.className = 'problem-file';
+    file.textContent = activeTab()?.document.name ?? '';
+    const location = document.createElement('span');
+    location.className = 'problem-location';
+    location.textContent = `${diagnostic.line + 1}:${diagnostic.startCol + 1}`;
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = `L${diagnostic.line + 1}:${diagnostic.startCol + 1} ${formatDiagnostic(diagnostic.code, diagnostic.args, state.locale)}`;
+    button.className = 'problem-message';
+    button.textContent = formatDiagnostic(diagnostic.code, diagnostic.args, state.locale);
     button.addEventListener('click', () => {
-      editor.focus();
-      const lines = editor.value.split('\n');
+      const lines = sourceEditor.getText().split('\n');
       const offset = lines.slice(0, diagnostic.line).reduce((total, line) => total + line.length + 1, 0) + diagnostic.startCol;
-      editor.setSelectionRange(offset, Math.min(editor.value.length, offset + Math.max(1, diagnostic.endCol - diagnostic.startCol)));
+      setWorkspaceViewMode('source');
+      sourceEditor.setSelection(offset, Math.min(sourceEditor.getText().length, offset + Math.max(1, diagnostic.endCol - diagnostic.startCol)));
     });
-    item.append(button);
-    list.append(item);
+    item.append(severity, file, location, button);
+    diagnosticsElement.append(item);
   }
-  diagnosticsElement.append(list);
 }
 
 function previewHtml(tab: OpenTab, score: ParsedScore): string {
@@ -504,20 +580,20 @@ function previewHtml(tab: OpenTab, score: ParsedScore): string {
 
 function renderPreview(tab: OpenTab | undefined): void {
   if (!tab) {
-    scoreFrame.srcdoc = '<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;padding:24px;color:#6b7280">Open a score to preview it.</p>';
-    app.querySelector('#preview-state')!.textContent = 'No score';
+    scoreFrame.srcdoc = `<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;padding:24px;color:#6b7280">${strings().previewEmpty}</p>`;
+    app.querySelector('#preview-state')!.textContent = strings().previewEmpty;
     return;
   }
   const score = currentScore(tab.source);
   renderDiagnostics(score);
   if (!score) {
-    app.querySelector('#preview-state')!.textContent = 'Unable to parse source';
+    app.querySelector('#preview-state')!.textContent = strings().previewInvalid;
     return;
   }
-  app.querySelector('#preview-state')!.textContent = score.diagnostics.some(item => item.severity === 'error') ? 'Check diagnostics' : 'Preview ready';
+  app.querySelector('#preview-state')!.textContent = score.diagnostics.some(item => item.severity === 'error') ? strings().previewCheck : strings().previewReady;
   try { scoreFrame.srcdoc = previewHtml(tab, score); }
   catch (error) {
-    app.querySelector('#preview-state')!.textContent = 'Preview failed';
+    app.querySelector('#preview-state')!.textContent = strings().previewFailed;
     showMessage(`Preview could not be rendered: ${shortError(error)}`, 'error');
   }
 }
@@ -530,12 +606,14 @@ const explorerController = new ExplorerController({
   root: app,
   getSnapshot: () => ({
     storage: state.activeStorage, locale: state.locale, account: state.account, drive: state.drive,
-    folderId: state.folderId, activeDocumentStorage: activeTab()?.document.identity.storage
+    folderId: state.folderId, activeDocumentStorage: activeTab()?.document.identity.storage,
+    authExpired: state.authExpired, connecting: driveConnectInProgress
   }),
   getLabels: () => {
     const t = strings();
     return {
-      files: t.files, local: t.local, drive: t.drive, addFile: t.addFile, chooseFolder: t.folder,
+      files: t.files, local: t.local, drive: t.drive, newScore: t.newScore,
+      connectDrive: t.connect, reconnectDrive: t.reconnect, connecting: t.connecting, chooseFolder: t.folder,
       createFolder: t.createFolder, openDrive: t.openDrive, createFirst: t.createFirst,
       connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess,
       driveOverwriteWarning: t.driveOverwriteWarning, loading: t.loadingDrive
@@ -544,7 +622,8 @@ const explorerController = new ExplorerController({
   listLocalDocuments: () => indexedDb.listDocuments('local'),
   getLocalDocument: identity => indexedDb.getDocument(identity),
   onStorageChange: storage => { state.activeStorage = storage; void renderExplorer(); },
-  onImport: () => app.querySelector<HTMLInputElement>('#file-input')!.click(),
+  onNewScore: () => void createNewScore(),
+  onConnectDrive: () => void connectDrive(),
   onChooseFolder: () => { void chooseDriveFolder(); },
   onCreateFolder: () => { void createDriveFolder(); },
   onOpenDrivePicker: () => { void openFromDrivePicker(); },
@@ -825,10 +904,9 @@ function renderInspector(): void {
       },
       onJump: (line, startCol, endCol) => {
         if (activeTab() !== tab) return;
-        const lines = editor.value.split('\n');
+        const lines = sourceEditor.getText().split('\n');
         const offset = lines.slice(0, line).reduce((total, value) => total + value.length + 1, 0);
-        editor.focus();
-        editor.setSelectionRange(offset + startCol, offset + endCol);
+        sourceEditor.setSelection(offset + startCol, offset + endCol);
       }
     });
   } else if (state.inspectorTab === 'settings') {
@@ -941,17 +1019,175 @@ function renderWebProgressionInspector(tab: OpenTab, score: ParsedScore | undefi
   status.textContent = state.audioStatus;
 }
 
-function applySplitRatio(): void {
-  if (!window.matchMedia('(min-width: 681px)').matches) return;
-  (app.querySelector('.source-pane') as HTMLElement).style.flexBasis = `${state.splitRatio * 100}%`;
-  (app.querySelector('.score-pane') as HTMLElement).style.flexBasis = `${(1 - state.splitRatio) * 100}%`;
-  splitDivider?.setAttribute('aria-valuenow', String(Math.round(state.splitRatio * 100)));
+interface WorkspaceLayoutPreference {
+  viewMode: WorkspaceViewMode;
+  explorerOpen: boolean;
+  inspectorOpen: boolean;
+  explorerWidth: number;
+  inspectorWidth: number;
+  problemsOpen: boolean;
+  problemsHeight: number;
+  splitRatio: number;
+}
+const workspace = app.querySelector<HTMLDivElement>('#workspace')!;
+const splitDivider = app.querySelector<HTMLDivElement>('#center-splitter')!;
+const splitView = app.querySelector<HTMLDivElement>('.split-view')!;
+let layoutSaveTimer = 0;
+
+function renderProblemsLabels(): void {
+  const t = strings();
+  app.querySelector('#problems-title')!.textContent = t.problems;
+  app.querySelector('#problems-panel')!.setAttribute('aria-label', t.problems);
+  const expanded = String(state.problemsOpen);
+  const toggle = app.querySelector<HTMLButtonElement>('#toggle-problems')!;
+  toggle.setAttribute('aria-expanded', expanded);
+  const count = toggle.querySelector('#tool-window-count')?.textContent ?? '0';
+  setIconButton(toggle, 'problems', t.problems);
+  const countBadge = document.createElement('span');
+  countBadge.id = 'tool-window-count'; countBadge.textContent = count;
+  toggle.append(countBadge);
+  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-problems')!, 'down', state.problemsOpen
+    ? (state.locale === 'ja' ? '問題パネルを折りたたむ' : 'Collapse Problems')
+    : (state.locale === 'ja' ? '問題パネルを展開' : 'Expand Problems'));
+  workspace.classList.toggle('problems-collapsed', !state.problemsOpen);
 }
 
-let splitSaveTimer = 0;
-function persistSplitRatioSoon(): void {
-  window.clearTimeout(splitSaveTimer);
-  splitSaveTimer = window.setTimeout(() => void savePreferences(), 300);
+function layoutSnapshot(): WorkspaceLayoutPreference {
+  return {
+    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
+    explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
+    problemsOpen: state.problemsOpen, problemsHeight: state.problemsHeight, splitRatio: state.splitRatio
+  };
+}
+
+function saveLayoutSoon(): void {
+  window.clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = window.setTimeout(() => {
+    void indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => {
+      state.storageReady = false;
+      renderStorageStatus();
+    });
+  }, 250);
+}
+
+function setWorkspaceViewMode(mode: WorkspaceViewMode, persist = true): void {
+  state.viewMode = mode;
+  workspace.classList.remove('view-source', 'view-split', 'view-score');
+  workspace.classList.add(`view-${mode}`);
+  for (const [id, value] of [['view-source', 'source'], ['view-split', 'split'], ['view-score', 'score']] as const) {
+    const button = app.querySelector<HTMLButtonElement>(`#${id}`)!;
+    button.setAttribute('aria-pressed', String(mode === value));
+    const label = value === 'source' ? strings().sourceView : value === 'score' ? strings().scoreView : strings().splitView;
+    setIconButton(button, value === 'source' ? 'code' : value === 'score' ? 'eye' : 'split', label);
+  }
+  applySplitRatio();
+  if (persist) saveLayoutSoon();
+}
+
+function updateResponsiveCollapse(): void {
+  const available = workspace.clientWidth;
+  let autoHideInspector = false;
+  let autoHideExplorer = false;
+  const required = () => 40 + 36 + (state.explorerOpen && !autoHideExplorer ? state.explorerWidth + 6 : 0)
+    + 240 + (state.inspectorOpen && !autoHideInspector ? 6 + state.inspectorWidth : 0);
+  if (required() > available) autoHideInspector = state.inspectorOpen;
+  if (required() > available) autoHideExplorer = state.explorerOpen;
+  workspace.classList.toggle('inspector-auto-hidden', autoHideInspector);
+  workspace.classList.toggle('explorer-auto-hidden', autoHideExplorer);
+}
+
+function applyWorkspaceLayout(): void {
+  workspace.style.setProperty('--explorer-width', `${state.explorerWidth}px`);
+  workspace.style.setProperty('--inspector-width', `${state.inspectorWidth}px`);
+  workspace.style.setProperty('--problems-height', `${state.problemsHeight}px`);
+  workspace.classList.toggle('explorer-closed', !state.explorerOpen);
+  workspace.classList.toggle('inspector-closed', !state.inspectorOpen);
+  app.querySelector('#activity-explorer')!.setAttribute('aria-pressed', String(state.explorerOpen));
+  app.querySelector('#activity-inspector')!.setAttribute('aria-pressed', String(state.inspectorOpen));
+  setIconButton(app.querySelector<HTMLButtonElement>('#activity-explorer')!, 'folder', strings().toggleExplorer);
+  setIconButton(app.querySelector<HTMLButtonElement>('#activity-inspector')!, 'inspector', strings().toggleInspector);
+  app.querySelector('#explorer-splitter')!.setAttribute('aria-valuenow', String(state.explorerWidth));
+  app.querySelector('#inspector-splitter')!.setAttribute('aria-valuenow', String(state.inspectorWidth));
+  app.querySelector('#problems-splitter')!.setAttribute('aria-valuenow', String(state.problemsHeight));
+  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-inspector')!, 'down', state.locale === 'ja' ? 'インスペクターを折りたたむ' : 'Collapse Inspector');
+  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-problems')!, 'down', state.locale === 'ja' ? 'Problems を折りたたむ' : 'Collapse Problems');
+  renderProblemsLabels();
+  updateResponsiveCollapse();
+  setWorkspaceViewMode(state.viewMode, false);
+}
+
+function applySplitRatio(): void {
+  const width = splitView?.clientWidth ?? 0;
+  if (width <= 0) return;
+  const minimum = width >= 566 ? 240 / width : 0.35;
+  const maximum = width >= 566 ? 1 - 320 / width : 0.65;
+  state.splitRatio = Math.max(minimum, Math.min(maximum, state.splitRatio));
+  (app.querySelector('.source-pane') as HTMLElement).style.flexBasis = `${state.splitRatio * 100}%`;
+  (app.querySelector('.score-pane') as HTMLElement).style.flexBasis = `${(1 - state.splitRatio) * 100}%`;
+  splitDivider.setAttribute('aria-valuemin', String(Math.round(minimum * 100)));
+  splitDivider.setAttribute('aria-valuemax', String(Math.round(maximum * 100)));
+  splitDivider.setAttribute('aria-valuenow', String(Math.round(state.splitRatio * 100)));
+}
+
+function persistSplitRatioSoon(): void { saveLayoutSoon(); }
+
+async function loadLayoutPreferences(): Promise<void> {
+  const saved = await indexedDb.getValue<Partial<WorkspaceLayoutPreference>>('settings', 'web-layout-v1').catch(() => undefined);
+  if (saved) {
+    if (saved.viewMode === 'source' || saved.viewMode === 'split' || saved.viewMode === 'score') state.viewMode = saved.viewMode;
+    if (typeof saved.explorerOpen === 'boolean') state.explorerOpen = saved.explorerOpen;
+    if (typeof saved.inspectorOpen === 'boolean') state.inspectorOpen = saved.inspectorOpen;
+    if (typeof saved.explorerWidth === 'number' && Number.isFinite(saved.explorerWidth)) state.explorerWidth = Math.max(180, Math.min(420, saved.explorerWidth));
+    if (typeof saved.inspectorWidth === 'number' && Number.isFinite(saved.inspectorWidth)) state.inspectorWidth = Math.max(260, Math.min(480, saved.inspectorWidth));
+    if (typeof saved.problemsOpen === 'boolean') state.problemsOpen = saved.problemsOpen;
+    if (typeof saved.problemsHeight === 'number' && Number.isFinite(saved.problemsHeight)) state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, saved.problemsHeight));
+    if (typeof saved.splitRatio === 'number' && Number.isFinite(saved.splitRatio)) state.splitRatio = Math.max(0.24, Math.min(0.76, saved.splitRatio));
+  } else {
+    state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, state.problemsHeight));
+    await indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => undefined);
+  }
+}
+
+function bindVerticalSplitter(element: HTMLElement, target: 'explorer' | 'inspector'): void {
+  let pointer: number | undefined;
+  let startX = 0;
+  let startWidth = 0;
+  const min = target === 'explorer' ? 180 : 260;
+  const max = target === 'explorer' ? 420 : 480;
+  const setWidth = (width: number, persist = false) => {
+    const clamped = Math.round(Math.max(min, Math.min(max, width)));
+    if (target === 'explorer') state.explorerWidth = clamped; else state.inspectorWidth = clamped;
+    workspace.style.setProperty(target === 'explorer' ? '--explorer-width' : '--inspector-width', `${clamped}px`);
+    element.setAttribute('aria-valuenow', String(clamped));
+    if (persist) { updateResponsiveCollapse(); saveLayoutSoon(); }
+  };
+  element.addEventListener('pointerdown', event => {
+    pointer = event.pointerId; startX = event.clientX;
+    startWidth = target === 'explorer' ? state.explorerWidth : state.inspectorWidth;
+    element.setPointerCapture(pointer); event.preventDefault();
+  });
+  element.addEventListener('pointermove', event => {
+    if (pointer !== event.pointerId) return;
+    const direction = target === 'explorer' ? 1 : -1;
+    setWidth(startWidth + (event.clientX - startX) * direction);
+  });
+  element.addEventListener('pointerup', event => {
+    if (pointer !== event.pointerId) return;
+    pointer = undefined; setWidth(target === 'explorer' ? state.explorerWidth : state.inspectorWidth, true);
+  });
+  element.addEventListener('pointercancel', () => { pointer = undefined; setWidth(startWidth, true); });
+  element.addEventListener('lostpointercapture', () => { if (pointer !== undefined) { pointer = undefined; setWidth(startWidth, true); } });
+  element.addEventListener('dblclick', () => setWidth(target === 'explorer' ? 220 : 300, true));
+  element.addEventListener('keydown', event => {
+    const delta = event.shiftKey ? 50 : 10;
+    let width = target === 'explorer' ? state.explorerWidth : state.inspectorWidth;
+    if (event.key === 'Home') width = min;
+    else if (event.key === 'End') width = max;
+    else if (event.key === 'ArrowLeft') width += target === 'explorer' ? -delta : delta;
+    else if (event.key === 'ArrowRight') width += target === 'explorer' ? delta : -delta;
+    else return;
+    event.preventDefault(); setWidth(width, true);
+  });
 }
 
 function addInspectorHeading(parent: HTMLElement, text: string): void { const heading = document.createElement('h2'); heading.textContent = text; parent.append(heading); }
@@ -1093,43 +1329,42 @@ function renderAll(): void {
   renderInspector();
   void renderExplorer();
   renderStorageStatus();
-  app.querySelector('#connect-drive')!.textContent = state.account ? t.disconnect : t.connect;
-  app.querySelector('#new-score')!.textContent = t.newScore;
-  app.querySelector('#save-document')!.textContent = t.save;
+  const connectLabel = driveConnectInProgress ? t.connecting : state.authExpired ? t.reconnect : state.account ? t.disconnect : t.connect;
+  setIconButton(app.querySelector<HTMLButtonElement>('#connect-drive')!, 'account', connectLabel);
+  const connectedAccount = state.account?.emailAddress;
+  if (connectedAccount) app.querySelector<HTMLButtonElement>('#connect-drive')!.title = `${t.connectedAs} ${connectedAccount} · ${connectLabel}`;
+  setIconButton(app.querySelector<HTMLButtonElement>('#save-document')!, 'save', t.save);
   app.querySelector('#export-file')!.textContent = t.exportFile;
-  app.querySelector('#download-pdf')!.textContent = t.downloadPdf;
-  app.querySelector('#mobile-source')!.textContent = t.narrowSource;
-  app.querySelector('#mobile-preview')!.textContent = t.narrowPreview;
+  setIconButton(app.querySelector<HTMLButtonElement>('#download-pdf')!, 'pdf', t.downloadPdf);
+  setIconButton(app.querySelector<HTMLButtonElement>('#help-button')!, 'help', t.help);
+  setIconButton(app.querySelector<HTMLButtonElement>('#settings-button')!, 'settings', t.settings);
+  setIconButton(app.querySelector<HTMLButtonElement>('#import-file')!, 'import', t.addFile);
   app.querySelector('#inspector-heading')!.textContent = t.inspector;
-  app.querySelector('#source-pane .pane-heading > span:first-child')!.textContent = t.source;
-  app.querySelector('#score-pane .pane-heading > span:first-child')!.textContent = t.preview;
   app.querySelector('.file-list')!.setAttribute('aria-label', t.files);
   app.querySelector('.inspector')!.setAttribute('aria-label', t.inspector);
   app.querySelector('.source-pane')!.setAttribute('aria-label', state.locale === 'ja' ? 'GuitarDSL ソース' : 'GuitarDSL source');
   app.querySelector('.score-pane')!.setAttribute('aria-label', state.locale === 'ja' ? '譜面プレビュー' : 'Score preview');
   app.querySelector('main')!.setAttribute('aria-label', 'GuitarDSL');
-  editor.setAttribute('aria-label', state.locale === 'ja' ? 'GuitarDSL ソースエディター' : 'GuitarDSL source editor');
-  app.querySelector('#import-file')!.setAttribute('aria-label', t.addFile);
-  app.querySelector('#locale-select')!.setAttribute('aria-label', t.language);
-  app.querySelector('#theme-select')!.setAttribute('aria-label', t.theme);
+  sourceEditor.setAccessibleName(state.locale === 'ja' ? 'GuitarDSL ソースエディター' : 'GuitarDSL source editor');
   app.querySelector('#workspace-name')!.textContent = state.activeStorage === 'drive' ? t.drive : t.local;
-  app.querySelector('#source-pane')!.classList.toggle('mobile-hidden', state.mobilePane !== 'source');
-  app.querySelector('#score-pane')!.classList.toggle('mobile-hidden', state.mobilePane !== 'preview');
+  renderProblemsLabels();
   const tab = activeTab();
   if (tab) {
-    sourceEditor.setSource(tab.source);
+    sourceEditor.setDocument(tabKey(tab), tab.source);
+    renderDiagnostics(currentScore(tab.source));
     renderStorageStatus();
     app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = tab.document.identity.storage !== 'local' || !state.account || !state.folderId;
     renderPreview(tab);
   } else {
-    sourceEditor.setSource('');
+    sourceEditor.setDocument('', '');
+    renderDiagnostics(undefined);
     renderPreview(undefined);
     app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = true;
   }
   app.dataset.theme = state.theme;
   app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = state.theme;
-  app.querySelector('#connect-drive')!.textContent = state.authExpired ? (state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive') : state.account ? t.disconnect : t.connect;
-  applySplitRatio();
+  renderCursorPosition();
+  applyWorkspaceLayout();
   renderDriveOperationControls();
 }
 
@@ -1218,7 +1453,7 @@ function onEditorInput(): void {
   state.progressionError = undefined;
   resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
-  tab.source = sourceEditor.acceptInput();
+  tab.source = sourceEditor.getSource();
   tab.revision += 1;
   scheduleDraft(tab);
   const score = currentScore(tab.source);
@@ -1540,6 +1775,8 @@ async function connectDrive(): Promise<void> {
     state.account = undefined; state.drive = undefined; state.folderId = undefined;
     renderAll(); await persistSessions(); return;
   }
+  driveConnectInProgress = true;
+  renderAll();
   try {
     const previousAccount = state.account;
     const account = await auth.connect();
@@ -1563,6 +1800,7 @@ async function connectDrive(): Promise<void> {
     if (state.activeStorage === 'drive') await renderExplorer();
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  finally { driveConnectInProgress = false; renderAll(); }
 }
 
 async function chooseDriveFolder(): Promise<void> {
@@ -1748,8 +1986,6 @@ async function loadPreferences(): Promise<void> {
   if (preferences.locale === 'en' || preferences.locale === 'ja') state.locale = preferences.locale;
   if (preferences.theme === 'system' || preferences.theme === 'light' || preferences.theme === 'dark') state.theme = preferences.theme;
   if (typeof preferences.splitRatio === 'number' && preferences.splitRatio >= 0.25 && preferences.splitRatio <= 0.75) state.splitRatio = preferences.splitRatio;
-  app.querySelector<HTMLSelectElement>('#locale-select')!.value = state.locale;
-  app.querySelector<HTMLSelectElement>('#theme-select')!.value = state.theme;
 }
 
 async function restoreLocalSession(): Promise<void> {
@@ -1774,7 +2010,7 @@ async function restoreLocalSession(): Promise<void> {
 }
 
 function progressionStartAtCaret(score: ParsedScore, offset: number): number {
-  const before = editor.value.slice(0, Math.max(0, offset));
+  const before = sourceEditor.getText().slice(0, Math.max(0, offset));
   const line = before.split('\n').length - 1;
   const column = before.length - before.lastIndexOf('\n') - 1;
   const tokens = (score.codeActionTokens ?? []).filter(token => token.kind === 'chord'
@@ -1803,7 +2039,7 @@ async function suggestProgression(tab: OpenTab): Promise<void> {
   if (!score || activeTab() !== tab) return;
   const startMeasure = state.progressionOperation === 'append'
     ? score.measures.length
-    : Math.min(state.progressionStartMeasure ?? progressionStartAtCaret(score, editor.selectionStart), Math.max(0, score.measures.length - state.progressionBars));
+    : Math.min(state.progressionStartMeasure ?? progressionStartAtCaret(score, sourceEditor.selection().from), Math.max(0, score.measures.length - state.progressionBars));
   state.progressionStartMeasure = state.progressionOperation === 'append' ? undefined : startMeasure;
   const target = { startMeasure };
   const result = suggestProgressions(score, target, state.progressionBars);
@@ -1943,6 +2179,14 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
   if (moveToDriveInProgress) return;
   const isCurrent = message.documentUri === activeIdentityLabel(tab)
     && message.documentVersion === tab.revision && message.previewGeneration === state.previewGeneration;
+  if (message.command === 'contextMenu') {
+    if (isCurrent && Number.isFinite(message.clientX) && Number.isFinite(message.clientY)) {
+      openPreviewContextMenu(Number(message.clientX), Number(message.clientY), String(message.selectedText ?? ''), tab, {
+        documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
+      });
+    }
+    return;
+  }
   if (message.command === 'previewUiModeRequest' && isCurrent) {
     const mode = message.mode;
     if (mode === 'normal' || mode === 'edit' || mode === 'practice') {
@@ -1983,9 +2227,9 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
     const id = String(message.visualElementId ?? '');
     const binding = currentScore(tab.source)?.visualSourceBindings?.find(item => item.id === id);
     if (!binding) return;
-    const lines = editor.value.split('\n');
+    const lines = sourceEditor.getText().split('\n');
     const offset = lines.slice(0, binding.line).reduce((total, line) => total + line.length + 1, 0) + binding.startCol;
-    editor.focus(); editor.setSelectionRange(offset, Math.min(editor.value.length, offset + Math.max(1, binding.endCol - binding.startCol)));
+    sourceEditor.setSelection(offset, Math.min(sourceEditor.getText().length, offset + Math.max(1, binding.endCol - binding.startCol)));
     return;
   }
   if (message.command === 'layoutChanged' && isCurrent) {
@@ -2020,20 +2264,313 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
 }
 
 function replaceEditorSourceWithUndo(source: string): void {
-  const oldSelection = { start: editor.selectionStart, end: editor.selectionEnd };
-  editor.focus();
-  let replaced = false;
-  try {
-    document.execCommand('selectAll');
-    replaced = document.execCommand('insertText', false, source);
-  } catch { replaced = false; }
-  if (!replaced) editor.value = source;
-  if (activeTab()) onEditorInput();
-  if (replaced) editor.setSelectionRange(Math.min(oldSelection.start, source.length), Math.min(oldSelection.end, source.length));
+  const oldSelection = sourceEditor.selection();
+  sourceEditor.replaceSource(source, 'input.replace');
+  sourceEditor.setSelection(Math.min(oldSelection.from, sourceEditor.getText().length), Math.min(oldSelection.to, sourceEditor.getText().length));
 }
 
-editor.addEventListener('input', onEditorInput);
-app.querySelector('#new-score')!.addEventListener('click', () => void createNewScore());
+interface WorkspaceMenuAction {
+  label: string;
+  run: () => void | Promise<void>;
+  disabled?: boolean;
+  checked?: boolean;
+}
+let activeMenuCleanup: (() => void) | undefined;
+let activeMenuInvoker: HTMLElement | undefined;
+
+function closeWorkspaceMenu(menu: HTMLElement, restoreFocus = false, invoker?: HTMLElement): void {
+  menu.hidden = true;
+  menu.replaceChildren();
+  activeMenuCleanup?.();
+  activeMenuCleanup = undefined;
+  const focusTarget = invoker ?? activeMenuInvoker;
+  if (focusTarget?.id === 'connect-drive') focusTarget.setAttribute('aria-expanded', 'false');
+  activeMenuInvoker = undefined;
+  if (restoreFocus) focusTarget?.focus();
+}
+
+function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: WorkspaceMenuAction[], invoker?: HTMLElement): void {
+  closeWorkspaceMenu(menu);
+  activeMenuInvoker = invoker;
+  menu.replaceChildren();
+  for (const action of actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', action.checked === undefined ? 'menuitem' : 'menuitemradio');
+    if (action.checked !== undefined) button.setAttribute('aria-checked', String(action.checked));
+    button.disabled = Boolean(action.disabled);
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      closeWorkspaceMenu(menu, true, invoker);
+      try {
+        const result = action.run();
+        if (result instanceof Promise) void result.catch(error => showMessage(shortError(error), 'error'));
+      } catch (error) { showMessage(shortError(error), 'error'); }
+    });
+    menu.append(button);
+  }
+  menu.hidden = false;
+  if (invoker?.id === 'connect-drive') invoker.setAttribute('aria-expanded', 'true');
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = Math.max(6, Math.min(x, window.innerWidth - bounds.width - 6)) + 'px';
+  menu.style.top = Math.max(6, Math.min(y, window.innerHeight - bounds.height - 6)) + 'px';
+  const buttons = () => Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+  buttons()[0]?.focus();
+  const onKeyDown = (event: KeyboardEvent) => {
+    const items = buttons();
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: HTMLButtonElement | undefined;
+    if (event.key === 'Escape') { event.preventDefault(); closeWorkspaceMenu(menu, true, invoker); return; }
+    if (event.key === 'ArrowDown') next = items[(index + 1 + items.length) % items.length];
+    else if (event.key === 'ArrowUp') next = items[(index - 1 + items.length) % items.length];
+    else if (event.key === 'Home') next = items[0];
+    else if (event.key === 'End') next = items[items.length - 1];
+    else if ((event.key === 'Enter' || event.key === ' ') && index >= 0) { event.preventDefault(); items[index].click(); return; }
+    else return;
+    event.preventDefault(); next?.focus();
+  };
+  const onOutside = (event: PointerEvent) => {
+    if (event.target instanceof Node && !menu.contains(event.target)) closeWorkspaceMenu(menu);
+  };
+  menu.addEventListener('keydown', onKeyDown);
+  document.addEventListener('pointerdown', onOutside, true);
+  activeMenuCleanup = () => {
+    menu.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('pointerdown', onOutside, true);
+  };
+}
+
+async function copyWithFailure(text: string): Promise<void> {
+  try {
+    if (!navigator.clipboard?.writeText) throw new DOMException('Clipboard API is unavailable', 'NotAllowedError');
+    await navigator.clipboard.writeText(text);
+    showMessage(state.locale === 'ja' ? 'クリップボードにコピーしました。' : 'Copied to clipboard.', 'info');
+  } catch {
+    showMessage(state.locale === 'ja' ? 'クリップボードへコピーできませんでした。' : 'Could not copy to the clipboard.', 'error');
+  }
+}
+
+function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMenuAction[] {
+  const t = strings();
+  const file = element.closest<HTMLButtonElement>('.file-item');
+  if (file) {
+    const storage = file.dataset.storage;
+    const fileId = file.dataset.fileId;
+    const accountId = file.dataset.accountId;
+    const title = file.textContent ?? '';
+    return [{
+      label: state.locale === 'ja' ? '開く' : 'Open',
+      run: () => {
+        if (!file.isConnected || file.dataset.storage !== storage || file.dataset.fileId !== fileId
+          || state.activeStorage !== storage || storage === 'drive' && (state.account?.accountId !== accountId || !state.drive)) {
+          showMessage(state.locale === 'ja' ? '対象が変わったため操作を中止しました。' : 'The target changed; the action was cancelled.', 'error'); return;
+        }
+        file.click();
+      }
+    }, { label: state.locale === 'ja' ? '名前をコピー' : 'Copy name', run: () => copyWithFailure(title) }];
+  }
+  const tabElement = element.closest<HTMLElement>('.tab');
+  if (tabElement?.dataset.documentTabKey) {
+    const key = tabElement.dataset.documentTabKey;
+    const tab = state.tabs.find(item => tabKey(item) === key);
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    return [{ label: state.locale === 'ja' ? 'タブを閉じる' : 'Close tab', run: () => {
+      if (!tabElement.isConnected || !state.tabs.includes(tab) || tab.revision !== revision || tab.source !== source) {
+        showMessage(state.locale === 'ja' ? '対象が変わったため操作を中止しました。' : 'The tab changed; the action was cancelled.', 'error'); return;
+      }
+      return closeTab(tab);
+    } }];
+  }
+  const problem = element.closest<HTMLElement>('.problem-row');
+  if (problem) {
+    const tab = activeTab();
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    const message = problem.querySelector('.problem-message')?.textContent ?? '';
+    return [
+      { label: state.locale === 'ja' ? 'ソースで表示' : 'Show in Source', run: () => {
+        if (!problem.isConnected || activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '診断の対象が変わりました。' : 'The diagnostic target changed.', 'error'); return;
+        }
+        problem.querySelector<HTMLButtonElement>('.problem-message')?.click();
+      } },
+      { label: state.locale === 'ja' ? 'メッセージをコピー' : 'Copy message', run: () => {
+        if (!problem.isConnected || activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '診断の対象が変わりました。' : 'The diagnostic target changed.', 'error'); return;
+        }
+        return copyWithFailure(message);
+      } }
+    ];
+  }
+  const gutter = element.closest<HTMLElement>('.cm-gutters');
+  if (gutter || keyboard && element.closest('.cm-content')) {
+    const tab = activeTab();
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    const from = sourceEditor.selection().from;
+    const line = sourceEditor.getText().slice(0, from).split('\n').length;
+    return [
+      { label: (state.locale === 'ja' ? '行 ' : 'Line ') + line + (state.locale === 'ja' ? ' へ移動…' : '…'), run: () => {
+        if (activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '文書が変わったため操作を中止しました。' : 'The document changed; the action was cancelled.', 'error'); return;
+        }
+        const value = window.prompt(state.locale === 'ja' ? '移動先の行番号' : 'Go to line', String(line));
+        const destination = Number(value);
+        if (value !== null && Number.isInteger(destination) && destination > 0) {
+          const lines = sourceEditor.getText().split('\n');
+          sourceEditor.setSelection(lines.slice(0, Math.min(destination - 1, lines.length)).reduce((total, row) => total + row.length + 1, 0));
+        }
+      } },
+      { label: state.locale === 'ja' ? '行番号をコピー' : 'Copy line number', run: () => copyWithFailure(String(line)) }
+    ];
+  }
+  return [];
+}
+
+function openContextMenu(event: MouseEvent | KeyboardEvent, target: HTMLElement, keyboard = false): void {
+  if (target.closest('.score-pane')) {
+    const tab = activeTab();
+    if (tab) openPreviewContextMenu(12, 12, '', tab, {
+      documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
+    });
+    if (event instanceof MouseEvent) event.preventDefault();
+    return;
+  }
+  const menu = app.querySelector<HTMLElement>('#context-menu')!;
+  const actions = contextActionsFor(target, keyboard);
+  if (!actions.length) return;
+  if (event instanceof MouseEvent) event.preventDefault();
+  const x = event instanceof MouseEvent ? event.clientX : Math.min(window.innerWidth - 220, target.getBoundingClientRect().left);
+  const y = event instanceof MouseEvent ? event.clientY : Math.min(window.innerHeight - 120, target.getBoundingClientRect().bottom);
+  showWorkspaceMenu(menu, x, y, actions, target);
+}
+
+function openPreviewContextMenu(x: number, y: number, selectedText: string, tab: OpenTab, identity: { documentUri: string; documentVersion: number; previewGeneration: number }): void {
+  const rect = scoreFrame.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#context-menu')!;
+  const actions: WorkspaceMenuAction[] = [
+    { label: strings().sourceView, run: () => {
+      if (!isCurrentPreviewIdentity(tab, identity)) { showMessage(state.locale === 'ja' ? 'プレビューの対象が変わりました。' : 'The Preview target changed.', 'error'); return; }
+      setWorkspaceViewMode('source');
+    } },
+    { label: strings().scoreView, run: () => {
+      if (!isCurrentPreviewIdentity(tab, identity)) { showMessage(state.locale === 'ja' ? 'プレビューの対象が変わりました。' : 'The Preview target changed.', 'error'); return; }
+      setWorkspaceViewMode('score');
+    } }
+  ];
+  actions.unshift({ label: state.locale === 'ja' ? '選択した文字をコピー' : 'Copy selected text', disabled: !selectedText.trim(), run: () => {
+    if (!isCurrentPreviewIdentity(tab, identity)) { showMessage(state.locale === 'ja' ? 'プレビューの対象が変わりました。' : 'The Preview target changed.', 'error'); return; }
+    return copyWithFailure(selectedText);
+  } });
+  showWorkspaceMenu(menu, rect.left + x, rect.top + y, actions, scoreFrame);
+}
+
+function openHelp(): void {
+  const dialog = app.querySelector<HTMLDialogElement>('#help-dialog')!;
+  const toc = app.querySelector<HTMLElement>('#help-toc')!;
+  const content = app.querySelector<HTMLElement>('#help-content')!;
+  app.querySelector('#help-title')!.textContent = strings().help;
+  const topics = state.locale === 'ja' ? [
+    ['getting-started', '基本操作', '新しい楽譜を作成するか、Explorer からローカル文書または Google Drive の文書を開きます。編集内容はブラウザー内の下書きとして保存されます。'],
+    ['editing', 'ソース編集', '行番号、構文色分け、補完、検索・置換、元に戻す／やり直しを利用できます。Problems の項目を選ぶと、該当行へ移動します。'],
+    ['preview', 'プレビュー', 'Source・Split・Score の表示を切り替えます。譜面プレビュー内の Normal・Edit・Practice は表示レイアウトとは独立しています。'],
+    ['drive', 'Google Drive', 'Drive は任意です。接続すると、アプリから開いた文書を保存できます。ローカル文書は接続しなくても編集・書き出しできます。'],
+    ['shortcuts', 'キーボード操作', '⌘/Ctrl+S で保存、⌘/Ctrl+F で検索、⌘/Ctrl+H で置換、⌘/Ctrl+G で行へ移動します。Escape でメニューを閉じます。']
+  ] : [
+    ['getting-started', 'Getting started', 'Create a score or open a local or Google Drive document from Explorer. Edits are stored as a recoverable browser draft.'],
+    ['editing', 'Editing source', 'Use line numbers, syntax colors, local completion, search and replace, undo, and redo. Select a Problems row to jump to its source range.'],
+    ['preview', 'Preview', 'Switch between Source, Split, and Score views. Normal, Edit, and Practice remain independent Preview modes.'],
+    ['drive', 'Google Drive', 'Drive is optional. Connect to save documents opened by this app. Local documents remain editable and exportable without signing in.'],
+    ['shortcuts', 'Keyboard shortcuts', 'Use ⌘/Ctrl+S to save, ⌘/Ctrl+F to search, ⌘/Ctrl+H to replace, and ⌘/Ctrl+G to go to a line. Press Escape to close a menu.']
+  ] as const;
+  toc.replaceChildren(); content.replaceChildren();
+  for (const [id, title, body] of topics) {
+    const link = document.createElement('button'); link.type = 'button'; link.textContent = title;
+    link.addEventListener('click', () => content.querySelector('#help-' + id)?.scrollIntoView({ block: 'start' }));
+    toc.append(link);
+    const section = document.createElement('section'); section.id = 'help-' + id;
+    const heading = document.createElement('h3'); heading.textContent = title;
+    const paragraph = document.createElement('p'); paragraph.textContent = body;
+    section.append(heading, paragraph); content.append(section);
+  }
+  if (!dialog.open) dialog.showModal();
+}
+
+function openSettingsMenu(): void {
+  const button = app.querySelector<HTMLElement>('#settings-button')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#settings-menu')!;
+  const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  for (const theme of ['system', 'light', 'dark'] as const) {
+    const label = state.locale === 'ja' ? ({ system: 'テーマ: システム', light: 'テーマ: ライト', dark: 'テーマ: ダーク' }[theme])
+      : ({ system: 'Theme: System', light: 'Theme: Light', dark: 'Theme: Dark' }[theme]);
+    actions.push({ label, checked: state.theme === theme, run: () => {
+      state.theme = theme;
+      void savePreferences(); renderAll();
+    } });
+  }
+  for (const locale of ['en', 'ja'] as const) {
+    actions.push({ label: locale === 'ja' ? 'Language: 日本語' : 'Language: English', checked: state.locale === locale, run: () => {
+      state.locale = locale;
+      void savePreferences(); renderAll();
+    } });
+  }
+  actions.push({ label: t.resetLayout, run: () => {
+    if (!window.confirm(t.resetLayoutConfirm)) return;
+    state.viewMode = 'split'; state.splitRatio = 0.4; state.explorerOpen = true; state.inspectorOpen = true;
+    state.explorerWidth = 220; state.inspectorWidth = 300; state.problemsOpen = true; state.problemsHeight = 200;
+    applyWorkspaceLayout(); saveLayoutSoon();
+  } });
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
+}
+
+function openAccountMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#account-menu')!;
+  const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  if (driveConnectInProgress) actions.push({ label: t.connecting, disabled: true, run: () => {} });
+  else if (!state.account || state.authExpired) {
+    actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
+  } else {
+    actions.push({
+      label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`,
+      disabled: true, run: () => {}
+    });
+    actions.push(
+      { label: t.folder, run: () => chooseDriveFolder() },
+      { label: t.createFolder, run: () => createDriveFolder() },
+      { label: t.openDrive, run: () => openFromDrivePicker() },
+      { label: t.disconnect, run: () => connectDrive() }
+    );
+  }
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
+}
+
+app.querySelector('#help-button')!.addEventListener('click', openHelp);
+app.querySelector('#close-help')!.addEventListener('click', () => app.querySelector<HTMLDialogElement>('#help-dialog')!.close());
+app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus());
+app.querySelector('#settings-button')!.addEventListener('click', openSettingsMenu);
+app.querySelector('#connect-drive')!.addEventListener('click', openAccountMenu);
+app.addEventListener('contextmenu', event => {
+  const target = event.target instanceof HTMLElement ? event.target : undefined;
+  if (!target || target.closest('.cm-content')) return; // Preserve the browser's native editor-body context menu.
+  if (target.closest('.file-item, .tab, .problem-row, .cm-gutters')) openContextMenu(event, target);
+});
+app.addEventListener('keydown', event => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  const target = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+  if (!target) return;
+  const menuTarget = target.closest('.file-item, .tab, .problem-row, .cm-gutters, .cm-content, .score-pane') as HTMLElement | null;
+  if (menuTarget) { event.preventDefault(); openContextMenu(event, menuTarget, true); }
+});
 app.querySelector('#save-document')!.addEventListener('click', () => void saveActiveDocument());
 app.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
@@ -2044,20 +2581,10 @@ app.addEventListener('keydown', event => {
 app.querySelector('#download-pdf')!.addEventListener('click', () => void downloadPdf());
 app.querySelector('#export-file')!.addEventListener('click', () => { const tab = activeTab(); if (tab) downloadSource(tab.document.name, tab.source); });
 app.querySelector('#move-drive')!.addEventListener('click', () => void moveToDrive());
-app.querySelector('#connect-drive')!.addEventListener('click', () => void connectDrive());
 app.querySelector('#file-input')!.addEventListener('change', event => {
   const input = event.currentTarget as HTMLInputElement; void importFile(input.files?.[0]); input.value = '';
 });
 app.querySelector('#import-file')!.addEventListener('click', () => app.querySelector<HTMLInputElement>('#file-input')!.click());
-app.querySelector('#mobile-source')!.addEventListener('click', () => { state.mobilePane = 'source'; renderAll(); });
-app.querySelector('#mobile-preview')!.addEventListener('click', () => { state.mobilePane = 'preview'; renderAll(); });
-app.querySelector('#locale-select')!.addEventListener('change', event => {
-  state.locale = (event.currentTarget as HTMLSelectElement).value as 'en' | 'ja'; void savePreferences(); renderAll();
-});
-app.querySelector('#theme-select')!.addEventListener('change', event => {
-  state.theme = (event.currentTarget as HTMLSelectElement).value as AppState['theme']; void savePreferences(); renderAll();
-});
-app.querySelector('#collapse-inspector')!.addEventListener('click', () => app.querySelector('.workspace')!.classList.toggle('inspector-collapsed'));
 inspectorTabsHost.addEventListener('focusin', event => {
   const focused = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
   if (!focused) return;
@@ -2090,27 +2617,89 @@ inspectorTabsHost.addEventListener('click', event => {
     } else renderInspector();
   }
 });
-const splitDivider = app.querySelector<HTMLDivElement>('.split-divider')!;
-const splitView = app.querySelector<HTMLDivElement>('.split-view')!;
 let splitPointer: number | undefined;
-function updateSplitRatio(clientX: number): void {
-  const bounds = splitView.getBoundingClientRect();
-  if (bounds.width <= 0) return;
-  state.splitRatio = Math.max(0.25, Math.min(0.75, (clientX - bounds.left) / bounds.width));
-  applySplitRatio(); persistSplitRatioSoon();
-}
 splitDivider.addEventListener('pointerdown', event => {
-  if (window.matchMedia('(max-width: 680px)').matches) return;
   splitPointer = event.pointerId; splitDivider.setPointerCapture(event.pointerId); event.preventDefault();
 });
-splitDivider.addEventListener('pointermove', event => { if (splitPointer === event.pointerId) updateSplitRatio(event.clientX); });
-splitDivider.addEventListener('pointerup', event => { if (splitPointer === event.pointerId) splitPointer = undefined; });
-splitDivider.addEventListener('pointercancel', () => { splitPointer = undefined; });
-splitDivider.addEventListener('keydown', event => {
-  const delta = event.key === 'ArrowLeft' ? -0.03 : event.key === 'ArrowRight' ? 0.03 : 0;
-  if (delta) { event.preventDefault(); state.splitRatio = Math.max(0.25, Math.min(0.75, state.splitRatio + delta)); applySplitRatio(); persistSplitRatioSoon(); }
+let splitStartRatio = state.splitRatio;
+splitDivider.addEventListener('pointerdown', event => { splitStartRatio = state.splitRatio; });
+splitDivider.addEventListener('pointermove', event => {
+  if (splitPointer !== event.pointerId) return;
+  const bounds = splitView.getBoundingClientRect();
+  if (bounds.width <= 0) return;
+  state.splitRatio = Math.max(0.05, Math.min(0.95, (event.clientX - bounds.left) / bounds.width));
+  applySplitRatio();
 });
-window.addEventListener('resize', applySplitRatio);
+splitDivider.addEventListener('pointerup', event => {
+  if (splitPointer !== event.pointerId) return;
+  splitPointer = undefined; persistSplitRatioSoon();
+});
+splitDivider.addEventListener('pointercancel', () => {
+  if (splitPointer === undefined) return;
+  splitPointer = undefined; state.splitRatio = splitStartRatio; applySplitRatio();
+});
+splitDivider.addEventListener('lostpointercapture', () => {
+  if (splitPointer === undefined) return;
+  splitPointer = undefined; state.splitRatio = splitStartRatio; applySplitRatio();
+});
+splitDivider.addEventListener('dblclick', () => { state.splitRatio = 0.4; applySplitRatio(); saveLayoutSoon(); });
+splitDivider.addEventListener('keydown', event => {
+  const width = splitView.clientWidth || 1;
+  const delta = (event.shiftKey ? 50 : 10) / width;
+  const minimum = Number(splitDivider.getAttribute('aria-valuemin')) / 100;
+  const maximum = Number(splitDivider.getAttribute('aria-valuemax')) / 100;
+  if (event.key === 'Home') state.splitRatio = minimum;
+  else if (event.key === 'End') state.splitRatio = maximum;
+  else if (event.key === 'ArrowLeft') state.splitRatio -= delta;
+  else if (event.key === 'ArrowRight') state.splitRatio += delta;
+  else return;
+  event.preventDefault(); applySplitRatio(); persistSplitRatioSoon();
+});
+bindVerticalSplitter(app.querySelector<HTMLElement>('#explorer-splitter')!, 'explorer');
+bindVerticalSplitter(app.querySelector<HTMLElement>('#inspector-splitter')!, 'inspector');
+const problemsSplitter = app.querySelector<HTMLElement>('#problems-splitter')!;
+let problemsPointer: number | undefined;
+let problemsStartY = 0;
+let problemsStartHeight = state.problemsHeight;
+const maxProblemsHeight = () => Math.max(140, Math.floor(window.innerHeight * 0.45));
+function setProblemsHeight(height: number, persist = false): void {
+  state.problemsHeight = Math.round(Math.max(140, Math.min(maxProblemsHeight(), height)));
+  workspace.style.setProperty('--problems-height', `${state.problemsHeight}px`);
+  problemsSplitter.setAttribute('aria-valuemax', String(maxProblemsHeight()));
+  problemsSplitter.setAttribute('aria-valuenow', String(state.problemsHeight));
+  if (persist) saveLayoutSoon();
+}
+problemsSplitter.addEventListener('pointerdown', event => {
+  if (!state.problemsOpen) return;
+  problemsPointer = event.pointerId; problemsStartY = event.clientY; problemsStartHeight = state.problemsHeight;
+  problemsSplitter.setPointerCapture(event.pointerId); event.preventDefault();
+});
+problemsSplitter.addEventListener('pointermove', event => { if (problemsPointer === event.pointerId) setProblemsHeight(problemsStartHeight + problemsStartY - event.clientY); });
+problemsSplitter.addEventListener('pointerup', event => { if (problemsPointer === event.pointerId) { problemsPointer = undefined; setProblemsHeight(state.problemsHeight, true); } });
+problemsSplitter.addEventListener('pointercancel', () => { if (problemsPointer !== undefined) { problemsPointer = undefined; setProblemsHeight(problemsStartHeight); } });
+problemsSplitter.addEventListener('lostpointercapture', () => { if (problemsPointer !== undefined) { problemsPointer = undefined; setProblemsHeight(problemsStartHeight); } });
+problemsSplitter.addEventListener('dblclick', () => setProblemsHeight(200, true));
+problemsSplitter.addEventListener('keydown', event => {
+  const delta = event.shiftKey ? 50 : 10;
+  if (event.key === 'Home') setProblemsHeight(140, true);
+  else if (event.key === 'End') setProblemsHeight(maxProblemsHeight(), true);
+  else if (event.key === 'ArrowUp') setProblemsHeight(state.problemsHeight + delta, true);
+  else if (event.key === 'ArrowDown') setProblemsHeight(state.problemsHeight - delta, true);
+  else return;
+  event.preventDefault();
+});
+for (const [id, mode] of [['view-source', 'source'], ['view-split', 'split'], ['view-score', 'score']] as const) {
+  app.querySelector<HTMLButtonElement>(`#${id}`)!.addEventListener('click', () => setWorkspaceViewMode(mode));
+}
+const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
+const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
+app.querySelector('#activity-explorer')!.addEventListener('click', toggleExplorer);
+for (const id of ['activity-inspector', 'collapse-inspector']) app.querySelector(`#${id}`)!.addEventListener('click', toggleInspector);
+const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
+app.querySelector('#toggle-problems')!.addEventListener('click', toggleProblems);
+app.querySelector('#collapse-problems')!.addEventListener('click', toggleProblems);
+window.addEventListener('resize', () => { applySplitRatio(); setProblemsHeight(state.problemsHeight); updateResponsiveCollapse(); });
+new ResizeObserver(() => updateResponsiveCollapse()).observe(workspace);
 listenForPreviewMessages(scoreFrame, handlePreviewMessage);
 window.addEventListener('beforeunload', (event: BeforeUnloadEvent) => {
   if (state.tabs.some(hasUnpersistedDraft)) {
@@ -2123,6 +2712,7 @@ window.addEventListener('pagehide', () => progressionAudioLease.dispose());
 async function init(): Promise<void> {
   try {
     await loadPreferences();
+    await loadLayoutPreferences();
     state.storageReady = true;
     await restoreLocalSession();
   } catch (error) {

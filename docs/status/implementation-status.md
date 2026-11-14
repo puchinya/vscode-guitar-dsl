@@ -6,6 +6,14 @@
 - **最終更新日**: 2026-11-14
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #172: Web Compact IDE
+
+- **状態**: Contractに沿った compact workspace の実装とローカル検証が完了し、PR準備中。ソース編集を CodeMirror 6 に置き換え、Source/Preview、Explorer、Inspector、Problems の配置、4 splitter、狭幅時のパネル折りたたみ、IndexedDBレイアウト保存、SVGアイコン、Help/Settings/Google Accountメニューを追加した。アカウント別Driveタブ、編集source/revision、CRLF、IME、タブ別Undo履歴を保持する。
+- **Contract**: Issue #172 comment `6876057443`、SHA-256 `dc51abf1cb7492d7ea5fef24675858a0f6cf2fd498e38906ed4e0fbe1aa49d21`。`verify-implementation-contract 172` で照合済み。
+- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、メニュー、Problems、Source-only/Score-only、およびDOMRect計測を保存。
+- **ブラウザー検証**: Playwright Chromium 42/42 PASS、Playwright WebKit 42/42 PASS、SafariDriver 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
+- **最終ゲート**: `npm test`（root unit、VS Code E2E、Web unit、Playwright Chromium/WebKit 合計84件）、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。Web buildでは500 kB超のchunk警告、prepublishではwasm-bindgenのprebuilt取得に失敗してcargo経由へfallbackする警告とextension bundleのサイズ警告があったが、各コマンドは成功した。PR作成後、最新HEADに結び付いたセルフレビューとGitHub Required Checksを確認する。
+
 ## Issue #166: Web SPA 版 GuitarDSL
 
 - **状態**: PR [#167](https://github.com/puchinya/vscode-guitar-dsl/pull/167) は 2026-11-14 に `main` へマージ済み。Issue #166 はSafari受け入れ条件追加により再オープンされ、PR [#171](https://github.com/puchinya/vscode-guitar-dsl/pull/171) とブランチ `feature/166-safari-browser-e2e` で対応中。既存実装は IndexedDB の競合保全、共有 Inspector／コード図 UI、保存状態、構文ハイライト、設定・コード進行Inspectorの両ホスト差を含む。Issue #166 の Architecture Decision Addendum（comment `6860479905`）に従い、通常保存は既存Drive fileIdへのPATCHに変更する。保存前に検知した競合は書込みを拒否し、同一アカウント／ファイルへのアプリ内保存は直列化する。GET→PATCH間の別端末競合は明示的に許容し、Drive一覧UIとHelpで周知する。再オープン分のレビューとPR完了ゲートは未完了。Milestone `0.1.0` を維持し、VS Code 拡張の TextEditor と既存配布経路を保持する。

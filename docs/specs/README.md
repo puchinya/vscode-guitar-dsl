@@ -23,7 +23,7 @@
 |---|---|
 | [拡張機能仕様](extension.md) | コマンド、エディタ連携、プレビュー、PDFエクスポート、アウトライン、採譜、AI 連携 |
 | [Web application specification](web-app.md) | Standalone browser editor, local and Google Drive storage, shared Preview, playback, and PDF download |
-| [GUI 画面仕様](gui_design.md) | 現行のサイドバー、Preview、Inspector、コード図エディタ、ローカル WAV 採譜導線の画面構成 |
+| [GUI 画面仕様](gui_design.md) | 現行のサイドバー、Preview、Inspector、コード図エディタ、ローカル WAV 採譜導線と Web Compact Workspace の画面構成 |
 | [GuitarDSL 言語構文仕様](guitardsl-syntax.md) | メタデータ、セクション、小節線、コード、リズム、歌詞、スコアイベント、描画規則 |
 | [Guitar Pro GPIF ファイル形式仕様](guitar-pro-file-format.md) | Guitar Pro 7/8 の `.gp` コンテナ、GPIF 参照構造、GP8.1.5 歌詞配置と import 対応 |
 

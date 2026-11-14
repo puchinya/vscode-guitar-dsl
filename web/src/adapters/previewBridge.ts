@@ -2,7 +2,18 @@ export const WEB_PREVIEW_BRIDGE = `window.guitarDslHost = {
   postMessage: message => window.parent.postMessage({ channel: 'guitardsl-preview', message }, '*'),
   getState: () => null,
   setState: () => {}
-};`;
+};
+document.addEventListener('contextmenu', event => {
+  const identity = document.body.dataset;
+  event.preventDefault();
+  window.parent.postMessage({ channel: 'guitardsl-preview', message: {
+    command: 'contextMenu', clientX: event.clientX, clientY: event.clientY,
+    selectedText: String(window.getSelection ? window.getSelection() : ''),
+    documentUri: identity.previewDocumentUri || '',
+    documentVersion: Number(identity.previewDocumentVersion),
+    previewGeneration: Number(identity.previewGeneration)
+  } }, '*');
+});`;
 
 export const WEB_PREVIEW_STYLE = `
   :root { color-scheme: light; --vscode-editorWidget-background:#fff; --vscode-editorWidget-border:#dfe2e7;

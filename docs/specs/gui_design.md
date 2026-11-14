@@ -8,15 +8,17 @@
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related Issue: [Issue #164](https://github.com/puchinya/vscode-guitar-dsl/issues/164)
+- Related Issue: [Issue #172](https://github.com/puchinya/vscode-guitar-dsl/issues/172)
 - Related specification: [拡張機能仕様](extension.md)
+- Related specification: [Web application specification](web-app.md)
 
 ## Purpose
 
-本書は、GuitarDSL 拡張機能が独自に表示する現行画面の構成、要素の順序、代表状態を規定する。各画面の全表示内容を独立した SVG に描き、図中の数値と文言はその画面状態を説明するサンプル値とする。
+本書は、GuitarDSL 拡張機能が独自に表示する現行画面と Issue #172 の Web Compact Workspace の構成、要素の順序、代表状態を規定する。各画面の全表示内容を独立した SVG に描き、図中の数値と文言はその画面状態を説明するサンプル値とする。Web application の編集・保存・アクセス可能性は [Web application specification](web-app.md) が所有する。
 
 ## Scope
 
-対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、およびローカル WAV 採譜の導線である。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
+対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、ローカル WAV 採譜の導線、および Web Compact Workspace である。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
 
 各 SVG は対象画面だけを描く独立したベクター図であり、スクリーンショットを貼り込んだものではない。矩形、線、パス、円、文字などで画面を表現する。画面内に縦スクロールがある場合は、図の高さをスクロール内容の末尾まで延ばして、その代表状態の全項目・全操作を含める。横幅からはみ出す操作列も図の幅に含める。表示領域の端で対象要素を切らない。
 
@@ -39,6 +41,10 @@
 | Inspector・移調 | [inspector-transpose.svg](gui_design/inspector-transpose.svg) | 293 × 1050 px | コード対応表と「適用」「閉じる」 |
 | Inspector・コード進行候補 | [inspector-progression.svg](gui_design/inspector-progression.svg) | 480 × 1360 px | 試聴設定、適用、閉じる |
 | コード図エディタ | [chord-editor.svg](gui_design/chord-editor.svg) | 548 × 1260 px | DSL 行と保存操作一式 |
+| Web Compact Workspace・全体 | [web-compact-workspace.svg](gui_design/proposals/issue-172/web-compact-workspace.svg) | 1600 × 900 px | ヘッダー、4 splitter、Source、Preview、Inspector、Problems |
+| Web Compact Workspace・寸法と操作 | [web-compact-layout-geometry.svg](gui_design/proposals/issue-172/web-compact-layout-geometry.svg) | 1600 × 920 px | 初期寸法、境界、最小/最大値、キーボード操作 |
+| Web Compact Workspace・アイコン | [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg) | 1200 × 750 px | Web ツールバーとツールウィンドウの SVG アイコン |
+| Web Compact Workspace・メニュー | [web-compact-context-menus.svg](gui_design/proposals/issue-172/web-compact-context-menus.svg) | 1340 × 780 px | Explorer、タブ、Problems、Preview のメニューと右上操作 |
 
 ## Normative requirements
 
@@ -279,6 +285,36 @@ Preview で変数参照を編集するときは「定義を編集（全参照）
 
 コード図の編集動作と DSL 表記は [拡張機能仕様 §3.3](extension.md) を参照する。
 
+## 5. Web Compact Workspace
+
+Issue #172 adds a compact desktop workspace to the browser application. The Web workspace uses CSS Grid and web-specific splitter controllers; it does not change the VS Code editor. The four proposal SVGs above are required vector references and source assets. Their music and diagnostic text are illustrative. This section owns Web screen geometry and visual hierarchy; editing, persistence, accessibility behavior, and menus are defined in the [Web application specification](web-app.md#2-application-and-document-editing).
+
+### 5.1 Workspace geometry
+
+At the 1600 × 900 CSS-pixel reference size, the horizontal layout is:
+
+`Activity Bar 40 px | Explorer 220 px | splitter 6 px | center minmax(0, 1fr) | splitter 6 px | Inspector 300 px | Tool Window Bar 36 px`.
+
+The Explorer width is adjustable from 180–420 px. The Inspector width is adjustable from 260–480 px. In Split view, the center uses a 40% Source / 60% Score ratio with minimum pane widths of 240 px and 320 px. The document tab row is 36 px. Source and Score panes have no redundant title row.
+
+The vertical layout is a 40 px header, the resizable main workspace and Problems window, and a 24 px status bar. The header's right-side controls appear in this order: Save, PDF, Google Account, Help, Settings. The main workspace places the left Explorer and center panes beside the right Inspector. The Problems window spans Explorer, center, and Inspector; it excludes both side bars. Its initial height is 200 px, minimum is 140 px, maximum is 45% of viewport height, and its top splitter is 6 px.
+
+### 5.2 Toolbars and display modes
+
+The tab row holds the active document name and three icon-only workspace controls: Source (`code-2`), Split (`columns-2`), and Score (`eye`). Split is selected initially. Exactly one mode is active. Source-only and Score-only modes hide the opposite pane and the center splitter. Workspace modes are separate from the Preview's normal, edit, and practice modes.
+
+The Activity Bar is 40 px wide and the Tool Window Bar is 36 px wide. Icon geometry comes from the 24 × 24 SVG paths in [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg). Icons must not rely on emoji, icon fonts, raster images, or externally hosted assets. Icon-only controls have Japanese and English accessible names and titles. Selected and hover states follow the reference icon sheet.
+
+### 5.3 Splitters and narrow layouts
+
+There are exactly four workspace splitters: the Explorer boundary, Source/Score boundary, Inspector boundary, and top of Problems. Each divider is 1 px with a 6 px pointer hit area. Pointer dragging uses capture and releases it on pointer-up or pointer-cancel. Double-click restores only that splitter's default. A focused splitter has a visible focus ring, uses `role="separator"`, exposes the orientation and current/minimum/maximum values, and accepts Arrow keys (10 px), Shift+Arrow keys (50 px), Home (minimum), and End (maximum). Bounds prevent negative or non-finite sizes and horizontal page overflow.
+
+At narrower viewports, the Inspector collapses before the Explorer. Width-driven collapse is temporary and MUST NOT replace a manually saved open/closed preference. At 1280 × 800, the workspace remains usable without horizontal overflow. Manual close/open state, panel sizes, workspace mode, and the center ratio are restored when the browser is reopened. Corrupt values fall back to their independent defaults.
+
+The separate Problems tool window is open by default. It has a 32 px header, error and warning counts, and close control. Its rows show type, file, line and column, and message; an empty list shows “No problems”. Diagnostic details and click behavior are owned by the Web application specification.
+
+The [workspace SVG](gui_design/proposals/issue-172/web-compact-workspace.svg) shows the Japanese Dark 1600 × 900 layout. The [geometry SVG](gui_design/proposals/issue-172/web-compact-layout-geometry.svg) shows default sizes and keyboard resizing. The [icon SVG](gui_design/proposals/issue-172/web-compact-icons.svg) shows the 30 vector icons. The [context-menu SVG](gui_design/proposals/issue-172/web-compact-context-menus.svg) shows menu placement and header controls. Numeric values in this section take precedence over illustrative labels in the SVGs.
+
 ## Observable behavior
 
 各図は見出しに記載した一つの代表状態を示す。スコア、コード、キー、選択行、候補数など文書や計算結果に応じて変わる値は、図のサンプル状態に限る。Preview の任意長譜面、別のキー・運指・候補、画面幅に応じた折り返し、読み込み中・エラー表示は、ここに示す図の寸法や代表値によって固定しない。
@@ -295,4 +331,4 @@ Preview で変数参照を編集するときは「定義を編集（全参照）
 
 ## Verification strategy
 
-画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した全寸法でベクターレンダラーを使って出力し、全13図を一覧表示して、対象画面の先頭から最下部の要素まで欠落がないことを確認する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 150` で検証する。
+画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した全寸法でベクターレンダラーを使って出力し、全17図を一覧表示して、対象画面の先頭から最下部の要素まで欠落がないことを確認する。実装画面は概念図と区別して、Issue #172 の受入条件にあるサイズ・ロケール・テーマで撮影し、DOM rectangle とともに記録する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 172` で検証する。

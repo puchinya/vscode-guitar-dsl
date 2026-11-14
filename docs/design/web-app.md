@@ -5,6 +5,7 @@
 
 - Status: Draft
 - Owning Issue: [Issue #166](https://github.com/puchinya/vscode-guitar-dsl/issues/166)
+- Related Issue: [Issue #172](https://github.com/puchinya/vscode-guitar-dsl/issues/172)
 - Related specification: [Web application specification](../specs/web-app.md)
 - Related designs: [System architecture](architecture.md), [Language and score processing](language-and-score-processing.md), [Preview, rendering, and export](preview-rendering-and-export.md), [Score editing](score-editing.md), [VS Code editor experience](vscode-editor-experience.md)
 
@@ -26,7 +27,10 @@ The design follows the approved Issue contract. It does not add a backend, authe
 | Local documents and recoverable drafts | `web/src/storage/indexedDb.ts` |
 | Google token acquisition and Drive file access | `web/src/auth/googleOAuth.ts`, `web/src/storage/googleDrive.ts` |
 | Explicit local-to-Drive transfer and recovery | `web/src/storage/fileTransfer.ts` |
-| Browser layout, editor, tabs, and file list | `web/src/editor/`, `web/src/tabs/`, `web/src/explorer/`, `web/src/adapters/` |
+| CodeMirror state, source projection, syntax decoration, and deterministic completion | `web/src/editor/sourceEditor.ts`, `web/src/tabs/`, shared compiler/tokenizer APIs |
+| Compact workspace grid, display modes, and splitter state | `web/src/layout/`, `web/src/adapters/`, IndexedDB layout preferences |
+| Shared compiler diagnostics for editor lint and Problems | `web/src/editor/`, `web/src/layout/`, `packages/core/` |
+| Browser layout, tabs, file list, Help, Settings, and context menus | `web/src/tabs/`, `web/src/explorer/`, `web/src/help/`, `web/src/menus/`, `web/src/adapters/` |
 | Public interaction and security requirements | [Web application specification](../specs/web-app.md) |
 
 ## Architecture
@@ -34,7 +38,7 @@ The design follows the approved Issue contract. It does not add a backend, authe
 ### Product and workspace boundaries
 
 - The repository contains the existing VS Code extension at the root, the browser application in `web/`, and shared workspaces in `packages/{core,ui,document,pdf}/`.
-- The root package continues to expose `main: ./out/extension.js`. The extension and Web app have separate build configurations and release artifacts. The Web app is built as static assets with Vite and Vanilla TypeScript; it does not introduce React, Vue, Monaco, or CodeMirror.
+- The root package continues to expose `main: ./out/extension.js`. The extension and Web app have separate build configurations and release artifacts. The Web app is built as static assets with Vite and Vanilla TypeScript. CodeMirror 6 is a Web-only editing component; it does not replace the VS Code TextEditor or introduce React, Vue, or Monaco.
 - Workspace packages expose explicit build outputs and package exports. VS Code packaging bundles the shared runtime into the extension; a VSIX MUST NOT rely on workspace symlinks being available at runtime. `.vscodeignore` excludes Web source, built SPA distribution, and shared package source/tests from the VSIX.
 - Existing host-independent logic moves to `packages/core/` instead of being copied. Temporary root `src/` re-export shims are allowed for compatibility during migration, but logic has one owner.
 
@@ -54,8 +58,16 @@ The shared settings sections consume a plain source snapshot and return display 
 ### Web application composition
 
 - `web/index.html` and `web/src/main.ts` bootstrap the static SPA.
-- `web/src/editor/` owns the native `textarea` input surface and visual highlighting layer. The textarea remains the editable text buffer so browser IME, selection, keyboard input, and undo remain native.
+- `web/src/editor/sourceEditor.ts` owns the CodeMirror 6 host adapter. `OpenTab.source` and its revision remain the sole saved/editable source authority; each open tab owns its CodeMirror `EditorState` (including selection and history) and its stored scroll position. The active `EditorView` is attached to the existing state when the tab changes; workspace redraws do not recreate editor state.
+- CodeMirror's rendered document uses LF line breaks for editing. The adapter maps transactions back through the existing `preserveLineEndings` rules so untouched CRLF and CR spans remain unchanged. IME composition is not flushed, completed, or replaced before the browser commits it.
+- Human input, search/replace, deterministic completion, and a planner-produced Preview or Inspector change set each apply as one CodeMirror transaction and one undo step. Only committed human edits advance the source revision, write an IndexedDB draft, and trigger derived-state recomputation. View-mode changes do not create source transactions.
+- Syntax highlighting is built from source ranges produced by the existing tokenizer and attached as CodeMirror decorations. It does not generate HTML and does not add another GuitarDSL parser. Completion uses local metadata fields, line prefixes, variable references, and syntactically safe constructs; it makes no model or network call.
+- CodeMirror lint maps only the shared `ParsedScore.diagnostics` values to editor ranges. The Problems tool window presents that same ordered diagnostic collection. It does not parse or validate DSL independently.
 - `web/src/explorer/` owns storage selection and file listing; `web/src/tabs/` owns tab identity and active document selection. The workspace is composed from a left file list, central tabs, adjustable source/Preview split, and right Inspector. Narrow layouts collapse side regions and switch between source and score surfaces.
+- `web/src/layout/` owns the CSS Grid workspace shell, the Source/Split/Score mode, and all four splitter controllers. Its persisted `web-layout-v1` record contains panel open state, width/height, center ratio, and display mode. It migrates the older `web-preferences.splitRatio` once and validates each stored number independently. A width-driven temporary collapse is not written over a user's saved open state.
+- An effective viewport fallback collapses Inspector before Explorer and keeps the main grid overflow-free. User-controlled open/close state remains separate from this computed collapse. Four separators own Explorer width, center split, Inspector width, and Problems height; pointer capture, double-click reset, keyboard moves, and pointer cancellation are scoped to one separator.
+- `web/src/menus/contextMenu.ts` owns host-created menus for Explorer, tabs, Problems, Preview, and the line-number gutter. The source text surface keeps the browser's native editing context menu. A menu captures document identity/revision and Drive account; Preview actions also capture the visual source binding. An invalidated target is discarded without applying an action.
+- `web/src/help/` and header controllers provide local bilingual Help, theme/language Settings, layout reset, Save/PDF, and Google account controls. Help/Settings remain independent of Preview's normal/edit/practice state. Escape and close restore focus to the invoking header button.
 - `web/src/adapters/` translates browser events and host capabilities into the shared UI and document contracts. Shared UI does not import storage adapters.
 - `web/src/storage/` contains the IndexedDB adapter, Drive API adapter, and transfer coordinator. `web/src/auth/` wraps user-initiated Google Identity Services token requests.
 - `web/src/pdfExporter.ts` selects browser font bytes, calls the shared PDF byte API, then starts a Blob download. It does not call Node APIs.
@@ -73,7 +85,9 @@ The shared settings sections consume a plain source snapshot and return display 
 
 - `packages/document` defines identities as `{storage, fileId}` and contracts for source revisions, session identity, save requests, and change sets.
 - An open document has one mutable source buffer. A compiler or Preview snapshot is derived state and cannot independently become the saved source.
+- CodeMirror stores tab-local undo history and view state, while `OpenTab.source` and the host's source-preserving transaction remain the authoritative document. A stale external change set is rejected by the same identity/revision check before it reaches CodeMirror or the document buffer.
 - The browser session stores open-tab identity and recoverable drafts in IndexedDB. Draft persistence and user-visible saved state are updated only after IndexedDB confirms the write.
+- Layout preferences use a separate IndexedDB key so resizing or changing display mode cannot advance a source revision, alter Drive metadata, or mark a document saved. Preference writes are debounced; invalid fields fall back to the corresponding default.
 - Local documents and Drive documents remain separate identities even when names match. Switching the file-list storage source changes only the list, not open tabs.
 - The Drive adapter keeps account-scoped metadata and open-tab sessions separate and uses only explicitly authorized files. Switching or disconnecting accounts retains each account's open tabs and drafts; Drive writes are enabled only when the connected account owns the active Drive tab. OAuth access tokens remain in memory. The selected folder ID is configuration, not a credential.
 - Opening a restored document compares its current source and revision with the last committed record. A recovered draft is shown as a local draft until a successful local or Drive commit advances that saved baseline.
@@ -126,11 +140,15 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 - Transfer recovery is keyed by account and returned Drive file ID. Upload success is not enough to delete the local original; remote readback and validation are required.
 - Preview and Inspector audio share an exclusive lease. The Inspector's fallback completion timer uses playback duration in seconds and playback speed, then stops the audio and releases the Preview lock at natural completion. On view disposal, document switch, or host shutdown, listeners and audio resources are released and outstanding operations cannot mutate a newer document revision.
 - Untrusted DSL and metadata are rendered through escaped text and constructed SVG attributes. CSP and host-specific Webview security continue to be enforced by the respective adapters.
+- Workspace mode changes and resize events update CSS grid tracks and the existing Preview viewport. They do not recreate the Preview iframe or reset its scroll, playback state, editor history, source revision, draft, audio lease, Drive identity, or audio resources.
+- A Problems row opens its source document and reveals the exact compiler range from the shared diagnostic. Reopening or switching documents resolves the current tab identity before focus; a diagnostic cannot target a previous document merely because the file name matches.
 
 ## Alternatives considered
 
 - **Separate repository or new backend:** rejected by the contract; the SPA and extension share core behavior in one repository and the Web product is static.
-- **React/Vue, Monaco, or CodeMirror:** rejected by the contract. A native `textarea` provides the browser's IME, selection, and undo behavior while a separate layer supplies GuitarDSL highlighting.
+- **React/Vue or Monaco:** rejected to keep the established Vanilla TypeScript host and avoid a second large UI framework or language-service stack.
+- **CodeMirror 6:** accepted for the Web editor in Issue #172. Its transaction/history model supplies tab-local undo, editing commands, search, completion, lint and keyboard behavior while the existing document buffer and revision checks remain authoritative. It is not introduced into the VS Code TextEditor.
+- **Custom `contenteditable` or a second textarea/highlight overlay:** rejected because it would duplicate native editing, selection, IME, history, and accessibility behavior that the established editor extension already provides.
 - **A second compiler, score model, play-order engine, or renderer:** rejected because it would allow the VS Code and Web products to interpret the same source differently.
 - **OAuth refresh-token persistence or full Drive scope:** rejected. The browser token model and `drive.file` keep credentials short-lived and access limited to user-authorized content.
 - **Automatic bidirectional sync or implicit move:** rejected. Local and Drive identities are distinct; Drive writes and local-to-Drive moves are explicit. Drive preflight detects known version changes, while the accepted GET→PATCH race remains possible across devices.
@@ -140,6 +158,8 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 
 - Build and unit-test the shared packages independently. Compare representative SVG pages and PDFs from VS Code and Web using the same Japanese, TAB, chord-diagram, and multi-page fixtures.
 - Browser tests use mocked IndexedDB and Drive APIs for persistence failures, pagination, scope-limited listing, version conflicts, edits during delayed conflict reload/save-as requests, restored-draft status, account separation and reconnect, interrupted moves, and duplicate retry.
+- Unit tests cover line-ending preservation, one-edit/one-undo transactions, tab-local EditorState, deterministic completions, tokenizer range mapping, diagnostic range conversion, layout validation/migration, splitter clamping and cancellation, and stale context-menu identities.
+- Browser E2E tests cover Source/Split/Score modes, four splitter geometries and keyboard operations, temporary narrow-width collapse, preferences after reload, Problems/lint parity and source navigation, Help/Settings focus return, and mouse/keyboard context-menu paths. Visual acceptance records screenshots and DOM rectangles at both contracted viewport sizes.
 - Required browser gates are independent checks named `web-spa-chromium`, `web-spa-webkit`, and `safari-smoke`. Chromium runs on Linux; Playwright WebKit runs on a macOS runner; `safari-smoke` uses `/usr/bin/safaridriver` and Selenium WebDriver against the installed Apple Safari. All three run for each pull request and are branch-protected. Firefox remains an optional regression project with a separate config and is not required.
 - Playwright WebKit and real Safari are separate targets. The WebKit project runs the browser E2E suite on macOS and exercises native editor Undo/Redo on every pull request. The serialized SafariDriver smoke runner serves the SPA from a local Vite server and records OS/Safari versions and machine-readable results. It checks local IndexedDB create/edit/draft/refresh/restore, trusted native text input, Preview SVG, Inspector variables/settings, PDF Blob signature/page count and download-anchor invocation, Preview/Inspector audio exclusion, narrow layout and keyboard focus, export after injected storage failure, and mocked Google OAuth/Picker/Drive requests. The SafariDriver smoke excludes native Undo/Redo and OS file persistence, and never changes the ordinary Downloads directory; its report records those checks as NOT RUN. WebKit's native Undo/Redo E2E and SafariDriver's PDF Blob checks are the acceptance gates; separate normal-window Safari evidence is not required. The SafariDriver suite uses no live Google credentials or Drive data and runs sequentially because the driver supports one session at a time. The parent supervisor applies an absolute runner deadline independently of a rolling per-WebDriver-command deadline and records `SAFARI_RUNNER_TIMEOUT` or `WEBDRIVER_HANG` with OS/Safari versions.
 - Safari smoke evidence is uploaded as a CI artifact even on failure, including the machine-readable report and failure screenshot when available. An unavailable or disabled SafariDriver fails the required `safari-smoke` job; WebKit and Firefox cannot substitute for it.
