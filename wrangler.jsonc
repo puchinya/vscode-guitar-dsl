@@ -9,18 +9,9 @@
   "routes": [
     {
       "pattern": "guitardsl.app",
-      "custom_domain": true
+      "custom_domain": true,
+      "previews_enabled": true
     }
   ],
-  "env": {
-    "development": {
-      "name": "guitardsl-dev",
-      "routes": [
-        {
-          "pattern": "dev.guitardsl.app",
-          "custom_domain": true
-        }
-      ]
-    }
-  }
+  "previews": {}
 }
