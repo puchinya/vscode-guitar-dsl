@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readlink, readdir, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Builder, By, Key } from 'selenium-webdriver';
+import { prepareIsolatedSafariDownloads as isolateSafariDownloads, restoreIsolatedSafariDownloads } from './safari-download-isolation.mjs';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = resolve(webRoot, 'test-results/safari');
@@ -201,55 +202,11 @@ async function installAppEditorEventRecorder() {
 
 async function prepareIsolatedSafariDownloads() {
   if (process.env.GITHUB_ACTIONS !== 'true') return null;
-  const runnerTemp = process.env.RUNNER_TEMP;
-  if (!runnerTemp) throw new Error('RUNNER_TEMP is required to isolate Safari downloads in CI.');
-
-  const downloadDirectory = await mkdtemp(join(runnerTemp, 'guitardsl-safari-downloads-'));
-  const downloadsPath = join(homedir(), 'Downloads');
-  const backupPath = `${downloadsPath}.guitardsl-safari-${process.pid}.backup`;
-  let backupCreated = false;
-  let linkCreated = false;
-  try {
-    let existing;
-    try { existing = await lstat(downloadsPath); }
-    catch (error) { if (error?.code !== 'ENOENT') throw error; }
-    if (existing) {
-      if (!existing.isDirectory() || existing.isSymbolicLink()) {
-        throw new Error('Safari Downloads must be a real directory before CI isolation.');
-      }
-      const entries = await readdir(downloadsPath);
-      if (entries.length > 0) throw new Error('Safari Downloads is not empty; refusing to change it.');
-      try {
-        await lstat(backupPath);
-        throw new Error('A Safari Downloads backup path already exists; refusing to replace it.');
-      } catch (error) { if (error?.code !== 'ENOENT') throw error; }
-      await rename(downloadsPath, backupPath);
-      backupCreated = true;
-    }
-    await symlink(downloadDirectory, downloadsPath, 'dir');
-    linkCreated = true;
-    return { directory: downloadDirectory, downloadsPath, backupPath, backupCreated };
-  } catch (error) {
-    if (linkCreated) await unlink(downloadsPath).catch(() => {});
-    if (backupCreated) await rename(backupPath, downloadsPath).catch(() => {});
-    await rm(downloadDirectory, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-}
-
-async function restoreSafariDownloads(isolation) {
-  if (!isolation) return;
-  const current = await lstat(isolation.downloadsPath).catch(error => error?.code === 'ENOENT' ? null : Promise.reject(error));
-  if (current) {
-    if (!current.isSymbolicLink()) throw new Error('Safari Downloads isolation link changed; refusing to remove it.');
-    const linkTarget = await readlink(isolation.downloadsPath);
-    if (resolve(dirname(isolation.downloadsPath), linkTarget) !== isolation.directory) {
-      throw new Error('Safari Downloads isolation link target changed; refusing to remove it.');
-    }
-    await unlink(isolation.downloadsPath);
-  }
-  if (isolation.backupCreated) await rename(isolation.backupPath, isolation.downloadsPath);
-  await rm(isolation.directory, { recursive: true, force: true });
+  return isolateSafariDownloads({
+    downloadsPath: join(homedir(), 'Downloads'),
+    runnerTemp: process.env.RUNNER_TEMP,
+    processId: process.pid
+  });
 }
 
 async function waitForDownloadedFile(filePath, timeoutMs = 25_000) {
@@ -324,7 +281,7 @@ process.on('SIGTERM', () => {
   terminationRequested = true;
   if (server && server.exitCode === null) server.kill('SIGTERM');
   const forceExit = setTimeout(() => process.exit(143), 1_500);
-  void restoreSafariDownloads(isolatedSafariDownloads)
+  void restoreIsolatedSafariDownloads(isolatedSafariDownloads)
     .catch(error => { report.downloadIsolationCleanupError = error instanceof Error ? error.message : String(error); })
     .finally(() => {
       clearTimeout(forceExit);
@@ -711,7 +668,7 @@ try {
     catch (error) { if (!report.quitError) report.quitError = error instanceof Error ? error.message : String(error); }
   }
   if (server && server.exitCode === null) server.kill('SIGTERM');
-  try { await restoreSafariDownloads(isolatedSafariDownloads); }
+  try { await restoreIsolatedSafariDownloads(isolatedSafariDownloads); }
   catch (error) {
     failed = true;
     report.downloadIsolationCleanupError = error instanceof Error ? error.message : String(error);
