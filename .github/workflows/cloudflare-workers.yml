@@ -39,13 +39,14 @@ jobs:
           VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
       - name: Verify build output
         run: test -f web/dist/index.html
-      - name: Publish to development Worker
+      - name: Publish development Preview of production Worker
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: deploy --config wrangler.jsonc --env development
+          wranglerVersion: '4.160.0'
+          command: preview --config wrangler.jsonc --name dev
 
   production:
     name: Deploy guitardsl.app
@@ -93,4 +94,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '4.160.0'
           command: deploy --config wrangler.jsonc
