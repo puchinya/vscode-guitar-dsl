@@ -261,12 +261,12 @@ try {
         editor.setSelectionRange(editor.value.length, editor.value.length);
       });
       await probe.sendKeys('x');
-      const afterInsert = await probe.getDomProperty('value');
+      const afterInsert = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
       await probe.sendKeys(Key.chord(Key.COMMAND, 'z'));
-      const afterUndo = await probe.getDomProperty('value');
+      const afterUndo = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
       const undoEvents = await driver.executeScript(() => window.__nativeTextareaProbe.events.filter(event => event.inputType === 'historyUndo'));
       await probe.sendKeys(Key.chord(Key.COMMAND, Key.SHIFT, 'z'));
-      const afterRedo = await probe.getDomProperty('value');
+      const afterRedo = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
       const redoEvents = await driver.executeScript(() => window.__nativeTextareaProbe.events.filter(event => event.inputType === 'historyRedo'));
       if (afterInsert !== 'seedx' || afterUndo !== 'seed' || afterRedo !== 'seedx'
         || !undoEvents.some(event => event.trusted) || !redoEvents.some(event => event.trusted)) {
