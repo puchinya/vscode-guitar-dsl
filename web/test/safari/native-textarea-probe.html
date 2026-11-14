@@ -11,11 +11,14 @@
     <script>
       const editor = document.querySelector('#native-textarea-probe');
       window.__nativeTextareaProbe = { events: [] };
-      for (const type of ['beforeinput', 'input']) {
+      for (const type of ['keydown', 'keyup', 'beforeinput', 'input']) {
         editor.addEventListener(type, event => window.__nativeTextareaProbe.events.push({
           type,
-          inputType: event.inputType,
-          data: event.data,
+          inputType: 'inputType' in event ? event.inputType : undefined,
+          data: 'data' in event ? event.data : undefined,
+          key: 'key' in event ? event.key : undefined,
+          metaKey: 'metaKey' in event ? event.metaKey : undefined,
+          shiftKey: 'shiftKey' in event ? event.shiftKey : undefined,
           trusted: event.isTrusted
         }), true);
       }

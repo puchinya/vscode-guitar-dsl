@@ -22,6 +22,7 @@ const report = {
 let server;
 let driver;
 let failed = false;
+let nativeKeyRoute = 'element.sendKeys';
 
 function emit(message) {
   if (process.send) process.send(message);
@@ -186,6 +187,30 @@ async function setEditorTextWithWebDriver(source) {
   await waitUntil(async () => await editorValue() === source, 'WebDriver native typing did not set the requested source.');
 }
 
+async function sendNativeShortcut(element, redo = false) {
+  if (nativeKeyRoute === 'actions') {
+    const actions = driver.actions().keyDown(Key.COMMAND);
+    if (redo) actions.keyDown(Key.SHIFT);
+    actions.sendKeys('z');
+    if (redo) actions.keyUp(Key.SHIFT);
+    actions.keyUp(Key.COMMAND);
+    await actions.perform();
+    return;
+  }
+  await element.sendKeys(Key.chord(Key.COMMAND, ...(redo ? [Key.SHIFT] : []), 'z'));
+}
+
+async function nativeProbeSnapshot() {
+  return driver.executeScript(() => ({
+    value: document.querySelector('#native-textarea-probe')?.value ?? null,
+    events: window.__nativeTextareaProbe.events
+  }));
+}
+
+function hasTrustedHistory(snapshot, inputType) {
+  return snapshot.events.some(event => event.type === 'input' && event.inputType === inputType && event.trusted);
+}
+
 process.on('SIGTERM', () => {
   if (server && server.exitCode === null) server.kill('SIGTERM');
   process.exit(143);
@@ -263,17 +288,31 @@ try {
       await probe.sendKeys('x');
       const afterInsert = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
       await probe.sendKeys(Key.chord(Key.COMMAND, 'z'));
-      const afterUndo = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
-      const undoEvents = await driver.executeScript(() => window.__nativeTextareaProbe.events.filter(event => event.inputType === 'historyUndo'));
-      await probe.sendKeys(Key.chord(Key.COMMAND, Key.SHIFT, 'z'));
-      const afterRedo = await driver.executeScript(() => document.querySelector('#native-textarea-probe')?.value ?? null);
-      const redoEvents = await driver.executeScript(() => window.__nativeTextareaProbe.events.filter(event => event.inputType === 'historyRedo'));
-      if (afterInsert !== 'seedx' || afterUndo !== 'seed' || afterRedo !== 'seedx'
-        || !undoEvents.some(event => event.trusted) || !redoEvents.some(event => event.trusted)) {
-        throw new BlockedCheckError(`SafariDriver could not prove trusted native textarea undo/redo: ${JSON.stringify({ afterInsert, afterUndo, afterRedo, undoEvents, redoEvents })}`);
+      const elementSendKeysUndo = await nativeProbeSnapshot();
+      if (elementSendKeysUndo.value !== 'seed' || !hasTrustedHistory(elementSendKeysUndo, 'historyUndo')) {
+        nativeKeyRoute = 'actions';
+        await sendNativeShortcut(probe);
+      }
+      const undo = await nativeProbeSnapshot();
+      if (afterInsert !== 'seedx' || undo.value !== 'seed' || !hasTrustedHistory(undo, 'historyUndo')) {
+        throw new BlockedCheckError(`SafariDriver could not prove trusted native textarea undo through WebDriver: ${JSON.stringify({ afterInsert, elementSendKeysUndo, actionUndo: nativeKeyRoute === 'actions' ? undo : undefined, nativeKeyRoute })}`);
+      }
+      await sendNativeShortcut(probe, true);
+      const redo = await nativeProbeSnapshot();
+      if (redo.value !== 'seedx' || !hasTrustedHistory(redo, 'historyRedo')) {
+        throw new BlockedCheckError(`SafariDriver could not prove trusted native textarea redo through WebDriver: ${JSON.stringify({ nativeKeyRoute, undo, redo })}`);
       }
       nativeUndoRedoProbePassed = true;
-      return { afterInsert, afterUndo, afterRedo, undoInputType: 'historyUndo', redoInputType: 'historyRedo', trustedNativeInput: true };
+      return {
+        afterInsert,
+        afterUndo: undo.value,
+        afterRedo: redo.value,
+        undoInputType: 'historyUndo',
+        redoInputType: 'historyRedo',
+        trustedNativeInput: true,
+        nativeKeyRoute,
+        keyboardEvents: redo.events.filter(event => event.type === 'keydown' || event.type === 'keyup')
+      };
     } catch (error) {
       if (error?.status === 'BLOCKED') throw error;
       throw new BlockedCheckError(`SafariDriver native textarea undo/redo probe could not complete: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
@@ -313,9 +352,9 @@ try {
     const editor = await driver.findElement(By.css('#source-pane textarea'));
     await editor.sendKeys('!');
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    await editor.sendKeys(Key.chord(Key.COMMAND, 'z'));
+    await sendNativeShortcut(editor);
     await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
-    await editor.sendKeys(Key.chord(Key.COMMAND, Key.SHIFT, 'z'));
+    await sendNativeShortcut(editor, true);
     await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
     const nativeEditorEvents = await driver.executeScript(() => window.__guitardslSafariSmoke.nativeEditorEvents.slice(-20));
     const trustedUndo = nativeEditorEvents.some(event => event.type === 'input' && event.inputType === 'historyUndo' && event.trusted);
@@ -329,8 +368,8 @@ try {
     return {
       restoredSourceLength: saved.length,
       tabRestored: await driver.findElements(By.css('#open-tabs [role="tab"]')).then(tabs => tabs.length > 0),
-      undoMethod: 'WebDriver Element.sendKeys with COMMAND+Z',
-      redoMethod: 'WebDriver Element.sendKeys with COMMAND+SHIFT+Z',
+      undoMethod: `WebDriver ${nativeKeyRoute} COMMAND+Z`,
+      redoMethod: `WebDriver ${nativeKeyRoute} COMMAND+SHIFT+Z`,
       keyboardUndoVerified: true,
       trustedUndo,
       trustedRedo,
