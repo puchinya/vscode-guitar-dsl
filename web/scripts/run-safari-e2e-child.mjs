@@ -211,7 +211,7 @@ async function inspectPreviewSvg() {
 try {
   await mkdir(outputDir, { recursive: true });
   startStep('start-vite-server');
-  server = spawn(process.execPath, [resolve(webRoot, '../node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
+  server = spawn(process.execPath, [resolve(webRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: webRoot,
     env: {
       ...process.env,
