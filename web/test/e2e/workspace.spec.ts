@@ -555,7 +555,8 @@ test('supports line numbers, search and replace, deterministic completion, and c
   await expectEditorSource(page, source.replace('Song', 'Track'));
   await editor.press('ControlOrMeta+z');
   await expectEditorSource(page, source);
-  await editor.press('ControlOrMeta+Shift+z');
+  const redoShortcut = await page.evaluate(() => /Mac/u.test(navigator.platform) ? 'Meta+Shift+z' : 'Control+y');
+  await editor.press(redoShortcut);
   await expectEditorSource(page, source.replace('Song', 'Track'));
   await page.keyboard.press('Escape');
 
