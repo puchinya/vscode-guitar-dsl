@@ -390,7 +390,7 @@ try {
       ...details,
       validPdfBlob: true,
       downloadAnchorInvoked: true,
-      actualFileSaved: 'NOT RUN (separate one-time normal-Safari Issue evidence)'
+      actualFileSaved: 'NOT RUN (outside Issue #166 acceptance)'
     };
   });
 
