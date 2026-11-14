@@ -385,7 +385,8 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
           tabs: '.tabs', tabViewControls: '.view-mode-controls', viewSource: '#view-source',
           viewSplit: '#view-split', viewScore: '#view-score', source: '#source-pane', centerSplitter: '#center-splitter', score: '#score-pane',
           inspectorSplitter: '#inspector-splitter', inspector: '.inspector', problemsSplitter: '#problems-splitter',
-          problems: '#problems-panel', toolWindowBar: '.tool-window-bar', status: '.statusbar'
+          problems: '#problems-panel', toolWindowBar: '.tool-window-bar', toolWindowInspector: '#toggle-inspector',
+          toolWindowProblems: '#toggle-problems', status: '.statusbar'
         };
         const rects = Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
           const element = document.querySelector(selector);
@@ -588,7 +589,8 @@ test('renders the compact workspace geometry and preserves the Preview across vi
       source: rect('#source-pane'), viewControls: rect('.view-mode-controls'),
       localRoot: rect('[data-storage-section="local"] .storage-root-row'),
       driveRoot: rect('[data-storage-section="drive"] .storage-root-row'),
-      problems: rect('#problems-panel'), toolWindow: rect('.tool-window-bar'), status: rect('.statusbar'),
+      problems: rect('#problems-panel'), toolWindow: rect('.tool-window-bar'),
+      toolWindowInspector: rect('#toggle-inspector'), toolWindowProblems: rect('#toggle-problems'), status: rect('.statusbar'),
       account: rect('#connect-drive'), help: rect('#help-button'), settings: rect('#settings-button')
     };
   });
@@ -613,6 +615,12 @@ test('renders the compact workspace geometry and preserves the Preview across vi
   expect(geometry.problems.height).toBe(200);
   expect(geometry.toolWindow.width).toBe(36);
   expect(geometry.toolWindow.x).toBe(1564);
+  expect(geometry.toolWindowInspector.x).toBeCloseTo(1568.5, 1);
+  expect(geometry.toolWindowProblems.x).toBeCloseTo(1568.5, 1);
+  expect(geometry.toolWindowInspector.y).toBeLessThan(geometry.toolWindowProblems.y);
+  await expect(page.locator('#toggle-inspector')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#toggle-inspector')).toHaveAttribute('title', 'Toggle Inspector');
+  await expect(page.locator('#activity-bar #activity-inspector')).toHaveCount(0);
   expect(geometry.status.height).toBe(24);
   await expect(page.locator('.top-actions .web-icon')).toHaveCount(5);
   await expect(page.locator('.view-mode-button .web-icon')).toHaveCount(3);
@@ -642,6 +650,38 @@ test('renders the compact workspace geometry and preserves the Preview across vi
   await page.getByRole('button', { name: 'Split view' }).click();
   await expect(page.locator('#workspace')).toHaveClass(/view-split/);
   expect(await frame.evaluate(element => (window.parent as Window & { __previewWindow?: Window | null }).__previewWindow === element.contentWindow)).toBe(true);
+});
+
+test('toggles Inspector from the right tool-window rail and restores its manual state', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  const inspectorToggle = page.locator('#toggle-inspector');
+  await expect(inspectorToggle).toBeVisible();
+  await expect(inspectorToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(inspectorToggle).toHaveAttribute('title', 'Toggle Inspector');
+  await inspectorToggle.focus();
+  await page.keyboard.press('Space');
+  await expect(inspectorToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(inspectorToggle).toBeFocused();
+  await expect(page.locator('#workspace')).toHaveClass(/inspector-closed/);
+  await page.waitForFunction(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const preference = await indexedDb.getValue<{ inspectorOpen?: boolean }>('settings', 'web-layout-v1');
+    return preference?.inspectorOpen === false;
+  });
+
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getValue<{ inspectorOpen?: boolean }>('settings', 'web-layout-v1'))?.inspectorOpen;
+  })).toBe(false);
+  await expect(inspectorToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#workspace')).toHaveClass(/inspector-closed/);
+  await inspectorToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(inspectorToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#workspace')).not.toHaveClass(/inspector-closed/);
 });
 
 test('resizes all panes with keyboard and pointer and restores layout without editing source', async ({ page }) => {
@@ -700,7 +740,7 @@ test('temporarily collapses side panels on narrow viewports without changing man
   await expect(page.locator('#workspace')).toHaveClass(/explorer-auto-hidden/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.locator('#activity-explorer')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#activity-inspector')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#toggle-inspector')).toHaveAttribute('aria-pressed', 'true');
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator('#workspace')).not.toHaveClass(/inspector-auto-hidden/);
   await expect(page.locator('#workspace')).not.toHaveClass(/explorer-auto-hidden/);
@@ -1620,6 +1660,20 @@ test('holds a composing source edit until the IME commits it', async ({ page }) 
     return (await indexedDb.getDocument({ storage: 'local', fileId }))?.source;
   }, savedDuringComposition);
   expect(draftDuringComposition).toBe(savedBeforeComposition);
+  const leaveGuarded = await page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(leaveGuarded).toBe(true);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Download PDF' }).click();
+  expect(await page.evaluate(() => (window as unknown as { __guitarDslReadLastPdfInput?: () => string | undefined }).__guitarDslReadLastPdfInput?.())).toBeUndefined();
+  const savedWhileComposing = await page.evaluate(async fileId => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getDocument({ storage: 'local', fileId }))?.source;
+  }, savedDuringComposition);
+  expect(savedWhileComposing).toBe(savedBeforeComposition);
   await editor.evaluate(element => element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本語' })));
   await expectEditorSource(page, initial + '日本語');
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
@@ -1900,6 +1954,91 @@ test('downloads a PDF from the shared score SVG renderer', async ({ page }) => {
   await page.getByRole('button', { name: 'Download PDF' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('Untitled.pdf');
+});
+
+test('flushes same-task source edits before Save and PDF snapshots', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const commitLocal = indexedDb.commitLocal.bind(indexedDb);
+    const target = window as unknown as {
+      __localCommitStarted?: boolean;
+      __localCommitSnapshot?: { source: string; revision: number };
+      __releaseLocalCommit?: () => void;
+    };
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__releaseLocalCommit = release;
+    indexedDb.commitLocal = async (...args) => {
+      target.__localCommitSnapshot = { source: args[0].source, revision: args[0].revision };
+      target.__localCommitStarted = true;
+      await gate;
+      return commitLocal(...args);
+    };
+  });
+
+  const saveSource = 'title: Same-task Save snapshot\n\n[Verse]\nAm | F | C | G |\n';
+  const dispatchedSave = await page.evaluate(source => {
+    const target = window as unknown as {
+      __guitarDslDispatchSourceEdit?: (value: string) => boolean;
+    };
+    const dispatched = target.__guitarDslDispatchSourceEdit?.(source) ?? false;
+    const leave = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leave);
+    document.querySelector<HTMLButtonElement>('#save-document')!.click();
+    return { dispatched, leaveGuarded: leave.defaultPrevented };
+  }, saveSource);
+  expect(dispatchedSave).toEqual({ dispatched: true, leaveGuarded: true });
+  await page.waitForFunction(() => (window as unknown as { __localCommitStarted?: boolean }).__localCommitStarted === true);
+
+  const draftState = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as unknown as {
+      __guitarDslReadTabs?: () => Array<{ source: string; revision: number }>;
+      __localCommitSnapshot?: { source: string; revision: number };
+    };
+    const saved = (await indexedDb.listDocuments('local'))[0];
+    return {
+      tab: target.__guitarDslReadTabs?.()[0],
+      commit: target.__localCommitSnapshot,
+      saved: await indexedDb.getSavedDocument(saved.identity),
+      draft: await indexedDb.getDraft(saved.identity)
+    };
+  });
+  expect(draftState.tab).toMatchObject({ source: saveSource, revision: 1 });
+  expect(draftState.commit).toEqual({ source: saveSource, revision: 1 });
+  expect(draftState.saved?.revision).toBe(0);
+  expect(draftState.draft).toMatchObject({ source: saveSource, revision: 1 });
+
+  await page.evaluate(() => (window as unknown as { __releaseLocalCommit?: () => void }).__releaseLocalCommit?.());
+  await expect(page.locator('#saved-state')).toHaveText('Saved locally');
+  const committed = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const saved = (await indexedDb.listDocuments('local'))[0];
+    return { row: await indexedDb.getSavedDocument(saved.identity), draft: await indexedDb.getDraft(saved.identity) };
+  });
+  expect(committed.row).toMatchObject({ source: saveSource, revision: 1 });
+  expect(committed.draft).toBeUndefined();
+
+  const pdfSource = 'title: Same-task PDF snapshot\n\n[Verse]\nF | Dm | G | C |\n';
+  const downloadPromise = page.waitForEvent('download');
+  const dispatchedPdf = await page.evaluate(source => {
+    const target = window as unknown as {
+      __guitarDslDispatchSourceEdit?: (value: string) => boolean;
+    };
+    const dispatched = target.__guitarDslDispatchSourceEdit?.(source) ?? false;
+    document.querySelector<HTMLButtonElement>('#download-pdf')!.click();
+    return dispatched;
+  }, pdfSource);
+  expect(dispatchedPdf).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as { __guitarDslReadLastPdfInput?: () => string | undefined }).__guitarDslReadLastPdfInput?.())).toBe(pdfSource);
+  const pdf = await downloadPromise;
+  expect(pdf.suggestedFilename()).toBe('Untitled.pdf');
+  const pdfPath = await pdf.path();
+  expect(pdfPath).not.toBeNull();
+  expect((await readFile(pdfPath!)).subarray(0, 5).toString('latin1')).toBe('%PDF-');
 });
 
 test('preserves a pending Preview edit when changing modes', async ({ page }) => {

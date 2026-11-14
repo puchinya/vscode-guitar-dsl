@@ -219,6 +219,7 @@ export class SourceEditorSurface {
 
   getSource(): string { return this.activeSource; }
   getText(): string { return this.view.state.doc.toString(); }
+  hasPendingEdit(): boolean { return this.publishPending || this.pendingComposition || this.compositionActive || this.view.composing; }
   setAccessibleName(label: string): void {
     this.host.setAttribute('aria-label', label);
     this.view.contentDOM.setAttribute('aria-label', label);

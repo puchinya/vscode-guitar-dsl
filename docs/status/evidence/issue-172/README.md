@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Chromium and WebKit each passed 48/48.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Chromium and WebKit each passed 50/50.
 
 Capture command:
 
@@ -34,6 +34,7 @@ Each image is 1600 × 900 CSS pixels.
 The measurements below are CSS pixels from the 1600 × 900 Japanese dark capture; exact values for all captures and interactive states are in `layout-domrect.json`.
 
 - Header: 40 px high. Explorer starts at x=40, is 220 px wide, and contains both visible root rows: local at y=76 (220 × 32 px), Drive at y=215 (220 × 32 px). The local score entry is x=50, y=148, 200 × 32 px.
+- The right Tool Window Bar starts at x=1564 and is 36 px wide. Inspector is the upper toggle at x=1568.5, y=48 (28 × 34 px); Problems is below it at x=1568.5, y=82 (28 × 34 px).
 - The tab strip is y=40 and exactly 36 px high. Source/Split/Score controls stay at its right edge (x=1155, 1188, 1221; each 30 × 28 px). There is no additional Source/Score row.
 - Source and Score begin at y=76. Their split widths are 394.41 px and 591.59 px; Inspector is 300 px wide. Problems is 200 px high, beginning at y=676. The status bar is 24 px high.
 - Header actions are five 32 × 30 px buttons spaced 4 px apart at x=1414, 1450, 1486, 1522, and 1558. At 1280 × 800, the right-aligned actions end at x=1270.
@@ -41,11 +42,11 @@ The measurements below are CSS pixels from the 1600 × 900 Japanese dark capture
 
 The layout and menus were visually compared with the four proposal drawings: [workspace](../../../specs/gui_design/proposals/issue-172/web-compact-workspace.svg), [layout geometry](../../../specs/gui_design/proposals/issue-172/web-compact-layout-geometry.svg), [context menus](../../../specs/gui_design/proposals/issue-172/web-compact-context-menus.svg), and [icons](../../../specs/gui_design/proposals/issue-172/web-compact-icons.svg). Numeric geometry in the approved spec remains the acceptance reference.
 
-Browser automation verifies initial geometry, the four keyboard- and pointer-resizable splitters, saved layout restoration, narrow viewport collapse, CodeMirror editing, CRLF preservation, IME composition, tab-local Undo history, right-click and Shift+F10 menus, disabled/stale Preview bindings, and rejection when the current source target changes.
+Browser automation verifies initial geometry, the four keyboard- and pointer-resizable splitters, saved layout restoration, narrow viewport collapse, CodeMirror editing, same-task Save/PDF snapshot flush, IME composition and leave protection, tab-local Undo history, right-click and Shift+F10 menus, disabled/stale Preview bindings, and rejection when the current source target changes.
 
 ## Browser checks
 
-- Playwright Chromium: 48/48 PASS on macOS arm64.
-- Playwright WebKit: 48/48 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
+- Playwright Chromium: 50/50 PASS on macOS arm64.
+- Playwright WebKit: 50/50 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive, and physical audio output are NOT RUN per the Safari acceptance contract.

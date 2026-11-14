@@ -125,6 +125,7 @@ const STRINGS = {
     driveSaveUnauthorized: 'Drive authorization expired before the save could be confirmed. Your local draft is kept. Reconnect Drive, review the file, and retry manually; the PATCH was not resent.',
     driveSaveForbidden: 'Drive denied the save due to access permissions. Your local draft is kept and no automatic retry was sent. Check file access before retrying.',
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
+    finishComposition: 'Finish the current text composition before saving or exporting.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
     suggest: 'Suggest next chords', reload: 'Reload latest', saveCopy: 'Save local version as a new Drive file', cancel: 'Cancel',
@@ -133,7 +134,7 @@ const STRINGS = {
     confirmDelete: 'Delete this local score and its draft?',
     audition: 'Audition', stopAudition: 'Stop audition', audioStarting: 'Starting audition…',
     audioPlaying: 'Audition playing.', audioStopped: 'Audition stopped.', audioUnavailable: 'Audio audition is unavailable.',
-    problems: 'Problems', noProblems: 'No problems', previewEmpty: 'No score', previewInvalid: 'Unable to parse source',
+    problems: 'Problems', toolWindows: 'Tool windows', noProblems: 'No problems', previewEmpty: 'No score', previewInvalid: 'Unable to parse source',
     previewCheck: 'Check diagnostics', previewReady: 'Preview ready', previewFailed: 'Preview failed', resetLayout: 'Reset layout',
     sourceView: 'Source view', splitView: 'Split view', scoreView: 'Score view',
     openTab: 'Open this tab', closeTabMenu: 'Close', closeOthers: 'Close other tabs', exportSource: 'Export source', deleteFile: 'Delete', copyName: 'Copy name',
@@ -159,6 +160,7 @@ const STRINGS = {
     driveSaveUnauthorized: 'Drive の認証が失効したため保存を確認できません。下書きは保持しました。Drive に再接続し、ファイルの状態を確認してから手動で再試行してください。PATCH の自動再送はしていません。',
     driveSaveForbidden: 'Drive が保存を拒否しました（ファイルのアクセス権を確認してください）。下書きは保持し、自動再送していません。権限を確認してから手動で再試行してください。',
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
+    finishComposition: '日本語入力を確定してから保存または書き出してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
     suggest: '次のコードを提案', reload: '最新の内容を読み込む', saveCopy: 'ローカル版を新しい Drive ファイルとして保存', cancel: 'キャンセル',
@@ -167,7 +169,7 @@ const STRINGS = {
     confirmDelete: 'このローカル楽譜と下書きを削除しますか？',
     audition: '試聴', stopAudition: '試聴を停止', audioStarting: '試聴を開始しています…',
     audioPlaying: '試聴中です。', audioStopped: '試聴を停止しました。', audioUnavailable: '試聴を利用できません。',
-    problems: '問題', noProblems: '問題はありません', previewEmpty: '譜面がありません', previewInvalid: 'ソースを解析できません',
+    problems: '問題', toolWindows: 'ツールウィンドウ', noProblems: '問題はありません', previewEmpty: '譜面がありません', previewInvalid: 'ソースを解析できません',
     previewCheck: '診断を確認してください', previewReady: 'プレビューを表示中', previewFailed: 'プレビューを表示できません', resetLayout: 'レイアウトをリセット',
     sourceView: 'ソース表示', splitView: '分割表示', scoreView: '譜面表示',
     openTab: 'このタブを開く', closeTabMenu: '閉じる', closeOthers: 'ほかのタブを閉じる', exportSource: 'ソースを書き出す', deleteFile: '削除', copyName: '名前をコピー',
@@ -219,7 +221,6 @@ app.innerHTML = `
     <div class="workspace" id="workspace">
       <nav class="activity-bar" aria-label="Workspace tools">
         <button type="button" id="activity-explorer" aria-label="Toggle Explorer" title="Toggle Explorer" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg></button>
-        <button type="button" id="activity-inspector" aria-label="Toggle Inspector" title="Toggle Inspector" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-inspector"></use></svg></button>
       </nav>
       <aside class="file-list" aria-label="Files">
         <div class="pane-heading"><span id="files-heading">Files</span><button type="button" id="import-file" class="icon-action" aria-label="Import file" title="Import file"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-import"></use></svg><span class="sr-only">Import file</span></button></div>
@@ -292,7 +293,10 @@ app.innerHTML = `
         <header class="problems-heading"><strong id="problems-title">Problems</strong><span id="problem-counts" aria-live="polite">Errors 0 / Warnings 0</span><span class="toolbar-spacer"></span><button type="button" id="collapse-problems" class="icon-action" aria-label="Collapse Problems" title="Collapse Problems"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button></header>
         <div class="diagnostics" id="diagnostics" role="list" aria-live="polite"></div>
       </section>
-      <div class="tool-window-bar"><button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button></div>
+      <div class="tool-window-bar" role="group" aria-label="Tool windows">
+        <button type="button" id="toggle-inspector" aria-label="Toggle Inspector" title="Toggle Inspector" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-inspector"></use></svg><span class="sr-only">Toggle Inspector</span></button>
+        <button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button>
+      </div>
     </div>
     <footer class="statusbar" aria-label="Workspace status"><span id="status-problems">Errors 0 / Warnings 0</span><span id="status-cursor">Ln 1, Col 1</span><span class="status-spacer"></span><span class="preview-state sr-only" id="preview-state" aria-live="polite">Loading score</span><span class="status-dot" aria-hidden="true"></span><span class="saved-state" id="saved-state">Saved locally</span></footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden />
@@ -310,12 +314,14 @@ sharedSettingsScript.remove();
 
 const editor = app.querySelector<HTMLElement>('.editor-surface')!;
 const sourceEditor = new SourceEditorSurface(editor, onEditorInput, renderCursorPosition);
+let lastPdfInputForTest: string | undefined;
 if (import.meta.env.DEV) {
   const testWindow = window as Window & {
     __guitarDslReadSource?: () => string;
     __guitarDslReplaceSource?: (source: string) => boolean;
     __guitarDslDispatchSourceEdit?: (source: string, userEvent?: string) => boolean;
     __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: OpenTab['saveStatus'] }>;
+    __guitarDslReadLastPdfInput?: () => string | undefined;
     __guitarDslReadSelection?: () => { from: number; to: number; head: number };
     __guitarDslRenderAll?: () => void;
     __guitarDslSetCursor?: (offset: number) => void;
@@ -324,6 +330,7 @@ if (import.meta.env.DEV) {
   testWindow.__guitarDslReplaceSource = source => sourceEditor.replaceSource(source);
   testWindow.__guitarDslDispatchSourceEdit = (source, userEvent) => sourceEditor.dispatchSourceEdit(source, userEvent);
   testWindow.__guitarDslReadTabs = () => state.tabs.map(tab => ({ key: tabKey(tab), source: tab.source, revision: tab.revision, saveStatus: tab.saveStatus }));
+  testWindow.__guitarDslReadLastPdfInput = () => lastPdfInputForTest;
   testWindow.__guitarDslReadSelection = () => sourceEditor.selection();
   testWindow.__guitarDslRenderAll = renderAll;
   testWindow.__guitarDslSetCursor = offset => sourceEditor.setSelection(offset);
@@ -444,6 +451,11 @@ function currentScore(source: string): ParsedScore | undefined {
 function editorReadyForDocumentChange(): boolean {
   if (sourceEditor.flushPendingEdit()) return true;
   showMessage(state.locale === 'ja' ? '日本語入力の確定後に文書を切り替えてください。' : 'Finish the current text composition before switching documents.', 'info');
+  return false;
+}
+function editorReadyForSnapshot(tab: OpenTab): boolean {
+  if (state.activeKey !== tabKey(tab) || sourceEditor.flushPendingEdit()) return true;
+  showMessage(strings().finishComposition, 'info');
   return false;
 }
 async function setActive(key: string, isCurrent?: () => boolean): Promise<void> {
@@ -1074,6 +1086,10 @@ function renderProblemsLabels(): void {
   const t = strings();
   app.querySelector('#problems-title')!.textContent = t.problems;
   app.querySelector('#problems-panel')!.setAttribute('aria-label', t.problems);
+  app.querySelector('.tool-window-bar')!.setAttribute('aria-label', t.toolWindows);
+  const inspectorToggle = app.querySelector<HTMLButtonElement>('#toggle-inspector')!;
+  inspectorToggle.setAttribute('aria-pressed', String(state.inspectorOpen));
+  setIconButton(inspectorToggle, 'inspector', t.toggleInspector);
   const expanded = String(state.problemsOpen);
   const toggle = app.querySelector<HTMLButtonElement>('#toggle-problems')!;
   toggle.setAttribute('aria-expanded', expanded);
@@ -1104,6 +1120,15 @@ function saveLayoutSoon(): void {
       renderStorageStatus();
     });
   }, 250);
+}
+
+function saveLayoutNow(): void {
+  window.clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = 0;
+  void indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => {
+    state.storageReady = false;
+    renderStorageStatus();
+  });
 }
 
 function setWorkspaceViewMode(mode: WorkspaceViewMode, persist = true): void {
@@ -1139,9 +1164,7 @@ function applyWorkspaceLayout(): void {
   workspace.classList.toggle('explorer-closed', !state.explorerOpen);
   workspace.classList.toggle('inspector-closed', !state.inspectorOpen);
   app.querySelector('#activity-explorer')!.setAttribute('aria-pressed', String(state.explorerOpen));
-  app.querySelector('#activity-inspector')!.setAttribute('aria-pressed', String(state.inspectorOpen));
   setIconButton(app.querySelector<HTMLButtonElement>('#activity-explorer')!, 'folder', strings().toggleExplorer);
-  setIconButton(app.querySelector<HTMLButtonElement>('#activity-inspector')!, 'inspector', strings().toggleInspector);
   app.querySelector('#explorer-splitter')!.setAttribute('aria-valuenow', String(state.explorerWidth));
   app.querySelector('#inspector-splitter')!.setAttribute('aria-valuenow', String(state.inspectorWidth));
   app.querySelector('#problems-splitter')!.setAttribute('aria-valuenow', String(state.problemsHeight));
@@ -1474,8 +1497,15 @@ async function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
 
 async function saveDraftNow(tab: OpenTab): Promise<boolean> {
   if (!tab.persistable || !state.storageReady) return false;
+  if (!editorReadyForSnapshot(tab)) return false;
   try {
-    await draftWrites.get(tabKey(tab));
+    const key = tabKey(tab);
+    while (true) {
+      const pendingWrite = draftWrites.get(key);
+      if (pendingWrite) await pendingWrite;
+      if (!editorReadyForSnapshot(tab)) return false;
+      if (draftWrites.get(key) === pendingWrite || !draftWrites.has(key)) break;
+    }
     const edit = snapshot(tab);
     const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
     if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
@@ -1522,6 +1552,7 @@ async function saveActiveDocument(): Promise<void> {
   if (!await saveDraftNow(tab)) return;
   if (tab.document.identity.storage === 'local') {
     try {
+      if (!editorReadyForSnapshot(tab)) return;
       const edit = snapshot(tab);
       const saved = await indexedDb.commitLocal(edit, undefined, tab.persistedBase);
       if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
@@ -1554,6 +1585,7 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         identityChanged = true;
         return;
       }
+      if (!editorReadyForSnapshot(tab)) return;
       const file: DriveFile = {
         id: queuedFileId, name: tab.document.name,
         version: tab.document.driveVersion ?? '', modifiedTime: tab.document.driveModifiedTime ?? '',
@@ -1771,8 +1803,11 @@ async function saveDriveCopy(
 
 async function downloadPdf(tab = activeTab()): Promise<void> {
   if (!tab) return;
+  if (!editorReadyForSnapshot(tab)) return;
   try {
-    await downloadScorePdf(tab.source, tab.document.name, {
+    const source = tab.source;
+    if (import.meta.env.DEV) lastPdfInputForTest = source;
+    await downloadScorePdf(source, tab.document.name, {
       pageSize: tab.pageSize, orientation: tab.orientation, expandPageBreakRepeats: state.expandPageBreakRepeats
     });
   } catch (error) { showMessage(`${state.locale === 'ja' ? 'PDFの書き出しに失敗しました: ' : 'PDF export failed: '}${shortError(error)}`, 'error'); }
@@ -2852,9 +2887,9 @@ for (const [id, mode] of [['view-source', 'source'], ['view-split', 'split'], ['
   app.querySelector<HTMLButtonElement>(`#${id}`)!.addEventListener('click', () => setWorkspaceViewMode(mode));
 }
 const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
-const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
+const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutNow(); };
 app.querySelector('#activity-explorer')!.addEventListener('click', toggleExplorer);
-for (const id of ['activity-inspector', 'collapse-inspector']) app.querySelector(`#${id}`)!.addEventListener('click', toggleInspector);
+for (const id of ['toggle-inspector', 'collapse-inspector']) app.querySelector(`#${id}`)!.addEventListener('click', toggleInspector);
 const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
 app.querySelector('#toggle-problems')!.addEventListener('click', toggleProblems);
 app.querySelector('#collapse-problems')!.addEventListener('click', toggleProblems);
@@ -2862,7 +2897,7 @@ window.addEventListener('resize', () => { applySplitRatio(); setProblemsHeight(s
 new ResizeObserver(() => updateResponsiveCollapse()).observe(workspace);
 listenForPreviewMessages(scoreFrame, handlePreviewMessage);
 window.addEventListener('beforeunload', (event: BeforeUnloadEvent) => {
-  if (state.tabs.some(hasUnpersistedDraft)) {
+  if (sourceEditor.hasPendingEdit() || state.tabs.some(hasUnpersistedDraft)) {
     event.preventDefault();
     event.returnValue = '';
   }

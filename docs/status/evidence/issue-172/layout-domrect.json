@@ -168,6 +168,18 @@
         "width": 36,
         "height": 836
       },
+      "toolWindowInspector": {
+        "x": 1568.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1568.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 876,
@@ -439,6 +451,18 @@
         "y": 40,
         "width": 36,
         "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1568.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
@@ -712,6 +736,18 @@
         "width": 36,
         "height": 836
       },
+      "toolWindowInspector": {
+        "x": 1568.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1568.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 876,
@@ -983,6 +1019,18 @@
         "y": 40,
         "width": 36,
         "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1568.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
@@ -1256,6 +1304,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -1527,6 +1587,18 @@
         "y": 40,
         "width": 36,
         "height": 736
+      },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
@@ -1866,6 +1938,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -2164,6 +2248,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -2451,6 +2547,18 @@
         "y": 40,
         "width": 36,
         "height": 736
+      },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
@@ -2770,6 +2878,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -3088,6 +3208,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -3388,6 +3520,18 @@
         "y": 40,
         "width": 36,
         "height": 736
+      },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
@@ -3716,6 +3860,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -4043,6 +4199,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -4341,6 +4509,18 @@
         "width": 36,
         "height": 736
       },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
+      },
       "status": {
         "x": 0,
         "y": 776,
@@ -4612,6 +4792,18 @@
         "y": 40,
         "width": 36,
         "height": 736
+      },
+      "toolWindowInspector": {
+        "x": 1248.5,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 1248.5,
+        "y": 82,
+        "width": 28,
+        "height": 34
       },
       "status": {
         "x": 0,
