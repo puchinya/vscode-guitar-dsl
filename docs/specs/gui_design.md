@@ -45,6 +45,7 @@
 | Web Compact Workspace・寸法と操作 | [web-compact-layout-geometry.svg](gui_design/proposals/issue-172/web-compact-layout-geometry.svg) | 1600 × 920 px | 初期寸法、境界、最小/最大値、キーボード操作 |
 | Web Compact Workspace・アイコン | [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg) | 1200 × 750 px | Web ツールバーとツールウィンドウの SVG アイコン |
 | Web Compact Workspace・メニュー | [web-compact-context-menus.svg](gui_design/proposals/issue-172/web-compact-context-menus.svg) | 1340 × 780 px | Explorer、タブ、Problems、Preview のメニューと右上操作 |
+| Web Compact Workspace・パネル見出し補正 | [web-compact-panel-chrome-correction.svg](gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg) | 1140 × 760 px | Explorer、Inspector、Problems、ファイル行のアイコンと状態 |
 
 ## Normative requirements
 
@@ -305,7 +306,13 @@ The tab row holds the active document name and three icon-only workspace control
 
 The Activity Bar is 40 px wide and the Tool Window Bar is 36 px wide. The right Tool Window Bar contains Inspector followed by Problems from top to bottom. Inspector's button reflects its manually saved open/closed state, even while the panel is temporarily hidden by the narrow-layout fallback. Both controls remain keyboard-operable with localized accessible names and titles; Inspector exposes `aria-pressed` and Problems exposes `aria-expanded`. Icon geometry comes from the 24 × 24 SVG paths in [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg). Icons must not rely on emoji, icon fonts, raster images, or externally hosted assets. Selected and hover states follow the reference icon sheet.
 
-The Explorer content shows two storage roots at once: “On this device” and “Google Drive”. Each root has an independent disclosure control, its own action row, and its own file tree. Local creation and import remain available without a Drive connection; Drive connection and folder actions stay with the Drive root. Selecting one root does not hide the other tree.
+The Explorer shows “On this device” and “Google Drive” simultaneously as expandable tree roots. Each 32 px root row begins with its disclosure chevron, followed by a folder or cloud icon and the localized root name. Only the active file row is selected; selecting or focusing a root does not paint the whole row as a selected document. Each file row is one line, 30–32 px high, and begins with a 16 px file icon. Modification time is available as title/accessibility metadata but is not a second visible row. The compact 36 px `PROJECT` heading places New Score and an options ellipsis at its right. That menu contains Import, Close Explorer, and Reset Explorer Width (220 px). Local creation and import remain available offline. Drive connection is an inline action at its root while disconnected; when connected, its tree shows a status dot and the selected folder before its file rows. Drive folder actions remain in the Drive root menu and account menu.
+
+The Inspector heading is 36 px high and uses an options ellipsis. Its menu contains only Close Inspector and Reset width to default (300 px). The default Web Inspector tab is Variables; an empty score uses the existing shared empty state. Inspector remains above Problems on the right Tool Window Bar.
+
+Problems has a 32 px header with the Problems icon, compiler-backed error and warning icons/counts, and a far-right × close action. The 25–30 px column header and diagnostic rows share the grid `74px minmax(180px,1fr) 72px minmax(250px,3fr)` at desktop widths and use the same responsive columns at narrower widths. Severity rows use the error/warning SVG icon and show the actual file, 1-based line and column, and compiler message. Zero counts remain visible in muted text. Closing Problems or Inspector preserves its current size for reopening from the right Tool Window Bar.
+
+In Dark theme, the Web host shell uses #202229 for the header, #22252C for tool windows, #333F59 for the selected file, #424652 for fine boundaries, #7692F4 for selected accents, and #99A3B5 for muted text. This palette does not style the shared score iframe. The shared Preview toolbar and score/Inspector rendering are outside this Web-only panel correction; their current shared presentation remains unchanged.
 
 ### 5.3 Splitters and narrow layouts
 

@@ -1,6 +1,7 @@
 export type WebIconName =
   | 'music' | 'code' | 'split' | 'eye' | 'save' | 'pdf' | 'account' | 'help' | 'settings'
-  | 'folder' | 'cloud' | 'fileplus' | 'import' | 'problems' | 'close' | 'down' | 'inspector';
+  | 'folder' | 'cloud' | 'file' | 'fileplus' | 'import' | 'problems' | 'error' | 'warning'
+  | 'close' | 'down' | 'right' | 'more' | 'inspector';
 
 /** Self-contained icon paths adapted from the Issue #172 SVG UI contract. */
 export const WEB_ICON_SPRITE = `<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
@@ -15,11 +16,16 @@ export const WEB_ICON_SPRITE = `<svg class="icon-sprite" aria-hidden="true" focu
   <symbol id="ic-settings" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M10.4 2h3.2l.6 2.4a8.2 8.2 0 0 1 2 .9l2.2-1.2 2.2 2.2-1.2 2.2c.4.6.7 1.2.9 2l2.4.6v3.2l-2.4.6a8 8 0 0 1-.9 2l1.2 2.2-2.2 2.2-2.2-1.2a8 8 0 0 1-2 .9l-.6 2.4h-3.2l-.6-2.4a8 8 0 0 1-2-.9l-2.2 1.2-2.2-2.2 1.2-2.2a8 8 0 0 1-.9-2l-2.4-.6v-3.2l2.4-.6a8 8 0 0 1 .9-2L3.4 6.3l2.2-2.2 2.2 1.2a8 8 0 0 1 2-.9L10.4 2Z"/><circle cx="12" cy="12" r="3.2"/></g></symbol>
   <symbol id="ic-folder" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></g></symbol>
   <symbol id="ic-cloud" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M7 19h11a4 4 0 0 0 .3-8 6.8 6.8 0 0 0-13.2-1.2A4.5 4.5 0 0 0 7 19Z"/></g></symbol>
+  <symbol id="ic-file" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 12h8M9 16h7"/></g></symbol>
   <symbol id="ic-fileplus" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 15h8m-4-4v8"/></g></symbol>
   <symbol id="ic-import" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M12 3v13m-5-5 5 5 5-5M4 18v4h16v-4"/></g></symbol>
   <symbol id="ic-problems" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 7v7m0 3h.01" stroke-width="2.6"/></g></symbol>
+  <symbol id="ic-error" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="12" cy="12" r="10"/><path d="m9 9 6 6m0-6-6 6"/></g></symbol>
+  <symbol id="ic-warning" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M12 2 1.5 21h21Z"/><path d="M12 9v5m0 4h.01" stroke-width="2.4"/></g></symbol>
   <symbol id="ic-close" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m5 5 14 14M19 5 5 19"/></g></symbol>
   <symbol id="ic-down" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m5 9 7 7 7-7"/></g></symbol>
+  <symbol id="ic-right" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m9 5 7 7-7 7"/></g></symbol>
+  <symbol id="ic-more" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></g></symbol>
   <symbol id="ic-inspector" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></g></symbol>
 </svg>`;
 

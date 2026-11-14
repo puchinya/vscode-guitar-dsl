@@ -4,6 +4,8 @@ import { planCapoTransform } from '@guitardsl/core/capo';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
+const DEFAULT_CAPTURE_SOURCE = 'title: Cloud song\n\n[Verse]\nC | G | Am | F |\n';
+
 interface DriveSeed {
   accountId: string;
   fileId: string;
@@ -37,6 +39,7 @@ interface DriveBrowserMockOptions {
   holdPickerSelection?: boolean;
   holdFileReadId?: string;
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+  driveFiles?: Array<{ id: string; name: string; version: string; modifiedTime: string; mimeType?: string; parents?: string[] }>;
   unauthorizedList?: boolean;
 }
 
@@ -131,10 +134,13 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     }
     if (url.pathname === '/drive/v3/files') {
       if (options.unauthorizedList) return route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
-      return route.fulfill({ headers, json: { files: [] } });
+      const query = url.searchParams.get('q') ?? '';
+      const parent = query.match(/^'([^']+)' in parents/u)?.[1];
+      const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
+      return route.fulfill({ headers, json: { files } });
     }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
-      return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
+      return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: options.pickerSelection?.name ?? 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
     }
     if (url.pathname.startsWith('/drive/v3/files/')) {
       const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
@@ -341,6 +347,13 @@ async function installFakeAudio(page: Page): Promise<void> {
 }
 
 test('opens a local-first GuitarDSL workspace', async ({ page }) => {
+  const captureIssue172 = process.env.GUITARDSL_CAPTURE_ISSUE172 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  if (captureIssue172) await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL Songs' },
+    remoteFiles: { 'drive-song': { name: 'Cloud Song.guitardsl', source: DEFAULT_CAPTURE_SOURCE, version: '1' } },
+    driveFiles: [{ id: 'drive-song', name: 'Cloud Song.guitardsl', version: '1', modifiedTime: '2026-11-15T00:00:00.000Z', mimeType: 'text/plain', parents: ['folder-account-a'] }]
+  });
   if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
     && page.context().browser()?.browserType().name() === 'chromium') {
     await page.setViewportSize({ width: 1600, height: 1000 });
@@ -350,7 +363,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Document' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Variables' })).toBeVisible();
   const inspectorTabs = page.locator('.shared-inspector-tabs');
   await expect(inspectorTabs.getByRole('tab')).toHaveCount(4);
   expect(await inspectorTabs.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -366,8 +379,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await mkdir(dirname(evidencePath), { recursive: true });
     await page.screenshot({ path: evidencePath, fullPage: false });
   }
-  if (process.env.GUITARDSL_CAPTURE_ISSUE172 === '1'
-    && page.context().browser()?.browserType().name() === 'chromium') {
+  if (captureIssue172) {
     const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-172');
     await mkdir(evidenceDir, { recursive: true });
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -378,14 +390,19 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         const selectors = {
           header: '.topbar', accountAction: '#connect-drive', helpAction: '#help-button', settingsAction: '#settings-button',
           activityBar: '.activity-bar', explorer: '.file-list', explorerSplitter: '#explorer-splitter',
+          explorerHeading: '.explorer-heading', explorerNewScore: '#new-score', explorerOptions: '#explorer-more',
           localRoot: '[data-storage-section="local"] .storage-root-row', localRootLabel: '#storage-local',
-          localActions: '#file-actions', localFile: '#file-items .file-item',
+          localRootIcon: '[data-storage-section="local"] .root-icon',
+          localActions: '#file-actions', localFile: '#file-items .file-item', activeLocalFile: '#file-items .file-item[aria-current="page"]',
           driveRoot: '[data-storage-section="drive"] .storage-root-row', driveRootLabel: '#storage-drive',
-          driveActions: '#drive-file-actions', driveFile: '#drive-file-items .file-item',
+          driveRootIcon: '[data-storage-section="drive"] .root-icon', driveStatus: '#drive-status', driveConnect: '#drive-connect-inline',
+          driveFolder: '#drive-file-items .drive-folder-row', driveActions: '#drive-file-actions', driveFile: '#drive-file-items .file-item',
           tabs: '.tabs', tabViewControls: '.view-mode-controls', viewSource: '#view-source',
           viewSplit: '#view-split', viewScore: '#view-score', source: '#source-pane', centerSplitter: '#center-splitter', score: '#score-pane',
-          inspectorSplitter: '#inspector-splitter', inspector: '.inspector', problemsSplitter: '#problems-splitter',
-          problems: '#problems-panel', toolWindowBar: '.tool-window-bar', toolWindowInspector: '#toggle-inspector',
+          inspectorSplitter: '#inspector-splitter', inspector: '.inspector', inspectorOptions: '#inspector-more', problemsSplitter: '#problems-splitter',
+          problems: '#problems-panel', problemsHeading: '.problems-heading', problemCounts: '#problem-counts', errorCount: '#error-count', warningCount: '#warning-count',
+          problemColumns: '.problem-columns', closeProblems: '#close-problems',
+          toolWindowBar: '.tool-window-bar', toolWindowInspector: '#toggle-inspector',
           toolWindowProblems: '#toggle-problems', status: '.statusbar'
         };
         const rects = Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
@@ -398,6 +415,10 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
           const { x, y, width, height } = element.getBoundingClientRect();
           return { className: (element as HTMLElement).className, x, y, width, height };
         });
+        const problemHeadings = Array.from(document.querySelector('#problem-columns')?.children ?? []).map(element => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { label: element.textContent, x, y, width, height };
+        });
         const topActions = ['#save-document', '#download-pdf', '#connect-drive', '#help-button', '#settings-button'].map(selector => {
           const element = document.querySelector(selector)!;
           const { x, y, width, height } = element.getBoundingClientRect();
@@ -405,8 +426,15 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         });
         const fileEntries = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector)).map(element => {
           const { x, y, width, height } = element.getBoundingClientRect();
-          return { name: element.textContent?.trim(), x, y, width, height };
+          const icon = element.querySelector<SVGSVGElement>('.web-icon');
+          const iconRect = icon?.getBoundingClientRect();
+          return { name: element.textContent?.trim(), x, y, width, height,
+            icon: iconRect ? { x: iconRect.x, y: iconRect.y, width: iconRect.width, height: iconRect.height } : null,
+            symbol: element.querySelector('use')?.getAttribute('href'), selected: element.getAttribute('aria-current') === 'page' };
         });
+        const symbols = Object.fromEntries(['[data-storage-section="local"] .root-icon use', '[data-storage-section="drive"] .root-icon use', '#new-score use', '#explorer-more use',
+          '#inspector-more use', '#close-problems use', '.problem-severity .web-icon use'].map(selector => [selector,
+          Array.from(document.querySelectorAll(selector)).map(element => element.getAttribute('href'))]));
         const splitters = Array.from(document.querySelectorAll<HTMLElement>('[role="separator"]')).map(element => ({
           name: element.getAttribute('aria-label'), orientation: element.getAttribute('aria-orientation'),
           min: element.getAttribute('aria-valuemin'), max: element.getAttribute('aria-valuemax'), now: element.getAttribute('aria-valuenow')
@@ -414,12 +442,12 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         const modes = Array.from(document.querySelectorAll<HTMLButtonElement>('.view-mode-button')).map(button => ({
           label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed')
         }));
-        const menu = document.querySelector<HTMLElement>('#context-menu:not([hidden]), #settings-menu:not([hidden])');
+        const menu = document.querySelector<HTMLElement>('#context-menu:not([hidden]), #settings-menu:not([hidden]), #panel-menu:not([hidden])');
         const menuItems = menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>('button')).map(button => ({
           label: button.textContent, disabled: button.disabled,
           rect: (() => { const { x, y, width, height } = button.getBoundingClientRect(); return { x, y, width, height }; })()
         })) : [];
-        return { viewport: { width: innerWidth, height: innerHeight }, rects, problemsColumns, topActions,
+        return { viewport: { width: innerWidth, height: innerHeight }, rects, problemsColumns, problemHeadings, symbols, topActions,
           localFileEntries: fileEntries('#file-items .file-item'), driveFileEntries: fileEntries('#drive-file-items .file-item'),
           splitters, modes, menu: menu ? (() => { const { x, y, width, height } = menu.getBoundingClientRect(); return { x, y, width, height }; })() : null,
           menuItems,
@@ -441,10 +469,41 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     }
     await page.setViewportSize({ width: 1280, height: 800 });
     await capture('desktop-1280x800-ja-dark.png');
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const namePrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Reference.guitardsl'));
+    await page.locator('#new-score').click();
+    await namePrompt;
+    await expect(page.locator('#file-items .file-item')).toHaveCount(2);
+    const editor = page.getByRole('textbox', { name: 'GuitarDSL ソースエディター' });
+    await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+    await page.locator('#connect-drive').click();
+    await page.getByRole('menuitem', { name: 'Drive に接続', exact: true }).click();
+    await expect(page.locator('#drive-status')).toBeVisible();
+    await page.locator('#storage-drive').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'フォルダーを選択' }).click();
+    await expect(page.locator('#drive-file-items .drive-folder-row')).toContainText('GuitarDSL Songs');
+    await expect(page.locator('#drive-file-items .file-item')).toHaveCount(1);
+    await page.locator('#app-message').evaluate(element => { (element as HTMLElement).hidden = true; });
+    await expect(page.locator('#file-items .file-item[aria-current="page"]')).toHaveText('Reference.guitardsl');
+    await expect(page.getByRole('tab', { name: '変数' })).toHaveAttribute('aria-selected', 'true');
+    await capture('reference-state-1600x900-ja-dark.png');
+
+    await page.setViewportSize({ width: 1280, height: 800 });
 
     await page.getByRole('button', { name: '設定' }).click();
     await expect(page.getByRole('menu')).toBeVisible();
     await capture('menu-settings-ja.png');
+    await page.keyboard.press('Escape');
+
+    await page.locator('#explorer-more').click();
+    await expect(page.getByRole('menuitem')).toHaveText(['ファイルを読み込む', 'Explorer を閉じる', 'Explorer の幅を初期値へ戻す（220px）']);
+    await capture('menu-explorer-options-ja.png');
+    await page.keyboard.press('Escape');
+    await page.locator('#inspector-more').click();
+    await expect(page.getByRole('menuitem')).toHaveText(['Inspector を閉じる', '幅を初期値へ戻す']);
+    await capture('menu-inspector-options-ja.png');
     await page.keyboard.press('Escape');
 
     await page.locator('#storage-local').click({ button: 'right' });
@@ -453,7 +512,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await page.keyboard.press('Escape');
 
     await page.locator('#storage-drive').click({ button: 'right' });
-    await expect(page.getByRole('menuitem', { name: 'Drive に接続' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'フォルダーを選択' })).toBeVisible();
     await capture('menu-drive-root-ja.png');
     await page.keyboard.press('Escape');
 
@@ -468,6 +527,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await expect(page.getByRole('menuitem', { name: 'このタブを開く' })).toBeVisible();
     await capture('menu-tab-ja.png');
     await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
 
     const editorName = 'GuitarDSL ソースエディター';
     await page.getByRole('textbox', { name: editorName }).fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
@@ -825,6 +885,66 @@ test('shows both Explorer roots and opens root and tab menus from Shift+F10', as
   await expect(tab).toBeFocused();
 });
 
+test('uses compact Explorer, Inspector, and Problems panel controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#files-heading')).toHaveText('PROJECT');
+  await expect(page.locator('[data-storage-section="local"] .root-icon use')).toHaveAttribute('href', '#ic-folder');
+  await expect(page.locator('[data-storage-section="drive"] .root-icon use')).toHaveAttribute('href', '#ic-cloud');
+  await expect(page.locator('.storage-root-label.selected')).toHaveCount(0);
+  await expect(page.locator('#storage-local')).not.toHaveAttribute('aria-pressed', /.*/u);
+  await expect(page.locator('#file-items .file-item[aria-current="page"]')).toHaveCount(1);
+  await expect(page.locator('#file-items .file-item .web-icon use').first()).toHaveAttribute('href', '#ic-file');
+
+  await page.locator('[data-storage-expander="local"]').click();
+  await expect(page.locator('#local-storage-content')).toBeHidden();
+  await expect(page.locator('[data-storage-expander="local"] .web-icon use')).toHaveAttribute('href', '#ic-right');
+  await page.locator('[data-storage-expander="local"]').click();
+
+  await page.locator('#explorer-splitter').focus();
+  await page.keyboard.press('End');
+  await page.locator('#explorer-more').click();
+  const explorerItems = page.getByRole('menuitem');
+  await expect(explorerItems).toHaveText(['Import file', 'Close Explorer', 'Reset Explorer Width (220px)']);
+  await page.getByRole('menuitem', { name: 'Reset Explorer Width (220px)' }).click();
+  await expect(page.locator('#workspace')).toHaveCSS('--explorer-width', '220px');
+  await page.locator('#explorer-more').click();
+  await page.getByRole('menuitem', { name: 'Close Explorer' }).click();
+  await expect(page.locator('#workspace')).toHaveClass(/explorer-closed/u);
+  await page.locator('#activity-explorer').click();
+  await expect(page.locator('#workspace')).not.toHaveClass(/explorer-closed/u);
+
+  await page.locator('#inspector-splitter').focus();
+  await page.keyboard.press('End');
+  await page.locator('#inspector-more').click();
+  await expect(page.getByRole('menuitem')).toHaveText(['Close Inspector', 'Reset width to default']);
+  await page.getByRole('menuitem', { name: 'Reset width to default' }).click();
+  await expect(page.locator('#workspace')).toHaveCSS('--inspector-width', '300px');
+  await page.locator('#inspector-more').click();
+  await page.getByRole('menuitem', { name: 'Close Inspector' }).click();
+  await expect(page.locator('#workspace')).toHaveClass(/inspector-closed/u);
+  await page.locator('#toggle-inspector').click();
+  await expect(page.locator('#workspace')).not.toHaveClass(/inspector-closed/u);
+
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  await expect(page.locator('#error-count')).not.toHaveText('0');
+  await expect(page.locator('#warning-count')).toHaveText('0');
+  await expect(page.locator('#problems-panel')).toHaveCSS('grid-row', '3');
+  await expect(page.locator('#problem-columns')).toHaveText('SeverityFileLine:ColMessage');
+  await expect(page.locator('.problem-severity .web-icon use').first()).toHaveAttribute('href', '#ic-error');
+  expect(await page.locator('.problem-row').evaluate(element => getComputedStyle(element).gridTemplateColumns))
+    .toBe(await page.locator('.problem-columns').evaluate(element => getComputedStyle(element).gridTemplateColumns));
+  await expect(page.locator('.problem-row')).toHaveCSS('grid-template-columns', /^74px \d+(?:\.\d+)?px 72px \d+(?:\.\d+)?px$/u);
+  await page.locator('#problems-splitter').focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#workspace')).toHaveCSS('--problems-height', '210px');
+  await page.locator('#close-problems').click();
+  await expect(page.locator('#workspace')).toHaveClass(/problems-collapsed/u);
+  await page.locator('#toggle-problems').click();
+  await expect(page.locator('#workspace')).not.toHaveClass(/problems-collapsed/u);
+  await expect(page.locator('#workspace')).toHaveCSS('--problems-height', '210px');
+});
+
 test('connects and reconnects from the Google Drive root menu', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a'], {
     pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL' }, unauthorizedList: true
@@ -833,18 +953,61 @@ test('connects and reconnects from the Google Drive root menu', async ({ page })
   const driveRoot = page.locator('#storage-drive');
   await driveRoot.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Connect Drive' }).click();
-  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' })).toBeVisible();
+  await expect(page.locator('#drive-status')).toBeVisible();
 
   await driveRoot.click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Choose folder' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Create GuitarDSL folder' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Open from Drive' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.locator('#drive-file-actions').getByRole('button', { name: 'Choose folder' }).click();
-  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+  await driveRoot.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Choose folder' }).click();
+  await expect(page.locator('#drive-connect-inline')).toBeVisible();
+  await expect(page.locator('#drive-connect-inline')).toHaveText('Reconnect Drive');
   await driveRoot.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Reconnect Drive' }).click();
-  await expect(page.locator('#drive-file-actions').getByRole('button', { name: 'Reconnect Drive' })).toBeVisible();
+  await expect(page.locator('#drive-connect-inline')).toBeVisible();
+});
+
+test('selects only the active Explorer file across local and Drive identities', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL Songs' },
+    remoteFiles: {
+      'drive-one': { name: 'Cloud One.guitardsl', source: 'title: Cloud One\n', version: '1' },
+      'drive-two': { name: 'Cloud Two.guitardsl', source: 'title: Cloud Two\n', version: '1' }
+    },
+    driveFiles: [
+      { id: 'drive-one', name: 'Cloud One.guitardsl', version: '1', modifiedTime: '2026-11-15T00:00:00.000Z', mimeType: 'text/plain', parents: ['folder-account-a'] },
+      { id: 'drive-two', name: 'Cloud Two.guitardsl', version: '1', modifiedTime: '2026-11-15T00:00:00.000Z', mimeType: 'text/plain', parents: ['folder-account-a'] }
+    ]
+  });
+  await page.goto('/');
+  await expect(page.locator('#drive-status')).toBeHidden();
+  await expect(page.locator('#drive-connect-inline')).toHaveText('Connect');
+  const prompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Second Local.guitardsl'));
+  await page.locator('#new-score').click();
+  await prompt;
+  await expect(page.locator('#file-items .file-item[aria-current="page"]')).toHaveCount(1);
+  await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveCount(0);
+
+  await performAccountAction(page);
+  await expect(page.locator('#drive-status')).toBeVisible();
+  await expect(page.locator('#drive-connect-inline')).toBeHidden();
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Choose folder' }).click();
+  await expect(page.locator('#drive-file-items .file-item')).toHaveCount(2);
+  await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveCount(0);
+
+  await page.locator('#drive-file-items .file-item').filter({ hasText: 'Cloud Two.guitardsl' }).click();
+  await expect(page.getByRole('tab', { name: 'Cloud Two.guitardsl' })).toBeVisible();
+  await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveCount(1);
+  await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveAttribute('data-file-id', 'drive-two');
+  await expect(page.locator('#file-items .file-item[aria-current="page"]')).toHaveCount(0);
+
+  const localFile = page.locator('#file-items .file-item').filter({ hasText: 'Second Local.guitardsl' });
+  await localFile.click();
+  await expect(localFile).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveCount(0);
 });
 
 test('exports and deletes a local file from its Explorer menu after confirmation', async ({ page }) => {
@@ -1085,8 +1248,8 @@ test('drops a Drive read that finishes after switching accounts', async ({ page 
   const connect = page.locator('#connect-drive');
   await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
-  await page.locator('#storage-drive').click();
-  await page.getByRole('button', { name: 'Open from Drive' }).click();
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Open from Drive' }).click();
   await drive.fileReadStarted;
 
   await performAccountAction(page);
@@ -1125,8 +1288,8 @@ test('drops a Picker result returned after switching accounts without reading or
   const connect = page.locator('#connect-drive');
   await performAccountAction(page);
   await expect(connect).toHaveText('Disconnect');
-  await page.locator('#storage-drive').click();
-  await page.getByRole('button', { name: 'Open from Drive' }).click();
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Open from Drive' }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __pickerOpened?: boolean }).__pickerOpened)).toBe(true);
 
   await performAccountAction(page);
@@ -1184,8 +1347,8 @@ test('Picker re-opening detects a known Drive conflict and preserves the saved b
   });
   await performAccountAction(page);
   await expect(page.locator('#connect-drive')).toHaveText('Disconnect');
-  await page.locator('#storage-drive').click();
-  await page.getByRole('button', { name: 'Open from Drive' }).click();
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Open from Drive' }).click();
 
   const conflict = page.getByRole('dialog');
   await expect(conflict).toBeVisible();
@@ -1215,7 +1378,7 @@ test('Drive saves keep the same file, retain edits made during a save, and do no
   await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await expect(page.locator('#drive-overwrite-note')).toBeVisible();
+  await expect(page.locator('#drive-overwrite-note')).toBeHidden();
   if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
     && page.context().browser()?.browserType().name() === 'chromium') {
     await page.setViewportSize({ width: 1600, height: 1000 });
@@ -1429,7 +1592,7 @@ test('re-prompts on Drive conflict reload if the tab changes while the remote re
   releaseMedia();
   await expectEditorSource(page, newSource);
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
   const stored = await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     return {
@@ -1618,7 +1781,7 @@ test('localizes the Inspector, honors its theme, and supports keyboard tabs', as
   await page.getByRole('button', { name: '設定' }).click();
   await page.getByRole('menuitemradio', { name: 'テーマ: ダーク' }).click();
   await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.getByRole('button', { name: '新しい楽譜' })).toBeVisible();
+  await expect(page.locator('#new-score')).toBeVisible();
 
   await page.getByRole('tab', { name: '文書' }).focus();
   await page.keyboard.press('ArrowRight');

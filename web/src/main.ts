@@ -30,7 +30,7 @@ import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, typ
 import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
-import { setIconButton, WEB_ICON_SPRITE } from './icons';
+import { createWebIcon, setIconButton, WEB_ICON_SPRITE } from './icons';
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
@@ -64,6 +64,7 @@ interface AppState {
   account?: GoogleAccount;
   drive?: GoogleDriveApi;
   folderId?: string;
+  folderName?: string;
   inspectorTab: InspectorTab;
   mobilePane: MobilePane;
   locale: 'en' | 'ja';
@@ -108,7 +109,7 @@ const DEFAULT_SOURCE = 'title: My song\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |
 
 const STRINGS = {
   en: {
-    files: 'Files', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect Drive',
+    files: 'Files', project: 'PROJECT', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect Drive', connectInline: 'Connect',
     reconnect: 'Reconnect Drive', connecting: 'Connecting…', connectedAs: 'Connected as', disconnect: 'Disconnect',
     folder: 'Choose folder', createFolder: 'Create GuitarDSL folder', openDrive: 'Open from Drive',
     addFile: 'Import file', source: 'Source', preview: 'Preview', inspector: 'Inspector', document: 'Document',
@@ -127,6 +128,10 @@ const STRINGS = {
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
     finishComposition: 'Finish the current text composition before saving or exporting.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
+    driveAuthStatus: 'Drive authorization expired. Reconnect to continue.', explorerOptions: 'Explorer options', closeExplorer: 'Close Explorer',
+    resetExplorerWidth: 'Reset Explorer Width (220px)', inspectorOptions: 'Inspector options', closeInspector: 'Close Inspector',
+    resetInspectorWidth: 'Reset width to default', closeProblems: 'Close Problems', severity: 'Severity', file: 'File',
+    lineCol: 'Line:Col', message: 'Message', error: 'Error', warning: 'Warning',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
     suggest: 'Suggest next chords', reload: 'Reload latest', saveCopy: 'Save local version as a new Drive file', cancel: 'Cancel',
     ready: 'Local storage ready', unavailable: 'Local storage is unavailable. Download your work to keep a copy.', loadingDrive: 'Loading Drive files…',
@@ -143,7 +148,7 @@ const STRINGS = {
     help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
   },
   ja: {
-    files: 'ファイル', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続',
+    files: 'ファイル', project: 'PROJECT', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続', connectInline: '接続',
     reconnect: 'Drive に再接続', connecting: '接続中…', connectedAs: '接続中のアカウント', disconnect: '接続を解除',
     folder: 'フォルダーを選択', createFolder: 'GuitarDSL フォルダーを作成', openDrive: 'Drive から開く',
     addFile: 'ファイルを読み込む', source: 'ソース', preview: 'プレビュー', inspector: 'インスペクター', document: '文書',
@@ -162,6 +167,10 @@ const STRINGS = {
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
     finishComposition: '日本語入力を確定してから保存または書き出してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
+    driveAuthStatus: 'Drive の認証が失効しました。再接続してください。', explorerOptions: 'Explorer のオプション', closeExplorer: 'Explorer を閉じる',
+    resetExplorerWidth: 'Explorer の幅を初期値へ戻す（220px）', inspectorOptions: 'Inspector のオプション', closeInspector: 'Inspector を閉じる',
+    resetInspectorWidth: '幅を初期値へ戻す', closeProblems: '問題パネルを閉じる', severity: '重要度', file: 'ファイル',
+    lineCol: '行:列', message: 'メッセージ', error: 'エラー', warning: '警告',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
     suggest: '次のコードを提案', reload: '最新の内容を読み込む', saveCopy: 'ローカル版を新しい Drive ファイルとして保存', cancel: 'キャンセル',
     ready: 'ローカル保存を利用できます', unavailable: 'ローカル保存を利用できません。作業内容を残すにはダウンロードしてください。', loadingDrive: 'Drive のファイルを読み込み中…',
@@ -184,7 +193,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.inert = true;
 app.setAttribute('aria-busy', 'true');
 const state: AppState = {
-  tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'document', mobilePane: 'source',
+  tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'variables', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
     orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
     progressionBars: 4, progressionOperation: 'append', progressionAuditionMode: 'bars', progressionSide: 'B', progressionSpeed: 100,
@@ -223,11 +232,12 @@ app.innerHTML = `
         <button type="button" id="activity-explorer" aria-label="Toggle Explorer" title="Toggle Explorer" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg></button>
       </nav>
       <aside class="file-list" aria-label="Files">
-        <div class="pane-heading"><span id="files-heading">Files</span><button type="button" id="import-file" class="icon-action" aria-label="Import file" title="Import file"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-import"></use></svg><span class="sr-only">Import file</span></button></div>
+        <div class="pane-heading explorer-heading"><span id="files-heading">PROJECT</span><div class="panel-heading-actions"><button type="button" id="new-score" class="icon-action" aria-label="New score" title="New score"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-fileplus"></use></svg></button><button type="button" id="explorer-more" class="icon-action" aria-label="Explorer options" title="Explorer options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div></div>
         <section class="storage-section" data-storage-section="local">
           <div class="storage-root-row">
             <button type="button" class="storage-expander" data-storage-expander="local" aria-label="Collapse On this device" aria-expanded="true" aria-controls="local-storage-content"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button>
-            <button type="button" data-storage="local" class="storage-root-label selected" id="storage-local" aria-pressed="true">On this device</button>
+            <svg class="web-icon root-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg>
+            <button type="button" data-storage="local" class="storage-root-label" id="storage-local">On this device</button>
           </div>
           <div class="storage-content" id="local-storage-content">
             <div class="file-actions" id="file-actions"></div>
@@ -237,7 +247,10 @@ app.innerHTML = `
         <section class="storage-section" data-storage-section="drive">
           <div class="storage-root-row">
             <button type="button" class="storage-expander" data-storage-expander="drive" aria-label="Collapse Google Drive" aria-expanded="true" aria-controls="drive-storage-content"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button>
-            <button type="button" data-storage="drive" class="storage-root-label" id="storage-drive" aria-pressed="false">Google Drive</button>
+            <svg class="web-icon root-icon drive-root-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cloud"></use></svg>
+            <button type="button" data-storage="drive" class="storage-root-label" id="storage-drive">Google Drive</button>
+            <span id="drive-status" class="drive-status-dot" aria-label="Connected to Google Drive" hidden></span>
+            <button type="button" id="drive-connect-inline" class="drive-connect-inline" aria-label="Connect" title="Connect">Connect</button>
           </div>
           <div class="storage-content" id="drive-storage-content">
             <div class="file-actions" id="drive-file-actions"></div>
@@ -270,7 +283,7 @@ app.innerHTML = `
       </section>
       <div class="workspace-splitter" id="inspector-splitter" role="separator" aria-orientation="vertical" aria-label="Resize Inspector" aria-valuemin="260" aria-valuemax="480" aria-valuenow="300" tabindex="0"></div>
       <aside class="inspector" aria-label="Inspector">
-        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="collapse-inspector" class="icon-action" aria-label="Collapse Inspector" title="Collapse Inspector"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button></div>
+        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="inspector-more" class="icon-action" aria-label="Inspector options" title="Inspector options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div>
         <div id="inspector-tabs-host"></div>
         <div class="inspector-content" id="inspector-content" role="tabpanel" tabindex="0"></div>
         <div id="inspector-settings-parking" hidden>
@@ -290,7 +303,8 @@ app.innerHTML = `
       </aside>
       <div class="problems-splitter" id="problems-splitter" role="separator" aria-orientation="horizontal" aria-label="Resize Problems" aria-valuemin="140" aria-valuemax="360" aria-valuenow="200" tabindex="0"></div>
       <section class="problems-panel" id="problems-panel" aria-label="Problems">
-        <header class="problems-heading"><strong id="problems-title">Problems</strong><span id="problem-counts" aria-live="polite">Errors 0 / Warnings 0</span><span class="toolbar-spacer"></span><button type="button" id="collapse-problems" class="icon-action" aria-label="Collapse Problems" title="Collapse Problems"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button></header>
+        <header class="problems-heading"><svg class="web-icon problems-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><strong id="problems-title">Problems</strong><div id="problem-counts" aria-live="polite"><span class="problem-count problem-count-errors"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-error"></use></svg><span id="error-count">0</span></span><span class="problem-count problem-count-warnings"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-warning"></use></svg><span id="warning-count">0</span></span></div><span class="toolbar-spacer"></span><button type="button" id="close-problems" class="icon-action" aria-label="Close Problems" title="Close Problems"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header>
+        <div class="problem-columns" id="problem-columns"><span id="problem-severity-heading">Severity</span><span id="problem-file-heading">File</span><span id="problem-location-heading">Line:Col</span><span id="problem-message-heading">Message</span></div>
         <div class="diagnostics" id="diagnostics" role="list" aria-live="polite"></div>
       </section>
       <div class="tool-window-bar" role="group" aria-label="Tool windows">
@@ -303,6 +317,7 @@ app.innerHTML = `
     <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
     <div id="account-menu" class="settings-menu" role="menu" hidden></div>
     <div id="settings-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="panel-menu" class="settings-menu" role="menu" hidden></div>
     <div id="context-menu" class="context-menu" role="menu" hidden></div>
   </main>
 `;
@@ -564,7 +579,11 @@ function renderDiagnostics(score: ParsedScore | undefined): void {
   const warnings = diagnostics.length - errors;
   const summary = state.locale === 'ja'
     ? `エラー ${errors} / 警告 ${warnings}` : `Errors ${errors} / Warnings ${warnings}`;
-  app.querySelector('#problem-counts')!.textContent = summary;
+  app.querySelector('#error-count')!.textContent = String(errors);
+  app.querySelector('#warning-count')!.textContent = String(warnings);
+  app.querySelector('.problem-count-errors')!.classList.toggle('zero', errors === 0);
+  app.querySelector('.problem-count-warnings')!.classList.toggle('zero', warnings === 0);
+  app.querySelector('#problem-counts')!.setAttribute('aria-label', summary);
   app.querySelector('#status-problems')!.textContent = summary;
   app.querySelector('#tool-window-count')!.textContent = String(diagnostics.length);
   if (!diagnostics.length) {
@@ -582,7 +601,8 @@ function renderDiagnostics(score: ParsedScore | undefined): void {
     item.setAttribute('role', 'listitem');
     const severity = document.createElement('span');
     severity.className = 'problem-severity';
-    severity.textContent = diagnostic.severity === 'error' ? (state.locale === 'ja' ? 'エラー' : 'Error') : (state.locale === 'ja' ? '警告' : 'Warning');
+    const severityLabel = diagnostic.severity === 'error' ? strings().error : strings().warning;
+    severity.append(createWebIcon(diagnostic.severity), document.createTextNode(severityLabel));
     const file = document.createElement('span');
     file.className = 'problem-file';
     file.textContent = activeTab()?.document.name ?? '';
@@ -648,18 +668,21 @@ function renderTabs(): void {
 const explorerController = new ExplorerController({
   root: app,
   getSnapshot: () => ({
-    storage: state.activeStorage, locale: state.locale, account: state.account, drive: state.drive,
-    folderId: state.folderId, activeDocumentStorage: activeTab()?.document.identity.storage,
+    storage: state.activeStorage, locale: state.locale,
+    account: state.account ? { accountId: state.account.accountId, emailAddress: state.account.emailAddress } : undefined,
+    drive: state.drive, folderId: state.folderId, folderName: state.folderName,
+    activeDocument: activeTab() ? { identity: activeTab()!.document.identity, accountId: activeTab()!.accountId } : undefined,
     authExpired: state.authExpired, connecting: driveConnectInProgress
   }),
   getLabels: () => {
     const t = strings();
     return {
-      files: t.files, local: t.local, drive: t.drive, newScore: t.newScore,
+      files: t.files, project: t.project, local: t.local, drive: t.drive, folder: t.folder, connectInline: t.connectInline,
       connectDrive: t.connect, reconnectDrive: t.reconnect, connecting: t.connecting, chooseFolder: t.folder,
       createFolder: t.createFolder, openDrive: t.openDrive, createFirst: t.createFirst,
       connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess,
-      driveOverwriteWarning: t.driveOverwriteWarning, loading: t.loadingDrive, expand: t.expand, collapse: t.collapse
+      driveOverwriteWarning: t.driveOverwriteWarning, driveAuthStatus: t.driveAuthStatus,
+      loading: t.loadingDrive, expand: t.expand, collapse: t.collapse
     };
   },
   listLocalDocuments: () => indexedDb.listDocuments('local'),
@@ -1085,6 +1108,10 @@ let layoutSaveTimer = 0;
 function renderProblemsLabels(): void {
   const t = strings();
   app.querySelector('#problems-title')!.textContent = t.problems;
+  app.querySelector('#problem-severity-heading')!.textContent = t.severity;
+  app.querySelector('#problem-file-heading')!.textContent = t.file;
+  app.querySelector('#problem-location-heading')!.textContent = t.lineCol;
+  app.querySelector('#problem-message-heading')!.textContent = t.message;
   app.querySelector('#problems-panel')!.setAttribute('aria-label', t.problems);
   app.querySelector('.tool-window-bar')!.setAttribute('aria-label', t.toolWindows);
   const inspectorToggle = app.querySelector<HTMLButtonElement>('#toggle-inspector')!;
@@ -1098,9 +1125,10 @@ function renderProblemsLabels(): void {
   const countBadge = document.createElement('span');
   countBadge.id = 'tool-window-count'; countBadge.textContent = count;
   toggle.append(countBadge);
-  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-problems')!, 'down', state.problemsOpen
-    ? (state.locale === 'ja' ? '問題パネルを折りたたむ' : 'Collapse Problems')
-    : (state.locale === 'ja' ? '問題パネルを展開' : 'Expand Problems'));
+  setIconButton(app.querySelector<HTMLButtonElement>('#close-problems')!, 'close', t.closeProblems);
+  setIconButton(app.querySelector<HTMLButtonElement>('#inspector-more')!, 'more', t.inspectorOptions);
+  setIconButton(app.querySelector<HTMLButtonElement>('#new-score')!, 'fileplus', t.newScore);
+  setIconButton(app.querySelector<HTMLButtonElement>('#explorer-more')!, 'more', t.explorerOptions);
   workspace.classList.toggle('problems-collapsed', !state.problemsOpen);
 }
 
@@ -1168,8 +1196,6 @@ function applyWorkspaceLayout(): void {
   app.querySelector('#explorer-splitter')!.setAttribute('aria-valuenow', String(state.explorerWidth));
   app.querySelector('#inspector-splitter')!.setAttribute('aria-valuenow', String(state.inspectorWidth));
   app.querySelector('#problems-splitter')!.setAttribute('aria-valuenow', String(state.problemsHeight));
-  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-inspector')!, 'down', state.locale === 'ja' ? 'インスペクターを折りたたむ' : 'Collapse Inspector');
-  setIconButton(app.querySelector<HTMLButtonElement>('#collapse-problems')!, 'down', state.locale === 'ja' ? 'Problems を折りたたむ' : 'Collapse Problems');
   renderProblemsLabels();
   updateResponsiveCollapse();
   setWorkspaceViewMode(state.viewMode, false);
@@ -1391,12 +1417,13 @@ function renderAll(): void {
   const connectLabel = driveConnectInProgress ? t.connecting : state.authExpired ? t.reconnect : state.account ? t.disconnect : t.connect;
   setIconButton(app.querySelector<HTMLButtonElement>('#connect-drive')!, 'account', connectLabel);
   const connectedAccount = state.account?.emailAddress;
-  if (connectedAccount) app.querySelector<HTMLButtonElement>('#connect-drive')!.title = `${t.connectedAs} ${connectedAccount} · ${connectLabel}`;
+  const accountButton = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  accountButton.title = connectedAccount && !state.authExpired ? `${t.connectedAs} ${connectedAccount} · ${connectLabel}` : connectLabel;
+  accountButton.dataset.connected = String(Boolean(connectedAccount && state.drive && !state.authExpired));
   setIconButton(app.querySelector<HTMLButtonElement>('#save-document')!, 'save', t.save);
   setIconButton(app.querySelector<HTMLButtonElement>('#download-pdf')!, 'pdf', t.downloadPdf);
   setIconButton(app.querySelector<HTMLButtonElement>('#help-button')!, 'help', t.help);
   setIconButton(app.querySelector<HTMLButtonElement>('#settings-button')!, 'settings', t.settings);
-  setIconButton(app.querySelector<HTMLButtonElement>('#import-file')!, 'import', t.addFile);
   app.querySelector('#inspector-heading')!.textContent = t.inspector;
   app.querySelector('.file-list')!.setAttribute('aria-label', t.files);
   app.querySelector('.inspector')!.setAttribute('aria-label', t.inspector);
@@ -1863,7 +1890,7 @@ async function connectDrive(): Promise<void> {
   if (state.account && !state.authExpired) {
     await persistSessions();
     try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
-    state.account = undefined; state.drive = undefined; state.folderId = undefined;
+    state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
     renderAll(); await persistSessions(); return;
   }
   driveConnectInProgress = true;
@@ -1874,17 +1901,20 @@ async function connectDrive(): Promise<void> {
     if (previousAccount && previousAccount.accountId !== account.accountId
       || !previousAccount && state.tabs.some(tab => tab.document.identity.storage === 'drive' && tab.accountId !== account.accountId)) {
       await persistSessions();
-      state.folderId = undefined;
+      state.folderId = undefined; state.folderName = undefined;
     }
     state.account = account; state.drive = new GoogleDriveApi(auth);
     state.authExpired = false;
+    state.folderName = undefined;
     const folderId = await indexedDb.getValue<string>('settings', `drive-folder:${account.accountId}`).catch(() => undefined);
     if (folderId) {
       try {
         const folder = await state.drive.getFolder(folderId) as DriveFile & { trashed?: boolean };
-        if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) state.folderId = folderId;
+        if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) {
+          state.folderId = folderId; state.folderName = folder.name;
+        }
         else await indexedDb.setValue('settings', `drive-folder:${account.accountId}`, undefined);
-      } catch { state.folderId = undefined; }
+      } catch { state.folderId = undefined; state.folderName = undefined; }
     }
     await restoreDriveSession(account.accountId);
     renderAll();
@@ -1902,6 +1932,7 @@ async function chooseDriveFolder(): Promise<void> {
     const folder = await state.drive.getFolder(selected.id) as DriveFile & { trashed?: boolean };
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.trashed) throw new Error('Choose an available Google Drive folder.');
     state.folderId = folder.id;
+    state.folderName = folder.name;
     await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
     await restoreDriveSession(state.account.accountId);
     await renderExplorer(); showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
@@ -1913,6 +1944,7 @@ async function createDriveFolder(): Promise<void> {
   try {
     const folder = await state.drive.createFolder();
     state.folderId = folder.id;
+    state.folderName = folder.name;
     await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
     await renderExplorer(); showMessage(state.locale === 'ja' ? 'GuitarDSL フォルダーを作成しました。' : 'Created the GuitarDSL folder.');
   } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
@@ -2378,7 +2410,7 @@ function closeWorkspaceMenu(menu: HTMLElement, restoreFocus = false, invoker?: H
   activeMenuCleanup?.();
   activeMenuCleanup = undefined;
   const focusTarget = invoker ?? activeMenuInvoker;
-  if (focusTarget?.id === 'connect-drive') focusTarget.setAttribute('aria-expanded', 'false');
+  if (focusTarget?.getAttribute('aria-haspopup') === 'menu') focusTarget.setAttribute('aria-expanded', 'false');
   activeMenuInvoker = undefined;
   if (restoreFocus) focusTarget?.focus();
 }
@@ -2405,7 +2437,7 @@ function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: Wor
     menu.append(button);
   }
   menu.hidden = false;
-  if (invoker?.id === 'connect-drive') invoker.setAttribute('aria-expanded', 'true');
+  if (invoker?.getAttribute('aria-haspopup') === 'menu') invoker.setAttribute('aria-expanded', 'true');
   const bounds = menu.getBoundingClientRect();
   menu.style.left = Math.max(6, Math.min(x, window.innerWidth - bounds.width - 6)) + 'px';
   menu.style.top = Math.max(6, Math.min(y, window.innerHeight - bounds.height - 6)) + 'px';
@@ -2624,8 +2656,9 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
 }
 
 function openContextMenu(event: MouseEvent | KeyboardEvent, target: HTMLElement, keyboard = false): void {
+  const invoker = target.closest<HTMLElement>('.storage-root-label, .file-item, .tab > [role="tab"], .problem-row, .cm-gutters') ?? target;
   if (!sourceEditor.flushPendingEdit()) return;
-  if (target.closest('.score-pane')) {
+  if (invoker.closest('.score-pane')) {
     const tab = activeTab();
     if (tab) openPreviewContextMenu(12, 12, tab, {
       documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
@@ -2634,12 +2667,12 @@ function openContextMenu(event: MouseEvent | KeyboardEvent, target: HTMLElement,
     return;
   }
   const menu = app.querySelector<HTMLElement>('#context-menu')!;
-  const actions = contextActionsFor(target, keyboard);
+  const actions = contextActionsFor(invoker, keyboard);
   if (!actions.length) return;
   if (event instanceof MouseEvent) event.preventDefault();
-  const x = event instanceof MouseEvent ? event.clientX : Math.min(window.innerWidth - 220, target.getBoundingClientRect().left);
-  const y = event instanceof MouseEvent ? event.clientY : Math.min(window.innerHeight - 120, target.getBoundingClientRect().bottom);
-  showWorkspaceMenu(menu, x, y, actions, target);
+  const x = event instanceof MouseEvent ? event.clientX : Math.min(window.innerWidth - 220, invoker.getBoundingClientRect().left);
+  const y = event instanceof MouseEvent ? event.clientY : Math.min(window.innerHeight - 120, invoker.getBoundingClientRect().bottom);
+  showWorkspaceMenu(menu, x, y, actions, invoker);
 }
 
 function openPreviewContextMenu(x: number, y: number, tab: OpenTab, identity: { documentUri: string; documentVersion: number; previewGeneration: number }, visualElementId = ''): void {
@@ -2727,6 +2760,43 @@ function openSettingsMenu(): void {
   showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
 }
 
+function openExplorerMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#explorer-more')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#panel-menu')!;
+  const t = strings();
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
+    { label: t.addFile, run: () => app.querySelector<HTMLInputElement>('#file-input')!.click() },
+    { label: t.closeExplorer, run: () => {
+      state.explorerOpen = false;
+      applyWorkspaceLayout(); saveLayoutNow();
+      app.querySelector<HTMLButtonElement>('#activity-explorer')!.focus();
+    } },
+    { label: t.resetExplorerWidth, run: () => {
+      state.explorerWidth = 220;
+      applyWorkspaceLayout(); saveLayoutNow();
+    } }
+  ], button);
+}
+
+function openInspectorMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#inspector-more')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#panel-menu')!;
+  const t = strings();
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
+    { label: t.closeInspector, run: () => {
+      state.inspectorOpen = false;
+      applyWorkspaceLayout(); saveLayoutNow();
+      app.querySelector<HTMLButtonElement>('#toggle-inspector')!.focus();
+    } },
+    { label: t.resetInspectorWidth, run: () => {
+      state.inspectorWidth = 300;
+      applyWorkspaceLayout(); saveLayoutNow();
+    } }
+  ], button);
+}
+
 function openAccountMenu(): void {
   const button = app.querySelector<HTMLButtonElement>('#connect-drive')!;
   const rect = button.getBoundingClientRect();
@@ -2756,6 +2826,9 @@ app.querySelector('#close-help')!.addEventListener('click', () => app.querySelec
 app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus());
 app.querySelector('#settings-button')!.addEventListener('click', openSettingsMenu);
 app.querySelector('#connect-drive')!.addEventListener('click', openAccountMenu);
+app.querySelector('#explorer-more')!.addEventListener('click', openExplorerMenu);
+app.querySelector('#inspector-more')!.addEventListener('click', openInspectorMenu);
+app.querySelector('#new-score')!.addEventListener('click', () => void createNewScore());
 app.addEventListener('contextmenu', event => {
   const target = event.target instanceof HTMLElement ? event.target : undefined;
   if (!target || target.closest('.cm-content')) return; // Preserve the browser's native editor-body context menu.
@@ -2779,7 +2852,6 @@ app.querySelector('#download-pdf')!.addEventListener('click', () => void downloa
 app.querySelector('#file-input')!.addEventListener('change', event => {
   const input = event.currentTarget as HTMLInputElement; void importFile(input.files?.[0]); input.value = '';
 });
-app.querySelector('#import-file')!.addEventListener('click', () => app.querySelector<HTMLInputElement>('#file-input')!.click());
 inspectorTabsHost.addEventListener('focusin', event => {
   const focused = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
   if (!focused) return;
@@ -2889,10 +2961,14 @@ for (const [id, mode] of [['view-source', 'source'], ['view-split', 'split'], ['
 const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
 const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutNow(); };
 app.querySelector('#activity-explorer')!.addEventListener('click', toggleExplorer);
-for (const id of ['toggle-inspector', 'collapse-inspector']) app.querySelector(`#${id}`)!.addEventListener('click', toggleInspector);
+app.querySelector('#toggle-inspector')!.addEventListener('click', toggleInspector);
 const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
 app.querySelector('#toggle-problems')!.addEventListener('click', toggleProblems);
-app.querySelector('#collapse-problems')!.addEventListener('click', toggleProblems);
+app.querySelector('#close-problems')!.addEventListener('click', () => {
+  state.problemsOpen = false;
+  renderProblemsLabels(); saveLayoutSoon();
+  app.querySelector<HTMLButtonElement>('#toggle-problems')!.focus();
+});
 window.addEventListener('resize', () => { applySplitRatio(); setProblemsHeight(state.problemsHeight); updateResponsiveCollapse(); });
 new ResizeObserver(() => updateResponsiveCollapse()).observe(workspace);
 listenForPreviewMessages(scoreFrame, handlePreviewMessage);

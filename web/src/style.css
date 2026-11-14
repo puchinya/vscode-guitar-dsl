@@ -416,3 +416,72 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .statusbar { padding: 0 5px; }
   .problem-row { grid-template-columns: 56px minmax(55px, .7fr) 45px minmax(100px, 2fr); gap: 4px; padding-inline: 5px; }
 }
+
+/* Issue #172 Web-only panel chrome. The score iframe remains independently styled. */
+.explorer-heading { font-size: 12px; font-weight: 650; letter-spacing: .04em; }
+.panel-heading-actions { display: flex; align-items: center; gap: 2px; }
+.panel-heading-actions .icon-action, .inspector .pane-heading .icon-action { width: 28px; height: 28px; min-width: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; }
+.storage-root-row { gap: 5px; }
+.storage-expander .web-icon { transform: none; }
+.storage-expander[aria-expanded="false"] .web-icon { transform: none; }
+.root-icon { width: 16px; height: 16px; }
+.storage-root-label { padding: 5px 3px; }
+.storage-root-label.selected { background: transparent; }
+.storage-root-label:hover, .storage-root-label:focus-visible { background: transparent; }
+.drive-status-dot { flex: 0 0 8px; width: 8px; height: 8px; margin: 0 7px; border-radius: 50%; background: #64cba2; box-shadow: 0 0 0 2px rgb(100 203 162 / 18%); }
+.drive-status-dot[hidden], .drive-connect-inline[hidden] { display: none; }
+.drive-connect-inline { flex: 0 0 auto; min-height: 26px; padding: 2px 6px; border: 0; border-radius: 4px; background: transparent; color: #5364d9; font-size: 11px; }
+.drive-connect-inline:hover { background: #eef0ff; }
+.file-list .file-actions { display: none; }
+.file-list .storage-content .file-items { padding: 0 0 8px 20px; }
+.file-item { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 32px; border: 0; border-radius: 4px; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+.file-item .web-icon { width: 16px; height: 16px; }
+.file-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-subtitle { display: none; }
+.drive-folder-row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; color: inherit; font-weight: 600; white-space: nowrap; }
+.drive-folder-row .web-icon { width: 16px; height: 16px; }
+.problems-heading { flex-basis: 32px; min-height: 32px; gap: 8px; padding: 0 8px 0 10px; }
+.problems-heading button { width: 28px; height: 28px; }
+.problems-heading-icon { width: 18px; height: 18px; }
+#problem-counts { display: flex; align-items: center; gap: 10px; margin-left: 8px; }
+.problem-count { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.problem-count .web-icon { width: 15px; height: 15px; }
+.problem-count-errors { color: #ee6d75; }
+.problem-count-warnings { color: #e5b75b; }
+.problem-count.zero { color: #99a3b5; }
+.problem-columns, .problem-row { display: grid; grid-template-columns: 74px minmax(180px, 1fr) 72px minmax(250px, 3fr); gap: 8px; padding-inline: 10px; }
+.problems-panel > .diagnostics { padding: 0; }
+.problem-columns { flex: 0 0 28px; align-items: center; min-height: 28px; border-bottom: 1px solid #eceef2; color: #77808d; font-size: 10px; font-weight: 600; }
+.problem-row { min-height: 30px; }
+.problem-severity { display: inline-flex; align-items: center; gap: 5px; color: #ee6d75; font-size: 11px; white-space: nowrap; }
+.problem-severity .web-icon { width: 16px; height: 16px; }
+.problem-warning .problem-severity { color: #e5b75b; }
+.topbar #connect-drive { position: relative; }
+.topbar #connect-drive[data-connected="true"]::after { content: ""; position: absolute; right: 3px; top: 3px; width: 7px; height: 7px; border: 1px solid #202229; border-radius: 50%; background: #64cba2; }
+.app-shell[data-theme="dark"] .activity-bar, .app-shell[data-theme="dark"] .tool-window-bar { background: #202229; border-color: #424652; }
+.app-shell[data-theme="dark"] .activity-bar button[aria-pressed="true"], .app-shell[data-theme="dark"] .view-mode-button[aria-pressed="true"] { background: #333f59; color: #7692f4; }
+.app-shell[data-theme="dark"] .topbar { background: #202229; color: #e4e7ee; border-color: #424652; }
+.app-shell[data-theme="dark"] .file-list, .app-shell[data-theme="dark"] .inspector, .app-shell[data-theme="dark"] .problems-panel { background: #22252c; color: #e4e7ee; }
+.app-shell[data-theme="dark"] .pane-heading, .app-shell[data-theme="dark"] .problems-heading,
+.app-shell[data-theme="dark"] .file-list, .app-shell[data-theme="dark"] .inspector,
+.app-shell[data-theme="dark"] .tabs, .app-shell[data-theme="dark"] .tab,
+.app-shell[data-theme="dark"] .problem-columns, .app-shell[data-theme="dark"] .problem-row { border-color: #424652; }
+.app-shell[data-theme="dark"] .workspace-splitter, .app-shell[data-theme="dark"] .problems-splitter { background: #424652; }
+.app-shell[data-theme="dark"] .file-item { color: #e4e7ee; }
+.app-shell[data-theme="dark"] .file-item[aria-current="page"] { background: #333f59; color: #e4e7ee; box-shadow: inset 2px 0 #7692f4; }
+.app-shell[data-theme="dark"] .storage-root-label, .app-shell[data-theme="dark"] .drive-folder-row { color: #e4e7ee; }
+.app-shell[data-theme="dark"] .drive-root-icon { color: #99a3b5; }
+.app-shell[data-theme="dark"] .drive-connect-inline { color: #7692f4; }
+.app-shell[data-theme="dark"] .drive-connect-inline:hover { background: #333f59; }
+.app-shell[data-theme="dark"] .tool-window-bar button[aria-expanded="true"] { background: #333f59; color: #7692f4; }
+.app-shell[data-theme="dark"] .problem-columns, .app-shell[data-theme="dark"] .problem-file,
+.app-shell[data-theme="dark"] .problem-location, .app-shell[data-theme="dark"] .problems-empty { color: #99a3b5; }
+.app-shell[data-theme="dark"] .problem-message { color: #e4e7ee; }
+.app-shell[data-theme="dark"] .problem-count.zero { color: #99a3b5; }
+.app-shell[data-theme="dark"] .problem-row:hover { background: #333f59; }
+@media (max-width: 900px) {
+  .problem-columns, .problem-row { grid-template-columns: 64px minmax(100px, .9fr) 62px minmax(140px, 2fr); gap: 5px; }
+}
+@media (max-width: 680px) {
+  .problem-columns, .problem-row { grid-template-columns: 56px minmax(70px, .8fr) 56px minmax(100px, 1.8fr); gap: 4px; padding-inline: 5px; }
+}

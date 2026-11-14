@@ -306,7 +306,7 @@ try {
 
   await recordCheck('local-create-edit-draft-refresh-restore', async () => {
     const priorTabs = await appTabSnapshot();
-    await click('#file-actions .file-action');
+    await click('#new-score');
     await waitUntil(async () => await driver.executeScript(() => window.__guitardslSafariSmoke?.localScoreCreationCount === 1)
       && (await appTabSnapshot()).some(tab => tab.name === 'Safari recovery.guitardsl' && tab.selected),
     'A new local score was not created and selected.');
@@ -515,13 +515,25 @@ try {
         throw new Error(`${error.message} State: ${JSON.stringify(details)}`);
       });
     await click('#storage-drive');
-    const driveSelected = await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected'));
-    if (!driveSelected) await driver.findElement(By.css('#storage-drive')).sendKeys(Key.ENTER);
-    await waitUntil(async () => await driver.executeScript(() => document.querySelector('#storage-drive')?.classList.contains('selected')),
-      'Google Drive storage did not become selected.');
-    const openPicker = await driver.findElements(By.css('#drive-file-actions button')).then(async buttons => {
+    const driveRootState = await driver.executeScript(() => ({
+      connected: !document.querySelector('#drive-status')?.hidden,
+      rootsStayUnselected: document.querySelectorAll('.storage-root-label.selected').length === 0
+    }));
+    if (!driveRootState.connected || !driveRootState.rootsStayUnselected) {
+      throw new Error(`Drive root state is incorrect: ${JSON.stringify(driveRootState)}`);
+    }
+    const driveRoot = await driver.findElement(By.css('#storage-drive'));
+    await driver.executeScript(target => {
+      target.focus();
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', code: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+    }, driveRoot);
+    await waitUntil(async () => await driver.executeScript(() => {
+      const menu = document.querySelector('#context-menu');
+      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Open from Drive')));
+    }), 'The connected Drive root menu did not open.');
+    const openPicker = await driver.findElements(By.css('#context-menu button')).then(async buttons => {
       for (const button of buttons) if ((await button.getText()).includes('Open from Drive')) return button;
-      throw new Error('Open from Drive action was not rendered.');
+      throw new Error('Open from Drive action was not rendered in the connected Drive root menu.');
     });
     await openPicker.sendKeys(Key.ENTER);
     await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),
