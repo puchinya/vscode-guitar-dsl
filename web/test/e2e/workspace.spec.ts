@@ -16,13 +16,21 @@ interface DriveSeed {
 
 interface DriveBrowserMockOptions {
   pickerSelection?: { id: string; name: string };
+  holdPickerSelection?: boolean;
+  holdFileReadId?: string;
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
 }
 
 async function installDriveBrowserMock(page: Page, accountSequence: string[], options: DriveBrowserMockOptions = {}): Promise<{
   patchCalls: { fileId: string; source: string }[];
+  mediaAccountIds: string[];
+  fileReadStarted: Promise<void>;
+  releaseFileRead(): void;
+  get fileReadCount(): number;
 }> {
-  await page.addInitScript((config: { accounts: string[]; pickerSelection?: { id: string; name: string } }) => {
+  await page.addInitScript((config: {
+    accounts: string[]; pickerSelection?: { id: string; name: string }; holdPickerSelection?: boolean;
+  }) => {
     const tokens = [...config.accounts];
     const google: Record<string, unknown> = {
       accounts: {
@@ -58,7 +66,12 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         build(): { setVisible(value: boolean): void } {
           const callback = this.callback;
           return { setVisible: visible => {
-            if (visible) callback?.({ [actionKey]: 'picked', [documentsKey]: [config.pickerSelection] });
+            if (!visible) return;
+            const complete = () => callback?.({ [actionKey]: 'picked', [documentsKey]: [config.pickerSelection] });
+            const target = window as unknown as { __pickerOpened?: boolean; __releasePickerSelection?: () => void };
+            target.__pickerOpened = true;
+            if (config.holdPickerSelection) target.__releasePickerSelection = complete;
+            else complete();
           } };
         }
       }
@@ -71,8 +84,18 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       (window as unknown as { gapi: unknown }).gapi = { load: (_name: string, callbacks: { callback(): void }) => callbacks.callback() };
     }
     (window as unknown as { google: unknown }).google = google;
-  }, { accounts: accountSequence, pickerSelection: options.pickerSelection });
+  }, {
+    accounts: accountSequence, pickerSelection: options.pickerSelection,
+    holdPickerSelection: options.holdPickerSelection
+  });
   const patchCalls: { fileId: string; source: string }[] = [];
+  const mediaAccountIds: string[] = [];
+  let startFileRead!: () => void;
+  const fileReadStarted = new Promise<void>(resolve => { startFileRead = resolve; });
+  let releaseFileRead!: () => void;
+  const fileReadGate = new Promise<void>(resolve => { releaseFileRead = resolve; });
+  let fileReadCount = 0;
+  let heldFileRead = false;
   await page.route('https://www.googleapis.com/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -95,7 +118,16 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
       const remote = options.remoteFiles?.[fileId];
       const version = remote?.version ?? '1';
+      if (url.searchParams.get('alt') !== 'media') {
+        fileReadCount += 1;
+        if (fileId === options.holdFileReadId && !heldFileRead) {
+          heldFileRead = true;
+          startFileRead();
+          await fileReadGate;
+        }
+      }
       if (url.searchParams.get('alt') === 'media') {
+        mediaAccountIds.push(accountId);
         return route.fulfill({ headers, body: remote?.source ?? `title: ${fileId}\n` });
       }
       return route.fulfill({ headers, json: {
@@ -113,7 +145,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     }
     return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
   });
-  return { patchCalls };
+  return { patchCalls, mediaAccountIds, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; } };
 }
 
 async function installStatefulDriveSaveMock(
@@ -219,6 +251,33 @@ async function seedDriveSessions(page: Page, documents: DriveSeed[]): Promise<vo
       await indexedDb.setValue('sessions', `workspace-drive:${accountId}`, { tabs, active: tabs[0] ?? null });
     }
   }, documents);
+}
+
+async function holdDraftSave(page: Page, fail = false): Promise<void> {
+  await page.evaluate(async (shouldFail: boolean) => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const original = indexedDb.saveDraft.bind(indexedDb);
+    const target = window as unknown as { __draftSaveStarted?: boolean; __releaseDraftSave?: () => void };
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__releaseDraftSave = release;
+    indexedDb.saveDraft = async (...args) => {
+      target.__draftSaveStarted = true;
+      if (shouldFail) throw new DOMException('Injected quota failure', 'QuotaExceededError');
+      await gate;
+      return original(...args);
+    };
+  }, fail);
+}
+
+async function attemptReloadAndAcceptBeforeUnload(page: Page): Promise<string> {
+  const dialogPromise = page.waitForEvent('dialog');
+  const reloadPromise = page.reload({ waitUntil: 'domcontentloaded' }).catch(() => null);
+  const dialog = await dialogPromise;
+  const type = dialog.type();
+  await dialog.accept();
+  await reloadPromise;
+  return type;
 }
 
 async function installFakeAudio(page: Page): Promise<void> {
@@ -390,12 +449,129 @@ test('restores the latest local draft and commits it on Save', async ({ page }) 
   const source = 'title: Draft restored\n\ntempo: 104\n\n[Verse]\nAm | F | C | G |\n';
   await editor.fill(source);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  let promptedBeforeUnload = false;
+  page.on('dialog', async dialog => {
+    if (dialog.type() === 'beforeunload') promptedBeforeUnload = true;
+    await dialog.accept();
+  });
   await page.reload();
+  expect(promptedBeforeUnload).toBe(false);
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toHaveValue(source);
   await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#saved-state')).toHaveText('Saved locally');
   await expect(page.getByRole('button', { name: 'Draft restored.guitardsl' })).toHaveCount(0);
+});
+
+test('shows a browser confirmation before leaving while a local draft write is pending', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await holdDraftSave(page);
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'title: Persist before leaving\n\n[Verse]\nAm | F |\n';
+  await editor.fill(source);
+  await page.waitForFunction(() => (window as unknown as { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
+
+  expect(await attemptReloadAndAcceptBeforeUnload(page)).toBe('beforeunload');
+  const stayedOnPage = await page.evaluate(() => (window as unknown as { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
+  if (stayedOnPage) {
+    await page.evaluate(() => (window as unknown as { __releaseDraftSave?: () => void }).__releaseDraftSave?.());
+    await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toHaveValue(source);
+  }
+});
+
+test('warns before leaving when IndexedDB draft persistence fails', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await holdDraftSave(page, true);
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'title: Keep after storage failure\n';
+  await editor.fill(source);
+  await page.waitForFunction(() => (window as unknown as { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
+  await expect(page.locator('#saved-state')).toHaveText('Unsaved changes');
+
+  expect(await attemptReloadAndAcceptBeforeUnload(page)).toBe('beforeunload');
+  const stayedOnPage = await page.evaluate(() => (window as unknown as { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
+  if (stayedOnPage) {
+    await expect(editor).toHaveValue(source);
+    await expect(page.locator('#saved-state')).toHaveText('Unsaved changes');
+  }
+});
+
+test('drops a Drive read that finishes after switching accounts', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    pickerSelection: { id: 'account-a-private', name: 'Account A private.guitardsl' },
+    holdFileReadId: 'account-a-private',
+    remoteFiles: { 'account-a-private': { name: 'Account A private.guitardsl', source: 'title: Account A private source\n', version: '1' } }
+  });
+  await page.goto('/');
+  const connect = page.locator('#connect-drive');
+  await connect.click();
+  await expect(connect).toHaveText('Disconnect');
+  await page.locator('#storage-drive').click();
+  await page.getByRole('button', { name: 'Open from Drive' }).click();
+  await drive.fileReadStarted;
+
+  await connect.click();
+  await expect(connect).toHaveText('Connect Drive');
+  await connect.click();
+  await expect(connect).toHaveText('Disconnect');
+  drive.releaseFileRead();
+
+  await expect(page.getByRole('tab', { name: 'Account A private.guitardsl' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Account A private.guitardsl' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).not.toHaveValue('title: Account A private source\n');
+  expect(drive.mediaAccountIds).toEqual(['account-a']);
+  const cached = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      accountA: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'account-a-private' }, 'account-a'),
+      accountADraft: await indexedDb.getDraft({ storage: 'drive', fileId: 'account-a-private' }, 'account-a'),
+      accountB: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'account-a-private' }, 'account-b'),
+      accountBDraft: await indexedDb.getDraft({ storage: 'drive', fileId: 'account-a-private' }, 'account-b'),
+      accountBFiles: await indexedDb.listDocuments('drive', 'account-b')
+    };
+  });
+  expect(cached.accountA).toBeUndefined();
+  expect(cached.accountADraft).toBeUndefined();
+  expect(cached.accountB).toBeUndefined();
+  expect(cached.accountBDraft).toBeUndefined();
+  expect(cached.accountBFiles).toEqual([]);
+});
+
+test('drops a Picker result returned after switching accounts without reading or caching it', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    pickerSelection: { id: 'picker-account-a-private', name: 'Picker account A private.guitardsl' },
+    holdPickerSelection: true
+  });
+  await page.goto('/');
+  const connect = page.locator('#connect-drive');
+  await connect.click();
+  await expect(connect).toHaveText('Disconnect');
+  await page.locator('#storage-drive').click();
+  await page.getByRole('button', { name: 'Open from Drive' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __pickerOpened?: boolean }).__pickerOpened)).toBe(true);
+
+  await connect.click();
+  await expect(connect).toHaveText('Connect Drive');
+  await connect.click();
+  await expect(connect).toHaveText('Disconnect');
+  await page.evaluate(() => (window as unknown as { __releasePickerSelection?: () => void }).__releasePickerSelection?.());
+
+  await expect(page.getByRole('tab', { name: 'Picker account A private.guitardsl' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Picker account A private.guitardsl' })).toHaveCount(0);
+  await expect.poll(() => drive.fileReadCount).toBe(0);
+  const cached = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      accountA: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'picker-account-a-private' }, 'account-a'),
+      accountB: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'picker-account-a-private' }, 'account-b')
+    };
+  });
+  expect(cached.accountA).toBeUndefined();
+  expect(cached.accountB).toBeUndefined();
 });
 
 test('restores a Drive draft as a local draft, not as remotely saved', async ({ page }) => {

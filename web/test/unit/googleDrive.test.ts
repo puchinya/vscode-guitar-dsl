@@ -8,6 +8,37 @@ function createApi() {
   return new GoogleDriveApi(auth);
 }
 
+test('one Drive file read keeps the account token it started with across its metadata and media requests', async () => {
+  let token = 'account-a-token';
+  let releaseMetadata!: () => void;
+  let markMetadataStarted!: () => void;
+  const metadataStarted = new Promise<void>(resolve => { markMetadataStarted = resolve; });
+  const metadataGate = new Promise<void>(resolve => { releaseMetadata = resolve; });
+  const auth = { tokenForRequest: () => token } as unknown as GoogleOAuth;
+  const api = new GoogleDriveApi(auth);
+  const originalFetch = globalThis.fetch;
+  const authorizationHeaders: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    authorizationHeaders.push(new Headers(init?.headers).get('Authorization') ?? '');
+    if (url.searchParams.get('alt') === 'media') return new Response('account A source', { status: 200 });
+    markMetadataStarted();
+    await metadataGate;
+    return new Response(JSON.stringify({ id: 'drive-a', name: 'A.guitardsl', version: '1', modifiedTime: 't1' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+  };
+  try {
+    const opening = api.getFile('drive-a');
+    await metadataStarted;
+    token = 'account-b-token';
+    releaseMetadata();
+    const result = await opening;
+    assert.equal(result.source, 'account A source');
+    assert.deepEqual(authorizationHeaders, ['Bearer account-a-token', 'Bearer account-a-token']);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('Drive listing paginates, scopes to the selected folder, and filters unsupported names', async () => {
   const api = createApi();
   const originalFetch = globalThis.fetch;

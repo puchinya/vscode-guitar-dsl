@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 process.env.VITE_GOOGLE_CLIENT_ID ??= 'playwright-test-client';
+process.env.VITE_GOOGLE_API_KEY ??= 'playwright-test-api-key';
+process.env.VITE_GOOGLE_APP_ID ??= '1234567890';
 
 export default defineConfig({
   testDir: './test/e2e',

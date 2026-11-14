@@ -54,9 +54,9 @@ function isGuitarDslName(name: string): boolean { return /\.(guitardsl|gdsl)$/i.
 export class GoogleDriveApi {
   constructor(private readonly auth: GoogleOAuth) {}
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, token = this.auth.tokenForRequest()): Promise<T> {
     const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${this.auth.tokenForRequest()}`);
+    headers.set('Authorization', `Bearer ${token}`);
     if (!headers.has('Content-Type') && init.body && !(init.body instanceof Blob)) headers.set('Content-Type', 'application/json');
     const response = await fetch(`${DRIVE_API}${path}`, { ...init, headers });
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive request failed (${response.status}).`);
@@ -94,8 +94,9 @@ export class GoogleDriveApi {
   }
 
   async getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }> {
-    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`);
-    const headers = new Headers({ Authorization: `Bearer ${this.auth.tokenForRequest()}` });
+    const token = this.auth.tokenForRequest();
+    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`, {}, token);
+    const headers = new Headers({ Authorization: `Bearer ${token}` });
     const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers });
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive download failed (${response.status}).`);
     return { file: metadata, source: await response.text(), etag: response.headers.get('ETag') ?? undefined };
