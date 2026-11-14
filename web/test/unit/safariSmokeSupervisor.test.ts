@@ -7,6 +7,7 @@ import test from 'node:test';
 import { runSafariSmokeSupervisor } from '../../scripts/safari-smoke-supervisor.mjs';
 
 const fixtureChild = fileURLToPath(new URL('../fixtures/safari-smoke-hanging-child.mjs', import.meta.url));
+const runnerDeadlineChild = fileURLToPath(new URL('../fixtures/safari-smoke-runner-deadline-child.mjs', import.meta.url));
 
 test('Safari smoke supervisor writes a versioned WEBDRIVER_HANG report and terminates a hanging worker', async () => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'guitardsl-safari-supervisor-'));
@@ -74,6 +75,46 @@ test('Safari smoke supervisor writes a versioned WEBDRIVER_HANG report and termi
       finishedAt: report.webDriverCommands.at(-1)?.finishedAt,
       errorCode: 'WEBDRIVER_HANG'
     });
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('Safari smoke supervisor enforces an absolute runner deadline across repeated short WebDriver commands', async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'guitardsl-safari-runner-deadline-'));
+  const reportPath = path.join(temporaryDirectory, 'safari-smoke-report.json');
+  try {
+    const { exitCode } = await runSafariSmokeSupervisor({
+      childPath: runnerDeadlineChild,
+      reportPath,
+      commandTimeoutMs: 1_000,
+      runnerTimeoutMs: 180,
+      report: {
+        target: 'Apple Safari via SafariDriver',
+        osVersion: 'macOS test-version',
+        safariDriverVersion: 'SafariDriver test-version',
+        safariVersion: 'Safari test-version'
+      }
+    });
+
+    const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+      status: string;
+      failure: { code: string; message: string; check: string; step: string };
+      checks: Array<{ id: string; status: string; errorCode: string }>;
+      webDriverCommands: Array<{ command: string; status: string; errorCode?: string }>;
+      runnerElapsedMs: number;
+    };
+    assert.equal(exitCode, 1);
+    assert.equal(report.status, 'FAIL');
+    assert.equal(report.failure.code, 'SAFARI_RUNNER_TIMEOUT');
+    assert.equal(report.failure.check, 'absolute-deadline-check');
+    assert.equal(report.failure.step, 'repeated-short-commands');
+    assert.match(report.failure.message, /absolute 180ms runner deadline/);
+    assert.equal(report.checks.at(-1)?.status, 'FAIL');
+    assert.equal(report.checks.at(-1)?.errorCode, 'SAFARI_RUNNER_TIMEOUT');
+    assert.ok(report.webDriverCommands.filter(command => command.status === 'COMPLETED').length >= 2);
+    assert.ok(report.runnerElapsedMs >= 180);
+    assert.ok(report.runnerElapsedMs < 2_000, `runner stopped after ${report.runnerElapsedMs}ms`);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

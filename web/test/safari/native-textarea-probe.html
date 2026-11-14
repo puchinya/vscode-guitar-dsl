@@ -19,7 +19,12 @@
           key: 'key' in event ? event.key : undefined,
           metaKey: 'metaKey' in event ? event.metaKey : undefined,
           shiftKey: 'shiftKey' in event ? event.shiftKey : undefined,
-          trusted: event.isTrusted
+          trusted: event.isTrusted,
+          focused: document.activeElement === editor,
+          activeElementId: document.activeElement?.id || null,
+          selectionStart: editor.selectionStart,
+          selectionEnd: editor.selectionEnd,
+          selectionDirection: editor.selectionDirection
         }), true);
       }
     </script>

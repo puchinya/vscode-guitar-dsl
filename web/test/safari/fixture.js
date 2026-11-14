@@ -3,11 +3,19 @@ const state = {
   pickerOpened: false,
   driveRequests: [],
   pdfBlob: undefined,
-  download: undefined
+  download: undefined,
+  downloadInvocationCount: 0,
+  localScoreCreationCount: 0,
+  localScoreName: 'Safari recovery.guitardsl',
+  nativePdfDownloadEnabled: import.meta.env.VITE_SAFARI_REAL_PDF_DOWNLOAD === 'true'
 };
 window.__guitardslSafariSmoke = state;
 Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
 Object.defineProperty(navigator, 'languages', { configurable: true, value: ['en-US'] });
+window.prompt = () => {
+  state.localScoreCreationCount += 1;
+  return state.localScoreName;
+};
 
 class FakeParam {
   value = 0;
@@ -48,9 +56,11 @@ URL.createObjectURL = blob => {
   state.pdfBlob = blob;
   return originalCreateObjectURL(blob);
 };
+const originalAnchorClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
-  state.download = { filename: this.download, href: this.href };
-  // Do not write a test download into the user's Downloads folder.
+  state.downloadInvocationCount += 1;
+  state.download = { filename: this.download, href: this.href, invocation: state.downloadInvocationCount };
+  if (state.nativePdfDownloadEnabled) originalAnchorClick.call(this);
 };
 
 window.google = {

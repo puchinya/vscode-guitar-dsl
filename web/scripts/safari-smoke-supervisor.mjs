@@ -47,7 +47,8 @@ export async function runSafariSmokeSupervisor({
   await writeReport(absoluteReportPath, result);
 
   let child;
-  let timeout;
+  let commandTimeout;
+  let runnerDeadline;
   let persistChain = Promise.resolve();
   let timedOut = false;
   let childClosed = false;
@@ -78,7 +79,8 @@ export async function runSafariSmokeSupervisor({
   const timeoutFailure = async (code, message) => {
     if (timedOut || childClosed) return;
     timedOut = true;
-    clearTimeout(timeout);
+    clearTimeout(commandTimeout);
+    clearTimeout(runnerDeadline);
     const id = activeCheck ?? 'safari-runner';
     upsertCheck({
       id,
@@ -124,18 +126,25 @@ export async function runSafariSmokeSupervisor({
     }
   });
 
-  const watchdog = (kind, label) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      const code = kind === 'command' ? 'WEBDRIVER_HANG' : 'SAFARI_RUNNER_TIMEOUT';
-      const description = kind === 'command'
-        ? `Safari WebDriver command exceeded ${commandTimeoutMs}ms: ${label}`
-        : `Safari smoke worker exceeded ${runnerTimeoutMs}ms.`;
-      void timeoutFailure(code, description);
-    }, kind === 'command' ? commandTimeoutMs : runnerTimeoutMs);
+  const runnerStartedAt = Date.now();
+  runnerDeadline = setTimeout(() => {
+    void timeoutFailure(
+      'SAFARI_RUNNER_TIMEOUT',
+      `Safari smoke worker exceeded its absolute ${runnerTimeoutMs}ms runner deadline.`
+    );
+  }, runnerTimeoutMs);
+
+  const startCommandDeadline = (label) => {
+    clearTimeout(commandTimeout);
+    commandTimeout = setTimeout(() => {
+      void timeoutFailure('WEBDRIVER_HANG', `Safari WebDriver command exceeded ${commandTimeoutMs}ms: ${label}`);
+    }, commandTimeoutMs);
   };
 
-  watchdog('runner');
+  const clearCommandDeadline = () => {
+    clearTimeout(commandTimeout);
+    commandTimeout = undefined;
+  };
 
   child.on('message', (message) => {
     if (timedOut || !message || typeof message !== 'object') return;
@@ -149,7 +158,7 @@ export async function runSafariSmokeSupervisor({
         result.currentStep = activeStep;
         result.steps.push({ name: activeStep, status: 'RUNNING', startedAt: message.startedAt ?? new Date().toISOString() });
         upsertCheck({ id: activeCheck, status: 'RUNNING', startedAt: message.startedAt ?? new Date().toISOString() });
-        watchdog('runner');
+        clearCommandDeadline();
         break;
       }
       case 'check-result': {
@@ -157,6 +166,7 @@ export async function runSafariSmokeSupervisor({
         finishCurrentStep(message.check.status, message.check.errorCode);
         activeCommand = null;
         result.activeWebDriverCommand = null;
+        clearCommandDeadline();
         break;
       }
       case 'step-start': {
@@ -164,7 +174,6 @@ export async function runSafariSmokeSupervisor({
         activeStep = message.step;
         result.currentStep = activeStep;
         result.steps.push({ name: activeStep, status: 'RUNNING', startedAt: new Date().toISOString() });
-        watchdog('runner');
         break;
       }
       case 'webdriver-command-start': {
@@ -178,18 +187,20 @@ export async function runSafariSmokeSupervisor({
           status: 'RUNNING',
           startedAt: new Date().toISOString()
         });
-        watchdog('command', activeCommand);
+        startCommandDeadline(activeCommand);
         break;
       }
       case 'webdriver-command-end': {
-        if (activeCommand === message.command) activeCommand = null;
+        if (activeCommand === message.command) {
+          activeCommand = null;
+          clearCommandDeadline();
+        }
         result.activeWebDriverCommand = activeCommand;
         const commandRecord = [...result.webDriverCommands].reverse().find((candidate) => candidate.command === message.command && candidate.status === 'RUNNING');
         if (commandRecord) {
           commandRecord.status = message.status ?? 'COMPLETED';
           commandRecord.finishedAt = new Date().toISOString();
         }
-        watchdog('runner');
         break;
       }
       case 'runner-error': {
@@ -213,7 +224,8 @@ export async function runSafariSmokeSupervisor({
     child.once('close', (code, signal) => resolveExit({ code, signal }));
   });
   childClosed = true;
-  clearTimeout(timeout);
+  clearTimeout(commandTimeout);
+  clearTimeout(runnerDeadline);
   await persistChain;
 
   if (!timedOut) {
@@ -231,6 +243,7 @@ export async function runSafariSmokeSupervisor({
     result.currentCheck = null;
     result.currentStep = null;
   }
+  result.runnerElapsedMs = Date.now() - runnerStartedAt;
   await persist();
   return { exitCode: result.status === 'PASS' ? 0 : 1, report: result };
 }
