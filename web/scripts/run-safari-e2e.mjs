@@ -187,12 +187,17 @@ try {
   server.stderr.on('data', chunk => process.stderr.write(chunk));
   await waitForServer();
 
+  console.log('Starting SafariDriver session.');
   driver = await new Builder().forBrowser('safari').build();
+  console.log('SafariDriver session started.');
   await driver.manage().setTimeouts({ implicit: 0, pageLoad: 30_000, script: 30_000 });
+  console.log('SafariDriver timeouts configured.');
   report.browserVersion = await driver.executeScript(() => navigator.userAgent).catch(() => null);
   const capabilities = await driver.getCapabilities();
   report.browserCapabilitiesVersion = capabilities.get('browserVersion') ?? null;
+  console.log(`SafariDriver browser version: ${report.browserCapabilitiesVersion ?? 'unavailable'}.`);
   await driver.get(`${baseUrl}/test/safari/fixture.html`);
+  console.log('Safari smoke fixture loaded.');
   await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane textarea'))), 20_000);
   await driver.executeScript(() => {
     const editor = document.querySelector('#source-pane textarea');

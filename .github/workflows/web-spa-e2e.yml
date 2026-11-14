@@ -67,6 +67,7 @@ jobs:
       - name: Enable SafariDriver
         run: sudo /usr/bin/safaridriver --enable
       - name: Run Safari smoke E2E
+        timeout-minutes: 5
         env:
           CI: "true"
           VITE_GOOGLE_CLIENT_ID: safari-test-client
