@@ -537,6 +537,7 @@ test('uses CodeMirror for source editing and GuitarDSL syntax highlighting', asy
 
 test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   const source = 'let riff = e4/8 g a g\n\ntitle: Song\n\n[Verse]\nC | G | Am | F |\n';
   await editor.fill(source);
