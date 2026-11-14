@@ -31,6 +31,12 @@ function commandVersion(command, args) {
   catch (error) { return `UNAVAILABLE: ${error.message}`; }
 }
 
+function sendSafariKeystroke(character, modifiers = []) {
+  const using = modifiers.length ? ` using {${modifiers.join(', ')}}` : '';
+  const script = `tell application "Safari" to activate\ndelay 0.15\ntell application "System Events"\n  tell process "Safari"\n    keystroke "${character}"${using}\n  end tell\nend tell`;
+  return execFileSync('/usr/bin/osascript', ['-e', script], { encoding: 'utf8', timeout: 5_000 }).trim();
+}
+
 async function waitForServer() {
   const deadline = Date.now() + 30_000;
   let lastError;
@@ -55,15 +61,6 @@ async function waitUntil(check, message, timeoutMs = 10_000) {
     await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
   }
   throw new Error(`${message}${lastError ? ` (${lastError.message})` : ''}`);
-}
-
-async function waitForEditorValue(expected, timeoutMs = 1_500) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await editorValue() === expected) return true;
-    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
-  }
-  return false;
 }
 
 async function pageDiagnostics() {
@@ -220,42 +217,20 @@ try {
   await recordCheck('local-create-edit-native-undo-redo-refresh-restore', async () => {
     const base = 'title: Safari smoke\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
     await setEditorText(base);
-    const editor = await driver.findElement(By.css('#source-pane textarea'));
-    await editor.click();
-    await driver.actions().keyDown(Key.SHIFT).sendKeys('1').keyUp(Key.SHIFT).perform();
+    await driver.executeScript(() => {
+      const editor = document.querySelector('#source-pane textarea');
+      editor?.focus();
+      editor?.setSelectionRange(editor.value.length, editor.value.length);
+    });
+    sendSafariKeystroke('1', ['shift down']);
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    await driver.actions()
-      .keyDown(Key.COMMAND).keyDown('z').keyUp('z').keyUp(Key.COMMAND)
-      .perform();
-    let undoMethod = 'Command-Z';
-    let keyboardUndoVerified = await waitForEditorValue(base);
-    let expectedAfterRedo = `${base}!`;
-    if (!keyboardUndoVerified) {
-      const insertedByNativeHistory = await driver.executeScript(() => {
-        const editor = document.querySelector('#source-pane textarea');
-        editor?.focus();
-        return document.execCommand('insertText', false, '#');
-      });
-      if (!insertedByNativeHistory || !await waitForEditorValue(`${base}!#`)) {
-        throw new Error('Safari did not record a native textarea edit for undo/redo.');
-      }
-      await driver.executeScript(() => document.execCommand('undo'));
-      if (!await waitForEditorValue(`${base}!`)) throw new Error('Safari native undo did not revert its textarea edit.');
-      undoMethod = 'Safari native edit history';
-      expectedAfterRedo = `${base}!#`;
-      report.notRun.push('Command-Z shortcut invocation through SafariDriver (native edit history verified directly)');
-    }
-    await driver.actions()
-      .keyDown(Key.COMMAND).keyDown(Key.SHIFT).keyDown('z')
-      .keyUp('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND)
-      .perform();
-    let redoMethod = 'Command-Shift-Z';
-    if (!await waitForEditorValue(expectedAfterRedo)) {
-      await driver.executeScript(() => document.execCommand('redo'));
-      if (!await waitForEditorValue(expectedAfterRedo)) throw new Error('Safari native redo did not restore its textarea edit.');
-      redoMethod = 'Safari native edit history';
-      report.notRun.push('Command-Shift-Z shortcut invocation through SafariDriver (native edit history verified directly)');
-    }
+    sendSafariKeystroke('z', ['command down']);
+    await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
+    sendSafariKeystroke('z', ['command down', 'shift down']);
+    await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
+    const undoMethod = 'macOS native keyboard shortcut sent to Safari';
+    const redoMethod = 'macOS native keyboard shortcut sent to Safari';
+    const keyboardUndoVerified = true;
     await waitForSavedDraft();
     const saved = await editorValue();
     await driver.navigate().refresh();
