@@ -424,7 +424,7 @@ export class ScoreSettingsInspectorController implements vscode.Disposable {
 
   private sectionContext(session: SettingsSession): ScoreSettingsSectionContext {
     return {
-      doc: session.doc,
+      source: session.source,
       messages: this.messages,
       editorMessages: this.editorMessages,
       refresh: () => this.publish(session),

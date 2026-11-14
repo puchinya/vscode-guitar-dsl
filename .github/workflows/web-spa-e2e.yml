@@ -1,0 +1,37 @@
+name: Web SPA browser E2E
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "packages/**"
+      - "media/chordEditor.js"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/web-spa-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web-spa-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build shared packages
+        run: npm run build:packages
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox
+      - name: Run Chromium and Firefox E2E
+        env:
+          VITE_GOOGLE_CLIENT_ID: playwright-test-client
+          VITE_GOOGLE_API_KEY: playwright-test-api-key
+          VITE_GOOGLE_APP_ID: "123456789"
+        run: npm run test:e2e --workspace web

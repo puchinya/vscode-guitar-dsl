@@ -5,6 +5,7 @@ Choose the source that owns the question, then read only the relevant category R
 | Need | Start here |
 |---|---|
 | GuitarDSL syntax, command specifications, extension behavior | [`specs/README.md`](specs/README.md) |
+| Browser application behavior and storage | [`specs/web-app.md`](specs/web-app.md) |
 | Internal architecture | [`design/README.md`](design/README.md) |
 | Current implementation and verification status | [`status/README.md`](status/README.md) |
 | Extension technical rules | [`agents/extension.md`](agents/extension.md) |

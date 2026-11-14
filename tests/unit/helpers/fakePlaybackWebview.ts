@@ -246,8 +246,8 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
   const scripts = Array.from(html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi));
   const dataScript = scripts.find((match) => /\bid=["']playback-data["']/.test(match[1]));
   const progressionDataScript = scripts.find((match) => /\bid=["']progression-assistant-data["']/.test(match[1]));
-  const executableScript = scripts.find((match) => !/\btype=["']application\/json["']/.test(match[1]));
-  if (!dataScript || !executableScript) throw new Error('Preview HTML must contain playback JSON and an executable inline script');
+  const executableScripts = scripts.filter((match) => !/\btype=["']application\/json["']/.test(match[1]));
+  if (!dataScript || executableScripts.length === 0) throw new Error('Preview HTML must contain playback JSON and an executable inline script');
 
   const playbackData = JSON.parse(dataScript[2]) as Record<string, any>;
   const progressionData = progressionDataScript
@@ -447,11 +447,10 @@ export function createFakePlaybackWebview(html: string, restoredState?: unknown)
     postMessage: (message: Record<string, unknown>) => { postedMessages.push(message); return undefined; }
   };
 
-  vm.runInNewContext(executableScript[2], {
-    window,
-    document,
-    acquireVsCodeApi: () => vscode
-  }, { timeout: 1000 });
+  const runtimeContext = { window, document, acquireVsCodeApi: () => vscode };
+  for (const script of executableScripts) {
+    vm.runInNewContext(script[2], runtimeContext, { timeout: 1000 });
+  }
 
   const allOscillators = () => contexts.flatMap((context) => context.oscillators);
   const getElement = (id: string) => document.getElementById(id);

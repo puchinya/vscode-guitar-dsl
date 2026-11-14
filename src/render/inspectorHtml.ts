@@ -1,5 +1,8 @@
 import { getMessages, getScoreSettingsEditorMessages, type SupportedLocale } from '../i18n';
 import type { InspectorContext } from '../inspector/inspectorController';
+import { renderInspectorTabsMarkup } from '@guitardsl/ui/inspectorTabs';
+import { renderProgressionInspectorMarkup } from '@guitardsl/ui/progressionInspectorMarkup';
+import { renderVariableEditorMarkup } from '@guitardsl/ui/variableEditor';
 
 export function renderInspectorHtml(
   locale: SupportedLocale,
@@ -27,6 +30,20 @@ export function renderInspectorHtml(
   const contextSessionGeneration = context.kind === 'empty' || context.kind === 'document' ? '' : String(context.sessionGeneration);
   const activeTab = context.kind === 'settings' ? 'settings' : context.kind === 'variables' ? 'variables'
     : context.kind === 'progression' ? 'progression' : 'document';
+  const inspectorTabsHtml = renderInspectorTabsMarkup({
+    listLabel: messages.inspectorTablistLabel,
+    active: activeTab,
+    labels: {
+      document: { full: messages.inspectorTabDocument, compact: messages.inspectorTabDocumentCompact },
+      variables: { full: messages.inspectorTabVariables, compact: messages.inspectorTabVariablesCompact },
+      settings: { full: messages.inspectorTabSettings, compact: messages.inspectorTabSettingsCompact },
+      progression: { full: messages.inspectorTabProgression, compact: messages.inspectorTabProgressionCompact }
+    },
+    disabled: [
+      ...(context.kind === 'empty' ? ['document', 'variables', 'settings'] as const : []),
+      ...(!progressionTabAvailable ? ['progression'] as const : [])
+    ]
+  });
   const labels = {
     heading: messages.inspectorHeading,
     inspectorTablistLabel: messages.inspectorTablistLabel,
@@ -84,7 +101,6 @@ export function renderInspectorHtml(
     variablesError: messages.inspectorVariableError
   };
   const webviewContext = context.kind === 'document' ? { kind: 'document' } : context;
-  const repeatNoticeVisibility = context.kind === 'progression' && context.target.bars > 4 ? '' : ' hidden';
   const initial = { context: webviewContext, status, description };
   const safeLabels = escapeJsonForHtml(JSON.stringify(labels));
   const safeSettingsLabels = escapeJsonForHtml(JSON.stringify(getScoreSettingsEditorMessages(locale)));
@@ -193,12 +209,7 @@ export function renderInspectorHtml(
     '<body>',
     '  <main id="inspector-state" data-generation="' + safeGeneration + '" data-context-kind="' + context.kind + '" data-document-uri="' + escapeHtml(contextUri) + '" data-document-version="' + escapeHtml(contextVersion) + '" data-session-generation="' + escapeHtml(contextSessionGeneration) + '" data-progression-tab-available="' + String(progressionTabAvailable) + '" data-audio-state="idle" aria-label="' + escapeHtml(messages.inspectorRegionLabel) + '" aria-labelledby="inspector-heading">',
     '    <h1 id="inspector-heading">' + escapeHtml(messages.inspectorHeading) + '</h1>',
-    '    <div class="inspector-context-tabs" id="inspector-context-tabs" role="tablist" aria-label="' + escapeHtml(messages.inspectorTablistLabel) + '">',
-    '      <button id="inspector-tab-document" type="button" role="tab" data-inspector-tab="document" aria-label="' + escapeHtml(messages.inspectorTabDocument) + '" title="' + escapeHtml(messages.inspectorTabDocument) + '" aria-controls="document-state" aria-selected="' + String(activeTab === 'document') + '" tabindex="' + (activeTab === 'document' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabDocument) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabDocumentCompact) + '</span></button>',
-    '      <button id="inspector-tab-variables" type="button" role="tab" data-inspector-tab="variables" aria-label="' + escapeHtml(messages.inspectorTabVariables) + '" title="' + escapeHtml(messages.inspectorTabVariables) + '" aria-controls="variables-state" aria-selected="' + String(activeTab === 'variables') + '" tabindex="' + (activeTab === 'variables' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabVariables) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabVariablesCompact) + '</span></button>',
-    '      <button id="inspector-tab-settings" type="button" role="tab" data-inspector-tab="settings" aria-label="' + escapeHtml(messages.inspectorTabSettings) + '" title="' + escapeHtml(messages.inspectorTabSettings) + '" aria-controls="settings-state" aria-selected="' + String(activeTab === 'settings') + '" tabindex="' + (activeTab === 'settings' ? '0' : '-1') + '"' + (context.kind === 'empty' ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabSettings) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabSettingsCompact) + '</span></button>',
-    '      <button id="inspector-tab-progression" type="button" role="tab" data-inspector-tab="progression" aria-label="' + escapeHtml(messages.inspectorTabProgression) + '" title="' + escapeHtml(messages.inspectorTabProgression) + '" aria-controls="progression-state" aria-selected="' + String(activeTab === 'progression') + '" tabindex="' + (activeTab === 'progression' ? '0' : '-1') + '"' + (!progressionTabAvailable ? ' disabled' : '') + '><span class="inspector-tab-label-full">' + escapeHtml(messages.inspectorTabProgression) + '</span><span class="inspector-tab-label-compact" aria-hidden="true">' + escapeHtml(messages.inspectorTabProgressionCompact) + '</span></button>',
-    '    </div>',
+    '    ' + inspectorTabsHtml,
     '    <div id="document-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-document">',
     '      <p id="inspector-status" class="status" role="status" aria-live="polite">' + escapeHtml(status) + '</p>',
     '      <p id="inspector-description" class="description">' + escapeHtml(description) + '</p>',
@@ -212,65 +223,19 @@ export function renderInspectorHtml(
     '        <button id="settings-cancel" type="button" data-inspector-control="action" data-inspector-key="close"></button>',
     '      </div>',
     '    </section>',
-    '    <section id="variables-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-variables" hidden>',
-    '      <h2 id="variables-heading"></h2>',
-    '      <p id="variables-description" class="description"></p>',
-    '      <ul id="variables-list" class="variable-list" aria-label="' + escapeHtml(messages.inspectorVariablesTitle) + '"></ul>',
-    '      <p id="variables-meta" class="variable-meta" role="status"></p>',
-    '      <ul id="variables-usages" class="variable-usage-list" aria-label="' + escapeHtml(messages.inspectorVariableUsage) + '"></ul>',
-    '      <div class="variable-form">',
-    '        <label><span id="variables-name-label"></span><input id="variables-name" type="text" maxlength="64" autocomplete="off"></label>',
-    '        <label><span id="variables-value-label"></span><textarea id="variables-value" rows="3" maxlength="2048" spellcheck="false"></textarea></label>',
-    '        <label><span id="variables-reference-label"></span><select id="variables-reference"></select></label>',
-    '        <label><span>' + escapeHtml(messages.inspectorVariableUsage) + '</span><select id="variables-operation">',
-    '          <option value="chooseReference">' + escapeHtml(messages.inspectorVariableChoose) + '</option>',
-    '          <option value="add">' + escapeHtml(messages.inspectorVariableAdd) + '</option>',
-    '          <option value="editGlobal">' + escapeHtml(messages.inspectorVariableEditGlobal) + '</option>',
-    '          <option value="rename">' + escapeHtml(messages.inspectorVariableRename) + '</option>',
-    '          <option value="clone">' + escapeHtml(messages.inspectorVariableClone) + '</option>',
-    '          <option value="deleteUnused">' + escapeHtml(messages.inspectorVariableDelete) + '</option>',
-    '          <option value="detachLocal">' + escapeHtml(messages.inspectorVariableDetach) + '</option>',
-    '        </select></label>',
-    '        <div class="variable-actions">',
-    '          <button id="variables-jump" type="button"></button>',
-    '          <button id="variables-apply" type="button"></button>',
-    '          <button id="variables-cancel" type="button"></button>',
-    '        </div>',
-    '        <p id="variables-error" class="error" role="alert" hidden></p>',
-    '      </div>',
-    '    </section>',
-    '    <section id="progression-state" role="tabpanel" tabindex="0" aria-labelledby="inspector-tab-progression" hidden>',
-    '      <h2 id="progression-heading"></h2>',
-    '      <p id="progression-description" class="description"></p>',
-    '      <fieldset><legend id="bars-legend"></legend><div class="choice-row" id="bars-options"></div></fieldset>',
-    '      <fieldset><legend id="operation-legend"></legend><div class="choice-row" id="operation-options"></div></fieldset>',
-    '      <h2 id="candidate-heading"></h2>',
-    '      <p id="progression-repeat-notice" class="description repeat-notice"' + repeatNoticeVisibility + '></p>',
-    '      <ul id="candidate-list" class="candidate-list"></ul>',
-    '      <p id="progression-error" class="error" role="alert" hidden></p>',
-    '      <div class="toolbar">',
-    '        <button id="progression-play" type="button" data-inspector-control="play" data-inspector-key="play"></button>',
-    '        <button id="progression-stop" type="button" data-inspector-control="stop" data-inspector-key="stop" disabled></button>',
-    '        <label class="mode-control"><span id="audition-mode-label"></span><select id="progression-audition-mode">',
-    '          <option value="chord">' + escapeHtml(messages.uiProgressionChord) + '</option>',
-    '          <option value="bars">' + escapeHtml(messages.uiProgressionBars) + '</option>',
-    '          <option value="melody">' + escapeHtml(messages.uiProgressionWithMelody) + '</option>',
-    '          <option value="song">' + escapeHtml(messages.uiProgressionFullSong) + '</option>',
-    '        </select></label>',
-    '        <div class="side-group" role="group" aria-label="' + escapeHtml(messages.uiProgressionTitle) + '">',
-    '          <button id="progression-side-a" type="button" aria-pressed="false"></button>',
-    '          <button id="progression-side-b" type="button" aria-pressed="false"></button>',
-    '        </div>',
-    '        <label class="speed-control"><span id="speed-label"></span><select id="progression-speed">',
-    '          <option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option>',
-    '        </select></label>',
-    '      </div>',
-    '      <p id="progression-audio-status" class="description" role="status" aria-live="polite"></p>',
-    '      <div class="actions">',
-    '        <button id="progression-apply" type="button"></button>',
-    '        <button id="progression-cancel" type="button"></button>',
-    '      </div>',
-    '    </section>',
+    '    ' + renderVariableEditorMarkup({
+      title: messages.inspectorVariablesTitle, description: messages.inspectorVariablesDescription,
+      name: messages.inspectorVariableName, value: messages.inspectorVariableValue,
+      reference: messages.inspectorVariableReference, usage: messages.inspectorVariableUsage,
+      choose: messages.inspectorVariableChoose, add: messages.inspectorVariableAdd,
+      editGlobal: messages.inspectorVariableEditGlobal, rename: messages.inspectorVariableRename,
+      clone: messages.inspectorVariableClone, deleteUnused: messages.inspectorVariableDelete,
+      detachLocal: messages.inspectorVariableDetach, jump: messages.inspectorVariableJump,
+      apply: messages.inspectorVariableApply, cancel: messages.inspectorVariableCancel
+    }),
+    '    ' + renderProgressionInspectorMarkup(messages, {
+      repeatNoticeVisible: context.kind === 'progression' && context.target.bars > 4
+    }),
     '  </main>',
     '  <script nonce="' + safeNonce + '">',
     '    (() => {',

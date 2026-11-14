@@ -1,7 +1,8 @@
 {
   "sources": {
     "syntax": "docs/specs/guitardsl-syntax.md",
-    "extension": "docs/specs/extension.md"
+    "extension": "docs/specs/extension.md",
+    "web": "docs/specs/web-app.md"
   },
   "pages": [
     {
@@ -209,6 +210,36 @@
       "section": "8",
       "helpPage": "features",
       "reviewedSourceSha256": "abc9b65684e9cd52a44d58ee801ee5418fcf5cf3e787e6f8010a423b35d00959"
+    },
+    {
+      "source": "web",
+      "section": "2",
+      "helpPage": "features",
+      "reviewedSourceSha256": "fcff997a86b52faa6ad4aa7e6a67762dd09630f00b97bcec7086bf7bcc23b047"
+    },
+    {
+      "source": "web",
+      "section": "3",
+      "helpPage": "features",
+      "reviewedSourceSha256": "8539146f8f7b679579a4552d1eb5bb372ba8d64899d09f7a3fdb64c46a23ee88"
+    },
+    {
+      "source": "web",
+      "section": "4",
+      "helpPage": "features",
+      "reviewedSourceSha256": "3700f770cb6d1ee394e29aee904af6e3dfb5ec46197e844fd0473b2fb286d500"
+    },
+    {
+      "source": "web",
+      "section": "5",
+      "helpPage": "features",
+      "reviewedSourceSha256": "ce3a533dbabb31e19dc9753991550bd94a778dcfc745fde93c8d85114ded5013"
+    },
+    {
+      "source": "web",
+      "section": "6",
+      "helpPage": "features",
+      "reviewedSourceSha256": "668bff5e57812629aed2da272983a0ccbedd438a0804bf1afa97530a12fa9199"
     }
   ],
   "excludedSections": [
@@ -216,6 +247,31 @@
       "source": "extension",
       "section": "7",
       "reason": "Developer-facing synchronization contract for Help itself (generation/check invariants); users need no Help prose for it."
+    },
+    {
+      "source": "web",
+      "section": "1",
+      "reason": "The overview defines product scope and ownership; user workflows are documented in sections 2–6."
+    },
+    {
+      "source": "web",
+      "section": "7",
+      "reason": "Observable behavior restates the workflows already covered in sections 2–6."
+    },
+    {
+      "source": "web",
+      "section": "8",
+      "reason": "Failure boundaries are handled in the app UI and are not a separate user task guide."
+    },
+    {
+      "source": "web",
+      "section": "9",
+      "reason": "Security and privacy implementation requirements do not need separate user Help prose."
+    },
+    {
+      "source": "web",
+      "section": "10",
+      "reason": "Verification procedures are developer-facing."
     }
   ]
 }

@@ -3,6 +3,10 @@
   "displayName": "GuitarDSL Previewer",
   "description": "Guitar rhythm slash notation and tab score previewer for guitarDSL",
   "version": "0.1.0",
+  "workspaces": [
+    "web",
+    "packages/*"
+  ],
   "publisher": "puchinya",
   "engines": {
     "vscode": "^1.109.0"
@@ -947,7 +951,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build:audio-mir && npm run compile",
+    "vscode:prepublish": "npm run build:audio-mir && npm run compile && npm run bundle:extension",
     "build:audio-mir": "wasm-pack build wasm/crates/audio-mir --target nodejs --release --out-dir ../../../media/audio-mir-wasm --out-name guitardsl_audio_mir",
     "test:audio-mir-wasm": "node --import tsx scripts/test-audio-mir-wasm.mjs",
     "generate:help": "node scripts/generate-help.mjs",
@@ -955,14 +959,22 @@
     "generate:ai": "node scripts/generate-ai-assets.mjs",
     "check:ai": "node scripts/check-ai-sync.mjs",
     "precompile": "npm run generate:help && npm run generate:ai",
-    "compile": "tsc -p ./",
+    "compile": "npm run build:packages && tsc -p ./",
+    "bundle:extension": "node scripts/bundle-extension.mjs",
+    "build:core": "npm run build --workspace @guitardsl/core",
+    "build:document": "npm run build --workspace @guitardsl/document",
+    "build:ui": "npm run build --workspace @guitardsl/ui",
+    "build:pdf": "npm run build --workspace @guitardsl/pdf",
+    "build:packages": "npm run build:core && npm run build:document && npm run build:ui && npm run build:pdf",
+    "build:web": "npm run build:packages && npm run typecheck --workspace web && npm run build --workspace web",
+    "test:web": "npm run build:packages && npm run test --workspace web",
     "compile:tests": "tsc -p ./tests",
     "compile:all": "npm run compile && npm run compile:tests",
     "watch": "tsc -watch -p ./",
     "test:unit": "mocha -r tsx -r ./tests/unit/setup.ts 'tests/unit/**/*.test.ts'",
     "test:e2e": "npm run compile:all && node out/tests/e2e/runTest.js",
     "verify:e2e-stability": "node scripts/verify-e2e-stability.mjs",
-    "test": "npm run check:help && npm run check:ai && npm run test:unit && npm run test:e2e"
+    "test": "npm run check:help && npm run check:ai && npm run build:packages && npm run test:unit && npm run test:e2e && npm run test:web"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -970,6 +982,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/vscode": "^1.109.0",
     "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.28.2",
     "glob": "^13.0.6",
     "mocha": "^12.0.2",
     "tsx": "^4.23.15",

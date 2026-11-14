@@ -6570,7 +6570,7 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
     const interchangeModule = require(path.resolve(__dirname, '../../../out/interchange/toGuitarDsl.js')) as {
       interchangeToGuitarDsl: (score: unknown, loss: unknown) => SerializeResult;
     };
-    const compilerModule = require(path.resolve(__dirname, '../../../out/compiler.js')) as {
+    const compilerModule = require('@guitardsl/core/compiler') as {
       parseGuitarDsl: (source: string) => ParseResult;
     };
     const gp78Module = require(path.resolve(__dirname, '../../../out/gp78/index.js')) as {
@@ -9065,7 +9065,7 @@ suite('Beginner Mode (Issue #65)', () => {
     let refreshed = 0;
     const statuses: string[] = [];
     const ctx = {
-      doc,
+      source: doc.getText(),
       messages: i18n().getMessages('ja'),
       editorMessages: i18n().getScoreSettingsEditorMessages('ja'),
       refresh: () => { refreshed++; },
@@ -9133,7 +9133,7 @@ suite('Advanced notation / sounding transposition (Issue #68)', () => {
   }
   function sectionContext(doc: vscode.TextDocument, statuses: string[]) {
     return {
-      doc,
+      get source() { return doc.getText(); },
       messages: i18n().getMessages('en'),
       editorMessages: i18n().getScoreSettingsEditorMessages('en'),
       refresh: () => undefined,

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml, isPreviewFocusControl, isPreviewLayoutFocusControl, type PreviewFocusControl } from './render/previewHtml';
+import { buildProgressionAuditionPlaybackData, compileGuitarDslToHtml, isPreviewFocusControl, isPreviewLayoutFocusControl, type PreviewFocusControl } from './adapters/previewHtml';
 import { PageSize, PageOrientation, isPageSize, isPageOrientation } from './render/layout';
 import { GuitarDslDocumentSymbolProvider } from './symbols';
 import { resolveLocale, getMessages, formatDiagnostic, SupportedLocale, getChordEditorMessages } from './i18n';
