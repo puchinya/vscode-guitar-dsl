@@ -229,30 +229,32 @@ try {
       .perform();
     let undoMethod = 'Command-Z';
     let keyboardUndoVerified = await waitForEditorValue(base);
+    let expectedAfterRedo = `${base}!`;
     if (!keyboardUndoVerified) {
-      await driver.executeScript(() => {
+      const insertedByNativeHistory = await driver.executeScript(() => {
         const editor = document.querySelector('#source-pane textarea');
         editor?.focus();
-        document.execCommand('undo');
+        return document.execCommand('insertText', false, '#');
       });
-      if (!await waitForEditorValue(base)) throw new Error('Neither Command-Z nor Safari native undo changed the textarea.');
-      undoMethod = 'document.execCommand(undo)';
-      report.notRun.push('Command-Z shortcut activation through SafariDriver (native undo verified through Safari edit history)');
+      if (!insertedByNativeHistory || !await waitForEditorValue(`${base}!#`)) {
+        throw new Error('Safari did not record a native textarea edit for undo/redo.');
+      }
+      await driver.executeScript(() => document.execCommand('undo'));
+      if (!await waitForEditorValue(`${base}!`)) throw new Error('Safari native undo did not revert its textarea edit.');
+      undoMethod = 'Safari native edit history';
+      expectedAfterRedo = `${base}!#`;
+      report.notRun.push('Command-Z shortcut invocation through SafariDriver (native edit history verified directly)');
     }
     await driver.actions()
       .keyDown(Key.COMMAND).keyDown(Key.SHIFT).keyDown('z')
       .keyUp('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND)
       .perform();
     let redoMethod = 'Command-Shift-Z';
-    if (!await waitForEditorValue(`${base}!`)) {
-      await driver.executeScript(() => {
-        const editor = document.querySelector('#source-pane textarea');
-        editor?.focus();
-        document.execCommand('redo');
-      });
-      if (!await waitForEditorValue(`${base}!`)) throw new Error('Neither Command-Shift-Z nor Safari native redo restored the textarea edit.');
-      redoMethod = 'document.execCommand(redo)';
-      report.notRun.push('Command-Shift-Z shortcut activation through SafariDriver (native redo verified through Safari edit history)');
+    if (!await waitForEditorValue(expectedAfterRedo)) {
+      await driver.executeScript(() => document.execCommand('redo'));
+      if (!await waitForEditorValue(expectedAfterRedo)) throw new Error('Safari native redo did not restore its textarea edit.');
+      redoMethod = 'Safari native edit history';
+      report.notRun.push('Command-Shift-Z shortcut invocation through SafariDriver (native edit history verified directly)');
     }
     await waitForSavedDraft();
     const saved = await editorValue();
