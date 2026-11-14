@@ -95,7 +95,8 @@ async function pageDiagnostics() {
       pickerOpened: window.__guitardslSafariSmoke.pickerOpened,
       driveRequests: window.__guitardslSafariSmoke.driveRequests.length,
       pdfBlobSize: window.__guitardslSafariSmoke.pdfBlob?.size,
-      download: window.__guitardslSafariSmoke.download
+      download: window.__guitardslSafariSmoke.download,
+      nativeEditorEvents: window.__guitardslSafariSmoke.nativeEditorEvents?.slice(-20)
     } : undefined
   }));
 }
@@ -194,7 +195,8 @@ try {
     for (const type of ['beforeinput', 'input', 'keydown', 'keyup']) {
       editor.addEventListener(type, event => events.push({
         type, inputType: event.inputType, data: event.data, key: event.key,
-        metaKey: event.metaKey, shiftKey: event.shiftKey
+        metaKey: event.metaKey, shiftKey: event.shiftKey,
+        trusted: event.isTrusted, defaultPrevented: event.defaultPrevented
       }), true);
     }
     window.__guitardslSafariSmoke.nativeEditorEvents = events;
@@ -213,9 +215,9 @@ try {
     await editor.click();
     await driver.actions().keyDown(Key.SHIFT).sendKeys('1').keyUp(Key.SHIFT).perform();
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    await driver.actions().keyDown(Key.COMMAND).sendKeys('z').keyUp(Key.COMMAND).perform();
+    await editor.sendKeys(Key.chord(Key.COMMAND, 'z'));
     await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
-    await driver.actions().keyDown(Key.COMMAND).keyDown(Key.SHIFT).sendKeys('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND).perform();
+    await editor.sendKeys(Key.chord(Key.COMMAND, Key.SHIFT, 'z'));
     await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
     await waitForSavedDraft();
     const saved = await editorValue();
