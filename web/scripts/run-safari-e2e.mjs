@@ -215,9 +215,14 @@ try {
     await editor.click();
     await driver.actions().keyDown(Key.SHIFT).sendKeys('1').keyUp(Key.SHIFT).perform();
     await waitUntil(async () => (await editorValue())?.endsWith('!'), 'Native text input was not applied.');
-    await editor.sendKeys(Key.chord(Key.COMMAND, 'z'));
+    await driver.actions()
+      .keyDown(Key.COMMAND).keyDown('z').keyUp('z').keyUp(Key.COMMAND)
+      .perform();
     await waitUntil(async () => (await editorValue()) === base, 'Command-Z did not undo the native textarea edit.');
-    await editor.sendKeys(Key.chord(Key.COMMAND, Key.SHIFT, 'z'));
+    await driver.actions()
+      .keyDown(Key.COMMAND).keyDown(Key.SHIFT).keyDown('z')
+      .keyUp('z').keyUp(Key.SHIFT).keyUp(Key.COMMAND)
+      .perform();
     await waitUntil(async () => (await editorValue()) === `${base}!`, 'Command-Shift-Z did not redo the native textarea edit.');
     await waitForSavedDraft();
     const saved = await editorValue();
