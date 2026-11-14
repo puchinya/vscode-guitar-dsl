@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -18,12 +18,14 @@ const report = {
   startedAt: new Date().toISOString(),
   browserVersion: null,
   checks: [],
+  downloadIsolationError: null,
   notRun: ['iOS/iPadOS Safari', 'production Google OAuth', 'production Google Drive', 'physical audio output']
 };
 
 let server;
 let driver;
 let isolatedSafariDownloads;
+let downloadIsolationError;
 let failed = false;
 let nativeKeyRoute = 'element.sendKeys';
 let terminationRequested = false;
@@ -37,10 +39,11 @@ function startStep(stepName) {
 }
 
 class BlockedCheckError extends Error {
-  constructor(message) {
+  constructor(message, details = {}) {
     super(message);
     this.name = 'BlockedCheckError';
     this.status = 'BLOCKED';
+    this.details = details;
   }
 }
 
@@ -125,7 +128,13 @@ async function recordCheck(id, action) {
   } catch (error) {
     const status = error?.status === 'BLOCKED' ? 'BLOCKED' : 'FAIL';
     failed ||= status !== 'PASS';
-    const check = { id, status, durationMs: Date.now() - started, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+    const check = {
+      id,
+      status,
+      durationMs: Date.now() - started,
+      ...(error?.details ?? {}),
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    };
     try { check.diagnostics = await pageDiagnostics(); } catch { /* retain the original failure */ }
     try {
       const path = resolve(outputDir, `${id}-failure.png`);
@@ -309,7 +318,13 @@ async function inspectPreviewSvg() {
 try {
   await mkdir(outputDir, { recursive: true });
   startStep('isolate-ci-safari-download-folder');
-  isolatedSafariDownloads = await prepareIsolatedSafariDownloads();
+  try {
+    isolatedSafariDownloads = await prepareIsolatedSafariDownloads();
+  } catch (error) {
+    downloadIsolationError = error instanceof Error ? error.message : String(error);
+    report.downloadIsolationError = downloadIsolationError;
+    console.warn(`Safari native PDF file-save check is blocked because Downloads could not be isolated safely: ${downloadIsolationError}`);
+  }
   startStep('start-vite-server');
   server = spawn(process.execPath, [resolve(webRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: webRoot,
@@ -318,7 +333,7 @@ try {
       VITE_GOOGLE_CLIENT_ID: process.env.VITE_GOOGLE_CLIENT_ID ?? 'safari-smoke-client',
       VITE_GOOGLE_API_KEY: process.env.VITE_GOOGLE_API_KEY ?? 'safari-smoke-api-key',
       VITE_GOOGLE_APP_ID: process.env.VITE_GOOGLE_APP_ID ?? '123456789',
-      VITE_SAFARI_REAL_PDF_DOWNLOAD: process.env.GITHUB_ACTIONS === 'true' ? 'true' : 'false'
+      VITE_SAFARI_REAL_PDF_DOWNLOAD: process.env.GITHUB_ACTIONS === 'true' && isolatedSafariDownloads ? 'true' : 'false'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -524,7 +539,13 @@ try {
       throw new Error(`Unexpected PDF export: ${JSON.stringify(details)}`);
     }
     if (!isolatedSafariDownloads) {
-      return { ...details, realFileSaved: 'NOT RUN (local smoke does not write to user Downloads)' };
+      const reason = downloadIsolationError ?? 'Local Safari smoke does not change the user Downloads directory.';
+      throw new BlockedCheckError(`Native PDF file save was not run because no safe isolated Downloads directory is available: ${reason}`, {
+        ...details,
+        nativeDownloadEnabled: false,
+        realFileSaved: 'NOT RUN',
+        downloadInvocationOnly: true
+      });
     }
     if (!details.nativeDownloadEnabled) throw new Error('Safari fixture did not enable the native PDF file download in CI.');
     const filename = basename(details.filename);
@@ -682,6 +703,7 @@ try {
     finalPageDiagnostics: report.finalPageDiagnostics,
     failureScreenshot: report.failureScreenshot,
     runnerError: report.runnerError,
+    downloadIsolationError: report.downloadIsolationError,
     downloadIsolationCleanupError: report.downloadIsolationCleanupError,
     nativeProbeKeyRelease: report.nativeProbeKeyRelease
   } });
