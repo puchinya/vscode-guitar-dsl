@@ -8,11 +8,11 @@
 
 ## Issue #172: Web Compact IDE
 
-- **状態**: Contractに沿った compact workspace の実装とローカル検証が完了し、PR準備中。ソース編集を CodeMirror 6 に置き換え、Source/Preview、Explorer、Inspector、Problems の配置、4 splitter、狭幅時のパネル折りたたみ、IndexedDBレイアウト保存、SVGアイコン、Help/Settings/Google Accountメニューを追加した。アカウント別Driveタブ、編集source/revision、CRLF、IME、タブ別Undo履歴を保持する。
+- **状態**: Contractに沿った compact workspace を実装し、PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) でレビュー中。ソース編集を CodeMirror 6 に置き換え、Source/Preview、Explorer、Inspector、Problems の配置、4 splitter、狭幅時のパネル折りたたみ、IndexedDBレイアウト保存、SVGアイコン、Help/Settings/Google Accountメニューを追加した。アカウント別Driveタブ、編集source/revision、CRLF、IME、タブ別Undo履歴を保持する。
 - **Contract**: Issue #172 comment `6876057443`、SHA-256 `dc51abf1cb7492d7ea5fef24675858a0f6cf2fd498e38906ed4e0fbe1aa49d21`。`verify-implementation-contract 172` で照合済み。
 - **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、メニュー、Problems、Source-only/Score-only、およびDOMRect計測を保存。
 - **ブラウザー検証**: Playwright Chromium 42/42 PASS、Playwright WebKit 42/42 PASS、SafariDriver 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
-- **最終ゲート**: `npm test`（root unit、VS Code E2E、Web unit、Playwright Chromium/WebKit 合計84件）、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。Web buildでは500 kB超のchunk警告、prepublishではwasm-bindgenのprebuilt取得に失敗してcargo経由へfallbackする警告とextension bundleのサイズ警告があったが、各コマンドは成功した。PR作成後、最新HEADに結び付いたセルフレビューとGitHub Required Checksを確認する。
+- **最終ゲート**: `npm test`（root unit、VS Code E2E、Web unit、Playwright Chromium/WebKit 合計84件）、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。Web buildでは500 kB超のchunk警告、prepublishではwasm-bindgenのprebuilt取得に失敗してcargo経由へfallbackする警告とextension bundleのサイズ警告があったが、各コマンドは成功した。最新HEADに結び付くセルフレビューとGitHub Required Checksの状況は[PR #173](https://github.com/puchinya/vscode-guitar-dsl/pull/173)を参照。
 
 ## Issue #166: Web SPA 版 GuitarDSL
 
