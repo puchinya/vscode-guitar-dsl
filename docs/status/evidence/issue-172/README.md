@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project after addressing PR #173 review findings. Chromium captured the screenshots and DOMRect measurements. This review follow-up changes OAuth validation, disconnect behavior, tab-close coordination, and documentation; it does not change the captured workspace rendering. The current working tree passed isolated Playwright Chromium 68/68, Playwright WebKit 68/68, Web unit 45/45, and SafariDriver smoke 7/7.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project after addressing PR #173 review findings. Chromium captured the screenshots and DOMRect measurements. This review follow-up changes OAuth validation, disconnect behavior, tab-close coordination, and documentation; it does not change the captured workspace rendering. Code commit `8e39420` passed all four PR Required Checks in Actions runs [43691257311](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257311) and [43691257351](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257351). The current working tree passed isolated Playwright Chromium 68/68, Playwright WebKit 68/68, Web unit 45/45, and SafariDriver smoke 7/7.
 
 Capture command:
 

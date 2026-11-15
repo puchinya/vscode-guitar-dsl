@@ -8,7 +8,7 @@
 
 ## Issue #172: Web Compact IDE
 
-- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の2026-11-15レビュー5点を実装修正した。部分OAuth許可の拒否、同期失敗後の確認付き切断、同一タブCloseのPromise共有、SVG寸法/Problems導線の仕様訂正、共有Preview差分の除去を含む。変更を同PRへ反映後のCI/self-reviewは未実施。PRは未マージ。
+- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の2026-11-15レビュー5点を実装修正し、コードcommit `8e39420` を同PRへpushした。部分OAuth許可の拒否、同期失敗後の確認付き切断、同一タブCloseのPromise共有、SVG寸法/Problems導線の仕様訂正、共有Preview差分の除去を含む。GitHub Required Checksは [run 43691257311](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257311) と [run 43691257351](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257351) で4/4 PASS。Issue #172 は `phase:review`、PRは未マージ。
 - **適用範囲**: 承認済み統合契約 Issue comment `6887610090`、23,527 bytes、SHA-256 `cd672d20cac9233dabdf514632db589c0125af310fc370d51eb3ab1e4d1ad943` を照合済み。Google Cloud OAuth同意画面の本番変更と実OAuth/Drive検証は未実施。トークンはメモリ内のみ。
 - **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、日本語Darkの接続Drive・複数Local文書・実診断を含む参照状態、初回Drive接続、File/Edit/View、Explorer/Inspector/Problemsのメニュー、ヘッダーidle/hover/keyboard focusを取得。DOMRectで領域寸法とProblems列の整列を計測。
 - **ブラウザー検証**: Web unit 45/45 PASS、Playwright Chromium 68/68 PASS、Playwright WebKit 68/68 PASS、SafariDriver smoke 7/7 PASS (macOS arm64 / Safari 26.6.2)。部分スコープ、初回appData 403後の切断、PATCH失敗後のA→B→A切替とpending復帰、同一タブCloseとremote restoreの競合を確認した。Safari UI Undo/Redo・OSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はNOT RUN。
