@@ -3,7 +3,8 @@ import test from 'node:test';
 import type { GoogleOAuth } from '../../src/auth/googleOAuth';
 import {
   DEFAULT_DRIVE_APPDATA_STATE, DRIVE_APPDATA_FILE_NAME, DRIVE_APPDATA_MIME_TYPE,
-  DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, type DriveAppDataFile, type DriveAppDataState
+  DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, validatePendingDriveAppData,
+  type DriveAppDataFile, type DriveAppDataState
 } from '../../src/storage/driveAppData';
 
 const file = (id: string, version = '1', createdTime = '2026-01-01T00:00:00Z'): DriveAppDataFile => ({
@@ -32,6 +33,21 @@ test('appData state validates the exact schema and bounds unique file references
     error instanceof DriveAppDataError && error.code === 'unsupported-version');
   assert.throws(() => validateDriveAppDataState({ ...state, openDriveFileIds: [3] }), error =>
     error instanceof DriveAppDataError && error.code === 'invalid-state');
+});
+
+test('pending Drive metadata is account-bound and rejects source, credentials, and unknown fields', () => {
+  const pending = { schemaVersion: 1, accountId: 'account-a', state, updatedAt: 1 };
+  assert.deepEqual(validatePendingDriveAppData(pending, 'account-a'), pending);
+  for (const value of [
+    { ...pending, accountId: 'account-b' },
+    { ...pending, accessToken: 'secret' },
+    { ...pending, source: 'title: secret' },
+    { ...pending, state: { ...state, draft: 'title: secret' } },
+    { ...pending, updatedAt: Number.NaN }
+  ]) {
+    assert.throws(() => validatePendingDriveAppData(value, 'account-a'), error =>
+      error instanceof DriveAppDataError && error.code === 'invalid-state');
+  }
 });
 
 test('appData discovery paginates exact appDataFolder and trashed=false filters and picks the oldest duplicate', async () => {

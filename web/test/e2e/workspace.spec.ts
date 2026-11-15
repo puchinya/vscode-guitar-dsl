@@ -36,6 +36,34 @@ async function expectEditorSource(page: Page, expected: string | RegExp): Promis
   else await expect.poll(() => readEditorSource(page)).toMatch(expected);
 }
 
+async function installDeferredClipboard(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const target = window as Window & {
+      __clipboardHoldRead?: boolean; __clipboardHoldWrite?: boolean;
+      __clipboardReadStarted?: boolean; __clipboardWriteStarted?: boolean;
+      __clipboardValue?: string; __clipboardWritten?: string;
+      __releaseClipboardRead?: () => void; __releaseClipboardWrite?: () => void;
+    };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (text: string) => {
+        target.__clipboardWritten = text;
+        if (!target.__clipboardHoldWrite) return;
+        target.__clipboardWriteStarted = true;
+        await new Promise<void>(resolve => { target.__releaseClipboardWrite = resolve; });
+        target.__clipboardWriteStarted = false;
+      },
+      readText: async () => {
+        if (target.__clipboardHoldRead) {
+          target.__clipboardReadStarted = true;
+          await new Promise<void>(resolve => { target.__releaseClipboardRead = resolve; });
+          target.__clipboardReadStarted = false;
+        }
+        return target.__clipboardValue ?? 'pasted text';
+      }
+    } });
+  });
+}
+
 async function performAccountAction(page: Page): Promise<void> {
   const control = page.locator('#connect-drive');
   const state = await control.getAttribute('data-state');
@@ -59,39 +87,56 @@ interface DriveBrowserMockOptions {
   pickerSelection?: { id: string; name: string };
   holdPickerSelection?: boolean;
   holdFileReadId?: string;
+  missingFileIds?: string[];
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+  folders?: Record<string, string>;
   driveFiles?: Array<{ id: string; name: string; version: string; modifiedTime: string; mimeType?: string; parents?: string[] }>;
   unauthorizedList?: boolean;
   appDataState?: TestAppDataState | null;
+  appDataStates?: Record<string, TestAppDataState | null>;
+  failAppDataPatchCount?: number;
 }
 
 async function installDriveBrowserMock(page: Page, accountSequence: string[], options: DriveBrowserMockOptions = {}): Promise<{
   patchCalls: { fileId: string; source: string }[];
+  appDataPatchCalls: TestAppDataState[];
   mediaAccountIds: string[];
   get appDataState(): TestAppDataState | null;
+  getAppDataState(accountId: string): TestAppDataState | null;
+  setAppDataState(accountId: string, value: TestAppDataState): void;
   get appDataCreateCount(): number;
   get visibleFolderCreateCount(): number;
   fileReadStarted: Promise<void>;
   releaseFileRead(): void;
   get fileReadCount(): number;
 }> {
-  const initialStates = Object.fromEntries(accountSequence.map(accountId => [accountId, options.appDataState === undefined ? {
-    schemaVersion: 1 as const, selectedFolderId: `folder-${accountId}`, folderPrompt: 'completed' as const,
-    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
-  } : options.appDataState]));
+  const initialStates = Object.fromEntries(accountSequence.map(accountId => [accountId,
+    options.appDataStates && Object.hasOwn(options.appDataStates, accountId) ? options.appDataStates[accountId]
+      : options.appDataState === undefined ? {
+        schemaVersion: 1 as const, selectedFolderId: `folder-${accountId}`, folderPrompt: 'completed' as const,
+        openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+      } : options.appDataState]));
   const appDataStates = new Map<string, TestAppDataState | null>(Object.entries(initialStates));
   mockedDriveAppData.set(page, appDataStates);
   mockedDriveSeeds.set(page, new Map());
   await page.addInitScript((config: {
     accounts: string[]; pickerSelection?: { id: string; name: string }; holdPickerSelection?: boolean;
   }) => {
-    const tokens = [...config.accounts];
+    let accounts = config.accounts;
+    try {
+      const override = sessionStorage.getItem('__guitarDslAccountSequence');
+      if (override) {
+        const parsed = JSON.parse(override) as unknown;
+        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) accounts = parsed;
+      }
+    } catch { /* use the configured account sequence */ }
+    const tokens = [...accounts];
     const google: Record<string, unknown> = {
       accounts: {
         oauth2: {
           initTokenClient: (tokenOptions: { callback: (result: { access_token: string; expires_in: number }) => void }) => ({
             requestAccessToken: () => tokenOptions.callback({
-              access_token: `test-token-${tokens.shift() ?? config.accounts.at(-1) ?? 'account-a'}`,
+              access_token: `test-token-${tokens.shift() ?? accounts.at(-1) ?? 'account-a'}`,
               expires_in: 3600
             })
           }),
@@ -143,10 +188,12 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     holdPickerSelection: options.holdPickerSelection
   });
   const patchCalls: { fileId: string; source: string }[] = [];
+  const appDataPatchCalls: TestAppDataState[] = [];
   const mediaAccountIds: string[] = [];
   let appDataState = initialStates[accountSequence[0] ?? 'account-a'] ?? null;
   let appDataVersion = 1;
   let appDataCreateCount = 0;
+  let appDataPatchFailureCount = options.failAppDataPatchCount ?? 0;
   let visibleFolderCreateCount = 0;
   let startFileRead!: () => void;
   const fileReadStarted = new Promise<void>(resolve => { startFileRead = resolve; });
@@ -186,7 +233,8 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       return route.fulfill({ headers, json: { files } });
     }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
-      return route.fulfill({ headers, json: { id: url.pathname.split('/').at(-1), name: options.pickerSelection?.name ?? 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
+      const id = url.pathname.split('/').at(-1)!;
+      return route.fulfill({ headers, json: { id, name: options.folders?.[id] ?? options.pickerSelection?.name ?? 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' } });
     }
     if (/^\/drive\/v3\/files\/app-state-[^/]+$/u.test(url.pathname)) {
       appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
@@ -200,6 +248,9 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
       const remote = options.remoteFiles?.[fileId];
       const seeded = mockedDriveSeeds.get(page)?.get(fileId);
+      if (url.searchParams.get('alt') !== 'media' && options.missingFileIds?.includes(fileId)) {
+        return route.fulfill({ status: 404, headers, json: { error: 'simulated missing Drive file' } });
+      }
       const version = remote?.version ?? seeded?.version ?? '1';
       if (url.searchParams.get('alt') !== 'media') {
         fileReadCount += 1;
@@ -223,6 +274,11 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         if (fileId.startsWith('app-state-')) {
           const candidate = parseMockedAppData(request.postData() ?? '');
           if (candidate) {
+            appDataPatchCalls.push(candidate);
+            if (appDataPatchFailureCount > 0) {
+              appDataPatchFailureCount -= 1;
+              return route.fulfill({ status: 400, headers, json: { error: 'simulated appData PATCH failure' } });
+            }
             appDataState = candidate;
             mockedDriveAppData.get(page)?.set(accountId, appDataState);
           }
@@ -252,7 +308,14 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     }
     return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
   });
-  return { patchCalls, mediaAccountIds, get appDataState() { return mockedDriveAppData.get(page)?.get(accountSequence[0] ?? 'account-a') ?? null; }, get appDataCreateCount() { return appDataCreateCount; },
+  return { patchCalls, appDataPatchCalls, mediaAccountIds,
+    get appDataState() { return mockedDriveAppData.get(page)?.get(accountSequence[0] ?? 'account-a') ?? null; },
+    getAppDataState: accountId => mockedDriveAppData.get(page)?.get(accountId) ?? null,
+    setAppDataState: (accountId, value) => {
+      mockedDriveAppData.get(page)?.set(accountId, value);
+      appDataVersion += 1;
+    },
+    get appDataCreateCount() { return appDataCreateCount; },
     get visibleFolderCreateCount() { return visibleFolderCreateCount; }, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; } };
 }
 
@@ -567,12 +630,18 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         const modes = Array.from(document.querySelectorAll<HTMLButtonElement>('.view-mode-button')).map(button => ({
           label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed')
         }));
+        const headerControlStyles = Object.fromEntries(Array.from(document.querySelectorAll<HTMLButtonElement>('.top-actions .quiet-button')).map(button => {
+          const style = getComputedStyle(button);
+          return [button.id, { backgroundColor: style.backgroundColor, borderWidth: style.borderWidth }];
+        }));
         const menu = document.querySelector<HTMLElement>('#context-menu:not([hidden]), #settings-menu:not([hidden]), #panel-menu:not([hidden]), #file-menu:not([hidden]), #edit-menu:not([hidden]), #view-menu:not([hidden])');
         const menuItems = menu ? Array.from(menu.querySelectorAll<HTMLButtonElement>('button')).map(button => ({
           label: button.textContent, disabled: button.disabled,
           rect: (() => { const { x, y, width, height } = button.getBoundingClientRect(); return { x, y, width, height }; })()
         })) : [];
         return { viewport: { width: innerWidth, height: innerHeight }, rects, problemsColumns, problemHeadings, symbols, topActions,
+          headerControlStyles, topbarPaddingRight: getComputedStyle(document.querySelector('.topbar')!).paddingRight,
+          brandMarkFilter: getComputedStyle(document.querySelector('.brand-mark')!).filter,
           localFileEntries: fileEntries('#file-items .file-item'), driveFileEntries: fileEntries('#drive-file-items .file-item'),
           splitters, modes, menu: menu ? (() => { const { x, y, width, height } = menu.getBoundingClientRect(); return { x, y, width, height }; })() : null,
           menuItems,
@@ -589,7 +658,29 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
         const setting = locale === 'ja' ? `テーマ: ${theme === 'light' ? 'ライト' : 'ダーク'}` : `Theme: ${theme === 'light' ? 'Light' : 'Dark'}`;
         await chooseSetting(locale, setting);
         await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', theme);
+        const normalStyles = await page.locator('.top-actions .quiet-button').evaluateAll(buttons => buttons.map(button => {
+          const style = getComputedStyle(button);
+          return { backgroundColor: style.backgroundColor, borderWidth: style.borderWidth };
+        }));
+        expect(normalStyles.length).toBeGreaterThan(0);
+        expect(normalStyles.every(style => style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.borderWidth === '0px')).toBe(true);
+        expect(await page.locator('.topbar').evaluate(element => getComputedStyle(element).paddingRight)).toBe('12px');
+        expect(await page.locator('.brand-mark').evaluate(element => getComputedStyle(element).filter))
+          .toBe(theme === 'dark' ? 'brightness(0) invert(1)' : 'none');
         await capture(`desktop-1600x900-${locale}-${theme}.png`);
+        const settings = page.locator('#settings-button');
+        await settings.hover();
+        await expect.poll(() => settings.evaluate(element => getComputedStyle(element).backgroundColor))
+          .toBe(theme === 'dark' ? 'rgb(48, 54, 65)' : 'rgb(239, 241, 245)');
+        await capture(`header-hover-${locale}-${theme}.png`);
+        await settings.focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(settings).toBeFocused();
+        await expect.poll(() => settings.evaluate(element => getComputedStyle(element).backgroundColor))
+          .toBe(theme === 'dark' ? 'rgb(48, 54, 65)' : 'rgb(239, 241, 245)');
+        await capture(`header-focus-${locale}-${theme}.png`);
+        await page.mouse.move(8, 880);
       }
     }
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -696,6 +787,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
       }).__guitarDslReadTabs?.()[0]?.revision);
       return await page.frameLocator('#score-frame').locator('body').getAttribute('data-preview-document-version') === String(revision);
     }).toBe(true);
+    await page.frameLocator('#score-frame').locator('#preview-mode-select').selectOption('edit');
     const bound = page.frameLocator('#score-frame').locator('.spread-sheet [data-visual-binding]').first();
     await expect(bound).toBeVisible();
     await bound.click({ button: 'right' });
@@ -1123,6 +1215,274 @@ test('first Drive sign-in offers folder setup once and remembers Later without c
   expect(drive.visibleFolderCreateCount).toBe(0);
 });
 
+test('keeps a failed folder change pending across reload and waits for an explicit sync choice', async ({ page }) => {
+  const remoteState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const otherAccountState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'deferred',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    appDataStates: { 'account-a': remoteState, 'account-b': otherAccountState },
+    pickerSelection: { id: 'folder-account-a-next', name: 'Next destination' }, failAppDataPatchCount: 1
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'connected');
+
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Choose destination folder…' }).click();
+  await expect.poll(() => drive.appDataPatchCalls.length).toBe(1);
+  await expect.poll(() => drive.appDataState?.selectedFolderId).toBe('folder-account-a');
+  await expect(page.locator('#saved-state')).toContainText('could not be synchronized');
+
+  await page.evaluate(() => sessionStorage.setItem('__guitarDslAccountSequence', JSON.stringify(['account-b'])));
+  expect(await attemptReloadAndAcceptBeforeUnload(page)).toBe('beforeunload');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  expect(drive.appDataPatchCalls).toHaveLength(1);
+  expect(drive.getAppDataState('account-a')?.selectedFolderId).toBe('folder-account-a');
+
+  await performAccountAction(page);
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'connected');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(drive.appDataPatchCalls).toHaveLength(1);
+  expect(drive.getAppDataState('account-b')?.selectedFolderId).toBe('folder-account-b');
+
+  await performAccountAction(page);
+  await page.evaluate(() => sessionStorage.setItem('__guitarDslAccountSequence', JSON.stringify(['account-a'])));
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Google Drive settings changed elsewhere' })).toBeVisible();
+  expect(drive.appDataPatchCalls).toHaveLength(1);
+  expect(drive.getAppDataState('account-a')?.selectedFolderId).toBe('folder-account-a');
+  await conflict.getByRole('button', { name: 'Keep this device’s settings' }).click();
+  await expect.poll(() => drive.appDataPatchCalls.length).toBe(2);
+  await expect.poll(() => drive.appDataState?.selectedFolderId).toBe('folder-account-a-next');
+  await expect(page.locator('#saved-state')).not.toContainText('could not be synchronized');
+});
+
+test('restores the selected remote folder and Drive tabs without resubmitting the rejected local choice', async ({ page }) => {
+  const initial: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const latest: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a-f2', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-f2'], activeDriveFileId: 'drive-f2', recentDriveFileIds: ['drive-f2']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: initial,
+    pickerSelection: { id: 'folder-account-a-f3', name: 'Folder F3' },
+    folders: { 'folder-account-a': 'Folder F1', 'folder-account-a-f2': 'Folder F2', 'folder-account-a-f3': 'Folder F3' },
+    driveFiles: [{ id: 'drive-f2', name: 'Remote F2.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a-f2'] }],
+    remoteFiles: { 'drive-f2': { name: 'Remote F2.guitardsl', source: 'title: Remote F2\n', version: '1' } }
+  });
+  await page.goto('/');
+  const localDraft = 'title: Keep this local draft\n\n[Verse]\nC | G |\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(localDraft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await performAccountAction(page);
+  drive.setAppDataState('account-a', latest);
+
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Choose destination folder…' }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Google Drive settings changed elsewhere' })).toBeVisible();
+  expect(drive.appDataPatchCalls).toHaveLength(0);
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  await expect(page.locator('#drive-file-items .drive-folder-row')).toContainText('Folder F2');
+  await expect(page.getByRole('tab', { name: 'Remote F2.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Remote F3.guitardsl' })).toHaveCount(0);
+  expect(drive.getAppDataState('account-a')?.selectedFolderId).toBe('folder-account-a-f2');
+  expect(drive.appDataPatchCalls).toHaveLength(0);
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await expectEditorSource(page, localDraft);
+});
+
+test('keeps pending metadata when an explicit remote choice cannot restore its Drive tabs', async ({ page }) => {
+  const initial: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const latest: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a-f2', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-missing'], activeDriveFileId: 'drive-missing', recentDriveFileIds: ['drive-missing']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: initial,
+    pickerSelection: { id: 'folder-account-a-f3', name: 'Folder F3' },
+    folders: { 'folder-account-a': 'Folder F1', 'folder-account-a-f2': 'Folder F2', 'folder-account-a-f3': 'Folder F3' },
+    failAppDataPatchCount: 1,
+    missingFileIds: ['drive-missing']
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Choose destination folder…' }).click();
+  await expect.poll(() => drive.appDataPatchCalls.length).toBe(1);
+  await expect(page.locator('#saved-state')).toContainText('could not be synchronized');
+
+  drive.setAppDataState('account-a', latest);
+  expect(await attemptReloadAndAcceptBeforeUnload(page)).toBe('beforeunload');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Google Drive settings changed elsewhere' })).toBeVisible();
+  const retryPrompt = page.waitForEvent('dialog');
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+  await (await retryPrompt).dismiss();
+
+  const pending = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<unknown>('settings', 'pending-drive-state:account-a');
+  });
+  expect(pending).toMatchObject({ accountId: 'account-a', state: { selectedFolderId: 'folder-account-a-f3' } });
+  expect(drive.getAppDataState('account-a')?.selectedFolderId).toBe('folder-account-a-f2');
+  expect(drive.appDataPatchCalls).toHaveLength(1);
+  await expect(page.locator('#saved-state')).toContainText('Pending settings have been kept.');
+});
+
+test('cancels delayed Cut and Paste when the active document changes and keeps Cut as one undo step', async ({ page }) => {
+  await installDeferredClipboard(page);
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const firstSource = 'title: First tab\n\n[Verse]\nC | G | Am | F |\n';
+  const secondSource = 'title: Second tab\n\n[Chorus]\nF | C | G | Am |\n';
+  const selectAllShortcut = await page.evaluate(() => /Mac|iPhone|iPad/u.test(navigator.platform) ? 'Meta+A' : 'Control+A');
+  await editor.fill(firstSource);
+  await page.keyboard.press('Escape');
+  await expectEditorSource(page, firstSource);
+  const newName = page.waitForEvent('dialog').then(dialog => dialog.accept('Second.guitardsl'));
+  await page.getByRole('button', { name: 'New score' }).click();
+  await newName;
+  await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await editor.fill(secondSource);
+  await page.keyboard.press('Escape');
+  await expectEditorSource(page, secondSource);
+  await expect.poll(() => page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ source: string }>
+  }).__guitarDslReadTabs?.().at(-1)?.source)).toBe(secondSource);
+
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await expectEditorSource(page, firstSource);
+  await editor.press(selectAllShortcut);
+  await page.evaluate(() => {
+    const target = window as Window & { __clipboardHoldWrite?: boolean; __clipboardWriteStarted?: boolean };
+    target.__clipboardHoldWrite = true; target.__clipboardWriteStarted = false;
+  });
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Cut' }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __clipboardWriteStarted?: boolean }).__clipboardWriteStarted)).toBe(true);
+  await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
+  await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(() => (window as Window & { __releaseClipboardWrite?: () => void }).__releaseClipboardWrite?.());
+  await expectEditorSource(page, secondSource);
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await expectEditorSource(page, firstSource);
+
+  await editor.press(selectAllShortcut);
+  await page.evaluate(() => {
+    const target = window as Window & { __clipboardHoldRead?: boolean; __clipboardReadStarted?: boolean };
+    target.__clipboardHoldRead = true; target.__clipboardReadStarted = false;
+  });
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Paste' }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __clipboardReadStarted?: boolean }).__clipboardReadStarted)).toBe(true);
+  await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
+  await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(() => (window as Window & { __releaseClipboardRead?: () => void }).__releaseClipboardRead?.());
+  await expectEditorSource(page, secondSource);
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await expectEditorSource(page, firstSource);
+
+  await editor.press(selectAllShortcut);
+  await page.evaluate(() => { (window as Window & { __clipboardHoldWrite?: boolean }).__clipboardHoldWrite = false; });
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Cut' }).click();
+  await expectEditorSource(page, '');
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Undo' }).click();
+  await expectEditorSource(page, firstSource);
+  await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
+  await expectEditorSource(page, secondSource);
+});
+
+test('handles concurrent tab closes without dropping drafts while concurrent Drive opens share one tab', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [{ id: 'drive-shared', name: 'Shared.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a'] }],
+    remoteFiles: { 'drive-shared': { name: 'Shared.guitardsl', source: 'title: Shared\n', version: '1' } }
+  });
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const sources = [
+    'title: First draft\n\n[Verse]\nC | G |\n',
+    'title: Second draft\n\n[Verse]\nAm | F |\n',
+    'title: Third draft\n\n[Verse]\nG | C |\n'
+  ];
+  await editor.fill(sources[0]!);
+  await expectEditorSource(page, sources[0]!);
+  const secondPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Second.guitardsl'));
+  await page.getByRole('button', { name: 'New score' }).click(); await secondPrompt;
+  await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await editor.fill(sources[1]!);
+  await expectEditorSource(page, sources[1]!);
+  const thirdPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Third.guitardsl'));
+  await page.getByRole('button', { name: 'New score' }).click(); await thirdPrompt;
+  await expect(page.getByRole('tab', { name: 'Third.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await editor.fill(sources[2]!);
+  await expectEditorSource(page, sources[2]!);
+
+  await holdDraftSave(page);
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>('.tab-close[aria-label="Close Untitled.guitardsl"]')?.click();
+    document.querySelector<HTMLButtonElement>('.tab-close[aria-label="Close Second.guitardsl"]')?.click();
+  });
+  await page.waitForFunction(() => (window as Window & { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
+  await page.evaluate(() => (window as Window & { __releaseDraftSave?: () => void }).__releaseDraftSave?.());
+  await expect(page.locator('#open-tabs').getByRole('tab')).toHaveCount(1);
+  await expect(page.getByRole('tab', { name: 'Third.guitardsl' })).toBeVisible();
+  const recoveredDrafts = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return Promise.all((await indexedDb.listDocuments('local')).map(async row => ({
+      name: row.name, source: (await indexedDb.getDocument(row.identity))?.source
+    })));
+  });
+  expect(recoveredDrafts.find(row => row.name === 'Untitled.guitardsl')?.source).toBe(sources[0]);
+  expect(recoveredDrafts.find(row => row.name === 'Second.guitardsl')?.source).toBe(sources[1]);
+  expect(recoveredDrafts.find(row => row.name === 'Third.guitardsl')?.source).toBe(sources[2]);
+
+  await performAccountAction(page);
+  await expect(page.locator('#drive-file-items .file-item').filter({ hasText: 'Shared.guitardsl' })).toBeVisible();
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const original = indexedDb.getSavedDocument.bind(indexedDb);
+    const target = window as Window & { __savedDocumentReads?: number; __releaseSavedDocumentReads?: () => void };
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__savedDocumentReads = 0;
+    target.__releaseSavedDocumentReads = release;
+    indexedDb.getSavedDocument = async (...args) => {
+      target.__savedDocumentReads = (target.__savedDocumentReads ?? 0) + 1;
+      await gate;
+      return original(...args);
+    };
+  });
+  await page.locator('#drive-file-items .file-item').filter({ hasText: 'Shared.guitardsl' }).evaluate(element => {
+    (element as HTMLElement).click(); (element as HTMLElement).click();
+  });
+  await page.waitForFunction(() => (window as Window & { __savedDocumentReads?: number }).__savedDocumentReads !== undefined
+    && (window as Window & { __savedDocumentReads?: number }).__savedDocumentReads! >= 2);
+  await page.evaluate(() => (window as Window & { __releaseSavedDocumentReads?: () => void }).__releaseSavedDocumentReads?.());
+  await expect(page.getByRole('tab', { name: 'Shared.guitardsl' })).toHaveCount(1);
+});
+
 test('shows both Explorer roots and opens root and tab menus from Shift+F10', async ({ page }) => {
   await page.goto('/');
   const localSection = page.locator('[data-storage-section="local"]');
@@ -1454,7 +1814,7 @@ test('exports and deletes a local file from its Explorer menu after confirmation
   await expect(page.getByRole('tab', { name: 'Delete me.guitardsl' })).toHaveCount(0);
 });
 
-test('uses Preview bindings for source navigation and rejects a stale menu target', async ({ page }) => {
+test('uses Preview bindings only in Edit mode for source navigation and rejects a stale menu target', async ({ page }) => {
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await editor.fill('title: Preview menu\n\n[Verse]\nC | G | Am | F |\n');
@@ -1465,6 +1825,8 @@ test('uses Preview bindings for source navigation and rejects a stale menu targe
     }).__guitarDslReadTabs?.()[0]?.revision);
     return await preview.locator('body').getAttribute('data-preview-document-version') === String(revision);
   }).toBe(true);
+  await expect(preview.locator('.spread-sheet [data-visual-binding]')).toHaveCount(0);
+  await preview.locator('#preview-mode-select').selectOption('edit');
   const boundElement = preview.locator('.spread-sheet [data-visual-binding]').first();
   await expect(boundElement).toBeVisible();
 
@@ -1480,13 +1842,16 @@ test('uses Preview bindings for source navigation and rejects a stale menu targe
   expect(selectedRange!.to).toBeGreaterThan(selectedRange!.from);
 
   await page.getByRole('button', { name: 'Split view' }).click();
+  await preview.locator('#preview-mode-select').selectOption('normal');
+  await expect(preview.locator('.spread-sheet [data-visual-binding]')).toHaveCount(0);
   await preview.locator('body').click({ button: 'right', position: { x: 2, y: 110 } });
   await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeDisabled();
   await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  await boundElement.click();
-  await page.keyboard.press('Shift+F10');
+  await preview.locator('#preview-mode-select').selectOption('edit');
+  await expect(boundElement).toBeVisible();
+  await boundElement.click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Go to source position' })).toBeEnabled();
   const pdfDownload = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Download PDF' }).click();

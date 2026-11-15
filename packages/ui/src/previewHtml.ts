@@ -58,8 +58,6 @@ export interface CompileHtmlOptions {
   previewUiMode?: 'normal' | 'edit' | 'practice';
   /** Source identity must be literal TextDocument text for editable Preview bindings. */
   previewEditAvailable?: boolean;
-  /** Keep source binding attributes available for host-owned context menus outside Edit mode. */
-  includeVisualBindingsForContextMenu?: boolean;
   /** Parser-owned authored token bindings, never inferred from SVG coordinates. */
   visualBindings?: readonly VisualSourceBinding[];
   /** Host messages and state are supplied by the owning application's adapter. */
@@ -277,7 +275,7 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     ? renderCspMeta(options.cspSource, options.nonce)
     : '';
 
-  const includeVisualBindings = previewEditAvailable && (previewEditMode || options?.includeVisualBindingsForContextMenu === true);
+  const includeVisualBindings = previewEditAvailable && previewEditMode;
   const sheets = renderScoreSheets(score, pageSize, orientation, includeVisualBindings);
   const spreadGroups: string[] = [];
   for (let i = 0; i < sheets.length; i += 2) {

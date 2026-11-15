@@ -31,6 +31,13 @@ export interface DriveAppDataSnapshot {
   duplicateCount: number;
 }
 
+export interface PendingDriveAppData {
+  schemaVersion: 1;
+  accountId: string;
+  state: DriveAppDataState;
+  updatedAt: number;
+}
+
 export type DriveAppDataErrorCode =
   | 'http' | 'permission' | 'network' | 'invalid-json' | 'invalid-state'
   | 'unsupported-version' | 'conflict' | 'unknown-outcome';
@@ -93,6 +100,25 @@ export function validateDriveAppDataState(value: unknown): DriveAppDataState {
     openDriveFileIds: uniqueIds(record.openDriveFileIds, 30, 'openDriveFileIds'),
     activeDriveFileId: record.activeDriveFileId as string | null,
     recentDriveFileIds: uniqueIds(record.recentDriveFileIds, 50, 'recentDriveFileIds')
+  };
+}
+
+export function validatePendingDriveAppData(value: unknown, expectedAccountId: string): PendingDriveAppData {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new DriveAppDataError('invalid-state', 'Pending Drive metadata must be an object.');
+  }
+  const record = value as Record<string, unknown>;
+  const keys = ['schemaVersion', 'accountId', 'state', 'updatedAt'];
+  if (Object.keys(record).length !== keys.length || keys.some(key => !Object.hasOwn(record, key))
+    || record.schemaVersion !== 1 || record.accountId !== expectedAccountId
+    || typeof record.updatedAt !== 'number' || !Number.isFinite(record.updatedAt) || record.updatedAt < 0) {
+    throw new DriveAppDataError('invalid-state', 'Pending Drive metadata is invalid or belongs to another account.');
+  }
+  return {
+    schemaVersion: 1,
+    accountId: expectedAccountId,
+    state: validateDriveAppDataState(record.state),
+    updatedAt: record.updatedAt
   };
 }
 

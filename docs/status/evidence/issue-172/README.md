@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements. At current revision `40689f0`, Playwright Chromium and Safari CI passed, local Playwright WebKit passed 59/59, and Web unit tests passed 43/43. The first WebKit CI attempt had one computed-style assertion failure; the same focused test and local full WebKit suite passed, and the failed CI job was rerun.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project after addressing PR #173 review findings. Chromium captured the screenshots and DOMRect measurements. The current working tree passed Playwright Chromium 64/64, Playwright WebKit 64/64, Web unit 44/44, and SafariDriver smoke 7/7.
 
 Capture command:
 
@@ -29,6 +29,7 @@ Each image is 1600 × 900 CSS pixels.
 - [Problems panel and context menu](problems-ja.png), [context menu](menu-problems-ja.png)
 - Preview: [without a source binding](menu-preview-ja.png), [with a valid source binding](menu-preview-binding-ja.png)
 - [Settings menu](menu-settings-ja.png)
+- Header interaction matrix: `header-hover-{en,ja}-{light,dark}.png` and `header-focus-{en,ja}-{light,dark}.png`.
 - [Source-only view](source-only-ja-dark.png)
 - [Score-only view](score-only-ja-dark.png)
 - [Measured DOM rectangles, entries, controls, columns, and view modes](layout-domrect.json)
@@ -49,18 +50,18 @@ The measurements below are CSS pixels from the 1600 × 900 Japanese dark capture
 - Problems headings and rows share the same four grid tracks: Severity x=50 / 74 px, File x=132 / 333.5 px, Line:Col x=473.5 / 72 px, Message x=553.5 / 1000.5 px. The reference state includes one compiler diagnostic with its real severity icon and source position.
 - The tab strip is y=40 and exactly 36 px high. Source/Split/Score controls stay at its right edge (x=1155, 1188, 1221; each 30 × 28 px).
 - Source and Score begin at y=76. Their split widths are 394.41 px and 591.59 px; Inspector is 300 px wide. Problems is 200 px high, beginning at y=676. The status bar is 24 px high.
-- Header actions are five 32 × 30 px buttons spaced 4 px apart at x=1414, 1450, 1486, 1522, and 1558. At 1280 × 800, the right-aligned actions end at x=1270.
+- Header actions are five 32 × 30 px buttons spaced 4 px apart at x=1414, 1450, 1486, 1522, and 1558. At 1280 × 800, the right-aligned actions end at x=1270 and Settings has 12 px right padding. Computed styles confirm idle controls have transparent backgrounds and no border; hover and keyboard focus show the theme-specific surface. The Web-only dark logo filter is also recorded in `layout-domrect.json`.
 
-The Web shell was visually compared with [workspace](../../../specs/gui_design/proposals/issue-172/web-compact-workspace.svg), [layout geometry](../../../specs/gui_design/proposals/issue-172/web-compact-layout-geometry.svg), [context menus](../../../specs/gui_design/proposals/issue-172/web-compact-context-menus.svg), [icons](../../../specs/gui_design/proposals/issue-172/web-compact-icons.svg), and the [panel-chrome correction](../../../specs/gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg). Numeric geometry in the approved spec remains the acceptance reference. Shared Preview contents and its two-row toolbar are deferred by the latest review scope update; they are not part of this Web shell comparison.
+The Web shell was visually compared with the approved [final shell](../../../specs/gui_design/proposals/issue-172/web-compact-final-shell-20261115.svg), [final menus](../../../specs/gui_design/proposals/issue-172/web-compact-final-menu-20261115.svg), and [first-connect state](../../../specs/gui_design/proposals/issue-172/web-drive-explorer-first-connect-20261115.svg). Earlier proposal diagrams are retained as history. Numeric geometry in the approved spec remains the acceptance reference. Shared Preview contents and its two-row toolbar are deferred by the latest review scope update; they are not part of this Web shell comparison.
 
-Browser automation verifies initial geometry, the four keyboard- and pointer-resizable splitters, saved layout restoration, narrow viewport collapse, CodeMirror editing, same-task Save/PDF snapshot flush, IME composition and leave protection, tab-local Undo history, right-click and Shift+F10 menus, disabled/stale Preview bindings, and rejection when the current source target changes.
+Browser automation verifies initial geometry, the four keyboard- and pointer-resizable splitters, saved layout restoration, narrow viewport collapse, CodeMirror editing, same-task Save/PDF snapshot flush, IME composition and leave protection, tab-local Undo history, right-click and Shift+F10 menus, disabled/stale Preview bindings, rejection when the current source target changes, and retention of account-bound pending metadata when remote Drive tabs fail to restore.
 
 ## Browser checks
 
-- Playwright Chromium: 59/59 PASS on the current PR revision (GitHub Actions).
-- Playwright WebKit: 59/59 PASS locally on macOS arm64, including native editor Undo/Redo and IME composition. The focused Problems grid test also passed 1/1 after its first CI attempt failed to read the header's computed grid tracks; the failed CI job was rerun.
-- Web unit: 43/43 PASS.
+- Playwright Chromium: 64/64 PASS locally on macOS arm64.
+- Playwright WebKit: 64/64 PASS locally on macOS arm64, including native editor Undo/Redo and IME composition.
+- Web unit: 44/44 PASS.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive using the Drive root keyboard menu.
-- Repository `npm test` at `40689f0`: root unit 1,138 PASS; VS Code/Electron E2E 130 PASS / 6 pending / 1 FAIL. The failure is the timing-sensitive Issue #162 fade cleanup assertion (`layers:1` at 841 ms before its 900 ms fallback); a filtered diagnostic of that test and the unrelated PB05 cleanup case passed 2/2. The command stopped before its Web stage; Web unit 43/43 and browser suites were run separately, and Chromium/WebKit each passed 59/59.
-- `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, `npx @vscode/vsce ls` (1,256 entries), `check:help`, `check:ai`, `validate-docs --issue 172`, implementation-contract verification, and `git diff --check` PASS. The VSIX file list contains bilingual Help, AI reference, and the Drive logo; it excludes test and evidence paths. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform.
+- Repository `npm test`: Help/AI checks and root unit 1,138/1,138 PASS; VS Code/Electron E2E reported 130 passing, 6 pending, and 1 failure in Issue #158 PB05 while checking restoration of the pre-existing tab order (the same two identities appeared in reversed order). The focused PB05 diagnostic passed 1/1. Issue #162's previously flaky fade test passed in this full run (30.5 s). The Web stage was not reached; Web unit and Chromium/WebKit suites passed separately as listed above.
+- `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, the VSIX inventory (1,256 entries), `check:help`, `check:ai`, `validate-docs --issue 172`, and `git diff --check` PASS. The inventory contains bilingual Help, AI reference, audio WASM, and the Drive logo; it excludes test and evidence paths. The `npx @vscode/vsce ls` wrapper could not resolve the configured npm mirror, so the cached VSCE 4.1.1 CLI was run directly. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform. The focused remote-restore-failure regression passed in Chromium and WebKit; pending metadata remained in IndexedDB and the remote PATCH count did not increase.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive and the Google Cloud consent-screen update, and physical audio output are NOT RUN. The live consent-screen change requires explicit user confirmation.

@@ -365,6 +365,954 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "Source view",
+        "pressed": "false"
+      },
+      {
+        "label": "Split view",
+        "pressed": "true"
+      },
+      {
+        "label": "Score view",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-hover-en-light.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1285.41,
+        "y": 5,
+        "width": 117.59,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 79,
+        "width": 160,
+        "height": 26
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 70.75,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 169.75,
+        "y": 151,
+        "width": 47.25,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 149.16,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "Severity",
+        "x": 50,
+        "y": 716.5,
+        "width": 74,
+        "height": 12
+      },
+      {
+        "label": "File",
+        "x": 132,
+        "y": 716.5,
+        "width": 333.5,
+        "height": 12
+      },
+      {
+        "label": "Line:Col",
+        "x": 473.5,
+        "y": 716.5,
+        "width": 72,
+        "height": 12
+      },
+      {
+        "label": "Message",
+        "x": 553.5,
+        "y": 716.5,
+        "width": 1000.5,
+        "height": 12
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1285.40625,
+        "y": 5,
+        "width": 117.59375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(239, 241, 245)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "Source view",
+        "pressed": "false"
+      },
+      {
+        "label": "Split view",
+        "pressed": "true"
+      },
+      {
+        "label": "Score view",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-focus-en-light.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1285.41,
+        "y": 5,
+        "width": 117.59,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 79,
+        "width": 160,
+        "height": 26
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 70.75,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 169.75,
+        "y": 151,
+        "width": 47.25,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 149.16,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "Severity",
+        "x": 50,
+        "y": 716.5,
+        "width": 74,
+        "height": 12
+      },
+      {
+        "label": "File",
+        "x": 132,
+        "y": 716.5,
+        "width": 333.5,
+        "height": 12
+      },
+      {
+        "label": "Line:Col",
+        "x": 473.5,
+        "y": 716.5,
+        "width": 72,
+        "height": 12
+      },
+      {
+        "label": "Message",
+        "x": 553.5,
+        "y": 716.5,
+        "width": 1000.5,
+        "height": 12
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1285.40625,
+        "y": 5,
+        "width": 117.59375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(239, 241, 245)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
     "localFileEntries": [
       {
         "name": "Untitled.guitardsl",
@@ -797,6 +1745,954 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "Source view",
+        "pressed": "false"
+      },
+      {
+        "label": "Split view",
+        "pressed": "true"
+      },
+      {
+        "label": "Score view",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-hover-en-dark.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1285.41,
+        "y": 5,
+        "width": 117.59,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 79,
+        "width": 160,
+        "height": 26
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 70.75,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 169.75,
+        "y": 151,
+        "width": 47.25,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 149.16,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "Severity",
+        "x": 50,
+        "y": 716.5,
+        "width": 74,
+        "height": 12
+      },
+      {
+        "label": "File",
+        "x": 132,
+        "y": 716.5,
+        "width": 333.5,
+        "height": 12
+      },
+      {
+        "label": "Line:Col",
+        "x": 473.5,
+        "y": 716.5,
+        "width": 72,
+        "height": 12
+      },
+      {
+        "label": "Message",
+        "x": 553.5,
+        "y": 716.5,
+        "width": 1000.5,
+        "height": 12
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1285.40625,
+        "y": 5,
+        "width": 117.59375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "Source view",
+        "pressed": "false"
+      },
+      {
+        "label": "Split view",
+        "pressed": "true"
+      },
+      {
+        "label": "Score view",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-focus-en-dark.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1285.41,
+        "y": 5,
+        "width": 117.59,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 79,
+        "width": 160,
+        "height": 26
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 70.75,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 169.75,
+        "y": 151,
+        "width": 47.25,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 149.16,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "Severity",
+        "x": 50,
+        "y": 716.5,
+        "width": 74,
+        "height": 12
+      },
+      {
+        "label": "File",
+        "x": 132,
+        "y": 716.5,
+        "width": 333.5,
+        "height": 12
+      },
+      {
+        "label": "Line:Col",
+        "x": 473.5,
+        "y": 716.5,
+        "width": 72,
+        "height": 12
+      },
+      {
+        "label": "Message",
+        "x": 553.5,
+        "y": 716.5,
+        "width": 1000.5,
+        "height": 12
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1285.40625,
+        "y": 5,
+        "width": 117.59375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Untitled.guitardsl",
@@ -1229,6 +3125,954 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-hover-ja-light.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1332.52,
+        "y": 5,
+        "width": 70.48,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 78,
+        "width": 160,
+        "height": 28
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 85.98,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 184.98,
+        "y": 151,
+        "width": 32.02,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 114.17,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "重要度",
+        "x": 50,
+        "y": 715.5,
+        "width": 74,
+        "height": 14
+      },
+      {
+        "label": "ファイル",
+        "x": 132,
+        "y": 715.5,
+        "width": 333.5,
+        "height": 14
+      },
+      {
+        "label": "行:列",
+        "x": 473.5,
+        "y": 715.5,
+        "width": 72,
+        "height": 14
+      },
+      {
+        "label": "メッセージ",
+        "x": 553.5,
+        "y": 715.5,
+        "width": 1000.5,
+        "height": 14
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1332.515625,
+        "y": 5,
+        "width": 70.484375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(239, 241, 245)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-focus-ja-light.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1332.52,
+        "y": 5,
+        "width": 70.48,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 78,
+        "width": 160,
+        "height": 28
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 85.98,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 184.98,
+        "y": 151,
+        "width": 32.02,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 114.17,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "重要度",
+        "x": 50,
+        "y": 715.5,
+        "width": 74,
+        "height": 14
+      },
+      {
+        "label": "ファイル",
+        "x": 132,
+        "y": 715.5,
+        "width": 333.5,
+        "height": 14
+      },
+      {
+        "label": "行:列",
+        "x": 473.5,
+        "y": 715.5,
+        "width": 72,
+        "height": 14
+      },
+      {
+        "label": "メッセージ",
+        "x": 553.5,
+        "y": 715.5,
+        "width": 1000.5,
+        "height": 14
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1332.515625,
+        "y": 5,
+        "width": 70.484375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(239, 241, 245)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "none",
     "localFileEntries": [
       {
         "name": "Untitled.guitardsl",
@@ -1661,6 +4505,954 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-hover-ja-dark.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1332.52,
+        "y": 5,
+        "width": 70.48,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 78,
+        "width": 160,
+        "height": 28
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 85.98,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 184.98,
+        "y": 151,
+        "width": 32.02,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 114.17,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "重要度",
+        "x": 50,
+        "y": 715.5,
+        "width": 74,
+        "height": 14
+      },
+      {
+        "label": "ファイル",
+        "x": 132,
+        "y": 715.5,
+        "width": 333.5,
+        "height": 14
+      },
+      {
+        "label": "行:列",
+        "x": 473.5,
+        "y": 715.5,
+        "width": 72,
+        "height": 14
+      },
+      {
+        "label": "メッセージ",
+        "x": 553.5,
+        "y": 715.5,
+        "width": 1000.5,
+        "height": 14
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1332.515625,
+        "y": 5,
+        "width": 70.484375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
+    "localFileEntries": [
+      {
+        "name": "Untitled.guitardsl",
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32,
+        "icon": {
+          "x": 68,
+          "y": 116,
+          "width": 16,
+          "height": 16
+        },
+        "symbol": "#ic-file",
+        "selected": true
+      }
+    ],
+    "driveFileEntries": [],
+    "splitters": [
+      {
+        "name": "Resize Explorer",
+        "orientation": "vertical",
+        "min": "180",
+        "max": "420",
+        "now": "220"
+      },
+      {
+        "name": "Resize source and score panes",
+        "orientation": "vertical",
+        "min": "24",
+        "max": "68",
+        "now": "40"
+      },
+      {
+        "name": "Resize Inspector",
+        "orientation": "vertical",
+        "min": "260",
+        "max": "480",
+        "now": "300"
+      },
+      {
+        "name": "Resize Problems",
+        "orientation": "horizontal",
+        "min": "140",
+        "max": "405",
+        "now": "200"
+      }
+    ],
+    "modes": [
+      {
+        "label": "ソース表示",
+        "pressed": "false"
+      },
+      {
+        "label": "分割表示",
+        "pressed": "true"
+      },
+      {
+        "label": "譜面表示",
+        "pressed": "false"
+      }
+    ],
+    "menu": null,
+    "menuItems": [],
+    "horizontalOverflow": false
+  },
+  "header-focus-ja-dark.png": {
+    "viewport": {
+      "width": 1600,
+      "height": 900
+    },
+    "rects": {
+      "header": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 40
+      },
+      "accountAction": {
+        "x": 1332.52,
+        "y": 5,
+        "width": 70.48,
+        "height": 30
+      },
+      "helpAction": {
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "settingsAction": {
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      "activityBar": {
+        "x": 0,
+        "y": 40,
+        "width": 40,
+        "height": 836
+      },
+      "explorer": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 630
+      },
+      "explorerSplitter": {
+        "x": 260,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "explorerHeading": {
+        "x": 40,
+        "y": 40,
+        "width": 220,
+        "height": 36
+      },
+      "explorerNewScore": {
+        "x": 192,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "explorerOptions": {
+        "x": 222,
+        "y": 44,
+        "width": 28,
+        "height": 28
+      },
+      "localRoot": {
+        "x": 40,
+        "y": 76,
+        "width": 220,
+        "height": 32
+      },
+      "localRootLabel": {
+        "x": 94,
+        "y": 78,
+        "width": 160,
+        "height": 28
+      },
+      "localRootIcon": {
+        "x": 73,
+        "y": 84,
+        "width": 16,
+        "height": 16
+      },
+      "localActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "localFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "activeLocalFile": {
+        "x": 60,
+        "y": 108,
+        "width": 200,
+        "height": 32
+      },
+      "driveRoot": {
+        "x": 40,
+        "y": 148,
+        "width": 220,
+        "height": 32
+      },
+      "driveRootLabel": {
+        "x": 94,
+        "y": 151,
+        "width": 85.98,
+        "height": 26
+      },
+      "driveRootIcon": {
+        "x": 73,
+        "y": 156,
+        "width": 16,
+        "height": 16
+      },
+      "driveStatus": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveConnect": {
+        "x": 184.98,
+        "y": 151,
+        "width": 32.02,
+        "height": 26
+      },
+      "driveFolder": null,
+      "driveActions": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "driveFile": null,
+      "tabs": {
+        "x": 266,
+        "y": 40,
+        "width": 992,
+        "height": 36
+      },
+      "tabViewControls": {
+        "x": 1149,
+        "y": 40,
+        "width": 109,
+        "height": 35
+      },
+      "viewSource": {
+        "x": 1155,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewSplit": {
+        "x": 1188,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "viewScore": {
+        "x": 1221,
+        "y": 43.5,
+        "width": 30,
+        "height": 28
+      },
+      "source": {
+        "x": 266,
+        "y": 76,
+        "width": 394.41,
+        "height": 594
+      },
+      "centerSplitter": {
+        "x": 660.41,
+        "y": 76,
+        "width": 6,
+        "height": 594
+      },
+      "score": {
+        "x": 666.41,
+        "y": 76,
+        "width": 591.59,
+        "height": 594
+      },
+      "inspectorSplitter": {
+        "x": 1258,
+        "y": 40,
+        "width": 6,
+        "height": 630
+      },
+      "inspector": {
+        "x": 1264,
+        "y": 40,
+        "width": 300,
+        "height": 630
+      },
+      "inspectorOptions": {
+        "x": 1522,
+        "y": 43.5,
+        "width": 28,
+        "height": 28
+      },
+      "problemsSplitter": {
+        "x": 40,
+        "y": 670,
+        "width": 1524,
+        "height": 6
+      },
+      "problems": {
+        "x": 40,
+        "y": 676,
+        "width": 1524,
+        "height": 200
+      },
+      "problemsHeading": {
+        "x": 40,
+        "y": 677,
+        "width": 1524,
+        "height": 32
+      },
+      "problemCounts": {
+        "x": 114.17,
+        "y": 692.5,
+        "width": 0,
+        "height": 0
+      },
+      "errorCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "warningCount": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "problemColumns": {
+        "x": 40,
+        "y": 709,
+        "width": 1524,
+        "height": 28
+      },
+      "closeProblems": {
+        "x": 1524,
+        "y": 678.5,
+        "width": 32,
+        "height": 28
+      },
+      "toolWindowBar": {
+        "x": 1564,
+        "y": 40,
+        "width": 36,
+        "height": 836
+      },
+      "toolWindowInspector": {
+        "x": 1568,
+        "y": 48,
+        "width": 28,
+        "height": 34
+      },
+      "toolWindowProblems": {
+        "x": 4,
+        "y": 834,
+        "width": 32,
+        "height": 34
+      },
+      "status": {
+        "x": 0,
+        "y": 876,
+        "width": 1600,
+        "height": 24
+      }
+    },
+    "problemsColumns": [],
+    "problemHeadings": [
+      {
+        "label": "重要度",
+        "x": 50,
+        "y": 715.5,
+        "width": 74,
+        "height": 14
+      },
+      {
+        "label": "ファイル",
+        "x": 132,
+        "y": 715.5,
+        "width": 333.5,
+        "height": 14
+      },
+      {
+        "label": "行:列",
+        "x": 473.5,
+        "y": 715.5,
+        "width": 72,
+        "height": 14
+      },
+      {
+        "label": "メッセージ",
+        "x": 553.5,
+        "y": 715.5,
+        "width": 1000.5,
+        "height": 14
+      }
+    ],
+    "symbols": {
+      "[data-storage-section=\"local\"] .root-icon use": [
+        "#ic-folder"
+      ],
+      "[data-storage-section=\"drive\"] .root-icon use": [],
+      "#new-score use": [
+        "#ic-fileplus"
+      ],
+      "#explorer-more use": [
+        "#ic-more"
+      ],
+      "#inspector-more use": [
+        "#ic-more"
+      ],
+      "#close-problems use": [
+        "#ic-close"
+      ],
+      ".problem-severity .web-icon use": []
+    },
+    "topActions": [
+      {
+        "id": "save-document",
+        "x": 1408,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "download-pdf",
+        "x": 1445,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "connect-drive",
+        "x": 1332.515625,
+        "y": 5,
+        "width": 70.484375,
+        "height": 30
+      },
+      {
+        "id": "help-button",
+        "x": 1519,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      },
+      {
+        "id": "settings-button",
+        "x": 1556,
+        "y": 5,
+        "width": 32,
+        "height": 30
+      }
+    ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Untitled.guitardsl",
@@ -2093,6 +5885,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Untitled.guitardsl",
@@ -2556,6 +6376,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -3044,6 +6892,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -3548,6 +7424,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -4142,6 +8046,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -4756,6 +8688,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -5350,6 +9310,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgb(48, 54, 65)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -5910,6 +9898,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -6450,6 +10466,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -6980,6 +11024,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -7510,6 +11582,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -8050,6 +12150,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -8610,6 +12738,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -9170,6 +13326,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -9674,6 +13858,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -10204,6 +14416,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -10703,6 +14943,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -11202,6 +15470,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",
@@ -11675,6 +15971,34 @@
         "height": 30
       }
     ],
+    "headerControlStyles": {
+      "connect-drive": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "save-document": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "download-pdf": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "account-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "help-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      },
+      "settings-button": {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderWidth": "0px"
+      }
+    },
+    "topbarPaddingRight": "12px",
+    "brandMarkFilter": "brightness(0) invert(1)",
     "localFileEntries": [
       {
         "name": "Reference.guitardsl",

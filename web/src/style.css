@@ -548,6 +548,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .top-actions .quiet-button:hover,
 .app-shell[data-theme="dark"] .top-actions .quiet-button:focus-visible,
 .app-shell[data-theme="dark"] .drive-root-more:hover { background: #303641; }
+.app-shell[data-theme="light"] .top-actions .quiet-button:not(:hover):not(:focus-visible),
+.app-shell[data-theme="dark"] .top-actions .quiet-button:not(:hover):not(:focus-visible) { background: transparent; border: 0; }
+.app-shell[data-theme="light"] .top-actions .quiet-button:hover,
+.app-shell[data-theme="light"] .top-actions .quiet-button:focus-visible { background: #eff1f5; }
+.app-shell[data-theme="dark"] .brand-mark { filter: brightness(0) invert(1); }
 .app-shell[data-theme="dark"] .drive-root-more { color: #99a3b5; }
 .app-shell[data-theme="dark"] .settings-menu button kbd { color: #99a3b5; }
 @media (max-width: 900px) {

@@ -238,18 +238,31 @@ export class SourceEditorSurface {
     await navigator.clipboard.writeText(this.view.state.sliceDoc(selection.from, selection.to));
     return true;
   }
-  async cut(): Promise<boolean> {
+  async cut(isCurrent?: () => boolean): Promise<boolean> {
     const selection = this.view.state.selection.main;
     if (selection.empty) return false;
     if (!navigator.clipboard?.writeText) throw new DOMException('Clipboard access is unavailable', 'NotAllowedError');
-    await navigator.clipboard.writeText(this.view.state.sliceDoc(selection.from, selection.to));
+    const editorState = this.view.state;
+    const key = this.activeKey;
+    const source = this.activeSource;
+    const text = editorState.sliceDoc(selection.from, selection.to);
+    await navigator.clipboard.writeText(text);
+    if (isCurrent && !isCurrent() || this.activeKey !== key || this.view.state !== editorState || this.activeSource !== source
+      || this.hasPendingEdit() || this.compositionActive || this.view.composing
+      || this.view.state.selection.main.from !== selection.from || this.view.state.selection.main.to !== selection.to) return false;
     this.view.dispatch({ changes: { from: selection.from, to: selection.to }, selection: { anchor: selection.from }, annotations: Transaction.userEvent.of('input.cut') });
     return true;
   }
-  async paste(): Promise<boolean> {
+  async paste(isCurrent?: () => boolean): Promise<boolean> {
     if (!navigator.clipboard?.readText) throw new DOMException('Clipboard access is unavailable', 'NotAllowedError');
+    const editorState = this.view.state;
+    const key = this.activeKey;
+    const source = this.activeSource;
+    const selection = editorState.selection.main;
     const text = (await navigator.clipboard.readText()).replace(/\r\n?/gu, '\n');
-    const selection = this.view.state.selection.main;
+    if (isCurrent && !isCurrent() || this.activeKey !== key || this.view.state !== editorState || this.activeSource !== source
+      || this.hasPendingEdit() || this.compositionActive || this.view.composing
+      || this.view.state.selection.main.from !== selection.from || this.view.state.selection.main.to !== selection.to) return false;
     if (!text && selection.empty) return false;
     this.view.dispatch({ changes: { from: selection.from, to: selection.to, insert: text }, selection: { anchor: selection.from + text.length }, annotations: Transaction.userEvent.of('input.paste') });
     return true;

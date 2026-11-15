@@ -373,7 +373,7 @@ describe('source-preserving visual and variable planners', () => {
     }), { ok: false, code: 'diagnosticRegression' }, 'inserting before lyrics cannot silently remap existing syllables');
   });
 
-  it('keeps Preview edit controls hidden by default while rendering parser targets', () => {
+  it('keeps Preview edit controls and source bindings hidden by default', () => {
     const source = '| C 4.d 4.u 4.d 4.u |\n';
     const score = parsed(source);
     const html = compileGuitarDslToHtml(source, {
@@ -383,10 +383,6 @@ describe('source-preserving visual and variable planners', () => {
     const editHtml = compileGuitarDslToHtml(source, {
       documentUri: 'file:///song.guitardsl', documentVersion: 1, previewGeneration: 2,
       previewEditMode: true, previewEditAvailable: true, visualBindings: score.visualSourceBindings
-    });
-    const contextMenuHtml = compileGuitarDslToHtml(source, {
-      documentUri: 'local:test', documentVersion: 1, previewGeneration: 2,
-      previewEditAvailable: true, includeVisualBindingsForContextMenu: true, visualBindings: score.visualSourceBindings
     });
     assert.match(html, /id="preview-edit-row"[^>]* hidden/);
     assert.match(html, /data-preview-edit-mode="false"/);
@@ -412,10 +408,6 @@ describe('source-preserving visual and variable planners', () => {
     assert.match(editHtml, /document\.addEventListener\('pointerup'/);
     assert.match(editHtml, /document\.addEventListener\('pointercancel'/);
     assert.match(editHtml, /id="preview-edit-open-source"/);
-    assert.match(contextMenuHtml, /id="preview-edit-row"[^>]* hidden/);
-    assert.match(contextMenuHtml, /data-preview-edit-mode="false"/);
-    assert.match(contextMenuHtml, /data-visual-binding="source-/,
-      'the Web host can route normal-mode notation context menus to source without enabling Preview editing');
   });
 
   it('rejects invalid or duplicate definitions without changing source', () => {
