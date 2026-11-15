@@ -105,17 +105,17 @@
         "x": 40,
         "y": 149,
         "width": 220,
-        "height": 35
+        "height": 32
       },
       "driveRootLabel": {
         "x": 94,
-        "y": 153.5,
+        "y": 152,
         "width": 98.78,
         "height": 26
       },
       "driveRootIcon": {
         "x": 73,
-        "y": 158.5,
+        "y": 157,
         "width": 16,
         "height": 16
       },
@@ -127,9 +127,9 @@
       },
       "driveConnect": {
         "x": 197.78,
-        "y": 149,
+        "y": 152,
         "width": 56.22,
-        "height": 35
+        "height": 26
       },
       "driveFolder": null,
       "driveActions": {
@@ -539,17 +539,17 @@
         "x": 40,
         "y": 149,
         "width": 220,
-        "height": 35
+        "height": 32
       },
       "driveRootLabel": {
         "x": 94,
-        "y": 153.5,
+        "y": 152,
         "width": 98.78,
         "height": 26
       },
       "driveRootIcon": {
         "x": 73,
-        "y": 158.5,
+        "y": 157,
         "width": 16,
         "height": 16
       },
@@ -561,9 +561,9 @@
       },
       "driveConnect": {
         "x": 197.78,
-        "y": 149,
+        "y": 152,
         "width": 56.22,
-        "height": 35
+        "height": 26
       },
       "driveFolder": null,
       "driveActions": {
@@ -973,17 +973,17 @@
         "x": 40,
         "y": 149,
         "width": 220,
-        "height": 37
+        "height": 32
       },
       "driveRootLabel": {
         "x": 94,
-        "y": 154.5,
+        "y": 152,
         "width": 122.67,
         "height": 26
       },
       "driveRootIcon": {
         "x": 73,
-        "y": 159.5,
+        "y": 157,
         "width": 16,
         "height": 16
       },
@@ -995,9 +995,9 @@
       },
       "driveConnect": {
         "x": 221.67,
-        "y": 149,
+        "y": 152,
         "width": 32.33,
-        "height": 37
+        "height": 26
       },
       "driveFolder": null,
       "driveActions": {
@@ -1407,17 +1407,17 @@
         "x": 40,
         "y": 149,
         "width": 220,
-        "height": 37
+        "height": 32
       },
       "driveRootLabel": {
         "x": 94,
-        "y": 154.5,
+        "y": 152,
         "width": 122.67,
         "height": 26
       },
       "driveRootIcon": {
         "x": 73,
-        "y": 159.5,
+        "y": 157,
         "width": 16,
         "height": 16
       },
@@ -1429,9 +1429,9 @@
       },
       "driveConnect": {
         "x": 221.67,
-        "y": 149,
+        "y": 152,
         "width": 32.33,
-        "height": 37
+        "height": 26
       },
       "driveFolder": null,
       "driveActions": {
@@ -1841,17 +1841,17 @@
         "x": 40,
         "y": 149,
         "width": 220,
-        "height": 37
+        "height": 32
       },
       "driveRootLabel": {
         "x": 94,
-        "y": 154.5,
+        "y": 152,
         "width": 122.67,
         "height": 26
       },
       "driveRootIcon": {
         "x": 73,
-        "y": 159.5,
+        "y": 157,
         "width": 16,
         "height": 16
       },
@@ -1863,9 +1863,9 @@
       },
       "driveConnect": {
         "x": 221.67,
-        "y": 149,
+        "y": 152,
         "width": 32.33,
-        "height": 37
+        "height": 26
       },
       "driveFolder": null,
       "driveActions": {

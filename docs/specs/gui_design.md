@@ -45,7 +45,7 @@
 | Web Compact Workspace・寸法と操作 | [web-compact-layout-geometry.svg](gui_design/proposals/issue-172/web-compact-layout-geometry.svg) | 1600 × 920 px | 初期寸法、境界、最小/最大値、キーボード操作 |
 | Web Compact Workspace・アイコン | [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg) | 1200 × 750 px | Web ツールバーとツールウィンドウの SVG アイコン |
 | Web Compact Workspace・メニュー | [web-compact-context-menus.svg](gui_design/proposals/issue-172/web-compact-context-menus.svg) | 1340 × 780 px | Explorer、タブ、Problems、Preview のメニューと右上操作 |
-| Web Compact Workspace・パネル見出し補正 | [web-compact-panel-chrome-correction.svg](gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg) | 1140 × 760 px | Explorer、Inspector、Problems、ファイル行のアイコンと状態 |
+| Web Compact Workspace・パネル見出し補正 | [web-compact-panel-chrome-correction.svg](gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg) | 1500 × 850 px | Explorer、Inspector、Problems、ファイル行のアイコンと状態 |
 
 ## Normative requirements
 

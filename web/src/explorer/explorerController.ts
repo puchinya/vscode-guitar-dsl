@@ -130,8 +130,8 @@ export class ExplorerController {
     this.driveConnect.hidden = connected;
     this.driveConnect.disabled = Boolean(state.connecting);
     const connectLabel = state.connecting ? labels.connecting : state.authExpired ? labels.reconnectDrive : labels.connectInline;
-    this.driveConnect.replaceChildren(createWebIcon('cloud'), document.createTextNode(connectLabel));
-    this.driveConnect.title = state.authExpired ? labels.driveAuthStatus : connectLabel;
+    this.driveConnect.textContent = connectLabel;
+    this.driveConnect.title = state.authExpired ? `${connectLabel} · ${labels.driveAuthStatus}` : connectLabel;
     this.driveConnect.setAttribute('aria-label', connectLabel);
 
     const localRender = this.localExpanded

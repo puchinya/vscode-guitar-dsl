@@ -1,11 +1,11 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Playwright Chromium and WebKit each passed 52/52, Web unit passed 34/34, and Apple Safari/SafariDriver passed 7/7.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Playwright Chromium and WebKit each passed 53/53, Web unit passed 34/34, and Apple Safari/SafariDriver passed 7/7.
 
 Capture command:
 
 ```bash
-GUITARDSL_CAPTURE_ISSUE172=1 npm run test:e2e --workspace web -- --project=chromium --grep='opens a local-first GuitarDSL workspace'
+GUITARDSL_CAPTURE_ISSUE172=1 npm run test:e2e --workspace web -- --project=chromium --grep='opens a local-first GuitarDSL workspace|resolves system theme and keeps Problems and document tabs readable'
 ```
 
 ## Main theme and locale matrix
@@ -31,6 +31,12 @@ Each image is 1600 × 900 CSS pixels.
 - [Score-only view](score-only-ja-dark.png)
 - [Measured DOM rectangles, entries, controls, columns, and view modes](layout-domrect.json)
 
+## System theme regression
+
+- [1600 × 900 Japanese system theme with the browser set to dark](system-theme-dark-1600x900-ja.png)
+- Chromium and WebKit E2E verify that System follows browser color-scheme changes, explicit Light stays light under a dark preference, explicit Dark stays dark under a light preference, and the Problems panel and active document tab remain readable.
+- Explorer keyboard coverage opens both option menus with Shift+F10 and the Context Menu key, then checks item navigation, activation, Escape focus return, close/reopen actions, and width reset. English and Japanese Drive states check that the root row stays 32px while disconnected, connecting, connected, and expired; the inline action is text-only and single-line.
+
 ## Geometry measurements
 
 The measurements below are CSS pixels from the 1600 × 900 Japanese dark capture; exact values for all captures and interactive states are in `layout-domrect.json`.
@@ -49,8 +55,8 @@ Browser automation verifies initial geometry, the four keyboard- and pointer-res
 
 ## Browser checks
 
-- Playwright Chromium: 52/52 PASS on macOS arm64 (1 worker for the final full run).
-- Playwright WebKit: 52/52 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
+- Playwright Chromium: 56/56 PASS on macOS arm64.
+- Playwright WebKit: 56/56 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
 - Web unit: 34/34 PASS.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive using the Drive root keyboard menu.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive, and physical audio output are NOT RUN per the Safari acceptance contract.

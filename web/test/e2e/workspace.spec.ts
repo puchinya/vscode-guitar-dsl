@@ -597,6 +597,53 @@ test('uses CodeMirror for source editing and GuitarDSL syntax highlighting', asy
   await expect.poll(() => page.locator('.cm-scroller').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 });
 
+test('resolves system theme and keeps Problems and document tabs readable', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  const shell = page.locator('.app-shell');
+  const problems = page.locator('#problems-panel');
+  const activeTab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+  await expect(activeTab).toBeVisible();
+  expect(await problems.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(34, 37, 44)');
+  expect(await activeTab.evaluate(element => getComputedStyle(element).color)).toBe('rgb(228, 231, 238)');
+
+  const chooseTheme = async (label: string): Promise<void> => {
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('menuitemradio', { name: label }).click();
+  };
+
+  await chooseTheme('Theme: Light');
+  await expect(shell).toHaveAttribute('data-theme', 'light');
+  expect(await problems.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(255, 255, 255)');
+  expect(await activeTab.evaluate(element => getComputedStyle(element).color)).toBe('rgb(37, 42, 51)');
+
+  await chooseTheme('Theme: System');
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(shell).toHaveAttribute('data-theme', 'light');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+
+  await chooseTheme('Theme: Dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await chooseTheme('Theme: System');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(shell).toHaveAttribute('data-theme', 'dark');
+  if (process.env.GUITARDSL_CAPTURE_ISSUE172 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-172');
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'system-theme-dark-1600x900-ja.png'), fullPage: false });
+  }
+});
+
 test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
@@ -885,6 +932,69 @@ test('shows both Explorer roots and opens root and tab menus from Shift+F10', as
   await expect(tab).toBeFocused();
 });
 
+test('opens Explorer and Inspector option menus with Shift+F10 and the Context Menu key', async ({ page }) => {
+  await page.goto('/');
+  const workspace = page.locator('#workspace');
+  const explorerOptions = page.locator('#explorer-more');
+  const inspectorOptions = page.locator('#inspector-more');
+  const menuItems = page.getByRole('menuitem');
+
+  await page.locator('#explorer-splitter').focus();
+  await page.keyboard.press('End');
+  await expect(workspace).toHaveCSS('--explorer-width', '420px');
+  await explorerOptions.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(menuItems).toHaveText(['Import file', 'Close Explorer', 'Reset Explorer Width (220px)']);
+  await expect(menuItems.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menuItems.nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(workspace).toHaveCSS('--explorer-width', '220px');
+
+  await explorerOptions.focus();
+  await page.keyboard.press('ContextMenu');
+  await expect(menuItems.first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(explorerOptions).toBeFocused();
+
+  await explorerOptions.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(workspace).toHaveClass(/explorer-closed/u);
+  await expect(page.locator('#activity-explorer')).toBeFocused();
+  await page.locator('#activity-explorer').click();
+  await expect(workspace).not.toHaveClass(/explorer-closed/u);
+
+  await page.locator('#inspector-splitter').focus();
+  await page.keyboard.press('End');
+  await expect(workspace).not.toHaveCSS('--inspector-width', '300px');
+  await inspectorOptions.focus();
+  await page.keyboard.press('ContextMenu');
+  await expect(menuItems).toHaveText(['Close Inspector', 'Reset width to default']);
+  await expect(menuItems.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menuItems.nth(1)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(workspace).toHaveCSS('--inspector-width', '300px');
+
+  await inspectorOptions.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await expect(workspace).toHaveClass(/inspector-closed/u);
+  await expect(page.locator('#toggle-inspector')).toBeFocused();
+  await page.locator('#toggle-inspector').click();
+  await expect(workspace).not.toHaveClass(/inspector-closed/u);
+
+  await inspectorOptions.focus();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('Escape');
+  await expect(inspectorOptions).toBeFocused();
+});
+
 test('uses compact Explorer, Inspector, and Problems panel controls', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/');
@@ -944,6 +1054,60 @@ test('uses compact Explorer, Inspector, and Problems panel controls', async ({ p
   await expect(page.locator('#workspace')).not.toHaveClass(/problems-collapsed/u);
   await expect(page.locator('#workspace')).toHaveCSS('--problems-height', '210px');
 });
+
+for (const locale of ['en', 'ja'] as const) {
+  test(`keeps the Drive root 32px tall across auth states (${locale})`, async ({ page }) => {
+    await installDriveBrowserMock(page, ['account-a'], {
+      pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL' }, unauthorizedList: true
+    });
+    await page.goto('/');
+    const copy = locale === 'ja'
+      ? { language: 'Language: 日本語', settings: 'Settings', connectMenu: 'Drive に接続', connect: '接続', connecting: '接続中…', folder: 'フォルダーを選択', reconnect: 'Drive に再接続' }
+      : { language: '', settings: '', connectMenu: 'Connect Drive', connect: 'Connect', connecting: 'Connecting…', folder: 'Choose folder', reconnect: 'Reconnect Drive' };
+    if (locale === 'ja') {
+      await page.getByRole('button', { name: copy.settings }).click();
+      await page.getByRole('menuitemradio', { name: copy.language }).click();
+    }
+    const driveRoot = page.locator('[data-storage-section="drive"] .storage-root-row');
+    const connect = page.locator('#drive-connect-inline');
+    const expectRootHeight = async (): Promise<void> => { await expect(driveRoot).toHaveCSS('height', '32px'); };
+    const expectTextOnlyConnect = async (label: string): Promise<void> => {
+      await expect(connect).toHaveText(label);
+      await expect(connect.locator('.web-icon')).toHaveCount(0);
+      await expect(connect).toHaveCSS('white-space', 'nowrap');
+      await expect(connect).toHaveCSS('height', '26px');
+    };
+
+    await expectRootHeight();
+    await expectTextOnlyConnect(copy.connect);
+    await page.evaluate((connectingLabel: string) => {
+      const target = window as Window & { __driveConnectingRootHeights?: number[] };
+      const button = document.querySelector<HTMLButtonElement>('#drive-connect-inline')!;
+      const root = button.closest<HTMLElement>('.storage-root-row')!;
+      const heights = target.__driveConnectingRootHeights = [];
+      new MutationObserver(() => {
+        if (button.getAttribute('aria-label') === connectingLabel) {
+          heights.push(root.getBoundingClientRect().height);
+        }
+      }).observe(button, { attributes: true, attributeFilter: ['aria-label'] });
+    }, copy.connecting);
+    await page.locator('#connect-drive').click();
+    await page.getByRole('menuitem', { name: copy.connectMenu }).click();
+    await expect(page.locator('#drive-status')).toBeVisible();
+    await expect(connect).toBeHidden();
+    await expectRootHeight();
+    const connectingHeights = await page.evaluate(() => (window as Window & { __driveConnectingRootHeights?: number[] }).__driveConnectingRootHeights ?? []);
+    expect(connectingHeights.length).toBeGreaterThan(0);
+    expect(connectingHeights.every(height => Math.abs(height - 32) <= 1)).toBe(true);
+
+    await page.locator('#storage-drive').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: copy.folder }).click();
+    await expect(connect).toBeVisible();
+    await expectTextOnlyConnect(copy.reconnect);
+    await expectRootHeight();
+    expect((await connect.getAttribute('title'))?.startsWith(copy.reconnect)).toBe(true);
+  });
+}
 
 test('connects and reconnects from the Google Drive root menu', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a'], {

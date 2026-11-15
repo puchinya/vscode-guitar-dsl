@@ -8,10 +8,10 @@
 
 ## Issue #172: Web Compact IDE
 
-- **状態**: 最新のPR指摘に従い、Webパネルの見た目と操作を修正。修正をPR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) へ提出し、再レビューとGitHub Required Checksを待つ。Explorerのファイル単位選択、32pxの行、InspectorのVariables初期表示、Problemsのアイコン付き列表示、メニューと閉じる/再表示を反映。コード・Driveアカウント境界・保存状態・共有Previewは維持する。
+- **状態**: 最新のPR指摘に従いWebパネルを修正し、ChromeのシステムテーマでProblemsが白く残る問題とタブ名のコントラスト不足も修正。変更をPR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) へ提出し、再レビューとGitHub Required Checksを待つ。Explorerのファイル単位選択、32pxの行、InspectorのVariables初期表示、Problemsのアイコン付き列表示、メニューと閉じる/再表示を反映。コード・Driveアカウント境界・保存状態・共有Previewは維持する。
 - **適用範囲**: Issue #172 comment `6876057443`、SHA-256 `dc51abf1cb7492d7ea5fef24675858a0f6cf2fd498e38906ed4e0fbe1aa49d21` を照合済み。最新レビュー指摘 `6881800390` のWeb-only scope correctionと承認済みパネルSVGを適用。共有Preview/Inspector描画の変更はこのPRの受け入れ対象から延期。
-- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、接続Drive・複数Local文書・実診断を含む1600×900参照状態、Explorer/Inspectorのオプションメニューを取得。DOMRectでProblems見出しと診断行のグリッド一致、アイコン寸法、横はみ出しなしを確認。
-- **ブラウザー検証**: Playwright Chromium 52/52 PASS、Playwright WebKit 52/52 PASS、Web unit 34/34 PASS、SafariDriver smoke 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
+- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、接続Drive・複数Local文書・実診断を含む1600×900参照状態、Explorer/Inspectorのオプションメニューに加え、システム暗色の画面を取得。DOMRectでProblems見出しと診断行のグリッド一致、アイコン寸法、横はみ出しなしを確認。
+- **ブラウザー検証**: Playwright Chromium 56/56 PASS、Playwright WebKit 56/56 PASS、Web unit 34/34 PASS、SafariDriver smoke 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。テーマ切替、Driveルートの英日×4認証状態、Explorer/InspectorのContext Menu/Shift+F10を確認。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
 - **最終ゲート**: `npm run compile`、`npm run build:web`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。Web buildは500 kB超のchunk警告あり。`npm test` の既知のVS Code E2E Issue #158 `E2E-PB05` は前回 `130 passing / 6 pending / 1 failing`。このIssueのコードは変更していない。今回のPR push後にGitHub Required Checksと最新HEADのセルフレビューを確認する。
 
 ## Issue #166: Web SPA 版 GuitarDSL

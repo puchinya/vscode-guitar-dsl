@@ -1408,6 +1408,16 @@ function applyWebScoreSettings(tab: OpenTab, sectionId: ScoreSettingsSectionId):
   replaceEditorSourceWithUndo(plan.text);
 }
 
+const systemColorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+function applyResolvedTheme(): void {
+  const theme = state.theme === 'system' ? (systemColorScheme.matches ? 'dark' : 'light') : state.theme;
+  app.dataset.theme = theme;
+  app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = theme;
+}
+systemColorScheme.addEventListener('change', () => {
+  if (state.theme === 'system') applyResolvedTheme();
+});
+
 function renderAll(): void {
   const t = strings();
   renderTabs();
@@ -1444,8 +1454,7 @@ function renderAll(): void {
     renderDiagnostics(undefined);
     renderPreview(undefined);
   }
-  app.dataset.theme = state.theme;
-  app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = state.theme;
+  applyResolvedTheme();
   renderCursorPosition();
   applyWorkspaceLayout();
   renderDriveOperationControls();
@@ -2838,6 +2847,13 @@ app.addEventListener('keydown', event => {
   if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
   const target = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
   if (!target) return;
+  const panelMenuButton = target.closest<HTMLButtonElement>('#explorer-more, #inspector-more');
+  if (panelMenuButton) {
+    event.preventDefault();
+    if (panelMenuButton.id === 'explorer-more') openExplorerMenu();
+    else openInspectorMenu();
+    return;
+  }
   const menuTarget = target.closest('.storage-root-row, .file-item, .tab, .problem-row, .cm-gutters, .cm-content, .score-pane');
   if (menuTarget) { event.preventDefault(); openContextMenu(event, target, true); }
 });
