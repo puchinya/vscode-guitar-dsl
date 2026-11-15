@@ -1539,6 +1539,13 @@ function applyResolvedTheme(): void {
   const theme = state.theme === 'system' ? (systemColorScheme.matches ? 'dark' : 'light') : state.theme;
   app.dataset.theme = theme;
   app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = theme;
+  for (const dialog of document.querySelectorAll<HTMLDialogElement>('.conflict-dialog')) dialog.dataset.theme = theme;
+}
+function createThemedConflictDialog(): HTMLDialogElement {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'conflict-dialog';
+  dialog.dataset.theme = app.dataset.theme ?? 'light';
+  return dialog;
 }
 systemColorScheme.addEventListener('change', () => {
   if (state.theme === 'system') applyResolvedTheme();
@@ -1897,7 +1904,7 @@ function driveSessionIsCurrent(accountId: string, drive: GoogleDriveApi, generat
 function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
   const t = strings();
   return new Promise(resolve => {
-    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const dialog = createThemedConflictDialog();
     const heading = document.createElement('h2'); heading.textContent = state.locale === 'ja' ? 'Drive で競合が見つかりました' : 'Drive version conflict';
     const body = document.createElement('p'); body.textContent = state.locale === 'ja'
       ? 'Drive のファイルが別の場所で変更されています。' : 'This Drive file changed since it was opened.';
@@ -1914,7 +1921,7 @@ function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
 function appDataConflictDialog(): Promise<'reload' | 'local'> {
   const t = strings();
   return new Promise(resolve => {
-    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const dialog = createThemedConflictDialog();
     const heading = document.createElement('h2'); heading.textContent = t.appDataConflictTitle;
     const body = document.createElement('p'); body.textContent = t.appDataConflictBody;
     const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
@@ -2056,12 +2063,13 @@ async function importFile(file?: File): Promise<void> {
 function folderSetupDialog(): Promise<'create' | 'choose' | 'later'> {
   const t = strings();
   return new Promise(resolve => {
-    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const dialog = createThemedConflictDialog();
     const heading = document.createElement('h2'); heading.textContent = t.folderPromptTitle;
     const body = document.createElement('p'); body.textContent = t.folderPromptBody;
     const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
     for (const [choice, label] of [['create', t.createChoice], ['choose', t.chooseChoice], ['later', t.laterChoice]] as const) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      if (choice === 'create') button.className = 'primary-button';
       button.addEventListener('click', () => { dialog.close(); dialog.remove(); resolve(choice); }); buttons.append(button);
     }
     dialog.append(heading, body, buttons); document.body.append(dialog); dialog.showModal();

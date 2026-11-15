@@ -1086,12 +1086,29 @@ test('blocked Help popups expose a usable same-origin tab link', async ({ page }
 
 test('first Drive sign-in offers folder setup once and remembers Later without creating a folder', async ({ page }) => {
   const drive = await installDriveBrowserMock(page, ['account-a'], { appDataState: null });
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
   await page.locator('#connect-drive').click();
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
   const setup = page.getByRole('dialog');
   await expect(setup.getByRole('heading', { name: 'Set up a Google Drive folder?' })).toBeVisible();
   await expect(setup.getByRole('button')).toHaveText(['Create folder', 'Choose existing folder…', 'Later']);
+  const dialogTheme = () => setup.evaluate(element => {
+    const style = getComputedStyle(element);
+    const createButton = getComputedStyle(element.querySelector('button')!);
+    return { colorScheme: style.colorScheme, backgroundColor: style.backgroundColor, color: style.color, createBackground: createButton.backgroundColor };
+  });
+  await expect.poll(dialogTheme).toEqual({
+    colorScheme: 'dark', backgroundColor: 'rgb(36, 40, 48)', color: 'rgb(228, 231, 238)', createBackground: 'rgb(83, 100, 217)'
+  });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(dialogTheme).toEqual({
+    colorScheme: 'light', backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(32, 36, 43)', createBackground: 'rgb(83, 100, 217)'
+  });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(dialogTheme).toEqual({
+    colorScheme: 'dark', backgroundColor: 'rgb(36, 40, 48)', color: 'rgb(228, 231, 238)', createBackground: 'rgb(83, 100, 217)'
+  });
   await setup.getByRole('button', { name: 'Later' }).click();
   await expect(setup).toBeHidden();
   await expect.poll(() => drive.appDataState?.folderPrompt).toBe('deferred');

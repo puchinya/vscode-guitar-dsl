@@ -36,7 +36,7 @@ Each image is 1600 × 900 CSS pixels.
 ## System theme regression
 
 - [1600 × 900 Japanese system theme with the browser set to dark](system-theme-dark-1600x900-ja.png)
-- Chromium and WebKit E2E verify that System follows browser color-scheme changes, explicit Light stays light under a dark preference, explicit Dark stays dark under a light preference, and the Problems panel and active document tab remain readable.
+- Chromium and WebKit E2E verify that System follows browser color-scheme changes, explicit Light stays light under a dark preference, explicit Dark stays dark under a light preference, and the Problems panel and active document tab remain readable. The first-Drive setup dialog also tracks System changes while it is open and styles its controls for the resolved theme.
 - Explorer keyboard coverage opens both option menus with Shift+F10 and the Context Menu key, then checks item navigation, activation, Escape focus return, close/reopen actions, and width reset. English and Japanese Drive states check that the root row stays 32px while disconnected, connecting, connected, and expired; the inline action is text-only and single-line.
 
 ## Geometry measurements
