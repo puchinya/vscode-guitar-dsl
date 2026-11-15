@@ -467,13 +467,21 @@ async function refreshExplorerSnapshot(): Promise<void> {
     const drive = state.drive;
     const accountId = state.account.accountId;
     const generation = state.driveGeneration;
+    const folderId = state.folderId;
+    const isCurrentDriveList = (): boolean => state.drive === drive
+      && state.account?.accountId === accountId
+      && state.driveGeneration === generation
+      && state.folderId === folderId
+      && !state.authExpired;
     try {
-      const files = await drive.listFiles(state.folderId);
-      if (state.drive === drive && state.account?.accountId === accountId && state.driveGeneration === generation) driveFileRows = files;
+      const files = await drive.listFiles(folderId);
+      if (isCurrentDriveList()) driveFileRows = files;
     } catch (error) {
-      driveFileRows = [];
-      markDriveAuthState(error);
-      workspaceMessage = { text: shortError(error), kind: 'error' };
+      if (isCurrentDriveList()) {
+        driveFileRows = [];
+        markDriveAuthState(error);
+        workspaceMessage = { text: shortError(error), kind: 'error' };
+      }
     }
   } else driveFileRows = [];
   publishWorkspaceSnapshot();

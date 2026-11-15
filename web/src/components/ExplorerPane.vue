@@ -45,8 +45,8 @@ const openFile = (file: (typeof props.snapshot.localFiles)[number]) => {
           <button v-for="file in snapshot.driveFiles" :key="file.identity.fileId" type="button" class="file-item" :class="{ selected: file.selected }" data-storage="drive" :data-file-id="file.identity.fileId" :data-account-id="file.accountId" :data-revision="file.revision" :aria-current="file.selected ? 'page' : undefined" @click="openFile(file)"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-file"></use></svg><span class="file-name">{{ file.name }}</span></button>
           <div v-if="snapshot.online && snapshot.driveStatus === 'connected' && !snapshot.driveFiles.length" class="empty-state">{{ snapshot.driveFolderId ? text('楽譜がありません', 'No scores yet') : text('保存先フォルダーを選択してください', 'Choose a destination folder') }}</div>
         </div>
-        <p class="drive-scope-note" id="drive-scope-note" role="note" hidden>{{ snapshot.driveScopeNote }}</p>
-        <p class="drive-overwrite-note" id="drive-overwrite-note" role="note" hidden>{{ snapshot.driveOverwriteWarning }}</p>
+        <p v-if="snapshot.driveScopeNote" class="drive-scope-note" id="drive-scope-note" role="note">{{ snapshot.driveScopeNote }}</p>
+        <p v-if="snapshot.driveOverwriteWarning" class="drive-overwrite-note" id="drive-overwrite-note" role="note">{{ snapshot.driveOverwriteWarning }}</p>
       </div>
     </section>
   </aside>

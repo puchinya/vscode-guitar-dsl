@@ -4,6 +4,7 @@ Captured on 2026-11-15 on macOS arm64 with the local Vite app and Chromium. The 
 
 - [Desktop workspace, 1600×900](workspace-desktop.png)
 - [Narrow workspace, 390×844](workspace-narrow.png)
+- [Connected Google Drive notices, 1600×900](drive-connection-notices.png)
 - [Measured layout geometry](workspace-geometry.json)
 
 The desktop render keeps the existing compact IDE structure: Explorer, source editor, score preview, Inspector, Problems, and status bar. At 390px, the document width remains 390px with both source and score panes present; no document-level horizontal overflow was measured.
