@@ -44,9 +44,9 @@ Each image is 1600 × 900 CSS pixels.
 
 The measurements below are CSS pixels from the 1600 × 900 Japanese dark capture; exact values for all captures and interactive states are in `layout-domrect.json`.
 
-- Header: 40 px high. Explorer starts at x=40, is 220 px wide, and its `PROJECT` heading is 36 px high. Both visible roots are 220 × 32 px: local at y=76 and Drive at y=181. Local file rows are x=60, 200 × 32 px with a 16 px `ic-file`; Drive shows its 30 px folder row then 32 px file rows. The active Local document is selected by document identity; the connected Drive file is not.
-- The right Tool Window Bar starts at x=1564 and is 36 px wide. Inspector is the upper toggle at x=1568.5, y=48 (28 × 34 px); Problems is below it at x=1568.5, y=82 (28 × 34 px).
-- Explorer and Inspector options are ellipsis menus; Problems closes with a far-right ×. Inspector opens on Variables. The Problems header is 32 px high and retains visible error/warning counts at zero.
+- Header: 40 px high. Explorer starts at x=40, is 220 px wide, and its `EXPLORER` heading is 36 px high. Both visible roots are 220 × 32 px: local at y=76 and Drive at y=181. Local file rows are x=60, 200 × 32 px with a 16 px `ic-file`; Drive shows its 30 px folder row then 32 px file rows. The active Local document is selected by document identity; the connected Drive file is not.
+- The right Tool Window Bar starts at x=1564 and is 36 px wide and contains only Inspector, at x=1568, y=48 (28 × 34 px). Problems is toggled from the bottom of the left Activity Bar at x=4, y=834 (32 × 34 px); the right bar has no Problems toggle.
+- Explorer and Inspector options are ellipsis menus; Problems closes with a far-right ×. Inspector opens on Variables. The Problems header is 32 px high. Zero error/warning counts have no visible badge: `layout-domrect.json` records a 0 × 0 count element in the empty state and a visible error count in the populated reference state. The status-bar diagnostic totals are separate.
 - Problems headings and rows share the same four grid tracks: Severity x=50 / 74 px, File x=132 / 333.5 px, Line:Col x=473.5 / 72 px, Message x=553.5 / 1000.5 px. The reference state includes one compiler diagnostic with its real severity icon and source position.
 - The tab strip is y=40 and exactly 36 px high. Source/Split/Score controls stay at its right edge (x=1155, 1188, 1221; each 30 × 28 px).
 - Source and Score begin at y=76. Their split widths are 394.41 px and 591.59 px; Inspector is 300 px wide. Problems is 200 px high, beginning at y=676. The status bar is 24 px high.
