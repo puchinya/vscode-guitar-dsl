@@ -212,7 +212,7 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   }));
   await editor.press('Control+A');
   await page.locator('#menu-edit-trigger').click();
-  await page.getByRole('menuitem', { name: /^Paste\b/u }).click();
+  await page.getByRole('menuitem', { name: /^Paste/u }).click();
   await page.waitForFunction(() => typeof (window as Window & { __guitardslResolveClipboardRead?: unknown }).__guitardslResolveClipboardRead === 'function');
   await page.getByRole('button', { name: 'Update', exact: true }).click();
   await expect(page.locator('.pwa-update-blocked')).toContainText('workspace operations');
