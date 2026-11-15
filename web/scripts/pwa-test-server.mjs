@@ -24,6 +24,11 @@ createServer(async (request, response) => {
     response.writeHead(204).end();
     return;
   }
+  if (pathname === '/__test/reset-update' && request.method === 'POST') {
+    updateEnabled = false;
+    response.writeHead(204).end();
+    return;
+  }
   if (pathname === '/sw.js' && updateEnabled) {
     response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }).end(updatedWorker);
     return;

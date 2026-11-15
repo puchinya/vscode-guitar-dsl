@@ -9,8 +9,9 @@ const emit = defineEmits<{ update: []; later: [] }>();
   <section
     v-if="state.updateAvailable"
     class="pwa-update-prompt"
-    role="dialog"
-    aria-modal="true"
+    role="region"
+    aria-live="polite"
+    aria-atomic="true"
     :aria-label="locale === 'ja' ? 'アプリの更新' : 'App update'"
   >
     <div class="pwa-update-copy">

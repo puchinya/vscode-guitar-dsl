@@ -1,5 +1,7 @@
 import inspectorSettingsSource from '../../packages/ui/src/inspectorSettings.js?raw';
 import { parseGuitarDsl, type ParsedScore } from '@guitardsl/core/compiler';
+import { createWorkspaceScoreCache } from './controllers/workspaceScoreCache';
+import { canOpenDriveFile, createLatestRequestSequence, readLocalExplorerRowsIfCurrent } from './controllers/workspaceAsyncGuards';
 import { formatDiagnostic, getMessages, getScoreSettingsEditorMessages } from '@guitardsl/core/i18n';
 import { planBeginnerTransform } from '@guitardsl/core/beginnerMode';
 import { planCapoTransform } from '@guitardsl/core/capo';
@@ -264,10 +266,17 @@ const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
 let driveConnectInProgress = false;
+let driveConnectInterrupted = false;
 let activeDriveOperations = 0;
 let activeDriveListOperations = 0;
 let activeDriveReadOperations = 0;
 let activeDriveWorkflowOperations = 0;
+let workspaceOperationGeneration = 0;
+let updatePreparationGeneration = 0;
+let activeWorkspaceOperationCount = 0;
+const activeWorkspaceOperations = new Set<Promise<unknown>>();
+const explorerListRequests = createLatestRequestSequence();
+let driveSaveNeedsReviewAfterBfcache = false;
 let appDataSyncTimer = 0;
 let appDataSyncQueue: Promise<void> = Promise.resolve();
 let appDataPendingQueue: Promise<void> = Promise.resolve();
@@ -288,6 +297,9 @@ let workspaceMenuSnapshot: Readonly<WorkspaceMenuSnapshot> | undefined;
 let workspaceMenuActions: Array<WorkspaceMenuAction> = [];
 const workspaceListeners = new Set<(snapshot: Readonly<WorkspaceViewSnapshot>) => void>();
 let pwaRuntime: PwaRuntime;
+const derivedScoreCache = createWorkspaceScoreCache(
+  (source, expandPageBreakRepeats) => parseGuitarDsl(source, { expandPageBreakRepeats })
+);
 
 function syncWorkspaceInteractionLock(): void {
   const locked = workspaceInitializing || moveToDriveInProgress || reloadPreparationActive || pageCacheSuspended;
@@ -334,6 +346,11 @@ function releasePreviewAudioLock(purpose: 'reload' | 'bfcache'): void {
 
 function suspendWorkspaceForBfcache(): void {
   if (runtimeDisposed || pageCacheSuspended) return;
+  workspaceOperationGeneration += 1;
+  if (driveConnectInProgress) {
+    driveConnectInterrupted = true;
+    driveConnectInProgress = false;
+  }
   const tab = activeTab();
   pageCacheBaseline = tab ? {
     activeKey: state.activeKey,
@@ -357,6 +374,7 @@ function suspendWorkspaceForBfcache(): void {
 
 function resumeWorkspaceFromBfcache(): void {
   if (runtimeDisposed || !pageCacheSuspended) return;
+  workspaceOperationGeneration += 1;
   const baseline = pageCacheBaseline;
   pageCacheBaseline = undefined;
   const tab = activeTab();
@@ -367,6 +385,20 @@ function resumeWorkspaceFromBfcache(): void {
       && sourceEditor.getText() === baseline.editorSource)
     : !tab;
   pageCacheSuspended = false;
+  if (driveConnectInterrupted) {
+    driveConnectInterrupted = false;
+    if (!state.appDataSnapshot) {
+      state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
+      state.appDataStore = undefined; state.appDataPending = undefined; state.appDataPendingChoice = undefined;
+      state.appDataSync = 'idle'; state.appDataError = undefined; state.driveGeneration += 1;
+    }
+    workspaceMessage = {
+      text: state.locale === 'ja'
+        ? 'ブラウザー履歴への退避中にGoogle Drive接続が中断されました。状態を確認してから再接続してください。'
+        : 'Google Drive connection was interrupted while this page entered browser history. Review the session and reconnect if needed.',
+      kind: 'info'
+    };
+  }
   releasePreviewAudioLock('bfcache');
   syncWorkspaceInteractionLock();
   applyWorkspaceLayout();
@@ -376,6 +408,15 @@ function resumeWorkspaceFromBfcache(): void {
       text: state.locale === 'ja'
         ? 'ブラウザー復帰中に文書状態が変わりました。内容を確認してください。'
         : 'The document changed while the browser restored this page. Review its contents before saving.',
+      kind: 'error'
+    };
+  }
+  if (driveSaveNeedsReviewAfterBfcache) {
+    driveSaveNeedsReviewAfterBfcache = false;
+    workspaceMessage = {
+      text: state.locale === 'ja'
+        ? 'ブラウザー復帰前にDrive保存結果を確認できませんでした。ローカル下書きは保持されています。Driveを確認してから必要な場合だけ再保存してください。'
+        : 'The Drive save result was not confirmed before browser suspension. The local draft is kept; check Drive before retrying.',
       kind: 'error'
     };
   }
@@ -472,6 +513,37 @@ function renderDriveOperationControls(): void {
   publishWorkspaceSnapshot();
 }
 
+function trackWorkspaceOperation<T>(operation: () => T | Promise<T>): T | Promise<T> | undefined {
+  if (runtimeDisposed || reloadPreparationActive || pageCacheSuspended) return undefined;
+  activeWorkspaceOperationCount += 1;
+  try {
+    const result = operation();
+    if (result && typeof (result as Promise<T>).then === 'function') {
+      let tracked: Promise<T>;
+      tracked = Promise.resolve(result).finally(() => {
+        activeWorkspaceOperations.delete(tracked);
+        activeWorkspaceOperationCount = Math.max(0, activeWorkspaceOperationCount - 1);
+        if (activeWorkspaceOperationCount === 0 && deferredExplorerRefresh
+          && !runtimeDisposed && !reloadPreparationActive && !pageCacheSuspended) {
+          deferredExplorerRefresh = false;
+          queueMicrotask(() => { void refreshExplorerSnapshot(); });
+        }
+      });
+      activeWorkspaceOperations.add(tracked);
+      return tracked;
+    }
+    activeWorkspaceOperationCount = Math.max(0, activeWorkspaceOperationCount - 1);
+    return result;
+  } catch (error) {
+    activeWorkspaceOperationCount = Math.max(0, activeWorkspaceOperationCount - 1);
+    throw error;
+  }
+}
+
+function workspaceOperationIsCurrent(generation: number): boolean {
+  return !runtimeDisposed && !pageCacheSuspended && generation === workspaceOperationGeneration;
+}
+
 async function withDriveOperation<T>(operation: () => Promise<T>): Promise<T> {
   if (reloadPreparationActive || pageCacheSuspended) throw new Error('Drive operations are paused while the workspace is preparing to update or is in browser history cache.');
   activeDriveOperations += 1;
@@ -512,9 +584,9 @@ function snapshot(tab: OpenTab): DocumentSnapshot {
 }
 function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
   const tab = activeTab();
-  const diagnostics: WorkspaceDiagnosticSnapshot[] = (tab ? currentScore(tab.source)?.diagnostics ?? [] : []).map(item => {
-    const lines = (tab?.source ?? '').split('\n');
-    const from = lines.slice(0, item.line).reduce((total, line) => total + line.length + 1, 0) + item.startCol;
+  const derived = tab ? derivedScoreFor(tab) : undefined;
+  const diagnostics: WorkspaceDiagnosticSnapshot[] = (derived?.score?.diagnostics ?? []).map(item => {
+    const from = derived!.offsetFor(item.line, item.startCol);
     return {
       severity: item.severity,
       message: formatDiagnostic(item.code, item.args, state.locale),
@@ -555,6 +627,7 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
     problemsHeight: state.problemsHeight, splitRatio: state.splitRatio,
     localFiles, driveFiles, diagnostics, menu: workspaceMenuSnapshot,
     online: navigator.onLine, driveStatus,
+    driveGeneration: state.driveGeneration,
     driveAccountLabel: state.account?.emailAddress ?? state.account?.accountId,
     driveFolderName: state.folderName, driveFolderId: state.folderId,
     driveScopeNote: state.account && state.drive && navigator.onLine ? strings().driveAccess : undefined,
@@ -573,44 +646,72 @@ function publishWorkspaceSnapshot(): void {
   for (const listener of workspaceListeners) listener(next);
 }
 
-async function refreshExplorerSnapshot(): Promise<void> {
-  if (runtimeDisposed) return;
-  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return; }
-  try {
-    localFileRows = await indexedDb.listDocuments('local');
-  } catch (error) {
-    state.storageReady = false;
-    workspaceMessage = { text: `${strings().unavailable} ${shortError(error)}`, kind: 'error' };
-  }
-  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; publishWorkspaceSnapshot(); return; }
-  if (state.drive && state.account && state.folderId && navigator.onLine && !state.authExpired) {
-    const drive = state.drive;
-    const accountId = state.account.accountId;
-    const generation = state.driveGeneration;
-    const folderId = state.folderId;
-    const isCurrentDriveList = (): boolean => state.drive === drive
-      && state.account?.accountId === accountId
-      && state.driveGeneration === generation
-      && state.folderId === folderId
-      && !state.authExpired;
-    activeDriveListOperations += 1;
-    try {
-      const files = await drive.listFiles(folderId);
-      if (isCurrentDriveList()) driveFileRows = files;
-    } catch (error) {
-      if (isCurrentDriveList()) {
-        driveFileRows = [];
-        markDriveAuthState(error);
-        workspaceMessage = { text: shortError(error), kind: 'error' };
-      }
-    } finally {
-      activeDriveListOperations = Math.max(0, activeDriveListOperations - 1);
-    }
-  } else driveFileRows = [];
-  publishWorkspaceSnapshot();
+function refreshExplorerSnapshot(): Promise<void> {
+  if (runtimeDisposed) return Promise.resolve();
+  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return Promise.resolve(); }
+  const tracked = trackWorkspaceOperation(refreshExplorerSnapshotOperation);
+  return tracked instanceof Promise ? tracked : Promise.resolve();
 }
 
-function currentScore(source: string): ParsedScore | undefined {
+async function refreshExplorerSnapshotOperation(): Promise<void> {
+  const sequence = explorerListRequests.begin();
+  const operationGeneration = workspaceOperationGeneration;
+  const preparationGeneration = updatePreparationGeneration;
+  const drive = state.drive;
+  const accountId = state.account?.accountId;
+  const driveGeneration = state.driveGeneration;
+  const folderId = state.folderId;
+  const requestIsCurrent = () => explorerListRequests.isLatest(sequence)
+    && preparationGeneration === updatePreparationGeneration && workspaceOperationIsCurrent(operationGeneration);
+  const driveSessionIsCurrent = () => Boolean(drive && accountId && folderId && state.drive === drive
+    && state.account?.accountId === accountId && state.driveGeneration === driveGeneration
+    && state.folderId === folderId && !state.authExpired && navigator.onLine);
+
+  let localListIsCurrent = false;
+  try {
+    localListIsCurrent = await readLocalExplorerRowsIfCurrent(
+      () => indexedDb.listDocuments('local'), requestIsCurrent, rows => { localFileRows = rows; }
+    );
+  } catch (error) {
+    if (requestIsCurrent()) {
+      state.storageReady = false;
+      workspaceMessage = { text: `${strings().unavailable} ${shortError(error)}`, kind: 'error' };
+    }
+    return;
+  }
+  if (!localListIsCurrent || !requestIsCurrent()) {
+    if (!runtimeDisposed) deferredExplorerRefresh = true;
+    return;
+  }
+  if (!navigator.onLine || !drive || !accountId || !folderId || state.authExpired) {
+    driveFileRows = [];
+    publishWorkspaceSnapshot();
+    return;
+  }
+  if (!driveSessionIsCurrent()) return;
+
+  activeDriveListOperations += 1;
+  try {
+    const files = await drive.listFiles(folderId);
+    if (requestIsCurrent() && driveSessionIsCurrent()) driveFileRows = files;
+  } catch (error) {
+    if (requestIsCurrent() && driveSessionIsCurrent()) {
+      driveFileRows = [];
+      markDriveAuthState(error);
+      workspaceMessage = { text: shortError(error), kind: 'error' };
+    }
+  } finally {
+    activeDriveListOperations = Math.max(0, activeDriveListOperations - 1);
+  }
+  if (requestIsCurrent() && (driveSessionIsCurrent() || !navigator.onLine)) publishWorkspaceSnapshot();
+}
+
+function derivedScoreFor(tab: OpenTab) {
+  return derivedScoreCache.get(activeIdentityLabel(tab), tab.revision, tab.source, state.locale, state.expandPageBreakRepeats);
+}
+
+function currentScore(source: string, tab?: OpenTab): ParsedScore | undefined {
+  if (tab?.source === source) return derivedScoreFor(tab).score;
   try { return parseGuitarDsl(source, { expandPageBreakRepeats: state.expandPageBreakRepeats }); }
   catch { return undefined; }
 }
@@ -625,6 +726,7 @@ function editorReadyForSnapshot(tab: OpenTab): boolean {
   return false;
 }
 async function setActive(key: string, isCurrent?: () => boolean): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
   const next = state.tabs.find(tab => tabKey(tab) === key);
   if (!next || isCurrent && !isCurrent()) return;
   if (state.activeKey !== key && !editorReadyForDocumentChange()) return;
@@ -632,7 +734,7 @@ async function setActive(key: string, isCurrent?: () => boolean): Promise<void> 
   if (progressionAudioLease.activeSessionUri && progressionAudioLease.activeSessionUri !== activeIdentityLabel(next)) {
     await stopCandidateAudition();
   }
-  if (isCurrent && !isCurrent()) return;
+  if (!workspaceOperationIsCurrent(operationGeneration) || isCurrent && !isCurrent()) return;
   if (state.activeKey !== key && !editorReadyForDocumentChange()) return;
   state.activeKey = key;
   const tab = activeTab();
@@ -975,7 +1077,7 @@ function renderPreview(tab: OpenTab | undefined): void {
     publishWorkspaceSnapshot();
     return;
   }
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   renderDiagnostics(score);
   if (!score) {
     previewStatusLabel = strings().previewInvalid;
@@ -1160,7 +1262,7 @@ function startCandidateAudition(tab: OpenTab, candidate: ProgressionCandidate, _
     if (state.audioCandidateId === candidate.id) void stopCandidateAudition();
     return;
   }
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   const progression = state.lastProgression;
   if (!score || !progression || activeTab() !== tab || progression.source !== tab.source || progression.revision !== tab.revision) return;
   let auditionSource = tab.source;
@@ -1222,7 +1324,7 @@ function renderInspector(): void {
   if (sharedSettingsHost.parentElement === inspectorContent) sharedSettingsParking.append(sharedSettingsHost);
   inspectorContent.replaceChildren();
   if (!tab) { inspectorContent.textContent = t.createFirst; return; }
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   if (state.inspectorTab === 'document') {
     addInspectorHeading(inspectorContent, t.document);
     addInspectorValue(inspectorContent, t.title, score?.title || '—');
@@ -1543,14 +1645,21 @@ function renderWebScoreSettings(tab: OpenTab, parent: HTMLElement): void {
   host.guitarDslInspectorContext = context;
   const source = tab.source;
   const revision = tab.revision;
-  host.guitarDslInspectorPostSettings = (command, extra = {}) => handleWebSettingsMessage(tab, source, revision, command, extra);
+  host.guitarDslInspectorPostSettings = (command, extra = {}) => {
+    if (reloadPreparationActive || pageCacheSuspended) {
+      showMessage(state.locale === 'ja' ? '更新またはブラウザー復帰の準備中は操作できません。' : 'Inspector settings are paused during update or browser restore.', 'info');
+      return;
+    }
+    return trackWorkspaceOperation(() => handleWebSettingsMessage(tab, source, revision, command, extra));
+  };
   host.renderSettingsInspector?.(context, labels);
 }
 
 function handleWebSettingsMessage(
   tab: OpenTab, expectedSource: string, expectedRevision: number, command: string, extra: Record<string, unknown>
 ): void {
-  if (activeTab() !== tab || tab.source !== expectedSource || tab.revision !== expectedRevision || moveToDriveInProgress) {
+  if (reloadPreparationActive || pageCacheSuspended || activeTab() !== tab
+    || tab.source !== expectedSource || tab.revision !== expectedRevision || moveToDriveInProgress) {
     showMessage(getScoreSettingsEditorMessages(state.locale).staleDocument, 'error');
     return;
   }
@@ -1630,7 +1739,7 @@ function renderAll(): void {
   const tab = activeTab();
   if (tab) {
     sourceEditor.setDocument(tabKey(tab), tab.source);
-    renderDiagnostics(currentScore(tab.source));
+    renderDiagnostics(currentScore(tab.source, tab));
     renderPreview(tab);
   } else {
     sourceEditor.setDocument('', '');
@@ -1649,18 +1758,20 @@ async function openDocument(
   documentRow: StoredDocument, source = documentRow.source, accountId?: string, persistable = true,
   isCurrent?: () => boolean
 ): Promise<OpenTab | undefined> {
-  if (isCurrent && !isCurrent()) return undefined;
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && (!isCurrent || isCurrent());
+  if (!operationIsCurrent()) return undefined;
   const match = state.tabs.find(tab => sameTabIdentity(tab, documentRow.identity, accountId));
   if (match) {
     await setActive(tabKey(match), isCurrent);
-    return isCurrent && !isCurrent() ? undefined : match;
+    return operationIsCurrent() ? match : undefined;
   }
   let savedDocument: StoredDocument | undefined;
   if (persistable) {
     try { savedDocument = await indexedDb.getSavedDocument(documentRow.identity, accountId); }
-    catch { if (!isCurrent || isCurrent()) state.storageReady = false; }
+    catch { if (operationIsCurrent()) state.storageReady = false; }
   }
-  if (isCurrent && !isCurrent()) return undefined;
+  if (!operationIsCurrent()) return undefined;
   const hasDraft = persistable && (!savedDocument
     || savedDocument.revision !== documentRow.revision || savedDocument.source !== source);
   const tab: OpenTab = {
@@ -1670,12 +1781,12 @@ async function openDocument(
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
   if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
-  if (isCurrent && !isCurrent()) return undefined;
+  if (!operationIsCurrent()) return undefined;
   if (!editorReadyForDocumentChange()) return undefined;
   const existing = state.tabs.find(tab => sameTabIdentity(tab, documentRow.identity, accountId));
   if (existing) {
     await setActive(tabKey(existing), isCurrent);
-    return isCurrent && !isCurrent() ? undefined : existing;
+    return operationIsCurrent() ? existing : undefined;
   }
   resetWebScoreSettings();
   state.tabs.push(tab);
@@ -1687,11 +1798,13 @@ async function openDocument(
 }
 
 async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
   try {
     const documentRow = await indexedDb.getDocument(identity);
+    if (!workspaceOperationIsCurrent(operationGeneration)) { deferredExplorerRefresh = true; return; }
     if (!documentRow) throw new DOMException('Document was deleted', 'NotFoundError');
     await openDocument(documentRow, documentRow.source);
-  } catch (error) { showMessage(shortError(error), 'error'); }
+  } catch (error) { if (workspaceOperationIsCurrent(operationGeneration)) showMessage(shortError(error), 'error'); }
 }
 
 function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
@@ -1705,25 +1818,31 @@ function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
 }
 
 async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   const key = tabKey(tab);
   if (!state.tabs.includes(tab)) return;
   if (state.activeKey === key && !editorReadyForDocumentChange()) return;
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
+  if (!operationIsCurrent()) return;
   if (state.activeKey === key && !editorReadyForDocumentChange()) return;
   if (!skipDraft) {
     while (true) {
       if (state.activeKey === key && !editorReadyForDocumentChange()) return;
       const revision = tab.revision;
       if (!await saveDraftNow(tab)) return;
+      if (!operationIsCurrent()) return;
       if (state.activeKey === key && !editorReadyForDocumentChange()) return;
       if (tab.revision === revision) break;
     }
   } else if (state.activeKey === key && draftWrites.has(key)) {
     await draftWrites.get(key);
+    if (!operationIsCurrent()) return;
   }
   const index = state.tabs.indexOf(tab);
   if (index < 0) return;
   state.tabs.splice(index, 1);
+  derivedScoreCache.clear(activeIdentityLabel(tab));
   if (state.activeKey === key) {
     const next = state.tabs[Math.max(0, index - 1)] ?? state.tabs[0];
     state.activeKey = next ? tabKey(next) : null;
@@ -1733,6 +1852,8 @@ async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
 }
 
 async function saveDraftNow(tab: OpenTab): Promise<boolean> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   if (!tab.persistable || !state.storageReady) return false;
   if (!editorReadyForSnapshot(tab)) return false;
   try {
@@ -1740,17 +1861,20 @@ async function saveDraftNow(tab: OpenTab): Promise<boolean> {
     while (true) {
       const pendingWrite = draftWrites.get(key);
       if (pendingWrite) await pendingWrite;
+      if (!operationIsCurrent()) return false;
       if (!editorReadyForSnapshot(tab)) return false;
       if (draftWrites.get(key) === pendingWrite || !draftWrites.has(key)) break;
     }
     const edit = snapshot(tab);
     const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
+    if (!operationIsCurrent()) return false;
     if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
     tab.persistedBase = { revision: edit.revision, source: edit.source };
     tab.saveStatus = 'draft';
     if (activeTab() === tab) renderStorageStatus();
     return true;
   } catch (error) {
+    if (!operationIsCurrent()) return false;
     tab.saveStatus = 'error';
     if (activeTab() === tab) renderStorageStatus();
     showMessage(shortError(error), 'error');
@@ -1759,6 +1883,7 @@ async function saveDraftNow(tab: OpenTab): Promise<boolean> {
 }
 
 function onEditorInput(source: string, documentKey: string): void {
+  if (runtimeDisposed || pageCacheSuspended) return;
   const tab = state.tabs.find(candidate => tabKey(candidate) === documentKey);
   if (!tab) return;
   tab.source = source;
@@ -1770,7 +1895,7 @@ function onEditorInput(source: string, documentKey: string): void {
   state.progressionError = undefined;
   resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   renderDiagnostics(score);
   renderPreviewDebounced(tab);
   renderInspector();
@@ -1783,15 +1908,19 @@ function renderPreviewDebounced(tab: OpenTab): void {
 }
 
 async function saveActiveDocument(): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   const tab = activeTab();
   if (!tab) return;
   if (!tab.persistable || !state.storageReady) { showMessage(strings().unavailable, 'error'); return; }
   if (!await saveDraftNow(tab)) return;
+  if (!operationIsCurrent()) return;
   if (tab.document.identity.storage === 'local') {
     try {
       if (!editorReadyForSnapshot(tab)) return;
       const edit = snapshot(tab);
       const saved = await indexedDb.commitLocal(edit, undefined, tab.persistedBase);
+      if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
       if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
       tab.document = saved;
       tab.persistedBase = { revision: saved.revision, source: saved.source };
@@ -1799,7 +1928,7 @@ async function saveActiveDocument(): Promise<void> {
       renderStorageStatus();
       showMessage(strings().saved);
       void renderExplorer();
-    } catch (error) { showMessage(shortError(error), 'error'); }
+    } catch (error) { if (operationIsCurrent()) showMessage(shortError(error), 'error'); }
     return;
   }
   if (tab.accountId !== state.account?.accountId) {
@@ -1810,6 +1939,8 @@ async function saveActiveDocument(): Promise<void> {
 }
 
 async function saveDriveDocument(tab: OpenTab): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   const drive = state.drive;
   const accountId = state.account?.accountId;
   if (!drive || !accountId) { showMessage(strings().connectHint, 'error'); return; }
@@ -1831,8 +1962,10 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
       };
       const submitted = tabOperationSnapshot(tab);
       const result = await drive.updateFile(file, submitted.source, tab.document.driveEtag);
+      if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (result.kind === 'conflict') {
         await handleDriveConflict(tab, result.latest, drive, accountId);
+        if (!operationIsCurrent()) driveSaveNeedsReviewAfterBfcache = true;
         return;
       }
       if (result.kind === 'unavailable') { showMessage(result.message, 'error'); return; }
@@ -1845,6 +1978,7 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         return;
       }
       const verified = result.readback ?? await drive.getFile(result.file.id);
+      if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
       const updated: StoredDocument = {
         ...tab.document, source: verified.source, revision: submitted.revision,
@@ -1853,9 +1987,11 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         driveEtag: verified.etag, updatedAt: Date.now()
       };
       const committed = await indexedDb.commitDriveDocument(updated, submitted, true);
+      if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
       if (!tabMatchesSnapshot(tab, submitted)) {
         await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
+        if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
         showMessage(state.locale === 'ja'
           ? 'Drive には保存しましたが、保存中に行った新しい編集は下書きとして保持しました。'
           : 'Drive saved the submitted version. Newer edits made during the save remain as a local draft.');
@@ -1868,8 +2004,11 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
       showMessage(state.locale === 'ja' ? 'Drive に保存しました。' : 'Saved to Google Drive.');
       void renderExplorer();
     }));
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
-  if (identityChanged && state.tabs.includes(tab) && tab.document.identity.storage === 'drive'
+  } catch (error) {
+    if (!operationIsCurrent()) driveSaveNeedsReviewAfterBfcache = true;
+    else { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  }
+  if (operationIsCurrent() && identityChanged && state.tabs.includes(tab) && tab.document.identity.storage === 'drive'
     && tab.saveStatus !== 'drive-saved') await saveDriveDocument(tab);
 }
 
@@ -2090,13 +2229,18 @@ async function deleteLocal(tab: OpenTab): Promise<void> {
 }
 
 async function createNewScore(): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   const name = window.prompt(state.locale === 'ja' ? 'ファイル名' : 'File name', 'Untitled.guitardsl') ?? 'Untitled.guitardsl';
   try {
     const documentRow = await indexedDb.createLocal(name, DEFAULT_SOURCE);
+    if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
     state.storageReady = true;
     await openDocument(documentRow);
+    if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
     showMessage(state.locale === 'ja' ? 'ローカル楽譜を作成しました。' : 'Created a local score.');
   } catch (error) {
+    if (!operationIsCurrent()) return;
     state.storageReady = false;
     const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: name || 'Untitled.guitardsl', source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
     const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
@@ -2109,10 +2253,15 @@ async function createNewScore(): Promise<void> {
 
 async function importFile(file?: File): Promise<void> {
   if (!file) return;
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   try {
     const documentRow = await importLocalFile(file);
-    state.storageReady = true; await openDocument(documentRow); showMessage(state.locale === 'ja' ? 'ファイルを読み込みました。' : 'Imported the GuitarDSL file.');
-  } catch (error) { showMessage(shortError(error), 'error'); }
+    if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
+    state.storageReady = true; await openDocument(documentRow);
+    if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
+    showMessage(state.locale === 'ja' ? 'ファイルを読み込みました。' : 'Imported the GuitarDSL file.');
+  } catch (error) { if (operationIsCurrent()) showMessage(shortError(error), 'error'); }
 }
 
 function folderSetupDialog(): Promise<'create' | 'choose' | 'later'> {
@@ -2230,17 +2379,22 @@ async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriv
 
 async function connectDrive(): Promise<void> {
   if (driveConnectInProgress || reloadPreparationActive || pageCacheSuspended) return;
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   driveConnectInProgress = true;
   renderAll();
   try {
     if (state.account && !state.authExpired) {
       const synchronized = await flushDriveAppData();
+      if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
       if (!synchronized || state.appDataSync !== 'idle') {
         await appDataPendingQueue;
+        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
         if (!window.confirm(strings().disconnectPendingConfirm)) return;
       }
       ++state.driveGeneration;
       try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
+      if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
       state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
       state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
       state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
@@ -2248,10 +2402,11 @@ async function connectDrive(): Promise<void> {
       renderAll(); await persistSessions(); return;
     }
     await flushDriveAppData();
+    if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
     const generation = ++state.driveGeneration;
     const previousAccount = state.account;
     const account = await auth.connect();
-    if (state.driveGeneration !== generation) return;
+    if (!operationIsCurrent() || state.driveGeneration !== generation) { driveConnectInterrupted = true; return; }
     if (previousAccount && previousAccount.accountId !== account.accountId) {
       state.folderId = undefined; state.folderName = undefined;
     }
@@ -2262,19 +2417,28 @@ async function connectDrive(): Promise<void> {
     state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
     state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
     const loaded = await loadDriveAppData(account.accountId, drive, generation);
-    if (!loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (!operationIsCurrent() || !loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+      if (!operationIsCurrent()) driveConnectInterrupted = true;
+      return;
+    }
     const { snapshot, pending, pendingChoice } = loaded;
     if (snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
     const session = pending?.state ?? snapshot.state;
     if (pendingChoice === 'remote' && pending) {
       const restored = await restoreRemoteDriveAppData(snapshot, account.accountId, drive, generation);
-      if (!restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+      if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+        if (!operationIsCurrent()) driveConnectInterrupted = true;
+        return;
+      }
     } else {
     const folderId = session.selectedFolderId;
     if (folderId) {
       try {
         const folder = await drive.getFolder(folderId);
-        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+        if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+          if (!operationIsCurrent()) driveConnectInterrupted = true;
+          return;
+        }
         if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) {
           state.folderId = folder.id; state.folderName = folder.name;
         } else {
@@ -2284,7 +2448,10 @@ async function connectDrive(): Promise<void> {
             : 'The saved destination is unavailable. Choose another folder from the Drive menu.', 'error');
         }
       } catch (error) {
-        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+        if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+          if (!operationIsCurrent()) driveConnectInterrupted = true;
+          return;
+        }
         state.folderId = undefined; state.folderName = undefined;
         if (error instanceof DriveApiError && error.status !== 403 && error.status !== 404) throw error;
         showMessage(state.locale === 'ja'
@@ -2293,35 +2460,48 @@ async function connectDrive(): Promise<void> {
       }
     }
     await setUpDriveFolderAfterConnect(account.accountId, drive, generation);
-    if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+      if (!operationIsCurrent()) driveConnectInterrupted = true;
+      return;
+    }
     const restored = await restoreDriveSession(account.accountId, drive, generation, session);
-    if (!restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+      if (!operationIsCurrent()) driveConnectInterrupted = true;
+      return;
+    }
     if (pending) {
       if (sameDriveAppDataState(pending.state, snapshot.state)) {
         if (!await clearPendingDriveAppData(account.accountId, drive, generation, pending.state)) {
           throw new DriveAppDataError('unknown-outcome', 'The remote state matched, but the pending local record could not be cleared.');
         }
+        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
         state.appDataSync = 'idle';
       } else if (pendingChoice === 'local') {
         state.appDataSync = 'pending';
         await persistDriveAppData(pending.state);
+        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
       }
     }
     }
     renderAll();
     if (state.activeStorage === 'drive') await renderExplorer();
+    if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
   } catch (error) {
-    if (error instanceof DriveAppDataError) { state.appDataSync = 'error'; state.appDataError = error.message; }
-    markDriveAuthState(error); showMessage(shortError(error), 'error');
+    if (!operationIsCurrent()) driveConnectInterrupted = true;
+    else {
+      if (error instanceof DriveAppDataError) { state.appDataSync = 'error'; state.appDataError = error.message; }
+      markDriveAuthState(error); showMessage(shortError(error), 'error');
+    }
   }
-  finally { driveConnectInProgress = false; renderAll(); }
+  finally { if (operationIsCurrent()) { driveConnectInProgress = false; renderAll(); } }
 }
 
 async function chooseDriveFolder(): Promise<void> {
   const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
   if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  const operationGeneration = workspaceOperationGeneration;
+  const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && driveSessionIsCurrent(accountId, drive, generation);
   activeDriveWorkflowOperations += 1;
   try {
     const selected = await drive.pickFolder();
@@ -2342,7 +2522,8 @@ async function chooseDriveFolder(): Promise<void> {
 async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
   const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
   if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  const operationGeneration = workspaceOperationGeneration;
+  const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && driveSessionIsCurrent(accountId, drive, generation);
   if (!alreadyConfirmed && !window.confirm(strings().createFolderConfirm)) return;
   activeDriveWorkflowOperations += 1;
   try {
@@ -2384,7 +2565,8 @@ async function openFromDrivePicker(): Promise<void> {
   const accountId = state.account?.accountId;
   if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
   const generation = state.driveGeneration;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  const operationGeneration = workspaceOperationGeneration;
+  const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && driveSessionIsCurrent(accountId, drive, generation);
   activeDriveWorkflowOperations += 1;
   try {
     const selection = await drive.pickFile();
@@ -2399,8 +2581,10 @@ async function openDriveDocument(
   file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive,
   generation = state.driveGeneration, pickerRetry = false
 ): Promise<void> {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  const isCurrent = () => operationIsCurrent() && driveSessionIsCurrent(accountId, drive, generation);
   if (!isCurrent()) return;
   const identity = driveIdentity(file.id);
   const open = state.tabs.find(tab => sameTabIdentity(tab, identity, accountId));
@@ -2647,7 +2831,7 @@ function progressionFailureMessage(code: string): string {
 }
 
 async function suggestProgression(tab: OpenTab): Promise<void> {
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   if (!score || activeTab() !== tab) return;
   const startMeasure = state.progressionOperation === 'append'
     ? score.measures.length
@@ -2667,7 +2851,7 @@ async function suggestProgression(tab: OpenTab): Promise<void> {
 
 function applyProgressionCandidate(tab: OpenTab, candidate: ProgressionCandidate): void {
   const progression = state.lastProgression;
-  const score = currentScore(tab.source);
+  const score = currentScore(tab.source, tab);
   if (!progression || !score || moveToDriveInProgress || activeTab() !== tab
     || tab.source !== progression.source || tab.revision !== progression.revision
     || !progression.candidates.some(item => item.id === candidate.id)) {
@@ -2831,7 +3015,7 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
   if (message.command === 'previewVisualEdit' && isCurrent && tab.previewMode === 'edit') {
     const visualElementId = String(message.visualElementId ?? '');
     const selectedVisualElementId = String(message.selectedVisualElementId ?? '');
-    const score = currentScore(tab.source);
+    const score = currentScore(tab.source, tab);
     const operation = score ? visualEditOperationFromMessage(score, message, visualElementId) : undefined;
     const resultIdentity = { documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration };
     if (!operation || operation.bindingId !== visualElementId || (selectedVisualElementId && selectedVisualElementId !== visualElementId)) {
@@ -2846,7 +3030,7 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
   }
   if ((message.command === 'previewEditReference' || message.command === 'previewOpenVisualSource') && isCurrent) {
     const id = String(message.visualElementId ?? '');
-    const binding = currentScore(tab.source)?.visualSourceBindings?.find(item => item.id === id);
+    const binding = currentScore(tab.source, tab)?.visualSourceBindings?.find(item => item.id === id);
     if (!binding) return;
     const lines = sourceEditor.getText().split('\n');
     const offset = lines.slice(0, binding.line).reduce((total, line) => total + line.length + 1, 0) + binding.startCol;
@@ -3160,7 +3344,7 @@ function openPreviewContextMenu(x: number, y: number, tab: OpenTab, identity: { 
   const menu = app.querySelector<HTMLElement>('#context-menu')!;
   const t = strings();
   const findBinding = () => visualElementId
-    ? currentScore(tab.source)?.visualSourceBindings?.find(binding => binding.id === visualElementId)
+    ? currentScore(tab.source, tab)?.visualSourceBindings?.find(binding => binding.id === visualElementId)
     : undefined;
   const actions: WorkspaceMenuAction[] = [
     { label: t.goToSource, disabled: !findBinding(), run: () => {
@@ -3257,15 +3441,29 @@ function openEditMenu(): void {
   const accountId = tab?.accountId;
   const revision = tab?.revision;
   const source = sourceEditor.getText();
+  const operationGeneration = workspaceOperationGeneration;
+  const preparationGeneration = updatePreparationGeneration;
+  let clipboardDeferred = false;
   const selection = sourceEditor.selection(); const hasSelection = selection.from !== selection.to;
-  const targetIsCurrent = () => !!tab && activeTab() === tab && state.activeKey === key
+  const targetIsCurrent = () => {
+    if (operationGeneration !== workspaceOperationGeneration || preparationGeneration !== updatePreparationGeneration
+      || reloadPreparationActive || pageCacheSuspended) {
+      clipboardDeferred = true;
+      return false;
+    }
+    return !!tab && activeTab() === tab && state.activeKey === key
     && tab.document.identity.storage === identity?.storage && tab.document.identity.fileId === identity?.fileId
     && tab.accountId === accountId && tab.revision === revision && sourceEditor.getText() === source
     && !sourceEditor.hasPendingEdit() && sourceEditor.selection().from === selection.from
     && sourceEditor.selection().to === selection.to && sourceEditor.selection().head === selection.head;
-  const staleClipboardAction = () => showMessage(state.locale === 'ja'
-    ? '対象の文書または選択範囲が変わったため、切り取り／貼り付けを中止しました。'
-    : 'Cut or paste was cancelled because the document or selection changed.', 'info');
+  };
+  const staleClipboardAction = () => showMessage(clipboardDeferred
+    ? state.locale === 'ja'
+      ? '更新またはブラウザー復帰の準備中にクリップボード操作を保留しました。内容を確認してからもう一度お試しください。'
+      : 'The clipboard edit was deferred while the app prepared an update or browser restore. Review the document and try again.'
+    : state.locale === 'ja'
+      ? '対象の文書または選択範囲が変わったため、切り取り／貼り付けを中止しました。'
+      : 'Cut or paste was cancelled because the document or selection changed.', 'info');
   showWorkspaceMenu(app.querySelector<HTMLElement>('#edit-menu')!, rect.left, rect.bottom + 2, [
     { label: t.undo, shortcut: menuShortcut('Z'), disabled: !tab || !sourceEditor.canUndo(), run: () => { sourceEditor.focus(); sourceEditor.undo(); } },
     { label: t.redo, shortcut: menuShortcut(/Mac|iPhone|iPad/u.test(navigator.platform) ? 'Z' : 'Y', /Mac|iPhone|iPad/u.test(navigator.platform)), disabled: !tab || !sourceEditor.canRedo(), run: () => { sourceEditor.focus(); sourceEditor.redo(); } },
@@ -3459,7 +3657,7 @@ app.addEventListener('keydown', event => {
 app.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
     event.preventDefault();
-    void saveActiveDocument();
+    void trackWorkspaceOperation(() => saveActiveDocument());
   }
 }, runtimeListenerOptions);
 inspectorTabsHost.addEventListener('focusin', event => {
@@ -3544,6 +3742,14 @@ async function init(): Promise<void> {
 
 function applyWorkspaceCommand(command: WorkspaceCommand): void | Promise<void> {
   if (runtimeDisposed) return;
+  if (command.type === 'lifecycle.pagehide' || command.type === 'lifecycle.pageshow') return dispatchWorkspaceCommand(command);
+  if (command.type === 'pwa.update') return pwaRuntime.applyUpdate();
+  if (reloadPreparationActive || pageCacheSuspended) return;
+  return trackWorkspaceOperation(() => dispatchWorkspaceCommand(command));
+}
+
+function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<void> {
+  if (runtimeDisposed) return;
   if (command.type === 'lifecycle.pagehide') {
     if (command.persisted) suspendWorkspaceForBfcache();
     return;
@@ -3558,7 +3764,12 @@ function applyWorkspaceCommand(command: WorkspaceCommand): void | Promise<void> 
     case 'document.open-local': return openLocalDocument(command.identity);
     case 'document.open-drive': {
       const file = driveFileRows.find(row => row.id === command.identity.fileId);
-      if (file) return openDriveDocument(file);
+      if (!canOpenDriveFile({
+        commandAccountId: command.accountId, currentAccountId: state.account?.accountId,
+        commandGeneration: command.driveGeneration, currentGeneration: state.driveGeneration,
+        connected: Boolean(state.drive), rowAvailable: Boolean(file)
+      })) return;
+      if (file && state.drive) return openDriveDocument(file, command.accountId, state.drive, state.driveGeneration);
       return;
     }
     case 'document.activate': return setActive(command.key);
@@ -3744,8 +3955,9 @@ async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: s
   if (reloadPreparationActive) return blocked('更新の準備がすでに進行中です。', 'An update is already being prepared.');
   if (pageCacheSuspended || runtimeDisposed) return blocked('ワークスペース復帰後にもう一度更新してください。', 'Resume the workspace before preparing an update.');
 
-  // Lock synchronously before the first await. The browser's inert boundary blocks native input,
-  // while applyWorkspaceCommand/withDriveOperation reject synthetic and late commands.
+  // Lock synchronously before the first await. Existing actions remain registered until they
+  // settle; an update attempt fails closed rather than reloading across an in-flight operation.
+  updatePreparationGeneration += 1;
   reloadPreparationActive = true;
   syncWorkspaceInteractionLock();
   publishWorkspaceSnapshot();
@@ -3753,6 +3965,9 @@ async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: s
     releaseReloadPreparation();
     return blocked(ja, en);
   };
+  if (activeWorkspaceOperationCount > 0) {
+    return fail('進行中のワークスペース操作が完了してから更新してください。', 'Wait for current workspace operations to finish before updating.');
+  }
   if (!sourceEditor.flushPendingEdit()) {
     return fail('日本語入力を確定してから更新してください。', 'Finish the current text composition before updating.');
   }
@@ -3867,7 +4082,11 @@ window.addEventListener('online', () => {
   if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return; }
   void refreshExplorerSnapshot();
 }, runtimeListenerOptions);
-window.addEventListener('offline', () => { driveFileRows = []; publishWorkspaceSnapshot(); }, runtimeListenerOptions);
+window.addEventListener('offline', () => {
+  explorerListRequests.invalidate();
+  driveFileRows = [];
+  publishWorkspaceSnapshot();
+}, runtimeListenerOptions);
 
 function disposeWorkspaceRuntime(): void {
   if (runtimeDisposed) return;
@@ -3899,6 +4118,7 @@ function disposeWorkspaceRuntime(): void {
   previewModeDraftChecks.clear();
   if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl);
   helpBlobUrl = '';
+  derivedScoreCache.clear();
   workspaceListeners.clear();
   sourceEditor.destroy();
   progressionAudioLease.dispose();

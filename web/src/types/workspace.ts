@@ -77,6 +77,7 @@ export interface WorkspaceViewSnapshot {
   menu?: Readonly<WorkspaceMenuSnapshot>;
   online: boolean;
   driveStatus: 'connected' | 'connecting' | 'reauth' | 'offline' | 'disconnected';
+  driveGeneration: number;
   driveAccountLabel?: string;
   driveFolderName?: string;
   driveFolderId?: string;
@@ -96,7 +97,7 @@ export type WorkspaceCommand =
   | { type: 'lifecycle.pageshow'; persisted: boolean }
   | { type: 'document.create' }
   | { type: 'document.open-local'; identity: Readonly<DocumentIdentity> }
-  | { type: 'document.open-drive'; identity: Readonly<DocumentIdentity>; accountId: string }
+  | { type: 'document.open-drive'; identity: Readonly<DocumentIdentity>; accountId: string; driveGeneration: number }
   | { type: 'document.activate'; key: string }
   | { type: 'document.close'; key: string }
   | { type: 'document.save' }

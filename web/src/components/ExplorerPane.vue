@@ -5,7 +5,9 @@ const props = defineProps<{ snapshot: Readonly<WorkspaceViewSnapshot> }>();
 const emit = defineEmits<{ command: [command: WorkspaceCommand] }>();
 const text = (ja: string, en: string) => props.snapshot.locale === 'ja' ? ja : en;
 const openFile = (file: (typeof props.snapshot.localFiles)[number]) => {
-  if (file.identity.storage === 'drive' && file.accountId) emit('command', { type: 'document.open-drive', identity: file.identity, accountId: file.accountId });
+  if (file.identity.storage === 'drive' && file.accountId) emit('command', {
+    type: 'document.open-drive', identity: file.identity, accountId: file.accountId, driveGeneration: props.snapshot.driveGeneration
+  });
   else emit('command', { type: 'document.open-local', identity: file.identity });
 };
 </script>

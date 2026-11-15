@@ -1297,6 +1297,61 @@ test('ignores a delayed Drive list failure from the previous account and keeps t
   await expect.poll(readAccountBDraft).toMatchObject({ source: bDraftSource, revision: 1 });
 });
 
+test('rejects a delayed Drive open command from the previous account when file IDs overlap', async ({ page }) => {
+  const accountAState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    appDataStates: { 'account-a': accountAState, 'account-b': accountBState },
+    driveFiles: [{ id: 'shared-file', name: 'Shared song.guitardsl', version: '1', modifiedTime: 't1',
+      mimeType: 'text/plain', parents: ['folder-account-a', 'folder-account-b'] }],
+    remoteFiles: { 'shared-file': { name: 'Shared song.guitardsl', source: 'title: Account owned song\n', version: '1' } }
+  });
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const localSource = 'title: Keep local source active\n';
+  await editor.fill(localSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await performAccountAction(page);
+  const accountAFile = page.locator('#drive-file-items .file-item[data-file-id="shared-file"]');
+  await expect(accountAFile).toBeVisible();
+  await expect(accountAFile).toHaveAttribute('data-account-id', 'account-a');
+  const generationA = await page.evaluate(async () => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    return workspaceRuntimeController.snapshot().driveGeneration;
+  });
+
+  await performAccountAction(page);
+  await performAccountAction(page);
+  const accountBFile = page.locator('#drive-file-items .file-item[data-file-id="shared-file"]');
+  await expect(accountBFile).toBeVisible();
+  await expect(accountBFile).toHaveAttribute('data-account-id', 'account-b');
+  const generationB = await page.evaluate(async () => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    return workspaceRuntimeController.snapshot().driveGeneration;
+  });
+  expect(generationB).toBeGreaterThan(generationA);
+  const readsBeforeStaleCommand = drive.fileReadCount;
+
+  await page.evaluate(async staleGeneration => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    await workspaceRuntimeController.dispatch({
+      type: 'document.open-drive', identity: { storage: 'drive', fileId: 'shared-file' },
+      accountId: 'account-a', driveGeneration: staleGeneration
+    });
+  }, generationA);
+
+  await expectEditorSource(page, localSource);
+  await expect(page.getByRole('tab', { name: 'Shared song.guitardsl' })).toHaveCount(0);
+  expect(drive.fileReadCount).toBe(readsBeforeStaleCommand);
+});
+
 test('allows leaving an account when its initial appData list is forbidden', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a', 'account-b'], { failAppDataListCount: 1 });
   await page.goto('/');
@@ -1534,7 +1589,7 @@ test('keeps pending metadata when an explicit remote choice cannot restore its D
   await expect(page.locator('#saved-state')).toContainText('Pending settings have been kept.');
 });
 
-test('cancels delayed Cut and Paste when the active document changes and keeps Cut as one undo step', async ({ page }) => {
+test('cancels delayed Cut and Paste after tab changes or BFCache suspension and keeps Cut as one undo step', async ({ page }) => {
   await installDeferredClipboard(page);
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
@@ -1571,6 +1626,28 @@ test('cancels delayed Cut and Paste when the active document changes and keeps C
   await expectEditorSource(page, secondSource);
   await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
   await expectEditorSource(page, firstSource);
+
+  await editor.press(selectAllShortcut);
+  await page.evaluate(() => {
+    const target = window as Window & { __clipboardHoldRead?: boolean; __clipboardReadStarted?: boolean };
+    target.__clipboardHoldRead = true; target.__clipboardReadStarted = false;
+  });
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Paste' }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __clipboardReadStarted?: boolean }).__clipboardReadStarted)).toBe(true);
+  const firstRevisionBeforeBfCache = await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ source: string; revision: number }>
+  }).__guitarDslReadTabs?.().find(tab => tab.source.includes('title: First tab'))?.revision);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await page.evaluate(() => (window as Window & { __releaseClipboardRead?: () => void }).__releaseClipboardRead?.());
+  await expect(page.getByText(/clipboard edit was deferred/i)).toBeVisible();
+  await expectEditorSource(page, firstSource);
+  expect(await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ source: string; revision: number }>
+  }).__guitarDslReadTabs?.().find(tab => tab.source.includes('title: First tab'))?.revision)).toBe(firstRevisionBeforeBfCache);
 
   await editor.press(selectAllShortcut);
   await page.evaluate(() => {
