@@ -1167,6 +1167,7 @@ test('opens Help, Settings, and host-owned context menus from workspace surfaces
 
 test('header menus keep their actions bound to the active editor and switch accessibly', async ({ page }) => {
   await page.goto('/');
+  await expectEditorSource(page, /^title: My song/m);
   const triggers = page.locator('.main-menu-bar [role="menuitem"]');
   await expect(triggers).toHaveCount(3);
   await expect(triggers).toHaveText(['File', 'Edit', 'View']);
