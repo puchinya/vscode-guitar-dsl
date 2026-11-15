@@ -1227,6 +1227,7 @@ test('first Drive sign-in offers folder setup once and remembers Later without c
   const drive = await installDriveBrowserMock(page, ['account-a'], { appDataState: null });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await page.locator('#connect-drive').click();
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
   const setup = page.getByRole('dialog');
@@ -1673,6 +1674,7 @@ test('shows both Explorer roots and opens root and tab menus from Shift+F10', as
 
 test('opens Explorer and Inspector option menus with Shift+F10 and the Context Menu key', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   const workspace = page.locator('#workspace');
   const explorerOptions = page.locator('#explorer-more');
   const inspectorOptions = page.locator('#inspector-more');
@@ -1856,6 +1858,7 @@ test('connects and reconnects from the Google Drive root menu', async ({ page })
   };
   await installDriveBrowserMock(page, ['account-a'], mockOptions);
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   const driveRoot = page.locator('#storage-drive');
   await driveRoot.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();

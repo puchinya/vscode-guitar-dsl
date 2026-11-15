@@ -6,6 +6,15 @@
 - **最終更新日**: 2026-11-15
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #174: Web版 Vue 3 + PWA
+
+- **状態**: 承認済みImplementation Contract（Issue comment `6892365767`、SHA-256 `24b0363ae66afcf06ce06310255fb1a3be33af90aadfe30c62671c7ce1180164`）に従い、Vue 3 SFCへWeb UIを移行した。`main.ts`はbootstrapに縮小し、Controller snapshot/command境界、安定したCodeMirror・Preview host、Explorer/タブ/Shell/Problems/menu UI、PWA登録と更新確認を実装。VS Code拡張と共有パッケージ、既存配布triggerは変更していない。PR作成・review遷移は検証後に追記する。
+- **PWA**: `npm run build:web` PASS。Workbox `generateSW` は同一originの静的資産20件、合計 **12,275.84 KiB** をprecacheする。Regular/Bold日本語PDFフォント（各約5.3 MB）と遅延アプリchunkを含む。外部API応答や文書をruntime cacheせず、更新は明示操作とローカルdraft/IME/Drive処理の安全確認後に限る。
+- **画面証拠**: [Chromium実画面・DOM寸法](evidence/issue-174/README.md)。1600×900のワークスペースと390×844の狭幅状態を撮影し目視確認。狭幅でdocument scrollWidthは390px、source/score paneがともに存在する。
+- **検証**: `npm run compile`、`npm run build:web`（`vue-tsc`込み）、`npm run test:unit --workspace web`（45/45）、Chromium E2E（68/68）、WebKit E2E（68/68）、本番PWA E2E（1/1）、SafariDriver smoke（7/7）、`npm test`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`validate-docs --issue 174`、`git diff --check` はPASS。SafariはmacOS arm64 / SafariDriver 26.6.2。Viteはminify後500 kB超chunkを警告する。
+- **PWA実行証拠**: 本番ブラウザーでservice workerの導入後にofflineへ切替え、Local文書の編集・Preview・PDF出力を確認（PDF `%PDF-`、ページ数>0）。下書きのIndexedDB保存失敗・IME composition中は更新を拒否し、Drive media PATCH中は更新を保留。appData PATCH中はUpdateを処理中のまま待ち、同期完了後にだけ切替・draft復元した。キャッシュURLは全て同一originで、Google OAuth/Drive等のURLは含まれない。
+- **未検証**: 実Google OAuth/Drive、iOS/iPadOS Safari、macOS DockアプリとSafari間のストレージ共有、実機へのPDF保存、物理音声出力、Windows/Linux、スクリーンリーダーはNOT RUN。Safari UI Undo/Redoと実OS PDF保存はこのSafari smokeの受け入れ対象外。
+
 ## Issue #172: Web Compact IDE
 
 - **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の2026-11-15レビュー5点を実装修正し、コードcommit `8e39420` を同PRへpushした。部分OAuth許可の拒否、同期失敗後の確認付き切断、同一タブCloseのPromise共有、SVG寸法/Problems導線の仕様訂正、共有Preview差分の除去を含む。GitHub Required Checksは [run 43691257311](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257311) と [run 43691257351](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257351) で4/4 PASS。Issue #172 は `phase:review`、PRは未マージ。

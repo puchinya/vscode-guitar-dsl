@@ -1,5 +1,4 @@
 import { documentTabKey, sameDocumentIdentity, type DocumentIdentity } from '@guitardsl/document';
-import { createWebIcon } from '../icons';
 
 export interface DocumentTabView {
   document: { identity: DocumentIdentity; name: string };
@@ -17,40 +16,4 @@ export function sameTabIdentity(tab: DocumentTabView, identity: DocumentIdentity
 
 export function activeTab<T extends DocumentTabView>(tabs: T[], activeKey: string | null): T | undefined {
   return tabs.find(tab => tabKey(tab) === activeKey);
-}
-
-export function renderDocumentTabs<T extends DocumentTabView>(
-  container: HTMLElement,
-  tabs: T[],
-  activeKey: string | null,
-  closeLabel: string,
-  onActivate: (key: string) => void | Promise<void>,
-  onClose: (tab: T) => void | Promise<void>
-): void {
-  container.replaceChildren();
-  for (const tab of tabs) {
-    const key = tabKey(tab);
-    const wrapper = document.createElement('div');
-    wrapper.className = `tab${key === activeKey ? ' active' : ''}`;
-    wrapper.dataset.documentTabKey = key;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute('role', 'tab');
-    button.setAttribute('aria-selected', String(key === activeKey));
-    button.textContent = tab.document.name;
-    button.title = tab.document.identity.storage === 'drive' ? `Google Drive · ${tab.document.name}` : tab.document.name;
-    button.addEventListener('click', () => { void onActivate(key); });
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'tab-close';
-    close.setAttribute('aria-label', `${closeLabel} ${tab.document.name}`);
-    close.title = `${closeLabel} ${tab.document.name}`;
-    close.append(createWebIcon('close'));
-    close.addEventListener('click', event => {
-      event.stopPropagation();
-      void onClose(tab);
-    });
-    wrapper.append(button, close);
-    container.append(wrapper);
-  }
 }

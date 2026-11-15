@@ -5,7 +5,7 @@
 
 - Status: Current
 - Owning Issue: [Issue #166](https://github.com/puchinya/vscode-guitar-dsl/issues/166)
-- Related Issue: [Issue #172](https://github.com/puchinya/vscode-guitar-dsl/issues/172)
+- Related Issues: [Issue #172](https://github.com/puchinya/vscode-guitar-dsl/issues/172), [Issue #174](https://github.com/puchinya/vscode-guitar-dsl/issues/174)
 - Related design: [Web application design](../design/web-app.md)
 - Related specifications: [GuitarDSL syntax](guitardsl-syntax.md), [VS Code extension](extension.md), [GUI](gui_design.md)
 
@@ -162,6 +162,7 @@ The numbered sections below define the Web application's normative behavior. The
 - User-authored DSL, file names, Drive metadata, and rendered score content are untrusted input. HTML and SVG insertion paths MUST escape or safely construct text and attributes; untrusted content MUST NOT become executable markup or script.
 - OAuth account identity is kept separate from local document identity. Switching accounts MUST NOT mix one account's cached remote metadata into another account's view.
 - The browser app does not send document text to an application server. Drive API requests are made only for user-authorized Drive operations.
+- The production service worker MUST cache only same-origin, built static assets. It MUST NOT cache Google Identity Services, Google Picker, OAuth or Drive/API responses, authorization headers, GuitarDSL source, PDF Blobs, or IndexedDB data.
 
 ## 10. Verification
 
@@ -178,3 +179,14 @@ The numbered sections below define the Web application's normative behavior. The
 - Browser verification reports the exact browser, engine, and OS versions. iOS/iPadOS Safari, assistive technologies, and any live Google account scenario not exercised are reported as NOT RUN. If a macOS CI runner cannot enable SafariDriver, the real Safari check is BLOCKED/NOT RUN; WebKit or Firefox success MUST NOT be treated as satisfying it.
 - Existing VS Code compile, unit, E2E, packaging, and Help/AI gates remain required for shared implementation changes. Visual UI changes require a rendered preview and image evidence attached to Issue #166; concept diagrams and screenshots are identified separately.
 - Issue #172's visual acceptance uses implemented Web screenshots at 1600 × 900 (Japanese Dark) and 1280 × 800 CSS pixels, plus DOM rectangle measurements. It includes Japanese/English in both light and dark themes, a screenshot for each theme/language combination, and focused states for menus, Problems, Source-only, and Score-only views. The four proposal SVGs are concept diagrams, not implementation evidence.
+- PWA verification MUST use the production build: load it online once, then launch offline in a fresh browser context and create/edit/restore a Local document, render Preview, and export a PDF whose bytes contain `%PDF-` and at least one page. The test MUST prove that both Japanese PDF fonts and the lazy PDF chunk are precached, that authenticated/API/document data is absent from Cache Storage, and that Google Drive actions are unavailable while offline.
+- Update verification MUST hold an update while an edit is unpublished, IME composition is active, a Local draft is not durably written, or Drive/appData work is pending. No automatic service-worker activation or reload is allowed. Only a user-selected update after the workspace is safe may stop audio, activate the waiting worker, and reload.
+
+## 11. Offline access, installation, and updates
+
+- The Web app MUST provide a root-scoped installable PWA with the GuitarDSL name, a standalone display mode, and 192 px, 512 px, maskable 512 px, and Apple touch icons. The app MUST remain a static application; installation does not add a backend or change document storage ownership.
+- The first load and service-worker installation require an online visit. After successful installation, the service worker MUST precache the same-origin production HTML, JavaScript and CSS chunks, SVG assets, PDF fonts, and PWA icons so the app can start and render PDFs offline. Service-worker registration MUST be disabled on the development server. A service-worker failure MUST leave ordinary online app use available.
+- When offline, users MUST be able to start the installed app, open and edit Local IndexedDB documents, restore Local drafts, view Preview, and export a PDF. The app MUST disable Google Drive listing, Picker, authentication, and remote save actions and clearly show that Drive is unavailable. Local drafts MUST remain labeled as local and MUST NOT appear remotely saved.
+- An available app update MUST appear in an explicit prompt with **Update** and **Later** choices. A waiting service worker MUST NOT activate itself, take control of existing clients, or reload the page. Choosing **Later** keeps the current app running.
+- Before an update can proceed, the app MUST synchronously flush completed CodeMirror edits, reject an active IME composition, and confirm that every open-tab draft has completed IndexedDB persistence and that no Drive save or appData operation is pending. If any condition is not met, the update stays deferred and the prompt explains what remains. After the checks pass and the user chooses **Update**, the app stops audio, explicitly activates the waiting service worker, then reloads. The prompt MUST disclose that reload can discard CodeMirror undo history.
+- The service worker MUST use no runtime network caching. Its precache MUST contain only files emitted by the same-origin production build. Google Identity Services, Google Picker, OAuth and Drive/API requests, authorization data, GuitarDSL source, PDF Blobs, and IndexedDB content MUST stay outside Cache Storage. Separate development and production origins MUST have separate service-worker scopes and caches.
