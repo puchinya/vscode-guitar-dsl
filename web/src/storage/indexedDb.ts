@@ -26,6 +26,7 @@ export interface StoredDocument {
 }
 
 export interface PersistenceBase { revision: number; source: string }
+export interface PersistedDraftBaseline extends PersistenceBase { kind: 'saved' | 'draft' }
 interface DraftRecord extends DocumentSnapshot { key: string; updatedAt: number }
 interface KeyValueRecord<T = unknown> { key: string; value: T }
 
@@ -135,6 +136,22 @@ export const indexedDb = {
     if (!draft) return undefined;
     const { key: _key, updatedAt: _updatedAt, ...snapshot } = draft;
     return snapshot;
+  },
+
+  async getDraftBaseline(identity: DocumentIdentity, accountId?: string): Promise<PersistedDraftBaseline | undefined> {
+    const db = await openDatabase();
+    const tx = db.transaction([DOCUMENTS, DRAFTS], 'readonly');
+    const done = transactionDone(tx);
+    const key = identityKey(identity, accountId);
+    const [saved, draft] = await Promise.all([
+      idbRequest<StoredDocument & { key: string } | undefined>(tx.objectStore(DOCUMENTS).get(key)),
+      idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key))
+    ]);
+    await done;
+    if (!saved) return undefined;
+    const useDraft = Boolean(draft && draft.revision >= saved.revision);
+    const current = useDraft ? draft! : saved;
+    return { revision: current.revision, source: current.source, kind: useDraft ? 'draft' : 'saved' };
   },
 
   async createLocal(name: string, source: string): Promise<StoredDocument> {

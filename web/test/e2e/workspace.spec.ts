@@ -528,6 +528,81 @@ async function holdDraftSave(page: Page, fail = false): Promise<void> {
   }, fail);
 }
 
+type WorkspaceTestTab = {
+  identity: { storage: 'local' | 'drive'; fileId: string };
+  accountId?: string;
+  source: string;
+  revision: number;
+  persistedBase: { revision: number; source: string };
+  saveStatus: string;
+};
+
+async function readFirstWorkspaceTab(page: Page): Promise<WorkspaceTestTab | undefined> {
+  return page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => WorkspaceTestTab[]
+  }).__guitarDslReadTabs?.()[0]);
+}
+
+async function readFirstWorkspaceDocument(page: Page): Promise<{ source: string; revision: number } | undefined> {
+  return page.evaluate(async () => {
+    const tab = (window as Window & { __guitarDslReadTabs?: () => WorkspaceTestTab[] }).__guitarDslReadTabs?.()[0];
+    if (!tab) return undefined;
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const document = await indexedDb.getDocument(tab.identity, tab.accountId);
+    return document && { source: document.source, revision: document.revision };
+  });
+}
+
+async function installOneShotDraftSaveGate(page: Page, mode: 'fail-now' | 'commit-then-hold' | 'fail-then-hold'): Promise<void> {
+  await page.evaluate(async (gateMode: typeof mode) => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as Window & {
+      __draftGateStarted?: boolean;
+      __draftGateCommitted?: boolean;
+      __draftGateSettled?: boolean;
+      __releaseDraftGate?: () => void;
+    };
+    const original = indexedDb.saveDraft.bind(indexedDb);
+    let intercepted = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__draftGateStarted = false;
+    target.__draftGateCommitted = false;
+    target.__draftGateSettled = false;
+    target.__releaseDraftGate = release;
+    indexedDb.saveDraft = async (...args) => {
+      if (intercepted) return original(...args);
+      intercepted = true;
+      target.__draftGateStarted = true;
+      if (gateMode === 'fail-now') {
+        target.__draftGateSettled = true;
+        throw new DOMException('Initial simulated draft failure', 'QuotaExceededError');
+      }
+      if (gateMode === 'commit-then-hold') {
+        const saved = await original(...args);
+        target.__draftGateCommitted = saved;
+        await gate;
+        target.__draftGateSettled = true;
+        return saved;
+      }
+      await gate;
+      target.__draftGateSettled = true;
+      throw new DOMException('Stale scheduled write failed', 'QuotaExceededError');
+    };
+  }, mode);
+}
+
+async function roundTripBfCache(page: Page): Promise<void> {
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+}
+
+async function releaseDraftSaveGate(page: Page): Promise<void> {
+  await page.evaluate(() => (window as Window & { __releaseDraftGate?: () => void }).__releaseDraftGate?.());
+}
+
 async function attemptReloadAndAcceptBeforeUnload(page: Page): Promise<string> {
   const dialogPromise = page.waitForEvent('dialog');
   const reloadPromise = page.reload({ waitUntil: 'domcontentloaded' }).catch(() => null);
@@ -1675,6 +1750,59 @@ test('cancels delayed Cut and Paste after tab changes or BFCache suspension and 
   await expectEditorSource(page, firstSource);
   await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
   await expectEditorSource(page, secondSource);
+});
+
+test('reconciles committed local draft baselines and ignores stale write results after BFCache restore', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect.poll(() => readFirstWorkspaceTab(page)).toBeDefined();
+
+  const source1 = 'title: BFCache draft one\n\n[Verse]\nC | G | Am | F |\n';
+  await installOneShotDraftSaveGate(page, 'fail-now');
+  await editor.fill(source1);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('error');
+  const beforeSave = await readFirstWorkspaceTab(page);
+  expect(beforeSave).toBeDefined();
+  expect(beforeSave?.persistedBase.source).not.toBe(source1);
+
+  await installOneShotDraftSaveGate(page, 'commit-then-hold');
+  await page.locator('#save-document').click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateCommitted?: boolean }).__draftGateCommitted)).toBe(true);
+  expect(await readFirstWorkspaceDocument(page)).toMatchObject({ source: source1, revision: beforeSave?.revision });
+  await roundTripBfCache(page);
+  const resumedAfterSave = await readFirstWorkspaceTab(page);
+  expect(resumedAfterSave).toMatchObject({ source: source1, revision: beforeSave?.revision, persistedBase: { source: source1 }, saveStatus: 'draft' });
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+
+  const source2 = 'title: BFCache draft two\n\n[Verse]\nD | A | Bm | G |\n';
+  await editor.fill(source2);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source2);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+
+  const source3 = 'title: BFCache scheduled success\n\n[Verse]\nE | B | C#m | A |\n';
+  await installOneShotDraftSaveGate(page, 'commit-then-hold');
+  await editor.fill(source3);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateCommitted?: boolean }).__draftGateCommitted)).toBe(true);
+  await roundTripBfCache(page);
+  expect(await readFirstWorkspaceTab(page)).toMatchObject({ source: source3, persistedBase: { source: source3 }, saveStatus: 'draft' });
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+
+  const source4 = 'title: BFCache scheduled retry\n\n[Verse]\nF | C | Dm | Bb |\n';
+  await installOneShotDraftSaveGate(page, 'fail-then-hold');
+  await editor.fill(source4);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateStarted?: boolean }).__draftGateStarted)).toBe(true);
+  await roundTripBfCache(page);
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source4);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+  await expect(page.getByText('Stale scheduled write failed')).toHaveCount(0);
+
+  await page.reload();
+  await expectEditorSource(page, source4);
 });
 
 test('coalesces a user close with remote tab restoration while the Drive draft save is pending', async ({ page }) => {

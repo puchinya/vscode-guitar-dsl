@@ -141,6 +141,8 @@ const STRINGS = {
     driveSaveForbidden: 'Drive denied the save due to access permissions. Your local draft is kept and no automatic retry was sent. Check file access before retrying.',
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
     finishComposition: 'Finish the current text composition before saving or exporting.',
+    draftRestoreConflict: 'Another version of this document was saved while the page was in browser history. The editor text and stored draft were kept; review them before saving again.',
+    draftRestoreUnavailable: 'Could not verify the saved draft after browser restore. The editor text remains open; export it before closing this page.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
     driveAuthStatus: 'Drive authorization expired. Reconnect to continue.', explorerOptions: 'Explorer options', closeExplorer: 'Close Explorer',
     resetExplorerWidth: 'Reset Explorer Width (220px)', inspectorOptions: 'Inspector options', closeInspector: 'Close Inspector',
@@ -189,6 +191,8 @@ const STRINGS = {
     driveSaveForbidden: 'Drive が保存を拒否しました（ファイルのアクセス権を確認してください）。下書きは保持し、自動再送していません。権限を確認してから手動で再試行してください。',
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
     finishComposition: '日本語入力を確定してから保存または書き出してください。',
+    draftRestoreConflict: 'ブラウザー履歴への退避中に別の版が保存されました。エディターの内容と保存済み下書きは両方保持しています。再保存する前に内容を確認してください。',
+    draftRestoreUnavailable: 'ブラウザー復帰後に保存済み下書きを確認できませんでした。エディターの内容は開いたままです。閉じる前に書き出してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
     driveAuthStatus: 'Drive の認証が失効しました。再接続してください。', explorerOptions: 'Explorer のオプション', closeExplorer: 'Explorer を閉じる',
     resetExplorerWidth: 'Explorer の幅を初期値へ戻す（220px）', inspectorOptions: 'Inspector のオプション', closeInspector: 'Inspector を閉じる',
@@ -372,11 +376,56 @@ function suspendWorkspaceForBfcache(): void {
   } else void requestPreviewAudioLock('bfcache');
 }
 
-function resumeWorkspaceFromBfcache(): void {
+async function resumeWorkspaceFromBfcache(): Promise<void> {
   if (runtimeDisposed || !pageCacheSuspended) return;
   workspaceOperationGeneration += 1;
+  const resumeGeneration = workspaceOperationGeneration;
   const baseline = pageCacheBaseline;
   pageCacheBaseline = undefined;
+  const tabs = [...state.tabs];
+  const retryDrafts: OpenTab[] = [];
+  let draftRestoreMessage: string | undefined;
+  for (const tab of tabs) {
+    const key = tabKey(tab);
+    const identity = { ...tab.document.identity };
+    const accountId = tab.accountId;
+    const source = tab.source;
+    const revision = tab.revision;
+    const oldPersistedBase = { ...tab.persistedBase };
+    try {
+      const persisted = await indexedDb.getDraftBaseline(identity, accountId);
+      if (runtimeDisposed || !pageCacheSuspended || resumeGeneration !== workspaceOperationGeneration) return;
+      if (!state.tabs.includes(tab) || tabKey(tab) !== key || !sameTabIdentity(tab, identity, accountId)
+        || tab.source !== source || tab.revision !== revision) {
+        draftRestoreMessage ??= strings().draftRestoreConflict;
+        continue;
+      }
+      if (!persisted) {
+        tab.saveStatus = 'error';
+        draftRestoreMessage ??= strings().draftRestoreUnavailable;
+        continue;
+      }
+      const persistedMatchesEditor = persisted.revision === revision && persisted.source === source;
+      const persistedMatchesPrevious = persisted.revision === oldPersistedBase.revision && persisted.source === oldPersistedBase.source;
+      if (persistedMatchesEditor || persistedMatchesPrevious) {
+        tab.persistedBase = { revision: persisted.revision, source: persisted.source };
+        if (persistedMatchesEditor) {
+          tab.saveStatus = persisted.kind === 'draft' ? 'draft'
+            : tab.document.identity.storage === 'drive' ? 'drive-saved' : 'local-saved';
+        } else if (source !== persisted.source || revision !== persisted.revision) retryDrafts.push(tab);
+        else tab.saveStatus = persisted.kind === 'draft' ? 'draft'
+          : tab.document.identity.storage === 'drive' ? 'drive-saved' : 'local-saved';
+      } else {
+        tab.saveStatus = 'error';
+        draftRestoreMessage ??= strings().draftRestoreConflict;
+      }
+    } catch {
+      if (runtimeDisposed || !pageCacheSuspended || resumeGeneration !== workspaceOperationGeneration) return;
+      tab.saveStatus = 'error';
+      draftRestoreMessage ??= strings().draftRestoreUnavailable;
+    }
+  }
+  if (runtimeDisposed || !pageCacheSuspended || resumeGeneration !== workspaceOperationGeneration) return;
   const tab = activeTab();
   const documentStillMatches = baseline
     ? Boolean(tab && state.activeKey === baseline.activeKey
@@ -411,6 +460,9 @@ function resumeWorkspaceFromBfcache(): void {
       kind: 'error'
     };
   }
+  if (draftRestoreMessage) {
+    workspaceMessage = { text: draftRestoreMessage, kind: 'error' };
+  }
   if (driveSaveNeedsReviewAfterBfcache) {
     driveSaveNeedsReviewAfterBfcache = false;
     workspaceMessage = {
@@ -421,6 +473,9 @@ function resumeWorkspaceFromBfcache(): void {
     };
   }
   publishWorkspaceSnapshot();
+  for (const tab of retryDrafts) {
+    if (state.tabs.includes(tab) && hasUnpersistedDraft(tab)) scheduleDraft(tab);
+  }
   if (deferredExplorerRefresh) {
     deferredExplorerRefresh = false;
     void refreshExplorerSnapshot();
@@ -439,7 +494,10 @@ if (import.meta.env.DEV) {
     __guitarDslReadSource?: () => string;
     __guitarDslReplaceSource?: (source: string) => boolean;
     __guitarDslDispatchSourceEdit?: (source: string, userEvent?: string) => boolean;
-    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: OpenTab['saveStatus'] }>;
+    __guitarDslReadTabs?: () => Array<{
+      key: string; identity: DocumentIdentity; accountId?: string; source: string; revision: number;
+      persistedBase: { revision: number; source: string }; saveStatus: OpenTab['saveStatus']
+    }>;
     __guitarDslReadLastPdfInput?: () => string | undefined;
     __guitarDslReadSelection?: () => { from: number; to: number; head: number };
     __guitarDslRenderAll?: () => void;
@@ -448,7 +506,10 @@ if (import.meta.env.DEV) {
   testWindow.__guitarDslReadSource = () => sourceEditor.getSource();
   testWindow.__guitarDslReplaceSource = source => sourceEditor.replaceSource(source);
   testWindow.__guitarDslDispatchSourceEdit = (source, userEvent) => sourceEditor.dispatchSourceEdit(source, userEvent);
-  testWindow.__guitarDslReadTabs = () => state.tabs.map(tab => ({ key: tabKey(tab), source: tab.source, revision: tab.revision, saveStatus: tab.saveStatus }));
+  testWindow.__guitarDslReadTabs = () => state.tabs.map(tab => ({
+    key: tabKey(tab), identity: { ...tab.document.identity }, accountId: tab.accountId, source: tab.source, revision: tab.revision,
+    persistedBase: { ...tab.persistedBase }, saveStatus: tab.saveStatus
+  }));
   testWindow.__guitarDslReadLastPdfInput = () => lastPdfInputForTest;
   testWindow.__guitarDslReadSelection = () => sourceEditor.selection();
   testWindow.__guitarDslRenderAll = renderAll;
@@ -1015,21 +1076,26 @@ function renderCursorPosition(): void {
 }
 
 function scheduleDraft(tab: OpenTab): void {
+  const operationGeneration = workspaceOperationGeneration;
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.tabs.includes(tab);
   const key = tabKey(tab);
   tab.saveStatus = 'saving';
   renderStorageStatus();
   const edit = snapshot(tab);
   const previous = draftWrites.get(key) ?? Promise.resolve();
   const write = previous.catch(() => undefined).then(async () => {
+    if (!operationIsCurrent()) return;
     try {
       if (!tab.persistable || !state.storageReady) throw new DOMException('Local storage is unavailable', 'NotSupportedError');
       const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
+      if (!operationIsCurrent()) return;
       if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
       tab.persistedBase = { revision: edit.revision, source: edit.source };
       tab.saveStatus = tab.revision === edit.revision ? 'draft' : 'saving';
       if (state.activeKey === key) renderStorageStatus();
       if (state.activeStorage === 'local') void renderExplorer();
     } catch (error) {
+      if (!operationIsCurrent()) return;
       tab.saveStatus = 'error';
       if (error instanceof DOMException && error.name === 'NotSupportedError') state.storageReady = false;
       if (state.activeKey === key) renderStorageStatus();
@@ -3755,8 +3821,7 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
     return;
   }
   if (command.type === 'lifecycle.pageshow') {
-    if (command.persisted) resumeWorkspaceFromBfcache();
-    return;
+    return command.persisted ? resumeWorkspaceFromBfcache() : undefined;
   }
   if (reloadPreparationActive || pageCacheSuspended) return;
   switch (command.type) {
