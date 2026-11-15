@@ -15,6 +15,7 @@ export interface DriveFile {
   headRevisionId?: string;
   parents?: string[];
   mimeType?: string;
+  trashed?: boolean;
   etag?: string;
   appProperties?: Record<string, string>;
 }
@@ -91,6 +92,28 @@ export class GoogleDriveApi {
       pageToken = page.nextPageToken;
     } while (pageToken);
     return files;
+  }
+
+  async findAccessibleFolders(name = 'GuitarDSL'): Promise<DriveFile[]> {
+    const folders: DriveFile[] = [];
+    let pageToken: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const params = new URLSearchParams({
+        q: `name='${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`,
+        pageSize: '100', orderBy: 'name_natural',
+        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,parents,trashed)'
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
+      folders.push(...(page.files ?? []).filter(file => file.name === name
+        && file.mimeType === 'application/vnd.google-apps.folder'
+        && file.parents?.includes('root') && !file.trashed));
+      if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
+      if (page.nextPageToken) seen.add(page.nextPageToken);
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return folders;
   }
 
   async getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }> {

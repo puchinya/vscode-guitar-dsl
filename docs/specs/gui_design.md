@@ -8,15 +8,17 @@
 - Related Issue: [Issue #137](https://github.com/puchinya/vscode-guitar-dsl/issues/137)
 - Related Issue: [Issue #158](https://github.com/puchinya/vscode-guitar-dsl/issues/158)
 - Related Issue: [Issue #164](https://github.com/puchinya/vscode-guitar-dsl/issues/164)
+- Related Issue: [Issue #172](https://github.com/puchinya/vscode-guitar-dsl/issues/172)
 - Related specification: [拡張機能仕様](extension.md)
+- Related specification: [Web application specification](web-app.md)
 
 ## Purpose
 
-本書は、GuitarDSL 拡張機能が独自に表示する現行画面の構成、要素の順序、代表状態を規定する。各画面の全表示内容を独立した SVG に描き、図中の数値と文言はその画面状態を説明するサンプル値とする。
+本書は、GuitarDSL 拡張機能が独自に表示する現行画面と Issue #172 の Web Compact Workspace の構成、要素の順序、代表状態を規定する。各画面の全表示内容を独立した SVG に描き、図中の数値と文言はその画面状態を説明するサンプル値とする。Web application の編集・保存・アクセス可能性は [Web application specification](web-app.md) が所有する。
 
 ## Scope
 
-対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、およびローカル WAV 採譜の導線である。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
+対象は GuitarDSL のサイドバー、Preview、Inspector、コード図エディタ、ローカル WAV 採譜の導線、および Web Compact Workspace である。VS Code のタイトルバー、アクティビティバー、標準サイドバー、ステータスバー、ブラウザー外枠など、対象画面ではない周辺 UI は図に含めない。VS Code 標準の Quick Pick、Input Box、ファイルダイアログ、通常のテキストエディタも独立した画面図にはしない。
 
 各 SVG は対象画面だけを描く独立したベクター図であり、スクリーンショットを貼り込んだものではない。矩形、線、パス、円、文字などで画面を表現する。画面内に縦スクロールがある場合は、図の高さをスクロール内容の末尾まで延ばして、その代表状態の全項目・全操作を含める。横幅からはみ出す操作列も図の幅に含める。表示領域の端で対象要素を切らない。
 
@@ -39,6 +41,14 @@
 | Inspector・移調 | [inspector-transpose.svg](gui_design/inspector-transpose.svg) | 293 × 1050 px | コード対応表と「適用」「閉じる」 |
 | Inspector・コード進行候補 | [inspector-progression.svg](gui_design/inspector-progression.svg) | 480 × 1360 px | 試聴設定、適用、閉じる |
 | コード図エディタ | [chord-editor.svg](gui_design/chord-editor.svg) | 548 × 1260 px | DSL 行と保存操作一式 |
+| Web Compact Workspace・最終Shell | [web-compact-final-shell-20261115.svg](gui_design/proposals/issue-172/web-compact-final-shell-20261115.svg) | 1600 × 900 px | 最終ヘッダー、左 Activity Bar、Explorer、Source、Preview、Inspector、Problems |
+| Web Compact Workspace・最終Menu | [web-compact-final-menu-20261115.svg](gui_design/proposals/issue-172/web-compact-final-menu-20261115.svg) | 1250 × 670 px | メニューとヘッダー操作 |
+| Web Compact Workspace・Drive初回接続 | [web-drive-explorer-first-connect-20261115.svg](gui_design/proposals/issue-172/web-drive-explorer-first-connect-20261115.svg) | 1150 × 600 px | 初回接続、保存先の選択、Explorer |
+| Web Compact Workspace・初期提案（履歴） | [web-compact-workspace.svg](gui_design/proposals/issue-172/web-compact-workspace.svg) | 1600 × 900 px | 初期案。最終構成の根拠にはしない |
+| Web Compact Workspace・初期寸法案（履歴） | [web-compact-layout-geometry.svg](gui_design/proposals/issue-172/web-compact-layout-geometry.svg) | 1600 × 920 px | 初期案。最終構成の根拠にはしない |
+| Web Compact Workspace・初期Icon案（履歴） | [web-compact-icons.svg](gui_design/proposals/issue-172/web-compact-icons.svg) | 1200 × 750 px | 初期案。最終構成の根拠にはしない |
+| Web Compact Workspace・初期Menu案（履歴） | [web-compact-context-menus.svg](gui_design/proposals/issue-172/web-compact-context-menus.svg) | 1340 × 780 px | 初期案。最終構成の根拠にはしない |
+| Web Compact Workspace・Chrome補正案（履歴） | [web-compact-panel-chrome-correction.svg](gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg) | 1500 × 850 px | 以前の補正案。最終構成の根拠にはしない |
 
 ## Normative requirements
 
@@ -279,6 +289,60 @@ Preview で変数参照を編集するときは「定義を編集（全参照）
 
 コード図の編集動作と DSL 表記は [拡張機能仕様 §3.3](extension.md) を参照する。
 
+## 5. Web Compact Workspace
+
+Issue #172 adds a compact desktop workspace to the browser application. The Web workspace uses CSS Grid and web-specific splitter controllers; it does not change the VS Code editor. The three final SVGs above are the approved visual references; the earlier proposal SVGs are retained as history and do not override them. The complete approved Issue #172 contract is preserved in [implementation-contract-complete-20261115.md](gui_design/proposals/issue-172/implementation-contract-complete-20261115.md). Music and diagnostic text in diagrams are illustrative. This section owns Web screen geometry and visual hierarchy; editing, persistence, accessibility behavior, and menus are defined in the [Web application specification](web-app.md#2-application-and-document-editing).
+
+### 5.1 Workspace geometry
+
+At the 1600 × 900 CSS-pixel reference size, the horizontal layout is:
+
+`Activity Bar 40 px | Explorer 220 px | splitter 6 px | center minmax(0, 1fr) | splitter 6 px | Inspector 300 px | Tool Window Bar 36 px`.
+
+The Explorer width is adjustable from 180–420 px. The Inspector width is adjustable from 260–480 px. In Split view, the center uses a 40% Source / 60% Score ratio with minimum pane widths of 240 px and 320 px. The document tab row is 36 px. Source and Score panes have no redundant title row.
+
+The vertical layout is a 40 px header, the resizable main workspace and Problems window, and a 24 px status bar. The header's right-side controls appear in this order: Save, PDF, Google Account, Help, Settings. The main workspace places the left Explorer and center panes beside the right Inspector. The Problems window spans Explorer, center, and Inspector; it excludes both side bars. Its initial height is 200 px, minimum is 140 px, maximum is 45% of viewport height, and its top splitter is 6 px.
+
+### 5.2 Toolbars and display modes
+
+The tab row holds the active document name and three icon-only workspace controls: Source (`code-2`), Split (`columns-2`), and Score (`eye`). Split is selected initially. Exactly one mode is active. Source-only and Score-only modes hide the opposite pane and the center splitter. Workspace modes are separate from the Preview's normal, edit, and practice modes.
+
+The Activity Bar is 40 px wide. Explorer is its top control and Problems is its bottom control. The right Tool Window Bar is 36 px wide and contains only Inspector. Inspector's button reflects its manually saved open/closed state, even while the panel is temporarily hidden by the narrow-layout fallback. The controls remain keyboard-operable with localized accessible names and titles; Inspector exposes `aria-pressed` and Problems exposes `aria-expanded`. Icons use the approved 24 × 24 vector paths. They must not rely on emoji, icon fonts, raster images, or externally hosted assets. Selected and hover states follow the final shell reference.
+
+The Explorer shows “On this device” and “Google Drive” simultaneously as expandable tree roots. Each 32 px root row begins with its disclosure chevron, followed by a folder or Google Drive icon and the localized root name. Only the active file row is selected; selecting or focusing a root does not paint the whole row as a selected document. Each file row is one line, 30–32 px high, and begins with a 16 px file icon. Modification time is available as title/accessibility metadata but is not a second visible row. The compact 36 px `EXPLORER` heading places New Score and a functional options ellipsis at its right. Local creation and import remain available offline. Drive connection is a one-line text action at its root in every connection state, and its height remains 32 px. When connected, the tree shows account status and the selected folder before file rows. The Drive root menu exposes Open from Drive, Choose Destination Folder, and Create GuitarDSL Folder. Folder selection does not authorize every child file.
+
+The Inspector heading is 36 px high and uses an options ellipsis. Its menu contains only Close Inspector and Reset width to default (300 px). The default Web Inspector tab is Variables; an empty score uses the existing shared empty state. Inspector remains on the right side of the workspace; its only tool-window toggle is on the right Tool Window Bar.
+
+Problems has a 32 px header with the Problems icon, compiler-backed error and warning icons/counts, and a far-right × close action. The 25–30 px column header and diagnostic rows share the grid `74px minmax(180px,1fr) 72px minmax(250px,3fr)` at desktop widths and use the same responsive columns at narrower widths. Severity rows use the error/warning SVG icon and show the actual file, 1-based line and column, and compiler message. Zero counts have no badge. Zero results show `No problems` and no notification badge. Closing Problems preserves its current size; reopen it from the Problems control at the bottom of the left Activity Bar. Closing Inspector preserves its current size; reopen it from the right Tool Window Bar.
+
+In Dark theme, the Web host shell uses #202229 for the header, #22252C for tool windows, #333F59 for the selected file, #424652 for fine boundaries, #7692F4 for selected accents, and #99A3B5 for muted text. Header controls have transparent backgrounds and no borders when idle in both themes; hover and keyboard focus show a theme-specific surface. The GuitarDSL sidebar mark receives a Web-only brightness treatment in Dark theme. These styles do not change the shared logo asset or score iframe.
+
+### 5.3 Splitters and narrow layouts
+
+There are exactly four workspace splitters: the Explorer boundary, Source/Score boundary, Inspector boundary, and top of Problems. Each divider is 1 px with a 6 px pointer hit area. Pointer dragging uses capture and releases it on pointer-up or pointer-cancel. Double-click restores only that splitter's default. A focused splitter has a visible focus ring, uses `role="separator"`, exposes the orientation and current/minimum/maximum values, and accepts Arrow keys (10 px), Shift+Arrow keys (50 px), Home (minimum), and End (maximum). Bounds prevent negative or non-finite sizes and horizontal page overflow.
+
+At narrower viewports, the Inspector collapses before the Explorer. Width-driven collapse is temporary and MUST NOT replace a manually saved open/closed preference. At 1280 × 800, the workspace remains usable without horizontal overflow. Manual close/open state, panel sizes, workspace mode, and the center ratio are restored when the browser is reopened. Corrupt values fall back to their independent defaults.
+
+The separate Problems tool window is open by default. It has a 32 px header, error and warning counts, and close control. Its rows show type, file, line and column, and message; an empty list shows “No problems”. Diagnostic details and click behavior are owned by the Web application specification.
+
+The [final shell SVG](gui_design/proposals/issue-172/web-compact-final-shell-20261115.svg), [final menu SVG](gui_design/proposals/issue-172/web-compact-final-menu-20261115.svg), and [first-connect SVG](gui_design/proposals/issue-172/web-drive-explorer-first-connect-20261115.svg) show the approved Issue #172 states. Numeric values in this section and the preserved approved contract take precedence over illustrative labels in earlier proposal SVGs.
+
+### 5.4 Header menus and actions
+
+The header displays the repository GuitarDSL sidebar mark and product name, then exactly three menus: **File**, **Edit**, and **View**. It has no Window menu, no storage label beside the title, and no permanent button outlines. On the right are the official Google Drive color mark with the real connection state, Save, PDF, Account, Help, and rightmost Settings; Settings has 12 px right padding. Idle header controls are transparent and borderless in Light and Dark; hover and keyboard focus show a theme-specific surface. Menu triggers have at least 24 px between labels and 10–12 px horizontal padding.
+
+File contains New Score, Import, Open from Google Drive, Save, Download a Copy, Export PDF, and Close Tab. Edit contains source-editor Undo/Redo, Cut/Copy/Paste, Select All, Find/Replace/Go to Line. View contains exclusive Source/Split/Score modes, Explorer/Inspector/Problems visibility, and confirmed Reset Layout. Each command uses existing host behavior and the captured document identity/revision. Cut and Paste capture the active tab, document identity, revision, selection, and IME state before awaiting Clipboard API; they apply only if those values still match afterward, otherwise source remains unchanged and the user is told the action was cancelled. A successful Cut or Paste is one undoable edit. Browser-reserved Ctrl/Cmd+N/O/W shortcuts are not intercepted. Clipboard actions report failure when browser permissions prevent them.
+
+Menus open beneath their trigger and support click, Tab, Arrow keys, Home/End, Enter/Space, Escape, outside click, and focus return. Only one header menu is open at a time. Platform shortcuts are displayed accurately; disabled items expose their actual state. Menu interaction does not modify source, revision, document identity, draft, playback, or layout.
+
+Help opens same-origin Web Help in a separate browser window. If a popup is blocked, the current window explains the restriction and shows a direct Help link. Settings includes only system/light/dark theme and Japanese/English language; layout reset is in View and requires confirmation.
+
+### 5.5 Google Drive setup and app state
+
+Drive authentication requests exactly `drive.file` and `drive.appdata`; its token is memory-only. The Explorer Drive menu exposes Open from Drive, Choose Destination Folder, and Create GuitarDSL Folder. On first sign-in without a selected folder, a one-time prompt offers Create, Choose Existing, and Later. Later is remembered and is not repeated on reconnect. A visible folder is created only after explicit confirmation.
+
+The selected folder and Drive tab IDs sync through one account-scoped `guitardsl-state-v1.json` in hidden appDataFolder. It contains the schema version, folder ID, first-folder prompt state, and bounded open/active/recent Drive file-ID references only. It never stores score source, drafts, local file IDs, tokens, email, or local layout. Before a folder change becomes visible, the Web app stores a schema-validated pending metadata record keyed by account in IndexedDB. It retains pending data after network errors, offline operation, and reload, then asks whether to load remote settings or keep this device's settings when local and remote states differ. It clears pending data only after a matching remote readback or after the user chooses remote state and the UI applies it. `beforeunload` warns for pending or failed metadata; `pagehide` starts no Drive write. Existing local folder/session settings migrate once only when no remote state exists. Choosing remote state validates its folder, updates Explorer and Drive tabs, and keeps local drafts. The shared score Preview and Inspector rendering remain unchanged.
+
 ## Observable behavior
 
 各図は見出しに記載した一つの代表状態を示す。スコア、コード、キー、選択行、候補数など文書や計算結果に応じて変わる値は、図のサンプル状態に限る。Preview の任意長譜面、別のキー・運指・候補、画面幅に応じた折り返し、読み込み中・エラー表示は、ここに示す図の寸法や代表値によって固定しない。
@@ -295,4 +359,4 @@ Preview で変数参照を編集するときは「定義を編集（全参照）
 
 ## Verification strategy
 
-画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した全寸法でベクターレンダラーを使って出力し、全13図を一覧表示して、対象画面の先頭から最下部の要素まで欠落がないことを確認する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 150` で検証する。
+画面仕様の図は SVG として XML 解析でき、`image` 要素やスクリーンショット画像の埋め込みを含まないことを確認する。SVG は各ファイルに記載した寸法でベクターレンダラーを使って出力する。実装画面は概念図と区別して、Issue #172 の受入条件にあるサイズ・ロケール・テーマで撮影し、同じ状態の DOM rectangle とともに記録する。Markdown の参照先と仕様書メタデータは `python3 -m agent_workflow validate-docs --issue 172` で検証する。

@@ -27,14 +27,18 @@ import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type P
 import { ExplorerController } from './explorer/explorerController';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
 import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile } from './storage/googleDrive';
+import { DEFAULT_DRIVE_APPDATA_STATE, DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, validatePendingDriveAppData,
+  type DriveAppDataSnapshot, type DriveAppDataState, type PendingDriveAppData } from './storage/driveAppData';
 import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
+import { createWebIcon, setIconButton, WEB_ICON_SPRITE } from './icons';
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
 type ScoreSettingsSectionId = 'capo' | 'beginner' | 'transpose';
 type MobilePane = 'source' | 'preview';
+type WorkspaceViewMode = 'source' | 'split' | 'score';
 
 interface WorkspaceSession {
   tabs: string[];
@@ -62,6 +66,14 @@ interface AppState {
   account?: GoogleAccount;
   drive?: GoogleDriveApi;
   folderId?: string;
+  folderName?: string;
+  driveGeneration: number;
+  appDataStore?: DriveAppDataStore;
+  appDataSnapshot?: DriveAppDataSnapshot;
+  appDataPending?: PendingDriveAppData;
+  appDataPendingChoice?: 'remote' | 'local';
+  appDataSync: 'idle' | 'pending' | 'syncing' | 'error';
+  appDataError?: string;
   inspectorTab: InspectorTab;
   mobilePane: MobilePane;
   locale: 'en' | 'ja';
@@ -72,6 +84,13 @@ interface AppState {
   storageReady: boolean;
   previewGeneration: number;
   splitRatio: number;
+  viewMode: WorkspaceViewMode;
+  explorerOpen: boolean;
+  inspectorOpen: boolean;
+  explorerWidth: number;
+  inspectorWidth: number;
+  problemsOpen: boolean;
+  problemsHeight: number;
   authExpired: boolean;
   lastProgression?: {
     target: ProgressionTarget; operation: ProgressionEditOperation; bars: ProgressionBars;
@@ -96,15 +115,19 @@ interface PreviewModeDraftCheck {
 }
 
 const DEFAULT_SOURCE = 'title: My song\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
+const GUITAR_MARK_URL = new URL('../../media/icons/guitardsl-sidebar.svg', import.meta.url).href;
+const GOOGLE_DRIVE_LOGO_URL = new URL('../../media/icons/google-drive-2026-color.png', import.meta.url).href;
 
 const STRINGS = {
   en: {
-    files: 'Files', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect Drive',
-    disconnect: 'Disconnect', folder: 'Choose folder', createFolder: 'Create GuitarDSL folder', openDrive: 'Open from Drive',
+    files: 'Files', project: 'EXPLORER', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect to Google Drive', connectInline: 'Connect',
+    reconnect: 'Reconnect Drive', connecting: 'Connecting…', connectedAs: 'Connected as', disconnect: 'Disconnect',
+    disconnectPendingConfirm: 'Google Drive app settings are not synchronized. Disconnect anyway? Pending settings for this account and local drafts will be kept for the next connection.',
+    folder: 'Choose destination folder…', createFolder: 'Create GuitarDSL folder…', openDrive: 'Open from Google Drive…',
     addFile: 'Import file', source: 'Source', preview: 'Preview', inspector: 'Inspector', document: 'Document',
     variables: 'Variables', settings: 'Settings', progression: 'Progression', save: 'Save', saved: 'Saved locally',
     draft: 'Local draft saved', saving: 'Saving draft…', unsaved: 'Unsaved changes', downloadPdf: 'Download PDF',
-    exportFile: 'Export .guitardsl', moveDrive: 'Move to Drive', closeTab: 'Close', language: 'Language',
+    moveDrive: 'Move to Drive', closeTab: 'Close', language: 'Language',
     theme: 'Theme', pageSize: 'Page size', orientation: 'Orientation', portrait: 'Portrait', landscape: 'Landscape',
     targetMeasure: 'Target measure',
     narrowSource: 'Source', narrowPreview: 'Score', createFirst: 'Create a score to get started.',
@@ -115,7 +138,12 @@ const STRINGS = {
     driveSaveUnauthorized: 'Drive authorization expired before the save could be confirmed. Your local draft is kept. Reconnect Drive, review the file, and retry manually; the PATCH was not resent.',
     driveSaveForbidden: 'Drive denied the save due to access permissions. Your local draft is kept and no automatic retry was sent. Check file access before retrying.',
     reconnectOwner: 'Reconnect the Google account used by this tab before saving.',
+    finishComposition: 'Finish the current text composition before saving or exporting.',
     driveAccess: 'Drive access is limited to files you open with this app or create here.', noDiagnostics: 'No diagnostics.',
+    driveAuthStatus: 'Drive authorization expired. Reconnect to continue.', explorerOptions: 'Explorer options', closeExplorer: 'Close Explorer',
+    resetExplorerWidth: 'Reset Explorer Width (220px)', inspectorOptions: 'Inspector options', closeInspector: 'Close Inspector',
+    resetInspectorWidth: 'Reset width to default', closeProblems: 'Close Problems', severity: 'Severity', file: 'File',
+    lineCol: 'Line:Col', message: 'Message', error: 'Error', warning: 'Warning',
     title: 'Title', artist: 'Artist', tempo: 'Tempo', measures: 'Measures', chords: 'Chords', errors: 'Errors',
     suggest: 'Suggest next chords', reload: 'Reload latest', saveCopy: 'Save local version as a new Drive file', cancel: 'Cancel',
     ready: 'Local storage ready', unavailable: 'Local storage is unavailable. Download your work to keep a copy.', loadingDrive: 'Loading Drive files…',
@@ -123,14 +151,31 @@ const STRINGS = {
     confirmDelete: 'Delete this local score and its draft?',
     audition: 'Audition', stopAudition: 'Stop audition', audioStarting: 'Starting audition…',
     audioPlaying: 'Audition playing.', audioStopped: 'Audition stopped.', audioUnavailable: 'Audio audition is unavailable.',
+    problems: 'Problems', toolWindows: 'Tool windows', noProblems: 'No problems', previewEmpty: 'No score', previewInvalid: 'Unable to parse source',
+    previewCheck: 'Check diagnostics', previewReady: 'Preview ready', previewFailed: 'Preview failed', resetLayout: 'Reset layout',
+    sourceView: 'Source view', splitView: 'Split view', scoreView: 'Score view',
+    openTab: 'Open this tab', closeTabMenu: 'Close', closeOthers: 'Close other tabs', exportSource: 'Export source', deleteFile: 'Delete', copyName: 'Copy name',
+    goToSource: 'Go to source position', expand: 'Expand', collapse: 'Collapse',
+    explorer: 'Explorer', toggleExplorer: 'Toggle Explorer', toggleInspector: 'Toggle Inspector',
+    help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
+    menuFile: 'File', menuEdit: 'Edit', menuView: 'View', downloadCopy: 'Download a copy', driveRootOptions: 'Google Drive options',
+    account: 'Account', driveNotConnected: 'Not connected', driveConnecting: 'Connecting…', driveConnected: 'Connected', driveReauth: 'Reconnect required',
+    undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select all', find: 'Find…', replace: 'Replace…', goToLine: 'Go to line…',
+    folderPromptTitle: 'Set up a Google Drive folder?', folderPromptBody: 'Choose a destination for GuitarDSL scores. Existing folders only show files this app is authorized to access.',
+    createChoice: 'Create folder', chooseChoice: 'Choose existing folder…', laterChoice: 'Later', createFolderConfirm: 'Create a visible GuitarDSL folder in My Drive?',
+    appDataPending: 'Google Drive app state sync pending', appDataError: 'Google Drive app state could not be synchronized', appDataDuplicates: 'Multiple GuitarDSL app state files were found. The oldest file is in use; duplicates were retained.',
+    appDataConflictTitle: 'Google Drive settings changed elsewhere', appDataConflictBody: 'Reload the remote settings, or explicitly keep this device’s settings. A near-simultaneous update from another device may still be overwritten.',
+    reloadRemote: 'Reload remote', keepLocal: 'Keep this device’s settings', helpPopupBlocked: 'Your browser blocked the Help window. Use this link to open Help in a new tab:', openHelpLink: 'Open Help in a new tab', driveRootMenuOpen: 'Open from Google Drive…', driveRootMenuFolder: 'Choose destination folder…', driveRootMenuCreate: 'Create GuitarDSL folder…',
   },
   ja: {
-    files: 'ファイル', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続',
-    disconnect: '接続を解除', folder: 'フォルダーを選択', createFolder: 'GuitarDSL フォルダーを作成', openDrive: 'Drive から開く',
+    files: 'ファイル', project: 'EXPLORER', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Google Drive に接続', connectInline: '接続',
+    reconnect: 'Drive に再接続', connecting: '接続中…', connectedAs: '接続中のアカウント', disconnect: '接続を解除',
+    disconnectPendingConfirm: 'Google Drive のアプリ設定は未同期です。このまま接続を解除しますか？このアカウントの保留中の設定とローカル下書きは、次回接続時に確認できるよう保持されます。',
+    folder: '保存先フォルダーを選択…', createFolder: 'GuitarDSL フォルダーを作成…', openDrive: 'Google Drive から開く…',
     addFile: 'ファイルを読み込む', source: 'ソース', preview: 'プレビュー', inspector: 'インスペクター', document: '文書',
     variables: '変数', settings: '設定', progression: 'コード進行', save: '保存', saved: 'ローカルに保存済み',
     draft: '下書きを保存済み', saving: '下書きを保存中…', unsaved: '未保存の変更', downloadPdf: 'PDF をダウンロード',
-    exportFile: '.guitardsl を書き出す', moveDrive: 'Drive に移動', closeTab: 'タブを閉じる', language: '言語',
+    moveDrive: 'Drive に移動', closeTab: 'タブを閉じる', language: '言語',
     theme: 'テーマ', pageSize: '用紙サイズ', orientation: '向き', portrait: '縦', landscape: '横',
     targetMeasure: '対象の小節',
     narrowSource: 'ソース', narrowPreview: '譜面', createFirst: '新しい楽譜を作成してください。',
@@ -141,7 +186,12 @@ const STRINGS = {
     driveSaveUnauthorized: 'Drive の認証が失効したため保存を確認できません。下書きは保持しました。Drive に再接続し、ファイルの状態を確認してから手動で再試行してください。PATCH の自動再送はしていません。',
     driveSaveForbidden: 'Drive が保存を拒否しました（ファイルのアクセス権を確認してください）。下書きは保持し、自動再送していません。権限を確認してから手動で再試行してください。',
     reconnectOwner: 'このタブの保存に使う Google アカウントへ再接続してください。',
+    finishComposition: '日本語入力を確定してから保存または書き出してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
+    driveAuthStatus: 'Drive の認証が失効しました。再接続してください。', explorerOptions: 'Explorer のオプション', closeExplorer: 'Explorer を閉じる',
+    resetExplorerWidth: 'Explorer の幅を初期値へ戻す（220px）', inspectorOptions: 'Inspector のオプション', closeInspector: 'Inspector を閉じる',
+    resetInspectorWidth: '幅を初期値へ戻す', closeProblems: '問題パネルを閉じる', severity: '重要度', file: 'ファイル',
+    lineCol: '行:列', message: 'メッセージ', error: 'エラー', warning: '警告',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
     suggest: '次のコードを提案', reload: '最新の内容を読み込む', saveCopy: 'ローカル版を新しい Drive ファイルとして保存', cancel: 'キャンセル',
     ready: 'ローカル保存を利用できます', unavailable: 'ローカル保存を利用できません。作業内容を残すにはダウンロードしてください。', loadingDrive: 'Drive のファイルを読み込み中…',
@@ -149,6 +199,21 @@ const STRINGS = {
     confirmDelete: 'このローカル楽譜と下書きを削除しますか？',
     audition: '試聴', stopAudition: '試聴を停止', audioStarting: '試聴を開始しています…',
     audioPlaying: '試聴中です。', audioStopped: '試聴を停止しました。', audioUnavailable: '試聴を利用できません。',
+    problems: '問題', toolWindows: 'ツールウィンドウ', noProblems: '問題はありません', previewEmpty: '譜面がありません', previewInvalid: 'ソースを解析できません',
+    previewCheck: '診断を確認してください', previewReady: 'プレビューを表示中', previewFailed: 'プレビューを表示できません', resetLayout: 'レイアウトをリセット',
+    sourceView: 'ソース表示', splitView: '分割表示', scoreView: '譜面表示',
+    openTab: 'このタブを開く', closeTabMenu: '閉じる', closeOthers: 'ほかのタブを閉じる', exportSource: 'ソースを書き出す', deleteFile: '削除', copyName: '名前をコピー',
+    goToSource: 'ソース位置へ移動', expand: '展開', collapse: '折りたたむ',
+    explorer: 'エクスプローラー', toggleExplorer: 'Explorer の表示を切り替え', toggleInspector: 'Inspector の表示を切り替え',
+    help: 'ヘルプ', close: '閉じる', resetLayoutConfirm: 'ワークスペースのレイアウトを初期状態に戻しますか？',
+    menuFile: 'ファイル', menuEdit: '編集', menuView: '表示', downloadCopy: 'コピーをダウンロード', driveRootOptions: 'Google Drive のオプション',
+    account: 'アカウント', driveNotConnected: '未接続', driveConnecting: '接続中…', driveConnected: '接続済み', driveReauth: '再認証が必要',
+    undo: '元に戻す', redo: 'やり直す', cut: '切り取り', copy: 'コピー', paste: '貼り付け', selectAll: 'すべて選択', find: '検索…', replace: '置換…', goToLine: '行へ移動…',
+    folderPromptTitle: 'Google Drive の保存先を設定しますか？', folderPromptBody: 'GuitarDSL の楽譜を保存する場所を選んでください。既存フォルダー内でも、このアプリが認可されたファイルのみ表示できます。',
+    createChoice: 'フォルダーを作成', chooseChoice: '既存フォルダーを選択…', laterChoice: '後で', createFolderConfirm: 'マイドライブ直下に GuitarDSL フォルダーを作成しますか？',
+    appDataPending: 'Google Drive のアプリ状態は未同期です', appDataError: 'Google Drive のアプリ状態を同期できませんでした', appDataDuplicates: 'GuitarDSL のアプリ状態ファイルが複数あります。最も古いファイルを使用し、重複ファイルは残しました。',
+    appDataConflictTitle: 'Google Drive の設定が別の端末で変更されました', appDataConflictBody: 'Drive の設定を再読み込みするか、この端末の設定を優先するか選んでください。別端末とほぼ同時に更新すると、相手の変更を上書きする場合があります。',
+    reloadRemote: 'Drive から再読み込み', keepLocal: 'この端末の設定を優先', helpPopupBlocked: 'ブラウザーがヘルプ画面を開けませんでした。次のリンクから新しいタブで開いてください:', openHelpLink: 'ヘルプを新しいタブで開く', driveRootMenuOpen: 'Google Drive から開く…', driveRootMenuFolder: '保存先フォルダーを選択…', driveRootMenuCreate: 'GuitarDSL フォルダーを作成…',
   }
 } as const;
 
@@ -157,74 +222,113 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.inert = true;
 app.setAttribute('aria-busy', 'true');
 const state: AppState = {
-  tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'document', mobilePane: 'source',
+  tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'variables', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
     orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
     progressionBars: 4, progressionOperation: 'append', progressionAuditionMode: 'bars', progressionSide: 'B', progressionSpeed: 100,
   scoreSettingsSection: 'capo',
     audioStatus: '',
-    splitRatio: 0.48, authExpired: false
+    splitRatio: 0.4, viewMode: 'split', explorerOpen: true, inspectorOpen: true,
+    explorerWidth: 220, inspectorWidth: 300, problemsOpen: true, problemsHeight: 200, authExpired: false,
+    driveGeneration: 0, appDataSync: 'idle'
 };
 const webScoreSettingsSections = {
   capo: new CapoSection(), beginner: new BeginnerSection(), transpose: new TransposeSection()
 };
 const auth = new GoogleOAuth();
 const draftWrites = new Map<string, Promise<void>>();
+const closingTabs = new WeakMap<OpenTab, Promise<void>>();
 const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
+let driveConnectInProgress = false;
 let activeDriveOperations = 0;
+let appDataSyncTimer = 0;
+let appDataSyncQueue: Promise<void> = Promise.resolve();
+let appDataPendingQueue: Promise<void> = Promise.resolve();
+let appDataOfflinePending = false;
+let restoringDriveSession = false;
+let helpBlobUrl = '';
 
 app.innerHTML = `
   <main class="app-shell" aria-label="GuitarDSL">
+    ${WEB_ICON_SPRITE}
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">♪</span><strong>GuitarDSL</strong></div>
-      <div class="workspace-name" id="workspace-name">My songs</div>
+      <div class="brand"><img class="brand-mark" src="${GUITAR_MARK_URL}" alt="" /><strong>GuitarDSL</strong></div>
+      <nav class="main-menu-bar" role="menubar" aria-label="Main menu">
+        <button type="button" id="menu-file-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">File</button>
+        <button type="button" id="menu-edit-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">Edit</button>
+        <button type="button" id="menu-view-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">View</button>
+      </nav>
       <div class="top-actions">
-        <button type="button" class="quiet-button" id="connect-drive">Connect Drive</button>
-        <button type="button" class="quiet-button" id="save-document">Save</button>
-        <button type="button" class="primary-button" id="new-score">New score</button>
+        <button type="button" class="quiet-button icon-action drive-header-button" id="connect-drive" aria-label="Connect Google Drive" title="Connect Google Drive" aria-haspopup="menu" aria-expanded="false"><img class="google-drive-logo" src="${GOOGLE_DRIVE_LOGO_URL}" alt="" /><span id="drive-state-label">Not connected</span><span class="sr-only">Connect Google Drive</span></button>
+        <button type="button" class="quiet-button icon-action" id="save-document" aria-label="Save" title="Save"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg><span class="sr-only">Save</span></button>
+        <button type="button" class="quiet-button icon-action" id="download-pdf" aria-label="Download PDF" title="Download PDF"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-pdf"></use></svg><span class="sr-only">Download PDF</span></button>
+        <button type="button" class="quiet-button icon-action" id="account-button" aria-label="Account" title="Account" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-account"></use></svg><span class="sr-only">Account</span></button>
+        <button type="button" class="quiet-button icon-action" id="help-button" aria-label="Help" title="Help"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-help"></use></svg><span class="sr-only">Help</span></button>
+        <button type="button" class="quiet-button icon-action" id="settings-button" aria-label="Settings" title="Settings"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg><span class="sr-only">Settings</span></button>
       </div>
     </header>
-    <div class="workspace">
+    <div class="workspace" id="workspace">
+      <nav class="activity-bar" aria-label="Workspace tools">
+        <button type="button" id="activity-explorer" aria-label="Toggle Explorer" title="Toggle Explorer" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg></button>
+        <span class="activity-spacer"></span>
+        <button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button>
+      </nav>
       <aside class="file-list" aria-label="Files">
-        <div class="pane-heading"><span id="files-heading">Files</span><button type="button" id="import-file" aria-label="Import file">＋</button></div>
-        <div class="storage-switch" role="group" aria-label="File storage">
-          <button type="button" data-storage="local" class="selected" id="storage-local">On this device</button>
-          <button type="button" data-storage="drive" id="storage-drive">Google Drive</button>
-        </div>
-        <div class="file-actions" id="file-actions"></div>
-        <div class="file-items" id="file-items"></div>
-        <p class="drive-scope-note" id="drive-scope-note" hidden></p>
-        <p class="drive-overwrite-note" id="drive-overwrite-note" role="note" hidden></p>
+        <div class="pane-heading explorer-heading"><span id="files-heading">PROJECT</span><div class="panel-heading-actions"><button type="button" id="new-score" class="icon-action" aria-label="New score" title="New score"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-fileplus"></use></svg></button><button type="button" id="explorer-more" class="icon-action" aria-label="Explorer options" title="Explorer options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div></div>
+        <section class="storage-section" data-storage-section="local">
+          <div class="storage-root-row">
+            <button type="button" class="storage-expander" data-storage-expander="local" aria-label="Collapse On this device" aria-expanded="true" aria-controls="local-storage-content"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button>
+            <svg class="web-icon root-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg>
+            <button type="button" data-storage="local" class="storage-root-label" id="storage-local">On this device</button>
+          </div>
+          <div class="storage-content" id="local-storage-content">
+            <div class="file-actions" id="file-actions"></div>
+            <div class="file-items" id="file-items"></div>
+          </div>
+        </section>
+        <section class="storage-section" data-storage-section="drive">
+          <div class="storage-root-row">
+            <button type="button" class="storage-expander" data-storage-expander="drive" aria-label="Collapse Google Drive" aria-expanded="true" aria-controls="drive-storage-content"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button>
+            <img class="root-icon drive-root-icon" src="${GOOGLE_DRIVE_LOGO_URL}" alt="" />
+            <button type="button" data-storage="drive" class="storage-root-label" id="storage-drive">Google Drive</button>
+            <span id="drive-status" class="drive-status-dot" aria-label="Connected to Google Drive" hidden></span>
+            <button type="button" id="drive-connect-inline" class="drive-connect-inline" aria-label="Connect" title="Connect">Connect</button>
+            <button type="button" id="drive-root-more" class="icon-action drive-root-more" aria-label="Google Drive options" title="Google Drive options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button>
+          </div>
+          <div class="storage-content" id="drive-storage-content">
+            <div class="file-actions" id="drive-file-actions"></div>
+            <div class="file-items" id="drive-file-items"></div>
+            <p class="drive-scope-note" id="drive-scope-note" hidden></p>
+            <p class="drive-overwrite-note" id="drive-overwrite-note" role="note" hidden></p>
+          </div>
+        </section>
       </aside>
+      <div class="workspace-splitter" id="explorer-splitter" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="180" aria-valuemax="420" aria-valuenow="220" tabindex="0"></div>
       <section class="editor-workspace" aria-label="Score workspace">
-        <div class="tabs" role="tablist" aria-label="Open documents" id="open-tabs"></div>
-        <div class="toolbar">
-          <button type="button" class="quiet-button" id="mobile-source">Source</button>
-          <button type="button" class="quiet-button" id="mobile-preview">Score</button>
-          <span class="toolbar-spacer"></span>
-          <span class="saved-state" id="saved-state">Local storage ready</span>
-          <button type="button" class="quiet-button" id="export-file">Export .guitardsl</button>
-          <button type="button" class="quiet-button" id="move-drive" hidden>Move to Drive</button>
-          <button type="button" class="primary-button" id="download-pdf">Download PDF</button>
+        <div class="tabs" aria-label="Open documents and workspace views">
+          <div class="document-tabs" role="tablist" id="open-tabs"></div>
+          <div class="view-mode-controls" role="group" aria-label="Workspace view">
+          <button type="button" class="view-mode-button" id="view-source" aria-label="Source view" title="Source view" aria-pressed="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-code"></use></svg><span class="sr-only">Source view</span></button>
+          <button type="button" class="view-mode-button" id="view-split" aria-label="Split view" title="Split view" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-split"></use></svg><span class="sr-only">Split view</span></button>
+          <button type="button" class="view-mode-button" id="view-score" aria-label="Score view" title="Score view" aria-pressed="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-eye"></use></svg><span class="sr-only">Score view</span></button>
+          </div>
         </div>
         <div class="app-message" id="app-message" role="status" hidden></div>
         <div class="split-view">
           <section class="source-pane" aria-label="GuitarDSL source" id="source-pane">
-            <div class="pane-heading"><span>Source</span><span class="language-chip">GuitarDSL</span></div>
             ${createSourceEditorMarkup()}
-            <div class="diagnostics" id="diagnostics" aria-live="polite"></div>
           </section>
-          <div class="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize source and score panes" tabindex="0"></div>
+          <div class="split-divider" id="center-splitter" role="separator" aria-orientation="vertical" aria-label="Resize source and score panes" aria-valuemin="24" aria-valuemax="76" aria-valuenow="40" tabindex="0"></div>
           <section class="score-pane" aria-label="Score preview" id="score-pane">
-            <div class="pane-heading"><span>Preview</span><span class="preview-state" id="preview-state">Loading score</span></div>
             <iframe id="score-frame" title="GuitarDSL score preview" sandbox="allow-scripts"></iframe>
           </section>
         </div>
       </section>
+      <div class="workspace-splitter" id="inspector-splitter" role="separator" aria-orientation="vertical" aria-label="Resize Inspector" aria-valuemin="260" aria-valuemax="480" aria-valuenow="300" tabindex="0"></div>
       <aside class="inspector" aria-label="Inspector">
-        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="collapse-inspector" aria-label="Collapse Inspector">⌄</button></div>
+        <div class="pane-heading"><span id="inspector-heading">Inspector</span><button type="button" id="inspector-more" class="icon-action" aria-label="Inspector options" title="Inspector options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div>
         <div id="inspector-tabs-host"></div>
         <div class="inspector-content" id="inspector-content" role="tabpanel" tabindex="0"></div>
         <div id="inspector-settings-parking" hidden>
@@ -242,12 +346,27 @@ app.innerHTML = `
           </div>
         </div>
       </aside>
+      <div class="problems-splitter" id="problems-splitter" role="separator" aria-orientation="horizontal" aria-label="Resize Problems" aria-valuemin="140" aria-valuemax="360" aria-valuenow="200" tabindex="0"></div>
+      <section class="problems-panel" id="problems-panel" aria-label="Problems">
+        <header class="problems-heading"><svg class="web-icon problems-heading-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><strong id="problems-title">Problems</strong><div id="problem-counts" aria-live="polite"><span class="problem-count problem-count-errors"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-error"></use></svg><span id="error-count">0</span></span><span class="problem-count problem-count-warnings"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-warning"></use></svg><span id="warning-count">0</span></span></div><span class="toolbar-spacer"></span><button type="button" id="close-problems" class="icon-action" aria-label="Close Problems" title="Close Problems"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header>
+        <div class="problem-columns" id="problem-columns"><span id="problem-severity-heading">Severity</span><span id="problem-file-heading">File</span><span id="problem-location-heading">Line:Col</span><span id="problem-message-heading">Message</span></div>
+        <div class="diagnostics" id="diagnostics" role="list" aria-live="polite"></div>
+      </section>
+      <div class="tool-window-bar" role="group" aria-label="Tool windows">
+        <button type="button" id="toggle-inspector" aria-label="Toggle Inspector" title="Toggle Inspector" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-inspector"></use></svg><span class="sr-only">Toggle Inspector</span></button>
+      </div>
     </div>
-    <footer class="statusbar"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Local storage ready</span><span class="status-spacer"></span>
-      <label class="status-select"><span class="sr-only">Language</span><select id="locale-select" aria-label="Language"><option value="en">English</option><option value="ja">日本語</option></select></label>
-      <label class="status-select"><span class="sr-only">Theme</span><select id="theme-select" aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-    </footer>
+    <footer class="statusbar" aria-label="Workspace status"><span id="status-problems">Errors 0 / Warnings 0</span><span id="status-cursor">Ln 1, Col 1</span><span class="status-spacer"></span><span class="preview-state sr-only" id="preview-state" aria-live="polite">Loading score</span><span class="status-dot" aria-hidden="true"></span><span class="saved-state" id="saved-state">Saved locally</span></footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden />
+    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer">Open Help in a new tab</a></p><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
+    <div id="file-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="edit-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="view-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="drive-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="account-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="settings-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="panel-menu" class="settings-menu" role="menu" hidden></div>
+    <div id="context-menu" class="context-menu" role="menu" hidden></div>
   </main>
 `;
 
@@ -256,8 +375,29 @@ sharedSettingsScript.textContent = inspectorSettingsSource;
 document.body.append(sharedSettingsScript);
 sharedSettingsScript.remove();
 
-const editor = app.querySelector<HTMLTextAreaElement>('textarea[aria-label="GuitarDSL source editor"]')!;
-const sourceEditor = new SourceEditorSurface(editor, app.querySelector<HTMLElement>('.editor-highlight')!);
+const editor = app.querySelector<HTMLElement>('.editor-surface')!;
+const sourceEditor = new SourceEditorSurface(editor, onEditorInput, renderCursorPosition);
+let lastPdfInputForTest: string | undefined;
+if (import.meta.env.DEV) {
+  const testWindow = window as Window & {
+    __guitarDslReadSource?: () => string;
+    __guitarDslReplaceSource?: (source: string) => boolean;
+    __guitarDslDispatchSourceEdit?: (source: string, userEvent?: string) => boolean;
+    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number; saveStatus: OpenTab['saveStatus'] }>;
+    __guitarDslReadLastPdfInput?: () => string | undefined;
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number };
+    __guitarDslRenderAll?: () => void;
+    __guitarDslSetCursor?: (offset: number) => void;
+  };
+  testWindow.__guitarDslReadSource = () => sourceEditor.getSource();
+  testWindow.__guitarDslReplaceSource = source => sourceEditor.replaceSource(source);
+  testWindow.__guitarDslDispatchSourceEdit = (source, userEvent) => sourceEditor.dispatchSourceEdit(source, userEvent);
+  testWindow.__guitarDslReadTabs = () => state.tabs.map(tab => ({ key: tabKey(tab), source: tab.source, revision: tab.revision, saveStatus: tab.saveStatus }));
+  testWindow.__guitarDslReadLastPdfInput = () => lastPdfInputForTest;
+  testWindow.__guitarDslReadSelection = () => sourceEditor.selection();
+  testWindow.__guitarDslRenderAll = renderAll;
+  testWindow.__guitarDslSetCursor = offset => sourceEditor.setSelection(offset);
+}
 const tabsElement = app.querySelector<HTMLDivElement>('#open-tabs')!;
 const scoreFrame = app.querySelector<HTMLIFrameElement>('#score-frame')!;
 const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')!;
@@ -344,14 +484,16 @@ function esc(value: string): string {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 function shortError(error: unknown): string {
+  if (error instanceof GoogleAuthError && error.code === 'insufficient-scope' && state.locale === 'ja') {
+    return 'Google Drive の2つの権限が必要です。もう一度接続し、要求された両方の権限を許可してください。';
+  }
   if (error instanceof Error) return error.message;
   return 'An unexpected error occurred.';
 }
 function markDriveAuthState(error: unknown): void {
-  if (error instanceof GoogleAuthError && error.code === 'expired' || error instanceof DriveApiError && error.status === 401) {
+  if (error instanceof GoogleAuthError && (error.code === 'expired' || error.code === 'insufficient-scope') || error instanceof DriveApiError && error.status === 401) {
     state.authExpired = true;
-    const button = app.querySelector<HTMLButtonElement>('#connect-drive');
-    if (button) button.textContent = state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive';
+    renderAll();
   }
 }
 function showMessage(message: string, kind: 'info' | 'error' = 'info'): void {
@@ -371,35 +513,246 @@ function currentScore(source: string): ParsedScore | undefined {
   try { return parseGuitarDsl(source, { expandPageBreakRepeats: state.expandPageBreakRepeats }); }
   catch { return undefined; }
 }
+function editorReadyForDocumentChange(): boolean {
+  if (sourceEditor.flushPendingEdit()) return true;
+  showMessage(state.locale === 'ja' ? '日本語入力の確定後に文書を切り替えてください。' : 'Finish the current text composition before switching documents.', 'info');
+  return false;
+}
+function editorReadyForSnapshot(tab: OpenTab): boolean {
+  if (state.activeKey !== tabKey(tab) || sourceEditor.flushPendingEdit()) return true;
+  showMessage(strings().finishComposition, 'info');
+  return false;
+}
 async function setActive(key: string, isCurrent?: () => boolean): Promise<void> {
   const next = state.tabs.find(tab => tabKey(tab) === key);
   if (!next || isCurrent && !isCurrent()) return;
+  if (state.activeKey !== key && !editorReadyForDocumentChange()) return;
   if (state.activeKey !== key) resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri && progressionAudioLease.activeSessionUri !== activeIdentityLabel(next)) {
     await stopCandidateAudition();
   }
   if (isCurrent && !isCurrent()) return;
+  if (state.activeKey !== key && !editorReadyForDocumentChange()) return;
   state.activeKey = key;
   const tab = activeTab();
   if (!tab) return;
   state.activeStorage = tab.document.identity.storage;
-  editor.value = tab.source;
   renderAll();
   void persistSessions();
 }
 
-async function persistDriveSession(accountId: string): Promise<void> {
-  const remoteTabs = state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId);
-  const remoteActive = remoteTabs.find(tab => tabKey(tab) === state.activeKey);
-  const previous = await indexedDb.getValue<WorkspaceSession>('sessions', `workspace-drive:${accountId}`).catch(() => undefined);
-  const active = remoteActive?.document.identity.fileId
-    ?? (previous?.active && remoteTabs.some(tab => tab.document.identity.fileId === previous.active) ? previous.active : null);
-  await indexedDb.setValue('sessions', `workspace-drive:${accountId}`, {
-    tabs: remoteTabs.map(tab => tab.document.identity.fileId), active
-  } satisfies WorkspaceSession);
+function driveWorkspaceState(): DriveAppDataState {
+  const previous = state.appDataPending?.state ?? state.appDataSnapshot?.state ?? DEFAULT_DRIVE_APPDATA_STATE;
+  const accountId = state.account?.accountId;
+  const tabs = accountId ? state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId) : [];
+  const activeId = tabs.find(tab => tabKey(tab) === state.activeKey)?.document.identity.fileId ?? null;
+  const recent = activeId ? [activeId, ...previous.recentDriveFileIds.filter(id => id !== activeId)] : previous.recentDriveFileIds;
+  return {
+    ...previous,
+    selectedFolderId: state.folderId ?? previous.selectedFolderId,
+    openDriveFileIds: [...new Set(tabs.map(tab => tab.document.identity.fileId))].slice(0, 30),
+    activeDriveFileId: activeId,
+    recentDriveFileIds: [...new Set(recent)].slice(0, 50)
+  };
 }
 
-async function persistSessions(additionalDriveAccounts: string[] = []): Promise<void> {
+function pendingDriveAppDataKey(accountId: string): string { return `pending-drive-state:${accountId}`; }
+
+function sameDriveAppDataState(left: DriveAppDataState, right: DriveAppDataState): boolean {
+  return JSON.stringify(validateDriveAppDataState(left)) === JSON.stringify(validateDriveAppDataState(right));
+}
+
+async function readPendingDriveAppData(accountId: string): Promise<PendingDriveAppData | undefined> {
+  const value = await indexedDb.getValue<unknown>('settings', pendingDriveAppDataKey(accountId));
+  return value === undefined ? undefined : validatePendingDriveAppData(value, accountId);
+}
+
+async function persistPendingDriveAppData(
+  accountId: string, drive: GoogleDriveApi, generation: number, value: DriveAppDataState
+): Promise<boolean> {
+  const pending = validatePendingDriveAppData({ schemaVersion: 1, accountId, state: value, updatedAt: Date.now() }, accountId);
+  const write = appDataPendingQueue.then(async () => {
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+    await indexedDb.setValue('settings', pendingDriveAppDataKey(accountId), pending);
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+    state.appDataPending = pending;
+    return true;
+  });
+  appDataPendingQueue = write.then(() => undefined, () => undefined);
+  return write;
+}
+
+async function clearPendingDriveAppData(
+  accountId: string, drive: GoogleDriveApi, generation: number, expectedState?: DriveAppDataState
+): Promise<boolean> {
+  const write = appDataPendingQueue.then(async () => {
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+    const persisted = await readPendingDriveAppData(accountId);
+    if (expectedState && persisted && !sameDriveAppDataState(persisted.state, expectedState)) return false;
+    if (expectedState && !persisted && state.appDataPending) return false;
+    await indexedDb.deleteValue('settings', pendingDriveAppDataKey(accountId));
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+    state.appDataPending = undefined;
+    state.appDataPendingChoice = undefined;
+    return true;
+  });
+  appDataPendingQueue = write.then(() => undefined, () => undefined);
+  return write;
+}
+
+function scheduleDriveAppDataSync(): void {
+  if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
+  const accountId = state.account.accountId;
+  const drive = state.drive;
+  const generation = state.driveGeneration;
+  const next = driveWorkspaceState();
+  state.appDataSync = 'pending';
+  renderStorageStatus();
+  window.clearTimeout(appDataSyncTimer);
+  void persistPendingDriveAppData(accountId, drive, generation, next).then(saved => {
+    if (!saved || !driveSessionIsCurrent(accountId, drive, generation)) return;
+    window.clearTimeout(appDataSyncTimer);
+    appDataSyncTimer = window.setTimeout(() => { appDataSyncTimer = 0; void persistDriveAppData(next); }, 900);
+  }).catch(error => {
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return;
+    state.appDataSync = 'error';
+    state.appDataError = shortError(error);
+    renderStorageStatus();
+    showMessage(`${strings().appDataError}: ${state.appDataError}`, 'error');
+  });
+}
+
+async function restoreRemoteDriveAppData(
+  snapshot: DriveAppDataSnapshot, accountId: string, drive: GoogleDriveApi, generation: number
+): Promise<boolean> {
+  if (!driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
+  const pendingState = state.appDataPending?.state;
+  let folder: DriveFile | undefined;
+  let folderNeedsPicker = false;
+  const folderId = snapshot.state.selectedFolderId;
+  if (folderId) {
+    try {
+      const candidate = await drive.getFolder(folderId);
+      if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+      if (candidate.mimeType === 'application/vnd.google-apps.folder' && !candidate.trashed) folder = candidate;
+      else folderNeedsPicker = true;
+    } catch (error) {
+      if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+      if (error instanceof DriveApiError && (error.status === 403 || error.status === 404)) folderNeedsPicker = true;
+      else throw error;
+    }
+  }
+  state.appDataSnapshot = snapshot;
+  state.folderId = folder?.id;
+  state.folderName = folder?.name;
+  state.appDataSync = 'syncing';
+  state.appDataError = undefined;
+  await renderExplorer();
+  if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
+  const restored = await restoreDriveSession(accountId, drive, generation, snapshot.state);
+  if (!restored || !driveSessionIsCurrent(accountId, drive, generation)) {
+    if (driveSessionIsCurrent(accountId, drive, generation)) {
+      state.appDataSync = 'error';
+      state.appDataError = state.locale === 'ja'
+        ? 'Drive のタブを復元できません。保留中の設定は保持されています。'
+        : 'Drive tabs could not be restored. Pending settings have been kept.';
+      renderStorageStatus();
+    }
+    return false;
+  }
+  if (pendingState && !await clearPendingDriveAppData(accountId, drive, generation, pendingState)) return false;
+  state.appDataSync = 'idle';
+  state.appDataError = undefined;
+  appDataOfflinePending = false;
+  renderAll();
+  if (state.activeStorage === 'drive') await renderExplorer();
+  if (folderNeedsPicker) showMessage(state.locale === 'ja'
+    ? 'Drive の保存先にアクセスできません。Drive メニューからフォルダーを選び直してアクセスを許可してください。'
+    : 'The saved Drive folder is unavailable. Choose the destination again from the Drive menu to authorize it.', 'error');
+  return true;
+}
+
+async function persistDriveAppData(next = driveWorkspaceState()): Promise<boolean> {
+  window.clearTimeout(appDataSyncTimer);
+  appDataSyncTimer = 0;
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const store = state.appDataStore;
+  const generation = state.driveGeneration;
+  if (!accountId || !drive || !store || !state.appDataSnapshot) return false;
+  const write = appDataSyncQueue.then(async () => {
+    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+    const baseline = state.appDataSnapshot;
+    if (!baseline) return false;
+    if (sameDriveAppDataState(baseline.state, next)) {
+      if (!await clearPendingDriveAppData(accountId, drive, generation, next)) return false;
+      state.appDataSync = 'idle';
+      state.appDataError = undefined;
+      appDataOfflinePending = false;
+      renderStorageStatus();
+      return true;
+    }
+    if (!await persistPendingDriveAppData(accountId, drive, generation, next)) return false;
+    if (!navigator.onLine) {
+      appDataOfflinePending = true;
+      state.appDataSync = 'pending';
+      renderStorageStatus();
+      return false;
+    }
+    state.appDataSync = 'syncing';
+    renderStorageStatus();
+    try {
+      let result = await store.update(baseline, next);
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      if (result.kind === 'conflict') {
+        const choice = await appDataConflictDialog();
+        if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+        if (choice === 'local') {
+          state.appDataSnapshot = result.latest;
+          result = await store.update(result.latest, next);
+        } else {
+          const restored = await restoreRemoteDriveAppData(result.latest, accountId, drive, generation);
+          return restored;
+        }
+        if (result.kind === 'conflict') {
+          state.appDataSnapshot = result.latest;
+          throw new DriveAppDataError('conflict', strings().appDataPending);
+        }
+      }
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      state.appDataSnapshot = result.snapshot;
+      if (!await clearPendingDriveAppData(accountId, drive, generation, next)) {
+        throw new DriveAppDataError('unknown-outcome', 'Drive saved its metadata, but the local pending record could not be cleared.');
+      }
+      state.appDataSync = 'idle';
+      state.appDataError = undefined;
+      appDataOfflinePending = false;
+      renderStorageStatus();
+      if (result.snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
+      return true;
+    } catch (error) {
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      state.appDataSync = 'error';
+      state.appDataError = shortError(error);
+      renderStorageStatus();
+      showMessage(`${strings().appDataError}: ${state.appDataError}`, 'error');
+      return false;
+    }
+  });
+  appDataSyncQueue = write.then(() => undefined, () => undefined);
+  return write;
+}
+
+async function flushDriveAppData(): Promise<boolean> {
+  if (appDataSyncTimer) {
+    await appDataPendingQueue;
+    return persistDriveAppData();
+  }
+  if (state.appDataSync === 'pending' || state.appDataSync === 'syncing') return appDataSyncQueue.then(() => state.appDataSync === 'idle');
+  return state.appDataSync === 'error' ? false : true;
+}
+
+async function persistSessions(_additionalDriveAccounts: string[] = []): Promise<void> {
   if (!state.storageReady) return;
   const localTabs = state.tabs.filter(tab => tab.document.identity.storage === 'local');
   const localActive = localTabs.find(tab => tabKey(tab) === state.activeKey);
@@ -407,25 +760,31 @@ async function persistSessions(additionalDriveAccounts: string[] = []): Promise<
     await indexedDb.setValue('sessions', 'workspace-local', {
       tabs: localTabs.map(tab => tab.document.identity.fileId), active: localActive?.document.identity.fileId ?? null
     } satisfies WorkspaceSession);
-    const accountIds = new Set(additionalDriveAccounts);
-    for (const tab of state.tabs) if (tab.document.identity.storage === 'drive' && tab.accountId) accountIds.add(tab.accountId);
-    if (state.account) accountIds.add(state.account.accountId);
-    for (const accountId of accountIds) await persistDriveSession(accountId);
+    scheduleDriveAppDataSync();
   } catch { state.storageReady = false; renderStorageStatus(); }
 }
 
 function renderStorageStatus(text?: string): void {
   const t = strings();
   const tab = activeTab();
-  const message = text ?? (state.storageReady ? t.ready : t.unavailable);
-  app.querySelector('#storage-status')!.textContent = message;
-  const savedMessage = !state.storageReady ? t.unavailable : !tab ? t.ready
+  const savedMessage = text ?? (state.appDataSync === 'error' ? `${t.appDataError}: ${state.appDataError ?? ''}`
+    : state.appDataSync === 'pending' || state.appDataSync === 'syncing' ? t.appDataPending
+      : !state.storageReady ? t.unavailable : !tab ? t.ready
     : tab.saveStatus === 'local-saved' ? t.saved
       : tab.saveStatus === 'drive-saved' ? (state.locale === 'ja' ? 'Drive に保存済み' : 'Saved to Drive')
         : tab.saveStatus === 'draft' ? t.draft
-          : tab.saveStatus === 'saving' ? t.saving : t.unsaved;
+          : tab.saveStatus === 'saving' ? t.saving : t.unsaved);
   app.querySelector('#saved-state')!.textContent = savedMessage;
   app.querySelector('.status-dot')!.classList.toggle('unavailable', !state.storageReady);
+}
+
+function renderCursorPosition(): void {
+  const cursor = sourceEditor.selection().head;
+  const lines = sourceEditor.getText().slice(0, cursor).split('\n');
+  const row = lines.length;
+  const column = (lines.at(-1)?.length ?? 0) + 1;
+  app.querySelector('#status-cursor')!.textContent = state.locale === 'ja'
+    ? `行 ${row}, 列 ${column}` : `Ln ${row}, Col ${column}`;
 }
 
 function scheduleDraft(tab: OpenTab): void {
@@ -461,28 +820,60 @@ function hasUnpersistedDraft(tab: OpenTab): boolean {
 function renderDiagnostics(score: ParsedScore | undefined): void {
   diagnosticsElement.replaceChildren();
   const diagnostics = score?.diagnostics ?? [];
+  sourceEditor.setDiagnostics(diagnostics.map(item => ({
+    message: formatDiagnostic(item.code, item.args, state.locale), line: item.line,
+    startCol: item.startCol, endCol: item.endCol, severity: item.severity
+  })));
+  const errors = diagnostics.filter(item => item.severity === 'error').length;
+  const warnings = diagnostics.length - errors;
+  const summary = state.locale === 'ja'
+    ? `エラー ${errors} / 警告 ${warnings}` : `Errors ${errors} / Warnings ${warnings}`;
+  app.querySelector('#error-count')!.textContent = String(errors);
+  app.querySelector('#warning-count')!.textContent = String(warnings);
+  app.querySelector<HTMLElement>('.problem-count-errors')!.hidden = errors === 0;
+  app.querySelector<HTMLElement>('.problem-count-warnings')!.hidden = warnings === 0;
+  app.querySelector('.problem-count-errors')!.classList.toggle('zero', errors === 0);
+  app.querySelector('.problem-count-warnings')!.classList.toggle('zero', warnings === 0);
+  app.querySelector('#problem-counts')!.setAttribute('aria-label', summary);
+  app.querySelector('#status-problems')!.textContent = summary;
+  app.querySelector('#tool-window-count')!.textContent = String(diagnostics.length);
+  app.querySelector<HTMLElement>('#tool-window-count')!.hidden = diagnostics.length === 0;
   if (!diagnostics.length) {
-    diagnosticsElement.textContent = strings().noDiagnostics;
+    const empty = document.createElement('p');
+    empty.className = 'problems-empty';
+    empty.textContent = strings().noProblems;
+    diagnosticsElement.append(empty);
     diagnosticsElement.dataset.kind = 'ok';
     return;
   }
   diagnosticsElement.dataset.kind = diagnostics.some(item => item.severity === 'error') ? 'error' : 'warning';
-  const list = document.createElement('ul');
   for (const diagnostic of diagnostics) {
-    const item = document.createElement('li');
+    const item = document.createElement('div');
+    item.className = `problem-row problem-${diagnostic.severity}`;
+    item.setAttribute('role', 'listitem');
+    const severity = document.createElement('span');
+    severity.className = 'problem-severity';
+    const severityLabel = diagnostic.severity === 'error' ? strings().error : strings().warning;
+    severity.append(createWebIcon(diagnostic.severity), document.createTextNode(severityLabel));
+    const file = document.createElement('span');
+    file.className = 'problem-file';
+    file.textContent = activeTab()?.document.name ?? '';
+    const location = document.createElement('span');
+    location.className = 'problem-location';
+    location.textContent = `${diagnostic.line + 1}:${diagnostic.startCol + 1}`;
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = `L${diagnostic.line + 1}:${diagnostic.startCol + 1} ${formatDiagnostic(diagnostic.code, diagnostic.args, state.locale)}`;
+    button.className = 'problem-message';
+    button.textContent = formatDiagnostic(diagnostic.code, diagnostic.args, state.locale);
     button.addEventListener('click', () => {
-      editor.focus();
-      const lines = editor.value.split('\n');
+      const lines = sourceEditor.getText().split('\n');
       const offset = lines.slice(0, diagnostic.line).reduce((total, line) => total + line.length + 1, 0) + diagnostic.startCol;
-      editor.setSelectionRange(offset, Math.min(editor.value.length, offset + Math.max(1, diagnostic.endCol - diagnostic.startCol)));
+      setWorkspaceViewMode('source');
+      sourceEditor.setSelection(offset, Math.min(sourceEditor.getText().length, offset + Math.max(1, diagnostic.endCol - diagnostic.startCol)));
     });
-    item.append(button);
-    list.append(item);
+    item.append(severity, file, location, button);
+    diagnosticsElement.append(item);
   }
-  diagnosticsElement.append(list);
 }
 
 function previewHtml(tab: OpenTab, score: ParsedScore): string {
@@ -504,20 +895,20 @@ function previewHtml(tab: OpenTab, score: ParsedScore): string {
 
 function renderPreview(tab: OpenTab | undefined): void {
   if (!tab) {
-    scoreFrame.srcdoc = '<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;padding:24px;color:#6b7280">Open a score to preview it.</p>';
-    app.querySelector('#preview-state')!.textContent = 'No score';
+    scoreFrame.srcdoc = `<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;padding:24px;color:#6b7280">${strings().previewEmpty}</p>`;
+    app.querySelector('#preview-state')!.textContent = strings().previewEmpty;
     return;
   }
   const score = currentScore(tab.source);
   renderDiagnostics(score);
   if (!score) {
-    app.querySelector('#preview-state')!.textContent = 'Unable to parse source';
+    app.querySelector('#preview-state')!.textContent = strings().previewInvalid;
     return;
   }
-  app.querySelector('#preview-state')!.textContent = score.diagnostics.some(item => item.severity === 'error') ? 'Check diagnostics' : 'Preview ready';
+  app.querySelector('#preview-state')!.textContent = score.diagnostics.some(item => item.severity === 'error') ? strings().previewCheck : strings().previewReady;
   try { scoreFrame.srcdoc = previewHtml(tab, score); }
   catch (error) {
-    app.querySelector('#preview-state')!.textContent = 'Preview failed';
+    app.querySelector('#preview-state')!.textContent = strings().previewFailed;
     showMessage(`Preview could not be rendered: ${shortError(error)}`, 'error');
   }
 }
@@ -529,22 +920,28 @@ function renderTabs(): void {
 const explorerController = new ExplorerController({
   root: app,
   getSnapshot: () => ({
-    storage: state.activeStorage, locale: state.locale, account: state.account, drive: state.drive,
-    folderId: state.folderId, activeDocumentStorage: activeTab()?.document.identity.storage
+    storage: state.activeStorage, locale: state.locale,
+    account: state.account ? { accountId: state.account.accountId, emailAddress: state.account.emailAddress } : undefined,
+    drive: state.drive, folderId: state.folderId, folderName: state.folderName,
+    activeDocument: activeTab() ? { identity: activeTab()!.document.identity, accountId: activeTab()!.accountId } : undefined,
+    authExpired: state.authExpired, connecting: driveConnectInProgress
   }),
   getLabels: () => {
     const t = strings();
     return {
-      files: t.files, local: t.local, drive: t.drive, addFile: t.addFile, chooseFolder: t.folder,
+      files: t.files, project: t.project, local: t.local, drive: t.drive, folder: t.folder, connectInline: t.connectInline,
+      connectDrive: t.connect, reconnectDrive: t.reconnect, connecting: t.connecting, chooseFolder: t.folder,
       createFolder: t.createFolder, openDrive: t.openDrive, createFirst: t.createFirst,
       connectHint: t.connectHint, noFolder: t.noFolder, driveAccess: t.driveAccess,
-      driveOverwriteWarning: t.driveOverwriteWarning, loading: t.loadingDrive
+      driveOverwriteWarning: t.driveOverwriteWarning, driveAuthStatus: t.driveAuthStatus,
+      loading: t.loadingDrive, expand: t.expand, collapse: t.collapse
     };
   },
   listLocalDocuments: () => indexedDb.listDocuments('local'),
   getLocalDocument: identity => indexedDb.getDocument(identity),
   onStorageChange: storage => { state.activeStorage = storage; void renderExplorer(); },
-  onImport: () => app.querySelector<HTMLInputElement>('#file-input')!.click(),
+  onNewScore: () => void createNewScore(),
+  onConnectDrive: () => void connectDrive(),
   onChooseFolder: () => { void chooseDriveFolder(); },
   onCreateFolder: () => { void createDriveFolder(); },
   onOpenDrivePicker: () => { void openFromDrivePicker(); },
@@ -555,7 +952,12 @@ const explorerController = new ExplorerController({
     renderStorageStatus(strings().unavailable);
     showMessage(shortError(error), 'error');
   },
-  onDriveError: error => { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  onDriveError: error => {
+    const wasExpired = state.authExpired;
+    markDriveAuthState(error);
+    if (!wasExpired && state.authExpired) void renderExplorer();
+    showMessage(shortError(error), 'error');
+  }
 });
 
 function renderExplorer(): Promise<void> { return explorerController.render(); }
@@ -825,10 +1227,9 @@ function renderInspector(): void {
       },
       onJump: (line, startCol, endCol) => {
         if (activeTab() !== tab) return;
-        const lines = editor.value.split('\n');
+        const lines = sourceEditor.getText().split('\n');
         const offset = lines.slice(0, line).reduce((total, value) => total + value.length + 1, 0);
-        editor.focus();
-        editor.setSelectionRange(offset + startCol, offset + endCol);
+        sourceEditor.setSelection(offset + startCol, offset + endCol);
       }
     });
   } else if (state.inspectorTab === 'settings') {
@@ -941,17 +1342,190 @@ function renderWebProgressionInspector(tab: OpenTab, score: ParsedScore | undefi
   status.textContent = state.audioStatus;
 }
 
-function applySplitRatio(): void {
-  if (!window.matchMedia('(min-width: 681px)').matches) return;
-  (app.querySelector('.source-pane') as HTMLElement).style.flexBasis = `${state.splitRatio * 100}%`;
-  (app.querySelector('.score-pane') as HTMLElement).style.flexBasis = `${(1 - state.splitRatio) * 100}%`;
-  splitDivider?.setAttribute('aria-valuenow', String(Math.round(state.splitRatio * 100)));
+interface WorkspaceLayoutPreference {
+  viewMode: WorkspaceViewMode;
+  explorerOpen: boolean;
+  inspectorOpen: boolean;
+  explorerWidth: number;
+  inspectorWidth: number;
+  problemsOpen: boolean;
+  problemsHeight: number;
+  splitRatio: number;
+}
+const workspace = app.querySelector<HTMLDivElement>('#workspace')!;
+const splitDivider = app.querySelector<HTMLDivElement>('#center-splitter')!;
+const splitView = app.querySelector<HTMLDivElement>('.split-view')!;
+let layoutSaveTimer = 0;
+
+function renderProblemsLabels(): void {
+  const t = strings();
+  app.querySelector('#problems-title')!.textContent = t.problems;
+  app.querySelector('#problem-severity-heading')!.textContent = t.severity;
+  app.querySelector('#problem-file-heading')!.textContent = t.file;
+  app.querySelector('#problem-location-heading')!.textContent = t.lineCol;
+  app.querySelector('#problem-message-heading')!.textContent = t.message;
+  app.querySelector('#problems-panel')!.setAttribute('aria-label', t.problems);
+  app.querySelector('.tool-window-bar')!.setAttribute('aria-label', t.toolWindows);
+  const inspectorToggle = app.querySelector<HTMLButtonElement>('#toggle-inspector')!;
+  inspectorToggle.setAttribute('aria-pressed', String(state.inspectorOpen));
+  setIconButton(inspectorToggle, 'inspector', t.toggleInspector);
+  const expanded = String(state.problemsOpen);
+  const toggle = app.querySelector<HTMLButtonElement>('#toggle-problems')!;
+  toggle.setAttribute('aria-expanded', expanded);
+  const count = toggle.querySelector('#tool-window-count')?.textContent ?? '0';
+  setIconButton(toggle, 'problems', t.problems);
+  const countBadge = document.createElement('span');
+  countBadge.id = 'tool-window-count'; countBadge.textContent = count;
+  countBadge.hidden = Number(count) === 0;
+  toggle.append(countBadge);
+  setIconButton(app.querySelector<HTMLButtonElement>('#close-problems')!, 'close', t.closeProblems);
+  setIconButton(app.querySelector<HTMLButtonElement>('#inspector-more')!, 'more', t.inspectorOptions);
+  setIconButton(app.querySelector<HTMLButtonElement>('#new-score')!, 'fileplus', t.newScore);
+  setIconButton(app.querySelector<HTMLButtonElement>('#explorer-more')!, 'more', t.explorerOptions);
+  workspace.classList.toggle('problems-collapsed', !state.problemsOpen);
 }
 
-let splitSaveTimer = 0;
-function persistSplitRatioSoon(): void {
-  window.clearTimeout(splitSaveTimer);
-  splitSaveTimer = window.setTimeout(() => void savePreferences(), 300);
+function layoutSnapshot(): WorkspaceLayoutPreference {
+  return {
+    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
+    explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
+    problemsOpen: state.problemsOpen, problemsHeight: state.problemsHeight, splitRatio: state.splitRatio
+  };
+}
+
+function saveLayoutSoon(): void {
+  window.clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = window.setTimeout(() => {
+    void indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => {
+      state.storageReady = false;
+      renderStorageStatus();
+    });
+  }, 250);
+}
+
+function saveLayoutNow(): void {
+  window.clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = 0;
+  void indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => {
+    state.storageReady = false;
+    renderStorageStatus();
+  });
+}
+
+function setWorkspaceViewMode(mode: WorkspaceViewMode, persist = true): void {
+  state.viewMode = mode;
+  workspace.classList.remove('view-source', 'view-split', 'view-score');
+  workspace.classList.add(`view-${mode}`);
+  for (const [id, value] of [['view-source', 'source'], ['view-split', 'split'], ['view-score', 'score']] as const) {
+    const button = app.querySelector<HTMLButtonElement>(`#${id}`)!;
+    button.setAttribute('aria-pressed', String(mode === value));
+    const label = value === 'source' ? strings().sourceView : value === 'score' ? strings().scoreView : strings().splitView;
+    setIconButton(button, value === 'source' ? 'code' : value === 'score' ? 'eye' : 'split', label);
+  }
+  applySplitRatio();
+  if (persist) saveLayoutSoon();
+}
+
+function updateResponsiveCollapse(): void {
+  const available = workspace.clientWidth;
+  let autoHideInspector = false;
+  let autoHideExplorer = false;
+  const required = () => 40 + 36 + (state.explorerOpen && !autoHideExplorer ? state.explorerWidth + 6 : 0)
+    + 240 + (state.inspectorOpen && !autoHideInspector ? 6 + state.inspectorWidth : 0);
+  if (required() > available) autoHideInspector = state.inspectorOpen;
+  if (required() > available) autoHideExplorer = state.explorerOpen;
+  workspace.classList.toggle('inspector-auto-hidden', autoHideInspector);
+  workspace.classList.toggle('explorer-auto-hidden', autoHideExplorer);
+}
+
+function applyWorkspaceLayout(): void {
+  workspace.style.setProperty('--explorer-width', `${state.explorerWidth}px`);
+  workspace.style.setProperty('--inspector-width', `${state.inspectorWidth}px`);
+  workspace.style.setProperty('--problems-height', `${state.problemsHeight}px`);
+  workspace.classList.toggle('explorer-closed', !state.explorerOpen);
+  workspace.classList.toggle('inspector-closed', !state.inspectorOpen);
+  app.querySelector('#activity-explorer')!.setAttribute('aria-pressed', String(state.explorerOpen));
+  setIconButton(app.querySelector<HTMLButtonElement>('#activity-explorer')!, 'folder', strings().toggleExplorer);
+  app.querySelector('#explorer-splitter')!.setAttribute('aria-valuenow', String(state.explorerWidth));
+  app.querySelector('#inspector-splitter')!.setAttribute('aria-valuenow', String(state.inspectorWidth));
+  app.querySelector('#problems-splitter')!.setAttribute('aria-valuenow', String(state.problemsHeight));
+  renderProblemsLabels();
+  updateResponsiveCollapse();
+  setWorkspaceViewMode(state.viewMode, false);
+}
+
+function applySplitRatio(): void {
+  const width = splitView?.clientWidth ?? 0;
+  if (width <= 0) return;
+  const minimum = width >= 566 ? 240 / width : 0.35;
+  const maximum = width >= 566 ? 1 - 320 / width : 0.65;
+  state.splitRatio = Math.max(minimum, Math.min(maximum, state.splitRatio));
+  (app.querySelector('.source-pane') as HTMLElement).style.flexBasis = `${state.splitRatio * 100}%`;
+  (app.querySelector('.score-pane') as HTMLElement).style.flexBasis = `${(1 - state.splitRatio) * 100}%`;
+  splitDivider.setAttribute('aria-valuemin', String(Math.round(minimum * 100)));
+  splitDivider.setAttribute('aria-valuemax', String(Math.round(maximum * 100)));
+  splitDivider.setAttribute('aria-valuenow', String(Math.round(state.splitRatio * 100)));
+}
+
+function persistSplitRatioSoon(): void { saveLayoutSoon(); }
+
+async function loadLayoutPreferences(): Promise<void> {
+  const saved = await indexedDb.getValue<Partial<WorkspaceLayoutPreference>>('settings', 'web-layout-v1').catch(() => undefined);
+  if (saved) {
+    if (saved.viewMode === 'source' || saved.viewMode === 'split' || saved.viewMode === 'score') state.viewMode = saved.viewMode;
+    if (typeof saved.explorerOpen === 'boolean') state.explorerOpen = saved.explorerOpen;
+    if (typeof saved.inspectorOpen === 'boolean') state.inspectorOpen = saved.inspectorOpen;
+    if (typeof saved.explorerWidth === 'number' && Number.isFinite(saved.explorerWidth)) state.explorerWidth = Math.max(180, Math.min(420, saved.explorerWidth));
+    if (typeof saved.inspectorWidth === 'number' && Number.isFinite(saved.inspectorWidth)) state.inspectorWidth = Math.max(260, Math.min(480, saved.inspectorWidth));
+    if (typeof saved.problemsOpen === 'boolean') state.problemsOpen = saved.problemsOpen;
+    if (typeof saved.problemsHeight === 'number' && Number.isFinite(saved.problemsHeight)) state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, saved.problemsHeight));
+    if (typeof saved.splitRatio === 'number' && Number.isFinite(saved.splitRatio)) state.splitRatio = Math.max(0.24, Math.min(0.76, saved.splitRatio));
+  } else {
+    state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, state.problemsHeight));
+    await indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => undefined);
+  }
+}
+
+function bindVerticalSplitter(element: HTMLElement, target: 'explorer' | 'inspector'): void {
+  let pointer: number | undefined;
+  let startX = 0;
+  let startWidth = 0;
+  const min = target === 'explorer' ? 180 : 260;
+  const max = target === 'explorer' ? 420 : 480;
+  const setWidth = (width: number, persist = false) => {
+    const clamped = Math.round(Math.max(min, Math.min(max, width)));
+    if (target === 'explorer') state.explorerWidth = clamped; else state.inspectorWidth = clamped;
+    workspace.style.setProperty(target === 'explorer' ? '--explorer-width' : '--inspector-width', `${clamped}px`);
+    element.setAttribute('aria-valuenow', String(clamped));
+    if (persist) { updateResponsiveCollapse(); saveLayoutSoon(); }
+  };
+  element.addEventListener('pointerdown', event => {
+    pointer = event.pointerId; startX = event.clientX;
+    startWidth = target === 'explorer' ? state.explorerWidth : state.inspectorWidth;
+    element.setPointerCapture(pointer); event.preventDefault();
+  });
+  element.addEventListener('pointermove', event => {
+    if (pointer !== event.pointerId) return;
+    const direction = target === 'explorer' ? 1 : -1;
+    setWidth(startWidth + (event.clientX - startX) * direction);
+  });
+  element.addEventListener('pointerup', event => {
+    if (pointer !== event.pointerId) return;
+    pointer = undefined; setWidth(target === 'explorer' ? state.explorerWidth : state.inspectorWidth, true);
+  });
+  element.addEventListener('pointercancel', () => { pointer = undefined; setWidth(startWidth, true); });
+  element.addEventListener('lostpointercapture', () => { if (pointer !== undefined) { pointer = undefined; setWidth(startWidth, true); } });
+  element.addEventListener('dblclick', () => setWidth(target === 'explorer' ? 220 : 300, true));
+  element.addEventListener('keydown', event => {
+    const delta = event.shiftKey ? 50 : 10;
+    let width = target === 'explorer' ? state.explorerWidth : state.inspectorWidth;
+    if (event.key === 'Home') width = min;
+    else if (event.key === 'End') width = max;
+    else if (event.key === 'ArrowLeft') width += target === 'explorer' ? -delta : delta;
+    else if (event.key === 'ArrowRight') width += target === 'explorer' ? delta : -delta;
+    else return;
+    event.preventDefault(); setWidth(width, true);
+  });
 }
 
 function addInspectorHeading(parent: HTMLElement, text: string): void { const heading = document.createElement('h2'); heading.textContent = text; parent.append(heading); }
@@ -1087,49 +1661,75 @@ function applyWebScoreSettings(tab: OpenTab, sectionId: ScoreSettingsSectionId):
   replaceEditorSourceWithUndo(plan.text);
 }
 
+const systemColorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+function applyResolvedTheme(): void {
+  const theme = state.theme === 'system' ? (systemColorScheme.matches ? 'dark' : 'light') : state.theme;
+  app.dataset.theme = theme;
+  app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = theme;
+  for (const dialog of document.querySelectorAll<HTMLDialogElement>('.conflict-dialog')) dialog.dataset.theme = theme;
+}
+function createThemedConflictDialog(): HTMLDialogElement {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'conflict-dialog';
+  dialog.dataset.theme = app.dataset.theme ?? 'light';
+  return dialog;
+}
+systemColorScheme.addEventListener('change', () => {
+  if (state.theme === 'system') applyResolvedTheme();
+});
+
 function renderAll(): void {
   const t = strings();
   renderTabs();
   renderInspector();
   void renderExplorer();
   renderStorageStatus();
-  app.querySelector('#connect-drive')!.textContent = state.account ? t.disconnect : t.connect;
-  app.querySelector('#new-score')!.textContent = t.newScore;
-  app.querySelector('#save-document')!.textContent = t.save;
-  app.querySelector('#export-file')!.textContent = t.exportFile;
-  app.querySelector('#download-pdf')!.textContent = t.downloadPdf;
-  app.querySelector('#mobile-source')!.textContent = t.narrowSource;
-  app.querySelector('#mobile-preview')!.textContent = t.narrowPreview;
+  const driveButton = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  const connectedAccount = state.account?.emailAddress;
+  const driveStatus = driveConnectInProgress ? t.driveConnecting : state.authExpired ? t.driveReauth : state.account && state.drive ? t.driveConnected : t.driveNotConnected;
+  driveButton.setAttribute('aria-label', `${t.drive}: ${driveStatus}`);
+  driveButton.title = state.account && !state.authExpired
+    ? `${t.disconnect} ${t.drive} · ${driveStatus}${connectedAccount ? ` · ${connectedAccount}` : ''}`
+    : `${t.connect} · ${driveStatus}`;
+  driveButton.dataset.state = driveConnectInProgress ? 'connecting' : state.authExpired ? 'reauth' : state.account && state.drive ? 'connected' : 'disconnected';
+  driveButton.dataset.connected = String(Boolean(state.account && state.drive && !state.authExpired));
+  app.querySelector('#drive-state-label')!.textContent = driveStatus;
+  const accountButton = app.querySelector<HTMLButtonElement>('#account-button')!;
+  accountButton.title = connectedAccount ? `${t.account}: ${connectedAccount}` : t.account;
+  accountButton.setAttribute('aria-label', accountButton.title);
+  setIconButton(accountButton, 'account', accountButton.title);
+  setIconButton(app.querySelector<HTMLButtonElement>('#save-document')!, 'save', t.save);
+  setIconButton(app.querySelector<HTMLButtonElement>('#download-pdf')!, 'pdf', t.downloadPdf);
+  setIconButton(app.querySelector<HTMLButtonElement>('#help-button')!, 'help', t.help);
+  setIconButton(app.querySelector<HTMLButtonElement>('#settings-button')!, 'settings', t.settings);
+  app.querySelector('#menu-file-trigger')!.textContent = t.menuFile;
+  app.querySelector('#menu-edit-trigger')!.textContent = t.menuEdit;
+  app.querySelector('#menu-view-trigger')!.textContent = t.menuView;
+  app.querySelector('#files-heading')!.textContent = t.project;
+  app.querySelector('#drive-root-more')!.setAttribute('aria-label', t.driveRootOptions);
+  app.querySelector<HTMLButtonElement>('#drive-root-more')!.title = t.driveRootOptions;
   app.querySelector('#inspector-heading')!.textContent = t.inspector;
-  app.querySelector('#source-pane .pane-heading > span:first-child')!.textContent = t.source;
-  app.querySelector('#score-pane .pane-heading > span:first-child')!.textContent = t.preview;
   app.querySelector('.file-list')!.setAttribute('aria-label', t.files);
   app.querySelector('.inspector')!.setAttribute('aria-label', t.inspector);
   app.querySelector('.source-pane')!.setAttribute('aria-label', state.locale === 'ja' ? 'GuitarDSL ソース' : 'GuitarDSL source');
   app.querySelector('.score-pane')!.setAttribute('aria-label', state.locale === 'ja' ? '譜面プレビュー' : 'Score preview');
   app.querySelector('main')!.setAttribute('aria-label', 'GuitarDSL');
-  editor.setAttribute('aria-label', state.locale === 'ja' ? 'GuitarDSL ソースエディター' : 'GuitarDSL source editor');
-  app.querySelector('#import-file')!.setAttribute('aria-label', t.addFile);
-  app.querySelector('#locale-select')!.setAttribute('aria-label', t.language);
-  app.querySelector('#theme-select')!.setAttribute('aria-label', t.theme);
-  app.querySelector('#workspace-name')!.textContent = state.activeStorage === 'drive' ? t.drive : t.local;
-  app.querySelector('#source-pane')!.classList.toggle('mobile-hidden', state.mobilePane !== 'source');
-  app.querySelector('#score-pane')!.classList.toggle('mobile-hidden', state.mobilePane !== 'preview');
+  sourceEditor.setAccessibleName(state.locale === 'ja' ? 'GuitarDSL ソースエディター' : 'GuitarDSL source editor');
+  renderProblemsLabels();
   const tab = activeTab();
   if (tab) {
-    sourceEditor.setSource(tab.source);
+    sourceEditor.setDocument(tabKey(tab), tab.source);
+    renderDiagnostics(currentScore(tab.source));
     renderStorageStatus();
-    app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = tab.document.identity.storage !== 'local' || !state.account || !state.folderId;
     renderPreview(tab);
   } else {
-    sourceEditor.setSource('');
+    sourceEditor.setDocument('', '');
+    renderDiagnostics(undefined);
     renderPreview(undefined);
-    app.querySelector<HTMLButtonElement>('#move-drive')!.hidden = true;
   }
-  app.dataset.theme = state.theme;
-  app.querySelector<HTMLElement>('.app-shell')!.dataset.theme = state.theme;
-  app.querySelector('#connect-drive')!.textContent = state.authExpired ? (state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive') : state.account ? t.disconnect : t.connect;
-  applySplitRatio();
+  applyResolvedTheme();
+  renderCursorPosition();
+  applyWorkspaceLayout();
   renderDriveOperationControls();
 }
 
@@ -1159,6 +1759,12 @@ async function openDocument(
   };
   if (progressionAudioLease.activeSessionUri) await stopCandidateAudition();
   if (isCurrent && !isCurrent()) return undefined;
+  if (!editorReadyForDocumentChange()) return undefined;
+  const existing = state.tabs.find(tab => sameTabIdentity(tab, documentRow.identity, accountId));
+  if (existing) {
+    await setActive(tabKey(existing), isCurrent);
+    return isCurrent && !isCurrent() ? undefined : existing;
+  }
   resetWebScoreSettings();
   state.tabs.push(tab);
   state.activeKey = tabKey(tab);
@@ -1176,12 +1782,35 @@ async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
-async function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
+function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
+  const inFlight = closingTabs.get(tab);
+  if (inFlight) return inFlight;
+  const closePromise = closeTabNow(tab, skipDraft).finally(() => {
+    if (closingTabs.get(tab) === closePromise) closingTabs.delete(tab);
+  });
+  closingTabs.set(tab, closePromise);
+  return closePromise;
+}
+
+async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
   const key = tabKey(tab);
+  if (!state.tabs.includes(tab)) return;
+  if (state.activeKey === key && !editorReadyForDocumentChange()) return;
+  if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
+  if (state.activeKey === key && !editorReadyForDocumentChange()) return;
+  if (!skipDraft) {
+    while (true) {
+      if (state.activeKey === key && !editorReadyForDocumentChange()) return;
+      const revision = tab.revision;
+      if (!await saveDraftNow(tab)) return;
+      if (state.activeKey === key && !editorReadyForDocumentChange()) return;
+      if (tab.revision === revision) break;
+    }
+  } else if (state.activeKey === key && draftWrites.has(key)) {
+    await draftWrites.get(key);
+  }
   const index = state.tabs.indexOf(tab);
   if (index < 0) return;
-  if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
-  if (!skipDraft && !await saveDraftNow(tab)) return;
   state.tabs.splice(index, 1);
   if (state.activeKey === key) {
     const next = state.tabs[Math.max(0, index - 1)] ?? state.tabs[0];
@@ -1193,8 +1822,15 @@ async function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
 
 async function saveDraftNow(tab: OpenTab): Promise<boolean> {
   if (!tab.persistable || !state.storageReady) return false;
+  if (!editorReadyForSnapshot(tab)) return false;
   try {
-    await draftWrites.get(tabKey(tab));
+    const key = tabKey(tab);
+    while (true) {
+      const pendingWrite = draftWrites.get(key);
+      if (pendingWrite) await pendingWrite;
+      if (!editorReadyForSnapshot(tab)) return false;
+      if (draftWrites.get(key) === pendingWrite || !draftWrites.has(key)) break;
+    }
     const edit = snapshot(tab);
     const saved = await indexedDb.saveDraft(edit, tab.accountId, tab.persistedBase);
     if (!saved) throw new DOMException('Concurrent local edits were detected; export or reload to resolve', 'InvalidStateError');
@@ -1210,17 +1846,18 @@ async function saveDraftNow(tab: OpenTab): Promise<boolean> {
   }
 }
 
-function onEditorInput(): void {
-  const tab = activeTab();
+function onEditorInput(source: string, documentKey: string): void {
+  const tab = state.tabs.find(candidate => tabKey(candidate) === documentKey);
   if (!tab) return;
+  tab.source = source;
+  tab.revision += 1;
+  scheduleDraft(tab);
+  if (activeTab() !== tab) return;
   state.lastProgression = undefined;
   state.progressionCandidateId = undefined;
   state.progressionError = undefined;
   resetWebScoreSettings();
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) void stopCandidateAudition();
-  tab.source = sourceEditor.acceptInput();
-  tab.revision += 1;
-  scheduleDraft(tab);
   const score = currentScore(tab.source);
   renderDiagnostics(score);
   renderPreviewDebounced(tab);
@@ -1240,6 +1877,7 @@ async function saveActiveDocument(): Promise<void> {
   if (!await saveDraftNow(tab)) return;
   if (tab.document.identity.storage === 'local') {
     try {
+      if (!editorReadyForSnapshot(tab)) return;
       const edit = snapshot(tab);
       const saved = await indexedDb.commitLocal(edit, undefined, tab.persistedBase);
       if (!saved) throw new DOMException('A newer edit exists in another tab', 'InvalidStateError');
@@ -1272,6 +1910,7 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         identityChanged = true;
         return;
       }
+      if (!editorReadyForSnapshot(tab)) return;
       const file: DriveFile = {
         id: queuedFileId, name: tab.document.name,
         version: tab.document.driveVersion ?? '', modifiedTime: tab.document.driveModifiedTime ?? '',
@@ -1350,7 +1989,8 @@ async function handleDriveConflict(
   tab: OpenTab, latest: DriveFile, drive = state.drive, accountId = state.account?.accountId
 ): Promise<void> {
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const generation = state.driveGeneration;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   const choice = await conflictDialog();
   if (choice === 'cancel' || !isCurrent()) return;
   if (choice === 'reload') {
@@ -1400,14 +2040,14 @@ async function handleDriveConflict(
   catch (error) { if (isCurrent()) showMessage(shortError(error), 'error'); }
 }
 
-function driveSessionIsCurrent(accountId: string, drive: GoogleDriveApi): boolean {
-  return state.account?.accountId === accountId && state.drive === drive;
+function driveSessionIsCurrent(accountId: string, drive: GoogleDriveApi, generation = state.driveGeneration): boolean {
+  return state.account?.accountId === accountId && state.drive === drive && state.driveGeneration === generation;
 }
 
 function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
   const t = strings();
   return new Promise(resolve => {
-    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const dialog = createThemedConflictDialog();
     const heading = document.createElement('h2'); heading.textContent = state.locale === 'ja' ? 'Drive で競合が見つかりました' : 'Drive version conflict';
     const body = document.createElement('p'); body.textContent = state.locale === 'ja'
       ? 'Drive のファイルが別の場所で変更されています。' : 'This Drive file changed since it was opened.';
@@ -1421,20 +2061,39 @@ function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
   });
 }
 
+function appDataConflictDialog(): Promise<'reload' | 'local'> {
+  const t = strings();
+  return new Promise(resolve => {
+    const dialog = createThemedConflictDialog();
+    const heading = document.createElement('h2'); heading.textContent = t.appDataConflictTitle;
+    const body = document.createElement('p'); body.textContent = t.appDataConflictBody;
+    const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
+    for (const [choice, label] of [['reload', t.reloadRemote], ['local', t.keepLocal]] as const) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.addEventListener('click', () => { dialog.close(); dialog.remove(); resolve(choice); }); buttons.append(button);
+    }
+    dialog.append(heading, body, buttons); document.body.append(dialog); dialog.showModal();
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); dialog.remove(); resolve('reload'); }, { once: true });
+  });
+}
+
 async function saveDriveCopy(
   tab: OpenTab, folderId?: string, drive = state.drive, accountId = state.account?.accountId,
-  isCurrent: () => boolean = () => !!drive && !!accountId && driveSessionIsCurrent(accountId, drive)
+  isCurrent?: () => boolean
 ): Promise<void> {
+  const generation = state.driveGeneration;
+  const current = isCurrent ?? (() => !!drive && !!accountId && driveSessionIsCurrent(accountId, drive, generation));
   if (!drive || !accountId || !folderId) throw new Error(strings().noFolder);
-  if (!isCurrent()) return;
+  if (!current()) return;
+  if (activeTab() === tab && !editorReadyForDocumentChange()) return;
   if (tab.document.identity.storage === 'drive' && tab.accountId !== accountId) throw new Error(strings().reconnectOwner);
   const submitted = tabOperationSnapshot(tab);
   const copyName = `${tab.document.name.replace(/\.(guitardsl|gdsl)$/i, '')} (local copy).guitardsl`;
   await withDriveOperation(async () => {
     const file = await drive.createFile(folderId, copyName, submitted.source);
-    if (!isCurrent()) return;
+    if (!current()) return;
     const verified = await drive.getFile(file.id);
-    if (!isCurrent()) return;
+    if (!current()) return;
     if (verified.source !== submitted.source) throw new Error('Drive copy verification failed; the original draft was kept.');
     const doc: StoredDocument = {
       identity: driveIdentity(file.id), accountId, name: file.name,
@@ -1442,50 +2101,57 @@ async function saveDriveCopy(
       driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime, driveRevisionId: verified.file.headRevisionId,
       driveEtag: verified.etag, driveFolderId: verified.file.parents?.[0] ?? folderId
     };
-    if (!isCurrent()) return;
+    if (!current()) return;
     await indexedDb.upsertDriveDocument(doc);
-    if (!isCurrent()) return;
+    if (!current()) return;
+    if (!editorReadyForDocumentChange()) return;
     if (!tabMatchesSnapshot(tab, submitted)) {
       if (state.tabs.includes(tab) && !await saveDraftNow(tab)) return;
-      if (!isCurrent()) return;
+      if (!current()) return;
       const activeBeforeCopy = state.activeKey;
-      await openDocument(doc, doc.source, accountId, true, isCurrent);
-      if (!isCurrent()) return;
+      await openDocument(doc, doc.source, accountId, true, current);
+      if (!current()) return;
       if (activeBeforeCopy && state.tabs.some(item => tabKey(item) === activeBeforeCopy)) {
+        if (!editorReadyForDocumentChange()) return;
         state.activeKey = activeBeforeCopy;
         state.activeStorage = activeTab()?.document.identity.storage ?? state.activeStorage;
       }
       renderAll();
       await persistSessions([accountId]);
-      if (!isCurrent()) return;
+      if (!current()) return;
       showMessage(state.locale === 'ja'
         ? 'Drive のコピーを保存しました。保存中に行った新しい編集は元のタブに保持しています。'
         : 'Saved the Drive copy. Newer edits made during upload remain in the original tab.');
       return;
     }
     const currentIndex = state.tabs.indexOf(tab);
-    if (!isCurrent()) return;
+    if (!current()) return;
     const existing = state.tabs.find(other => sameTabIdentity(other, doc.identity, accountId));
     if (existing) {
+      if (!editorReadyForDocumentChange()) return;
       existing.source = verified.source; existing.revision = doc.revision; existing.document = doc;
       existing.persistedBase = { revision: doc.revision, source: doc.source }; existing.saveStatus = 'drive-saved';
       if (currentIndex >= 0 && existing !== tab) state.tabs.splice(currentIndex, 1);
       state.activeKey = tabKey(existing);
     } else {
+      if (!editorReadyForDocumentChange()) return;
       tab.document = doc; tab.accountId = accountId; tab.source = verified.source;
       tab.persistedBase = { revision: doc.revision, source: doc.source }; tab.saveStatus = 'drive-saved';
       state.activeKey = tabKey(tab);
     }
     renderAll(); await persistSessions([accountId]);
-    if (!isCurrent()) return;
+    if (!current()) return;
     showMessage(state.locale === 'ja' ? 'ローカル版を別の Drive ファイルとして保存しました。' : 'Saved the local version as a new Drive file.');
   });
 }
 
 async function downloadPdf(tab = activeTab()): Promise<void> {
   if (!tab) return;
+  if (!editorReadyForSnapshot(tab)) return;
   try {
-    await downloadScorePdf(tab.source, tab.document.name, {
+    const source = tab.source;
+    if (import.meta.env.DEV) lastPdfInputForTest = source;
+    await downloadScorePdf(source, tab.document.name, {
       pageSize: tab.pageSize, orientation: tab.orientation, expandPageBreakRepeats: state.expandPageBreakRepeats
     });
   } catch (error) { showMessage(`${state.locale === 'ja' ? 'PDFの書き出しに失敗しました: ' : 'PDF export failed: '}${shortError(error)}`, 'error'); }
@@ -1500,8 +2166,11 @@ async function renameLocal(tab: OpenTab, name: string): Promise<void> {
 }
 
 async function deleteLocal(tab: OpenTab): Promise<void> {
+  if (!editorReadyForDocumentChange()) return;
   if (!window.confirm(strings().confirmDelete)) return;
   try {
+    await draftWrites.get(tabKey(tab));
+    if (!state.tabs.includes(tab)) return;
     await indexedDb.deleteDocument(tab.document.identity);
     await closeTab(tab, true);
     await renderExplorer();
@@ -1520,6 +2189,7 @@ async function createNewScore(): Promise<void> {
     const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: name || 'Untitled.guitardsl', source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
     const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
       persistedBase: { revision: 0, source: DEFAULT_SOURCE }, saveStatus: 'error' };
+    if (!editorReadyForDocumentChange()) return;
     state.tabs.push(tab); state.activeKey = tabKey(tab); renderAll();
     showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
   }
@@ -1533,80 +2203,286 @@ async function importFile(file?: File): Promise<void> {
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
-async function connectDrive(): Promise<void> {
-  if (state.account && !state.authExpired) {
-    await persistSessions();
-    try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
-    state.account = undefined; state.drive = undefined; state.folderId = undefined;
-    renderAll(); await persistSessions(); return;
+function folderSetupDialog(): Promise<'create' | 'choose' | 'later'> {
+  const t = strings();
+  return new Promise(resolve => {
+    const dialog = createThemedConflictDialog();
+    const heading = document.createElement('h2'); heading.textContent = t.folderPromptTitle;
+    const body = document.createElement('p'); body.textContent = t.folderPromptBody;
+    const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
+    for (const [choice, label] of [['create', t.createChoice], ['choose', t.chooseChoice], ['later', t.laterChoice]] as const) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      if (choice === 'create') button.className = 'primary-button';
+      button.addEventListener('click', () => { dialog.close(); dialog.remove(); resolve(choice); }); buttons.append(button);
+    }
+    dialog.append(heading, body, buttons); document.body.append(dialog); dialog.showModal();
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); dialog.remove(); resolve('later'); }, { once: true });
+  });
+}
+
+async function loadDriveAppData(accountId: string, drive: GoogleDriveApi, generation: number): Promise<{
+  snapshot: DriveAppDataSnapshot; pending?: PendingDriveAppData; pendingChoice?: 'remote' | 'local'
+} | undefined> {
+  const store = new DriveAppDataStore(auth);
+  const [existing, pending] = await Promise.all([store.load(), readPendingDriveAppData(accountId)]);
+  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  let snapshot = existing;
+  let pendingChoice: 'remote' | 'local' | undefined;
+  if (!snapshot) {
+    const [legacyFolder, legacySession] = await Promise.all([
+      indexedDb.getValue<unknown>('settings', `drive-folder:${accountId}`).catch(() => undefined),
+      indexedDb.getValue<unknown>('sessions', `workspace-drive:${accountId}`).catch(() => undefined)
+    ]);
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    const folderId = typeof legacyFolder === 'string' && legacyFolder ? legacyFolder : null;
+    const session = legacySession && typeof legacySession === 'object' ? legacySession as Partial<WorkspaceSession> : {};
+    const openDriveFileIds = Array.isArray(session.tabs) ? session.tabs.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+    const activeDriveFileId = typeof session.active === 'string' && openDriveFileIds.includes(session.active) ? session.active : null;
+    const migrated = Boolean(folderId || openDriveFileIds.length);
+    const initial: DriveAppDataState = {
+      ...DEFAULT_DRIVE_APPDATA_STATE,
+      selectedFolderId: folderId,
+      folderPrompt: folderId ? 'completed' : 'unasked',
+      openDriveFileIds: [...new Set(openDriveFileIds)].slice(0, 30),
+      activeDriveFileId,
+      recentDriveFileIds: activeDriveFileId ? [activeDriveFileId] : []
+    };
+    const choice = pending ? await appDataConflictDialog() : undefined;
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    pendingChoice = choice === 'local' ? 'local' : choice === 'reload' ? 'remote' : undefined;
+    snapshot = await store.loadOrCreate(pending && choice === 'local' ? pending.state : initial, true);
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    if (migrated) {
+      await Promise.all([
+        indexedDb.deleteValue('settings', `drive-folder:${accountId}`),
+        indexedDb.deleteValue('sessions', `workspace-drive:${accountId}`)
+      ]);
+    }
+  } else if (pending) {
+    if (sameDriveAppDataState(pending.state, snapshot.state)) pendingChoice = 'remote';
+    else pendingChoice = (await appDataConflictDialog()) === 'local' ? 'local' : 'remote';
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
   }
+  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  state.appDataStore = store;
+  state.appDataSnapshot = snapshot;
+  state.appDataPending = pending;
+  state.appDataPendingChoice = pendingChoice;
+  state.appDataSync = pending ? 'pending' : 'idle';
+  state.appDataError = undefined;
+  return { snapshot, pending, pendingChoice };
+}
+
+async function commitSelectedDriveFolder(folder: DriveFile, prompt: DriveAppDataState['folderPrompt'] = 'completed'): Promise<void> {
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const generation = state.driveGeneration;
+  const next = { ...driveWorkspaceState(), selectedFolderId: folder.id, folderPrompt: prompt };
+  if (accountId && drive && state.appDataSnapshot) {
+    try {
+      if (!await persistPendingDriveAppData(accountId, drive, generation, next)) return;
+    } catch (error) {
+      if (driveSessionIsCurrent(accountId, drive, generation)) {
+        state.appDataSync = 'error';
+        state.appDataError = shortError(error);
+        renderStorageStatus();
+      }
+      throw error;
+    }
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return;
+  }
+  state.folderId = folder.id;
+  state.folderName = folder.name;
+  if (accountId && drive && state.appDataSnapshot) {
+    state.appDataSync = 'pending';
+    state.appDataPendingChoice = 'local';
+    renderStorageStatus();
+    void persistDriveAppData(next);
+  }
+  await renderExplorer();
+}
+
+async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriveApi, generation: number): Promise<void> {
+  const snapshot = state.appDataSnapshot;
+  const session = state.appDataPending?.state ?? snapshot?.state;
+  if (!snapshot || !session || session.selectedFolderId || session.folderPrompt !== 'unasked') return;
+  const choice = await folderSetupDialog();
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
+  if (choice === 'later') {
+    await persistDriveAppData({ ...session, folderPrompt: 'deferred' });
+    return;
+  }
+  if (choice === 'choose') { await chooseDriveFolder(); return; }
+  await createDriveFolder(true);
+}
+
+async function connectDrive(): Promise<void> {
+  if (driveConnectInProgress) return;
+  driveConnectInProgress = true;
+  renderAll();
   try {
+    if (state.account && !state.authExpired) {
+      const synchronized = await flushDriveAppData();
+      if (!synchronized || state.appDataSync !== 'idle') {
+        await appDataPendingQueue;
+        if (!window.confirm(strings().disconnectPendingConfirm)) return;
+      }
+      ++state.driveGeneration;
+      try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
+      state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
+      state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
+      state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
+      appDataOfflinePending = false;
+      renderAll(); await persistSessions(); return;
+    }
+    await flushDriveAppData();
+    const generation = ++state.driveGeneration;
     const previousAccount = state.account;
     const account = await auth.connect();
-    if (previousAccount && previousAccount.accountId !== account.accountId
-      || !previousAccount && state.tabs.some(tab => tab.document.identity.storage === 'drive' && tab.accountId !== account.accountId)) {
-      await persistSessions();
-      state.folderId = undefined;
+    if (state.driveGeneration !== generation) return;
+    if (previousAccount && previousAccount.accountId !== account.accountId) {
+      state.folderId = undefined; state.folderName = undefined;
     }
-    state.account = account; state.drive = new GoogleDriveApi(auth);
+    const drive = new GoogleDriveApi(auth);
+    state.account = account; state.drive = drive;
     state.authExpired = false;
-    const folderId = await indexedDb.getValue<string>('settings', `drive-folder:${account.accountId}`).catch(() => undefined);
+    state.folderId = undefined; state.folderName = undefined;
+    state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
+    state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
+    const loaded = await loadDriveAppData(account.accountId, drive, generation);
+    if (!loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    const { snapshot, pending, pendingChoice } = loaded;
+    if (snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
+    const session = pending?.state ?? snapshot.state;
+    if (pendingChoice === 'remote' && pending) {
+      const restored = await restoreRemoteDriveAppData(snapshot, account.accountId, drive, generation);
+      if (!restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    } else {
+    const folderId = session.selectedFolderId;
     if (folderId) {
       try {
-        const folder = await state.drive.getFolder(folderId) as DriveFile & { trashed?: boolean };
-        if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) state.folderId = folderId;
-        else await indexedDb.setValue('settings', `drive-folder:${account.accountId}`, undefined);
-      } catch { state.folderId = undefined; }
+        const folder = await drive.getFolder(folderId);
+        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+        if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) {
+          state.folderId = folder.id; state.folderName = folder.name;
+        } else {
+          state.folderId = undefined; state.folderName = undefined;
+          showMessage(state.locale === 'ja'
+            ? '保存先フォルダーにアクセスできません。Drive メニューから選び直してください。'
+            : 'The saved destination is unavailable. Choose another folder from the Drive menu.', 'error');
+        }
+      } catch (error) {
+        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+        state.folderId = undefined; state.folderName = undefined;
+        if (error instanceof DriveApiError && error.status !== 403 && error.status !== 404) throw error;
+        showMessage(state.locale === 'ja'
+          ? '保存先フォルダーにアクセスできません。Drive メニューから選び直してください。'
+          : 'The saved destination is unavailable. Choose another folder from the Drive menu.', 'error');
+      }
     }
-    await restoreDriveSession(account.accountId);
+    await setUpDriveFolderAfterConnect(account.accountId, drive, generation);
+    if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    const restored = await restoreDriveSession(account.accountId, drive, generation, session);
+    if (!restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (pending) {
+      if (sameDriveAppDataState(pending.state, snapshot.state)) {
+        if (!await clearPendingDriveAppData(account.accountId, drive, generation, pending.state)) {
+          throw new DriveAppDataError('unknown-outcome', 'The remote state matched, but the pending local record could not be cleared.');
+        }
+        state.appDataSync = 'idle';
+      } else if (pendingChoice === 'local') {
+        state.appDataSync = 'pending';
+        await persistDriveAppData(pending.state);
+      }
+    }
+    }
     renderAll();
     if (state.activeStorage === 'drive') await renderExplorer();
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  } catch (error) {
+    if (error instanceof DriveAppDataError) { state.appDataSync = 'error'; state.appDataError = error.message; }
+    markDriveAuthState(error); showMessage(shortError(error), 'error');
+  }
+  finally { driveConnectInProgress = false; renderAll(); }
 }
 
 async function chooseDriveFolder(): Promise<void> {
-  if (!state.drive || !state.account) return;
+  const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
+  if (!drive || !accountId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   try {
-    const selected = await state.drive.pickFolder();
-    if (!selected) return;
-    const folder = await state.drive.getFolder(selected.id) as DriveFile & { trashed?: boolean };
+    const selected = await drive.pickFolder();
+    if (!isCurrent() || !selected) return;
+    const folder = await drive.getFolder(selected.id);
+    if (!isCurrent()) return;
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.trashed) throw new Error('Choose an available Google Drive folder.');
-    state.folderId = folder.id;
-    await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
-    await restoreDriveSession(state.account.accountId);
-    await renderExplorer(); showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    await commitSelectedDriveFolder(folder);
+    if (isCurrent()) {
+      const restored = await restoreDriveSession(accountId, drive, generation);
+      if (!restored || !isCurrent()) return;
+      showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
+    }
+  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
-async function createDriveFolder(): Promise<void> {
-  if (!state.drive || !state.account) return;
+async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
+  const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
+  if (!drive || !accountId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  if (!alreadyConfirmed && !window.confirm(strings().createFolderConfirm)) return;
   try {
-    const folder = await state.drive.createFolder();
-    state.folderId = folder.id;
-    await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
-    await renderExplorer(); showMessage(state.locale === 'ja' ? 'GuitarDSL フォルダーを作成しました。' : 'Created the GuitarDSL folder.');
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    let folders = await drive.findAccessibleFolders();
+    if (!isCurrent()) return;
+    if (folders.length > 1) {
+      const selected = await drive.pickFolder();
+      if (!isCurrent() || !selected) return;
+      const folder = await drive.getFolder(selected.id);
+      if (!isCurrent()) return;
+      if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.trashed) throw new Error('Choose an available Google Drive folder.');
+      await commitSelectedDriveFolder(folder);
+      return;
+    }
+    let folder = folders[0];
+    if (!folder) {
+      try { folder = await drive.createFolder(); }
+      catch (createError) {
+        // One list reconciliation handles a lost POST response; it never issues another create.
+        folders = await drive.findAccessibleFolders();
+        if (!isCurrent()) return;
+        if (!folders.length) throw createError;
+        if (folders.length > 1) {
+          const selected = await drive.pickFolder();
+          if (!isCurrent() || !selected) return;
+          folder = await drive.getFolder(selected.id);
+        } else folder = folders[0];
+      }
+    }
+    if (!isCurrent()) return;
+    await commitSelectedDriveFolder(folder);
+    showMessage(state.locale === 'ja' ? 'GuitarDSL の保存先を設定しました。' : 'Set the GuitarDSL Drive destination.');
+  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
 async function openFromDrivePicker(): Promise<void> {
   const drive = state.drive;
   const accountId = state.account?.accountId;
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const generation = state.driveGeneration;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   try {
     const selection = await drive.pickFile();
     if (!isCurrent() || !selection) return;
     if (!isSupportedDriveFile(selection.name)) throw new Error('Choose a .guitardsl or .gdsl file.');
-    await openDriveDocument({ id: selection.id }, accountId, drive);
+    await openDriveDocument({ id: selection.id }, accountId, drive, generation);
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
 async function openDriveDocument(
-  file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive
+  file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive,
+  generation = state.driveGeneration, pickerRetry = false
 ): Promise<void> {
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   if (!isCurrent()) return;
   const identity = driveIdentity(file.id);
   const open = state.tabs.find(tab => sameTabIdentity(tab, identity, accountId));
@@ -1658,49 +2534,103 @@ async function openDriveDocument(
       if (!isCurrent()) return;
     }
     await openDocument(documentRow, source, accountId, true, isCurrent);
-  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  } catch (error) {
+    if (!isCurrent()) return;
+    markDriveAuthState(error);
+    if (!pickerRetry && error instanceof DriveApiError && (error.status === 403 || error.status === 404)) {
+      const retry = window.confirm(state.locale === 'ja'
+        ? 'このファイルはまだ GuitarDSL から認可されていません。Google Drive Picker で選び直しますか？'
+        : 'This file is not authorized for GuitarDSL yet. Reopen Google Drive Picker to authorize it?');
+      if (retry && isCurrent()) {
+        const selection = await drive.pickFile();
+        if (!isCurrent() || !selection) return;
+        if (selection.id !== file.id) { await openDriveDocument({ id: selection.id }, accountId, drive, generation, true); return; }
+        await openDriveDocument(file, accountId, drive, generation, true);
+        return;
+      }
+    }
+    showMessage(shortError(error), 'error');
+  }
 }
 
-async function restoreDriveSession(accountId: string): Promise<void> {
-  if (!state.storageReady) return;
+async function restoreDriveSession(
+  accountId: string, drive = state.drive, generation = state.driveGeneration,
+  session = state.appDataPending?.state ?? state.appDataSnapshot?.state
+): Promise<boolean> {
+  const snapshot = state.appDataSnapshot;
+  if (!state.storageReady || !drive || !snapshot || !session || state.account?.accountId !== accountId) return false;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.appDataSnapshot === snapshot;
+  restoringDriveSession = true;
   try {
-    const session = await indexedDb.getValue<WorkspaceSession>('sessions', `workspace-drive:${accountId}`);
-    if (!session) return;
-    for (const fileId of session.tabs) {
-      const identity = driveIdentity(fileId);
-      const documentRow = await indexedDb.getDocument(identity, accountId);
-      if (documentRow) await openDocument(documentRow, documentRow.source, accountId);
+    const ids = new Set([...session.openDriveFileIds, ...(session.activeDriveFileId ? [session.activeDriveFileId] : [])]);
+    for (const tab of [...state.tabs]) {
+      if (tab.document.identity.storage !== 'drive' || tab.accountId !== accountId || ids.has(tab.document.identity.fileId)) continue;
+      await closeTab(tab);
+      if (!isCurrent()) return false;
+      if (state.tabs.includes(tab)) throw new Error('Could not preserve the draft while restoring Drive tabs.');
     }
-    if (session.active) {
-      const tab = state.tabs.find(item => item.document.identity.storage === 'drive' && item.document.identity.fileId === session.active && item.accountId === accountId);
-      if (tab) state.activeKey = tabKey(tab);
+    for (const fileId of ids) {
+      if (!isCurrent()) return false;
+      await openDriveDocument({ id: fileId }, accountId, drive, generation);
+      if (!isCurrent()) return false;
+      if (!state.tabs.some(tab => tab.document.identity.storage === 'drive'
+        && tab.document.identity.fileId === fileId && tab.accountId === accountId)) return false;
     }
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    if (session.activeDriveFileId && isCurrent()) {
+      const tab = state.tabs.find(item => item.document.identity.storage === 'drive' && item.document.identity.fileId === session.activeDriveFileId && item.accountId === accountId);
+      if (!tab || !editorReadyForDocumentChange()) return false;
+      state.activeKey = tabKey(tab); state.activeStorage = 'drive';
+    } else {
+      const active = activeTab();
+      if (active?.document.identity.storage === 'drive' && active.accountId === accountId) {
+        const local = state.tabs.find(item => item.document.identity.storage === 'local');
+        state.activeKey = local ? tabKey(local) : null;
+        state.activeStorage = local ? 'local' : 'drive';
+      }
+    }
+    return isCurrent();
+  } catch (error) {
+    if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    return false;
+  }
+  finally { restoringDriveSession = false; }
 }
 
-async function moveToDrive(): Promise<void> {
-  const tab = activeTab();
-  if (moveToDriveInProgress || !tab || tab.document.identity.storage !== 'local' || !state.drive || !state.account || !state.folderId) return;
+async function moveToDrive(tab = activeTab()): Promise<void> {
+  const drive = state.drive;
+  const accountId = state.account?.accountId;
+  const folderId = state.folderId;
+  const generation = state.driveGeneration;
+  if (moveToDriveInProgress || !tab || tab.document.identity.storage !== 'local' || !drive || !accountId || !folderId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.tabs.includes(tab);
+  if (!editorReadyForDocumentChange()) return;
   moveToDriveInProgress = true;
   app.inert = true;
   app.setAttribute('aria-busy', 'true');
   let resultMessage: { text: string; kind: 'info' | 'error' } | undefined;
   try {
     await stopCandidateAudition();
+    if (!isCurrent()) return;
     if (!await saveDraftNow(tab)) throw new Error('Could not preserve the local draft; transfer cancelled.');
-    const remote = await moveLocalDocumentToDrive(snapshot(tab), tab.document.name, state.folderId, state.account.accountId, state.drive);
-    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId: state.account.accountId,
+    if (!isCurrent()) return;
+    const transferSnapshot = snapshot(tab);
+    const remote = await moveLocalDocumentToDrive(transferSnapshot, tab.document.name, folderId, accountId, drive);
+    if (!isCurrent()) return;
+    if (!editorReadyForDocumentChange()) throw new Error(state.locale === 'ja' ? '日本語入力を確定してから再試行してください。' : 'Finish text composition before completing the move.');
+    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId,
       persistedBase: { revision: 0, source: remote.source }, saveStatus: 'drive-saved' };
-    const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, state.account!.accountId));
+    const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, accountId));
     if (existing) { state.tabs.splice(state.tabs.indexOf(tab), 1); existing.document = remote; existing.source = remote.source; state.activeKey = tabKey(existing); }
     else { state.tabs[state.tabs.indexOf(tab)] = replacement; state.activeKey = tabKey(replacement); }
     renderAll(); await persistSessions();
     resultMessage = { text: state.locale === 'ja' ? 'Drive への移動が完了しました。' : 'Moved the score to Google Drive.', kind: 'info' };
   } catch (error) {
+    if (!isCurrent()) return;
     if (error instanceof LocalMoveConflictError) {
       let latestLoaded = false;
       try {
         const latest = await indexedDb.getDocument(tab.document.identity);
+        if (!isCurrent()) return;
         if (latest) {
           tab.document = latest;
           tab.source = latest.source;
@@ -1748,8 +2678,6 @@ async function loadPreferences(): Promise<void> {
   if (preferences.locale === 'en' || preferences.locale === 'ja') state.locale = preferences.locale;
   if (preferences.theme === 'system' || preferences.theme === 'light' || preferences.theme === 'dark') state.theme = preferences.theme;
   if (typeof preferences.splitRatio === 'number' && preferences.splitRatio >= 0.25 && preferences.splitRatio <= 0.75) state.splitRatio = preferences.splitRatio;
-  app.querySelector<HTMLSelectElement>('#locale-select')!.value = state.locale;
-  app.querySelector<HTMLSelectElement>('#theme-select')!.value = state.theme;
 }
 
 async function restoreLocalSession(): Promise<void> {
@@ -1760,7 +2688,7 @@ async function restoreLocalSession(): Promise<void> {
       if (row) await openDocument(row, row.source);
     }
     const selected = session.active && state.tabs.find(tab => tab.document.identity.storage === 'local' && tab.document.identity.fileId === session.active);
-    if (selected) state.activeKey = tabKey(selected);
+    if (selected && editorReadyForDocumentChange()) state.activeKey = tabKey(selected);
   } else {
     const local = await indexedDb.listDocuments('local');
     if (local.length) {
@@ -1774,7 +2702,7 @@ async function restoreLocalSession(): Promise<void> {
 }
 
 function progressionStartAtCaret(score: ParsedScore, offset: number): number {
-  const before = editor.value.slice(0, Math.max(0, offset));
+  const before = sourceEditor.getText().slice(0, Math.max(0, offset));
   const line = before.split('\n').length - 1;
   const column = before.length - before.lastIndexOf('\n') - 1;
   const tokens = (score.codeActionTokens ?? []).filter(token => token.kind === 'chord'
@@ -1803,7 +2731,7 @@ async function suggestProgression(tab: OpenTab): Promise<void> {
   if (!score || activeTab() !== tab) return;
   const startMeasure = state.progressionOperation === 'append'
     ? score.measures.length
-    : Math.min(state.progressionStartMeasure ?? progressionStartAtCaret(score, editor.selectionStart), Math.max(0, score.measures.length - state.progressionBars));
+    : Math.min(state.progressionStartMeasure ?? progressionStartAtCaret(score, sourceEditor.selection().from), Math.max(0, score.measures.length - state.progressionBars));
   state.progressionStartMeasure = state.progressionOperation === 'append' ? undefined : startMeasure;
   const target = { startMeasure };
   const result = suggestProgressions(score, target, state.progressionBars);
@@ -1941,8 +2869,18 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
     return;
   }
   if (moveToDriveInProgress) return;
+  if (['contextMenu', 'previewVisualEdit', 'previewEditReference', 'previewOpenVisualSource', 'savePdf'].includes(String(message.command))
+    && !sourceEditor.flushPendingEdit()) return;
   const isCurrent = message.documentUri === activeIdentityLabel(tab)
     && message.documentVersion === tab.revision && message.previewGeneration === state.previewGeneration;
+  if (message.command === 'contextMenu') {
+    if (isCurrent && Number.isFinite(message.clientX) && Number.isFinite(message.clientY)) {
+      openPreviewContextMenu(Number(message.clientX), Number(message.clientY), tab, {
+        documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
+      }, String(message.visualElementId ?? ''));
+    }
+    return;
+  }
   if (message.command === 'previewUiModeRequest' && isCurrent) {
     const mode = message.mode;
     if (mode === 'normal' || mode === 'edit' || mode === 'practice') {
@@ -1983,9 +2921,9 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
     const id = String(message.visualElementId ?? '');
     const binding = currentScore(tab.source)?.visualSourceBindings?.find(item => item.id === id);
     if (!binding) return;
-    const lines = editor.value.split('\n');
+    const lines = sourceEditor.getText().split('\n');
     const offset = lines.slice(0, binding.line).reduce((total, line) => total + line.length + 1, 0) + binding.startCol;
-    editor.focus(); editor.setSelectionRange(offset, Math.min(editor.value.length, offset + Math.max(1, binding.endCol - binding.startCol)));
+    sourceEditor.setSelection(offset, Math.min(sourceEditor.getText().length, offset + Math.max(1, binding.endCol - binding.startCol)));
     return;
   }
   if (message.command === 'layoutChanged' && isCurrent) {
@@ -2020,20 +2958,633 @@ function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostM
 }
 
 function replaceEditorSourceWithUndo(source: string): void {
-  const oldSelection = { start: editor.selectionStart, end: editor.selectionEnd };
-  editor.focus();
-  let replaced = false;
-  try {
-    document.execCommand('selectAll');
-    replaced = document.execCommand('insertText', false, source);
-  } catch { replaced = false; }
-  if (!replaced) editor.value = source;
-  if (activeTab()) onEditorInput();
-  if (replaced) editor.setSelectionRange(Math.min(oldSelection.start, source.length), Math.min(oldSelection.end, source.length));
+  const oldSelection = sourceEditor.selection();
+  sourceEditor.replaceSource(source, 'input.replace');
+  sourceEditor.setSelection(Math.min(oldSelection.from, sourceEditor.getText().length), Math.min(oldSelection.to, sourceEditor.getText().length));
 }
 
-editor.addEventListener('input', onEditorInput);
+interface WorkspaceMenuAction {
+  label: string;
+  run: () => void | Promise<void>;
+  disabled?: boolean;
+  checked?: boolean;
+  shortcut?: string;
+  separator?: boolean;
+}
+let activeMenuCleanup: (() => void) | undefined;
+let activeMenuInvoker: HTMLElement | undefined;
+let activeMenuElement: HTMLElement | undefined;
+
+function closeWorkspaceMenu(menu: HTMLElement, restoreFocus = false, invoker?: HTMLElement): void {
+  const closing = activeMenuElement ?? menu;
+  closing.hidden = true;
+  closing.replaceChildren();
+  activeMenuCleanup?.();
+  activeMenuCleanup = undefined;
+  const focusTarget = invoker ?? activeMenuInvoker;
+  if (focusTarget?.getAttribute('aria-haspopup') === 'menu') focusTarget.setAttribute('aria-expanded', 'false');
+  if (closing !== menu && menu.getAttribute('role') === 'menu') menu.hidden = true;
+  activeMenuInvoker = undefined;
+  activeMenuElement = undefined;
+  if (restoreFocus) focusTarget?.focus();
+}
+
+function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: WorkspaceMenuAction[], invoker?: HTMLElement): void {
+  if (activeMenuElement && activeMenuElement !== menu) closeWorkspaceMenu(activeMenuElement);
+  else closeWorkspaceMenu(menu);
+  activeMenuInvoker = invoker;
+  activeMenuElement = menu;
+  menu.replaceChildren();
+  for (const action of actions) {
+    if (action.separator) {
+      const separator = document.createElement('div'); separator.setAttribute('role', 'separator'); menu.append(separator); continue;
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', action.checked === undefined ? 'menuitem' : 'menuitemradio');
+    if (action.checked !== undefined) button.setAttribute('aria-checked', String(action.checked));
+    button.disabled = Boolean(action.disabled);
+    const label = document.createElement('span'); label.textContent = action.label;
+    button.append(label);
+    if (action.shortcut) { const shortcut = document.createElement('kbd'); shortcut.textContent = action.shortcut; button.append(shortcut); }
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      closeWorkspaceMenu(menu, true, invoker);
+      try {
+        const result = action.run();
+        if (result instanceof Promise) void result.catch(error => showMessage(shortError(error), 'error'));
+      } catch (error) { showMessage(shortError(error), 'error'); }
+    });
+    menu.append(button);
+  }
+  menu.hidden = false;
+  if (invoker?.getAttribute('aria-haspopup') === 'menu') invoker.setAttribute('aria-expanded', 'true');
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = Math.max(6, Math.min(x, window.innerWidth - bounds.width - 6)) + 'px';
+  menu.style.top = Math.max(6, Math.min(y, window.innerHeight - bounds.height - 6)) + 'px';
+  const buttons = () => Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+  buttons()[0]?.focus();
+  const onKeyDown = (event: KeyboardEvent) => {
+    const items = buttons();
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: HTMLButtonElement | undefined;
+    if (event.key === 'Escape') { event.preventDefault(); closeWorkspaceMenu(menu, true, invoker); return; }
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && ['file-menu', 'edit-menu', 'view-menu'].includes(menu.id)) {
+      const triggers = Array.from(app.querySelectorAll<HTMLButtonElement>('.main-menu-bar button[role="menuitem"]'));
+      const current = triggers.findIndex(button => button === invoker);
+      const target = triggers[(current + (event.key === 'ArrowRight' ? 1 : triggers.length - 1)) % triggers.length];
+      if (target) {
+        event.preventDefault();
+        closeWorkspaceMenu(menu);
+        target.focus();
+        if (target.id === 'menu-file-trigger') openFileMenu();
+        else if (target.id === 'menu-edit-trigger') openEditMenu();
+        else openViewMenu();
+      }
+      return;
+    }
+    if (event.key === 'ArrowDown') next = items[(index + 1 + items.length) % items.length];
+    else if (event.key === 'ArrowUp') next = items[(index - 1 + items.length) % items.length];
+    else if (event.key === 'Home') next = items[0];
+    else if (event.key === 'End') next = items[items.length - 1];
+    else if ((event.key === 'Enter' || event.key === ' ') && index >= 0) { event.preventDefault(); items[index].click(); return; }
+    else return;
+    event.preventDefault(); next?.focus();
+  };
+  const onOutside = (event: PointerEvent) => {
+    if (event.target instanceof Node && !menu.contains(event.target)) closeWorkspaceMenu(menu);
+  };
+  const onFocusChange = (event: FocusEvent) => {
+    if (!(event.target instanceof Node) || menu.contains(event.target) || event.target === invoker) return;
+    closeWorkspaceMenu(menu);
+  };
+  menu.addEventListener('keydown', onKeyDown);
+  document.addEventListener('pointerdown', onOutside, true);
+  document.addEventListener('focusin', onFocusChange, true);
+  activeMenuCleanup = () => {
+    menu.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('focusin', onFocusChange, true);
+  };
+}
+
+async function copyWithFailure(text: string): Promise<void> {
+  try {
+    if (!navigator.clipboard?.writeText) throw new DOMException('Clipboard API is unavailable', 'NotAllowedError');
+    await navigator.clipboard.writeText(text);
+    showMessage(state.locale === 'ja' ? 'クリップボードにコピーしました。' : 'Copied to clipboard.', 'info');
+  } catch {
+    showMessage(state.locale === 'ja' ? 'クリップボードへコピーできませんでした。' : 'Could not copy to the clipboard.', 'error');
+  }
+}
+
+function staleMenuTarget(): void {
+  showMessage(state.locale === 'ja' ? '対象が変わったため操作を中止しました。' : 'The target changed; the action was cancelled.', 'error');
+}
+
+async function deleteLocalFromExplorer(
+  file: HTMLButtonElement, fileId: string, expectedRevision: number,
+  tab: OpenTab | undefined, tabRevision: number | undefined, tabSource: string | undefined
+): Promise<void> {
+  const identity: DocumentIdentity = { storage: 'local', fileId };
+  const rowIsCurrent = () => file.isConnected && file.dataset.storage === 'local'
+    && file.dataset.fileId === fileId && Number(file.dataset.revision) === expectedRevision;
+  if (!editorReadyForDocumentChange()) return;
+  const initial = await indexedDb.getDocument(identity);
+  if (!rowIsCurrent() || !initial || initial.revision !== expectedRevision) { staleMenuTarget(); return; }
+  if (!window.confirm(strings().confirmDelete)) return;
+  const latest = await indexedDb.getDocument(identity);
+  if (!latest || latest.revision !== expectedRevision
+    || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
+  const openTab = state.tabs.find(candidate => candidate.document.identity.storage === 'local' && candidate.document.identity.fileId === fileId);
+  if (openTab) {
+    await draftWrites.get(tabKey(openTab));
+    if (!state.tabs.includes(openTab)) { staleMenuTarget(); return; }
+    await closeTab(openTab, true);
+    await draftWrites.get(tabKey(openTab));
+  }
+  const beforeDelete = await indexedDb.getDocument(identity);
+  if (!beforeDelete || beforeDelete.revision !== expectedRevision) { staleMenuTarget(); return; }
+  await indexedDb.deleteDocument(identity);
+  void renderExplorer();
+}
+
+function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMenuAction[] {
+  const t = strings();
+  const rootRow = element.closest<HTMLElement>('.storage-root-row');
+  if (rootRow) {
+    const section = rootRow.closest<HTMLElement>('.storage-section');
+    const storage = section?.dataset.storageSection;
+    if (!section || (storage !== 'local' && storage !== 'drive')) return [];
+    const rootIsCurrent = () => rootRow.isConnected && rootRow.closest('.storage-section') === section;
+    if (storage === 'local') return [
+      { label: t.newScore, run: () => { if (!rootIsCurrent()) { staleMenuTarget(); return; } return createNewScore(); } },
+      { label: t.addFile, run: () => { if (!rootIsCurrent()) { staleMenuTarget(); return; } app.querySelector<HTMLInputElement>('#file-input')!.click(); } }
+    ];
+    const accountId = state.account?.accountId;
+    const drive = state.drive;
+    const generation = state.driveGeneration;
+    const driveIsCurrent = () => rootIsCurrent() && state.account?.accountId === accountId && state.drive === drive && state.driveGeneration === generation && !state.authExpired;
+    if (!accountId || !drive || state.authExpired) return [{
+      label: state.authExpired ? t.reconnect : t.connect,
+      disabled: driveConnectInProgress,
+      run: () => {
+        if (!rootIsCurrent() || state.account?.accountId !== accountId || state.drive !== drive || driveConnectInProgress) { staleMenuTarget(); return; }
+        return connectDrive();
+      }
+    }];
+    return [
+      { label: t.driveRootMenuOpen, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return openFromDrivePicker(); } },
+      { label: t.driveRootMenuFolder, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return chooseDriveFolder(); } },
+      { label: t.driveRootMenuCreate, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return createDriveFolder(); } }
+    ];
+  }
+
+  const file = element.closest<HTMLButtonElement>('.file-item');
+  if (file) {
+    const storage = file.dataset.storage;
+    const fileId = file.dataset.fileId;
+    const accountId = file.dataset.accountId;
+    const revision = Number(file.dataset.revision);
+    const title = file.textContent?.trim() ?? '';
+    const tab = state.tabs.find(candidate => candidate.document.identity.storage === storage
+      && candidate.document.identity.fileId === fileId && (storage !== 'drive' || candidate.accountId === accountId));
+    const tabRevision = tab?.revision;
+    const tabSource = tab?.source;
+    const rowIsCurrent = () => file.isConnected && file.dataset.storage === storage
+      && file.dataset.fileId === fileId && file.dataset.accountId === accountId
+      && Number(file.dataset.revision ?? 0) === revision;
+    if (!fileId || (storage !== 'local' && storage !== 'drive')) return [];
+    const actions: WorkspaceMenuAction[] = [{ label: state.locale === 'ja' ? '開く' : 'Open', run: () => {
+      if (!rowIsCurrent() || storage === 'drive' && (state.account?.accountId !== accountId || !state.drive)) { staleMenuTarget(); return; }
+      file.click();
+    } }, { label: t.copyName, run: () => { if (!rowIsCurrent()) { staleMenuTarget(); return; } return copyWithFailure(title); } }];
+    if (storage === 'local') {
+      actions.push(
+        { label: t.exportSource, run: async () => {
+          if (!sourceEditor.flushPendingEdit()) { staleMenuTarget(); return; }
+          if (!rowIsCurrent() || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
+          const latest = await indexedDb.getDocument({ storage: 'local', fileId });
+          if (!rowIsCurrent() || !latest || latest.revision !== revision) { staleMenuTarget(); return; }
+          downloadSource(tab?.document.name ?? latest.name, tab?.source ?? latest.source);
+        } },
+        { label: t.deleteFile, run: () => deleteLocalFromExplorer(file, fileId, revision, tab, tabRevision, tabSource) }
+      );
+      if (state.account && state.drive && state.folderId) actions.push({ label: t.moveDrive, run: async () => {
+        if (!sourceEditor.flushPendingEdit()) { staleMenuTarget(); return; }
+        if (!rowIsCurrent() || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
+        const current = await indexedDb.getDocument({ storage: 'local', fileId });
+        if (!current || current.revision !== revision) { staleMenuTarget(); return; }
+        const targetTab = tab ?? await openLocalDocument({ storage: 'local', fileId });
+        if (!targetTab) return;
+        await setActive(tabKey(targetTab));
+        if (state.activeKey === tabKey(targetTab)) await moveToDrive(targetTab);
+      } });
+    }
+    return actions;
+  }
+  const tabElement = element.closest<HTMLElement>('.tab');
+  if (tabElement?.dataset.documentTabKey) {
+    const key = tabElement.dataset.documentTabKey;
+    const tab = state.tabs.find(item => tabKey(item) === key);
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    const accountId = tab.accountId;
+    const tabIsCurrent = () => sourceEditor.flushPendingEdit() && tabElement.isConnected && state.tabs.includes(tab) && tabKey(tab) === key
+      && tab.revision === revision && tab.source === source && tab.accountId === accountId;
+    const actions: WorkspaceMenuAction[] = [
+      { label: t.openTab, run: () => { if (!tabIsCurrent()) { staleMenuTarget(); return; } return setActive(key); } },
+      { label: t.closeTabMenu, run: () => { if (!tabIsCurrent()) { staleMenuTarget(); return; } return closeTab(tab); } },
+      { label: t.closeOthers, run: async () => {
+        if (!tabIsCurrent()) { staleMenuTarget(); return; }
+        await setActive(key);
+        if (state.activeKey !== key || !tabIsCurrent()) { staleMenuTarget(); return; }
+        for (const other of [...state.tabs]) if (other !== tab) await closeTab(other);
+      } },
+      { label: t.exportSource, run: () => { if (!tabIsCurrent()) { staleMenuTarget(); return; } downloadSource(tab.document.name, tab.source); } }
+    ];
+    if (tab.document.identity.storage === 'local' && state.account && state.drive && state.folderId) {
+      actions.push({ label: t.moveDrive, run: () => { if (!tabIsCurrent()) { staleMenuTarget(); return; } return moveToDrive(tab); } });
+    }
+    return actions;
+  }
+  const problem = element.closest<HTMLElement>('.problem-row');
+  if (problem) {
+    const tab = activeTab();
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    const message = problem.querySelector('.problem-message')?.textContent ?? '';
+    return [
+      { label: state.locale === 'ja' ? 'ソースで表示' : 'Show in Source', run: () => {
+        if (!problem.isConnected || activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '診断の対象が変わりました。' : 'The diagnostic target changed.', 'error'); return;
+        }
+        problem.querySelector<HTMLButtonElement>('.problem-message')?.click();
+      } },
+      { label: state.locale === 'ja' ? 'メッセージをコピー' : 'Copy message', run: () => {
+        if (!problem.isConnected || activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '診断の対象が変わりました。' : 'The diagnostic target changed.', 'error'); return;
+        }
+        return copyWithFailure(message);
+      } }
+    ];
+  }
+  const gutter = element.closest<HTMLElement>('.cm-gutters');
+  if (gutter || keyboard && element.closest('.cm-content')) {
+    const tab = activeTab();
+    if (!tab) return [];
+    const revision = tab.revision;
+    const source = tab.source;
+    const from = sourceEditor.selection().from;
+    const line = sourceEditor.getText().slice(0, from).split('\n').length;
+    return [
+      { label: (state.locale === 'ja' ? '行 ' : 'Line ') + line + (state.locale === 'ja' ? ' へ移動…' : '…'), run: () => {
+        if (activeTab() !== tab || tab.revision !== revision || tab.source !== source) {
+          showMessage(state.locale === 'ja' ? '文書が変わったため操作を中止しました。' : 'The document changed; the action was cancelled.', 'error'); return;
+        }
+        const value = window.prompt(state.locale === 'ja' ? '移動先の行番号' : 'Go to line', String(line));
+        const destination = Number(value);
+        if (value !== null && Number.isInteger(destination) && destination > 0) {
+          const lines = sourceEditor.getText().split('\n');
+          sourceEditor.setSelection(lines.slice(0, Math.min(destination - 1, lines.length)).reduce((total, row) => total + row.length + 1, 0));
+        }
+      } },
+      { label: state.locale === 'ja' ? '行番号をコピー' : 'Copy line number', run: () => copyWithFailure(String(line)) }
+    ];
+  }
+  return [];
+}
+
+function openContextMenu(event: MouseEvent | KeyboardEvent, target: HTMLElement, keyboard = false): void {
+  const invoker = target.closest<HTMLElement>('.storage-root-label, .file-item, .tab > [role="tab"], .problem-row, .cm-gutters') ?? target;
+  if (!sourceEditor.flushPendingEdit()) return;
+  if (invoker.closest('.score-pane')) {
+    const tab = activeTab();
+    if (tab) openPreviewContextMenu(12, 12, tab, {
+      documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
+    }, '');
+    if (event instanceof MouseEvent) event.preventDefault();
+    return;
+  }
+  const menu = app.querySelector<HTMLElement>('#context-menu')!;
+  const actions = contextActionsFor(invoker, keyboard);
+  if (!actions.length) return;
+  if (event instanceof MouseEvent) event.preventDefault();
+  const x = event instanceof MouseEvent ? event.clientX : Math.min(window.innerWidth - 220, invoker.getBoundingClientRect().left);
+  const y = event instanceof MouseEvent ? event.clientY : Math.min(window.innerHeight - 120, invoker.getBoundingClientRect().bottom);
+  showWorkspaceMenu(menu, x, y, actions, invoker);
+}
+
+function openPreviewContextMenu(x: number, y: number, tab: OpenTab, identity: { documentUri: string; documentVersion: number; previewGeneration: number }, visualElementId = ''): void {
+  const rect = scoreFrame.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#context-menu')!;
+  const t = strings();
+  const findBinding = () => visualElementId
+    ? currentScore(tab.source)?.visualSourceBindings?.find(binding => binding.id === visualElementId)
+    : undefined;
+  const actions: WorkspaceMenuAction[] = [
+    { label: t.goToSource, disabled: !findBinding(), run: () => {
+      if (!sourceEditor.flushPendingEdit() || !isCurrentPreviewIdentity(tab, identity)) { staleMenuTarget(); return; }
+      const binding = findBinding();
+      if (!binding) { staleMenuTarget(); return; }
+      const lines = sourceEditor.getText().split('\n');
+      const offset = lines.slice(0, binding.line).reduce((total, line) => total + line.length + 1, 0) + binding.startCol;
+      setWorkspaceViewMode('source');
+      sourceEditor.setSelection(offset, Math.min(sourceEditor.getText().length, offset + Math.max(1, binding.endCol - binding.startCol)));
+    } },
+    { label: t.downloadPdf, run: () => {
+      if (!sourceEditor.flushPendingEdit() || !isCurrentPreviewIdentity(tab, identity)) { staleMenuTarget(); return; }
+      return downloadPdf(tab);
+    } }
+  ];
+  showWorkspaceMenu(menu, rect.left + x, rect.top + y, actions, scoreFrame);
+}
+
+function openHelp(): void {
+  const dialog = app.querySelector<HTMLDialogElement>('#help-dialog')!;
+  const toc = app.querySelector<HTMLElement>('#help-toc')!;
+  const content = app.querySelector<HTMLElement>('#help-content')!;
+  app.querySelector('#help-title')!.textContent = strings().help;
+  const topics = state.locale === 'ja' ? [
+    ['getting-started', '基本操作', '新しい楽譜を作成するか、Explorer からローカル文書または Google Drive の文書を開きます。編集内容はブラウザー内の下書きとして保存されます。'],
+    ['editing', 'ソース編集', '行番号、構文色分け、補完、検索・置換、元に戻す／やり直しを利用できます。Problems の項目を選ぶと、該当行へ移動します。'],
+    ['preview', 'プレビュー', 'Source・Split・Score の表示を切り替えます。譜面プレビュー内の Normal・Edit・Practice は表示レイアウトとは独立しています。'],
+    ['drive', 'Google Drive', 'Google Drive は任意です。初回接続時に保存先フォルダーを作成・選択するか、後で設定できます。選んだフォルダー内でも、Google Drive Picker で認可した楽譜だけを開けます。フォルダー、開いているファイルID、最近使ったファイルIDはアカウントごとのアプリ状態として同期します。ソースと未保存の下書きはこの端末に残ります。'],
+    ['shortcuts', 'キーボード操作', '⌘/Ctrl+S で保存、⌘/Ctrl+F で検索、⌘/Ctrl+H で置換、⌘/Ctrl+G で行へ移動します。Escape でメニューを閉じます。']
+  ] : [
+    ['getting-started', 'Getting started', 'Create a score or open a local or Google Drive document from Explorer. Edits are stored as a recoverable browser draft.'],
+    ['editing', 'Editing source', 'Use line numbers, syntax colors, local completion, search and replace, undo, and redo. Select a Problems row to jump to its source range.'],
+    ['preview', 'Preview', 'Switch between Source, Split, and Score views. Normal, Edit, and Practice remain independent Preview modes.'],
+    ['drive', 'Google Drive', 'Google Drive is optional. On first sign-in, create or choose a destination folder, or defer setup. A selected folder does not authorize every score inside it; open existing scores with Google Drive Picker. Folder, open-file IDs, and recent-file IDs sync as account-specific app state. Source text and unsaved drafts remain on this device.'],
+    ['shortcuts', 'Keyboard shortcuts', 'Use ⌘/Ctrl+S to save, ⌘/Ctrl+F to search, ⌘/Ctrl+H to replace, and ⌘/Ctrl+G to go to a line. Press Escape to close a menu.']
+  ] as const;
+  const localeName = state.locale === 'ja' ? '日本語' : 'English';
+  const helpHtml = `<!doctype html><html lang="${state.locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(strings().help)} · GuitarDSL</title><style>body{margin:0;padding:28px;max-width:900px;font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;color:#20242b;background:#f7f8fa}header{position:sticky;top:0;padding:8px 0 16px;background:#f7f8fa;border-bottom:1px solid #d9dde5}nav{display:flex;gap:8px;flex-wrap:wrap}nav a{color:#3444b8}section{padding:16px 0;border-bottom:1px solid #dfe2e7}a{color:#3444b8}</style><body><header><h1>GuitarDSL ${esc(strings().help)} · ${localeName}</h1><nav>${topics.map(([id, title]) => `<a href="#${id}">${esc(title)}</a>`).join('')}</nav></header>${topics.map(([id, title, body]) => `<section id="${id}"><h2>${esc(title)}</h2><p>${esc(body)}</p></section>`).join('')}</body></html>`;
+  if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl);
+  helpBlobUrl = URL.createObjectURL(new Blob([helpHtml], { type: 'text/html;charset=UTF-8' }));
+  const popup = window.open(helpBlobUrl, 'guitardsl-help', 'popup,width=920,height=760');
+  if (popup) { window.setTimeout(() => { if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl); helpBlobUrl = ''; }, 120_000); return; }
+  toc.replaceChildren(); content.replaceChildren();
+  app.querySelector('#help-popup-note')!.textContent = strings().helpPopupBlocked;
+  app.querySelector<HTMLElement>('#help-popup-note')!.hidden = false;
+  const linkRow = app.querySelector<HTMLElement>('#help-direct-link-row')!;
+  const directLink = app.querySelector<HTMLAnchorElement>('#help-direct-link')!;
+  directLink.href = helpBlobUrl; directLink.textContent = strings().openHelpLink; linkRow.hidden = false;
+  for (const [id, title, body] of topics) {
+    const link = document.createElement('button'); link.type = 'button'; link.textContent = title;
+    link.addEventListener('click', () => content.querySelector('#help-' + id)?.scrollIntoView({ block: 'start' }));
+    toc.append(link);
+    const section = document.createElement('section'); section.id = 'help-' + id;
+    const heading = document.createElement('h3'); heading.textContent = title;
+    const paragraph = document.createElement('p'); paragraph.textContent = body;
+    section.append(heading, paragraph); content.append(section);
+  }
+  if (!dialog.open) dialog.showModal();
+}
+
+function menuShortcut(key: string, shift = false): string {
+  const mac = /Mac|iPhone|iPad/u.test(navigator.platform);
+  return mac ? `⌘${shift ? '⇧' : ''}${key}` : `Ctrl+${shift ? 'Shift+' : ''}${key}`;
+}
+
+function openFileMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-file-trigger')!;
+  const rect = button.getBoundingClientRect();
+  const t = strings(); const tab = activeTab();
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#file-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.newScore, run: () => createNewScore() },
+    { label: t.addFile, run: () => app.querySelector<HTMLInputElement>('#file-input')!.click() },
+    { label: state.drive && !state.authExpired ? t.openDrive : `${t.openDrive} · ${t.connect}`, disabled: !state.drive || state.authExpired, run: () => openFromDrivePicker() },
+    { separator: true, label: '', run: () => {} },
+    { label: t.save, shortcut: menuShortcut('S'), disabled: !tab, run: () => saveActiveDocument() },
+    { label: t.downloadCopy, disabled: !tab, run: () => {
+      const current = activeTab();
+      if (!current || !editorReadyForSnapshot(current)) return;
+      downloadSource(current.document.name, current.source);
+    } },
+    { label: t.downloadPdf, disabled: !tab, run: () => downloadPdf() },
+    { separator: true, label: '', run: () => {} },
+    { label: t.closeTabMenu, disabled: !tab, run: () => tab && closeTab(tab) }
+  ], button);
+}
+
+function openEditMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-edit-trigger')!;
+  const rect = button.getBoundingClientRect();
+  const t = strings(); const tab = activeTab();
+  const key = state.activeKey;
+  const identity = tab?.document.identity;
+  const accountId = tab?.accountId;
+  const revision = tab?.revision;
+  const source = sourceEditor.getText();
+  const selection = sourceEditor.selection(); const hasSelection = selection.from !== selection.to;
+  const targetIsCurrent = () => !!tab && activeTab() === tab && state.activeKey === key
+    && tab.document.identity.storage === identity?.storage && tab.document.identity.fileId === identity?.fileId
+    && tab.accountId === accountId && tab.revision === revision && sourceEditor.getText() === source
+    && !sourceEditor.hasPendingEdit() && sourceEditor.selection().from === selection.from
+    && sourceEditor.selection().to === selection.to && sourceEditor.selection().head === selection.head;
+  const staleClipboardAction = () => showMessage(state.locale === 'ja'
+    ? '対象の文書または選択範囲が変わったため、切り取り／貼り付けを中止しました。'
+    : 'Cut or paste was cancelled because the document or selection changed.', 'info');
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#edit-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.undo, shortcut: menuShortcut('Z'), disabled: !tab || !sourceEditor.canUndo(), run: () => { sourceEditor.focus(); sourceEditor.undo(); } },
+    { label: t.redo, shortcut: menuShortcut(/Mac|iPhone|iPad/u.test(navigator.platform) ? 'Z' : 'Y', /Mac|iPhone|iPad/u.test(navigator.platform)), disabled: !tab || !sourceEditor.canRedo(), run: () => { sourceEditor.focus(); sourceEditor.redo(); } },
+    { separator: true, label: '', run: () => {} },
+    { label: t.cut, shortcut: menuShortcut('X'), disabled: !tab || !hasSelection || !navigator.clipboard?.writeText, run: async () => { sourceEditor.focus(); try { if (!await sourceEditor.cut(targetIsCurrent)) staleClipboardAction(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードへ切り取れませんでした。' : 'Could not cut to the clipboard.', 'error'); } } },
+    { label: t.copy, shortcut: menuShortcut('C'), disabled: !tab || !hasSelection || !navigator.clipboard?.writeText, run: async () => { sourceEditor.focus(); try { await sourceEditor.copy(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードへコピーできませんでした。' : 'Could not copy to the clipboard.', 'error'); } } },
+    { label: t.paste, shortcut: menuShortcut('V'), disabled: !tab || !navigator.clipboard?.readText, run: async () => { sourceEditor.focus(); try { if (!await sourceEditor.paste(targetIsCurrent)) staleClipboardAction(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードから貼り付けられませんでした。' : 'Could not paste from the clipboard.', 'error'); } } },
+    { label: t.selectAll, shortcut: menuShortcut('A'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.selectAll(); } },
+    { separator: true, label: '', run: () => {} },
+    { label: t.find, shortcut: menuShortcut('F'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.openSearch(); } },
+    { label: t.replace, shortcut: menuShortcut('H'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.openReplace(); } },
+    { label: t.goToLine, shortcut: menuShortcut('G'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.goToLine(); } }
+  ], button);
+}
+
+function resetWorkspaceLayout(): void {
+  if (!window.confirm(strings().resetLayoutConfirm)) return;
+  state.viewMode = 'split'; state.splitRatio = 0.4; state.explorerOpen = true; state.inspectorOpen = true;
+  state.explorerWidth = 220; state.inspectorWidth = 300; state.problemsOpen = true; state.problemsHeight = 200;
+  applyWorkspaceLayout(); saveLayoutNow();
+}
+
+function openViewMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-view-trigger')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#view-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.sourceView, checked: state.viewMode === 'source', run: () => setWorkspaceViewMode('source') },
+    { label: t.splitView, checked: state.viewMode === 'split', run: () => setWorkspaceViewMode('split') },
+    { label: t.scoreView, checked: state.viewMode === 'score', run: () => setWorkspaceViewMode('score') },
+    { separator: true, label: '', run: () => {} },
+    { label: t.toggleExplorer, checked: state.explorerOpen, run: () => toggleExplorer() },
+    { label: t.toggleInspector, checked: state.inspectorOpen, run: () => toggleInspector() },
+    { label: t.problems, checked: state.problemsOpen, run: () => toggleProblems() },
+    { separator: true, label: '', run: () => {} },
+    { label: `${t.resetLayout}…`, run: resetWorkspaceLayout }
+  ], button);
+}
+
+function openDriveHeaderMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  if (driveConnectInProgress) actions.push({ label: t.connecting, disabled: true, run: () => {} });
+  else if (!state.account || state.authExpired) actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
+  else actions.push({ label: t.disconnect, run: () => connectDrive() });
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#drive-menu')!, rect.left, rect.bottom + 3, actions, button);
+}
+
+function openDriveRootMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#drive-root-more')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  const connected = Boolean(state.drive && state.account && !state.authExpired);
+  const actions: WorkspaceMenuAction[] = connected ? [
+    { label: t.driveRootMenuOpen, run: () => openFromDrivePicker() },
+    { label: t.driveRootMenuFolder, run: () => chooseDriveFolder() },
+    { label: t.driveRootMenuCreate, run: () => createDriveFolder() }
+  ] : [{ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() }];
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#panel-menu')!, rect.left, rect.bottom + 3, actions, button);
+}
+
+function openSettingsMenu(): void {
+  const button = app.querySelector<HTMLElement>('#settings-button')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#settings-menu')!;
+  const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  for (const theme of ['system', 'light', 'dark'] as const) {
+    const label = state.locale === 'ja' ? ({ system: 'テーマ: システム', light: 'テーマ: ライト', dark: 'テーマ: ダーク' }[theme])
+      : ({ system: 'Theme: System', light: 'Theme: Light', dark: 'Theme: Dark' }[theme]);
+    actions.push({ label, checked: state.theme === theme, run: () => {
+      state.theme = theme;
+      void savePreferences(); renderAll();
+    } });
+  }
+  for (const locale of ['en', 'ja'] as const) {
+    actions.push({ label: locale === 'ja' ? 'Language: 日本語' : 'Language: English', checked: state.locale === locale, run: () => {
+      state.locale = locale;
+      void savePreferences(); renderAll();
+    } });
+  }
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
+}
+
+function openExplorerMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#explorer-more')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#panel-menu')!;
+  const t = strings();
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
+    { label: t.addFile, run: () => app.querySelector<HTMLInputElement>('#file-input')!.click() },
+    { label: t.closeExplorer, run: () => {
+      state.explorerOpen = false;
+      applyWorkspaceLayout(); saveLayoutNow();
+      app.querySelector<HTMLButtonElement>('#activity-explorer')!.focus();
+    } },
+    { label: t.resetExplorerWidth, run: () => {
+      state.explorerWidth = 220;
+      applyWorkspaceLayout(); saveLayoutNow();
+    } }
+  ], button);
+}
+
+function openInspectorMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#inspector-more')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#panel-menu')!;
+  const t = strings();
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
+    { label: t.closeInspector, run: () => {
+      state.inspectorOpen = false;
+      applyWorkspaceLayout(); saveLayoutNow();
+      app.querySelector<HTMLButtonElement>('#toggle-inspector')!.focus();
+    } },
+    { label: t.resetInspectorWidth, run: () => {
+      state.inspectorWidth = 300;
+      applyWorkspaceLayout(); saveLayoutNow();
+    } }
+  ], button);
+}
+
+function openAccountMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#account-button')!;
+  const rect = button.getBoundingClientRect();
+  const menu = app.querySelector<HTMLElement>('#account-menu')!;
+  const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  if (state.account && state.drive) {
+    actions.push({ label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`, disabled: true, run: () => {} });
+    actions.push({ separator: true, label: '', run: () => {} });
+    actions.push({ label: t.disconnect, disabled: driveConnectInProgress, run: () => connectDrive() });
+  } else {
+    actions.push({ label: `${t.drive}: ${state.authExpired ? t.driveReauth : t.driveNotConnected}`, disabled: true, run: () => {} });
+  }
+  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
+}
+
+app.querySelector('#help-button')!.addEventListener('click', openHelp);
+app.querySelector('#close-help')!.addEventListener('click', () => app.querySelector<HTMLDialogElement>('#help-dialog')!.close());
+app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus());
+app.querySelector('#settings-button')!.addEventListener('click', openSettingsMenu);
+app.querySelector('#connect-drive')!.addEventListener('click', openDriveHeaderMenu);
+app.querySelector('#account-button')!.addEventListener('click', openAccountMenu);
+app.querySelector('#drive-root-more')!.addEventListener('click', openDriveRootMenu);
+app.querySelector('#explorer-more')!.addEventListener('click', openExplorerMenu);
+app.querySelector('#inspector-more')!.addEventListener('click', openInspectorMenu);
+app.querySelector('#menu-file-trigger')!.addEventListener('click', openFileMenu);
+app.querySelector('#menu-edit-trigger')!.addEventListener('click', openEditMenu);
+app.querySelector('#menu-view-trigger')!.addEventListener('click', openViewMenu);
+for (const [selector, open] of [
+  ['#menu-file-trigger', openFileMenu], ['#menu-edit-trigger', openEditMenu], ['#menu-view-trigger', openViewMenu]
+] as const) {
+  app.querySelector(selector)!.addEventListener('pointerenter', () => {
+    const trigger = app.querySelector<HTMLElement>(selector)!;
+    if (activeMenuElement && activeMenuInvoker !== trigger) open();
+  });
+}
+app.querySelector('.main-menu-bar')!.addEventListener('keydown', event => {
+  if (!(event instanceof KeyboardEvent)) return;
+  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLButtonElement>('button[role="menuitem"]') : null;
+  if (!target) return;
+  const buttons = Array.from(app.querySelectorAll<HTMLButtonElement>('.main-menu-bar button[role="menuitem"]'));
+  const index = buttons.indexOf(target);
+  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+    event.preventDefault();
+    buttons[(index + (event.key === 'ArrowRight' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+    return;
+  }
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault(); buttons[event.key === 'Home' ? 0 : buttons.length - 1]?.focus(); return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    if (target.id === 'menu-file-trigger') openFileMenu();
+    else if (target.id === 'menu-edit-trigger') openEditMenu();
+    else openViewMenu();
+  }
+});
 app.querySelector('#new-score')!.addEventListener('click', () => void createNewScore());
+app.addEventListener('contextmenu', event => {
+  const target = event.target instanceof HTMLElement ? event.target : undefined;
+  if (!target || target.closest('.cm-content')) return; // Preserve the browser's native editor-body context menu.
+  if (target.closest('.storage-root-row, .file-item, .tab, .problem-row, .cm-gutters')) openContextMenu(event, target);
+});
+app.addEventListener('keydown', event => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  const target = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+  if (!target) return;
+  const panelMenuButton = target.closest<HTMLButtonElement>('#explorer-more, #inspector-more');
+  if (panelMenuButton) {
+    event.preventDefault();
+    if (panelMenuButton.id === 'explorer-more') openExplorerMenu();
+    else openInspectorMenu();
+    return;
+  }
+  const menuTarget = target.closest('.storage-root-row, .file-item, .tab, .problem-row, .cm-gutters, .cm-content, .score-pane');
+  if (menuTarget) { event.preventDefault(); openContextMenu(event, target, true); }
+});
 app.querySelector('#save-document')!.addEventListener('click', () => void saveActiveDocument());
 app.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
@@ -2042,22 +3593,9 @@ app.addEventListener('keydown', event => {
   }
 });
 app.querySelector('#download-pdf')!.addEventListener('click', () => void downloadPdf());
-app.querySelector('#export-file')!.addEventListener('click', () => { const tab = activeTab(); if (tab) downloadSource(tab.document.name, tab.source); });
-app.querySelector('#move-drive')!.addEventListener('click', () => void moveToDrive());
-app.querySelector('#connect-drive')!.addEventListener('click', () => void connectDrive());
 app.querySelector('#file-input')!.addEventListener('change', event => {
   const input = event.currentTarget as HTMLInputElement; void importFile(input.files?.[0]); input.value = '';
 });
-app.querySelector('#import-file')!.addEventListener('click', () => app.querySelector<HTMLInputElement>('#file-input')!.click());
-app.querySelector('#mobile-source')!.addEventListener('click', () => { state.mobilePane = 'source'; renderAll(); });
-app.querySelector('#mobile-preview')!.addEventListener('click', () => { state.mobilePane = 'preview'; renderAll(); });
-app.querySelector('#locale-select')!.addEventListener('change', event => {
-  state.locale = (event.currentTarget as HTMLSelectElement).value as 'en' | 'ja'; void savePreferences(); renderAll();
-});
-app.querySelector('#theme-select')!.addEventListener('change', event => {
-  state.theme = (event.currentTarget as HTMLSelectElement).value as AppState['theme']; void savePreferences(); renderAll();
-});
-app.querySelector('#collapse-inspector')!.addEventListener('click', () => app.querySelector('.workspace')!.classList.toggle('inspector-collapsed'));
 inspectorTabsHost.addEventListener('focusin', event => {
   const focused = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inspector-tab]');
   if (!focused) return;
@@ -2090,39 +3628,122 @@ inspectorTabsHost.addEventListener('click', event => {
     } else renderInspector();
   }
 });
-const splitDivider = app.querySelector<HTMLDivElement>('.split-divider')!;
-const splitView = app.querySelector<HTMLDivElement>('.split-view')!;
 let splitPointer: number | undefined;
-function updateSplitRatio(clientX: number): void {
-  const bounds = splitView.getBoundingClientRect();
-  if (bounds.width <= 0) return;
-  state.splitRatio = Math.max(0.25, Math.min(0.75, (clientX - bounds.left) / bounds.width));
-  applySplitRatio(); persistSplitRatioSoon();
-}
 splitDivider.addEventListener('pointerdown', event => {
-  if (window.matchMedia('(max-width: 680px)').matches) return;
   splitPointer = event.pointerId; splitDivider.setPointerCapture(event.pointerId); event.preventDefault();
 });
-splitDivider.addEventListener('pointermove', event => { if (splitPointer === event.pointerId) updateSplitRatio(event.clientX); });
-splitDivider.addEventListener('pointerup', event => { if (splitPointer === event.pointerId) splitPointer = undefined; });
-splitDivider.addEventListener('pointercancel', () => { splitPointer = undefined; });
-splitDivider.addEventListener('keydown', event => {
-  const delta = event.key === 'ArrowLeft' ? -0.03 : event.key === 'ArrowRight' ? 0.03 : 0;
-  if (delta) { event.preventDefault(); state.splitRatio = Math.max(0.25, Math.min(0.75, state.splitRatio + delta)); applySplitRatio(); persistSplitRatioSoon(); }
+let splitStartRatio = state.splitRatio;
+splitDivider.addEventListener('pointerdown', event => { splitStartRatio = state.splitRatio; });
+splitDivider.addEventListener('pointermove', event => {
+  if (splitPointer !== event.pointerId) return;
+  const bounds = splitView.getBoundingClientRect();
+  if (bounds.width <= 0) return;
+  state.splitRatio = Math.max(0.05, Math.min(0.95, (event.clientX - bounds.left) / bounds.width));
+  applySplitRatio();
 });
-window.addEventListener('resize', applySplitRatio);
+splitDivider.addEventListener('pointerup', event => {
+  if (splitPointer !== event.pointerId) return;
+  splitPointer = undefined; persistSplitRatioSoon();
+});
+splitDivider.addEventListener('pointercancel', () => {
+  if (splitPointer === undefined) return;
+  splitPointer = undefined; state.splitRatio = splitStartRatio; applySplitRatio();
+});
+splitDivider.addEventListener('lostpointercapture', () => {
+  if (splitPointer === undefined) return;
+  splitPointer = undefined; state.splitRatio = splitStartRatio; applySplitRatio();
+});
+splitDivider.addEventListener('dblclick', () => { state.splitRatio = 0.4; applySplitRatio(); saveLayoutSoon(); });
+splitDivider.addEventListener('keydown', event => {
+  const width = splitView.clientWidth || 1;
+  const delta = (event.shiftKey ? 50 : 10) / width;
+  const minimum = Number(splitDivider.getAttribute('aria-valuemin')) / 100;
+  const maximum = Number(splitDivider.getAttribute('aria-valuemax')) / 100;
+  if (event.key === 'Home') state.splitRatio = minimum;
+  else if (event.key === 'End') state.splitRatio = maximum;
+  else if (event.key === 'ArrowLeft') state.splitRatio -= delta;
+  else if (event.key === 'ArrowRight') state.splitRatio += delta;
+  else return;
+  event.preventDefault(); applySplitRatio(); persistSplitRatioSoon();
+});
+bindVerticalSplitter(app.querySelector<HTMLElement>('#explorer-splitter')!, 'explorer');
+bindVerticalSplitter(app.querySelector<HTMLElement>('#inspector-splitter')!, 'inspector');
+const problemsSplitter = app.querySelector<HTMLElement>('#problems-splitter')!;
+let problemsPointer: number | undefined;
+let problemsStartY = 0;
+let problemsStartHeight = state.problemsHeight;
+const maxProblemsHeight = () => Math.max(140, Math.floor(window.innerHeight * 0.45));
+function setProblemsHeight(height: number, persist = false): void {
+  state.problemsHeight = Math.round(Math.max(140, Math.min(maxProblemsHeight(), height)));
+  workspace.style.setProperty('--problems-height', `${state.problemsHeight}px`);
+  problemsSplitter.setAttribute('aria-valuemax', String(maxProblemsHeight()));
+  problemsSplitter.setAttribute('aria-valuenow', String(state.problemsHeight));
+  if (persist) saveLayoutSoon();
+}
+problemsSplitter.addEventListener('pointerdown', event => {
+  if (!state.problemsOpen) return;
+  problemsPointer = event.pointerId; problemsStartY = event.clientY; problemsStartHeight = state.problemsHeight;
+  problemsSplitter.setPointerCapture(event.pointerId); event.preventDefault();
+});
+problemsSplitter.addEventListener('pointermove', event => { if (problemsPointer === event.pointerId) setProblemsHeight(problemsStartHeight + problemsStartY - event.clientY); });
+problemsSplitter.addEventListener('pointerup', event => { if (problemsPointer === event.pointerId) { problemsPointer = undefined; setProblemsHeight(state.problemsHeight, true); } });
+problemsSplitter.addEventListener('pointercancel', () => { if (problemsPointer !== undefined) { problemsPointer = undefined; setProblemsHeight(problemsStartHeight); } });
+problemsSplitter.addEventListener('lostpointercapture', () => { if (problemsPointer !== undefined) { problemsPointer = undefined; setProblemsHeight(problemsStartHeight); } });
+problemsSplitter.addEventListener('dblclick', () => setProblemsHeight(200, true));
+problemsSplitter.addEventListener('keydown', event => {
+  const delta = event.shiftKey ? 50 : 10;
+  if (event.key === 'Home') setProblemsHeight(140, true);
+  else if (event.key === 'End') setProblemsHeight(maxProblemsHeight(), true);
+  else if (event.key === 'ArrowUp') setProblemsHeight(state.problemsHeight + delta, true);
+  else if (event.key === 'ArrowDown') setProblemsHeight(state.problemsHeight - delta, true);
+  else return;
+  event.preventDefault();
+});
+for (const [id, mode] of [['view-source', 'source'], ['view-split', 'split'], ['view-score', 'score']] as const) {
+  app.querySelector<HTMLButtonElement>(`#${id}`)!.addEventListener('click', () => setWorkspaceViewMode(mode));
+}
+const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
+const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutNow(); };
+app.querySelector('#activity-explorer')!.addEventListener('click', toggleExplorer);
+app.querySelector('#toggle-inspector')!.addEventListener('click', toggleInspector);
+const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
+app.querySelector('#toggle-problems')!.addEventListener('click', toggleProblems);
+app.querySelector('#close-problems')!.addEventListener('click', () => {
+  state.problemsOpen = false;
+  renderProblemsLabels(); saveLayoutSoon();
+  app.querySelector<HTMLButtonElement>('#toggle-problems')!.focus();
+});
+window.addEventListener('resize', () => { applySplitRatio(); setProblemsHeight(state.problemsHeight); updateResponsiveCollapse(); });
+new ResizeObserver(() => updateResponsiveCollapse()).observe(workspace);
 listenForPreviewMessages(scoreFrame, handlePreviewMessage);
 window.addEventListener('beforeunload', (event: BeforeUnloadEvent) => {
-  if (state.tabs.some(hasUnpersistedDraft)) {
+  if (sourceEditor.hasPendingEdit() || state.tabs.some(hasUnpersistedDraft)
+    || Boolean(appDataSyncTimer) || Boolean(state.appDataPending)
+    || state.appDataSync === 'pending' || state.appDataSync === 'syncing' || state.appDataSync === 'error') {
     event.preventDefault();
     event.returnValue = '';
   }
 });
-window.addEventListener('pagehide', () => progressionAudioLease.dispose());
+window.addEventListener('offline', () => {
+  if (state.appDataSync !== 'pending') return;
+  window.clearTimeout(appDataSyncTimer);
+  appDataSyncTimer = 0;
+  appDataOfflinePending = true;
+  renderStorageStatus();
+});
+window.addEventListener('online', () => {
+  if (!appDataOfflinePending || !navigator.onLine) return;
+  appDataOfflinePending = false;
+  void persistDriveAppData();
+});
+window.addEventListener('pagehide', () => {
+  progressionAudioLease.dispose();
+});
 
 async function init(): Promise<void> {
   try {
     await loadPreferences();
+    await loadLayoutPreferences();
     state.storageReady = true;
     await restoreLocalSession();
   } catch (error) {

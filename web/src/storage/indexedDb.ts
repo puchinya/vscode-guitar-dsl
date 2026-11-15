@@ -288,6 +288,14 @@ export const indexedDb = {
     await done;
   },
 
+  async deleteValue(storeName: typeof SETTINGS | typeof SESSIONS, key: string): Promise<void> {
+    const db = await openDatabase();
+    const tx = db.transaction(storeName, 'readwrite');
+    const done = transactionDone(tx);
+    tx.objectStore(storeName).delete(key);
+    await done;
+  },
+
   async renameLocal(identity: DocumentIdentity, name: string): Promise<void> {
     if (identity.storage !== 'local') throw new TypeError('Only local documents can be renamed here');
     const db = await openDatabase();

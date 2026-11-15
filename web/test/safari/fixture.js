@@ -67,9 +67,15 @@ window.google = {
         return {
           requestAccessToken() {
             state.tokenRequests += 1;
-            options.callback({ access_token: 'safari-smoke-token', expires_in: 3600 });
+            options.callback({
+              access_token: 'safari-smoke-token', expires_in: 3600,
+              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata'
+            });
           }
         };
+      },
+      hasGrantedAllScopes(response, ...scopes) {
+        return scopes.every(scope => response.scope.split(/\s+/u).includes(scope));
       },
       revoke(_token, callback) { callback?.(); }
     }
@@ -105,6 +111,13 @@ const driveFile = {
   modifiedTime: '2026-11-14T00:00:00.000Z', headRevisionId: 'safari-revision-1', parents: ['safari-folder']
 };
 const driveSource = 'title: Safari Drive mock\n\n[Verse]\nAm | F | C | G |\n';
+const appDataFileId = 'safari-app-state';
+let appDataVersion = 1;
+let appDataState;
+const appDataMetadata = () => ({
+  id: appDataFileId, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+  createdTime: '2026-11-15T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}`
+});
 const json = value => new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const originalFetch = window.fetch.bind(window);
 window.fetch = async (input, init = {}) => {
@@ -112,8 +125,24 @@ window.fetch = async (input, init = {}) => {
   if (url.origin !== 'https://www.googleapis.com') return originalFetch(input, init);
   const method = (init.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   state.driveRequests.push({ method, path: url.pathname, query: url.search });
+  const requestBody = async () => {
+    if (typeof init.body === 'string') return init.body;
+    if (init.body instanceof Blob) return init.body.text();
+    if (input instanceof Request) return input.clone().text();
+    return '';
+  };
+  const parseAppData = body => [...body.matchAll(/\{[^{}]*\}/gu)].map(match => match[0]).map(value => {
+    try { return JSON.parse(value); } catch { return undefined; }
+  }).find(value => value?.schemaVersion === 1 && Array.isArray(value.openDriveFileIds));
   if (url.pathname === '/drive/v3/about') return json({ user: { permissionId: 'safari-smoke', emailAddress: 'safari-smoke@example.test' } });
-  if (url.pathname === '/drive/v3/files' && method === 'GET') return json({ files: [driveFile] });
+  if (url.pathname === '/drive/v3/files' && method === 'GET') {
+    if (url.searchParams.get('spaces') === 'appDataFolder') return json({ files: appDataState ? [appDataMetadata()] : [] });
+    return json({ files: [driveFile] });
+  }
+  if (url.pathname === `/drive/v3/files/${appDataFileId}`) {
+    if (!appDataState) return new Response('', { status: 404 });
+    return url.searchParams.get('alt') === 'media' ? json(appDataState) : json(appDataMetadata());
+  }
   if (url.pathname === '/drive/v3/files/safari-folder') {
     return json({ id: 'safari-folder', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' });
   }
@@ -121,6 +150,18 @@ window.fetch = async (input, init = {}) => {
     return url.searchParams.get('alt') === 'media'
       ? new Response(driveSource, { status: 200, headers: { ETag: '"safari-etag"' } })
       : json(driveFile);
+  }
+  if (url.pathname === '/upload/drive/v3/files' && method === 'POST' && url.searchParams.get('uploadType') === 'multipart') {
+    appDataState = parseAppData(await requestBody());
+    if (!appDataState) return new Response(JSON.stringify({ error: 'Missing appData state JSON' }), { status: 400 });
+    return json(appDataMetadata());
+  }
+  if (url.pathname === `/upload/drive/v3/files/${appDataFileId}` && method === 'PATCH') {
+    const candidate = parseAppData(await requestBody());
+    if (!candidate) return new Response(JSON.stringify({ error: 'Invalid appData state JSON' }), { status: 400 });
+    appDataState = candidate;
+    appDataVersion += 1;
+    return json(appDataMetadata());
   }
   if (url.pathname.startsWith('/upload/drive/v3/files')) return json({ ...driveFile, version: '2' });
   return new Response(JSON.stringify({ error: `Unhandled Safari mock request: ${method} ${url.pathname}` }), {

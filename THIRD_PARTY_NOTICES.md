@@ -2,6 +2,43 @@
 
 The GuitarDSL extension bundles the following third-party material.
 
+## Google Drive product icon
+
+The Web app includes Google's official 2026 Google Drive color product icon. The source PNG is used without recoloring or other alteration; the browser may resize it for display.
+
+- Asset: `media/icons/google-drive-2026-color.png`
+- Source: https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png
+- Brand guidance: https://developers.google.com/workspace/drive/api/guides/branding?hl=en
+- Rights and use: Google Drive and the Google Drive logo are trademarks of Google LLC. Use follows Google's Drive API branding guidance.
+
+## CodeMirror 6
+
+The standalone Web app uses CodeMirror 6 for source editing. Packages: @codemirror/autocomplete@6.20.4, @codemirror/commands@6.11.1, @codemirror/language@6.13.1, @codemirror/lint@6.9.8, @codemirror/search@6.7.2, @codemirror/state@6.7.6, @codemirror/view@6.43.15, and the transitive @codemirror/streamparser@6.0.0.
+
+- Project: https://codemirror.net/
+
+MIT License
+
+Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
 ## Beat This! (`small0` model weights)
 
 The local Audio MIR beat tracker embeds the Beat This! `small0` model weights, converted to ONNX, in `media/audio-mir-wasm/guitardsl_audio_mir_bg.wasm`.

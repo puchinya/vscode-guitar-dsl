@@ -3,8 +3,16 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-14
+- **最終更新日**: 2026-11-15
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+
+## Issue #172: Web Compact IDE
+
+- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の2026-11-15レビュー5点を実装修正し、コードcommit `8e39420` を同PRへpushした。部分OAuth許可の拒否、同期失敗後の確認付き切断、同一タブCloseのPromise共有、SVG寸法/Problems導線の仕様訂正、共有Preview差分の除去を含む。GitHub Required Checksは [run 43691257311](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257311) と [run 43691257351](https://github.com/puchinya/vscode-guitar-dsl/actions/runs/43691257351) で4/4 PASS。Issue #172 は `phase:review`、PRは未マージ。
+- **適用範囲**: 承認済み統合契約 Issue comment `6887610090`、23,527 bytes、SHA-256 `cd672d20cac9233dabdf514632db589c0125af310fc370d51eb3ab1e4d1ad943` を照合済み。Google Cloud OAuth同意画面の本番変更と実OAuth/Drive検証は未実施。トークンはメモリ内のみ。
+- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、日本語Darkの接続Drive・複数Local文書・実診断を含む参照状態、初回Drive接続、File/Edit/View、Explorer/Inspector/Problemsのメニュー、ヘッダーidle/hover/keyboard focusを取得。DOMRectで領域寸法とProblems列の整列を計測。
+- **ブラウザー検証**: Web unit 45/45 PASS、Playwright Chromium 68/68 PASS、Playwright WebKit 68/68 PASS、SafariDriver smoke 7/7 PASS (macOS arm64 / Safari 26.6.2)。部分スコープ、初回appData 403後の切断、PATCH失敗後のA→B→A切替とpending復帰、同一タブCloseとremote restoreの競合を確認した。Safari UI Undo/Redo・OSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はNOT RUN。
+- **最終ゲート**: `npm run compile`、`npm run build:web`、`npm run vscode:prepublish`、VSIX inventory 1,256項目、`check:help`、`check:ai`、`validate-docs --issue 172`、`git diff --check` はPASS。`npm test` のroot unit 1,138/1,138とVS Code/Electron E2E 131 passing / 6 pendingはPASS。その後の並列Web browser runは134/136で終了し、既存Preview edit E2E 1件とWebKit geometry E2E 1件が失敗した。両ブラウザーを分離したRequired Check相当は各68/68 PASS。Web unit 45/45、Safari smoke 7/7もPASS。Viteは500 kB超chunkを警告。prepublishのwasm-bindgen事前ビルド取得は非対応プラットフォームのためCargo fallbackで成功。
 
 ## Issue #166: Web SPA 版 GuitarDSL
 
