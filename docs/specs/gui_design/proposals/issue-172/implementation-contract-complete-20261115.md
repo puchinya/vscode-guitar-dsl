@@ -80,7 +80,16 @@
 ## 10. Completion Report
 変更ファイル、全チェック結果、テストPASS/FAIL/NOT RUN、最新HEAD実画像/DOMRect、未検証platform・Google実OAuth/consent、契約逸脱とIssue #168の阻害、commit SHA、**PR URL (https://github.com/puchinya/vscode-guitar-dsl/pull/173)**、`Closes #172`とレビュー状態を報告。commit/pushのみでは完了としない。権限/認証/CI/PR workflowで阻害された場合は正確なエラー付き**BLOCKED**。
 
-### Visual References (authoritative for Web shell; shared preview decorative only)
+### Visual References (current; shared preview itself unchanged)
+
+**Final SVGs for this contract (these three supersede earlier UI drawings where they differ):**
+- [Complete Web Compact shell 1600×900](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-final-shell-20261115.svg) — File/Edit/View, far-right Settings, Google Drive status, left Explorer+Problems/right Inspector, CodeMirror, zero-warning badge hidden. Guitar icon is the shape from `media/icons/guitardsl-sidebar.svg`. Shared score content is illustrative only.
+- [File / Edit / View menu contents](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-final-menu-20261115.svg) — 3 menus, "コピーをダウンロード", layout reset in View, no Window menu.
+- [Explorer Google Drive actions + first-connect confirmation](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-drive-explorer-first-connect-20261115.svg) — File Picker, Folder Picker, confirmed visible GuitarDSL folder creation.
+
+![Consolidated 1600x900 reference](https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-final-shell-20261115.svg)
+
+**Legacy supplemental SVGs (geometry/icon shape only; old labels/layout superseded):**
 - 統合画面: [`web-compact-workspace.svg`](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-workspace.svg); グリッド: [`web-compact-layout-geometry.svg`](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-layout-geometry.svg); SVGアイコン: [`web-compact-icons.svg`](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-icons.svg); パネル補正: [`web-compact-panel-chrome-correction.svg`](https://github.com/puchinya/vscode-guitar-dsl/blob/feature/172-compact-ui-svg/docs/specs/gui_design/proposals/issue-172/web-compact-panel-chrome-correction.svg)。
 - **最新画面決定 (2026-11-15):** 画面v4/3メニューバー案（File/Edit/Viewのみ、window廃止、View末尾にreset、Fileのコピーをダウンロード）、Explorer Google Drive Picker/初回確認ダイアログ案。これらは上述の具体的なテキスト契約を優先し、過去のSVGに残る旧表記・旧レール・仮データは適用しない。
 - Google一次資料: https://developers.google.com/workspace/drive/api/guides/appdata ; https://developers.google.com/workspace/drive/api/guides/api-specific-auth ; https://developers.google.com/workspace/drive/api/guides/branding ; https://developers.google.com/workspace/drive/picker/reference/picker.pickerbuilder.setappid
