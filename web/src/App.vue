@@ -16,10 +16,21 @@ const systemDark = ref(systemTheme.matches);
 const updateSystemTheme = (event: MediaQueryListEvent) => { systemDark.value = event.matches; };
 systemTheme.addEventListener('change', updateSystemTheme);
 const disposeController = () => props.controller.dispose();
-onMounted(() => window.addEventListener('pagehide', disposeController, { once: true }));
+const handlePageHide = (event: PageTransitionEvent) => {
+  if (event.persisted) dispatch({ type: 'lifecycle.pagehide', persisted: true });
+  else disposeController();
+};
+const handlePageShow = (event: PageTransitionEvent) => {
+  if (event.persisted) dispatch({ type: 'lifecycle.pageshow', persisted: true });
+};
+onMounted(() => {
+  window.addEventListener('pagehide', handlePageHide);
+  window.addEventListener('pageshow', handlePageShow);
+});
 onBeforeUnmount(() => {
   systemTheme.removeEventListener('change', updateSystemTheme);
-  window.removeEventListener('pagehide', disposeController);
+  window.removeEventListener('pagehide', handlePageHide);
+  window.removeEventListener('pageshow', handlePageShow);
   disposeController();
 });
 const theme = computed(() => snapshot.value.theme === 'system' ? (systemDark.value ? 'dark' : 'light') : snapshot.value.theme);

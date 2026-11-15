@@ -92,6 +92,8 @@ export interface WorkspaceViewSnapshot {
 }
 
 export type WorkspaceCommand =
+  | { type: 'lifecycle.pagehide'; persisted: boolean }
+  | { type: 'lifecycle.pageshow'; persisted: boolean }
   | { type: 'document.create' }
   | { type: 'document.open-local'; identity: Readonly<DocumentIdentity> }
   | { type: 'document.open-drive'; identity: Readonly<DocumentIdentity>; accountId: string }

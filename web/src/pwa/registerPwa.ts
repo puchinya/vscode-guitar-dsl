@@ -2,6 +2,8 @@ import { registerSW } from 'virtual:pwa-register';
 
 export interface ReloadPreparation {
   prepareForReload(): Promise<{ ok: true } | { ok: false; reason: string }>;
+  revalidateForActivation(): { ok: true } | { ok: false; reason: string };
+  cancelPreparation(): void;
 }
 
 export interface PwaUpdateSnapshot {
@@ -79,11 +81,19 @@ export function registerPwa(preparation: ReloadPreparation): PwaRuntime {
         const prepared = await preparation.prepareForReload();
         if (disposed) return;
         if (!prepared.ok) {
+          preparation.cancelPreparation();
           publish({ ...current, updating: false, blockedReason: prepared.reason });
+          return;
+        }
+        const finalCheck = preparation.revalidateForActivation();
+        if (!finalCheck.ok) {
+          preparation.cancelPreparation();
+          publish({ ...current, updating: false, blockedReason: finalCheck.reason });
           return;
         }
         await updateServiceWorker(true);
       } catch (error) {
+        preparation.cancelPreparation();
         publish({
           ...current,
           updating: false,
@@ -98,6 +108,7 @@ export function registerPwa(preparation: ReloadPreparation): PwaRuntime {
     dispose() {
       if (disposed) return;
       disposed = true;
+      preparation.cancelPreparation();
       if (updateCheckTimer !== undefined) window.clearInterval(updateCheckTimer);
       window.removeEventListener('online', updateWindow);
       window.removeEventListener('offline', updateWindow);

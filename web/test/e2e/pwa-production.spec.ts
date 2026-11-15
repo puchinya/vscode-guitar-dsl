@@ -11,6 +11,7 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   };
   let holdDrivePatch = false;
   let holdAppDataPatch = false;
+  let drivePatchCount = 0;
   let startDrivePatch!: () => void;
   let releaseDrivePatch!: () => void;
   let startAppDataPatch!: () => void;
@@ -77,6 +78,7 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
         version: String(driveVersion), modifiedTime: `t${driveVersion}`, headRevisionId: `r${driveVersion}`, parents: ['folder-account-a'] });
     }
     if (url.pathname === '/upload/drive/v3/files/drive-song' && request.method() === 'PATCH') {
+      drivePatchCount += 1;
       if (holdDrivePatch) {
         startDrivePatch();
         await drivePatchGate;
@@ -190,7 +192,7 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   await page.locator('#save-document').click();
   await drivePatchStarted;
   await page.getByRole('button', { name: 'Update', exact: true }).click();
-  await expect(page.locator('.pwa-update-blocked')).toContainText('Google Drive operation to finish');
+  await expect(page.locator('.pwa-update-blocked')).toContainText('current Google Drive operations to finish');
   expect(await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.scriptURL)).toBe(activeWorkerBeforeGate);
   expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(true);
   releaseDrivePatch();
@@ -199,15 +201,51 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
 
   holdAppDataPatch = true;
   const localTab = page.locator('#open-tabs [role="tab"]').filter({ hasText: 'Offline recovery.guitardsl' });
+  const driveTab = page.locator('#open-tabs [role="tab"]').filter({ hasText: 'Drive Song.guitardsl' });
+  const driveDraftDuringGate = 'title: Drive draft during appData wait\n';
+  await editor.fill(driveDraftDuringGate);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
   await localTab.click();
   await appDataPatchStarted;
+  await driveTab.click();
+  await expect(page.locator('.cm-content')).toContainText('Drive draft during appData wait');
+  const drivePatchesBeforeGate = drivePatchCount;
   const reload = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Update', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  const sourceBeforeRejectedInput = await page.locator('.cm-content').innerText();
+  const editorAcceptedFocus = await page.locator('.cm-content').evaluate(element => {
+    (element as HTMLElement).focus();
+    return document.activeElement === element;
+  });
+  expect(editorAcceptedFocus).toBe(false);
+  await page.keyboard.insertText('must stay blocked');
+  expect(await page.locator('.cm-content').innerText()).toBe(sourceBeforeRejectedInput);
+  await page.locator('#save-document').evaluate(element => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+  expect(drivePatchCount).toBe(drivePatchesBeforeGate);
   expect(await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.scriptURL)).toBe(activeWorkerBeforeGate);
   releaseAppDataPatch();
   holdAppDataPatch = false;
   await reload;
+  const driveDraftPersisted = await page.evaluate(() => new Promise<boolean>(resolve => {
+    const request = indexedDB.open('guitardsl-workspace');
+    request.onerror = () => resolve(false);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('drafts', 'readonly');
+      const read = transaction.objectStore('drafts').getAll() as IDBRequest<Array<{ source: string }>>;
+      read.onsuccess = () => {
+        resolve(read.result.some(draft => draft.source.includes('Drive draft during appData wait')));
+        db.close();
+      };
+      read.onerror = () => { resolve(false); db.close(); };
+    };
+  }));
+  expect(driveDraftPersisted).toBe(true);
+  expect(drivePatchCount).toBe(drivePatchesBeforeGate);
   await page.locator('#open-tabs').getByRole('tab', { name: 'Offline recovery.guitardsl' }).click();
   await expect(page.locator('.cm-content')).toContainText('Offline draft after update');
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);

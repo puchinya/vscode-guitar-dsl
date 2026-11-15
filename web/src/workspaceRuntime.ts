@@ -221,6 +221,18 @@ const app = document.querySelector<HTMLElement>('.app-shell')!;
 const runtimeLifecycle = new AbortController();
 const runtimeListenerOptions: AddEventListenerOptions = { signal: runtimeLifecycle.signal };
 let runtimeDisposed = false;
+let workspaceInitializing = true;
+let reloadPreparationActive = false;
+let reloadBaselineMatches: (() => boolean) | undefined;
+let pageCacheSuspended = false;
+let pageCacheBaseline: { activeKey: string | null; identity: DocumentIdentity; accountId: string | undefined; source: string; revision: number; editorSource: string } | undefined;
+let deferredExplorerRefresh = false;
+let deferredAppDataSync = false;
+let previewAudioLockId: string | undefined;
+let previewAudioLockPurpose: 'reload' | 'bfcache' | undefined;
+let previewAudioLockAcknowledged = false;
+let previewAudioLockSequence = 0;
+const previewAudioStopWaiters = new Map<string, { resolve(stopped: boolean): void; timeout: number }>();
 let workspaceResizeObserver: ResizeObserver | undefined;
 let removePreviewMessageListener = () => {};
 let unsubscribePwaRuntime = () => {};
@@ -253,6 +265,9 @@ let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
 let driveConnectInProgress = false;
 let activeDriveOperations = 0;
+let activeDriveListOperations = 0;
+let activeDriveReadOperations = 0;
+let activeDriveWorkflowOperations = 0;
 let appDataSyncTimer = 0;
 let appDataSyncQueue: Promise<void> = Promise.resolve();
 let appDataPendingQueue: Promise<void> = Promise.resolve();
@@ -273,6 +288,107 @@ let workspaceMenuSnapshot: Readonly<WorkspaceMenuSnapshot> | undefined;
 let workspaceMenuActions: Array<WorkspaceMenuAction> = [];
 const workspaceListeners = new Set<(snapshot: Readonly<WorkspaceViewSnapshot>) => void>();
 let pwaRuntime: PwaRuntime;
+
+function syncWorkspaceInteractionLock(): void {
+  const locked = workspaceInitializing || moveToDriveInProgress || reloadPreparationActive || pageCacheSuspended;
+  app.inert = locked;
+  if (locked) app.setAttribute('aria-busy', 'true');
+  else app.removeAttribute('aria-busy');
+}
+
+function requestPreviewAudioLock(purpose: 'reload' | 'bfcache'): Promise<boolean> {
+  if (!activeTab()) return Promise.resolve(true);
+  if (previewAudioLockId) return Promise.resolve(previewAudioLockAcknowledged);
+  const frame = scoreFrame.contentWindow;
+  if (!frame) return Promise.resolve(false);
+  const leaseId = `workspace-${purpose}-${++previewAudioLockSequence}`;
+  previewAudioLockId = leaseId;
+  previewAudioLockPurpose = purpose;
+  previewAudioLockAcknowledged = false;
+  return new Promise(resolve => {
+    const timeout = window.setTimeout(() => {
+      const waiter = previewAudioStopWaiters.get(leaseId);
+      if (!waiter) return;
+      previewAudioStopWaiters.delete(leaseId);
+      waiter.resolve(false);
+    }, 2000);
+    previewAudioStopWaiters.set(leaseId, { resolve, timeout });
+    frame.postMessage({ command: 'progressionAudioLock', leaseId }, '*');
+  });
+}
+
+function releasePreviewAudioLock(purpose: 'reload' | 'bfcache'): void {
+  const leaseId = previewAudioLockId;
+  if (!leaseId || previewAudioLockPurpose !== purpose) return;
+  scoreFrame.contentWindow?.postMessage({ command: 'progressionAudioUnlock', leaseId }, '*');
+  const waiter = previewAudioStopWaiters.get(leaseId);
+  if (waiter) {
+    window.clearTimeout(waiter.timeout);
+    previewAudioStopWaiters.delete(leaseId);
+    waiter.resolve(false);
+  }
+  previewAudioLockId = undefined;
+  previewAudioLockPurpose = undefined;
+  previewAudioLockAcknowledged = false;
+}
+
+function suspendWorkspaceForBfcache(): void {
+  if (runtimeDisposed || pageCacheSuspended) return;
+  const tab = activeTab();
+  pageCacheBaseline = tab ? {
+    activeKey: state.activeKey,
+    identity: { ...tab.document.identity },
+    accountId: tab.accountId,
+    source: tab.source,
+    revision: tab.revision,
+    editorSource: sourceEditor.getText()
+  } : undefined;
+  pageCacheSuspended = true;
+  syncWorkspaceInteractionLock();
+  publishWorkspaceSnapshot();
+  if (progressionAudioLease.activeLeaseId) {
+    void stopCandidateAudition().then(() => {
+      if (pageCacheSuspended && !reloadPreparationActive) void requestPreviewAudioLock('bfcache');
+    }).catch(error => {
+      if (pageCacheSuspended) showMessage(shortError(error), 'error');
+    });
+  } else void requestPreviewAudioLock('bfcache');
+}
+
+function resumeWorkspaceFromBfcache(): void {
+  if (runtimeDisposed || !pageCacheSuspended) return;
+  const baseline = pageCacheBaseline;
+  pageCacheBaseline = undefined;
+  const tab = activeTab();
+  const documentStillMatches = baseline
+    ? Boolean(tab && state.activeKey === baseline.activeKey
+      && sameTabIdentity(tab, baseline.identity, baseline.accountId)
+      && tab.source === baseline.source && tab.revision === baseline.revision
+      && sourceEditor.getText() === baseline.editorSource)
+    : !tab;
+  pageCacheSuspended = false;
+  releasePreviewAudioLock('bfcache');
+  syncWorkspaceInteractionLock();
+  applyWorkspaceLayout();
+  applySplitRatio();
+  if (!documentStillMatches) {
+    workspaceMessage = {
+      text: state.locale === 'ja'
+        ? 'ブラウザー復帰中に文書状態が変わりました。内容を確認してください。'
+        : 'The document changed while the browser restored this page. Review its contents before saving.',
+      kind: 'error'
+    };
+  }
+  publishWorkspaceSnapshot();
+  if (deferredExplorerRefresh) {
+    deferredExplorerRefresh = false;
+    void refreshExplorerSnapshot();
+  }
+  if (deferredAppDataSync && !reloadPreparationActive && state.appDataSync !== 'error' && navigator.onLine) {
+    deferredAppDataSync = false;
+    scheduleDriveAppDataSync();
+  }
+}
 
 const editor = app.querySelector<HTMLElement>('.editor-surface')!;
 const sourceEditor = new SourceEditorSurface(editor, onEditorInput, renderCursorPosition);
@@ -357,6 +473,7 @@ function renderDriveOperationControls(): void {
 }
 
 async function withDriveOperation<T>(operation: () => Promise<T>): Promise<T> {
+  if (reloadPreparationActive || pageCacheSuspended) throw new Error('Drive operations are paused while the workspace is preparing to update or is in browser history cache.');
   activeDriveOperations += 1;
   renderDriveOperationControls();
   try { return await operation(); }
@@ -457,12 +574,15 @@ function publishWorkspaceSnapshot(): void {
 }
 
 async function refreshExplorerSnapshot(): Promise<void> {
+  if (runtimeDisposed) return;
+  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return; }
   try {
     localFileRows = await indexedDb.listDocuments('local');
   } catch (error) {
     state.storageReady = false;
     workspaceMessage = { text: `${strings().unavailable} ${shortError(error)}`, kind: 'error' };
   }
+  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; publishWorkspaceSnapshot(); return; }
   if (state.drive && state.account && state.folderId && navigator.onLine && !state.authExpired) {
     const drive = state.drive;
     const accountId = state.account.accountId;
@@ -473,6 +593,7 @@ async function refreshExplorerSnapshot(): Promise<void> {
       && state.driveGeneration === generation
       && state.folderId === folderId
       && !state.authExpired;
+    activeDriveListOperations += 1;
     try {
       const files = await drive.listFiles(folderId);
       if (isCurrentDriveList()) driveFileRows = files;
@@ -482,6 +603,8 @@ async function refreshExplorerSnapshot(): Promise<void> {
         markDriveAuthState(error);
         workspaceMessage = { text: shortError(error), kind: 'error' };
       }
+    } finally {
+      activeDriveListOperations = Math.max(0, activeDriveListOperations - 1);
     }
   } else driveFileRows = [];
   publishWorkspaceSnapshot();
@@ -580,6 +703,12 @@ async function clearPendingDriveAppData(
 
 function scheduleDriveAppDataSync(): void {
   if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
+  if (reloadPreparationActive || pageCacheSuspended) {
+    deferredAppDataSync = true;
+    state.appDataSync = 'pending';
+    renderStorageStatus();
+    return;
+  }
   const accountId = state.account.accountId;
   const drive = state.drive;
   const generation = state.driveGeneration;
@@ -590,7 +719,11 @@ function scheduleDriveAppDataSync(): void {
   void persistPendingDriveAppData(accountId, drive, generation, next).then(saved => {
     if (!saved || !driveSessionIsCurrent(accountId, drive, generation)) return;
     window.clearTimeout(appDataSyncTimer);
-    appDataSyncTimer = window.setTimeout(() => { appDataSyncTimer = 0; void persistDriveAppData(next); }, 900);
+    appDataSyncTimer = window.setTimeout(() => {
+      appDataSyncTimer = 0;
+      if (reloadPreparationActive || pageCacheSuspended) { deferredAppDataSync = true; return; }
+      void persistDriveAppData(next);
+    }, 900);
   }).catch(error => {
     if (!driveSessionIsCurrent(accountId, drive, generation)) return;
     state.appDataSync = 'error';
@@ -721,13 +854,28 @@ async function persistDriveAppData(next = driveWorkspaceState()): Promise<boolea
   return write;
 }
 
-async function flushDriveAppData(): Promise<boolean> {
-  if (appDataSyncTimer) {
+async function flushDriveAppData(shouldContinue: () => boolean = () => true): Promise<boolean> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (appDataSyncTimer) {
+      window.clearTimeout(appDataSyncTimer);
+      appDataSyncTimer = 0;
+    }
     await appDataPendingQueue;
-    return persistDriveAppData();
+    if (!shouldContinue() || state.appDataSync === 'error') return false;
+    if (state.appDataSync === 'syncing') {
+      await appDataSyncQueue;
+      if (!shouldContinue()) return false;
+      continue;
+    }
+    if (state.appDataSync === 'pending' || state.appDataPending || deferredAppDataSync) {
+      deferredAppDataSync = false;
+      const synced = await persistDriveAppData();
+      if (!synced || !shouldContinue()) return false;
+      continue;
+    }
+    if (state.appDataSync === 'idle' && !state.appDataPending && !appDataSyncTimer) return true;
   }
-  if (state.appDataSync === 'pending' || state.appDataSync === 'syncing') return appDataSyncQueue.then(() => state.appDataSync === 'idle');
-  return state.appDataSync === 'error' ? false : true;
+  return false;
 }
 
 async function persistSessions(_additionalDriveAccounts: string[] = []): Promise<void> {
@@ -2081,7 +2229,7 @@ async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriv
 }
 
 async function connectDrive(): Promise<void> {
-  if (driveConnectInProgress) return;
+  if (driveConnectInProgress || reloadPreparationActive || pageCacheSuspended) return;
   driveConnectInProgress = true;
   renderAll();
   try {
@@ -2172,8 +2320,9 @@ async function connectDrive(): Promise<void> {
 
 async function chooseDriveFolder(): Promise<void> {
   const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
-  if (!drive || !accountId) return;
+  if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  activeDriveWorkflowOperations += 1;
   try {
     const selected = await drive.pickFolder();
     if (!isCurrent() || !selected) return;
@@ -2187,13 +2336,15 @@ async function chooseDriveFolder(): Promise<void> {
       showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
     }
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
 
 async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
   const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
-  if (!drive || !accountId) return;
+  if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   if (!alreadyConfirmed && !window.confirm(strings().createFolderConfirm)) return;
+  activeDriveWorkflowOperations += 1;
   try {
     let folders = await drive.findAccessibleFolders();
     if (!isCurrent()) return;
@@ -2225,32 +2376,36 @@ async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
     await commitSelectedDriveFolder(folder);
     showMessage(state.locale === 'ja' ? 'GuitarDSL の保存先を設定しました。' : 'Set the GuitarDSL Drive destination.');
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
 
 async function openFromDrivePicker(): Promise<void> {
   const drive = state.drive;
   const accountId = state.account?.accountId;
-  if (!drive || !accountId) return;
+  if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
   const generation = state.driveGeneration;
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  activeDriveWorkflowOperations += 1;
   try {
     const selection = await drive.pickFile();
     if (!isCurrent() || !selection) return;
     if (!isSupportedDriveFile(selection.name)) throw new Error('Choose a .guitardsl or .gdsl file.');
     await openDriveDocument({ id: selection.id }, accountId, drive, generation);
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
 
 async function openDriveDocument(
   file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive,
   generation = state.driveGeneration, pickerRetry = false
 ): Promise<void> {
-  if (!drive || !accountId) return;
+  if (!drive || !accountId || reloadPreparationActive || pageCacheSuspended) return;
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   if (!isCurrent()) return;
   const identity = driveIdentity(file.id);
   const open = state.tabs.find(tab => sameTabIdentity(tab, identity, accountId));
   if (open) { await setActive(tabKey(open), isCurrent); return; }
+  activeDriveReadOperations += 1;
   try {
     const [saved, draft, latest] = await Promise.all([
       indexedDb.getSavedDocument(identity, accountId),
@@ -2314,6 +2469,8 @@ async function openDriveDocument(
       }
     }
     showMessage(shortError(error), 'error');
+  } finally {
+    activeDriveReadOperations = Math.max(0, activeDriveReadOperations - 1);
   }
 }
 
@@ -2361,6 +2518,7 @@ async function restoreDriveSession(
 }
 
 async function moveToDrive(tab = activeTab()): Promise<void> {
+  if (reloadPreparationActive || pageCacheSuspended) return;
   const drive = state.drive;
   const accountId = state.account?.accountId;
   const folderId = state.folderId;
@@ -2369,8 +2527,7 @@ async function moveToDrive(tab = activeTab()): Promise<void> {
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.tabs.includes(tab);
   if (!editorReadyForDocumentChange()) return;
   moveToDriveInProgress = true;
-  app.inert = true;
-  app.setAttribute('aria-busy', 'true');
+  syncWorkspaceInteractionLock();
   let resultMessage: { text: string; kind: 'info' | 'error' } | undefined;
   try {
     await stopCandidateAudition();
@@ -2421,9 +2578,8 @@ async function moveToDrive(tab = activeTab()): Promise<void> {
       : 'The Drive copy is verified and the local original remains. Retry Move to Drive to finish without creating a duplicate.', kind: 'error' };
     else { markDriveAuthState(error); resultMessage = { text: shortError(error), kind: 'error' }; }
   } finally {
-    app.inert = false;
-    app.removeAttribute('aria-busy');
     moveToDriveInProgress = false;
+    syncWorkspaceInteractionLock();
   }
   if (resultMessage) showMessage(resultMessage.text, resultMessage.kind);
 }
@@ -2626,13 +2782,20 @@ async function transitionPreviewUiMode(
 }
 
 function handlePreviewMessage(message: PreviewMessage, postToFrame: PreviewPostMessage): void {
-  const tab = activeTab();
-  if (!tab) return;
   if (message.command === 'progressionAudioPreviewStopped' && typeof message.leaseId === 'string') {
+    const waiter = previewAudioStopWaiters.get(message.leaseId);
+    if (message.leaseId === previewAudioLockId) previewAudioLockAcknowledged = true;
+    if (waiter) {
+      window.clearTimeout(waiter.timeout);
+      previewAudioStopWaiters.delete(message.leaseId);
+      waiter.resolve(true);
+    }
     progressionAudioLease.acknowledgePreviewStopped(message.leaseId);
     return;
   }
-  if (moveToDriveInProgress) return;
+  const tab = activeTab();
+  if (!tab) return;
+  if (moveToDriveInProgress || reloadPreparationActive || pageCacheSuspended) return;
   if (['contextMenu', 'previewVisualEdit', 'previewEditReference', 'previewOpenVisualSource', 'savePdf'].includes(String(message.command))
     && !sourceEditor.flushPendingEdit()) return;
   const isCurrent = message.documentUri === activeIdentityLabel(tab)
@@ -3350,9 +3513,18 @@ window.addEventListener('offline', () => {
   renderStorageStatus();
 }, runtimeListenerOptions);
 window.addEventListener('online', () => {
-  if (!appDataOfflinePending || !navigator.onLine) return;
-  appDataOfflinePending = false;
-  void persistDriveAppData();
+  if (!navigator.onLine) return;
+  if (reloadPreparationActive || pageCacheSuspended) {
+    deferredAppDataSync = deferredAppDataSync || appDataOfflinePending;
+    return;
+  }
+  if (appDataOfflinePending) {
+    appDataOfflinePending = false;
+    void persistDriveAppData();
+  } else if (deferredAppDataSync && state.appDataSync !== 'error') {
+    deferredAppDataSync = false;
+    scheduleDriveAppDataSync();
+  }
 }, runtimeListenerOptions);
 
 async function init(): Promise<void> {
@@ -3371,6 +3543,16 @@ async function init(): Promise<void> {
 }
 
 function applyWorkspaceCommand(command: WorkspaceCommand): void | Promise<void> {
+  if (runtimeDisposed) return;
+  if (command.type === 'lifecycle.pagehide') {
+    if (command.persisted) suspendWorkspaceForBfcache();
+    return;
+  }
+  if (command.type === 'lifecycle.pageshow') {
+    if (command.persisted) resumeWorkspaceFromBfcache();
+    return;
+  }
+  if (reloadPreparationActive || pageCacheSuspended) return;
   switch (command.type) {
     case 'document.create': return createNewScore();
     case 'document.open-local': return openLocalDocument(command.identity);
@@ -3539,38 +3721,152 @@ function handleSplitterCommand(command: Extract<WorkspaceCommand, { type: 'split
   }
 }
 
+function releaseReloadPreparation(): void {
+  if (!reloadPreparationActive) return;
+  reloadPreparationActive = false;
+  reloadBaselineMatches = undefined;
+  if (runtimeDisposed) return;
+  releasePreviewAudioLock('reload');
+  syncWorkspaceInteractionLock();
+  publishWorkspaceSnapshot();
+  if (deferredExplorerRefresh && !pageCacheSuspended) {
+    deferredExplorerRefresh = false;
+    void refreshExplorerSnapshot();
+  }
+  if (deferredAppDataSync && !pageCacheSuspended && state.appDataSync !== 'error' && navigator.onLine) {
+    deferredAppDataSync = false;
+    scheduleDriveAppDataSync();
+  }
+}
+
 async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: string }> {
   const blocked = (ja: string, en: string) => ({ ok: false as const, reason: state.locale === 'ja' ? ja : en });
-  if (sourceEditor.hasPendingEdit() && !sourceEditor.flushPendingEdit()) {
-    return blocked('日本語入力を確定してから更新してください。', 'Finish the current text composition before updating.');
+  if (reloadPreparationActive) return blocked('更新の準備がすでに進行中です。', 'An update is already being prepared.');
+  if (pageCacheSuspended || runtimeDisposed) return blocked('ワークスペース復帰後にもう一度更新してください。', 'Resume the workspace before preparing an update.');
+
+  // Lock synchronously before the first await. The browser's inert boundary blocks native input,
+  // while applyWorkspaceCommand/withDriveOperation reject synthetic and late commands.
+  reloadPreparationActive = true;
+  syncWorkspaceInteractionLock();
+  publishWorkspaceSnapshot();
+  const fail = (ja: string, en: string) => {
+    releaseReloadPreparation();
+    return blocked(ja, en);
+  };
+  if (!sourceEditor.flushPendingEdit()) {
+    return fail('日本語入力を確定してから更新してください。', 'Finish the current text composition before updating.');
   }
-  if (activeDriveOperations > 0) {
-    return blocked('Google Drive の処理が完了してから更新してください。', 'Wait for the current Google Drive operation to finish before updating.');
-  }
-  for (const tab of state.tabs) {
-    if (!hasUnpersistedDraft(tab)) continue;
-    if (!await saveDraftNow(tab)) return blocked('未保存の下書きをローカル保存できませんでした。', 'A draft could not be saved locally before updating.');
-  }
-  if (state.appDataSync === 'pending' || state.appDataSync === 'syncing' || state.appDataSync === 'error'
-    || appDataSyncTimer || state.appDataPending) {
-    const synced = await flushDriveAppData();
-    if (!synced || state.appDataSync !== 'idle' || state.appDataPending) {
+
+  const baseline = {
+    activeKey: state.activeKey,
+    tabs: state.tabs.map(tab => ({
+      tab, key: tabKey(tab), identity: { ...tab.document.identity }, accountId: tab.accountId,
+      source: tab.source, revision: tab.revision
+    }))
+  };
+  const baselineMatches = (): boolean => state.activeKey === baseline.activeKey
+    && state.tabs.length === baseline.tabs.length
+    && baseline.tabs.every((saved, index) => {
+      const tab = state.tabs[index];
+      return tab === saved.tab && tabKey(tab) === saved.key && sameTabIdentity(tab, saved.identity, saved.accountId)
+        && tab.source === saved.source && tab.revision === saved.revision;
+    })
+    && (activeTab()
+      ? sourceEditor.getText() === activeTab()!.source.replace(/\r\n?/gu, '\n')
+      : sourceEditor.getText() === '');
+  reloadBaselineMatches = baselineMatches;
+  const validate = (requireDrafts: boolean, requireAppDataIdle: boolean): { ok: true } | { ok: false; reason: string } => {
+    if (!reloadPreparationActive || runtimeDisposed) return blocked('更新準備が中断されました。', 'Update preparation was interrupted.');
+    if (pageCacheSuspended) return blocked('ページ復帰後にもう一度確認してください。', 'Recheck the workspace after it resumes from browser history.');
+    if (!baselineMatches()) return blocked('更新準備中に文書が変わりました。編集状態を確認してから再試行してください。', 'A document changed during update preparation. Review the edits and try again.');
+    if (sourceEditor.hasPendingEdit()) return blocked('確定していない編集があります。入力を完了してから再試行してください。', 'An editor change is still pending. Finish the input and try again.');
+    if (moveToDriveInProgress || driveConnectInProgress || restoringDriveSession
+      || activeDriveOperations > 0 || activeDriveListOperations > 0
+      || activeDriveReadOperations > 0 || activeDriveWorkflowOperations > 0) {
+      return blocked('Google Drive の処理が完了してから更新してください。', 'Wait for current Google Drive operations to finish before updating.');
+    }
+    if (requireDrafts && state.tabs.some(tab => hasUnpersistedDraft(tab) || tab.saveStatus === 'saving')) {
+      return blocked('未保存の下書きをローカル保存できませんでした。', 'A draft could not be saved locally before updating.');
+    }
+    if (requireAppDataIdle && (state.appDataSync !== 'idle' || state.appDataPending || appDataSyncTimer || deferredAppDataSync)) {
       return blocked('Google Drive の設定同期が完了するまで更新できません。', 'Wait for Google Drive settings to finish syncing before updating.');
     }
+    return { ok: true };
+  };
+
+  let check = validate(false, false);
+  if (!check.ok) return fail(check.reason, check.reason);
+  for (const saved of baseline.tabs) {
+    if (!hasUnpersistedDraft(saved.tab)) continue;
+    const persisted = await saveDraftNow(saved.tab);
+    if (!persisted) return fail('未保存の下書きをローカル保存できませんでした。', 'A draft could not be saved locally before updating.');
+    check = validate(false, false);
+    if (!check.ok) return fail(check.reason, check.reason);
   }
-  if (sourceEditor.hasPendingEdit() || state.tabs.some(hasUnpersistedDraft)) {
-    return blocked('未保存の編集があります。保存が完了してから更新してください。', 'There are unpublished edits. Wait for local draft saving to finish before updating.');
+
+  const appDataNeedsFlush = state.appDataSync === 'pending' || state.appDataSync === 'syncing'
+    || state.appDataSync === 'error' || appDataSyncTimer > 0 || Boolean(state.appDataPending) || deferredAppDataSync;
+  if (appDataNeedsFlush) {
+    const synced = await flushDriveAppData(() => validate(false, false).ok);
+    if (!synced) return fail('Google Drive の設定同期が完了するまで更新できません。', 'Wait for Google Drive settings to finish syncing before updating.');
+    deferredAppDataSync = false;
+    check = validate(true, true);
+    if (!check.ok) return fail(check.reason, check.reason);
   }
-  if (progressionAudioLease.activeLeaseId) await stopCandidateAudition();
+  check = validate(true, true);
+  if (!check.ok) return fail(check.reason, check.reason);
+
   if (progressionAudioLease.activeLeaseId) {
-    return blocked('試聴を停止できませんでした。停止後に更新してください。', 'Audio playback could not be stopped. Stop it before updating.');
+    await stopCandidateAudition();
+    check = validate(true, true);
+    if (!check.ok) return fail(check.reason, check.reason);
   }
+  if (progressionAudioLease.activeLeaseId) {
+    return fail('試聴を停止できませんでした。停止後に更新してください。', 'Inspector audio could not be stopped. Stop it before updating.');
+  }
+  const previewStopped = await requestPreviewAudioLock('reload');
+  if (!previewStopped) return fail('Preview の再生を停止できませんでした。停止後に更新してください。', 'Preview playback could not be stopped. Stop it before updating.');
+  check = validate(true, true);
+  if (!check.ok) return fail(check.reason, check.reason);
   return { ok: true };
 }
 
-pwaRuntime = registerPwa({ prepareForReload });
+pwaRuntime = registerPwa({
+  prepareForReload,
+  revalidateForActivation() {
+    const blocked = (ja: string, en: string) => ({ ok: false as const, reason: state.locale === 'ja' ? ja : en });
+    if (runtimeDisposed) return blocked('ワークスペースが終了しています。', 'The workspace has been disposed.');
+    if (!reloadPreparationActive || pageCacheSuspended) {
+      return blocked('更新準備が安全な状態ではありません。', 'The workspace is not in a safe update-preparation state.');
+    }
+    if (!reloadBaselineMatches?.()) return blocked('更新準備中に文書が変わりました。編集状態を確認してから再試行してください。', 'A document identity or source revision changed during update preparation.');
+    const active = activeTab();
+    if (sourceEditor.hasPendingEdit() || active && sourceEditor.getText() !== active.source.replace(/\r\n?/gu, '\n')) {
+      return blocked('更新準備中にエディターの入力状態が変わりました。内容を確認してから再試行してください。', 'Editor input changed during update preparation.');
+    }
+    if (moveToDriveInProgress || driveConnectInProgress || restoringDriveSession
+      || activeDriveOperations > 0 || activeDriveListOperations > 0
+      || activeDriveReadOperations > 0 || activeDriveWorkflowOperations > 0) {
+      return blocked('更新準備中にGoogle Driveの処理が始まりました。処理完了後に再試行してください。', 'A Google Drive operation started during update preparation.');
+    }
+    if (state.tabs.some(tab => hasUnpersistedDraft(tab) || tab.saveStatus === 'saving')) {
+      return blocked('ローカルの下書き保存が完了していません。保存完了後に再試行してください。', 'A local draft is not fully persisted.');
+    }
+    if (state.appDataSync !== 'idle' || state.appDataPending || appDataSyncTimer || deferredAppDataSync) {
+      return blocked('Google Driveの設定同期が完了していません。同期完了後に再試行してください。', 'Google Drive application state is still pending.');
+    }
+    if (active && (!previewAudioLockId || previewAudioLockPurpose !== 'reload' || !previewAudioLockAcknowledged)) {
+      return blocked('Previewの再生停止を確認できませんでした。停止後に再試行してください。', 'Preview audio has not confirmed that it stopped.');
+    }
+    return { ok: true as const };
+  },
+  cancelPreparation: releaseReloadPreparation
+});
 unsubscribePwaRuntime = pwaRuntime.subscribe(() => publishWorkspaceSnapshot());
-window.addEventListener('online', () => { void refreshExplorerSnapshot(); }, runtimeListenerOptions);
+window.addEventListener('online', () => {
+  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return; }
+  void refreshExplorerSnapshot();
+}, runtimeListenerOptions);
 window.addEventListener('offline', () => { driveFileRows = []; publishWorkspaceSnapshot(); }, runtimeListenerOptions);
 
 function disposeWorkspaceRuntime(): void {
@@ -3594,6 +3890,11 @@ function disposeWorkspaceRuntime(): void {
   auditionCompletionTimer = 0;
   for (const timer of pendingAudioStopTimers.values()) window.clearTimeout(timer);
   pendingAudioStopTimers.clear();
+  for (const waiter of previewAudioStopWaiters.values()) {
+    window.clearTimeout(waiter.timeout);
+    waiter.resolve(false);
+  }
+  previewAudioStopWaiters.clear();
   for (const check of previewModeDraftChecks.values()) check.resolve(undefined);
   previewModeDraftChecks.clear();
   if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl);
@@ -3629,8 +3930,8 @@ export const workspaceRuntimeController: Omit<WebWorkspaceController, 'start'> &
 
 void init().finally(() => {
   if (runtimeDisposed) return;
-  app.inert = false;
-  app.removeAttribute('aria-busy');
+  workspaceInitializing = false;
+  syncWorkspaceInteractionLock();
   void refreshExplorerSnapshot();
   publishWorkspaceSnapshot();
 });

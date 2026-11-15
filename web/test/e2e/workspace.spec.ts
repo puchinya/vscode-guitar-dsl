@@ -3247,3 +3247,78 @@ test('keeps a narrow workspace usable', async ({ page }) => {
   await expect(page.locator('#source-pane')).toBeHidden();
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
 });
+
+test('preserves the mounted workspace and stops Preview and Inspector audio across persisted page transitions', async ({ page }) => {
+  await installFakeAudio(page);
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const preview = page.frameLocator('#score-frame');
+  const priorRevision = Number(await preview.locator('body').getAttribute('data-preview-document-version'));
+  await editor.fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await expect.poll(async () => Number(await preview.locator('body').getAttribute('data-preview-document-version')))
+    .toBeGreaterThan(priorRevision);
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
+  await preview.locator('#btn-play').click();
+  await expect(preview.locator('#btn-pause')).toBeEnabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  const originalEditor = await editor.evaluateHandle(element => element);
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+  expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
+
+  await page.getByRole('tab', { name: 'Progression' }).click();
+  await expect(page.locator('#candidate-list li').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Audition' }).click();
+  const audioStatus = page.locator('#progression-audio-status');
+  await expect(audioStatus).toHaveText('Audition playing.');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+  expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
+  await editor.fill('title: Workspace resumed\n');
+  await expect(page.locator('.cm-content')).toContainText('Workspace resumed');
+});
+
+test('resumes the same workspace after browser back when Chromium restores it from BFCache', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('title: BFCache history restore\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('.editor-surface').evaluate(element => {
+    (element as HTMLElement).dataset.issue174EditorToken = 'preserved-editor-view';
+  });
+  await page.evaluate(() => {
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) document.documentElement.dataset.issue174BfcacheRestored = 'true';
+    });
+  });
+
+  await page.goto('/?issue174-bfcache-away=1');
+  await page.goBack();
+  const restoredFromBfcache = await page.locator('html').getAttribute('data-issue174-bfcache-restored');
+  test.skip(restoredFromBfcache !== 'true', 'Chromium did not restore this run from BFCache.');
+
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.locator('.editor-surface')).toHaveAttribute('data-issue174-editor-token', 'preserved-editor-view');
+  await expect(page.locator('.cm-content')).toContainText('BFCache history restore');
+  await editor.fill('title: BFCache editor resumed\n');
+  await expect(page.locator('.cm-content')).toContainText('BFCache editor resumed');
+});

@@ -97,7 +97,7 @@ Save Drive changes explicitly; a normal save updates the same Drive file. If a c
 
 Open the app online once so it can save its static files. After that, you can start the installed GuitarDSL app offline, create/edit/restore scores stored on this device, view Preview, and export PDFs. Try PDF export after the first online visit so its Japanese fonts are available offline. Google Drive listing, sign-in, Picker, and remote saves are unavailable offline. Pending Drive changes stay as local drafts and are never shown as saved to Drive.
 
-When an update is ready, choose **Update** or **Later**. **Later** keeps the current app running. Updates wait while input or IME composition is active, a local draft is still saving, or Drive/app-state work is pending. After those operations finish, choose **Update** to stop playback and reload the app. CodeMirror undo history may not survive the reload.
+When an update is ready, choose **Update** or **Later**. **Later** keeps the current app running. After you choose **Update**, workspace input and Drive commands pause while the app saves local drafts and waits for Drive/app-state work to finish. If a safety check fails, the update stays waiting and you can continue editing and saving. Once the checks pass, playback stops and the app reloads. A page restored with the browser's Back or Forward button resumes its workspace without restarting playback. CodeMirror undo history may not survive an update reload.
 
 ### Score Preview
 
