@@ -8,11 +8,11 @@
 
 ## Issue #172: Web Compact IDE
 
-- **状態**: 最新のPR指摘に従いWebパネルを修正し、ChromeのシステムテーマでProblemsが白く残る問題とタブ名のコントラスト不足も修正。変更をPR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) へ提出し、再レビューとGitHub Required Checksを待つ。Explorerのファイル単位選択、32pxの行、InspectorのVariables初期表示、Problemsのアイコン付き列表示、メニューと閉じる/再表示を反映。コード・Driveアカウント境界・保存状態・共有Previewは維持する。
-- **適用範囲**: Issue #172 comment `6876057443`、SHA-256 `dc51abf1cb7492d7ea5fef24675858a0f6cf2fd498e38906ed4e0fbe1aa49d21` を照合済み。最新レビュー指摘 `6881800390` のWeb-only scope correctionと承認済みパネルSVGを適用。共有Preview/Inspector描画の変更はこのPRの受け入れ対象から延期。
-- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、接続Drive・複数Local文書・実診断を含む1600×900参照状態、Explorer/Inspectorのオプションメニューに加え、システム暗色の画面を取得。DOMRectでProblems見出しと診断行のグリッド一致、アイコン寸法、横はみ出しなしを確認。
-- **ブラウザー検証**: Playwright Chromium 56/56 PASS、Playwright WebKit 56/56 PASS、Web unit 34/34 PASS、SafariDriver smoke 7/7 PASS (macOS 26.6.2 / Safari 26.6.2)。テーマ切替、Driveルートの英日×4認証状態、Explorer/InspectorのContext Menu/Shift+F10を確認。Safari UI Undo/RedoとOSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はcontractどおりNOT RUN。
-- **最終ゲート**: `npm run compile`、`npm run build:web`、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。Web buildは500 kB超のchunk警告あり。`npm test` の既知のVS Code E2E Issue #158 `E2E-PB05` は前回 `130 passing / 6 pending / 1 failing`。このIssueのコードは変更していない。今回のPR push後にGitHub Required Checksと最新HEADのセルフレビューを確認する。
+- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の最新指摘に対応。ChromeのシステムテーマでProblemsが白く残る問題とアクティブタブ名のコントラスト不足を修正し、Drive appData同期、初回フォルダー確認、File/Edit/View操作、ExplorerとProblemsのレイアウトも統合契約に合わせた。Driveのアカウント境界・下書き保全・共有Previewの実装は維持する。PRは未マージ。
+- **適用範囲**: 承認済み統合契約 Issue comment `6887610090`、23,527 bytes、SHA-256 `cd672d20cac9233dabdf514632db589c0125af310fc370d51eb3ab1e4d1ad943` を照合済み。共有Preview/Inspector描画の変更は対象外。Google Cloud OAuth同意画面の本番変更と実OAuth/Drive検証は、ユーザーの明示確認を得るまで未実施。
+- **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、日本語Darkの接続Drive・複数Local文書・実診断を含む参照状態、初回Drive接続、File/Edit/View、Explorer/Inspector/Problemsのメニュー・各状態を取得。DOMRectで領域寸法とProblems列の整列を計測。
+- **ブラウザー検証**: Playwright Chromium 59/59 PASS、Playwright WebKit 59/59 PASS、Web unit 43/43 PASS、SafariDriver smoke 7/7 PASS (macOS arm64 / Safari 26.6.2)。Systemテーマ追従、Problemsとタブ文字の可読性、Drive接続・再接続、メニュー操作、WebKitのUndo/RedoとIMEを確認。Safari UI Undo/Redo・OSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はNOT RUN。
+- **最終ゲート**: `npm run compile`、`npm test`、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,256項目、Help/AI/Driveアイコンを含み、test/evidenceは含まない）、`check:help`、`check:ai`、`validate-docs --issue 172`、実装Contract照合、`git diff --check` はPASS。`npm test`: root unit 1,138件、VS Code E2E 131 pass / 6 pending、Web unit 43件、Chromium/WebKit 118件PASS。Web buildは500 kB超chunkの警告あり。prepublishのwasm-bindgen事前ビルド取得はプラットフォーム非対応で、Cargo fallbackにより成功。
 
 ## Issue #166: Web SPA 版 GuitarDSL
 

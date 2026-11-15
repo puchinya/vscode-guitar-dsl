@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements; Playwright Chromium and WebKit each passed 53/53, Web unit passed 34/34, and Apple Safari/SafariDriver passed 7/7.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements. Final browser checks passed: Playwright Chromium 59/59, Playwright WebKit 59/59, Web unit 43/43, and Apple Safari/SafariDriver 7/7 (Safari 26.6.2).
 
 Capture command:
 
@@ -21,6 +21,8 @@ Each image is 1600 × 900 CSS pixels.
 
 - [1280 × 800 Japanese, dark theme](desktop-1280x800-ja-dark.png)
 - [Reference-equivalent populated state: two local scores, connected Drive folder and file, selected local document, live diagnostic, Variables tab, 1600 × 900 Japanese dark](reference-state-1600x900-ja-dark.png)
+- [First Google Drive connection with folder setup choices](drive-first-connect-ja.png)
+- [File menu](menu-file-ja.png), [Edit menu](menu-edit-ja.png), [View menu](menu-view-ja.png)
 - Explorer roots: [On this device](menu-local-root-ja.png), [Google Drive](menu-drive-root-ja.png), [file actions](menu-explorer-ja.png)
 - Panel options: [Explorer](menu-explorer-options-ja.png), [Inspector](menu-inspector-options-ja.png)
 - [Tab context menu](menu-tab-ja.png)
@@ -55,8 +57,10 @@ Browser automation verifies initial geometry, the four keyboard- and pointer-res
 
 ## Browser checks
 
-- Playwright Chromium: 56/56 PASS on macOS arm64.
-- Playwright WebKit: 56/56 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
-- Web unit: 34/34 PASS.
+- Playwright Chromium: 59/59 PASS on macOS arm64.
+- Playwright WebKit: 59/59 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
+- Web unit: 43/43 PASS.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive using the Drive root keyboard menu.
-- Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive, and physical audio output are NOT RUN per the Safari acceptance contract.
+- Repository `npm test`: 1,138 root unit tests PASS; VS Code/Electron E2E 131 PASS / 6 pending; Web unit 43/43 and Web browser E2E 118/118 PASS.
+- `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, `npx @vscode/vsce ls` (1,256 entries), `check:help`, `check:ai`, `validate-docs --issue 172`, implementation-contract verification, and `git diff --check` PASS. The VSIX file list contains bilingual Help, AI reference, and the Drive logo; it excludes test and evidence paths. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform.
+- Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive and the Google Cloud consent-screen update, and physical audio output are NOT RUN. The live consent-screen change requires explicit user confirmation.

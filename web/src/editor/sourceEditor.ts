@@ -1,5 +1,5 @@
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, isolateHistory, redo as runRedo, redoDepth, selectAll as runSelectAll, undo as runUndo, undoDepth } from '@codemirror/commands';
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { lintGutter, setDiagnostics, type Diagnostic as CodeMirrorDiagnostic } from '@codemirror/lint';
 import { gotoLine, openSearchPanel, search, searchKeymap } from '@codemirror/search';
@@ -219,6 +219,41 @@ export class SourceEditorSurface {
 
   getSource(): string { return this.activeSource; }
   getText(): string { return this.view.state.doc.toString(); }
+  undo(): boolean { return runUndo(this.view); }
+  redo(): boolean { return runRedo(this.view); }
+  canUndo(): boolean { return undoDepth(this.view.state) > 0; }
+  canRedo(): boolean { return redoDepth(this.view.state) > 0; }
+  selectAll(): boolean { return runSelectAll(this.view); }
+  openSearch(): boolean { return openSearchPanel(this.view); }
+  openReplace(): boolean {
+    const opened = openSearchPanel(this.view);
+    requestAnimationFrame(() => this.view.dom.querySelector<HTMLInputElement>('.cm-search input[name="replace"]')?.focus());
+    return opened;
+  }
+  goToLine(): boolean { return gotoLine(this.view); }
+  async copy(): Promise<boolean> {
+    const selection = this.view.state.selection.main;
+    if (selection.empty) return false;
+    if (!navigator.clipboard?.writeText) throw new DOMException('Clipboard access is unavailable', 'NotAllowedError');
+    await navigator.clipboard.writeText(this.view.state.sliceDoc(selection.from, selection.to));
+    return true;
+  }
+  async cut(): Promise<boolean> {
+    const selection = this.view.state.selection.main;
+    if (selection.empty) return false;
+    if (!navigator.clipboard?.writeText) throw new DOMException('Clipboard access is unavailable', 'NotAllowedError');
+    await navigator.clipboard.writeText(this.view.state.sliceDoc(selection.from, selection.to));
+    this.view.dispatch({ changes: { from: selection.from, to: selection.to }, selection: { anchor: selection.from }, annotations: Transaction.userEvent.of('input.cut') });
+    return true;
+  }
+  async paste(): Promise<boolean> {
+    if (!navigator.clipboard?.readText) throw new DOMException('Clipboard access is unavailable', 'NotAllowedError');
+    const text = (await navigator.clipboard.readText()).replace(/\r\n?/gu, '\n');
+    const selection = this.view.state.selection.main;
+    if (!text && selection.empty) return false;
+    this.view.dispatch({ changes: { from: selection.from, to: selection.to, insert: text }, selection: { anchor: selection.from + text.length }, annotations: Transaction.userEvent.of('input.paste') });
+    return true;
+  }
   hasPendingEdit(): boolean { return this.publishPending || this.pendingComposition || this.compositionActive || this.view.composing; }
   setAccessibleName(label: string): void {
     this.host.setAttribute('aria-label', label);

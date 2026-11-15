@@ -494,21 +494,32 @@ try {
   await recordCheck('mocked-google-oauth-picker-drive-api', async () => {
     await click('#connect-drive');
     const menuOpened = await driver.executeScript(() => {
-      const menu = document.querySelector('#account-menu');
+      const menu = document.querySelector('#drive-menu');
       return Boolean(menu && !menu.hidden && menu.querySelector('button'));
     });
     if (!menuOpened) await driver.findElement(By.css('#connect-drive')).sendKeys(Key.ENTER);
     await waitUntil(async () => await driver.executeScript(() => {
-      const menu = document.querySelector('#account-menu');
+      const menu = document.querySelector('#drive-menu');
       return Boolean(menu && !menu.hidden && menu.querySelector('button'));
     }), 'Google Account menu did not open.');
-    const connectMenuAction = await driver.findElement(By.css('#account-menu button'));
+    const connectMenuAction = await driver.findElement(By.css('#drive-menu button'));
     await driver.executeScript(action => action.click(), connectMenuAction);
+    await waitUntil(async () => await driver.executeScript(() =>
+      document.querySelector('dialog[open] h2')?.textContent === 'Set up a Google Drive folder?'
+      || document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
+    'Mock Google OAuth connection did not reach folder setup or completion.', 10_000);
+    const firstConnectPrompt = await driver.executeScript(() => document.querySelector('dialog[open] h2')?.textContent === 'Set up a Google Drive folder?');
+    if (firstConnectPrompt) {
+      await driver.executeScript(() => {
+        const button = Array.from(document.querySelectorAll('dialog button')).find(candidate => candidate.textContent?.trim() === 'Later');
+        button?.click();
+      });
+    }
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
       'Mock Google OAuth connection did not complete.', 10_000).catch(async error => {
         const details = await driver.executeScript(() => ({
-          accountMenuHidden: document.querySelector('#account-menu')?.hidden,
-          accountMenuText: document.querySelector('#account-menu')?.textContent?.trim(),
+          driveMenuHidden: document.querySelector('#drive-menu')?.hidden,
+          driveMenuText: document.querySelector('#drive-menu')?.textContent?.trim(),
           tokenRequests: window.__guitardslSafariSmoke?.tokenRequests,
           appMessage: document.querySelector('#app-message')?.textContent?.trim()
         }));
@@ -529,11 +540,11 @@ try {
     }, driveRoot);
     await waitUntil(async () => await driver.executeScript(() => {
       const menu = document.querySelector('#context-menu');
-      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Open from Drive')));
+      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Open from Google Drive')));
     }), 'The connected Drive root menu did not open.');
     const openPicker = await driver.findElements(By.css('#context-menu button')).then(async buttons => {
-      for (const button of buttons) if ((await button.getText()).includes('Open from Drive')) return button;
-      throw new Error('Open from Drive action was not rendered in the connected Drive root menu.');
+      for (const button of buttons) if ((await button.getText()).includes('Open from Google Drive')) return button;
+      throw new Error('Open from Google Drive action was not rendered in the connected Drive root menu.');
     });
     await openPicker.sendKeys(Key.ENTER);
     await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),

@@ -1,4 +1,4 @@
-const TOKEN_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const TOKEN_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
 

@@ -27,6 +27,7 @@ import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type P
 import { ExplorerController } from './explorer/explorerController';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
 import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile } from './storage/googleDrive';
+import { DEFAULT_DRIVE_APPDATA_STATE, DriveAppDataError, DriveAppDataStore, type DriveAppDataSnapshot, type DriveAppDataState } from './storage/driveAppData';
 import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
@@ -65,6 +66,11 @@ interface AppState {
   drive?: GoogleDriveApi;
   folderId?: string;
   folderName?: string;
+  driveGeneration: number;
+  appDataStore?: DriveAppDataStore;
+  appDataSnapshot?: DriveAppDataSnapshot;
+  appDataSync: 'idle' | 'pending' | 'syncing' | 'error';
+  appDataError?: string;
   inspectorTab: InspectorTab;
   mobilePane: MobilePane;
   locale: 'en' | 'ja';
@@ -106,12 +112,14 @@ interface PreviewModeDraftCheck {
 }
 
 const DEFAULT_SOURCE = 'title: My song\n\ntempo: 96\n\n[Verse]\nC | G | Am | F |\n';
+const GUITAR_MARK_URL = new URL('../../media/icons/guitardsl-sidebar.svg', import.meta.url).href;
+const GOOGLE_DRIVE_LOGO_URL = new URL('../../media/icons/google-drive-2026-color.png', import.meta.url).href;
 
 const STRINGS = {
   en: {
-    files: 'Files', project: 'PROJECT', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect Drive', connectInline: 'Connect',
+    files: 'Files', project: 'EXPLORER', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect to Google Drive', connectInline: 'Connect',
     reconnect: 'Reconnect Drive', connecting: 'Connecting…', connectedAs: 'Connected as', disconnect: 'Disconnect',
-    folder: 'Choose folder', createFolder: 'Create GuitarDSL folder', openDrive: 'Open from Drive',
+    folder: 'Choose destination folder…', createFolder: 'Create GuitarDSL folder…', openDrive: 'Open from Google Drive…',
     addFile: 'Import file', source: 'Source', preview: 'Preview', inspector: 'Inspector', document: 'Document',
     variables: 'Variables', settings: 'Settings', progression: 'Progression', save: 'Save', saved: 'Saved locally',
     draft: 'Local draft saved', saving: 'Saving draft…', unsaved: 'Unsaved changes', downloadPdf: 'Download PDF',
@@ -146,11 +154,19 @@ const STRINGS = {
     goToSource: 'Go to source position', expand: 'Expand', collapse: 'Collapse',
     explorer: 'Explorer', toggleExplorer: 'Toggle Explorer', toggleInspector: 'Toggle Inspector',
     help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
+    menuFile: 'File', menuEdit: 'Edit', menuView: 'View', downloadCopy: 'Download a copy', driveRootOptions: 'Google Drive options',
+    account: 'Account', driveNotConnected: 'Not connected', driveConnecting: 'Connecting…', driveConnected: 'Connected', driveReauth: 'Reconnect required',
+    undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select all', find: 'Find…', replace: 'Replace…', goToLine: 'Go to line…',
+    folderPromptTitle: 'Set up a Google Drive folder?', folderPromptBody: 'Choose a destination for GuitarDSL scores. Existing folders only show files this app is authorized to access.',
+    createChoice: 'Create folder', chooseChoice: 'Choose existing folder…', laterChoice: 'Later', createFolderConfirm: 'Create a visible GuitarDSL folder in My Drive?',
+    appDataPending: 'Google Drive app state sync pending', appDataError: 'Google Drive app state could not be synchronized', appDataDuplicates: 'Multiple GuitarDSL app state files were found. The oldest file is in use; duplicates were retained.',
+    appDataConflictTitle: 'Google Drive settings changed elsewhere', appDataConflictBody: 'Reload the remote settings, or explicitly keep this device’s settings. A near-simultaneous update from another device may still be overwritten.',
+    reloadRemote: 'Reload remote', keepLocal: 'Keep this device’s settings', helpPopupBlocked: 'Your browser blocked the Help window. Use this link to open Help in a new tab:', openHelpLink: 'Open Help in a new tab', driveRootMenuOpen: 'Open from Google Drive…', driveRootMenuFolder: 'Choose destination folder…', driveRootMenuCreate: 'Create GuitarDSL folder…',
   },
   ja: {
-    files: 'ファイル', project: 'PROJECT', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Drive に接続', connectInline: '接続',
+    files: 'ファイル', project: 'EXPLORER', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Google Drive に接続', connectInline: '接続',
     reconnect: 'Drive に再接続', connecting: '接続中…', connectedAs: '接続中のアカウント', disconnect: '接続を解除',
-    folder: 'フォルダーを選択', createFolder: 'GuitarDSL フォルダーを作成', openDrive: 'Drive から開く',
+    folder: '保存先フォルダーを選択…', createFolder: 'GuitarDSL フォルダーを作成…', openDrive: 'Google Drive から開く…',
     addFile: 'ファイルを読み込む', source: 'ソース', preview: 'プレビュー', inspector: 'インスペクター', document: '文書',
     variables: '変数', settings: '設定', progression: 'コード進行', save: '保存', saved: 'ローカルに保存済み',
     draft: '下書きを保存済み', saving: '下書きを保存中…', unsaved: '未保存の変更', downloadPdf: 'PDF をダウンロード',
@@ -185,6 +201,14 @@ const STRINGS = {
     goToSource: 'ソース位置へ移動', expand: '展開', collapse: '折りたたむ',
     explorer: 'エクスプローラー', toggleExplorer: 'Explorer の表示を切り替え', toggleInspector: 'Inspector の表示を切り替え',
     help: 'ヘルプ', close: '閉じる', resetLayoutConfirm: 'ワークスペースのレイアウトを初期状態に戻しますか？',
+    menuFile: 'ファイル', menuEdit: '編集', menuView: '表示', downloadCopy: 'コピーをダウンロード', driveRootOptions: 'Google Drive のオプション',
+    account: 'アカウント', driveNotConnected: '未接続', driveConnecting: '接続中…', driveConnected: '接続済み', driveReauth: '再認証が必要',
+    undo: '元に戻す', redo: 'やり直す', cut: '切り取り', copy: 'コピー', paste: '貼り付け', selectAll: 'すべて選択', find: '検索…', replace: '置換…', goToLine: '行へ移動…',
+    folderPromptTitle: 'Google Drive の保存先を設定しますか？', folderPromptBody: 'GuitarDSL の楽譜を保存する場所を選んでください。既存フォルダー内でも、このアプリが認可されたファイルのみ表示できます。',
+    createChoice: 'フォルダーを作成', chooseChoice: '既存フォルダーを選択…', laterChoice: '後で', createFolderConfirm: 'マイドライブ直下に GuitarDSL フォルダーを作成しますか？',
+    appDataPending: 'Google Drive のアプリ状態は未同期です', appDataError: 'Google Drive のアプリ状態を同期できませんでした', appDataDuplicates: 'GuitarDSL のアプリ状態ファイルが複数あります。最も古いファイルを使用し、重複ファイルは残しました。',
+    appDataConflictTitle: 'Google Drive の設定が別の端末で変更されました', appDataConflictBody: 'Drive の設定を再読み込みするか、この端末の設定を優先するか選んでください。別端末とほぼ同時に更新すると、相手の変更を上書きする場合があります。',
+    reloadRemote: 'Drive から再読み込み', keepLocal: 'この端末の設定を優先', helpPopupBlocked: 'ブラウザーがヘルプ画面を開けませんでした。次のリンクから新しいタブで開いてください:', openHelpLink: 'ヘルプを新しいタブで開く', driveRootMenuOpen: 'Google Drive から開く…', driveRootMenuFolder: '保存先フォルダーを選択…', driveRootMenuCreate: 'GuitarDSL フォルダーを作成…',
   }
 } as const;
 
@@ -200,7 +224,8 @@ const state: AppState = {
   scoreSettingsSection: 'capo',
     audioStatus: '',
     splitRatio: 0.4, viewMode: 'split', explorerOpen: true, inspectorOpen: true,
-    explorerWidth: 220, inspectorWidth: 300, problemsOpen: true, problemsHeight: 200, authExpired: false
+    explorerWidth: 220, inspectorWidth: 300, problemsOpen: true, problemsHeight: 200, authExpired: false,
+    driveGeneration: 0, appDataSync: 'idle'
 };
 const webScoreSettingsSections = {
   capo: new CapoSection(), beginner: new BeginnerSection(), transpose: new TransposeSection()
@@ -212,17 +237,27 @@ let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
 let driveConnectInProgress = false;
 let activeDriveOperations = 0;
+let appDataSyncTimer = 0;
+let appDataSyncQueue: Promise<void> = Promise.resolve();
+let appDataOfflinePending = false;
+let restoringDriveSession = false;
+let helpBlobUrl = '';
 
 app.innerHTML = `
   <main class="app-shell" aria-label="GuitarDSL">
     ${WEB_ICON_SPRITE}
     <header class="topbar">
-      <div class="brand"><svg class="web-icon brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#ic-music"></use></svg><strong>GuitarDSL</strong></div>
-      <div class="workspace-name" id="workspace-name">My songs</div>
+      <div class="brand"><img class="brand-mark" src="${GUITAR_MARK_URL}" alt="" /><strong>GuitarDSL</strong></div>
+      <nav class="main-menu-bar" role="menubar" aria-label="Main menu">
+        <button type="button" id="menu-file-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">File</button>
+        <button type="button" id="menu-edit-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">Edit</button>
+        <button type="button" id="menu-view-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">View</button>
+      </nav>
       <div class="top-actions">
+        <button type="button" class="quiet-button icon-action drive-header-button" id="connect-drive" aria-label="Connect Google Drive" title="Connect Google Drive" aria-haspopup="menu" aria-expanded="false"><img class="google-drive-logo" src="${GOOGLE_DRIVE_LOGO_URL}" alt="" /><span id="drive-state-label">Not connected</span><span class="sr-only">Connect Google Drive</span></button>
         <button type="button" class="quiet-button icon-action" id="save-document" aria-label="Save" title="Save"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-save"></use></svg><span class="sr-only">Save</span></button>
         <button type="button" class="quiet-button icon-action" id="download-pdf" aria-label="Download PDF" title="Download PDF"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-pdf"></use></svg><span class="sr-only">Download PDF</span></button>
-        <button type="button" class="quiet-button icon-action" id="connect-drive" aria-label="Connect Drive" title="Connect Drive" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-account"></use></svg><span class="sr-only">Connect Drive</span></button>
+        <button type="button" class="quiet-button icon-action" id="account-button" aria-label="Account" title="Account" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-account"></use></svg><span class="sr-only">Account</span></button>
         <button type="button" class="quiet-button icon-action" id="help-button" aria-label="Help" title="Help"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-help"></use></svg><span class="sr-only">Help</span></button>
         <button type="button" class="quiet-button icon-action" id="settings-button" aria-label="Settings" title="Settings"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-settings"></use></svg><span class="sr-only">Settings</span></button>
       </div>
@@ -230,6 +265,8 @@ app.innerHTML = `
     <div class="workspace" id="workspace">
       <nav class="activity-bar" aria-label="Workspace tools">
         <button type="button" id="activity-explorer" aria-label="Toggle Explorer" title="Toggle Explorer" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-folder"></use></svg></button>
+        <span class="activity-spacer"></span>
+        <button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button>
       </nav>
       <aside class="file-list" aria-label="Files">
         <div class="pane-heading explorer-heading"><span id="files-heading">PROJECT</span><div class="panel-heading-actions"><button type="button" id="new-score" class="icon-action" aria-label="New score" title="New score"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-fileplus"></use></svg></button><button type="button" id="explorer-more" class="icon-action" aria-label="Explorer options" title="Explorer options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div></div>
@@ -247,10 +284,11 @@ app.innerHTML = `
         <section class="storage-section" data-storage-section="drive">
           <div class="storage-root-row">
             <button type="button" class="storage-expander" data-storage-expander="drive" aria-label="Collapse Google Drive" aria-expanded="true" aria-controls="drive-storage-content"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-down"></use></svg></button>
-            <svg class="web-icon root-icon drive-root-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-cloud"></use></svg>
+            <img class="root-icon drive-root-icon" src="${GOOGLE_DRIVE_LOGO_URL}" alt="" />
             <button type="button" data-storage="drive" class="storage-root-label" id="storage-drive">Google Drive</button>
             <span id="drive-status" class="drive-status-dot" aria-label="Connected to Google Drive" hidden></span>
             <button type="button" id="drive-connect-inline" class="drive-connect-inline" aria-label="Connect" title="Connect">Connect</button>
+            <button type="button" id="drive-root-more" class="icon-action drive-root-more" aria-label="Google Drive options" title="Google Drive options" aria-haspopup="menu" aria-expanded="false"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button>
           </div>
           <div class="storage-content" id="drive-storage-content">
             <div class="file-actions" id="drive-file-actions"></div>
@@ -309,12 +347,15 @@ app.innerHTML = `
       </section>
       <div class="tool-window-bar" role="group" aria-label="Tool windows">
         <button type="button" id="toggle-inspector" aria-label="Toggle Inspector" title="Toggle Inspector" aria-pressed="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-inspector"></use></svg><span class="sr-only">Toggle Inspector</span></button>
-        <button type="button" id="toggle-problems" aria-label="Problems" title="Problems" aria-expanded="true"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-problems"></use></svg><span id="tool-window-count">0</span><span class="sr-only">Problems</span></button>
       </div>
     </div>
     <footer class="statusbar" aria-label="Workspace status"><span id="status-problems">Errors 0 / Warnings 0</span><span id="status-cursor">Ln 1, Col 1</span><span class="status-spacer"></span><span class="preview-state sr-only" id="preview-state" aria-live="polite">Loading score</span><span class="status-dot" aria-hidden="true"></span><span class="saved-state" id="saved-state">Saved locally</span></footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden />
-    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
+    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-close"></use></svg></button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer">Open Help in a new tab</a></p><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
+    <div id="file-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="edit-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="view-menu" class="settings-menu command-menu" role="menu" hidden></div>
+    <div id="drive-menu" class="settings-menu" role="menu" hidden></div>
     <div id="account-menu" class="settings-menu" role="menu" hidden></div>
     <div id="settings-menu" class="settings-menu" role="menu" hidden></div>
     <div id="panel-menu" class="settings-menu" role="menu" hidden></div>
@@ -442,8 +483,7 @@ function shortError(error: unknown): string {
 function markDriveAuthState(error: unknown): void {
   if (error instanceof GoogleAuthError && error.code === 'expired' || error instanceof DriveApiError && error.status === 401) {
     state.authExpired = true;
-    const button = app.querySelector<HTMLButtonElement>('#connect-drive');
-    if (button) button.textContent = state.locale === 'ja' ? 'Drive に再接続' : 'Reconnect Drive';
+    renderAll();
   }
 }
 function showMessage(message: string, kind: 'info' | 'error' = 'info'): void {
@@ -491,18 +531,101 @@ async function setActive(key: string, isCurrent?: () => boolean): Promise<void> 
   void persistSessions();
 }
 
-async function persistDriveSession(accountId: string): Promise<void> {
-  const remoteTabs = state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId);
-  const remoteActive = remoteTabs.find(tab => tabKey(tab) === state.activeKey);
-  const previous = await indexedDb.getValue<WorkspaceSession>('sessions', `workspace-drive:${accountId}`).catch(() => undefined);
-  const active = remoteActive?.document.identity.fileId
-    ?? (previous?.active && remoteTabs.some(tab => tab.document.identity.fileId === previous.active) ? previous.active : null);
-  await indexedDb.setValue('sessions', `workspace-drive:${accountId}`, {
-    tabs: remoteTabs.map(tab => tab.document.identity.fileId), active
-  } satisfies WorkspaceSession);
+function driveWorkspaceState(): DriveAppDataState {
+  const previous = state.appDataSnapshot?.state ?? DEFAULT_DRIVE_APPDATA_STATE;
+  const accountId = state.account?.accountId;
+  const tabs = accountId ? state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId) : [];
+  const activeId = tabs.find(tab => tabKey(tab) === state.activeKey)?.document.identity.fileId ?? null;
+  const recent = activeId ? [activeId, ...previous.recentDriveFileIds.filter(id => id !== activeId)] : previous.recentDriveFileIds;
+  return {
+    ...previous,
+    selectedFolderId: state.folderId ?? previous.selectedFolderId,
+    openDriveFileIds: [...new Set(tabs.map(tab => tab.document.identity.fileId))].slice(0, 30),
+    activeDriveFileId: activeId,
+    recentDriveFileIds: [...new Set(recent)].slice(0, 50)
+  };
 }
 
-async function persistSessions(additionalDriveAccounts: string[] = []): Promise<void> {
+function scheduleDriveAppDataSync(): void {
+  if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
+  state.appDataSync = 'pending';
+  renderStorageStatus();
+  window.clearTimeout(appDataSyncTimer);
+  appDataSyncTimer = window.setTimeout(() => { appDataSyncTimer = 0; void persistDriveAppData(); }, 900);
+}
+
+async function persistDriveAppData(next = driveWorkspaceState()): Promise<boolean> {
+  window.clearTimeout(appDataSyncTimer);
+  appDataSyncTimer = 0;
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const store = state.appDataStore;
+  const generation = state.driveGeneration;
+  if (!accountId || !drive || !store || !state.appDataSnapshot) return false;
+  const write = appDataSyncQueue.then(async () => {
+    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+    const baseline = state.appDataSnapshot;
+    if (!baseline || JSON.stringify(baseline.state) === JSON.stringify(next)) {
+      state.appDataSync = 'idle';
+      appDataOfflinePending = false;
+      renderStorageStatus();
+      return true;
+    }
+    if (!navigator.onLine) {
+      appDataOfflinePending = true;
+      state.appDataSync = 'pending';
+      renderStorageStatus();
+      return false;
+    }
+    state.appDataSync = 'syncing';
+    renderStorageStatus();
+    try {
+      let result = await store.update(baseline, next);
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      if (result.kind === 'conflict') {
+        const choice = await appDataConflictDialog();
+        if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+        if (choice === 'local') result = await store.update(result.latest, next);
+        else {
+          state.appDataSnapshot = result.latest;
+          state.appDataSync = 'idle';
+          state.appDataError = undefined;
+          renderStorageStatus();
+          return true;
+        }
+        if (result.kind === 'conflict') {
+          state.appDataSnapshot = result.latest;
+          throw new DriveAppDataError('conflict', strings().appDataPending);
+        }
+      }
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      state.appDataSnapshot = result.snapshot;
+      state.appDataSync = 'idle';
+      state.appDataError = undefined;
+      appDataOfflinePending = false;
+      renderStorageStatus();
+      if (result.snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
+      return true;
+    } catch (error) {
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
+      state.appDataSync = 'error';
+      state.appDataError = shortError(error);
+      renderStorageStatus();
+      showMessage(`${strings().appDataError}: ${state.appDataError}`, 'error');
+      return false;
+    }
+  });
+  appDataSyncQueue = write.then(() => undefined, () => undefined);
+  return write;
+}
+
+async function flushDriveAppData(): Promise<boolean> {
+  if (appDataSyncTimer) return persistDriveAppData();
+  if (state.appDataSync === 'pending' || state.appDataSync === 'syncing') return appDataSyncQueue.then(() => state.appDataSync === 'idle');
+  return true;
+}
+
+async function persistSessions(_additionalDriveAccounts: string[] = []): Promise<void> {
   if (!state.storageReady) return;
   const localTabs = state.tabs.filter(tab => tab.document.identity.storage === 'local');
   const localActive = localTabs.find(tab => tabKey(tab) === state.activeKey);
@@ -510,17 +633,16 @@ async function persistSessions(additionalDriveAccounts: string[] = []): Promise<
     await indexedDb.setValue('sessions', 'workspace-local', {
       tabs: localTabs.map(tab => tab.document.identity.fileId), active: localActive?.document.identity.fileId ?? null
     } satisfies WorkspaceSession);
-    const accountIds = new Set(additionalDriveAccounts);
-    for (const tab of state.tabs) if (tab.document.identity.storage === 'drive' && tab.accountId) accountIds.add(tab.accountId);
-    if (state.account) accountIds.add(state.account.accountId);
-    for (const accountId of accountIds) await persistDriveSession(accountId);
+    scheduleDriveAppDataSync();
   } catch { state.storageReady = false; renderStorageStatus(); }
 }
 
 function renderStorageStatus(text?: string): void {
   const t = strings();
   const tab = activeTab();
-  const savedMessage = text ?? (!state.storageReady ? t.unavailable : !tab ? t.ready
+  const savedMessage = text ?? (state.appDataSync === 'error' ? `${t.appDataError}: ${state.appDataError ?? ''}`
+    : state.appDataSync === 'pending' || state.appDataSync === 'syncing' ? t.appDataPending
+      : !state.storageReady ? t.unavailable : !tab ? t.ready
     : tab.saveStatus === 'local-saved' ? t.saved
       : tab.saveStatus === 'drive-saved' ? (state.locale === 'ja' ? 'Drive に保存済み' : 'Saved to Drive')
         : tab.saveStatus === 'draft' ? t.draft
@@ -581,11 +703,14 @@ function renderDiagnostics(score: ParsedScore | undefined): void {
     ? `エラー ${errors} / 警告 ${warnings}` : `Errors ${errors} / Warnings ${warnings}`;
   app.querySelector('#error-count')!.textContent = String(errors);
   app.querySelector('#warning-count')!.textContent = String(warnings);
+  app.querySelector<HTMLElement>('.problem-count-errors')!.hidden = errors === 0;
+  app.querySelector<HTMLElement>('.problem-count-warnings')!.hidden = warnings === 0;
   app.querySelector('.problem-count-errors')!.classList.toggle('zero', errors === 0);
   app.querySelector('.problem-count-warnings')!.classList.toggle('zero', warnings === 0);
   app.querySelector('#problem-counts')!.setAttribute('aria-label', summary);
   app.querySelector('#status-problems')!.textContent = summary;
   app.querySelector('#tool-window-count')!.textContent = String(diagnostics.length);
+  app.querySelector<HTMLElement>('#tool-window-count')!.hidden = diagnostics.length === 0;
   if (!diagnostics.length) {
     const empty = document.createElement('p');
     empty.className = 'problems-empty';
@@ -1124,6 +1249,7 @@ function renderProblemsLabels(): void {
   setIconButton(toggle, 'problems', t.problems);
   const countBadge = document.createElement('span');
   countBadge.id = 'tool-window-count'; countBadge.textContent = count;
+  countBadge.hidden = Number(count) === 0;
   toggle.append(countBadge);
   setIconButton(app.querySelector<HTMLButtonElement>('#close-problems')!, 'close', t.closeProblems);
   setIconButton(app.querySelector<HTMLButtonElement>('#inspector-more')!, 'more', t.inspectorOptions);
@@ -1424,16 +1550,30 @@ function renderAll(): void {
   renderInspector();
   void renderExplorer();
   renderStorageStatus();
-  const connectLabel = driveConnectInProgress ? t.connecting : state.authExpired ? t.reconnect : state.account ? t.disconnect : t.connect;
-  setIconButton(app.querySelector<HTMLButtonElement>('#connect-drive')!, 'account', connectLabel);
+  const driveButton = app.querySelector<HTMLButtonElement>('#connect-drive')!;
   const connectedAccount = state.account?.emailAddress;
-  const accountButton = app.querySelector<HTMLButtonElement>('#connect-drive')!;
-  accountButton.title = connectedAccount && !state.authExpired ? `${t.connectedAs} ${connectedAccount} · ${connectLabel}` : connectLabel;
-  accountButton.dataset.connected = String(Boolean(connectedAccount && state.drive && !state.authExpired));
+  const driveStatus = driveConnectInProgress ? t.driveConnecting : state.authExpired ? t.driveReauth : state.account && state.drive ? t.driveConnected : t.driveNotConnected;
+  driveButton.setAttribute('aria-label', `${t.drive}: ${driveStatus}`);
+  driveButton.title = state.account && !state.authExpired
+    ? `${t.disconnect} ${t.drive} · ${driveStatus}${connectedAccount ? ` · ${connectedAccount}` : ''}`
+    : `${t.connect} · ${driveStatus}`;
+  driveButton.dataset.state = driveConnectInProgress ? 'connecting' : state.authExpired ? 'reauth' : state.account && state.drive ? 'connected' : 'disconnected';
+  driveButton.dataset.connected = String(Boolean(state.account && state.drive && !state.authExpired));
+  app.querySelector('#drive-state-label')!.textContent = driveStatus;
+  const accountButton = app.querySelector<HTMLButtonElement>('#account-button')!;
+  accountButton.title = connectedAccount ? `${t.account}: ${connectedAccount}` : t.account;
+  accountButton.setAttribute('aria-label', accountButton.title);
+  setIconButton(accountButton, 'account', accountButton.title);
   setIconButton(app.querySelector<HTMLButtonElement>('#save-document')!, 'save', t.save);
   setIconButton(app.querySelector<HTMLButtonElement>('#download-pdf')!, 'pdf', t.downloadPdf);
   setIconButton(app.querySelector<HTMLButtonElement>('#help-button')!, 'help', t.help);
   setIconButton(app.querySelector<HTMLButtonElement>('#settings-button')!, 'settings', t.settings);
+  app.querySelector('#menu-file-trigger')!.textContent = t.menuFile;
+  app.querySelector('#menu-edit-trigger')!.textContent = t.menuEdit;
+  app.querySelector('#menu-view-trigger')!.textContent = t.menuView;
+  app.querySelector('#files-heading')!.textContent = t.project;
+  app.querySelector('#drive-root-more')!.setAttribute('aria-label', t.driveRootOptions);
+  app.querySelector<HTMLButtonElement>('#drive-root-more')!.title = t.driveRootOptions;
   app.querySelector('#inspector-heading')!.textContent = t.inspector;
   app.querySelector('.file-list')!.setAttribute('aria-label', t.files);
   app.querySelector('.inspector')!.setAttribute('aria-label', t.inspector);
@@ -1441,7 +1581,6 @@ function renderAll(): void {
   app.querySelector('.score-pane')!.setAttribute('aria-label', state.locale === 'ja' ? '譜面プレビュー' : 'Score preview');
   app.querySelector('main')!.setAttribute('aria-label', 'GuitarDSL');
   sourceEditor.setAccessibleName(state.locale === 'ja' ? 'GuitarDSL ソースエディター' : 'GuitarDSL source editor');
-  app.querySelector('#workspace-name')!.textContent = state.activeStorage === 'drive' ? t.drive : t.local;
   renderProblemsLabels();
   const tab = activeTab();
   if (tab) {
@@ -1700,7 +1839,8 @@ async function handleDriveConflict(
   tab: OpenTab, latest: DriveFile, drive = state.drive, accountId = state.account?.accountId
 ): Promise<void> {
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const generation = state.driveGeneration;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   const choice = await conflictDialog();
   if (choice === 'cancel' || !isCurrent()) return;
   if (choice === 'reload') {
@@ -1750,8 +1890,8 @@ async function handleDriveConflict(
   catch (error) { if (isCurrent()) showMessage(shortError(error), 'error'); }
 }
 
-function driveSessionIsCurrent(accountId: string, drive: GoogleDriveApi): boolean {
-  return state.account?.accountId === accountId && state.drive === drive;
+function driveSessionIsCurrent(accountId: string, drive: GoogleDriveApi, generation = state.driveGeneration): boolean {
+  return state.account?.accountId === accountId && state.drive === drive && state.driveGeneration === generation;
 }
 
 function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
@@ -1771,21 +1911,39 @@ function conflictDialog(): Promise<'reload' | 'save-as' | 'cancel'> {
   });
 }
 
+function appDataConflictDialog(): Promise<'reload' | 'local'> {
+  const t = strings();
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const heading = document.createElement('h2'); heading.textContent = t.appDataConflictTitle;
+    const body = document.createElement('p'); body.textContent = t.appDataConflictBody;
+    const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
+    for (const [choice, label] of [['reload', t.reloadRemote], ['local', t.keepLocal]] as const) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.addEventListener('click', () => { dialog.close(); dialog.remove(); resolve(choice); }); buttons.append(button);
+    }
+    dialog.append(heading, body, buttons); document.body.append(dialog); dialog.showModal();
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); dialog.remove(); resolve('reload'); }, { once: true });
+  });
+}
+
 async function saveDriveCopy(
   tab: OpenTab, folderId?: string, drive = state.drive, accountId = state.account?.accountId,
-  isCurrent: () => boolean = () => !!drive && !!accountId && driveSessionIsCurrent(accountId, drive)
+  isCurrent?: () => boolean
 ): Promise<void> {
+  const generation = state.driveGeneration;
+  const current = isCurrent ?? (() => !!drive && !!accountId && driveSessionIsCurrent(accountId, drive, generation));
   if (!drive || !accountId || !folderId) throw new Error(strings().noFolder);
-  if (!isCurrent()) return;
+  if (!current()) return;
   if (activeTab() === tab && !editorReadyForDocumentChange()) return;
   if (tab.document.identity.storage === 'drive' && tab.accountId !== accountId) throw new Error(strings().reconnectOwner);
   const submitted = tabOperationSnapshot(tab);
   const copyName = `${tab.document.name.replace(/\.(guitardsl|gdsl)$/i, '')} (local copy).guitardsl`;
   await withDriveOperation(async () => {
     const file = await drive.createFile(folderId, copyName, submitted.source);
-    if (!isCurrent()) return;
+    if (!current()) return;
     const verified = await drive.getFile(file.id);
-    if (!isCurrent()) return;
+    if (!current()) return;
     if (verified.source !== submitted.source) throw new Error('Drive copy verification failed; the original draft was kept.');
     const doc: StoredDocument = {
       identity: driveIdentity(file.id), accountId, name: file.name,
@@ -1793,16 +1951,16 @@ async function saveDriveCopy(
       driveVersion: verified.file.version, driveModifiedTime: verified.file.modifiedTime, driveRevisionId: verified.file.headRevisionId,
       driveEtag: verified.etag, driveFolderId: verified.file.parents?.[0] ?? folderId
     };
-    if (!isCurrent()) return;
+    if (!current()) return;
     await indexedDb.upsertDriveDocument(doc);
-    if (!isCurrent()) return;
+    if (!current()) return;
     if (!editorReadyForDocumentChange()) return;
     if (!tabMatchesSnapshot(tab, submitted)) {
       if (state.tabs.includes(tab) && !await saveDraftNow(tab)) return;
-      if (!isCurrent()) return;
+      if (!current()) return;
       const activeBeforeCopy = state.activeKey;
-      await openDocument(doc, doc.source, accountId, true, isCurrent);
-      if (!isCurrent()) return;
+      await openDocument(doc, doc.source, accountId, true, current);
+      if (!current()) return;
       if (activeBeforeCopy && state.tabs.some(item => tabKey(item) === activeBeforeCopy)) {
         if (!editorReadyForDocumentChange()) return;
         state.activeKey = activeBeforeCopy;
@@ -1810,14 +1968,14 @@ async function saveDriveCopy(
       }
       renderAll();
       await persistSessions([accountId]);
-      if (!isCurrent()) return;
+      if (!current()) return;
       showMessage(state.locale === 'ja'
         ? 'Drive のコピーを保存しました。保存中に行った新しい編集は元のタブに保持しています。'
         : 'Saved the Drive copy. Newer edits made during upload remain in the original tab.');
       return;
     }
     const currentIndex = state.tabs.indexOf(tab);
-    if (!isCurrent()) return;
+    if (!current()) return;
     const existing = state.tabs.find(other => sameTabIdentity(other, doc.identity, accountId));
     if (existing) {
       if (!editorReadyForDocumentChange()) return;
@@ -1832,7 +1990,7 @@ async function saveDriveCopy(
       state.activeKey = tabKey(tab);
     }
     renderAll(); await persistSessions([accountId]);
-    if (!isCurrent()) return;
+    if (!current()) return;
     showMessage(state.locale === 'ja' ? 'ローカル版を別の Drive ファイルとして保存しました。' : 'Saved the local version as a new Drive file.');
   });
 }
@@ -1895,88 +2053,224 @@ async function importFile(file?: File): Promise<void> {
   } catch (error) { showMessage(shortError(error), 'error'); }
 }
 
-async function connectDrive(): Promise<void> {
-  if (state.account && !state.authExpired) {
-    await persistSessions();
-    try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
-    state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
-    renderAll(); await persistSessions(); return;
+function folderSetupDialog(): Promise<'create' | 'choose' | 'later'> {
+  const t = strings();
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog'); dialog.className = 'conflict-dialog';
+    const heading = document.createElement('h2'); heading.textContent = t.folderPromptTitle;
+    const body = document.createElement('p'); body.textContent = t.folderPromptBody;
+    const buttons = document.createElement('div'); buttons.className = 'dialog-actions';
+    for (const [choice, label] of [['create', t.createChoice], ['choose', t.chooseChoice], ['later', t.laterChoice]] as const) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.addEventListener('click', () => { dialog.close(); dialog.remove(); resolve(choice); }); buttons.append(button);
+    }
+    dialog.append(heading, body, buttons); document.body.append(dialog); dialog.showModal();
+    dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); dialog.remove(); resolve('later'); }, { once: true });
+  });
+}
+
+async function loadDriveAppData(accountId: string, drive: GoogleDriveApi, generation: number): Promise<DriveAppDataSnapshot | undefined> {
+  const store = new DriveAppDataStore(auth);
+  const existing = await store.load();
+  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  let snapshot = existing;
+  if (!snapshot) {
+    const [legacyFolder, legacySession] = await Promise.all([
+      indexedDb.getValue<unknown>('settings', `drive-folder:${accountId}`).catch(() => undefined),
+      indexedDb.getValue<unknown>('sessions', `workspace-drive:${accountId}`).catch(() => undefined)
+    ]);
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    const folderId = typeof legacyFolder === 'string' && legacyFolder ? legacyFolder : null;
+    const session = legacySession && typeof legacySession === 'object' ? legacySession as Partial<WorkspaceSession> : {};
+    const openDriveFileIds = Array.isArray(session.tabs) ? session.tabs.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+    const activeDriveFileId = typeof session.active === 'string' && openDriveFileIds.includes(session.active) ? session.active : null;
+    const migrated = Boolean(folderId || openDriveFileIds.length);
+    const initial: DriveAppDataState = {
+      ...DEFAULT_DRIVE_APPDATA_STATE,
+      selectedFolderId: folderId,
+      folderPrompt: folderId ? 'completed' : 'unasked',
+      openDriveFileIds: [...new Set(openDriveFileIds)].slice(0, 30),
+      activeDriveFileId,
+      recentDriveFileIds: activeDriveFileId ? [activeDriveFileId] : []
+    };
+    snapshot = await store.loadOrCreate(initial, true);
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    if (migrated) {
+      await Promise.all([
+        indexedDb.deleteValue('settings', `drive-folder:${accountId}`),
+        indexedDb.deleteValue('sessions', `workspace-drive:${accountId}`)
+      ]);
+    }
   }
+  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  state.appDataStore = store;
+  state.appDataSnapshot = snapshot;
+  state.appDataSync = 'idle';
+  state.appDataError = undefined;
+  return snapshot;
+}
+
+async function commitSelectedDriveFolder(folder: DriveFile, prompt: DriveAppDataState['folderPrompt'] = 'completed'): Promise<void> {
+  state.folderId = folder.id;
+  state.folderName = folder.name;
+  if (state.appDataSnapshot) await persistDriveAppData({ ...driveWorkspaceState(), selectedFolderId: folder.id, folderPrompt: prompt });
+  await renderExplorer();
+}
+
+async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriveApi, generation: number): Promise<void> {
+  const snapshot = state.appDataSnapshot;
+  if (!snapshot || snapshot.state.selectedFolderId || snapshot.state.folderPrompt !== 'unasked') return;
+  const choice = await folderSetupDialog();
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
+  if (choice === 'later') {
+    await persistDriveAppData({ ...snapshot.state, folderPrompt: 'deferred' });
+    return;
+  }
+  if (choice === 'choose') { await chooseDriveFolder(); return; }
+  await createDriveFolder(true);
+}
+
+async function connectDrive(): Promise<void> {
+  if (driveConnectInProgress) return;
   driveConnectInProgress = true;
   renderAll();
   try {
+    if (state.account && !state.authExpired) {
+      const synchronized = await flushDriveAppData();
+      if (!synchronized || state.appDataSync !== 'idle') {
+        showMessage(strings().appDataPending, 'error');
+        return;
+      }
+      ++state.driveGeneration;
+      try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
+      state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
+      state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
+      appDataOfflinePending = false;
+      renderAll(); await persistSessions(); return;
+    }
+    await flushDriveAppData();
+    const generation = ++state.driveGeneration;
     const previousAccount = state.account;
     const account = await auth.connect();
-    if (previousAccount && previousAccount.accountId !== account.accountId
-      || !previousAccount && state.tabs.some(tab => tab.document.identity.storage === 'drive' && tab.accountId !== account.accountId)) {
-      await persistSessions();
+    if (state.driveGeneration !== generation) return;
+    if (previousAccount && previousAccount.accountId !== account.accountId) {
       state.folderId = undefined; state.folderName = undefined;
     }
-    state.account = account; state.drive = new GoogleDriveApi(auth);
+    const drive = new GoogleDriveApi(auth);
+    state.account = account; state.drive = drive;
     state.authExpired = false;
-    state.folderName = undefined;
-    const folderId = await indexedDb.getValue<string>('settings', `drive-folder:${account.accountId}`).catch(() => undefined);
+    state.folderId = undefined; state.folderName = undefined;
+    state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
+    const snapshot = await loadDriveAppData(account.accountId, drive, generation);
+    if (!snapshot || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
+    const folderId = snapshot.state.selectedFolderId;
     if (folderId) {
       try {
-        const folder = await state.drive.getFolder(folderId) as DriveFile & { trashed?: boolean };
+        const folder = await drive.getFolder(folderId);
+        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
         if (folder.mimeType === 'application/vnd.google-apps.folder' && !folder.trashed) {
-          state.folderId = folderId; state.folderName = folder.name;
+          state.folderId = folder.id; state.folderName = folder.name;
+        } else {
+          state.folderId = undefined; state.folderName = undefined;
+          await persistDriveAppData({ ...snapshot.state, selectedFolderId: null, folderPrompt: 'unasked' });
         }
-        else await indexedDb.setValue('settings', `drive-folder:${account.accountId}`, undefined);
-      } catch { state.folderId = undefined; state.folderName = undefined; }
+      } catch (error) {
+        if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+        state.folderId = undefined; state.folderName = undefined;
+        if (error instanceof DriveApiError && error.status !== 403 && error.status !== 404) throw error;
+        await persistDriveAppData({ ...snapshot.state, selectedFolderId: null, folderPrompt: 'unasked' });
+      }
     }
-    await restoreDriveSession(account.accountId);
+    await setUpDriveFolderAfterConnect(account.accountId, drive, generation);
+    if (!driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    await restoreDriveSession(account.accountId, drive, generation);
     renderAll();
     if (state.activeStorage === 'drive') await renderExplorer();
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  } catch (error) {
+    if (error instanceof DriveAppDataError) { state.appDataSync = 'error'; state.appDataError = error.message; }
+    markDriveAuthState(error); showMessage(shortError(error), 'error');
+  }
   finally { driveConnectInProgress = false; renderAll(); }
 }
 
 async function chooseDriveFolder(): Promise<void> {
-  if (!state.drive || !state.account) return;
+  const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
+  if (!drive || !accountId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   try {
-    const selected = await state.drive.pickFolder();
-    if (!selected) return;
-    const folder = await state.drive.getFolder(selected.id) as DriveFile & { trashed?: boolean };
+    const selected = await drive.pickFolder();
+    if (!isCurrent() || !selected) return;
+    const folder = await drive.getFolder(selected.id);
+    if (!isCurrent()) return;
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.trashed) throw new Error('Choose an available Google Drive folder.');
-    state.folderId = folder.id;
-    state.folderName = folder.name;
-    await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
-    await restoreDriveSession(state.account.accountId);
-    await renderExplorer(); showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    await commitSelectedDriveFolder(folder);
+    if (isCurrent()) {
+      await restoreDriveSession(accountId, drive, generation);
+      showMessage(state.locale === 'ja' ? `保存先: ${folder.name}` : `Drive folder: ${folder.name}`);
+    }
+  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
-async function createDriveFolder(): Promise<void> {
-  if (!state.drive || !state.account) return;
+async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
+  const drive = state.drive; const accountId = state.account?.accountId; const generation = state.driveGeneration;
+  if (!drive || !accountId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  if (!alreadyConfirmed && !window.confirm(strings().createFolderConfirm)) return;
   try {
-    const folder = await state.drive.createFolder();
-    state.folderId = folder.id;
-    state.folderName = folder.name;
-    await indexedDb.setValue('settings', `drive-folder:${state.account.accountId}`, folder.id);
-    await renderExplorer(); showMessage(state.locale === 'ja' ? 'GuitarDSL フォルダーを作成しました。' : 'Created the GuitarDSL folder.');
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+    let folders = await drive.findAccessibleFolders();
+    if (!isCurrent()) return;
+    if (folders.length > 1) {
+      const selected = await drive.pickFolder();
+      if (!isCurrent() || !selected) return;
+      const folder = await drive.getFolder(selected.id);
+      if (!isCurrent()) return;
+      if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.trashed) throw new Error('Choose an available Google Drive folder.');
+      await commitSelectedDriveFolder(folder);
+      return;
+    }
+    let folder = folders[0];
+    if (!folder) {
+      try { folder = await drive.createFolder(); }
+      catch (createError) {
+        // One list reconciliation handles a lost POST response; it never issues another create.
+        folders = await drive.findAccessibleFolders();
+        if (!isCurrent()) return;
+        if (!folders.length) throw createError;
+        if (folders.length > 1) {
+          const selected = await drive.pickFolder();
+          if (!isCurrent() || !selected) return;
+          folder = await drive.getFolder(selected.id);
+        } else folder = folders[0];
+      }
+    }
+    if (!isCurrent()) return;
+    await commitSelectedDriveFolder(folder);
+    showMessage(state.locale === 'ja' ? 'GuitarDSL の保存先を設定しました。' : 'Set the GuitarDSL Drive destination.');
+  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
 async function openFromDrivePicker(): Promise<void> {
   const drive = state.drive;
   const accountId = state.account?.accountId;
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const generation = state.driveGeneration;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   try {
     const selection = await drive.pickFile();
     if (!isCurrent() || !selection) return;
     if (!isSupportedDriveFile(selection.name)) throw new Error('Choose a .guitardsl or .gdsl file.');
-    await openDriveDocument({ id: selection.id }, accountId, drive);
+    await openDriveDocument({ id: selection.id }, accountId, drive, generation);
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
 }
 
 async function openDriveDocument(
-  file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive
+  file: Pick<DriveFile, 'id'>, accountId = state.account?.accountId, drive = state.drive,
+  generation = state.driveGeneration, pickerRetry = false
 ): Promise<void> {
   if (!drive || !accountId) return;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive);
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   if (!isCurrent()) return;
   const identity = driveIdentity(file.id);
   const open = state.tabs.find(tab => sameTabIdentity(tab, identity, accountId));
@@ -2028,28 +2322,52 @@ async function openDriveDocument(
       if (!isCurrent()) return;
     }
     await openDocument(documentRow, source, accountId, true, isCurrent);
-  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  } catch (error) {
+    if (!isCurrent()) return;
+    markDriveAuthState(error);
+    if (!pickerRetry && error instanceof DriveApiError && (error.status === 403 || error.status === 404)) {
+      const retry = window.confirm(state.locale === 'ja'
+        ? 'このファイルはまだ GuitarDSL から認可されていません。Google Drive Picker で選び直しますか？'
+        : 'This file is not authorized for GuitarDSL yet. Reopen Google Drive Picker to authorize it?');
+      if (retry && isCurrent()) {
+        const selection = await drive.pickFile();
+        if (!isCurrent() || !selection) return;
+        if (selection.id !== file.id) { await openDriveDocument({ id: selection.id }, accountId, drive, generation, true); return; }
+        await openDriveDocument(file, accountId, drive, generation, true);
+        return;
+      }
+    }
+    showMessage(shortError(error), 'error');
+  }
 }
 
-async function restoreDriveSession(accountId: string): Promise<void> {
-  if (!state.storageReady) return;
+async function restoreDriveSession(accountId: string, drive = state.drive, generation = state.driveGeneration): Promise<void> {
+  const snapshot = state.appDataSnapshot;
+  if (!state.storageReady || !drive || !snapshot || state.account?.accountId !== accountId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.appDataSnapshot === snapshot;
+  const session = snapshot.state;
+  restoringDriveSession = true;
   try {
-    const session = await indexedDb.getValue<WorkspaceSession>('sessions', `workspace-drive:${accountId}`);
-    if (!session) return;
-    for (const fileId of session.tabs) {
-      const identity = driveIdentity(fileId);
-      const documentRow = await indexedDb.getDocument(identity, accountId);
-      if (documentRow) await openDocument(documentRow, documentRow.source, accountId);
+    const ids = [...new Set([...session.openDriveFileIds, ...(session.activeDriveFileId ? [session.activeDriveFileId] : [])])];
+    for (const fileId of ids) {
+      if (!isCurrent()) return;
+      await openDriveDocument({ id: fileId }, accountId, drive, generation);
     }
-    if (session.active) {
-      const tab = state.tabs.find(item => item.document.identity.storage === 'drive' && item.document.identity.fileId === session.active && item.accountId === accountId);
-      if (tab && editorReadyForDocumentChange()) state.activeKey = tabKey(tab);
+    if (session.activeDriveFileId && isCurrent()) {
+      const tab = state.tabs.find(item => item.document.identity.storage === 'drive' && item.document.identity.fileId === session.activeDriveFileId && item.accountId === accountId);
+      if (tab && editorReadyForDocumentChange()) { state.activeKey = tabKey(tab); state.activeStorage = 'drive'; }
     }
-  } catch (error) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
+  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+  finally { restoringDriveSession = false; }
 }
 
 async function moveToDrive(tab = activeTab()): Promise<void> {
-  if (moveToDriveInProgress || !tab || tab.document.identity.storage !== 'local' || !state.drive || !state.account || !state.folderId) return;
+  const drive = state.drive;
+  const accountId = state.account?.accountId;
+  const folderId = state.folderId;
+  const generation = state.driveGeneration;
+  if (moveToDriveInProgress || !tab || tab.document.identity.storage !== 'local' || !drive || !accountId || !folderId) return;
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.tabs.includes(tab);
   if (!editorReadyForDocumentChange()) return;
   moveToDriveInProgress = true;
   app.inert = true;
@@ -2057,21 +2375,27 @@ async function moveToDrive(tab = activeTab()): Promise<void> {
   let resultMessage: { text: string; kind: 'info' | 'error' } | undefined;
   try {
     await stopCandidateAudition();
+    if (!isCurrent()) return;
     if (!await saveDraftNow(tab)) throw new Error('Could not preserve the local draft; transfer cancelled.');
-    const remote = await moveLocalDocumentToDrive(snapshot(tab), tab.document.name, state.folderId, state.account.accountId, state.drive);
+    if (!isCurrent()) return;
+    const transferSnapshot = snapshot(tab);
+    const remote = await moveLocalDocumentToDrive(transferSnapshot, tab.document.name, folderId, accountId, drive);
+    if (!isCurrent()) return;
     if (!editorReadyForDocumentChange()) throw new Error(state.locale === 'ja' ? '日本語入力を確定してから再試行してください。' : 'Finish text composition before completing the move.');
-    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId: state.account.accountId,
+    const replacement: OpenTab = { ...tab, document: remote, source: remote.source, revision: 0, accountId,
       persistedBase: { revision: 0, source: remote.source }, saveStatus: 'drive-saved' };
-    const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, state.account!.accountId));
+    const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, accountId));
     if (existing) { state.tabs.splice(state.tabs.indexOf(tab), 1); existing.document = remote; existing.source = remote.source; state.activeKey = tabKey(existing); }
     else { state.tabs[state.tabs.indexOf(tab)] = replacement; state.activeKey = tabKey(replacement); }
     renderAll(); await persistSessions();
     resultMessage = { text: state.locale === 'ja' ? 'Drive への移動が完了しました。' : 'Moved the score to Google Drive.', kind: 'info' };
   } catch (error) {
+    if (!isCurrent()) return;
     if (error instanceof LocalMoveConflictError) {
       let latestLoaded = false;
       try {
         const latest = await indexedDb.getDocument(tab.document.identity);
+        if (!isCurrent()) return;
         if (latest) {
           tab.document = latest;
           tab.source = latest.source;
@@ -2409,32 +2733,45 @@ interface WorkspaceMenuAction {
   run: () => void | Promise<void>;
   disabled?: boolean;
   checked?: boolean;
+  shortcut?: string;
+  separator?: boolean;
 }
 let activeMenuCleanup: (() => void) | undefined;
 let activeMenuInvoker: HTMLElement | undefined;
+let activeMenuElement: HTMLElement | undefined;
 
 function closeWorkspaceMenu(menu: HTMLElement, restoreFocus = false, invoker?: HTMLElement): void {
-  menu.hidden = true;
-  menu.replaceChildren();
+  const closing = activeMenuElement ?? menu;
+  closing.hidden = true;
+  closing.replaceChildren();
   activeMenuCleanup?.();
   activeMenuCleanup = undefined;
   const focusTarget = invoker ?? activeMenuInvoker;
   if (focusTarget?.getAttribute('aria-haspopup') === 'menu') focusTarget.setAttribute('aria-expanded', 'false');
+  if (closing !== menu && menu.getAttribute('role') === 'menu') menu.hidden = true;
   activeMenuInvoker = undefined;
+  activeMenuElement = undefined;
   if (restoreFocus) focusTarget?.focus();
 }
 
 function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: WorkspaceMenuAction[], invoker?: HTMLElement): void {
-  closeWorkspaceMenu(menu);
+  if (activeMenuElement && activeMenuElement !== menu) closeWorkspaceMenu(activeMenuElement);
+  else closeWorkspaceMenu(menu);
   activeMenuInvoker = invoker;
+  activeMenuElement = menu;
   menu.replaceChildren();
   for (const action of actions) {
+    if (action.separator) {
+      const separator = document.createElement('div'); separator.setAttribute('role', 'separator'); menu.append(separator); continue;
+    }
     const button = document.createElement('button');
     button.type = 'button';
     button.setAttribute('role', action.checked === undefined ? 'menuitem' : 'menuitemradio');
     if (action.checked !== undefined) button.setAttribute('aria-checked', String(action.checked));
     button.disabled = Boolean(action.disabled);
-    button.textContent = action.label;
+    const label = document.createElement('span'); label.textContent = action.label;
+    button.append(label);
+    if (action.shortcut) { const shortcut = document.createElement('kbd'); shortcut.textContent = action.shortcut; button.append(shortcut); }
     button.addEventListener('click', () => {
       if (button.disabled) return;
       closeWorkspaceMenu(menu, true, invoker);
@@ -2457,6 +2794,20 @@ function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: Wor
     const index = items.indexOf(document.activeElement as HTMLButtonElement);
     let next: HTMLButtonElement | undefined;
     if (event.key === 'Escape') { event.preventDefault(); closeWorkspaceMenu(menu, true, invoker); return; }
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && ['file-menu', 'edit-menu', 'view-menu'].includes(menu.id)) {
+      const triggers = Array.from(app.querySelectorAll<HTMLButtonElement>('.main-menu-bar button[role="menuitem"]'));
+      const current = triggers.findIndex(button => button === invoker);
+      const target = triggers[(current + (event.key === 'ArrowRight' ? 1 : triggers.length - 1)) % triggers.length];
+      if (target) {
+        event.preventDefault();
+        closeWorkspaceMenu(menu);
+        target.focus();
+        if (target.id === 'menu-file-trigger') openFileMenu();
+        else if (target.id === 'menu-edit-trigger') openEditMenu();
+        else openViewMenu();
+      }
+      return;
+    }
     if (event.key === 'ArrowDown') next = items[(index + 1 + items.length) % items.length];
     else if (event.key === 'ArrowUp') next = items[(index - 1 + items.length) % items.length];
     else if (event.key === 'Home') next = items[0];
@@ -2468,11 +2819,17 @@ function showWorkspaceMenu(menu: HTMLElement, x: number, y: number, actions: Wor
   const onOutside = (event: PointerEvent) => {
     if (event.target instanceof Node && !menu.contains(event.target)) closeWorkspaceMenu(menu);
   };
+  const onFocusChange = (event: FocusEvent) => {
+    if (!(event.target instanceof Node) || menu.contains(event.target) || event.target === invoker) return;
+    closeWorkspaceMenu(menu);
+  };
   menu.addEventListener('keydown', onKeyDown);
   document.addEventListener('pointerdown', onOutside, true);
+  document.addEventListener('focusin', onFocusChange, true);
   activeMenuCleanup = () => {
     menu.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('focusin', onFocusChange, true);
   };
 }
 
@@ -2531,7 +2888,8 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
     ];
     const accountId = state.account?.accountId;
     const drive = state.drive;
-    const driveIsCurrent = () => rootIsCurrent() && state.account?.accountId === accountId && state.drive === drive && !state.authExpired;
+    const generation = state.driveGeneration;
+    const driveIsCurrent = () => rootIsCurrent() && state.account?.accountId === accountId && state.drive === drive && state.driveGeneration === generation && !state.authExpired;
     if (!accountId || !drive || state.authExpired) return [{
       label: state.authExpired ? t.reconnect : t.connect,
       disabled: driveConnectInProgress,
@@ -2541,9 +2899,9 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
       }
     }];
     return [
-      { label: t.folder, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return chooseDriveFolder(); } },
-      { label: t.createFolder, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return createDriveFolder(); } },
-      { label: t.openDrive, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return openFromDrivePicker(); } }
+      { label: t.driveRootMenuOpen, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return openFromDrivePicker(); } },
+      { label: t.driveRootMenuFolder, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return chooseDriveFolder(); } },
+      { label: t.driveRootMenuCreate, run: () => { if (!driveIsCurrent()) { staleMenuTarget(); return; } return createDriveFolder(); } }
     ];
   }
 
@@ -2718,16 +3076,27 @@ function openHelp(): void {
     ['getting-started', '基本操作', '新しい楽譜を作成するか、Explorer からローカル文書または Google Drive の文書を開きます。編集内容はブラウザー内の下書きとして保存されます。'],
     ['editing', 'ソース編集', '行番号、構文色分け、補完、検索・置換、元に戻す／やり直しを利用できます。Problems の項目を選ぶと、該当行へ移動します。'],
     ['preview', 'プレビュー', 'Source・Split・Score の表示を切り替えます。譜面プレビュー内の Normal・Edit・Practice は表示レイアウトとは独立しています。'],
-    ['drive', 'Google Drive', 'Drive は任意です。接続すると、アプリから開いた文書を保存できます。ローカル文書は接続しなくても編集・書き出しできます。'],
+    ['drive', 'Google Drive', 'Google Drive は任意です。初回接続時に保存先フォルダーを作成・選択するか、後で設定できます。選んだフォルダー内でも、Google Drive Picker で認可した楽譜だけを開けます。フォルダー、開いているファイルID、最近使ったファイルIDはアカウントごとのアプリ状態として同期します。ソースと未保存の下書きはこの端末に残ります。'],
     ['shortcuts', 'キーボード操作', '⌘/Ctrl+S で保存、⌘/Ctrl+F で検索、⌘/Ctrl+H で置換、⌘/Ctrl+G で行へ移動します。Escape でメニューを閉じます。']
   ] : [
     ['getting-started', 'Getting started', 'Create a score or open a local or Google Drive document from Explorer. Edits are stored as a recoverable browser draft.'],
     ['editing', 'Editing source', 'Use line numbers, syntax colors, local completion, search and replace, undo, and redo. Select a Problems row to jump to its source range.'],
     ['preview', 'Preview', 'Switch between Source, Split, and Score views. Normal, Edit, and Practice remain independent Preview modes.'],
-    ['drive', 'Google Drive', 'Drive is optional. Connect to save documents opened by this app. Local documents remain editable and exportable without signing in.'],
+    ['drive', 'Google Drive', 'Google Drive is optional. On first sign-in, create or choose a destination folder, or defer setup. A selected folder does not authorize every score inside it; open existing scores with Google Drive Picker. Folder, open-file IDs, and recent-file IDs sync as account-specific app state. Source text and unsaved drafts remain on this device.'],
     ['shortcuts', 'Keyboard shortcuts', 'Use ⌘/Ctrl+S to save, ⌘/Ctrl+F to search, ⌘/Ctrl+H to replace, and ⌘/Ctrl+G to go to a line. Press Escape to close a menu.']
   ] as const;
+  const localeName = state.locale === 'ja' ? '日本語' : 'English';
+  const helpHtml = `<!doctype html><html lang="${state.locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(strings().help)} · GuitarDSL</title><style>body{margin:0;padding:28px;max-width:900px;font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;color:#20242b;background:#f7f8fa}header{position:sticky;top:0;padding:8px 0 16px;background:#f7f8fa;border-bottom:1px solid #d9dde5}nav{display:flex;gap:8px;flex-wrap:wrap}nav a{color:#3444b8}section{padding:16px 0;border-bottom:1px solid #dfe2e7}a{color:#3444b8}</style><body><header><h1>GuitarDSL ${esc(strings().help)} · ${localeName}</h1><nav>${topics.map(([id, title]) => `<a href="#${id}">${esc(title)}</a>`).join('')}</nav></header>${topics.map(([id, title, body]) => `<section id="${id}"><h2>${esc(title)}</h2><p>${esc(body)}</p></section>`).join('')}</body></html>`;
+  if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl);
+  helpBlobUrl = URL.createObjectURL(new Blob([helpHtml], { type: 'text/html;charset=UTF-8' }));
+  const popup = window.open(helpBlobUrl, 'guitardsl-help', 'popup,width=920,height=760');
+  if (popup) { window.setTimeout(() => { if (helpBlobUrl) URL.revokeObjectURL(helpBlobUrl); helpBlobUrl = ''; }, 120_000); return; }
   toc.replaceChildren(); content.replaceChildren();
+  app.querySelector('#help-popup-note')!.textContent = strings().helpPopupBlocked;
+  app.querySelector<HTMLElement>('#help-popup-note')!.hidden = false;
+  const linkRow = app.querySelector<HTMLElement>('#help-direct-link-row')!;
+  const directLink = app.querySelector<HTMLAnchorElement>('#help-direct-link')!;
+  directLink.href = helpBlobUrl; directLink.textContent = strings().openHelpLink; linkRow.hidden = false;
   for (const [id, title, body] of topics) {
     const link = document.createElement('button'); link.type = 'button'; link.textContent = title;
     link.addEventListener('click', () => content.querySelector('#help-' + id)?.scrollIntoView({ block: 'start' }));
@@ -2738,6 +3107,97 @@ function openHelp(): void {
     section.append(heading, paragraph); content.append(section);
   }
   if (!dialog.open) dialog.showModal();
+}
+
+function menuShortcut(key: string, shift = false): string {
+  const mac = /Mac|iPhone|iPad/u.test(navigator.platform);
+  return mac ? `⌘${shift ? '⇧' : ''}${key}` : `Ctrl+${shift ? 'Shift+' : ''}${key}`;
+}
+
+function openFileMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-file-trigger')!;
+  const rect = button.getBoundingClientRect();
+  const t = strings(); const tab = activeTab();
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#file-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.newScore, run: () => createNewScore() },
+    { label: t.addFile, run: () => app.querySelector<HTMLInputElement>('#file-input')!.click() },
+    { label: state.drive && !state.authExpired ? t.openDrive : `${t.openDrive} · ${t.connect}`, disabled: !state.drive || state.authExpired, run: () => openFromDrivePicker() },
+    { separator: true, label: '', run: () => {} },
+    { label: t.save, shortcut: menuShortcut('S'), disabled: !tab, run: () => saveActiveDocument() },
+    { label: t.downloadCopy, disabled: !tab, run: () => {
+      const current = activeTab();
+      if (!current || !editorReadyForSnapshot(current)) return;
+      downloadSource(current.document.name, current.source);
+    } },
+    { label: t.downloadPdf, disabled: !tab, run: () => downloadPdf() },
+    { separator: true, label: '', run: () => {} },
+    { label: t.closeTabMenu, disabled: !tab, run: () => tab && closeTab(tab) }
+  ], button);
+}
+
+function openEditMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-edit-trigger')!;
+  const rect = button.getBoundingClientRect();
+  const t = strings(); const tab = activeTab();
+  const selection = sourceEditor.selection(); const hasSelection = selection.from !== selection.to;
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#edit-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.undo, shortcut: menuShortcut('Z'), disabled: !tab || !sourceEditor.canUndo(), run: () => { sourceEditor.focus(); sourceEditor.undo(); } },
+    { label: t.redo, shortcut: menuShortcut(/Mac|iPhone|iPad/u.test(navigator.platform) ? 'Z' : 'Y', /Mac|iPhone|iPad/u.test(navigator.platform)), disabled: !tab || !sourceEditor.canRedo(), run: () => { sourceEditor.focus(); sourceEditor.redo(); } },
+    { separator: true, label: '', run: () => {} },
+    { label: t.cut, shortcut: menuShortcut('X'), disabled: !tab || !hasSelection || !navigator.clipboard?.writeText, run: async () => { sourceEditor.focus(); try { await sourceEditor.cut(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードへ切り取れませんでした。' : 'Could not cut to the clipboard.', 'error'); } } },
+    { label: t.copy, shortcut: menuShortcut('C'), disabled: !tab || !hasSelection || !navigator.clipboard?.writeText, run: async () => { sourceEditor.focus(); try { await sourceEditor.copy(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードへコピーできませんでした。' : 'Could not copy to the clipboard.', 'error'); } } },
+    { label: t.paste, shortcut: menuShortcut('V'), disabled: !tab || !navigator.clipboard?.readText, run: async () => { sourceEditor.focus(); try { await sourceEditor.paste(); } catch { showMessage(state.locale === 'ja' ? 'クリップボードから貼り付けられませんでした。' : 'Could not paste from the clipboard.', 'error'); } } },
+    { label: t.selectAll, shortcut: menuShortcut('A'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.selectAll(); } },
+    { separator: true, label: '', run: () => {} },
+    { label: t.find, shortcut: menuShortcut('F'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.openSearch(); } },
+    { label: t.replace, shortcut: menuShortcut('H'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.openReplace(); } },
+    { label: t.goToLine, shortcut: menuShortcut('G'), disabled: !tab, run: () => { sourceEditor.focus(); sourceEditor.goToLine(); } }
+  ], button);
+}
+
+function resetWorkspaceLayout(): void {
+  if (!window.confirm(strings().resetLayoutConfirm)) return;
+  state.viewMode = 'split'; state.splitRatio = 0.4; state.explorerOpen = true; state.inspectorOpen = true;
+  state.explorerWidth = 220; state.inspectorWidth = 300; state.problemsOpen = true; state.problemsHeight = 200;
+  applyWorkspaceLayout(); saveLayoutNow();
+}
+
+function openViewMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-view-trigger')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#view-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.sourceView, checked: state.viewMode === 'source', run: () => setWorkspaceViewMode('source') },
+    { label: t.splitView, checked: state.viewMode === 'split', run: () => setWorkspaceViewMode('split') },
+    { label: t.scoreView, checked: state.viewMode === 'score', run: () => setWorkspaceViewMode('score') },
+    { separator: true, label: '', run: () => {} },
+    { label: t.toggleExplorer, checked: state.explorerOpen, run: () => toggleExplorer() },
+    { label: t.toggleInspector, checked: state.inspectorOpen, run: () => toggleInspector() },
+    { label: t.problems, checked: state.problemsOpen, run: () => toggleProblems() },
+    { separator: true, label: '', run: () => {} },
+    { label: `${t.resetLayout}…`, run: resetWorkspaceLayout }
+  ], button);
+}
+
+function openDriveHeaderMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  const actions: WorkspaceMenuAction[] = [];
+  if (driveConnectInProgress) actions.push({ label: t.connecting, disabled: true, run: () => {} });
+  else if (!state.account || state.authExpired) actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
+  else actions.push({ label: t.disconnect, run: () => connectDrive() });
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#drive-menu')!, rect.left, rect.bottom + 3, actions, button);
+}
+
+function openDriveRootMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#drive-root-more')!;
+  const rect = button.getBoundingClientRect(); const t = strings();
+  const connected = Boolean(state.drive && state.account && !state.authExpired);
+  const actions: WorkspaceMenuAction[] = connected ? [
+    { label: t.driveRootMenuOpen, run: () => openFromDrivePicker() },
+    { label: t.driveRootMenuFolder, run: () => chooseDriveFolder() },
+    { label: t.driveRootMenuCreate, run: () => createDriveFolder() }
+  ] : [{ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() }];
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#panel-menu')!, rect.left, rect.bottom + 3, actions, button);
 }
 
 function openSettingsMenu(): void {
@@ -2760,12 +3220,6 @@ function openSettingsMenu(): void {
       void savePreferences(); renderAll();
     } });
   }
-  actions.push({ label: t.resetLayout, run: () => {
-    if (!window.confirm(t.resetLayoutConfirm)) return;
-    state.viewMode = 'split'; state.splitRatio = 0.4; state.explorerOpen = true; state.inspectorOpen = true;
-    state.explorerWidth = 220; state.inspectorWidth = 300; state.problemsOpen = true; state.problemsHeight = 200;
-    applyWorkspaceLayout(); saveLayoutSoon();
-  } });
   showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
 }
 
@@ -2807,25 +3261,17 @@ function openInspectorMenu(): void {
 }
 
 function openAccountMenu(): void {
-  const button = app.querySelector<HTMLButtonElement>('#connect-drive')!;
+  const button = app.querySelector<HTMLButtonElement>('#account-button')!;
   const rect = button.getBoundingClientRect();
   const menu = app.querySelector<HTMLElement>('#account-menu')!;
   const t = strings();
   const actions: WorkspaceMenuAction[] = [];
-  if (driveConnectInProgress) actions.push({ label: t.connecting, disabled: true, run: () => {} });
-  else if (!state.account || state.authExpired) {
-    actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
+  if (state.account && state.drive) {
+    actions.push({ label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`, disabled: true, run: () => {} });
+    actions.push({ separator: true, label: '', run: () => {} });
+    actions.push({ label: t.disconnect, disabled: driveConnectInProgress, run: () => connectDrive() });
   } else {
-    actions.push({
-      label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`,
-      disabled: true, run: () => {}
-    });
-    actions.push(
-      { label: t.folder, run: () => chooseDriveFolder() },
-      { label: t.createFolder, run: () => createDriveFolder() },
-      { label: t.openDrive, run: () => openFromDrivePicker() },
-      { label: t.disconnect, run: () => connectDrive() }
-    );
+    actions.push({ label: `${t.drive}: ${state.authExpired ? t.driveReauth : t.driveNotConnected}`, disabled: true, run: () => {} });
   }
   showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
 }
@@ -2834,9 +3280,43 @@ app.querySelector('#help-button')!.addEventListener('click', openHelp);
 app.querySelector('#close-help')!.addEventListener('click', () => app.querySelector<HTMLDialogElement>('#help-dialog')!.close());
 app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus());
 app.querySelector('#settings-button')!.addEventListener('click', openSettingsMenu);
-app.querySelector('#connect-drive')!.addEventListener('click', openAccountMenu);
+app.querySelector('#connect-drive')!.addEventListener('click', openDriveHeaderMenu);
+app.querySelector('#account-button')!.addEventListener('click', openAccountMenu);
+app.querySelector('#drive-root-more')!.addEventListener('click', openDriveRootMenu);
 app.querySelector('#explorer-more')!.addEventListener('click', openExplorerMenu);
 app.querySelector('#inspector-more')!.addEventListener('click', openInspectorMenu);
+app.querySelector('#menu-file-trigger')!.addEventListener('click', openFileMenu);
+app.querySelector('#menu-edit-trigger')!.addEventListener('click', openEditMenu);
+app.querySelector('#menu-view-trigger')!.addEventListener('click', openViewMenu);
+for (const [selector, open] of [
+  ['#menu-file-trigger', openFileMenu], ['#menu-edit-trigger', openEditMenu], ['#menu-view-trigger', openViewMenu]
+] as const) {
+  app.querySelector(selector)!.addEventListener('pointerenter', () => {
+    const trigger = app.querySelector<HTMLElement>(selector)!;
+    if (activeMenuElement && activeMenuInvoker !== trigger) open();
+  });
+}
+app.querySelector('.main-menu-bar')!.addEventListener('keydown', event => {
+  if (!(event instanceof KeyboardEvent)) return;
+  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLButtonElement>('button[role="menuitem"]') : null;
+  if (!target) return;
+  const buttons = Array.from(app.querySelectorAll<HTMLButtonElement>('.main-menu-bar button[role="menuitem"]'));
+  const index = buttons.indexOf(target);
+  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+    event.preventDefault();
+    buttons[(index + (event.key === 'ArrowRight' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+    return;
+  }
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault(); buttons[event.key === 'Home' ? 0 : buttons.length - 1]?.focus(); return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    if (target.id === 'menu-file-trigger') openFileMenu();
+    else if (target.id === 'menu-edit-trigger') openEditMenu();
+    else openViewMenu();
+  }
+});
 app.querySelector('#new-score')!.addEventListener('click', () => void createNewScore());
 app.addEventListener('contextmenu', event => {
   const target = event.target instanceof HTMLElement ? event.target : undefined;
@@ -2989,12 +3469,28 @@ window.addEventListener('resize', () => { applySplitRatio(); setProblemsHeight(s
 new ResizeObserver(() => updateResponsiveCollapse()).observe(workspace);
 listenForPreviewMessages(scoreFrame, handlePreviewMessage);
 window.addEventListener('beforeunload', (event: BeforeUnloadEvent) => {
-  if (sourceEditor.hasPendingEdit() || state.tabs.some(hasUnpersistedDraft)) {
+  if (sourceEditor.hasPendingEdit() || state.tabs.some(hasUnpersistedDraft)
+    || Boolean(appDataSyncTimer) || state.appDataSync === 'pending' || state.appDataSync === 'syncing') {
     event.preventDefault();
     event.returnValue = '';
   }
 });
-window.addEventListener('pagehide', () => progressionAudioLease.dispose());
+window.addEventListener('offline', () => {
+  if (state.appDataSync !== 'pending') return;
+  window.clearTimeout(appDataSyncTimer);
+  appDataSyncTimer = 0;
+  appDataOfflinePending = true;
+  renderStorageStatus();
+});
+window.addEventListener('online', () => {
+  if (!appDataOfflinePending || !navigator.onLine) return;
+  appDataOfflinePending = false;
+  void persistDriveAppData();
+});
+window.addEventListener('pagehide', () => {
+  if (appDataSyncTimer || state.appDataSync === 'pending') void flushDriveAppData();
+  progressionAudioLease.dispose();
+});
 
 async function init(): Promise<void> {
   try {

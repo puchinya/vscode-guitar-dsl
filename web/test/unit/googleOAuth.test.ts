@@ -9,7 +9,7 @@ function installGoogle(response: Parameters<TokenCallback>[0], revocations: stri
     initTokenClient: (options: { scope: string; callback: TokenCallback }) => ({
       requestAccessToken: (request: { prompt?: string }) => {
         assert.equal(request.prompt, 'select_account');
-        assert.equal(options.scope, 'https://www.googleapis.com/auth/drive.file');
+        assert.equal(options.scope, 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata');
         options.callback(response);
       }
     }),

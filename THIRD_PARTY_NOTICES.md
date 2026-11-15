@@ -2,6 +2,15 @@
 
 The GuitarDSL extension bundles the following third-party material.
 
+## Google Drive product icon
+
+The Web app includes Google's official 2026 Google Drive color product icon. The source PNG is used without recoloring or other alteration; the browser may resize it for display.
+
+- Asset: `media/icons/google-drive-2026-color.png`
+- Source: https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png
+- Brand guidance: https://developers.google.com/workspace/drive/api/guides/branding?hl=en
+- Rights and use: Google Drive and the Google Drive logo are trademarks of Google LLC. Use follows Google's Drive API branding guidance.
+
 ## CodeMirror 6
 
 The standalone Web app uses CodeMirror 6 for source editing. Packages: @codemirror/autocomplete@6.20.4, @codemirror/commands@6.11.1, @codemirror/language@6.13.1, @codemirror/lint@6.9.8, @codemirror/search@6.7.2, @codemirror/state@6.7.6, @codemirror/view@6.43.15, and the transitive @codemirror/streamparser@6.0.0.

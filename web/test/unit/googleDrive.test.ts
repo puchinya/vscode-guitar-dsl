@@ -65,6 +65,27 @@ test('Drive listing paginates, scopes to the selected folder, and filters unsupp
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('accessible GuitarDSL folder discovery searches only the exact untrashed My Drive root folder', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  const calls: URL[] = [];
+  globalThis.fetch = async input => {
+    calls.push(new URL(String(input)));
+    return new Response(JSON.stringify({ files: [
+      { id: 'folder-1', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] },
+      { id: 'folder-2', name: 'GuitarDSL Archive', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] },
+      { id: 'folder-3', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['parent'] },
+      { id: 'file-1', name: 'GuitarDSL', mimeType: 'text/plain', parents: ['root'] }
+    ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const folders = await api.findAccessibleFolders();
+    assert.deepEqual(folders.map(folder => folder.id), ['folder-1']);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].searchParams.get('q')!, /mimeType='application\/vnd\.google-apps\.folder'.*'root' in parents and trashed=false/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('Drive list surfaces authorization and access-scope errors without hiding their status', async () => {
   const api = createApi();
   const originalFetch = globalThis.fetch;
