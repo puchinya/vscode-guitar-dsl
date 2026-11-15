@@ -348,13 +348,7 @@ function releasePreviewAudioLock(purpose: 'reload' | 'bfcache'): void {
   previewAudioLockAcknowledged = false;
 }
 
-function suspendWorkspaceForBfcache(): void {
-  if (runtimeDisposed || pageCacheSuspended) return;
-  workspaceOperationGeneration += 1;
-  if (driveConnectInProgress) {
-    driveConnectInterrupted = true;
-    driveConnectInProgress = false;
-  }
+function capturePageCacheBaseline(): void {
   const tab = activeTab();
   pageCacheBaseline = tab ? {
     activeKey: state.activeKey,
@@ -364,6 +358,17 @@ function suspendWorkspaceForBfcache(): void {
     revision: tab.revision,
     editorSource: sourceEditor.getText()
   } : undefined;
+}
+
+function suspendWorkspaceForBfcache(): void {
+  if (runtimeDisposed) return;
+  workspaceOperationGeneration += 1;
+  capturePageCacheBaseline();
+  if (pageCacheSuspended) return;
+  if (driveConnectInProgress) {
+    driveConnectInterrupted = true;
+    driveConnectInProgress = false;
+  }
   pageCacheSuspended = true;
   syncWorkspaceInteractionLock();
   publishWorkspaceSnapshot();
@@ -381,7 +386,6 @@ async function resumeWorkspaceFromBfcache(): Promise<void> {
   workspaceOperationGeneration += 1;
   const resumeGeneration = workspaceOperationGeneration;
   const baseline = pageCacheBaseline;
-  pageCacheBaseline = undefined;
   const tabs = [...state.tabs];
   const retryDrafts: OpenTab[] = [];
   let draftRestoreMessage: string | undefined;
@@ -433,6 +437,7 @@ async function resumeWorkspaceFromBfcache(): Promise<void> {
       && tab.source === baseline.source && tab.revision === baseline.revision
       && sourceEditor.getText() === baseline.editorSource)
     : !tab;
+  pageCacheBaseline = undefined;
   pageCacheSuspended = false;
   if (driveConnectInterrupted) {
     driveConnectInterrupted = false;

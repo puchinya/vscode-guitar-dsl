@@ -127,6 +127,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   get fileReadCount(): number;
   driveListStarted: Promise<void>;
   releaseDriveList(): void;
+  get driveFileListCount(): number;
 }> {
   const initialStates = Object.fromEntries(accountSequence.map(accountId => [accountId,
     options.appDataStates && Object.hasOwn(options.appDataStates, accountId) ? options.appDataStates[accountId]
@@ -224,6 +225,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   let releaseFileRead!: () => void;
   const fileReadGate = new Promise<void>(resolve => { releaseFileRead = resolve; });
   let fileReadCount = 0;
+  let driveFileListCount = 0;
   let heldFileRead = false;
   let startDriveList!: () => void;
   const driveListStarted = new Promise<void>(resolve => { startDriveList = resolve; });
@@ -255,6 +257,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
           createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
         return route.fulfill({ headers, json: { files } });
       }
+      if (request.method() === 'GET') driveFileListCount += 1;
       if (options.holdDriveListAccountId === accountId) {
         startDriveList();
         await driveListGate;
@@ -355,7 +358,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     },
     get appDataCreateCount() { return appDataCreateCount; },
     get visibleFolderCreateCount() { return visibleFolderCreateCount; }, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; },
-    driveListStarted, releaseDriveList };
+    driveListStarted, releaseDriveList, get driveFileListCount() { return driveFileListCount; } };
 }
 
 async function installStatefulDriveSaveMock(
@@ -601,6 +604,44 @@ async function roundTripBfCache(page: Page): Promise<void> {
 
 async function releaseDraftSaveGate(page: Page): Promise<void> {
   await page.evaluate(() => (window as Window & { __releaseDraftGate?: () => void }).__releaseDraftGate?.());
+}
+
+async function deferNextDraftBaselineRead(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as Window & {
+      __draftBaselineReadStarted?: boolean;
+      __draftBaselineReadSettled?: boolean;
+      __releaseDraftBaselineRead?: () => void;
+      __localListReads?: number;
+    };
+    const readBaseline = indexedDb.getDraftBaseline.bind(indexedDb);
+    const listDocuments = indexedDb.listDocuments.bind(indexedDb);
+    let deferred = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__draftBaselineReadStarted = false;
+    target.__draftBaselineReadSettled = false;
+    target.__releaseDraftBaselineRead = release;
+    target.__localListReads = 0;
+    indexedDb.getDraftBaseline = async (...args) => {
+      const baseline = await readBaseline(...args);
+      if (deferred) return baseline;
+      deferred = true;
+      target.__draftBaselineReadStarted = true;
+      await gate;
+      target.__draftBaselineReadSettled = true;
+      return baseline;
+    };
+    indexedDb.listDocuments = async (...args) => {
+      target.__localListReads = (target.__localListReads ?? 0) + 1;
+      return listDocuments(...args);
+    };
+  });
+}
+
+async function releaseDraftBaselineRead(page: Page): Promise<void> {
+  await page.evaluate(() => (window as Window & { __releaseDraftBaselineRead?: () => void }).__releaseDraftBaselineRead?.());
 }
 
 async function attemptReloadAndAcceptBeforeUnload(page: Page): Promise<string> {
@@ -1803,6 +1844,64 @@ test('reconciles committed local draft baselines and ignores stale write results
 
   await page.reload();
   await expectEditorSource(page, source4);
+});
+
+test('keeps the BFCache lock when another persisted pagehide interrupts draft reconciliation', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a']);
+  await installFakeAudio(page);
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await performAccountAction(page);
+  await expect.poll(() => drive.driveFileListCount).toBeGreaterThan(0);
+  const driveListsBeforeSuspension = drive.driveFileListCount;
+  await deferNextDraftBaselineRead(page);
+  const preview = page.frameLocator('#score-frame');
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadStarted?: boolean }).__draftBaselineReadStarted)).toBe(true);
+
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await releaseDraftBaselineRead(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadSettled?: boolean }).__draftBaselineReadSettled)).toBe(true);
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  expect(await page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads)).toBe(0);
+  expect(drive.driveFileListCount).toBe(driveListsBeforeSuspension);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect.poll(() => page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads ?? 0)).toBeGreaterThan(0);
+  await expect.poll(() => drive.driveFileListCount).toBeGreaterThan(driveListsBeforeSuspension);
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'title: BFCache final resume\n\n[Verse]\nC | G | Am | F |\n';
+  await editor.fill(source);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source);
+});
+
+test('a non-persisted pagehide invalidates a pending BFCache draft reconciliation', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await deferNextDraftBaselineRead(page);
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadStarted?: boolean }).__draftBaselineReadStarted)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+
+  await releaseDraftBaselineRead(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadSettled?: boolean }).__draftBaselineReadSettled)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  expect(await page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads)).toBe(0);
 });
 
 test('coalesces a user close with remote tab restoration while the Drive draft save is pending', async ({ page }) => {
