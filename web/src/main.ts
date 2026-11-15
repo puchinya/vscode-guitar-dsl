@@ -122,6 +122,7 @@ const STRINGS = {
   en: {
     files: 'Files', project: 'EXPLORER', local: 'On this device', drive: 'Google Drive', newScore: 'New score', connect: 'Connect to Google Drive', connectInline: 'Connect',
     reconnect: 'Reconnect Drive', connecting: 'Connecting…', connectedAs: 'Connected as', disconnect: 'Disconnect',
+    disconnectPendingConfirm: 'Google Drive app settings are not synchronized. Disconnect anyway? Pending settings for this account and local drafts will be kept for the next connection.',
     folder: 'Choose destination folder…', createFolder: 'Create GuitarDSL folder…', openDrive: 'Open from Google Drive…',
     addFile: 'Import file', source: 'Source', preview: 'Preview', inspector: 'Inspector', document: 'Document',
     variables: 'Variables', settings: 'Settings', progression: 'Progression', save: 'Save', saved: 'Saved locally',
@@ -169,6 +170,7 @@ const STRINGS = {
   ja: {
     files: 'ファイル', project: 'EXPLORER', local: 'このデバイス', drive: 'Google Drive', newScore: '新しい楽譜', connect: 'Google Drive に接続', connectInline: '接続',
     reconnect: 'Drive に再接続', connecting: '接続中…', connectedAs: '接続中のアカウント', disconnect: '接続を解除',
+    disconnectPendingConfirm: 'Google Drive のアプリ設定は未同期です。このまま接続を解除しますか？このアカウントの保留中の設定とローカル下書きは、次回接続時に確認できるよう保持されます。',
     folder: '保存先フォルダーを選択…', createFolder: 'GuitarDSL フォルダーを作成…', openDrive: 'Google Drive から開く…',
     addFile: 'ファイルを読み込む', source: 'ソース', preview: 'プレビュー', inspector: 'インスペクター', document: '文書',
     variables: '変数', settings: '設定', progression: 'コード進行', save: '保存', saved: 'ローカルに保存済み',
@@ -235,7 +237,7 @@ const webScoreSettingsSections = {
 };
 const auth = new GoogleOAuth();
 const draftWrites = new Map<string, Promise<void>>();
-const closingTabs = new WeakSet<OpenTab>();
+const closingTabs = new WeakMap<OpenTab, Promise<void>>();
 const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
@@ -482,11 +484,14 @@ function esc(value: string): string {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 function shortError(error: unknown): string {
+  if (error instanceof GoogleAuthError && error.code === 'insufficient-scope' && state.locale === 'ja') {
+    return 'Google Drive の2つの権限が必要です。もう一度接続し、要求された両方の権限を許可してください。';
+  }
   if (error instanceof Error) return error.message;
   return 'An unexpected error occurred.';
 }
 function markDriveAuthState(error: unknown): void {
-  if (error instanceof GoogleAuthError && error.code === 'expired' || error instanceof DriveApiError && error.status === 401) {
+  if (error instanceof GoogleAuthError && (error.code === 'expired' || error.code === 'insufficient-scope') || error instanceof DriveApiError && error.status === 401) {
     state.authExpired = true;
     renderAll();
   }
@@ -1778,9 +1783,13 @@ async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
 }
 
 function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
-  if (closingTabs.has(tab)) return Promise.resolve();
-  closingTabs.add(tab);
-  return closeTabNow(tab, skipDraft).finally(() => closingTabs.delete(tab));
+  const inFlight = closingTabs.get(tab);
+  if (inFlight) return inFlight;
+  const closePromise = closeTabNow(tab, skipDraft).finally(() => {
+    if (closingTabs.get(tab) === closePromise) closingTabs.delete(tab);
+  });
+  closingTabs.set(tab, closePromise);
+  return closePromise;
 }
 
 async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
@@ -2315,8 +2324,8 @@ async function connectDrive(): Promise<void> {
     if (state.account && !state.authExpired) {
       const synchronized = await flushDriveAppData();
       if (!synchronized || state.appDataSync !== 'idle') {
-        showMessage(strings().appDataPending, 'error');
-        return;
+        await appDataPendingQueue;
+        if (!window.confirm(strings().disconnectPendingConfirm)) return;
       }
       ++state.driveGeneration;
       try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }

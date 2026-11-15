@@ -8,11 +8,11 @@
 
 ## Issue #172: Web Compact IDE
 
-- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の最新指摘に対応。Drive appData競合選択と失敗後のアカウント別pending永続化、遅延Clipboardの対象再確認、並行tab closeと重複openの保護、Preview source bindingのEdit限定、テーマ別ヘッダー操作状態、ダークロゴを実装・再確認した。共有Preview描画の契約外変更は除去した。PRは未マージ。
-- **適用範囲**: 承認済み統合契約 Issue comment `6887610090`、23,527 bytes、SHA-256 `cd672d20cac9233dabdf514632db589c0125af310fc370d51eb3ab1e4d1ad943` を照合済み。共有Preview/Inspector描画の変更は対象外。Google Cloud OAuth同意画面の本番変更と実OAuth/Drive検証は、ユーザーの明示確認を得るまで未実施。
+- **状態**: PR [#173](https://github.com/puchinya/vscode-guitar-dsl/pull/173) の2026-11-15レビュー5点を実装修正した。部分OAuth許可の拒否、同期失敗後の確認付き切断、同一タブCloseのPromise共有、SVG寸法/Problems導線の仕様訂正、共有Preview差分の除去を含む。変更を同PRへ反映後のCI/self-reviewは未実施。PRは未マージ。
+- **適用範囲**: 承認済み統合契約 Issue comment `6887610090`、23,527 bytes、SHA-256 `cd672d20cac9233dabdf514632db589c0125af310fc370d51eb3ab1e4d1ad943` を照合済み。Google Cloud OAuth同意画面の本番変更と実OAuth/Drive検証は未実施。トークンはメモリ内のみ。
 - **画面証拠**: [画面一覧・ブラウザー検証](evidence/issue-172/README.md)。英日×ライト/ダークの1600×900、1280×800、日本語Darkの接続Drive・複数Local文書・実診断を含む参照状態、初回Drive接続、File/Edit/View、Explorer/Inspector/Problemsのメニュー、ヘッダーidle/hover/keyboard focusを取得。DOMRectで領域寸法とProblems列の整列を計測。
-- **ブラウザー検証**: Playwright Chromium 64/64 PASS、Playwright WebKit 64/64 PASS、Web unit 44/44 PASS、SafariDriver smoke 7/7 PASS (macOS arm64 / Safari 26.6.2)。Systemテーマ追従、Problems・タブ文字・初回Drive確認ダイアログの可読性、Drive接続/再接続、遅延Clipboard、並行tab closeと重複open、リモートDriveタブ復元失敗時のpending保持、WebKitのUndo/RedoとIMEを確認。Safari UI Undo/Redo・OSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はNOT RUN。
-- **最終ゲート**: `npm run compile`、`npm run build:web`、`npm run vscode:prepublish`、VSIX inventory（1,256項目、Help/AI/Drive icon/audio WASMを含みtest/evidenceは含まない）、`check:help`、`check:ai`、`validate-docs --issue 172`、`git diff --check` はPASS。`npx @vscode/vsce ls` は設定npm mirrorに接続できず、cache済みVSCE CLI 4.1.1で同じ一覧を取得した。最新 `npm test` は Help/AI同期とroot unit 1,138/1,138 PASS後、VS Code E2Eが130 pass / 6 pending / 1 failで終了。失敗は別Issue #158 PB05のtab order復元比較で、二つの既存tab identityの順序が逆だった。許可された単体診断は1/1 PASSし、Issue #162のfadeテストも同実行で30.5秒後にPASS。Web段階へは到達しなかった。Web unit 44/44とPlaywright Chromium/WebKit各64/64、Safari smokeは個別にPASS。Viteは500 kB超chunkを警告。prepublishのwasm-bindgen事前ビルド取得は非対応プラットフォームのためCargo fallbackで成功。
+- **ブラウザー検証**: Web unit 45/45 PASS、Playwright Chromium 68/68 PASS、Playwright WebKit 68/68 PASS、SafariDriver smoke 7/7 PASS (macOS arm64 / Safari 26.6.2)。部分スコープ、初回appData 403後の切断、PATCH失敗後のA→B→A切替とpending復帰、同一タブCloseとremote restoreの競合を確認した。Safari UI Undo/Redo・OSファイル保存、iOS/iPadOS、実OAuth/Drive、物理音声はNOT RUN。
+- **最終ゲート**: `npm run compile`、`npm run build:web`、`npm run vscode:prepublish`、VSIX inventory 1,256項目、`check:help`、`check:ai`、`validate-docs --issue 172`、`git diff --check` はPASS。`npm test` のroot unit 1,138/1,138とVS Code/Electron E2E 131 passing / 6 pendingはPASS。その後の並列Web browser runは134/136で終了し、既存Preview edit E2E 1件とWebKit geometry E2E 1件が失敗した。両ブラウザーを分離したRequired Check相当は各68/68 PASS。Web unit 45/45、Safari smoke 7/7もPASS。Viteは500 kB超chunkを警告。prepublishのwasm-bindgen事前ビルド取得は非対応プラットフォームのためCargo fallbackで成功。
 
 ## Issue #166: Web SPA 版 GuitarDSL
 

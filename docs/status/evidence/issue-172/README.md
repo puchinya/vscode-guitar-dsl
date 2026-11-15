@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project after addressing PR #173 review findings. Chromium captured the screenshots and DOMRect measurements. The current working tree passed Playwright Chromium 64/64, Playwright WebKit 64/64, Web unit 44/44, and SafariDriver smoke 7/7.
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project after addressing PR #173 review findings. Chromium captured the screenshots and DOMRect measurements. This review follow-up changes OAuth validation, disconnect behavior, tab-close coordination, and documentation; it does not change the captured workspace rendering. The current working tree passed isolated Playwright Chromium 68/68, Playwright WebKit 68/68, Web unit 45/45, and SafariDriver smoke 7/7.
 
 Capture command:
 
@@ -58,10 +58,10 @@ Browser automation verifies initial geometry, the four keyboard- and pointer-res
 
 ## Browser checks
 
-- Playwright Chromium: 64/64 PASS locally on macOS arm64.
-- Playwright WebKit: 64/64 PASS locally on macOS arm64, including native editor Undo/Redo and IME composition.
-- Web unit: 44/44 PASS.
+- Playwright Chromium: 68/68 PASS locally on macOS arm64, including partial OAuth consent, initial appData 403 disconnect, account-scoped pending data after disconnect, and same-tab close/remote restore.
+- Playwright WebKit: 68/68 PASS locally on macOS arm64, including native editor Undo/Redo and IME composition.
+- Web unit: 45/45 PASS, including partial-scope OAuth rejection and in-memory token handling.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive using the Drive root keyboard menu.
-- Repository `npm test`: Help/AI checks and root unit 1,138/1,138 PASS; VS Code/Electron E2E reported 130 passing, 6 pending, and 1 failure in Issue #158 PB05 while checking restoration of the pre-existing tab order (the same two identities appeared in reversed order). The focused PB05 diagnostic passed 1/1. Issue #162's previously flaky fade test passed in this full run (30.5 s). The Web stage was not reached; Web unit and Chromium/WebKit suites passed separately as listed above.
-- `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, the VSIX inventory (1,256 entries), `check:help`, `check:ai`, `validate-docs --issue 172`, and `git diff --check` PASS. The inventory contains bilingual Help, AI reference, audio WASM, and the Drive logo; it excludes test and evidence paths. The `npx @vscode/vsce ls` wrapper could not resolve the configured npm mirror, so the cached VSCE 4.1.1 CLI was run directly. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform. The focused remote-restore-failure regression passed in Chromium and WebKit; pending metadata remained in IndexedDB and the remote PATCH count did not increase.
+- Repository `npm test`: Help/AI checks, root unit 1,138/1,138, and VS Code/Electron E2E 131 passing / 6 pending passed. Its combined Web Playwright run reported 134/136: one Preview-edit test did not receive its status announcement, and one WebKit geometry check observed tied diagnostic-column x positions under the parallel browser load. Both separate project runs passed 68/68; these two combined-run failures were not reproduced in the isolated Chromium/WebKit runs.
+- `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, `check:help`, `check:ai`, `validate-docs --issue 172`, and `git diff --check` PASS. Cached VSCE 4.1.1 produced a 1,256-entry inventory containing Help, AI reference, audio WASM, and the Drive logo; repository test/evidence paths are excluded. The `npx @vscode/vsce ls` wrapper did not complete in the sandbox, so the cached CLI was run directly. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform. A separate same-tab close/remote restore test passed in both browsers and confirmed the Drive draft and remaining local tab survive.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive and the Google Cloud consent-screen update, and physical audio output are NOT RUN. The live consent-screen change requires explicit user confirmation.

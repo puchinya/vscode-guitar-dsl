@@ -67,9 +67,15 @@ window.google = {
         return {
           requestAccessToken() {
             state.tokenRequests += 1;
-            options.callback({ access_token: 'safari-smoke-token', expires_in: 3600 });
+            options.callback({
+              access_token: 'safari-smoke-token', expires_in: 3600,
+              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata'
+            });
           }
         };
+      },
+      hasGrantedAllScopes(response, ...scopes) {
+        return scopes.every(scope => response.scope.split(/\s+/u).includes(scope));
       },
       revoke(_token, callback) { callback?.(); }
     }

@@ -143,6 +143,9 @@ The local source buffer is the only editable source. A Drive-backed tab also kee
 
 ## Failure handling
 
+- `closeTab` coalesces same-tab requests in an in-flight `WeakMap<OpenTab, Promise<void>>`. Each caller awaits the same operation through draft persistence, tab removal, and session persistence, so a remote restore cannot mistake an unfinished user close for a completed one.
+- Google OAuth accepts a token only when both requested scopes are present in the GIS `TokenResponse.scope` and `hasGrantedAllScopes` accepts them when that helper is available. Partial consent clears auth state and presents an explicit reapproval error before `/about` or appData requests.
+- When appData sync is pending or failed, disconnect waits for the account-keyed pending write to settle and asks for confirmation. Confirmed disconnect clears the in-memory auth/session binding while retaining the IndexedDB pending record and local drafts for account-specific reconciliation on reconnect.
 - Compiler, renderer, planner, and PDF failures stay typed at their owning package boundary; they are not converted into successful empty output.
 - IndexedDB errors do not clear the in-memory source. The UI reports unsaved state and enables file download.
 - Each Drive open captures its account ID and `GoogleDriveApi` instance. A multi-request `getFile` read also pins its access token across metadata and media requests, so an account reconnect cannot switch credentials halfway through that read. Picker, Drive-read, conflict-dialog, and IndexedDB continuations recheck the captured session before starting writes and before changing tabs or Explorer state; a result from an ended session is discarded. Account-scoped keys always use the captured account ID.

@@ -373,7 +373,7 @@ describe('source-preserving visual and variable planners', () => {
     }), { ok: false, code: 'diagnosticRegression' }, 'inserting before lyrics cannot silently remap existing syllables');
   });
 
-  it('keeps Preview edit controls and source bindings hidden by default', () => {
+  it('keeps Preview edit controls hidden by default while rendering parser targets', () => {
     const source = '| C 4.d 4.u 4.d 4.u |\n';
     const score = parsed(source);
     const html = compileGuitarDslToHtml(source, {

@@ -5,6 +5,7 @@ const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
 interface GoogleTokenResponse {
   access_token?: string;
   expires_in?: number;
+  scope?: string;
   error?: string;
   error_description?: string;
 }
@@ -21,6 +22,7 @@ interface GoogleIdentityApi {
       callback: (response: GoogleTokenResponse) => void;
       error_callback?: (error: { type?: string; message?: string }) => void;
     }): GoogleTokenClient;
+    hasGrantedAllScopes?(tokenResponse: GoogleTokenResponse, ...scopes: string[]): boolean;
     revoke(token: string, callback?: () => void): void;
   };
 }
@@ -38,7 +40,7 @@ export interface GoogleAccount {
 const VITE_ENV = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
 
 export class GoogleAuthError extends Error {
-  constructor(readonly code: 'not-configured' | 'cancelled' | 'expired' | 'unavailable', message: string) {
+  constructor(readonly code: 'not-configured' | 'cancelled' | 'expired' | 'insufficient-scope' | 'unavailable', message: string) {
     super(message);
     this.name = 'GoogleAuthError';
   }
@@ -88,6 +90,17 @@ export class GoogleOAuth {
           if (response.error || !response.access_token) {
             reject(new GoogleAuthError(response.error === 'access_denied' ? 'cancelled' : 'unavailable',
               response.error_description || 'Google Drive authorization did not complete.'));
+            return;
+          }
+          const requiredScopes = TOKEN_SCOPE.split(' ');
+          const grantedScopes = new Set((response.scope ?? '').split(/\s+/u).filter(Boolean));
+          const grantedByToken = requiredScopes.every(scope => grantedScopes.has(scope));
+          const grantedByIdentity = api.oauth2.hasGrantedAllScopes?.(response, ...requiredScopes) ?? true;
+          if (!grantedByToken || !grantedByIdentity) {
+            this.accessToken = undefined;
+            this.expiresAt = 0;
+            this.account = undefined;
+            reject(new GoogleAuthError('insufficient-scope', 'Both Google Drive permissions are required. Connect again and grant access to both requested permissions.'));
             return;
           }
           resolve({ token: response.access_token, expiresIn: Math.max(0, Number(response.expires_in) || 0) });

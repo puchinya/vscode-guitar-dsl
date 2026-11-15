@@ -275,13 +275,12 @@ export function compileGuitarDslToHtml(dslContent: string, options?: CompileHtml
     ? renderCspMeta(options.cspSource, options.nonce)
     : '';
 
-  const includeVisualBindings = previewEditAvailable && previewEditMode;
-  const sheets = renderScoreSheets(score, pageSize, orientation, includeVisualBindings);
+  const sheets = renderScoreSheets(score, pageSize, orientation, previewEditMode && previewEditAvailable);
   const spreadGroups: string[] = [];
   for (let i = 0; i < sheets.length; i += 2) {
     spreadGroups.push(`<div class="spread-sheet">${sheets.slice(i, i + 2).join('\n')}</div>`);
   }
-  const continuousSvg = renderContinuousSvg(score, pageSize, includeVisualBindings);
+  const continuousSvg = renderContinuousSvg(score, pageSize, previewEditMode && previewEditAvailable);
 
   const sheetMaxWidthPx = Math.round(getSheetSize(pageSize, orientation).width * PX_PER_PT);
   const previewIdentityJson = escapeJsonForHtml(JSON.stringify({
