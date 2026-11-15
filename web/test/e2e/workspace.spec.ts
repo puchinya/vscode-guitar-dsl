@@ -128,6 +128,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   driveListStarted: Promise<void>;
   releaseDriveList(): void;
   get driveFileListCount(): number;
+  get driveFileListPendingCount(): number;
 }> {
   const initialStates = Object.fromEntries(accountSequence.map(accountId => [accountId,
     options.appDataStates && Object.hasOwn(options.appDataStates, accountId) ? options.appDataStates[accountId]
@@ -226,6 +227,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   const fileReadGate = new Promise<void>(resolve => { releaseFileRead = resolve; });
   let fileReadCount = 0;
   let driveFileListCount = 0;
+  let driveFileListPendingCount = 0;
   let heldFileRead = false;
   let startDriveList!: () => void;
   const driveListStarted = new Promise<void>(resolve => { startDriveList = resolve; });
@@ -246,32 +248,40 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
     }
     if (url.pathname === '/drive/v3/files') {
-      const query = url.searchParams.get('q') ?? '';
-      if (url.searchParams.get('spaces') === 'appDataFolder') {
-        if (appDataListFailureCount > 0) {
-          appDataListFailureCount -= 1;
-          return route.fulfill({ status: 403, headers, json: { error: 'simulated appData permission failure' } });
+      const isDriveFileList = request.method() === 'GET' && url.searchParams.get('spaces') !== 'appDataFolder';
+      if (isDriveFileList) {
+        driveFileListCount += 1;
+        driveFileListPendingCount += 1;
+      }
+      try {
+        const query = url.searchParams.get('q') ?? '';
+        if (url.searchParams.get('spaces') === 'appDataFolder') {
+          if (appDataListFailureCount > 0) {
+            appDataListFailureCount -= 1;
+            return await route.fulfill({ status: 403, headers, json: { error: 'simulated appData permission failure' } });
+          }
+          appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
+          const files = appDataState ? [{ id: `app-state-${accountId}`, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+            createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
+          return await route.fulfill({ headers, json: { files } });
         }
-        appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
-        const files = appDataState ? [{ id: `app-state-${accountId}`, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
-          createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
-        return route.fulfill({ headers, json: { files } });
+        if (options.holdDriveListAccountId === accountId) {
+          startDriveList();
+          await driveListGate;
+        }
+        if (options.unauthorizedList || options.unauthorizedListAccountId === accountId) {
+          return await route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
+        }
+        if (request.method() === 'POST') {
+          visibleFolderCreateCount += 1;
+          return await route.fulfill({ headers, json: { id: `folder-${accountId}`, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] } });
+        }
+        const parent = query.match(/^'([^']+)' in parents/u)?.[1];
+        const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
+        return await route.fulfill({ headers, json: { files } });
+      } finally {
+        if (isDriveFileList) driveFileListPendingCount -= 1;
       }
-      if (request.method() === 'GET') driveFileListCount += 1;
-      if (options.holdDriveListAccountId === accountId) {
-        startDriveList();
-        await driveListGate;
-      }
-      if (options.unauthorizedList || options.unauthorizedListAccountId === accountId) {
-        return route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
-      }
-      if (request.method() === 'POST') {
-        visibleFolderCreateCount += 1;
-        return route.fulfill({ headers, json: { id: `folder-${accountId}`, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] } });
-      }
-      const parent = query.match(/^'([^']+)' in parents/u)?.[1];
-      const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
-      return route.fulfill({ headers, json: { files } });
     }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
       const id = url.pathname.split('/').at(-1)!;
@@ -358,7 +368,8 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     },
     get appDataCreateCount() { return appDataCreateCount; },
     get visibleFolderCreateCount() { return visibleFolderCreateCount; }, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; },
-    driveListStarted, releaseDriveList, get driveFileListCount() { return driveFileListCount; } };
+    driveListStarted, releaseDriveList, get driveFileListCount() { return driveFileListCount; },
+    get driveFileListPendingCount() { return driveFileListPendingCount; } };
 }
 
 async function installStatefulDriveSaveMock(
@@ -1853,6 +1864,9 @@ test('keeps the BFCache lock when another persisted pagehide interrupts draft re
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
   await performAccountAction(page);
   await expect.poll(() => drive.driveFileListCount).toBeGreaterThan(0);
+  await expect.poll(() => drive.driveFileListPendingCount).toBe(0);
+  await page.waitForTimeout(100);
+  await expect.poll(() => drive.driveFileListPendingCount).toBe(0);
   const driveListsBeforeSuspension = drive.driveFileListCount;
   await deferNextDraftBaselineRead(page);
   const preview = page.frameLocator('#score-frame');
