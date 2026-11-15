@@ -1,6 +1,6 @@
 # Issue #172 Web Compact Workspace evidence
 
-Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements. Final browser checks passed: Playwright Chromium 59/59, Playwright WebKit 59/59, Web unit 43/43, and Apple Safari/SafariDriver 7/7 (Safari 26.6.2).
+Captured on 2026-11-15 on macOS arm64 with the Playwright Chromium project. Chromium captured the screenshots and DOMRect measurements. At current revision `40689f0`, Playwright Chromium and Safari CI passed, local Playwright WebKit passed 59/59, and Web unit tests passed 43/43. The first WebKit CI attempt had one computed-style assertion failure; the same focused test and local full WebKit suite passed, and the failed CI job was rerun.
 
 Capture command:
 
@@ -57,10 +57,10 @@ Browser automation verifies initial geometry, the four keyboard- and pointer-res
 
 ## Browser checks
 
-- Playwright Chromium: 59/59 PASS on macOS arm64.
-- Playwright WebKit: 59/59 PASS on macOS arm64, including native editor Undo/Redo and IME composition.
+- Playwright Chromium: 59/59 PASS on the current PR revision (GitHub Actions).
+- Playwright WebKit: 59/59 PASS locally on macOS arm64, including native editor Undo/Redo and IME composition. The focused Problems grid test also passed 1/1 after its first CI attempt failed to read the header's computed grid tracks; the failed CI job was rerun.
 - Web unit: 43/43 PASS.
 - Apple Safari/SafariDriver: 7/7 checks PASS on macOS 26.6.2 / Safari 26.6.2. The checks cover local draft restore, Preview/Inspector, PDF Blob and download invocation, audio exclusion, narrow layout and focus, source export after a storage failure, and mocked OAuth/Picker/Drive using the Drive root keyboard menu.
-- Repository `npm test`: 1,138 root unit tests PASS; VS Code/Electron E2E 131 PASS / 6 pending; Web unit 43/43 and Web browser E2E 118/118 PASS.
+- Repository `npm test` at `40689f0`: root unit 1,138 PASS; VS Code/Electron E2E 130 PASS / 6 pending / 1 FAIL. The failure is the timing-sensitive Issue #162 fade cleanup assertion (`layers:1` at 841 ms before its 900 ms fallback); a filtered diagnostic of that test and the unrelated PB05 cleanup case passed 2/2. The command stopped before its Web stage; Web unit 43/43 and browser suites were run separately, and Chromium/WebKit each passed 59/59.
 - `npm run compile`, `npm run build:web`, `npm run vscode:prepublish`, `npx @vscode/vsce ls` (1,256 entries), `check:help`, `check:ai`, `validate-docs --issue 172`, implementation-contract verification, and `git diff --check` PASS. The VSIX file list contains bilingual Help, AI reference, and the Drive logo; it excludes test and evidence paths. Vite reports advisory chunks above 500 kB. `vscode:prepublish` used Cargo fallback because no prebuilt wasm-bindgen binary is available for this platform.
 - Safari UI Undo/Redo, actual OS PDF saving, iOS/iPadOS Safari, production Google OAuth/Drive and the Google Cloud consent-screen update, and physical audio output are NOT RUN. The live consent-screen change requires explicit user confirmation.
