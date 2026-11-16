@@ -1929,6 +1929,7 @@ test('keeps the BFCache lock when another persisted pagehide interrupts draft re
 test('a non-persisted pagehide invalidates a pending BFCache draft reconciliation', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await deferNextDraftBaselineRead(page);
 
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
