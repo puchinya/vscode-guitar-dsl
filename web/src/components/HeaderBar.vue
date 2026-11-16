@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import type { WorkspaceCommand, WorkspaceViewSnapshot } from '../types/workspace';
+import { computed } from 'vue';
+import type { WorkspaceCommand } from '../types/workspace';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
-const props = defineProps<{ snapshot: Readonly<WorkspaceViewSnapshot> }>();
+const workspaceStore = useWorkspaceStore();
+const snapshot = computed(() => {
+  const current = workspaceStore.view;
+  if (current === null) throw new Error('Workspace store must be attached before HeaderBar is rendered.');
+  return current;
+});
 const emit = defineEmits<{ command: [command: WorkspaceCommand] }>();
-const text = (ja: string, en: string) => props.snapshot.locale === 'ja' ? ja : en;
+const text = (ja: string, en: string) => snapshot.value.locale === 'ja' ? ja : en;
 const openMenu = (menu: Extract<WorkspaceCommand, { type: 'menu.open' }>['menu']) => emit('command', { type: 'menu.open', menu });
 const driveStatusLabel = () => {
-  const values = props.snapshot.locale === 'ja'
+  const values = snapshot.value.locale === 'ja'
     ? { connected: '接続済み', connecting: '接続中…', reauth: '再接続が必要', offline: 'オフライン', disconnected: '未接続' }
     : { connected: 'Connected', connecting: 'Connecting…', reauth: 'Reconnect required', offline: 'Offline', disconnected: 'Not connected' };
-  return values[props.snapshot.driveStatus];
+  return values[snapshot.value.driveStatus];
 };
 </script>
 

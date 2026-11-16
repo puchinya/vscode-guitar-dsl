@@ -1049,6 +1049,32 @@ test('resolves system theme and keeps Problems and document tabs readable', asyn
   }
 });
 
+test('Header and Problems render the latest Controller view through the workspace store', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#drive-state-label')).toHaveText('Not connected');
+  await expect(page.locator('#status-problems')).toHaveText('Errors 0 / Warnings 0');
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  const errors = page.locator('#error-count');
+  const warnings = page.locator('#warning-count');
+  await expect(errors).not.toHaveText('0');
+  await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+  await expect.poll(() => page.locator('#status-problems').textContent()).toMatch(/^Errors \d+ \/ Warnings \d+$/u);
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('#drive-state-label')).toHaveText('未接続');
+  await expect(page.locator('#problems-title')).toHaveText('問題');
+  await expect(page.locator('#status-problems')).toHaveText(`エラー ${await errors.textContent()} / 警告 ${await warnings.textContent()}`);
+
+  await page.locator('#close-problems').click();
+  await expect(page.locator('#problems-panel')).toBeHidden();
+  await page.locator('#toggle-problems').click();
+  await expect(page.locator('#problems-panel')).toBeVisible();
+});
+
 test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
@@ -1903,6 +1929,7 @@ test('keeps the BFCache lock when another persisted pagehide interrupts draft re
 test('a non-persisted pagehide invalidates a pending BFCache draft reconciliation', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await deferNextDraftBaselineRead(page);
 
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
