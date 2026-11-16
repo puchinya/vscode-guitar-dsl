@@ -29,6 +29,12 @@ jobs:
           VITE_GOOGLE_API_KEY: playwright-test-api-key
           VITE_GOOGLE_APP_ID: "123456789"
         run: npm run test:e2e --workspace web -- --project=chromium
+      - name: Run production PWA E2E
+        env:
+          VITE_GOOGLE_CLIENT_ID: playwright-test-client
+          VITE_GOOGLE_API_KEY: playwright-test-api-key
+          VITE_GOOGLE_APP_ID: "123456789"
+        run: npm run test:e2e:pwa --workspace web
 
   web-spa-webkit:
     runs-on: macos-latest

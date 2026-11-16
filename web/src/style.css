@@ -555,6 +555,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .brand-mark { filter: brightness(0) invert(1); }
 .app-shell[data-theme="dark"] .drive-root-more { color: #99a3b5; }
 .app-shell[data-theme="dark"] .settings-menu button kbd { color: #99a3b5; }
+.pwa-update-prompt { position: fixed; z-index: 2000; right: 20px; bottom: 20px; display: flex; width: min(520px, calc(100vw - 32px)); align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid #d7dbe3; border-radius: 10px; background: #fff; color: #252a33; box-shadow: 0 12px 36px rgb(20 28 42 / 24%); }
+.pwa-update-copy { display: grid; gap: 5px; font-size: 12px; line-height: 1.45; }
+.pwa-update-copy strong { font-size: 13px; }
+.pwa-update-copy span { color: #596273; }
+.pwa-update-copy .pwa-update-blocked { color: #a12f2f; }
+.pwa-update-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.pwa-update-actions button { min-height: 32px; padding: 0 11px; border: 1px solid #cfd5df; border-radius: 5px; background: #f7f8fa; color: inherit; }
+.pwa-update-actions .primary-button { border-color: #314fc4; background: #314fc4; color: #fff; }
+.pwa-update-actions button:disabled { opacity: .55; }
+.app-shell[data-theme="dark"] .pwa-update-prompt { border-color: #454d5b; background: #252a32; color: #edf0f4; }
+.app-shell[data-theme="dark"] .pwa-update-copy span { color: #aeb6c3; }
+.app-shell[data-theme="dark"] .pwa-update-copy .pwa-update-blocked { color: #ffaaaa; }
+.app-shell[data-theme="dark"] .pwa-update-actions button { border-color: #515b6b; background: #343b47; color: #edf0f4; }
+.app-shell[data-theme="dark"] .pwa-update-actions .primary-button { border-color: #5265db; background: #5265db; }
+@media (max-width: 560px) {
+  .pwa-update-prompt { right: 8px; bottom: 8px; left: 8px; width: auto; align-items: flex-start; flex-direction: column; gap: 12px; }
+  .pwa-update-actions { width: 100%; justify-content: flex-end; }
+}
 @media (max-width: 900px) {
   .problem-columns, .problem-row { grid-template-columns: 64px minmax(100px, .9fr) 62px minmax(140px, 2fr); gap: 5px; }
 }

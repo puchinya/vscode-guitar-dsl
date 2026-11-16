@@ -104,6 +104,8 @@ interface DriveBrowserMockOptions {
   folders?: Record<string, string>;
   driveFiles?: Array<{ id: string; name: string; version: string; modifiedTime: string; mimeType?: string; parents?: string[] }>;
   unauthorizedList?: boolean;
+  unauthorizedListAccountId?: string;
+  holdDriveListAccountId?: string;
   appDataState?: TestAppDataState | null;
   appDataStates?: Record<string, TestAppDataState | null>;
   grantedScopes?: string;
@@ -123,6 +125,10 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   fileReadStarted: Promise<void>;
   releaseFileRead(): void;
   get fileReadCount(): number;
+  driveListStarted: Promise<void>;
+  releaseDriveList(): void;
+  get driveFileListCount(): number;
+  get driveFileListPendingCount(): number;
 }> {
   const initialStates = Object.fromEntries(accountSequence.map(accountId => [accountId,
     options.appDataStates && Object.hasOwn(options.appDataStates, accountId) ? options.appDataStates[accountId]
@@ -220,7 +226,13 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   let releaseFileRead!: () => void;
   const fileReadGate = new Promise<void>(resolve => { releaseFileRead = resolve; });
   let fileReadCount = 0;
+  let driveFileListCount = 0;
+  let driveFileListPendingCount = 0;
   let heldFileRead = false;
+  let startDriveList!: () => void;
+  const driveListStarted = new Promise<void>(resolve => { startDriveList = resolve; });
+  let releaseDriveList!: () => void;
+  const driveListGate = new Promise<void>(resolve => { releaseDriveList = resolve; });
   await page.route('https://www.googleapis.com/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -236,25 +248,40 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
     }
     if (url.pathname === '/drive/v3/files') {
-      const query = url.searchParams.get('q') ?? '';
-      if (url.searchParams.get('spaces') === 'appDataFolder') {
-        if (appDataListFailureCount > 0) {
-          appDataListFailureCount -= 1;
-          return route.fulfill({ status: 403, headers, json: { error: 'simulated appData permission failure' } });
+      const isDriveFileList = request.method() === 'GET' && url.searchParams.get('spaces') !== 'appDataFolder';
+      if (isDriveFileList) {
+        driveFileListCount += 1;
+        driveFileListPendingCount += 1;
+      }
+      try {
+        const query = url.searchParams.get('q') ?? '';
+        if (url.searchParams.get('spaces') === 'appDataFolder') {
+          if (appDataListFailureCount > 0) {
+            appDataListFailureCount -= 1;
+            return await route.fulfill({ status: 403, headers, json: { error: 'simulated appData permission failure' } });
+          }
+          appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
+          const files = appDataState ? [{ id: `app-state-${accountId}`, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+            createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
+          return await route.fulfill({ headers, json: { files } });
         }
-        appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
-        const files = appDataState ? [{ id: `app-state-${accountId}`, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
-          createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
-        return route.fulfill({ headers, json: { files } });
+        if (options.holdDriveListAccountId === accountId) {
+          startDriveList();
+          await driveListGate;
+        }
+        if (options.unauthorizedList || options.unauthorizedListAccountId === accountId) {
+          return await route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
+        }
+        if (request.method() === 'POST') {
+          visibleFolderCreateCount += 1;
+          return await route.fulfill({ headers, json: { id: `folder-${accountId}`, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] } });
+        }
+        const parent = query.match(/^'([^']+)' in parents/u)?.[1];
+        const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
+        return await route.fulfill({ headers, json: { files } });
+      } finally {
+        if (isDriveFileList) driveFileListPendingCount -= 1;
       }
-      if (options.unauthorizedList) return route.fulfill({ status: 401, headers, json: { error: 'expired test token' } });
-      if (request.method() === 'POST') {
-        visibleFolderCreateCount += 1;
-        return route.fulfill({ headers, json: { id: `folder-${accountId}`, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] } });
-      }
-      const parent = query.match(/^'([^']+)' in parents/u)?.[1];
-      const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
-      return route.fulfill({ headers, json: { files } });
     }
     if (/^\/drive\/v3\/files\/folder-[^/]+$/u.test(url.pathname)) {
       const id = url.pathname.split('/').at(-1)!;
@@ -340,7 +367,9 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       appDataVersion += 1;
     },
     get appDataCreateCount() { return appDataCreateCount; },
-    get visibleFolderCreateCount() { return visibleFolderCreateCount; }, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; } };
+    get visibleFolderCreateCount() { return visibleFolderCreateCount; }, fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; },
+    driveListStarted, releaseDriveList, get driveFileListCount() { return driveFileListCount; },
+    get driveFileListPendingCount() { return driveFileListPendingCount; } };
 }
 
 async function installStatefulDriveSaveMock(
@@ -450,7 +479,10 @@ async function installStatefulDriveSaveMock(
   };
 }
 
-async function seedDriveSessions(page: Page, documents: DriveSeed[], options: { appDataState?: TestAppDataState | null } = {}): Promise<void> {
+async function seedDriveSessions(page: Page, documents: DriveSeed[], options: {
+  appDataState?: TestAppDataState | null;
+  appDataStates?: Record<string, TestAppDataState | null>;
+} = {}): Promise<void> {
   const driveSeeds = mockedDriveSeeds.get(page) ?? new Map<string, DriveSeed>();
   for (const seed of documents) driveSeeds.set(seed.fileId, seed);
   mockedDriveSeeds.set(page, driveSeeds);
@@ -465,6 +497,7 @@ async function seedDriveSessions(page: Page, documents: DriveSeed[], options: { 
     appDataStates.set(accountId, { schemaVersion: 1, selectedFolderId: `folder-${accountId}`, folderPrompt: 'completed',
       openDriveFileIds: tabs, activeDriveFileId: tabs[0] ?? null, recentDriveFileIds: tabs });
   }
+  for (const [accountId, state] of Object.entries(options.appDataStates ?? {})) appDataStates.set(accountId, state);
   if (options.appDataState !== undefined) appDataStates.set(documents[0]?.accountId ?? 'account-a', options.appDataState);
   mockedDriveAppData.set(page, appDataStates);
   await page.evaluate(async (seeds: DriveSeed[]) => {
@@ -507,6 +540,119 @@ async function holdDraftSave(page: Page, fail = false): Promise<void> {
       return original(...args);
     };
   }, fail);
+}
+
+type WorkspaceTestTab = {
+  identity: { storage: 'local' | 'drive'; fileId: string };
+  accountId?: string;
+  source: string;
+  revision: number;
+  persistedBase: { revision: number; source: string };
+  saveStatus: string;
+};
+
+async function readFirstWorkspaceTab(page: Page): Promise<WorkspaceTestTab | undefined> {
+  return page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => WorkspaceTestTab[]
+  }).__guitarDslReadTabs?.()[0]);
+}
+
+async function readFirstWorkspaceDocument(page: Page): Promise<{ source: string; revision: number } | undefined> {
+  return page.evaluate(async () => {
+    const tab = (window as Window & { __guitarDslReadTabs?: () => WorkspaceTestTab[] }).__guitarDslReadTabs?.()[0];
+    if (!tab) return undefined;
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const document = await indexedDb.getDocument(tab.identity, tab.accountId);
+    return document && { source: document.source, revision: document.revision };
+  });
+}
+
+async function installOneShotDraftSaveGate(page: Page, mode: 'fail-now' | 'commit-then-hold' | 'fail-then-hold'): Promise<void> {
+  await page.evaluate(async (gateMode: typeof mode) => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as Window & {
+      __draftGateStarted?: boolean;
+      __draftGateCommitted?: boolean;
+      __draftGateSettled?: boolean;
+      __releaseDraftGate?: () => void;
+    };
+    const original = indexedDb.saveDraft.bind(indexedDb);
+    let intercepted = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__draftGateStarted = false;
+    target.__draftGateCommitted = false;
+    target.__draftGateSettled = false;
+    target.__releaseDraftGate = release;
+    indexedDb.saveDraft = async (...args) => {
+      if (intercepted) return original(...args);
+      intercepted = true;
+      target.__draftGateStarted = true;
+      if (gateMode === 'fail-now') {
+        target.__draftGateSettled = true;
+        throw new DOMException('Initial simulated draft failure', 'QuotaExceededError');
+      }
+      if (gateMode === 'commit-then-hold') {
+        const saved = await original(...args);
+        target.__draftGateCommitted = saved;
+        await gate;
+        target.__draftGateSettled = true;
+        return saved;
+      }
+      await gate;
+      target.__draftGateSettled = true;
+      throw new DOMException('Stale scheduled write failed', 'QuotaExceededError');
+    };
+  }, mode);
+}
+
+async function roundTripBfCache(page: Page): Promise<void> {
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+}
+
+async function releaseDraftSaveGate(page: Page): Promise<void> {
+  await page.evaluate(() => (window as Window & { __releaseDraftGate?: () => void }).__releaseDraftGate?.());
+}
+
+async function deferNextDraftBaselineRead(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as Window & {
+      __draftBaselineReadStarted?: boolean;
+      __draftBaselineReadSettled?: boolean;
+      __releaseDraftBaselineRead?: () => void;
+      __localListReads?: number;
+    };
+    const readBaseline = indexedDb.getDraftBaseline.bind(indexedDb);
+    const listDocuments = indexedDb.listDocuments.bind(indexedDb);
+    let deferred = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__draftBaselineReadStarted = false;
+    target.__draftBaselineReadSettled = false;
+    target.__releaseDraftBaselineRead = release;
+    target.__localListReads = 0;
+    indexedDb.getDraftBaseline = async (...args) => {
+      const baseline = await readBaseline(...args);
+      if (deferred) return baseline;
+      deferred = true;
+      target.__draftBaselineReadStarted = true;
+      await gate;
+      target.__draftBaselineReadSettled = true;
+      return baseline;
+    };
+    indexedDb.listDocuments = async (...args) => {
+      target.__localListReads = (target.__localListReads ?? 0) + 1;
+      return listDocuments(...args);
+    };
+  });
+}
+
+async function releaseDraftBaselineRead(page: Page): Promise<void> {
+  await page.evaluate(() => (window as Window & { __releaseDraftBaselineRead?: () => void }).__releaseDraftBaselineRead?.());
 }
 
 async function attemptReloadAndAcceptBeforeUnload(page: Page): Promise<string> {
@@ -1148,6 +1294,7 @@ test('opens Help, Settings, and host-owned context menus from workspace surfaces
 
 test('header menus keep their actions bound to the active editor and switch accessibly', async ({ page }) => {
   await page.goto('/');
+  await expectEditorSource(page, /^title: My song/m);
   const triggers = page.locator('.main-menu-bar [role="menuitem"]');
   await expect(triggers).toHaveCount(3);
   await expect(triggers).toHaveText(['File', 'Edit', 'View']);
@@ -1212,6 +1359,127 @@ test('keeps a partial Google consent disconnected when account lookup would succ
   await expect(page.locator('#app-message')).toContainText('Both Google Drive permissions are required');
 });
 
+test('ignores a delayed Drive list failure from the previous account and keeps the current account state', async ({ page }) => {
+  const accountAState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-b'], activeDriveFileId: 'drive-b', recentDriveFileIds: ['drive-b']
+  };
+  const bSavedSource = 'title: Account B saved\n';
+  const bDraftSource = 'title: Account B local draft\n';
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    appDataStates: { 'account-a': accountAState, 'account-b': accountBState },
+    holdDriveListAccountId: 'account-a', unauthorizedListAccountId: 'account-a',
+    driveFiles: [{ id: 'drive-b', name: 'Account B song.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-b'] }],
+    remoteFiles: { 'drive-b': { name: 'Account B song.guitardsl', source: bSavedSource, version: '1' } }
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-b', fileId: 'drive-b', name: 'Account B song.guitardsl', source: bSavedSource, draftSource: bDraftSource
+  }], { appDataStates: { 'account-a': accountAState, 'account-b': accountBState } });
+  await performAccountAction(page);
+  await drive.driveListStarted;
+  await performAccountAction(page);
+  await performAccountAction(page);
+
+  const accountBFile = page.locator('#drive-file-items .file-item[data-file-id="drive-b"]');
+  await expect(accountBFile).toBeVisible();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'true');
+  await expect(page.locator('#drive-scope-note')).toBeVisible();
+  await expect(page.locator('#drive-scope-note')).toContainText('files you open with this app or create here');
+  await expect(page.locator('#drive-overwrite-note')).toBeVisible();
+  await expect(page.locator('#drive-overwrite-note')).toContainText('may overwrite its changes');
+  await expectEditorSource(page, bDraftSource);
+  if (page.context().browser()?.browserType().name() === 'chromium') {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const evidencePath = resolve(process.cwd(), '../docs/status/evidence/issue-174/drive-connection-notices.png');
+    await mkdir(dirname(evidencePath), { recursive: true });
+    await page.screenshot({ path: evidencePath, fullPage: false });
+  }
+
+  const readAccountBDraft = () => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getDraft({ storage: 'drive', fileId: 'drive-b' }, 'account-b');
+  });
+  await expect.poll(readAccountBDraft).toMatchObject({ source: bDraftSource, revision: 1 });
+
+  const oldAccountListResponse = page.waitForResponse(response => {
+    const request = response.request();
+    const url = new URL(request.url());
+    return url.pathname === '/drive/v3/files'
+      && url.searchParams.get('spaces') !== 'appDataFolder'
+      && request.headers().authorization === 'Bearer test-token-account-a';
+  });
+  drive.releaseDriveList();
+  expect((await oldAccountListResponse).status()).toBe(401);
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+  await expect(accountBFile).toBeVisible();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'true');
+  await expect(page.locator('#drive-scope-note')).toBeVisible();
+  await expect(page.locator('#drive-overwrite-note')).toBeVisible();
+  await expectEditorSource(page, bDraftSource);
+  await expect.poll(readAccountBDraft).toMatchObject({ source: bDraftSource, revision: 1 });
+});
+
+test('rejects a delayed Drive open command from the previous account when file IDs overlap', async ({ page }) => {
+  const accountAState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    appDataStates: { 'account-a': accountAState, 'account-b': accountBState },
+    driveFiles: [{ id: 'shared-file', name: 'Shared song.guitardsl', version: '1', modifiedTime: 't1',
+      mimeType: 'text/plain', parents: ['folder-account-a', 'folder-account-b'] }],
+    remoteFiles: { 'shared-file': { name: 'Shared song.guitardsl', source: 'title: Account owned song\n', version: '1' } }
+  });
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const localSource = 'title: Keep local source active\n';
+  await editor.fill(localSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await performAccountAction(page);
+  const accountAFile = page.locator('#drive-file-items .file-item[data-file-id="shared-file"]');
+  await expect(accountAFile).toBeVisible();
+  await expect(accountAFile).toHaveAttribute('data-account-id', 'account-a');
+  const generationA = await page.evaluate(async () => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    return workspaceRuntimeController.snapshot().driveGeneration;
+  });
+
+  await performAccountAction(page);
+  await performAccountAction(page);
+  const accountBFile = page.locator('#drive-file-items .file-item[data-file-id="shared-file"]');
+  await expect(accountBFile).toBeVisible();
+  await expect(accountBFile).toHaveAttribute('data-account-id', 'account-b');
+  const generationB = await page.evaluate(async () => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    return workspaceRuntimeController.snapshot().driveGeneration;
+  });
+  expect(generationB).toBeGreaterThan(generationA);
+  const readsBeforeStaleCommand = drive.fileReadCount;
+
+  await page.evaluate(async staleGeneration => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    await workspaceRuntimeController.dispatch({
+      type: 'document.open-drive', identity: { storage: 'drive', fileId: 'shared-file' },
+      accountId: 'account-a', driveGeneration: staleGeneration
+    });
+  }, generationA);
+
+  await expectEditorSource(page, localSource);
+  await expect(page.getByRole('tab', { name: 'Shared song.guitardsl' })).toHaveCount(0);
+  expect(drive.fileReadCount).toBe(readsBeforeStaleCommand);
+});
+
 test('allows leaving an account when its initial appData list is forbidden', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a', 'account-b'], { failAppDataListCount: 1 });
   await page.goto('/');
@@ -1227,6 +1495,7 @@ test('first Drive sign-in offers folder setup once and remembers Later without c
   const drive = await installDriveBrowserMock(page, ['account-a'], { appDataState: null });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await page.locator('#connect-drive').click();
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
   const setup = page.getByRole('dialog');
@@ -1448,7 +1717,7 @@ test('keeps pending metadata when an explicit remote choice cannot restore its D
   await expect(page.locator('#saved-state')).toContainText('Pending settings have been kept.');
 });
 
-test('cancels delayed Cut and Paste when the active document changes and keeps Cut as one undo step', async ({ page }) => {
+test('cancels delayed Cut and Paste after tab changes or BFCache suspension and keeps Cut as one undo step', async ({ page }) => {
   await installDeferredClipboard(page);
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
@@ -1494,6 +1763,28 @@ test('cancels delayed Cut and Paste when the active document changes and keeps C
   await page.locator('#menu-edit-trigger').click();
   await page.locator('#edit-menu').getByRole('menuitem', { name: 'Paste' }).click();
   await expect.poll(() => page.evaluate(() => (window as Window & { __clipboardReadStarted?: boolean }).__clipboardReadStarted)).toBe(true);
+  const firstRevisionBeforeBfCache = await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ source: string; revision: number }>
+  }).__guitarDslReadTabs?.().find(tab => tab.source.includes('title: First tab'))?.revision);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await page.evaluate(() => (window as Window & { __releaseClipboardRead?: () => void }).__releaseClipboardRead?.());
+  await expect(page.getByText(/clipboard edit was deferred/i)).toBeVisible();
+  await expectEditorSource(page, firstSource);
+  expect(await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ source: string; revision: number }>
+  }).__guitarDslReadTabs?.().find(tab => tab.source.includes('title: First tab'))?.revision)).toBe(firstRevisionBeforeBfCache);
+
+  await editor.press(selectAllShortcut);
+  await page.evaluate(() => {
+    const target = window as Window & { __clipboardHoldRead?: boolean; __clipboardReadStarted?: boolean };
+    target.__clipboardHoldRead = true; target.__clipboardReadStarted = false;
+  });
+  await page.locator('#menu-edit-trigger').click();
+  await page.locator('#edit-menu').getByRole('menuitem', { name: 'Paste' }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __clipboardReadStarted?: boolean }).__clipboardReadStarted)).toBe(true);
   await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
   await expect(page.getByRole('tab', { name: 'Second.guitardsl' })).toHaveAttribute('aria-selected', 'true');
   await page.evaluate(() => (window as Window & { __releaseClipboardRead?: () => void }).__releaseClipboardRead?.());
@@ -1511,6 +1802,120 @@ test('cancels delayed Cut and Paste when the active document changes and keeps C
   await expectEditorSource(page, firstSource);
   await page.getByRole('tab', { name: 'Second.guitardsl' }).click();
   await expectEditorSource(page, secondSource);
+});
+
+test('reconciles committed local draft baselines and ignores stale write results after BFCache restore', async ({ page }) => {
+  await page.goto('/');
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await expect.poll(() => readFirstWorkspaceTab(page)).toBeDefined();
+
+  const source1 = 'title: BFCache draft one\n\n[Verse]\nC | G | Am | F |\n';
+  await installOneShotDraftSaveGate(page, 'fail-now');
+  await editor.fill(source1);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('error');
+  const beforeSave = await readFirstWorkspaceTab(page);
+  expect(beforeSave).toBeDefined();
+  expect(beforeSave?.persistedBase.source).not.toBe(source1);
+
+  await installOneShotDraftSaveGate(page, 'commit-then-hold');
+  await page.locator('#save-document').click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateCommitted?: boolean }).__draftGateCommitted)).toBe(true);
+  expect(await readFirstWorkspaceDocument(page)).toMatchObject({ source: source1, revision: beforeSave?.revision });
+  await roundTripBfCache(page);
+  const resumedAfterSave = await readFirstWorkspaceTab(page);
+  expect(resumedAfterSave).toMatchObject({ source: source1, revision: beforeSave?.revision, persistedBase: { source: source1 }, saveStatus: 'draft' });
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+
+  const source2 = 'title: BFCache draft two\n\n[Verse]\nD | A | Bm | G |\n';
+  await editor.fill(source2);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source2);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+
+  const source3 = 'title: BFCache scheduled success\n\n[Verse]\nE | B | C#m | A |\n';
+  await installOneShotDraftSaveGate(page, 'commit-then-hold');
+  await editor.fill(source3);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateCommitted?: boolean }).__draftGateCommitted)).toBe(true);
+  await roundTripBfCache(page);
+  expect(await readFirstWorkspaceTab(page)).toMatchObject({ source: source3, persistedBase: { source: source3 }, saveStatus: 'draft' });
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+
+  const source4 = 'title: BFCache scheduled retry\n\n[Verse]\nF | C | Dm | Bb |\n';
+  await installOneShotDraftSaveGate(page, 'fail-then-hold');
+  await editor.fill(source4);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateStarted?: boolean }).__draftGateStarted)).toBe(true);
+  await roundTripBfCache(page);
+  await releaseDraftSaveGate(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftGateSettled?: boolean }).__draftGateSettled)).toBe(true);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source4);
+  await expect.poll(async () => (await readFirstWorkspaceTab(page))?.saveStatus).toBe('draft');
+  await expect(page.getByText('Stale scheduled write failed')).toHaveCount(0);
+
+  await page.reload();
+  await expectEditorSource(page, source4);
+});
+
+test('keeps the BFCache lock when another persisted pagehide interrupts draft reconciliation', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a']);
+  await installFakeAudio(page);
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await performAccountAction(page);
+  await expect.poll(() => drive.driveFileListCount).toBeGreaterThan(0);
+  await expect.poll(() => drive.driveFileListPendingCount).toBe(0);
+  await page.waitForTimeout(100);
+  await expect.poll(() => drive.driveFileListPendingCount).toBe(0);
+  const driveListsBeforeSuspension = drive.driveFileListCount;
+  await deferNextDraftBaselineRead(page);
+  const preview = page.frameLocator('#score-frame');
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadStarted?: boolean }).__draftBaselineReadStarted)).toBe(true);
+
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await releaseDraftBaselineRead(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadSettled?: boolean }).__draftBaselineReadSettled)).toBe(true);
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  expect(await page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads)).toBe(0);
+  expect(drive.driveFileListCount).toBe(driveListsBeforeSuspension);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect.poll(() => page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads ?? 0)).toBeGreaterThan(0);
+  await expect.poll(() => drive.driveFileListCount).toBeGreaterThan(driveListsBeforeSuspension);
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const source = 'title: BFCache final resume\n\n[Verse]\nC | G | Am | F |\n';
+  await editor.fill(source);
+  await expect.poll(async () => (await readFirstWorkspaceDocument(page))?.source).toBe(source);
+});
+
+test('a non-persisted pagehide invalidates a pending BFCache draft reconciliation', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await deferNextDraftBaselineRead(page);
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadStarted?: boolean }).__draftBaselineReadStarted)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+
+  await releaseDraftBaselineRead(page);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftBaselineReadSettled?: boolean }).__draftBaselineReadSettled)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  expect(await page.evaluate(() => (window as Window & { __localListReads?: number }).__localListReads)).toBe(0);
 });
 
 test('coalesces a user close with remote tab restoration while the Drive draft save is pending', async ({ page }) => {
@@ -1673,6 +2078,7 @@ test('shows both Explorer roots and opens root and tab menus from Shift+F10', as
 
 test('opens Explorer and Inspector option menus with Shift+F10 and the Context Menu key', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   const workspace = page.locator('#workspace');
   const explorerOptions = page.locator('#explorer-more');
   const inspectorOptions = page.locator('#inspector-more');
@@ -1856,6 +2262,7 @@ test('connects and reconnects from the Google Drive root menu', async ({ page })
   };
   await installDriveBrowserMock(page, ['account-a'], mockOptions);
   await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   const driveRoot = page.locator('#storage-drive');
   await driveRoot.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
@@ -2293,7 +2700,7 @@ test('Drive saves keep the same file, retain edits made during a save, and do no
   await performAccountAction(page);
   await expect(page.getByRole('tab', { name: 'Song.guitardsl' })).toBeVisible();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await expect(page.locator('#drive-overwrite-note')).toBeHidden();
+  await expect(page.locator('#drive-overwrite-note')).toBeVisible();
   if (process.env.GUITARDSL_CAPTURE_ISSUE166 === '1'
     && page.context().browser()?.browserType().name() === 'chromium') {
     await page.setViewportSize({ width: 1600, height: 1000 });
@@ -3158,4 +3565,79 @@ test('keeps a narrow workspace usable', async ({ page }) => {
   await page.getByRole('button', { name: 'Score view' }).click();
   await expect(page.locator('#source-pane')).toBeHidden();
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
+});
+
+test('preserves the mounted workspace and stops Preview and Inspector audio across persisted page transitions', async ({ page }) => {
+  await installFakeAudio(page);
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const preview = page.frameLocator('#score-frame');
+  const priorRevision = Number(await preview.locator('body').getAttribute('data-preview-document-version'));
+  await editor.fill('key: C\n\n[Verse]\nC | G | Am | F |\n');
+  await expect.poll(async () => Number(await preview.locator('body').getAttribute('data-preview-document-version')))
+    .toBeGreaterThan(priorRevision);
+  await expect(preview.locator('body')).toHaveAttribute('data-preview-interactions-ready', 'true');
+  await preview.locator('#btn-play').click();
+  await expect(preview.locator('#btn-pause')).toBeEnabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  const originalEditor = await editor.evaluateHandle(element => element);
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+  expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
+
+  await page.getByRole('tab', { name: 'Progression' }).click();
+  await expect(page.locator('#candidate-list li').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Audition' }).click();
+  const audioStatus = page.locator('#progression-audio-status');
+  await expect(audioStatus).toHaveText('Audition playing.');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'true');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(preview.locator('body')).toHaveAttribute('data-progression-audio-locked', 'false');
+  await expect(audioStatus).toHaveText('Audition stopped.');
+  await expect(preview.locator('#btn-play')).toBeEnabled();
+  await expect(preview.locator('#btn-pause')).toBeDisabled();
+  expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
+  await editor.fill('title: Workspace resumed\n');
+  await expect(page.locator('.cm-content')).toContainText('Workspace resumed');
+});
+
+test('resumes the same workspace after browser back when Chromium restores it from BFCache', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('title: BFCache history restore\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('.editor-surface').evaluate(element => {
+    (element as HTMLElement).dataset.issue174EditorToken = 'preserved-editor-view';
+  });
+  await page.evaluate(() => {
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) document.documentElement.dataset.issue174BfcacheRestored = 'true';
+    });
+  });
+
+  await page.goto('/?issue174-bfcache-away=1');
+  await page.goBack();
+  const restoredFromBfcache = await page.locator('html').getAttribute('data-issue174-bfcache-restored');
+  test.skip(restoredFromBfcache !== 'true', 'Chromium did not restore this run from BFCache.');
+
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.locator('.editor-surface')).toHaveAttribute('data-issue174-editor-token', 'preserved-editor-view');
+  await expect(page.locator('.cm-content')).toContainText('BFCache history restore');
+  await editor.fill('title: BFCache editor resumed\n');
+  await expect(page.locator('.cm-content')).toContainText('BFCache editor resumed');
 });

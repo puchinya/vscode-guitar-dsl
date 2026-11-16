@@ -1,20 +1,24 @@
 # GuitarDSL Web app
 
-The app is a static Vite SPA. Local documents work without Google credentials:
+The app is a static Vite SPA. Vue 3 owns the Web shell and workspace views; a single `WebWorkspaceController` owns document, storage, Drive, preview, and Inspector state. The VS Code extension remains separate and does not depend on Vue.
+
+Local documents work without Google credentials:
 
 ```sh
 npm install
 npm run dev --workspace @guitardsl/web
 ```
 
-To enable Google Drive, enable the Google Drive API and Google Picker API in a Google Cloud project, configure a Web OAuth client with the development and deployed JavaScript origins, then copy `.env.example` to `.env.local` and set the public client ID, a referrer-restricted API key, and the project number. The browser asks only for `drive.file`; there is no client secret or app backend.
+To enable Google Drive, enable the Google Drive API and Google Picker API in a Google Cloud project, configure a Web OAuth client with the development and deployed JavaScript origins, then copy `.env.example` to `.env.local` and set the public client ID, a referrer-restricted API key, and the project number. The browser asks for `drive.file` and `drive.appdata`; there is no client secret or app backend.
+
+The production Web app is installable as a PWA. After its first online load and service worker setup, local documents and drafts stored in IndexedDB can be opened, edited, previewed, and exported to PDF offline. Google Drive authentication, Picker, listing, and saves need a network connection. The service worker precaches same-origin static assets, including the PDF fonts; it does not cache document data, OAuth tokens, or Google API responses. Updates are offered to the user and wait while text composition, drafts, or Drive synchronization are not safe to interrupt. The app never activates an update and reloads automatically.
 
 ```sh
 npm run build:web
 npm run test:web
 ```
 
-`build:web` type-checks the Web TypeScript before producing `web/dist/`. Drive and Picker credentials are deployment configuration and must not be committed.
+`build:web` type-checks Web TypeScript and Vue templates before producing `web/dist/`. Drive and Picker credentials are deployment configuration and must not be committed.
 
 ## Cloudflare Workers Static Assets deployment (one Worker + Previews)
 

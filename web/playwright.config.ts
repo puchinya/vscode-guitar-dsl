@@ -6,6 +6,7 @@ process.env.VITE_GOOGLE_APP_ID ??= '1234567890';
 
 export default defineConfig({
   testDir: './test/e2e',
+  testMatch: '**/workspace.spec.ts',
   fullyParallel: true,
   reporter: 'list',
   use: {

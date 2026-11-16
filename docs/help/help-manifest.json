@@ -240,6 +240,12 @@
       "section": "6",
       "helpPage": "features",
       "reviewedSourceSha256": "668bff5e57812629aed2da272983a0ccbedd438a0804bf1afa97530a12fa9199"
+    },
+    {
+      "source": "web",
+      "section": "11",
+      "helpPage": "features",
+      "reviewedSourceSha256": "c0233cbfe2c8beabc796484c3ac242dfee723bd397cf83b86c47037655faa257"
     }
   ],
   "excludedSections": [
