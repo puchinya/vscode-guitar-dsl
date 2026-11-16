@@ -1,21 +1,33 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import HeaderBar from './components/HeaderBar.vue';
 import WorkspaceShell from './components/WorkspaceShell.vue';
 import MenuLayer from './components/MenuLayer.vue';
 import PwaUpdatePrompt from './components/PwaUpdatePrompt.vue';
-import { useWorkspace } from './composables/useWorkspace';
 import { WEB_ICON_SPRITE } from './icons';
-import type { WebWorkspaceController, WorkspaceHostBindings, WorkspaceCommand } from './types/workspace';
+import { useWorkspaceStore } from './stores/workspaceStore';
+import type { WebWorkspaceController, WorkspaceHostBindings, WorkspaceCommand, WorkspaceViewSnapshot } from './types/workspace';
 
 const props = defineProps<{ controller: WebWorkspaceController & WorkspaceHostBindings }>();
-const { snapshot } = useWorkspace(props.controller);
+const workspaceStore = useWorkspaceStore();
+const { view: storeView, problemSummary } = storeToRefs(workspaceStore);
+const snapshot = computed<Readonly<WorkspaceViewSnapshot>>(() => {
+  if (storeView.value === null) throw new Error('Workspace store must be attached before App is mounted.');
+  return storeView.value;
+});
 const iconSprite = WEB_ICON_SPRITE;
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(systemTheme.matches);
 const updateSystemTheme = (event: MediaQueryListEvent) => { systemDark.value = event.matches; };
 systemTheme.addEventListener('change', updateSystemTheme);
-const disposeController = () => props.controller.dispose();
+let disposed = false;
+const disposeController = () => {
+  if (disposed) return;
+  disposed = true;
+  workspaceStore.detach();
+  props.controller.dispose();
+};
 const handlePageHide = (event: PageTransitionEvent) => {
   if (event.persisted) dispatch({ type: 'lifecycle.pagehide', persisted: true });
   else disposeController();
@@ -38,11 +50,6 @@ watch(theme, value => document.querySelector('#app')?.setAttribute('data-theme',
 watch(() => snapshot.value.ready, ready => {
   document.querySelector('#app')?.setAttribute('aria-busy', String(!ready));
 }, { immediate: true });
-const problemSummary = computed(() => {
-  const errors = snapshot.value.diagnostics.filter(item => item.severity === 'error').length;
-  const warnings = snapshot.value.diagnostics.filter(item => item.severity === 'warning').length;
-  return snapshot.value.locale === 'ja' ? `エラー ${errors} / 警告 ${warnings}` : `Errors ${errors} / Warnings ${warnings}`;
-});
 function dispatch(command: WorkspaceCommand): void {
   void props.controller.dispatch(command);
 }
@@ -51,7 +58,7 @@ function dispatch(command: WorkspaceCommand): void {
 <template>
   <main class="app-shell" :data-theme="theme" :aria-busy="!snapshot.ready" aria-label="GuitarDSL">
     <div class="icon-sprite" aria-hidden="true" v-html="iconSprite"></div>
-    <HeaderBar :snapshot="snapshot" @command="dispatch" />
+    <HeaderBar @command="dispatch" />
     <WorkspaceShell :snapshot="snapshot" :controller="controller" @command="dispatch" />
     <footer class="statusbar" aria-label="Workspace status">
       <span id="status-problems">{{ problemSummary }}</span>

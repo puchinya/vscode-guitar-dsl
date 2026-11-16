@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import type { WorkspaceCommand, WorkspaceViewSnapshot } from '../types/workspace';
+import { computed } from 'vue';
+import type { WorkspaceCommand } from '../types/workspace';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
-const props = defineProps<{ snapshot: Readonly<WorkspaceViewSnapshot> }>();
+const workspaceStore = useWorkspaceStore();
+const snapshot = computed(() => {
+  const current = workspaceStore.view;
+  if (current === null) throw new Error('Workspace store must be attached before ProblemsPane is rendered.');
+  return current;
+});
 const emit = defineEmits<{ command: [command: WorkspaceCommand] }>();
-const text = (ja: string, en: string) => props.snapshot.locale === 'ja' ? ja : en;
+const text = (ja: string, en: string) => snapshot.value.locale === 'ja' ? ja : en;
 </script>
 
 <template>
