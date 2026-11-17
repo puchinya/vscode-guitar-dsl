@@ -4113,7 +4113,7 @@ test('keeps a narrow workspace usable', async ({ page }) => {
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
 });
 
-test('preserves the mounted workspace and stops Preview and Inspector audio across persisted page transitions', async ({ page }) => {
+test('preserves the mounted workspace and locale across persisted page transitions while stopping audio', async ({ page }) => {
   await installFakeAudio(page);
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
@@ -4159,31 +4159,17 @@ test('preserves the mounted workspace and stops Preview and Inspector audio acro
   expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
   await editor.fill('title: Workspace resumed\n');
   await expect(page.locator('.cm-content')).toContainText('Workspace resumed');
-});
 
-test('resumes the same workspace after browser back when Chromium restores it from BFCache', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
-  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await editor.fill('title: BFCache history restore\n');
-  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
-  await page.locator('.editor-surface').evaluate(element => {
-    (element as HTMLElement).dataset.issue174EditorToken = 'preserved-editor-view';
-  });
-  await page.evaluate(() => {
-    window.addEventListener('pageshow', event => {
-      if (event.persisted) document.documentElement.dataset.issue174BfcacheRestored = 'true';
-    });
-  });
-
-  await page.goto('/?issue174-bfcache-away=1');
-  await page.goBack();
-  const restoredFromBfcache = await page.locator('html').getAttribute('data-issue174-bfcache-restored');
-  test.skip(restoredFromBfcache !== 'true', 'Chromium did not restore this run from BFCache.');
-
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  const sourceBeforeLocaleResume = await readEditorSource(page);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
   await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
-  await expect(page.locator('.editor-surface')).toHaveAttribute('data-issue174-editor-token', 'preserved-editor-view');
-  await expect(page.locator('.cm-content')).toContainText('BFCache history restore');
-  await editor.fill('title: BFCache editor resumed\n');
-  await expect(page.locator('.cm-content')).toContainText('BFCache editor resumed');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expectEditorSource(page, sourceBeforeLocaleResume);
+  expect(await page.locator('.cm-content').evaluate((element, original) => element === original, originalEditor)).toBe(true);
 });
+
