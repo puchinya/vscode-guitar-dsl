@@ -1,4 +1,4 @@
-import type { WebWorkspaceController, WorkspaceCommand, WorkspaceHostBindings, WorkspaceViewSnapshot } from '../types/workspace';
+import type { WebWorkspaceController, WorkspaceCommand, WorkspaceContextMenuRequest, WorkspaceHostBindings, WorkspaceViewSnapshot } from '../types/workspace';
 
 export type { WebWorkspaceController } from '../types/workspace';
 
@@ -86,6 +86,10 @@ export function createWorkspaceController(): WebWorkspaceController & WorkspaceH
     },
     mountInspectorHosts(value) {
       Object.assign(hosts, value);
+    },
+    requestContextMenu(request: WorkspaceContextMenuRequest) {
+      if (disposed) return;
+      runtime?.requestContextMenu(request);
     }
   };
 

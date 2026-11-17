@@ -52,6 +52,13 @@ export interface WorkspaceMenuSnapshot {
   position?: { left: number; top: number };
 }
 
+export interface WorkspaceContextMenuRequest {
+  target: HTMLElement;
+  clientX: number;
+  clientY: number;
+  keyboard: boolean;
+}
+
 export interface WorkspaceViewSnapshot {
   ready: boolean;
   tabs: readonly WorkspaceTabSnapshot[];
@@ -116,7 +123,7 @@ export type WorkspaceCommand =
   | { type: 'settings.set-theme'; theme: WorkspaceTheme }
   | { type: 'pwa.update' }
   | { type: 'pwa.later' }
-  | { type: 'menu.open'; menu: 'file' | 'edit' | 'view' | 'drive' | 'drive-root' | 'account' | 'settings' | 'explorer' | 'inspector' }
+  | { type: 'menu.open'; menu: 'file' | 'edit' | 'view' | 'drive' | 'drive-root' | 'settings' | 'explorer' | 'inspector' }
   | { type: 'menu.close' }
   | { type: 'menu.activate'; itemId: string }
   | { type: 'help.open' }
@@ -138,4 +145,5 @@ export interface WorkspaceHostBindings {
   mountSourceEditor(container: HTMLElement): void;
   mountScoreFrame(frame: HTMLIFrameElement): void;
   mountInspectorHosts(hosts: { content: HTMLElement; tabs: HTMLElement; settings: HTMLElement; settingsLabels: HTMLElement }): void;
+  requestContextMenu(request: WorkspaceContextMenuRequest): void;
 }

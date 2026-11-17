@@ -3,13 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import HeaderBar from './components/HeaderBar.vue';
 import WorkspaceShell from './components/WorkspaceShell.vue';
+import Snackbar from './components/Snackbar.vue';
 import MenuLayer from './components/MenuLayer.vue';
 import PwaUpdatePrompt from './components/PwaUpdatePrompt.vue';
 import { WEB_ICON_SPRITE } from './icons';
 import { useWorkspaceStore } from './stores/workspaceStore';
-import type { WebWorkspaceController, WorkspaceHostBindings, WorkspaceCommand, WorkspaceViewSnapshot } from './types/workspace';
+import type { WebWorkspaceController, WorkspaceHostBindings, WorkspaceCommand, WorkspaceContextMenuRequest, WorkspaceViewSnapshot } from './types/workspace';
+import type { MainMenuId } from './components/MainMenuBar.vue';
 
 const props = defineProps<{ controller: WebWorkspaceController & WorkspaceHostBindings }>();
+const headerBar = ref<InstanceType<typeof HeaderBar>>();
 const workspaceStore = useWorkspaceStore();
 const { view: storeView, problemSummary } = storeToRefs(workspaceStore);
 const snapshot = computed<Readonly<WorkspaceViewSnapshot>>(() => {
@@ -53,13 +56,20 @@ watch(() => snapshot.value.ready, ready => {
 function dispatch(command: WorkspaceCommand): void {
   void props.controller.dispatch(command);
 }
+function requestContextMenu(request: WorkspaceContextMenuRequest): void {
+  props.controller.requestContextMenu(request);
+}
+function navigateMainMenu(menu: MainMenuId): void {
+  headerBar.value?.focusMainMenu(menu);
+}
 </script>
 
 <template>
   <main class="app-shell" :data-theme="theme" :aria-busy="!snapshot.ready" aria-label="GuitarDSL">
     <div class="icon-sprite" aria-hidden="true" v-html="iconSprite"></div>
-    <HeaderBar @command="dispatch" />
+    <HeaderBar ref="headerBar" @command="dispatch" />
     <WorkspaceShell :snapshot="snapshot" :controller="controller" @command="dispatch" />
+    <Snackbar :message="snapshot.message" @dismiss="dispatch({ type: 'message.dismiss' })" />
     <footer class="statusbar" aria-label="Workspace status">
       <span id="status-problems">{{ problemSummary }}</span>
       <span id="status-cursor">{{ snapshot.cursorPosition || 'Ln 1, Col 1' }}</span><span class="status-spacer"></span>
@@ -68,7 +78,7 @@ function dispatch(command: WorkspaceCommand): void {
     </footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden @change="dispatch({ type: 'document.import-local' })" />
     <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">Help</h2><button type="button" id="close-help" class="icon-action" aria-label="Close" title="Close">×</button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer">Open Help in a new tab</a></p><nav id="help-toc" aria-label="Help topics"></nav><article id="help-content"></article></dialog>
-    <MenuLayer :snapshot="snapshot" @command="dispatch" />
+    <MenuLayer :snapshot="snapshot" @command="dispatch" @context-request="requestContextMenu" @navigate-main="navigateMainMenu" />
     <PwaUpdatePrompt :state="snapshot.pwa" :locale="snapshot.locale" @update="dispatch({ type: 'pwa.update' })" @later="dispatch({ type: 'pwa.later' })" />
   </main>
 </template>
