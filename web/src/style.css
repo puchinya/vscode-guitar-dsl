@@ -313,7 +313,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .file-list .pane-heading { min-height: 36px; padding: 0 10px; }
 .workspace-splitter { grid-row: 1; width: 6px; background: #e7e9ee; cursor: col-resize; touch-action: none; }
 #explorer-splitter { grid-column: 3; }
-.workspace-splitter:hover, .workspace-splitter:focus-visible, .problems-splitter:hover, .problems-splitter:focus-visible { background: #8290eb; outline: 2px solid #6574e5; outline-offset: -2px; }
+.workspace-splitter:hover, .workspace-splitter:focus-visible, .problems-splitter:hover, .problems-splitter:focus-visible,
+.split-divider:hover, .split-divider:focus-visible { background: #8290eb; outline: 2px solid #6574e5; outline-offset: -2px; }
 .editor-workspace { grid-column: 4; grid-row: 1; min-width: 0; }
 .tabs { min-height: 36px; height: 36px; flex: 0 0 36px; }
 .document-tabs { overflow-x: auto; overflow-y: hidden; }
@@ -514,7 +515,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .file-list, .app-shell[data-theme="dark"] .inspector,
 .app-shell[data-theme="dark"] .tabs, .app-shell[data-theme="dark"] .tab,
 .app-shell[data-theme="dark"] .problem-columns, .app-shell[data-theme="dark"] .problem-row { border-color: #424652; }
-.app-shell[data-theme="dark"] .workspace-splitter, .app-shell[data-theme="dark"] .problems-splitter { background: #424652; }
+.app-shell[data-theme="dark"] .workspace-splitter, .app-shell[data-theme="dark"] .problems-splitter,
+.app-shell[data-theme="dark"] .split-divider { background: #424652; }
+.app-shell[data-theme="dark"] .view-mode-controls { border-left-color: #424652; }
 .app-shell[data-theme="dark"] .file-item { color: #e4e7ee; }
 .app-shell[data-theme="dark"] .file-item[aria-current="page"] { background: #333f59; color: #e4e7ee; box-shadow: none; }
 .app-shell[data-theme="dark"] .storage-root-label, .app-shell[data-theme="dark"] .drive-folder-row { color: #e4e7ee; }

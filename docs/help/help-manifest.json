@@ -243,6 +243,12 @@
     },
     {
       "source": "web",
+      "section": "7",
+      "helpPage": "features",
+      "reviewedSourceSha256": "05bc594c29e18b8579d382dbb67d87023c1457a64a5774eb599223cfd0f358db"
+    },
+    {
+      "source": "web",
       "section": "11",
       "helpPage": "features",
       "reviewedSourceSha256": "c0233cbfe2c8beabc796484c3ac242dfee723bd397cf83b86c47037655faa257"
@@ -258,11 +264,6 @@
       "source": "web",
       "section": "1",
       "reason": "The overview defines product scope and ownership; user workflows are documented in sections 2–6."
-    },
-    {
-      "source": "web",
-      "section": "7",
-      "reason": "Observable behavior restates the workflows already covered in sections 2–6."
     },
     {
       "source": "web",

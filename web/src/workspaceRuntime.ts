@@ -3309,8 +3309,14 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
         { label: t.renameFile, run: async () => {
           const target = await readTarget();
           if (!target) return;
-          const nextName = window.prompt(t.renamePrompt, target.document.name);
-          if (nextName === null || !nextName.trim()) return;
+          const originalName = target.document.name;
+          const extension = originalName.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '';
+          const initialBaseName = extension ? originalName.slice(0, -extension.length) : originalName;
+          const enteredName = window.prompt(t.renamePrompt, initialBaseName);
+          if (enteredName === null || !enteredName.trim()) return;
+          const baseName = enteredName.trim().replace(/\.(?:guitardsl|gdsl)$/iu, '').trim();
+          if (!baseName) return;
+          const nextName = `${baseName}${extension}`;
           if (!rowIsCurrent() || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
           const renamed = await indexedDb.renameLocal(identity, nextName.trim(), { revision: tab?.revision ?? target.document.revision, source: tab?.source ?? target.source });
           if (!renamed) { staleMenuTarget(); return; }

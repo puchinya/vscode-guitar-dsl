@@ -1234,6 +1234,69 @@ test('Issue #178 workspace polish: panels, splitters, menus, Explorer localizati
   await expect(snackbar).toHaveCount(0, { timeout: 5_000 });
 });
 
+test('center splitter hover matches the other splitters and the dark view separator is gray', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  const captureScreenshots = process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+
+  for (const theme of ['Light', 'Dark'] as const) {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', { name: `Theme: ${theme}` }).click();
+    const center = page.locator('#center-splitter');
+    const explorer = page.locator('#explorer-splitter');
+    await center.hover();
+    const centerStyle = await center.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { background: style.backgroundColor, outline: style.outline, outlineOffset: style.outlineOffset };
+    });
+    if (captureScreenshots) {
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({ path: resolve(evidenceDir, `center-splitter-hover-${theme.toLowerCase()}.png`) });
+    }
+    await explorer.hover();
+    const explorerStyle = await explorer.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { background: style.backgroundColor, outline: style.outline, outlineOffset: style.outlineOffset };
+    });
+    expect(centerStyle).toEqual(explorerStyle);
+    if (theme === 'Dark') {
+      const separator = await page.locator('.view-mode-controls').evaluate(element => getComputedStyle(element).borderLeftColor);
+      expect(separator).toBe('rgb(66, 70, 82)');
+      if (captureScreenshots) {
+        await page.locator('#center-splitter').hover();
+        await page.screenshot({ path: resolve(evidenceDir, 'view-controls-divider-dark.png') });
+      }
+    }
+  }
+});
+
+test('an empty document tab row shows only its theme background', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  for (const theme of ['Light', 'Dark'] as const) {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', { name: `Theme: ${theme}` }).click();
+    if (theme === 'Light') {
+      await page.getByRole('button', { name: 'Close Untitled.guitardsl' }).click();
+    }
+    await expect(page.locator('.tabs')).toBeVisible();
+    await expect(page.locator('.tabs').locator('*')).toHaveCount(0);
+    await expect(page.locator('.tabs')).toHaveText('');
+    const background = await page.locator('.tabs').evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(background).toBe(theme === 'Light' ? 'rgb(241, 242, 245)' : 'rgb(30, 33, 39)');
+    if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+      && page.context().browser()?.browserType().name() === 'chromium') {
+      const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({ path: resolve(evidenceDir, `empty-tabs-${theme.toLowerCase()}.png`) });
+    }
+  }
+});
+
 test('Google Drive menu owns the connected account identity and disconnect action', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await installDriveBrowserMock(page, ['ui18-account']);
@@ -2580,6 +2643,9 @@ test('performs local file Explorer menu actions against the clicked file', async
   const otherPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Other.guitardsl'));
   await page.getByRole('button', { name: 'New score' }).click();
   await otherPrompt;
+  const otherTab = page.getByRole('tab', { name: 'Other.guitardsl' });
+  await expect(otherTab).toBeVisible();
+  await expect(otherTab).toHaveAttribute('aria-selected', 'true');
   const otherSource = 'title: Other active tab\n\n[Verse]\nG | C | F | Am |\n';
   await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(otherSource);
   await expectEditorSource(page, otherSource);
@@ -2631,13 +2697,27 @@ test('performs local file Explorer menu actions against the clicked file', async
   await expect(target).toBeVisible();
 
   await target.click({ button: 'right' });
-  const renamePrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Renamed target.guitardsl'));
+  const renamePrompt = page.waitForEvent('dialog').then(async dialog => {
+    expect(dialog.defaultValue()).toBe('Menu target');
+    await dialog.accept('Renamed target.gdsl');
+  });
   await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
   await renamePrompt;
   const renamed = page.locator('#file-items .file-item').filter({ hasText: 'Renamed target.guitardsl' });
   await expect(renamed).toBeVisible();
+  await expect(page.locator('#file-items .file-item').filter({ hasText: 'Renamed target.gdsl' })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Renamed target.guitardsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Menu target.guitardsl' })).toHaveCount(0);
+  if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+    await page.getByRole('button', { name: 'Score view' }).click();
+    await expect(page.locator('#workspace')).toHaveClass(/view-score/);
+    await expect(page.locator('.cm-tooltip-autocomplete')).toBeHidden();
+    await expect(page.locator('#app-message')).toHaveCount(0, { timeout: 5_000 });
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'rename-preserved-extension.png'), fullPage: true });
+  }
 
   await renamed.click({ button: 'right' });
   const firstConfirmation = page.waitForEvent('dialog').then(async dialog => {
