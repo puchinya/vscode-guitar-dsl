@@ -389,31 +389,57 @@ test('production PWA cold-starts offline from the same persistent browser profil
     const editor = firstPage.getByRole('textbox', { name: 'GuitarDSL source editor' });
     await editor.fill(originalSource);
     await expect(firstPage.locator('#saved-state')).toHaveText('Local draft saved');
+    await firstPage.locator('#settings-button').click();
+    await firstPage.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+    await expect(firstPage.locator('html')).toHaveAttribute('lang', 'ja');
+    await expect.poll(() => firstPage.evaluate(() => new Promise<string | undefined>((resolve, reject) => {
+      const opening = indexedDB.open('guitardsl-workspace', 1);
+      opening.onerror = () => reject(opening.error);
+      opening.onsuccess = () => {
+        const db = opening.result;
+        const request = db.transaction('settings', 'readonly').objectStore('settings').get('web-preferences');
+        request.onsuccess = () => { db.close(); resolve(request.result?.value?.locale); };
+        request.onerror = () => { db.close(); reject(request.error); };
+      };
+    }))).toBe('ja');
+    await expect(firstPage.locator('#saved-state')).toHaveText('下書きを保存済み');
     await context.close();
 
     context = await chromium.launchPersistentContext(userDataDir, {
-      headless: true, viewport: { width: 1280, height: 800 }
+      headless: true, locale: 'en-US', viewport: { width: 1280, height: 800 }
     });
     await context.setOffline(true);
     const coldPage = await context.newPage();
     await coldPage.goto('http://127.0.0.1:4179/', { waitUntil: 'domcontentloaded' });
     await expect(coldPage.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
     await expect.poll(() => coldPage.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    const coldEditor = coldPage.getByRole('textbox', { name: 'GuitarDSL source editor' });
+    await expect(coldPage.locator('html')).toHaveAttribute('lang', 'ja');
+    await expect(coldPage.locator('#menu-file-trigger')).toHaveText('ファイル');
+    const coldEditor = coldPage.locator('.cm-content');
     await expect(coldEditor).toContainText('Persistent cold start');
 
     const offlineSource = `${originalSource}C | G | Am | F |\n`;
     await coldEditor.fill(offlineSource);
     await expect(coldPage.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
-    await expect(coldPage.locator('#saved-state')).toHaveText('Local draft saved');
+    await expect(coldPage.locator('#saved-state')).toHaveText('下書きを保存済み');
     const downloadPromise = coldPage.waitForEvent('download');
-    await coldPage.getByRole('button', { name: 'Download PDF' }).click();
+    await coldPage.locator('#download-pdf').click();
     const download = await downloadPromise;
     const pdfPath = await download.path();
     expect(pdfPath).toBeTruthy();
     const pdf = (await readFile(pdfPath!)).toString('latin1');
     expect(pdf.slice(0, 5)).toBe('%PDF-');
     expect(Number(pdf.match(/\/Count\s+(\d+)/u)?.[1] ?? 0)).toBeGreaterThan(0);
+
+    await coldPage.locator('#settings-button').click();
+    await coldPage.getByRole('menuitemradio', { name: 'Language: English' }).click();
+    await expect(coldPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(coldPage.locator('#menu-file-trigger')).toHaveText('File');
+    await coldPage.reload();
+    await expect(coldPage.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+    await expect(coldPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(coldPage.locator('#open-tabs').getByRole('tab', { name: 'Persistent cold start.guitardsl' })).toBeVisible();
+    await expect(coldPage.locator('#saved-state')).toHaveText('Local draft saved');
   } finally {
     await context.close();
     await rm(userDataDir, { recursive: true, force: true });

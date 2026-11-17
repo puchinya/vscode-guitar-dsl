@@ -2,6 +2,8 @@
 
 The app is a static Vite SPA. Vue 3 owns the Web shell and workspace views; a single `WebWorkspaceController` owns document, storage, Drive, preview, and Inspector state. Pinia's one Web-only workspace store projects the latest Controller snapshot through a shallow view ref and derives the Problems summary. It does not own source, revisions, persistence, Drive sessions, audio, or commands; edits and actions still go through the Controller. `main.ts` attaches the store before mounting Vue and starts the Controller after its hosts mount. The app detaches before Controller disposal on an ordinary page exit or Vue unmount, while BFCache suspension keeps the same store and subscription. The VS Code extension remains separate and does not depend on Vue or Pinia.
 
+Vue-owned fixed labels, tooltips, and ARIA text use `vue-i18n` 11.4.22 Composition API with statically imported English and Japanese messages. The Controller's locale and IndexedDB preference remain authoritative; `App.vue` projects each snapshot locale into the global Composer and the document language. Controller-generated menus, Help and Inspector DOM, and shared-package messages continue using their existing translation owners.
+
 Local documents work without Google credentials:
 
 ```sh

@@ -1066,6 +1066,7 @@ test('resolves system theme and keeps Problems and document tabs readable', asyn
 test('Header and Problems render the latest Controller view through the workspace store', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.locator('#drive-state-label')).toHaveText('Not connected');
   await expect(page.locator('#status-problems')).toHaveText('Errors 0 / Warnings 0');
 
@@ -1075,18 +1076,105 @@ test('Header and Problems render the latest Controller view through the workspac
   const warnings = page.locator('#warning-count');
   await expect(errors).not.toHaveText('0');
   await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('error');
   await expect.poll(() => page.locator('#status-problems').textContent()).toMatch(/^Errors \d+ \/ Warnings \d+$/u);
 
   await page.locator('#settings-button').click();
   await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
   await expect(page.locator('#drive-state-label')).toHaveText('未接続');
   await expect(page.locator('#problems-title')).toHaveText('問題');
+  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('エラー');
   await expect(page.locator('#status-problems')).toHaveText(`エラー ${await errors.textContent()} / 警告 ${await warnings.textContent()}`);
 
   await page.locator('#close-problems').click();
   await expect(page.locator('#problems-panel')).toBeHidden();
   await page.locator('#toggle-problems').click();
   await expect(page.locator('#problems-panel')).toBeVisible();
+});
+
+test('projects Controller locale into Vue I18n without disturbing source or undo history', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  const captureScreenshots = process.env.GUITARDSL_CAPTURE_ISSUE181 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-181');
+  const capture = async (name: string): Promise<void> => {
+    if (!captureScreenshots) return;
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, name), fullPage: false });
+  };
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const initialSource = await readEditorSource(page);
+  const source = 'title: Locale test\n\n[Verse]\nC | G |\n';
+  await editor.fill(source);
+  await expectEditorSource(page, source);
+  await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
+  await capture('vue-i18n-en-1600x900.png');
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('ファイル');
+  await expect(page.locator('#save-document')).toHaveAttribute('aria-label', '保存');
+  await expect(page.locator('#explorer-more')).toHaveAttribute('aria-label', 'エクスプローラーのオプション');
+  await expect(page.locator('#problems-title')).toHaveText('問題');
+  await expect(page.locator('#inspector-heading')).toHaveText('インスペクタ');
+  await expect(page.locator('#toggle-inspector')).toHaveAttribute('title', 'Inspector の表示切替');
+  await expect(page.locator('#status-cursor')).toHaveText(/^行 \d+, 列 \d+$/u);
+  await capture('vue-i18n-ja-1600x900.png');
+  await expectEditorSource(page, source);
+
+  await page.locator('.cm-content').press('ControlOrMeta+z');
+  await expectEditorSource(page, initialSource);
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: English' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('File');
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getValue<{ locale?: string }>('settings', 'web-preferences'))?.locale;
+  })).toBe('ja');
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('ファイル');
+});
+
+test('uses the browser language by default and a saved locale after reload', async ({ page }) => {
+  await page.goto('/');
+  const appUrl = page.url();
+  const browser = page.context().browser();
+  if (!browser) throw new Error('The browser fixture is unavailable.');
+  const context = await browser.newContext({ locale: 'ja-JP' });
+  try {
+    const localizedPage = await context.newPage();
+    await localizedPage.goto(appUrl);
+    await expect(localizedPage.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'ja');
+    await expect(localizedPage.locator('#menu-file-trigger')).toHaveText('ファイル');
+
+    await localizedPage.locator('#settings-button').click();
+    await localizedPage.getByRole('menuitemradio', { name: 'Language: English' }).click();
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect.poll(() => localizedPage.evaluate(async () => {
+      const { indexedDb } = await import('/src/storage/indexedDb.ts');
+      return (await indexedDb.getValue<{ locale?: string }>('settings', 'web-preferences'))?.locale;
+    })).toBe('en');
+    await localizedPage.reload();
+    await expect(localizedPage.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(localizedPage.locator('#menu-file-trigger')).toHaveText('File');
+  } finally {
+    await context.close();
+  }
 });
 
 test('Issue #178 workspace polish: panels, splitters, menus, Explorer localization, notices, and cancel', async ({ page }) => {

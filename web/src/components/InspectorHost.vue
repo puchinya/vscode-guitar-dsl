@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { getScoreSettingsEditorMessages } from '@guitardsl/core/i18n';
 import type { WorkspaceCommand, WorkspaceHostBindings, WorkspaceViewSnapshot } from '../types/workspace';
 
 const props = defineProps<{ snapshot: Readonly<WorkspaceViewSnapshot>; controller: WorkspaceHostBindings }>();
 const emit = defineEmits<{ command: [command: WorkspaceCommand] }>();
-const text = (ja: string, en: string) => props.snapshot.locale === 'ja' ? ja : en;
+const { t } = useI18n({ useScope: 'global' });
 const content = ref<HTMLElement>();
 const tabs = ref<HTMLElement>();
 const settings = ref<HTMLElement>();
@@ -19,8 +20,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <aside class="inspector" :aria-label="text('インスペクタ', 'Inspector')">
-    <div class="pane-heading"><span id="inspector-heading">{{ text('インスペクタ', 'Inspector') }}</span><button type="button" id="inspector-more" class="icon-action" aria-label="Inspector options" title="Inspector options" aria-haspopup="menu" @click="emit('command', { type: 'menu.open', menu: 'inspector' })"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div>
+  <aside class="inspector" :aria-label="t('inspector.title')">
+    <div class="pane-heading"><span id="inspector-heading">{{ t('inspector.title') }}</span><button type="button" id="inspector-more" class="icon-action" :aria-label="t('inspector.options')" :title="t('inspector.options')" aria-haspopup="menu" @click="emit('command', { type: 'menu.open', menu: 'inspector' })"><svg class="web-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-more"></use></svg></button></div>
     <div ref="tabs" id="inspector-tabs-host"></div>
     <div ref="content" class="inspector-content" id="inspector-content" role="tabpanel" tabindex="0"></div>
     <div id="inspector-settings-parking" hidden>
