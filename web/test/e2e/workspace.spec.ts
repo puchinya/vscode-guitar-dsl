@@ -2688,7 +2688,7 @@ test('moves a local file to Google Drive only after verified upload', async ({ p
     'Open', 'Rename', 'Duplicate', 'Download', 'Download as PDF', 'Move to Google Drive', 'Delete'
   ]);
   if (test.info().project.name === 'chromium') {
-    const screenshotPath = '/private/tmp/vscode-guitar-dsl-issue-178/local-file-context-menu.png';
+    const screenshotPath = test.info().outputPath('local-file-context-menu.png');
     await expect(page.locator('#app-message')).toHaveCount(0, { timeout: 7000 });
     await mkdir(dirname(screenshotPath), { recursive: true });
     await page.screenshot({ path: screenshotPath, fullPage: true });
