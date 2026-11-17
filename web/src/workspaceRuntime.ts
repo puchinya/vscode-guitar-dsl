@@ -34,7 +34,7 @@ import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
 import { createWebIcon, setIconButton, WEB_ICON_SPRITE } from './icons';
 import { registerPwa, type PwaRuntime } from './pwa/registerPwa';
-import type { WebWorkspaceController, WorkspaceCommand, WorkspaceDiagnosticSnapshot, WorkspaceFileSnapshot, WorkspaceMenuSnapshot, WorkspaceViewSnapshot, WorkspaceHostBindings } from './types/workspace';
+import type { WebWorkspaceController, WorkspaceCommand, WorkspaceContextMenuRequest, WorkspaceDiagnosticSnapshot, WorkspaceFileSnapshot, WorkspaceMenuSnapshot, WorkspaceViewSnapshot, WorkspaceHostBindings } from './types/workspace';
 
 type PreviewMode = 'normal' | 'edit' | 'practice';
 type InspectorTab = InspectorTabId;
@@ -159,6 +159,7 @@ const STRINGS = {
     previewCheck: 'Check diagnostics', previewReady: 'Preview ready', previewFailed: 'Preview failed', resetLayout: 'Reset layout',
     sourceView: 'Source view', splitView: 'Split view', scoreView: 'Score view',
     openTab: 'Open this tab', closeTabMenu: 'Close', closeOthers: 'Close other tabs', exportSource: 'Export source', deleteFile: 'Delete', copyName: 'Copy name',
+    renameFile: 'Rename', duplicateFile: 'Duplicate', downloadFile: 'Download', downloadPdfFile: 'Download as PDF', moveGoogleDrive: 'Move to Google Drive', renamePrompt: 'File name',
     goToSource: 'Go to source position', expand: 'Expand', collapse: 'Collapse',
     explorer: 'Explorer', toggleExplorer: 'Toggle Explorer', toggleInspector: 'Toggle Inspector',
     help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
@@ -194,8 +195,8 @@ const STRINGS = {
     draftRestoreConflict: 'ブラウザー履歴への退避中に別の版が保存されました。エディターの内容と保存済み下書きは両方保持しています。再保存する前に内容を確認してください。',
     draftRestoreUnavailable: 'ブラウザー復帰後に保存済み下書きを確認できませんでした。エディターの内容は開いたままです。閉じる前に書き出してください。',
     driveAccess: 'Drive の一覧には、このアプリで開いたファイルと作成したファイルのみ表示されます。', noDiagnostics: '診断はありません。',
-    driveAuthStatus: 'Drive の認証が失効しました。再接続してください。', explorerOptions: 'Explorer のオプション', closeExplorer: 'Explorer を閉じる',
-    resetExplorerWidth: 'Explorer の幅を初期値へ戻す（220px）', inspectorOptions: 'Inspector のオプション', closeInspector: 'Inspector を閉じる',
+    driveAuthStatus: 'Drive の認証が失効しました。再接続してください。', explorerOptions: 'エクスプローラーのオプション', closeExplorer: 'エクスプローラーを閉じる',
+    resetExplorerWidth: 'エクスプローラーの幅を初期値へ戻す（220px）', inspectorOptions: 'Inspector のオプション', closeInspector: 'Inspector を閉じる',
     resetInspectorWidth: '幅を初期値へ戻す', closeProblems: '問題パネルを閉じる', severity: '重要度', file: 'ファイル',
     lineCol: '行:列', message: 'メッセージ', error: 'エラー', warning: '警告',
     title: 'タイトル', artist: 'アーティスト', tempo: 'テンポ', measures: '小節', chords: 'コード', errors: 'エラー',
@@ -209,6 +210,7 @@ const STRINGS = {
     previewCheck: '診断を確認してください', previewReady: 'プレビューを表示中', previewFailed: 'プレビューを表示できません', resetLayout: 'レイアウトをリセット',
     sourceView: 'ソース表示', splitView: '分割表示', scoreView: '譜面表示',
     openTab: 'このタブを開く', closeTabMenu: '閉じる', closeOthers: 'ほかのタブを閉じる', exportSource: 'ソースを書き出す', deleteFile: '削除', copyName: '名前をコピー',
+    renameFile: '名前を変更', duplicateFile: '複製', downloadFile: 'ダウンロード', downloadPdfFile: 'PDF としてダウンロード', moveGoogleDrive: 'Google Drive に移動', renamePrompt: 'ファイル名',
     goToSource: 'ソース位置へ移動', expand: '展開', collapse: '折りたたむ',
     explorer: 'エクスプローラー', toggleExplorer: 'Explorer の表示を切り替え', toggleInspector: 'Inspector の表示を切り替え',
     help: 'ヘルプ', close: '閉じる', resetLayoutConfirm: 'ワークスペースのレイアウトを初期状態に戻しますか？',
@@ -664,7 +666,7 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
     const open = state.tabs.find(candidate => candidate.document.identity.storage === 'local'
       && candidate.document.identity.fileId === row.identity.fileId);
     return {
-      identity: row.identity, name: row.name, revision: row.revision,
+      identity: row.identity, name: open?.document.name ?? row.name, revision: open?.revision ?? row.revision,
       selected: row.identity.fileId === tab?.document.identity.fileId && tab.document.identity.storage === 'local',
       updatedAt: row.updatedAt, localDraft: open ? hasUnpersistedDraft(open) : false
     };
@@ -741,7 +743,7 @@ async function refreshExplorerSnapshotOperation(): Promise<void> {
   } catch (error) {
     if (requestIsCurrent()) {
       state.storageReady = false;
-      workspaceMessage = { text: `${strings().unavailable} ${shortError(error)}`, kind: 'error' };
+      showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
     }
     return;
   }
@@ -2302,9 +2304,12 @@ async function deleteLocal(tab: OpenTab): Promise<void> {
 async function createNewScore(): Promise<void> {
   const operationGeneration = workspaceOperationGeneration;
   const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
-  const name = window.prompt(state.locale === 'ja' ? 'ファイル名' : 'File name', 'Untitled.guitardsl') ?? 'Untitled.guitardsl';
+  const name = window.prompt(state.locale === 'ja' ? 'ファイル名（拡張子なし）' : 'File name (without extension)', 'Untitled');
+  if (name === null) return;
+  const baseName = name.trim().replace(/\.(?:guitardsl|gdsl)$/i, '').trim() || 'Untitled';
+  const fileName = `${baseName}.guitardsl`;
   try {
-    const documentRow = await indexedDb.createLocal(name, DEFAULT_SOURCE);
+    const documentRow = await indexedDb.createLocal(fileName, DEFAULT_SOURCE);
     if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
     state.storageReady = true;
     await openDocument(documentRow);
@@ -2313,7 +2318,7 @@ async function createNewScore(): Promise<void> {
   } catch (error) {
     if (!operationIsCurrent()) return;
     state.storageReady = false;
-    const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: name || 'Untitled.guitardsl', source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
+    const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: fileName, source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
     const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
       persistedBase: { revision: 0, source: DEFAULT_SOURCE }, saveStatus: 'error' };
     if (!editorReadyForDocumentChange()) return;
@@ -2798,7 +2803,7 @@ async function moveToDrive(tab = activeTab()): Promise<void> {
     const existing = state.tabs.find(other => other !== tab && sameTabIdentity(other, remote.identity, accountId));
     if (existing) { state.tabs.splice(state.tabs.indexOf(tab), 1); existing.document = remote; existing.source = remote.source; state.activeKey = tabKey(existing); }
     else { state.tabs[state.tabs.indexOf(tab)] = replacement; state.activeKey = tabKey(replacement); }
-    renderAll(); await persistSessions();
+    renderAll(); await persistSessions(); await renderExplorer();
     resultMessage = { text: state.locale === 'ja' ? 'Drive への移動が完了しました。' : 'Moved the score to Google Drive.', kind: 'info' };
   } catch (error) {
     if (!isCurrent()) return;
@@ -3153,45 +3158,39 @@ interface WorkspaceMenuAction {
   shortcut?: string;
   separator?: boolean;
 }
-let activeMenuCleanup: (() => void) | undefined;
 let activeMenuInvoker: HTMLElement | undefined;
-let activeMenuElement: HTMLElement | undefined;
+let menuInvokerSequence = 0;
 
-function closeWorkspaceMenu(_menu?: HTMLElement, restoreFocus = false, invoker?: HTMLElement): void {
-  const focusTarget = invoker ?? activeMenuInvoker;
+function closeWorkspaceMenu(): void {
+  const focusTarget = activeMenuInvoker;
   if (focusTarget?.getAttribute('aria-haspopup') === 'menu') focusTarget.setAttribute('aria-expanded', 'false');
-  activeMenuCleanup?.();
-  activeMenuCleanup = undefined;
   activeMenuInvoker = undefined;
-  activeMenuElement = undefined;
   workspaceMenuSnapshot = undefined;
   workspaceMenuActions = [];
   publishWorkspaceSnapshot();
-  if (restoreFocus) focusTarget?.focus();
 }
 
-function showWorkspaceMenu(_menu: HTMLElement | null, x: number, y: number, actions: WorkspaceMenuAction[], invoker?: HTMLElement): void {
+function showWorkspaceMenu(_menu: HTMLElement | null | undefined, x: number, y: number, actions: WorkspaceMenuAction[], invoker?: HTMLElement): void {
   activeMenuInvoker = invoker;
-  activeMenuElement = app;
+  if (invoker && !invoker.id) invoker.id = `workspace-menu-invoker-${++menuInvokerSequence}`;
   workspaceMenuActions = actions;
   const id = invoker?.id === 'menu-file-trigger' ? 'file'
     : invoker?.id === 'menu-edit-trigger' ? 'edit'
       : invoker?.id === 'menu-view-trigger' ? 'view'
         : invoker?.id === 'connect-drive' ? 'drive'
-          : invoker?.id === 'account-button' ? 'account'
-            : invoker?.id === 'settings-button' ? 'settings'
-              : invoker?.id === 'explorer-more' ? 'explorer'
-                : invoker?.id === 'inspector-more' ? 'inspector'
-                  : invoker?.id === 'drive-root-more' ? 'drive-root' : 'context';
+          : invoker?.id === 'settings-button' ? 'settings'
+            : invoker?.id === 'explorer-more' ? 'explorer'
+              : invoker?.id === 'inspector-more' ? 'inspector'
+                : invoker?.id === 'drive-root-more' ? 'drive-root' : 'context';
   const labels: Record<string, string> = {
     file: strings().menuFile, edit: strings().menuEdit, view: strings().menuView,
-    drive: strings().drive, 'drive-root': strings().driveRootOptions, account: strings().account, settings: strings().settings,
+    drive: strings().drive, 'drive-root': strings().driveRootOptions, settings: strings().settings,
     explorer: strings().explorerOptions, inspector: strings().inspectorOptions, context: strings().menuFile
   };
   const rect = invoker?.getBoundingClientRect();
   workspaceMenuSnapshot = {
     id, label: labels[id] ?? strings().menuFile, invokerId: invoker?.id,
-    position: { left: Math.max(6, Math.min(x, window.innerWidth - 260)), top: Math.max(6, Math.min(y, window.innerHeight - 240)) },
+    position: { left: x, top: y },
     items: actions.map((action, index) => ({
       id: `${id}-${index}`, label: action.label, shortcut: action.shortcut,
       disabled: action.disabled, checked: action.checked, separator: action.separator
@@ -3291,28 +3290,87 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
     const actions: WorkspaceMenuAction[] = [{ label: state.locale === 'ja' ? '開く' : 'Open', run: () => {
       if (!rowIsCurrent() || storage === 'drive' && (state.account?.accountId !== accountId || !state.drive)) { staleMenuTarget(); return; }
       file.click();
-    } }, { label: t.copyName, run: () => { if (!rowIsCurrent()) { staleMenuTarget(); return; } return copyWithFailure(title); } }];
+    } }];
     if (storage === 'local') {
+      const identity: DocumentIdentity = { storage: 'local', fileId };
+      const readTarget = async (): Promise<{ document: StoredDocument; source: string } | undefined> => {
+        if (!sourceEditor.flushPendingEdit() || !rowIsCurrent()) { staleMenuTarget(); return undefined; }
+        if (tab) {
+          if (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource) { staleMenuTarget(); return undefined; }
+          await draftWrites.get(tabKey(tab));
+          if (!rowIsCurrent() || !state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource) { staleMenuTarget(); return undefined; }
+        }
+        const current = await indexedDb.getDocument(identity);
+        if (!rowIsCurrent() || !current || !tab && current.revision !== revision
+          || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) {
+          staleMenuTarget(); return undefined;
+        }
+        return { document: current, source: tab?.source ?? current.source };
+      };
       actions.push(
-        { label: t.exportSource, run: async () => {
-          if (!sourceEditor.flushPendingEdit()) { staleMenuTarget(); return; }
+        { label: t.renameFile, run: async () => {
+          const target = await readTarget();
+          if (!target) return;
+          const originalName = target.document.name;
+          const extension = originalName.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '';
+          const initialBaseName = extension ? originalName.slice(0, -extension.length) : originalName;
+          const enteredName = window.prompt(t.renamePrompt, initialBaseName);
+          if (enteredName === null || !enteredName.trim()) return;
+          const baseName = enteredName.trim().replace(/\.(?:guitardsl|gdsl)$/iu, '').trim();
+          if (!baseName) return;
+          const nextName = `${baseName}${extension}`;
           if (!rowIsCurrent() || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
-          const latest = await indexedDb.getDocument({ storage: 'local', fileId });
-          if (!rowIsCurrent() || !latest || latest.revision !== revision) { staleMenuTarget(); return; }
-          downloadSource(tab?.document.name ?? latest.name, tab?.source ?? latest.source);
+          const renamed = await indexedDb.renameLocal(identity, nextName.trim(), { revision: tab?.revision ?? target.document.revision, source: tab?.source ?? target.source });
+          if (!renamed) { staleMenuTarget(); return; }
+          if (tab) tab.document = { ...tab.document, name: nextName.trim() };
+          renderAll(); await persistSessions();
         } },
-        { label: t.deleteFile, run: () => deleteLocalFromExplorer(file, fileId, revision, tab, tabRevision, tabSource) }
+        { label: t.duplicateFile, run: async () => {
+          const target = await readTarget();
+          if (!target) return;
+          const duplicate = await indexedDb.duplicateLocal(identity, { revision: tab?.revision ?? target.document.revision, source: target.source });
+          if (!duplicate) { staleMenuTarget(); return; }
+          await openDocument(duplicate, duplicate.source);
+        } },
+        { label: t.downloadFile, run: async () => {
+          const target = await readTarget();
+          if (!target) return;
+          downloadSource(tab?.document.name ?? target.document.name, target.source);
+        } },
+        { label: t.downloadPdfFile, run: async () => {
+          const target = await readTarget();
+          if (!target) return;
+          try {
+            if (import.meta.env.DEV) lastPdfInputForTest = target.source;
+            await downloadScorePdf(target.source, tab?.document.name ?? target.document.name, {
+              pageSize: tab?.pageSize ?? state.pageSize,
+              orientation: tab?.orientation ?? state.orientation,
+              expandPageBreakRepeats: state.expandPageBreakRepeats
+            });
+          } catch (error) {
+            showMessage(`${state.locale === 'ja' ? 'PDFの書き出しに失敗しました: ' : 'PDF export failed: '}${shortError(error)}`, 'error');
+          }
+        } }
       );
-      if (state.account && state.drive && state.folderId) actions.push({ label: t.moveDrive, run: async () => {
-        if (!sourceEditor.flushPendingEdit()) { staleMenuTarget(); return; }
-        if (!rowIsCurrent() || tab && (!state.tabs.includes(tab) || tab.revision !== tabRevision || tab.source !== tabSource)) { staleMenuTarget(); return; }
-        const current = await indexedDb.getDocument({ storage: 'local', fileId });
-        if (!current || current.revision !== revision) { staleMenuTarget(); return; }
-        const targetTab = tab ?? await openLocalDocument({ storage: 'local', fileId });
-        if (!targetTab) return;
+      const driveAtMenuOpen = state.drive;
+      const accountAtMenuOpen = state.account?.accountId;
+      const folderAtMenuOpen = state.folderId;
+      const driveGenerationAtMenuOpen = state.driveGeneration;
+      const driveTargetIsCurrent = () => state.drive === driveAtMenuOpen
+        && state.account?.accountId === accountAtMenuOpen && state.folderId === folderAtMenuOpen
+        && state.driveGeneration === driveGenerationAtMenuOpen && !state.authExpired;
+      if (accountAtMenuOpen && driveAtMenuOpen && folderAtMenuOpen) actions.push({ label: t.moveGoogleDrive, run: async () => {
+        if (!driveTargetIsCurrent()) { staleMenuTarget(); return; }
+        const target = await readTarget();
+        if (!target || !driveTargetIsCurrent()) { staleMenuTarget(); return; }
+        const targetTab = tab ?? await openDocument(target.document, target.source);
+        if (!targetTab || !driveTargetIsCurrent()) { staleMenuTarget(); return; }
         await setActive(tabKey(targetTab));
-        if (state.activeKey === tabKey(targetTab)) await moveToDrive(targetTab);
+        if (state.activeKey === tabKey(targetTab) && driveTargetIsCurrent()) await moveToDrive(targetTab);
       } });
+      actions.push({ label: t.deleteFile, run: () => deleteLocalFromExplorer(file, fileId, revision, tab, tabRevision, tabSource) });
+    } else {
+      actions.push({ label: t.copyName, run: () => { if (!rowIsCurrent()) { staleMenuTarget(); return; } return copyWithFailure(title); } });
     }
     return actions;
   }
@@ -3390,24 +3448,24 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
   return [];
 }
 
-function openContextMenu(event: MouseEvent | KeyboardEvent, target: HTMLElement, keyboard = false): void {
+function requestWorkspaceContextMenu(request: WorkspaceContextMenuRequest): void {
+  const target = request.target;
+  if (!target.isConnected) return;
+  if (request.keyboard && target.id === 'explorer-more') { openExplorerMenu(); return; }
+  if (request.keyboard && target.id === 'inspector-more') { openInspectorMenu(); return; }
   const invoker = target.closest<HTMLElement>('.storage-root-label, .file-item, .tab > [role="tab"], .problem-row, .cm-gutters') ?? target;
   if (!sourceEditor.flushPendingEdit()) return;
   if (invoker.closest('.score-pane')) {
     const tab = activeTab();
-    if (tab) openPreviewContextMenu(12, 12, tab, {
+    if (tab) openPreviewContextMenu(request.keyboard ? 12 : request.clientX, request.keyboard ? 12 : request.clientY, tab, {
       documentUri: activeIdentityLabel(tab), documentVersion: tab.revision, previewGeneration: state.previewGeneration
     }, '');
-    if (event instanceof MouseEvent) event.preventDefault();
     return;
   }
   const menu = app.querySelector<HTMLElement>('#context-menu')!;
-  const actions = contextActionsFor(invoker, keyboard);
+  const actions = contextActionsFor(invoker, request.keyboard);
   if (!actions.length) return;
-  if (event instanceof MouseEvent) event.preventDefault();
-  const x = event instanceof MouseEvent ? event.clientX : Math.min(window.innerWidth - 220, invoker.getBoundingClientRect().left);
-  const y = event instanceof MouseEvent ? event.clientY : Math.min(window.innerHeight - 120, invoker.getBoundingClientRect().bottom);
-  showWorkspaceMenu(menu, x, y, actions, invoker);
+  showWorkspaceMenu(menu, request.clientX, request.clientY, actions, invoker);
 }
 
 function openPreviewContextMenu(x: number, y: number, tab: OpenTab, identity: { documentUri: string; documentVersion: number; previewGeneration: number }, visualElementId = ''): void {
@@ -3582,8 +3640,12 @@ function openDriveHeaderMenu(): void {
   const rect = button.getBoundingClientRect(); const t = strings();
   const actions: WorkspaceMenuAction[] = [];
   if (driveConnectInProgress) actions.push({ label: t.connecting, disabled: true, run: () => {} });
-  else if (!state.account || state.authExpired) actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
-  else actions.push({ label: t.disconnect, run: () => connectDrive() });
+  else if (!state.drive || !state.account || state.authExpired) actions.push({ label: state.authExpired ? t.reconnect : t.connect, run: () => connectDrive() });
+  else {
+    actions.push({ label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`, disabled: true, run: () => {} });
+    actions.push({ separator: true, label: '', run: () => {} });
+    actions.push({ label: t.disconnect, run: () => connectDrive() });
+  }
   showWorkspaceMenu(app.querySelector<HTMLElement>('#drive-menu')!, rect.left, rect.bottom + 3, actions, button);
 }
 
@@ -3659,72 +3721,8 @@ function openInspectorMenu(): void {
   ], button);
 }
 
-function openAccountMenu(): void {
-  const button = app.querySelector<HTMLButtonElement>('#account-button')!;
-  const rect = button.getBoundingClientRect();
-  const menu = app.querySelector<HTMLElement>('#account-menu')!;
-  const t = strings();
-  const actions: WorkspaceMenuAction[] = [];
-  if (state.account && state.drive) {
-    actions.push({ label: `${t.connectedAs} ${state.account.emailAddress ?? state.account.accountId}`, disabled: true, run: () => {} });
-    actions.push({ separator: true, label: '', run: () => {} });
-    actions.push({ label: t.disconnect, disabled: driveConnectInProgress, run: () => connectDrive() });
-  } else {
-    actions.push({ label: `${t.drive}: ${state.authExpired ? t.driveReauth : t.driveNotConnected}`, disabled: true, run: () => {} });
-  }
-  showWorkspaceMenu(menu, rect.left, rect.bottom + 3, actions, button);
-}
-
 app.querySelector('#close-help')!.addEventListener('click', () => app.querySelector<HTMLDialogElement>('#help-dialog')!.close(), runtimeListenerOptions);
 app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus(), runtimeListenerOptions);
-for (const [selector, open] of [
-  ['#menu-file-trigger', openFileMenu], ['#menu-edit-trigger', openEditMenu], ['#menu-view-trigger', openViewMenu]
-] as const) {
-  app.querySelector(selector)!.addEventListener('pointerenter', () => {
-    const trigger = app.querySelector<HTMLElement>(selector)!;
-    if (activeMenuElement && activeMenuInvoker !== trigger) open();
-  }, runtimeListenerOptions);
-}
-app.querySelector('.main-menu-bar')!.addEventListener('keydown', event => {
-  if (!(event instanceof KeyboardEvent)) return;
-  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLButtonElement>('button[role="menuitem"]') : null;
-  if (!target) return;
-  const buttons = Array.from(app.querySelectorAll<HTMLButtonElement>('.main-menu-bar button[role="menuitem"]'));
-  const index = buttons.indexOf(target);
-  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-    event.preventDefault();
-    buttons[(index + (event.key === 'ArrowRight' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
-    return;
-  }
-  if (event.key === 'Home' || event.key === 'End') {
-    event.preventDefault(); buttons[event.key === 'Home' ? 0 : buttons.length - 1]?.focus(); return;
-  }
-  if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    if (target.id === 'menu-file-trigger') openFileMenu();
-    else if (target.id === 'menu-edit-trigger') openEditMenu();
-    else openViewMenu();
-  }
-}, runtimeListenerOptions);
-app.addEventListener('contextmenu', event => {
-  const target = event.target instanceof HTMLElement ? event.target : undefined;
-  if (!target || target.closest('.cm-content')) return; // Preserve the browser's native editor-body context menu.
-  if (target.closest('.storage-root-row, .file-item, .tab, .problem-row, .cm-gutters')) openContextMenu(event, target);
-}, runtimeListenerOptions);
-app.addEventListener('keydown', event => {
-  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-  const target = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-  if (!target) return;
-  const panelMenuButton = target.closest<HTMLButtonElement>('#explorer-more, #inspector-more');
-  if (panelMenuButton) {
-    event.preventDefault();
-    if (panelMenuButton.id === 'explorer-more') openExplorerMenu();
-    else openInspectorMenu();
-    return;
-  }
-  const menuTarget = target.closest('.storage-root-row, .file-item, .tab, .problem-row, .cm-gutters, .cm-content, .score-pane');
-  if (menuTarget) { event.preventDefault(); openContextMenu(event, target, true); }
-}, runtimeListenerOptions);
 app.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
     event.preventDefault();
@@ -3897,17 +3895,16 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
       else if (command.menu === 'view') openViewMenu();
       else if (command.menu === 'drive') openDriveHeaderMenu();
       else if (command.menu === 'drive-root') openDriveRootMenu();
-      else if (command.menu === 'account') openAccountMenu();
       else if (command.menu === 'settings') openSettingsMenu();
       else if (command.menu === 'explorer') openExplorerMenu();
       else openInspectorMenu();
       return;
-    case 'menu.close': closeWorkspaceMenu(undefined, true); return;
+    case 'menu.close': closeWorkspaceMenu(); return;
     case 'menu.activate': {
       const index = workspaceMenuSnapshot?.items.findIndex(item => item.id === command.itemId) ?? -1;
       const action = index >= 0 ? workspaceMenuActions[index] : undefined;
       if (!action || action.disabled || action.separator) return;
-      closeWorkspaceMenu(undefined, true);
+      closeWorkspaceMenu();
       try {
         const result = action.run();
         if (result instanceof Promise) return result.catch(error => showMessage(shortError(error), 'error'));
@@ -4215,6 +4212,9 @@ export const workspaceRuntimeController: Omit<WebWorkspaceController, 'start'> &
       || hosts.settingsLabels !== app.querySelector<HTMLElement>('#settings-labels')) {
       throw new Error('Vue mounted different Inspector hosts than the workspace runtime.');
     }
+  },
+  requestContextMenu(request) {
+    requestWorkspaceContextMenu(request);
   }
 };
 

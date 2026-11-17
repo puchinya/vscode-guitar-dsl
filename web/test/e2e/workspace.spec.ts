@@ -340,17 +340,31 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         patchCalls.push({ fileId, source: request.postData() ?? '' });
       }
       if (request.method() === 'POST' && url.searchParams.get('uploadType') === 'multipart') {
-        appDataCreateCount += 1;
-        const candidate = parseMockedAppData(mockedRequestBody(request))
-          ?? (options.appDataState === null ? {
-            schemaVersion: 1, selectedFolderId: null, folderPrompt: 'unasked', openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
-          } satisfies TestAppDataState : undefined);
-        if (!candidate) throw new Error('The appData create request did not include a valid state JSON part.');
-        appDataState = candidate;
-        mockedDriveAppData.get(page)?.set(accountId, appDataState);
-        const fileId = `app-state-${accountId}`;
-        return route.fulfill({ headers, json: { id: fileId, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
-          createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` } });
+        const body = mockedRequestBody(request);
+        const candidate = parseMockedAppData(body);
+        const requestedFields = url.searchParams.get('fields') ?? '';
+        if (candidate || body.includes('guitardsl-state-v1.json') || !requestedFields.includes('parents')) {
+          appDataCreateCount += 1;
+          const appDataCandidate = candidate ?? (options.appDataState === null ? {
+              schemaVersion: 1, selectedFolderId: null, folderPrompt: 'unasked', openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+            } satisfies TestAppDataState : undefined);
+          if (!appDataCandidate) throw new Error('The appData create request did not include a valid state JSON part.');
+          appDataState = appDataCandidate;
+          mockedDriveAppData.get(page)?.set(accountId, appDataState);
+          const fileId = `app-state-${accountId}`;
+          return route.fulfill({ headers, json: { id: fileId, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+            createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` } });
+        }
+        const remote = options.remoteFiles?.['created-drive-copy'];
+        const fileList = options.driveFiles ?? (options.driveFiles = []);
+        if (!fileList.some(file => file.id === 'created-drive-copy')) fileList.push({
+          id: 'created-drive-copy', name: remote?.name ?? 'Song (local copy).guitardsl', version: remote?.version ?? '1',
+          modifiedTime: '2026-11-17T00:00:00.000Z', mimeType: 'text/plain', parents: [`folder-${accountId}`]
+        });
+        return route.fulfill({ headers, json: {
+          id: 'created-drive-copy', name: remote?.name ?? 'Song (local copy).guitardsl', version: remote?.version ?? '1',
+          modifiedTime: 't-copy', headRevisionId: 'r-copy', parents: [`folder-${accountId}`]
+        } });
       }
       return route.fulfill({ headers, json: {
         id: 'created-drive-copy', name: 'Song (local copy).guitardsl', version: '1', modifiedTime: 't-copy',
@@ -1075,6 +1089,292 @@ test('Header and Problems render the latest Controller view through the workspac
   await expect(page.locator('#problems-panel')).toBeVisible();
 });
 
+test('Issue #178 workspace polish: panels, splitters, menus, Explorer localization, notices, and cancel', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  const captureScreenshots = process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+  const capture = async (name: string): Promise<void> => {
+    if (!captureScreenshots) return;
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, name), fullPage: false });
+  };
+
+  await expect(page.locator('#account-button')).toHaveCount(0);
+  await expect(page.locator('#account-menu')).toHaveCount(0);
+  await expect(page.locator('.grid-splitter')).toHaveCount(4);
+  await expect(page.locator('#problems-panel')).toBeVisible();
+  await expect(page.locator('#problems-splitter')).toBeVisible();
+  await expect(page.locator('#tool-window-count')).toBeHidden();
+  expect(await page.locator('#problems-panel').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  expect(await page.locator('#activity-explorer').evaluate(element => getComputedStyle(element).boxShadow)).toBe('none');
+  expect(await page.locator('#file-items .file-item[aria-current="page"]').evaluate(element => getComputedStyle(element).boxShadow)).toBe('none');
+  expect(await page.locator('#toggle-problems').getAttribute('aria-expanded')).toBe('true');
+  expect(await page.locator('#toggle-problems').evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+  expect(await page.locator('#toggle-inspector').getAttribute('aria-pressed')).toBe('true');
+  expect(await page.locator('#toggle-inspector').evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+  await capture('problems-open-zero-light.png');
+
+  const center = page.locator('#center-splitter');
+  const centerBefore = await center.getAttribute('aria-valuenow');
+  const centerBox = await center.boundingBox();
+  expect(centerBox).not.toBeNull();
+  await page.mouse.move(centerBox!.x + centerBox!.width / 2, centerBox!.y + 48);
+  await page.mouse.down();
+  await page.mouse.move(centerBox!.x + centerBox!.width / 2 + 88, centerBox!.y + 48, { steps: 6 });
+  await page.mouse.up();
+  await expect(center).not.toHaveAttribute('aria-valuenow', centerBefore ?? '40');
+  const centerAfter = await center.getAttribute('aria-valuenow');
+  const sourceWidth = await page.locator('#source-pane').evaluate(element => element.getBoundingClientRect().width);
+  const scoreWidth = await page.locator('#score-pane').evaluate(element => element.getBoundingClientRect().width);
+  expect(sourceWidth).toBeGreaterThan(0);
+  expect(scoreWidth).toBeGreaterThan(0);
+  await page.waitForTimeout(350);
+  await capture('center-splitter-dragged-light.png');
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#center-splitter')).toHaveAttribute('aria-valuenow', centerAfter ?? '40');
+
+  await page.locator('#close-problems').click();
+  await expect(page.locator('#problems-panel')).toBeHidden();
+  await expect(page.locator('#problems-splitter')).toBeHidden();
+  await expect(page.locator('#toggle-problems')).toHaveAttribute('aria-expanded', 'false');
+  await capture('problems-closed-light.png');
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.fill('time: 3/4\n\n[Verse]\nC |\n@time: 7/x\n');
+  await expect(page.locator('#tool-window-count')).toBeVisible();
+  const errorTotal = Number(await page.locator('#error-count').textContent());
+  const warningTotal = Number(await page.locator('#warning-count').textContent());
+  await expect(page.locator('#tool-window-count')).toHaveText(String(errorTotal + warningTotal));
+  await page.locator('#toggle-problems').click();
+  await expect(page.locator('#problems-panel')).toBeVisible();
+  await capture('problems-open-positive-light.png');
+
+  expect(await page.locator('.main-menu-bar').evaluate(element => getComputedStyle(element).columnGap)).toBe('4px');
+  await page.locator('#menu-view-trigger').focus();
+  await page.keyboard.press('ArrowDown');
+  const viewMenu = page.locator('#view-menu');
+  await expect(viewMenu).toBeVisible();
+  await viewMenu.locator('button').first().hover();
+  const menuRows = await viewMenu.locator('button').evaluateAll(buttons => buttons.map(button => ({
+    height: button.getBoundingClientRect().height,
+    highlighted: getComputedStyle(button).backgroundColor === 'rgb(238, 240, 255)',
+    checked: button.getAttribute('aria-checked') === 'true'
+  })));
+  expect(menuRows.every(row => row.height === 32)).toBe(true);
+  expect(menuRows.filter(row => row.highlighted)).toHaveLength(1);
+  expect(menuRows.some(row => row.checked && row.highlighted)).toBe(false);
+  await page.keyboard.press('Escape');
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Theme: Dark' }).click();
+  await page.locator('#menu-file-trigger').click();
+  const fileMenu = page.locator('#file-menu');
+  await expect(fileMenu).toBeVisible();
+  await expect(fileMenu.locator('button').first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  const saveItem = fileMenu.getByRole('menuitem', { name: /Save/u });
+  await expect(saveItem).toBeFocused();
+  expect(await saveItem.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(238, 240, 255)');
+  expect(await saveItem.evaluate(element => getComputedStyle(element).color)).toBe('rgb(32, 36, 43)');
+  expect(await saveItem.locator('kbd').evaluate(element => getComputedStyle(element).color)).toBe('rgb(77, 86, 100)');
+  await capture('dark-menu-focused.png');
+  await page.keyboard.press('Escape');
+
+  const selectedFile = page.locator('#file-items .file-item[aria-current="page"]');
+  await selectedFile.click({ button: 'right' });
+  const contextMenu = page.locator('#context-menu');
+  await expect(contextMenu).toBeVisible();
+  await capture('context-menu-file.png');
+  await page.keyboard.press('Escape');
+  await selectedFile.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(contextMenu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(selectedFile).toBeFocused();
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('#files-heading')).toHaveText('エクスプローラー');
+  await expect(page.locator('#activity-explorer')).toHaveAttribute('aria-label', 'エクスプローラーの表示切替');
+  await page.locator('#explorer-more').click();
+  await expect(page.locator('#panel-menu')).toHaveAttribute('aria-label', 'エクスプローラーのオプション');
+  await page.keyboard.press('Escape');
+  await capture('explorer-japanese.png');
+
+  const filesBeforeCancel = await page.locator('#file-items .file-item').count();
+  const tabsBeforeCancel = await page.locator('.tabs [role="tab"]').count();
+  const cancelPrompt = page.waitForEvent('dialog').then(dialog => dialog.dismiss());
+  await page.locator('#new-score').click();
+  await cancelPrompt;
+  await expect(page.locator('#file-items .file-item')).toHaveCount(filesBeforeCancel);
+  await expect(page.locator('.tabs [role="tab"]')).toHaveCount(tabsBeforeCancel);
+  await expect(page.locator('#app-message')).toHaveCount(0);
+
+  const createPrompt = page.waitForEvent('dialog').then(dialog => {
+    expect(dialog.message()).toBe('ファイル名（拡張子なし）');
+    expect(dialog.defaultValue()).toBe('Untitled');
+    return dialog.accept('Issue 178 demo');
+  });
+  await page.locator('#new-score').click();
+  await createPrompt;
+  await expect(page.getByRole('tab', { name: 'Issue 178 demo.guitardsl' })).toBeVisible();
+  const snackbar = page.locator('#app-message');
+  await expect(snackbar).toHaveText('ローカル楽譜を作成しました。');
+  await expect(snackbar).toHaveAttribute('role', 'status');
+  expect(await snackbar.evaluate(element => getComputedStyle(element).position)).toBe('fixed');
+  expect(await snackbar.locator('button').count()).toBe(0);
+  await capture('snackbar-ja.png');
+  await page.waitForTimeout(2_000);
+  const replacementPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Issue 178 replacement.gdsl'));
+  await page.locator('#new-score').click();
+  await replacementPrompt;
+  await expect(page.getByRole('tab', { name: 'Issue 178 replacement.guitardsl' })).toBeVisible();
+  await expect(page.locator('#file-items')).toContainText('Issue 178 replacement.guitardsl');
+  await expect(page.locator('#file-items')).not.toContainText('Issue 178 replacement.gdsl');
+  await expect(snackbar).toHaveText('ローカル楽譜を作成しました。');
+  await page.waitForTimeout(3_500);
+  await expect(snackbar).toBeVisible();
+  await expect(snackbar).toHaveCount(0, { timeout: 5_000 });
+});
+
+test('center splitter hover matches the other splitters and the dark view separator is gray', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  const captureScreenshots = process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+
+  for (const theme of ['Light', 'Dark'] as const) {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', { name: `Theme: ${theme}` }).click();
+    const center = page.locator('#center-splitter');
+    const explorer = page.locator('#explorer-splitter');
+    await center.hover();
+    const centerStyle = await center.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { background: style.backgroundColor, outline: style.outline, outlineOffset: style.outlineOffset };
+    });
+    if (captureScreenshots) {
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({ path: resolve(evidenceDir, `center-splitter-hover-${theme.toLowerCase()}.png`) });
+    }
+    await explorer.hover();
+    const explorerStyle = await explorer.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { background: style.backgroundColor, outline: style.outline, outlineOffset: style.outlineOffset };
+    });
+    expect(centerStyle).toEqual(explorerStyle);
+    if (theme === 'Dark') {
+      const separator = await page.locator('.view-mode-controls').evaluate(element => getComputedStyle(element).borderLeftColor);
+      expect(separator).toBe('rgb(66, 70, 82)');
+      if (captureScreenshots) {
+        await page.locator('#center-splitter').hover();
+        await page.screenshot({ path: resolve(evidenceDir, 'view-controls-divider-dark.png') });
+      }
+    }
+  }
+});
+
+test('an empty editor workspace shows only its theme background and restores the selected mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await page.locator('#view-score').click();
+  await expect(page.locator('#view-score')).toHaveAttribute('aria-pressed', 'true');
+  for (const theme of ['Light', 'Dark'] as const) {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', { name: `Theme: ${theme}` }).click();
+    if (theme === 'Light') {
+      await page.getByRole('button', { name: 'Close Untitled.guitardsl' }).click();
+    }
+    await expect(page.locator('.tabs')).toBeVisible();
+    await expect(page.locator('.tabs').locator('*')).toHaveCount(0);
+    await expect(page.locator('.tabs')).toHaveText('');
+    const bottomBorderWidth = await page.locator('.tabs').evaluate(element => getComputedStyle(element).borderBottomWidth);
+    expect(bottomBorderWidth).toBe('0px');
+    const background = await page.locator('.tabs').evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(background).toBe('rgba(0, 0, 0, 0)');
+    const workspaceBackground = await page.locator('.app-shell').evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(workspaceBackground).toBe(theme === 'Light' ? 'rgb(247, 248, 250)' : 'rgb(31, 34, 40)');
+    await expect(page.locator('.split-view')).toBeHidden();
+    await expect(page.locator('#source-pane')).toBeHidden();
+    await expect(page.locator('#score-pane')).toBeHidden();
+    if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+      && page.context().browser()?.browserType().name() === 'chromium') {
+      const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({ path: resolve(evidenceDir, `empty-workspace-${theme.toLowerCase()}.png`) });
+    }
+  }
+
+  await page.locator('#file-items .file-item').click();
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expect(page.locator('#view-score')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#source-pane')).toBeHidden();
+  await expect(page.locator('#score-pane')).toBeVisible();
+  await expect(page.locator('#inspector-heading')).toHaveText('Inspector');
+  await expect(page.locator('.inspector')).toHaveAttribute('aria-label', 'Inspector');
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('#inspector-heading')).toHaveText('インスペクタ');
+  await expect(page.locator('.inspector')).toHaveAttribute('aria-label', 'インスペクタ');
+  if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'inspector-title-japanese.png') });
+  }
+});
+
+test('Google Drive menu owns the connected account identity and disconnect action', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await installDriveBrowserMock(page, ['ui18-account']);
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#account-button')).toHaveCount(0);
+  await expect(page.locator('#account-menu')).toHaveCount(0);
+
+  const driveButton = page.locator('#connect-drive');
+  const driveMenu = page.locator('#drive-menu');
+  await driveButton.click();
+  await expect(driveMenu).toBeVisible();
+  await expect(driveMenu.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(driveButton).toBeFocused();
+
+  await driveButton.click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  await expect(driveButton).toHaveAttribute('data-state', 'connected');
+  await driveButton.click();
+  const accountItem = driveMenu.getByRole('menuitem', { name: 'Connected as ui18-account@example.test', exact: true });
+  await expect(accountItem).toBeVisible();
+  await expect(accountItem).toBeDisabled();
+  await expect(driveMenu.getByRole('separator')).toHaveCount(1);
+  await expect(driveMenu.getByRole('menuitem', { name: 'Disconnect', exact: true })).toBeEnabled();
+
+  if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'drive-menu-account.png'), fullPage: false });
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(driveButton).toBeFocused();
+  await performAccountAction(page);
+  await expect(driveButton).toHaveAttribute('data-state', 'disconnected');
+  await driveButton.click();
+  await expect(driveMenu.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true })).toBeVisible();
+  await expect(driveMenu.getByRole('menuitem', { name: /Connected as/u })).toHaveCount(0);
+  await expect(driveMenu.getByRole('menuitem', { name: 'Disconnect', exact: true })).toHaveCount(0);
+});
+
 test('supports line numbers, search and replace, deterministic completion, and compiler lint', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
@@ -1160,7 +1460,7 @@ test('renders the compact workspace geometry and preserves the Preview across vi
   await expect(page.locator('#toggle-inspector')).toHaveAttribute('title', 'Toggle Inspector');
   await expect(page.locator('#activity-bar #activity-inspector')).toHaveCount(0);
   expect(geometry.status.height).toBe(24);
-  await expect(page.locator('.top-actions .web-icon')).toHaveCount(5);
+  await expect(page.locator('.top-actions .web-icon')).toHaveCount(4);
   await expect(page.locator('.view-mode-button .web-icon')).toHaveCount(3);
   await expect(page.locator('#status-cursor')).toHaveText('Ln 1, Col 1');
   await expect(page.locator('#status-problems')).toContainText('Errors 0 / Warnings 0');
@@ -2086,10 +2386,9 @@ test('shows both Explorer roots and opens root and tab menus from Shift+F10', as
 
   const file = page.locator('#file-items .file-item').first();
   await file.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: 'Export source' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Copy name' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Move to Drive' })).toHaveCount(0);
+  await expect(page.locator('#context-menu').getByRole('menuitem')).toHaveText([
+    'Open', 'Rename', 'Duplicate', 'Download', 'Download as PDF', 'Delete'
+  ]);
   await page.keyboard.press('Escape');
 
   const tab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
@@ -2351,34 +2650,121 @@ test('selects only the active Explorer file across local and Drive identities', 
   await expect(page.locator('#drive-file-items .file-item[aria-current="page"]')).toHaveCount(0);
 });
 
-test('exports and deletes a local file from its Explorer menu after confirmation', async ({ page }) => {
+test('performs local file Explorer menu actions against the clicked file', async ({ page }) => {
   await page.goto('/');
-  const namePrompt = page.waitForEvent('dialog').then(async dialog => {
-    const type = dialog.type();
-    await dialog.accept('Delete me.guitardsl');
-    return type;
-  });
+  const initialSource = 'title: Menu target\n\n[Verse]\nC | G | Am | F |\n';
+  await page.evaluate(async source => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.createLocal('Menu target.guitardsl', source);
+    await indexedDb.createLocal('Menu target(1).guitardsl', 'title: Existing collision\n');
+    (window as Window & { __guitarDslRenderAll?: () => void }).__guitarDslRenderAll?.();
+  }, initialSource);
+  const target = page.locator('#file-items .file-item').filter({ hasText: 'Menu target.guitardsl' });
+  await expect(target).toBeVisible();
+
+  await target.click({ button: 'right' });
+  await expect(page.locator('#context-menu').getByRole('menuitem')).toHaveText([
+    'Open', 'Rename', 'Duplicate', 'Download', 'Download as PDF', 'Delete'
+  ]);
+  await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Menu target.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await expectEditorSource(page, initialSource);
+
+  const targetSource = 'title: Updated target source\n\n[Verse]\nAm | F | C | G |\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(targetSource);
+  await expectEditorSource(page, targetSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  const otherPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Other.guitardsl'));
   await page.getByRole('button', { name: 'New score' }).click();
-  expect(await namePrompt).toBe('prompt');
-  const file = page.locator('#file-items .file-item').filter({ hasText: 'Delete me.guitardsl' });
-  await expect(file).toBeVisible();
+  await otherPrompt;
+  const otherTab = page.getByRole('tab', { name: 'Other.guitardsl' });
+  await expect(otherTab).toBeVisible();
+  await expect(otherTab).toHaveAttribute('aria-selected', 'true');
+  const otherSource = 'title: Other active tab\n\n[Verse]\nG | C | F | Am |\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(otherSource);
+  await expectEditorSource(page, otherSource);
+  await page.getByRole('tab', { name: 'Menu target.guitardsl' }).click();
+  await expectEditorSource(page, targetSource);
+  await page.getByRole('tab', { name: 'Other.guitardsl' }).click();
+  await expectEditorSource(page, otherSource);
 
-  await file.click({ button: 'right' });
+  await target.click({ button: 'right' });
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('menuitem', { name: 'Export source' }).click();
-  expect((await downloadPromise).suggestedFilename()).toBe('Delete me.guitardsl');
+  await page.getByRole('menuitem', { name: 'Download', exact: true }).click();
+  const sourceDownload = await downloadPromise;
+  expect(sourceDownload.suggestedFilename()).toBe('Menu target.guitardsl');
+  expect(await readFile((await sourceDownload.path())!, 'utf8')).toBe(targetSource);
 
-  await file.click({ button: 'right' });
+  await target.click({ button: 'right' });
+  const pdfDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Download as PDF', exact: true }).click();
+  const pdfDownload = await pdfDownloadPromise;
+  expect(pdfDownload.suggestedFilename()).toBe('Menu target.pdf');
+  expect((await readFile((await pdfDownload.path())!)).subarray(0, 4).toString('ascii')).toBe('%PDF');
+  expect(await page.evaluate(() => (window as Window & { __guitarDslReadLastPdfInput?: () => string }).__guitarDslReadLastPdfInput?.()))
+    .toBe(targetSource);
+
+  await target.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
+  const duplicate = page.locator('#file-items .file-item').filter({ hasText: 'Menu target(2).guitardsl' });
+  await expect(duplicate).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Menu target(2).guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await expectEditorSource(page, targetSource);
+  const duplicateData = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const row = (await indexedDb.listDocuments('local')).find(item => item.name === 'Menu target(2).guitardsl');
+    return row ? (await indexedDb.getDocument(row.identity))?.source : undefined;
+  });
+  expect(duplicateData).toBe(targetSource);
+
+  await page.getByRole('tab', { name: 'Menu target.guitardsl' }).click();
+  await target.click({ button: 'right' });
+  const cancelledRename = page.waitForEvent('dialog').then(dialog => dialog.dismiss());
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  await cancelledRename;
+  await expect(target).toBeVisible();
+
+  await target.click({ button: 'right' });
+  const emptyRename = page.waitForEvent('dialog').then(dialog => dialog.accept('   '));
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  await emptyRename;
+  await expect(target).toBeVisible();
+
+  await target.click({ button: 'right' });
+  const renamePrompt = page.waitForEvent('dialog').then(async dialog => {
+    expect(dialog.defaultValue()).toBe('Menu target');
+    await dialog.accept('Renamed target.gdsl');
+  });
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  await renamePrompt;
+  const renamed = page.locator('#file-items .file-item').filter({ hasText: 'Renamed target.guitardsl' });
+  await expect(renamed).toBeVisible();
+  await expect(page.locator('#file-items .file-item').filter({ hasText: 'Renamed target.gdsl' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Renamed target.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Menu target.guitardsl' })).toHaveCount(0);
+  if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+    await page.getByRole('button', { name: 'Score view' }).click();
+    await expect(page.locator('#workspace')).toHaveClass(/view-score/);
+    await expect(page.locator('.cm-tooltip-autocomplete')).toBeHidden();
+    await expect(page.locator('#app-message')).toHaveCount(0, { timeout: 5_000 });
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'rename-preserved-extension.png'), fullPage: true });
+  }
+
+  await renamed.click({ button: 'right' });
   const firstConfirmation = page.waitForEvent('dialog').then(async dialog => {
     const type = dialog.type();
     await dialog.dismiss();
     return type;
   });
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   expect(await firstConfirmation).toBe('confirm');
-  await expect(file).toBeVisible();
+  await expect(renamed).toBeVisible();
 
-  await file.click({ button: 'right' });
+  await renamed.click({ button: 'right' });
   const secondConfirmation = page.waitForEvent('dialog').then(async dialog => {
     const type = dialog.type();
     await dialog.accept();
@@ -2386,8 +2772,53 @@ test('exports and deletes a local file from its Explorer menu after confirmation
   });
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   expect(await secondConfirmation).toBe('confirm');
-  await expect(file).toHaveCount(0);
-  await expect(page.getByRole('tab', { name: 'Delete me.guitardsl' })).toHaveCount(0);
+  await expect(renamed).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Renamed target.guitardsl' })).toHaveCount(0);
+});
+
+test('moves a local file to Google Drive only after verified upload', async ({ page }) => {
+  const mockOptions: DriveBrowserMockOptions = { remoteFiles: {}, driveFiles: [] };
+  await installDriveBrowserMock(page, ['move-menu-account'], mockOptions);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  const source = 'title: Move from local\n\n[Verse]\nC | G | Am | F |\n';
+  const local = await page.evaluate(async sourceText => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const document = await indexedDb.createLocal('Move me.guitardsl', sourceText);
+    (window as Window & { __guitarDslRenderAll?: () => void }).__guitarDslRenderAll?.();
+    return document.identity;
+  }, source);
+  const localFile = page.locator('#file-items .file-item').filter({ hasText: 'Move me.guitardsl' });
+  await expect(localFile).toBeVisible();
+  await localFile.click({ button: 'right' });
+  await expect(page.locator('#context-menu').getByRole('menuitem')).toHaveText([
+    'Open', 'Rename', 'Duplicate', 'Download', 'Download as PDF', 'Delete'
+  ]);
+  await page.keyboard.press('Escape');
+
+  await performAccountAction(page);
+  mockOptions.remoteFiles!['created-drive-copy'] = { name: 'Move me.guitardsl', source, version: '1' };
+  await localFile.click({ button: 'right' });
+  await expect(page.locator('#context-menu').getByRole('menuitem')).toHaveText([
+    'Open', 'Rename', 'Duplicate', 'Download', 'Download as PDF', 'Move to Google Drive', 'Delete'
+  ]);
+  if (test.info().project.name === 'chromium') {
+    const screenshotPath = test.info().outputPath('local-file-context-menu.png');
+    await expect(page.locator('#app-message')).toHaveCount(0, { timeout: 7000 });
+    await mkdir(dirname(screenshotPath), { recursive: true });
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+  }
+  await page.getByRole('menuitem', { name: 'Move to Google Drive', exact: true }).click();
+  await expect(localFile).toHaveCount(0);
+  const driveFile = page.locator('#drive-file-items .file-item').filter({ hasText: 'Move me.guitardsl' });
+  await expect(driveFile).toBeVisible();
+  const result = await page.evaluate(async identity => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const docs = await indexedDb.listDocuments('drive', 'move-menu-account');
+    return { local: await indexedDb.getDocument(identity), drive: docs.map(row => ({ name: row.name, source: row.source })) };
+  }, local);
+  expect(result.local).toBeUndefined();
+  expect(result.drive).toContainEqual({ name: 'Move me.guitardsl', source });
 });
 
 test('uses Preview bindings only in Edit mode for source navigation and rejects a stale menu target', async ({ page }) => {

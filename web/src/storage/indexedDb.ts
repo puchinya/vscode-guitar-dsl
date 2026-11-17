@@ -88,6 +88,10 @@ function record(document: StoredDocument): StoredDocument & { key: string } {
   return { ...document, key: identityKey(document.identity, document.accountId) };
 }
 
+function normalizedLocalName(name: string): string {
+  return name.normalize('NFC').toLowerCase();
+}
+
 export const indexedDb = {
   async listDocuments(storage: StorageKind, accountId?: string): Promise<StoredDocument[]> {
     const db = await openDatabase();
@@ -288,6 +292,51 @@ export const indexedDb = {
     await done;
   },
 
+  async duplicateLocal(identity: DocumentIdentity, expected: PersistenceBase): Promise<StoredDocument | undefined> {
+    if (identity.storage !== 'local') throw new TypeError('Only local documents can be duplicated here');
+    const db = await openDatabase();
+    const tx = db.transaction([DOCUMENTS, DRAFTS], 'readwrite');
+    const done = transactionDone(tx);
+    const key = identityKey(identity);
+    const documents = tx.objectStore(DOCUMENTS);
+    const [saved, draft, localRows] = await Promise.all([
+      idbRequest<StoredDocument & { key: string } | undefined>(documents.get(key)),
+      idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key)),
+      idbRequest<(StoredDocument & { key: string })[]>(documents.index('storage').getAll('local'))
+    ]);
+    if (!saved) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return undefined;
+    }
+    const currentSource = draft && draft.revision >= saved.revision ? draft.source : saved.source;
+    const currentRevision = draft && draft.revision >= saved.revision ? draft.revision : saved.revision;
+    if (currentRevision !== expected.revision || currentSource !== expected.source) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return undefined;
+    }
+
+    const originalName = saved.name;
+    const extensionMatch = originalName.match(/(\.(?:guitardsl|gdsl))$/iu);
+    const extension = extensionMatch?.[1] ?? '';
+    const stem = extension ? originalName.slice(0, -extension.length) : originalName;
+    const usedNames = new Set(localRows.map(row => normalizedLocalName(row.name)));
+    let suffix = 1;
+    let name = '';
+    do { name = `${stem}(${suffix++})${extension}`; }
+    while (usedNames.has(normalizedLocalName(name)));
+
+    const now = Date.now();
+    const duplicate: StoredDocument = {
+      identity: { storage: 'local', fileId: crypto.randomUUID() },
+      name, source: expected.source, revision: 0, createdAt: now, updatedAt: now
+    };
+    documents.add(record(duplicate));
+    await done;
+    return duplicate;
+  },
+
   async getValue<T>(storeName: typeof SETTINGS | typeof SESSIONS, key: string): Promise<T | undefined> {
     const db = await openDatabase();
     const tx = db.transaction(storeName, 'readonly');
@@ -313,20 +362,32 @@ export const indexedDb = {
     await done;
   },
 
-  async renameLocal(identity: DocumentIdentity, name: string): Promise<void> {
+  async renameLocal(identity: DocumentIdentity, name: string, expected?: PersistenceBase): Promise<boolean> {
     if (identity.storage !== 'local') throw new TypeError('Only local documents can be renamed here');
     const db = await openDatabase();
-    const tx = db.transaction(DOCUMENTS, 'readwrite');
+    const tx = db.transaction([DOCUMENTS, DRAFTS], 'readwrite');
     const done = transactionDone(tx);
     const store = tx.objectStore(DOCUMENTS);
-    const row = await idbRequest<StoredDocument & { key: string } | undefined>(store.get(identityKey(identity)));
+    const key = identityKey(identity);
+    const [row, draft] = await Promise.all([
+      idbRequest<StoredDocument & { key: string } | undefined>(store.get(key)),
+      idbRequest<DraftRecord | undefined>(tx.objectStore(DRAFTS).get(key))
+    ]);
     if (!row) {
       tx.abort();
       await done.catch(() => undefined);
       throw new DOMException('Document was deleted', 'NotFoundError');
     }
+    const currentSource = draft && draft.revision >= row.revision ? draft.source : row.source;
+    const currentRevision = draft && draft.revision >= row.revision ? draft.revision : row.revision;
+    if (expected && (currentRevision !== expected.revision || currentSource !== expected.source)) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return false;
+    }
     store.put({ ...row, name: name.trim() || row.name, updatedAt: Date.now() });
     await done;
+    return true;
   },
 
   async setPendingDriveFile(identity: DocumentIdentity, driveFileId: string, folderId: string): Promise<void> {

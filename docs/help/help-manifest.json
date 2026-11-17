@@ -221,7 +221,7 @@
       "source": "web",
       "section": "3",
       "helpPage": "features",
-      "reviewedSourceSha256": "a854276c0490336ebf9df754491d07fe7e6b114a70c3585b3c370b38f89882e9"
+      "reviewedSourceSha256": "a5fc5528c824ff0ae1818546dc3db8916878adc82122068c0a7688e1554bec7e"
     },
     {
       "source": "web",
@@ -243,6 +243,12 @@
     },
     {
       "source": "web",
+      "section": "7",
+      "helpPage": "features",
+      "reviewedSourceSha256": "7df155c65fb4fae3dbecf3d4672e13ad45fce0e667469220b55c61ae469377da"
+    },
+    {
+      "source": "web",
       "section": "11",
       "helpPage": "features",
       "reviewedSourceSha256": "c0233cbfe2c8beabc796484c3ac242dfee723bd397cf83b86c47037655faa257"
@@ -258,11 +264,6 @@
       "source": "web",
       "section": "1",
       "reason": "The overview defines product scope and ownership; user workflows are documented in sections 2–6."
-    },
-    {
-      "source": "web",
-      "section": "7",
-      "reason": "Observable behavior restates the workflows already covered in sections 2–6."
     },
     {
       "source": "web",
