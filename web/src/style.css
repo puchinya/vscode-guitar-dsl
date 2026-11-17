@@ -54,6 +54,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .drive-overwrite-note { margin: 0 12px 14px; padding: 8px; border-left: 3px solid #d19a29; background: #fff8e7; color: #684b12; font-size: 11px; line-height: 1.45; }
 .editor-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .tabs { display: flex; align-items: stretch; min-height: 36px; height: 36px; overflow: hidden; background: #f1f2f5; border-bottom: 1px solid #dfe2e7; }
+.tabs.tabs-empty { background: transparent; border-bottom: 0; }
 .document-tabs { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow: hidden auto; }
 .view-mode-controls { display: flex; align-items: center; flex: 0 0 auto; gap: 3px; padding: 0 7px 0 5px; border-left: 1px solid #dfe2e7; }
 .tab { display: flex; align-items: center; min-width: 0; border-right: 1px solid #dfe2e7; }
@@ -617,3 +618,4 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .top-actions .google-drive-logo { width: 18px; height: 18px; flex-basis: 18px; }
   .top-actions .icon-action { width: 29px; min-width: 29px; }
 }
+.app-shell[data-theme="dark"] .tabs.tabs-empty { background: transparent; }

@@ -2304,10 +2304,12 @@ async function deleteLocal(tab: OpenTab): Promise<void> {
 async function createNewScore(): Promise<void> {
   const operationGeneration = workspaceOperationGeneration;
   const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
-  const name = window.prompt(state.locale === 'ja' ? 'ファイル名' : 'File name', 'Untitled.guitardsl');
+  const name = window.prompt(state.locale === 'ja' ? 'ファイル名（拡張子なし）' : 'File name (without extension)', 'Untitled');
   if (name === null) return;
+  const baseName = name.trim().replace(/\.(?:guitardsl|gdsl)$/i, '').trim() || 'Untitled';
+  const fileName = `${baseName}.guitardsl`;
   try {
-    const documentRow = await indexedDb.createLocal(name, DEFAULT_SOURCE);
+    const documentRow = await indexedDb.createLocal(fileName, DEFAULT_SOURCE);
     if (!operationIsCurrent()) { deferredExplorerRefresh = true; return; }
     state.storageReady = true;
     await openDocument(documentRow);
@@ -2316,7 +2318,7 @@ async function createNewScore(): Promise<void> {
   } catch (error) {
     if (!operationIsCurrent()) return;
     state.storageReady = false;
-    const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: name || 'Untitled.guitardsl', source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
+    const documentRow: StoredDocument = { identity: { storage: 'local', fileId: crypto.randomUUID() }, name: fileName, source: DEFAULT_SOURCE, revision: 0, createdAt: Date.now(), updatedAt: Date.now() };
     const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
       persistedBase: { revision: 0, source: DEFAULT_SOURCE }, saveStatus: 'error' };
     if (!editorReadyForDocumentChange()) return;

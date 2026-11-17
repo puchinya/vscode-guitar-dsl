@@ -7,7 +7,7 @@ const text = (ja: string, en: string) => props.snapshot.locale === 'ja' ? ja : e
 </script>
 
 <template>
-  <div class="tabs" :aria-label="snapshot.tabs.length ? text('開いている文書とワークスペース表示', 'Open documents and workspace views') : undefined">
+  <div class="tabs" :class="{ 'tabs-empty': snapshot.tabs.length === 0 }" :aria-label="snapshot.tabs.length ? text('開いている文書とワークスペース表示', 'Open documents and workspace views') : undefined">
     <div v-if="snapshot.tabs.length" class="document-tabs" role="tablist" id="open-tabs">
       <div v-for="tab in snapshot.tabs" :key="tab.key" class="tab" :class="{ active: tab.key === snapshot.activeKey }" :data-document-tab-key="tab.key">
         <button type="button" role="tab" :aria-selected="tab.key === snapshot.activeKey" :title="tab.name" @click="emit('command', { type: 'document.activate', key: tab.key })">{{ tab.name }}</button>

@@ -39,7 +39,7 @@ const maxProblemsHeight = () => Math.floor(window.innerHeight * 0.45);
     <GridSplitter id="explorer-splitter" class="workspace-splitter" splitter="explorer" orientation="vertical" :label="text('Explorer の幅を変更', 'Resize Explorer')" :min="180" :max="420" :value="snapshot.explorerWidth" @command="emit('command', $event)" />
     <section class="editor-workspace" :aria-label="text('楽譜ワークスペース', 'Score workspace')">
       <DocumentTabs :snapshot="snapshot" @command="emit('command', $event)" />
-      <div class="split-view" :style="{ '--split-ratio': `${snapshot.splitRatio * 100}%` }">
+      <div v-show="snapshot.tabs.length > 0" class="split-view" :style="{ '--split-ratio': `${snapshot.splitRatio * 100}%` }">
         <SourceEditorHost :snapshot="snapshot" :controller="controller" />
         <GridSplitter id="center-splitter" class="split-divider" splitter="center" orientation="vertical" :label="text('ソースと譜面の幅を変更', 'Resize source and score panes')" :min="5" :max="95" :value="Math.round(snapshot.splitRatio * 100)" @command="emit('command', $event)" />
         <ScorePreviewHost :controller="controller" />

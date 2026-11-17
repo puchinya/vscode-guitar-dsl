@@ -1215,9 +1215,14 @@ test('Issue #178 workspace polish: panels, splitters, menus, Explorer localizati
   await expect(page.locator('.tabs [role="tab"]')).toHaveCount(tabsBeforeCancel);
   await expect(page.locator('#app-message')).toHaveCount(0);
 
-  const createPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Issue 178 demo.guitardsl'));
+  const createPrompt = page.waitForEvent('dialog').then(dialog => {
+    expect(dialog.message()).toBe('ファイル名（拡張子なし）');
+    expect(dialog.defaultValue()).toBe('Untitled');
+    return dialog.accept('Issue 178 demo');
+  });
   await page.locator('#new-score').click();
   await createPrompt;
+  await expect(page.getByRole('tab', { name: 'Issue 178 demo.guitardsl' })).toBeVisible();
   const snackbar = page.locator('#app-message');
   await expect(snackbar).toHaveText('ローカル楽譜を作成しました。');
   await expect(snackbar).toHaveAttribute('role', 'status');
@@ -1225,9 +1230,12 @@ test('Issue #178 workspace polish: panels, splitters, menus, Explorer localizati
   expect(await snackbar.locator('button').count()).toBe(0);
   await capture('snackbar-ja.png');
   await page.waitForTimeout(2_000);
-  const replacementPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Issue 178 replacement.guitardsl'));
+  const replacementPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Issue 178 replacement.gdsl'));
   await page.locator('#new-score').click();
   await replacementPrompt;
+  await expect(page.getByRole('tab', { name: 'Issue 178 replacement.guitardsl' })).toBeVisible();
+  await expect(page.locator('#file-items')).toContainText('Issue 178 replacement.guitardsl');
+  await expect(page.locator('#file-items')).not.toContainText('Issue 178 replacement.gdsl');
   await expect(snackbar).toHaveText('ローカル楽譜を作成しました。');
   await page.waitForTimeout(3_500);
   await expect(snackbar).toBeVisible();
@@ -1273,10 +1281,12 @@ test('center splitter hover matches the other splitters and the dark view separa
   }
 });
 
-test('an empty document tab row shows only its theme background', async ({ page }) => {
+test('an empty editor workspace shows only its theme background and restores the selected mode', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await page.locator('#view-score').click();
+  await expect(page.locator('#view-score')).toHaveAttribute('aria-pressed', 'true');
   for (const theme of ['Light', 'Dark'] as const) {
     await page.locator('#settings-button').click();
     await page.getByRole('menuitemradio', { name: `Theme: ${theme}` }).click();
@@ -1286,14 +1296,39 @@ test('an empty document tab row shows only its theme background', async ({ page 
     await expect(page.locator('.tabs')).toBeVisible();
     await expect(page.locator('.tabs').locator('*')).toHaveCount(0);
     await expect(page.locator('.tabs')).toHaveText('');
+    const bottomBorderWidth = await page.locator('.tabs').evaluate(element => getComputedStyle(element).borderBottomWidth);
+    expect(bottomBorderWidth).toBe('0px');
     const background = await page.locator('.tabs').evaluate(element => getComputedStyle(element).backgroundColor);
-    expect(background).toBe(theme === 'Light' ? 'rgb(241, 242, 245)' : 'rgb(30, 33, 39)');
+    expect(background).toBe('rgba(0, 0, 0, 0)');
+    const workspaceBackground = await page.locator('.app-shell').evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(workspaceBackground).toBe(theme === 'Light' ? 'rgb(247, 248, 250)' : 'rgb(31, 34, 40)');
+    await expect(page.locator('.split-view')).toBeHidden();
+    await expect(page.locator('#source-pane')).toBeHidden();
+    await expect(page.locator('#score-pane')).toBeHidden();
     if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
       && page.context().browser()?.browserType().name() === 'chromium') {
       const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
       await mkdir(evidenceDir, { recursive: true });
-      await page.screenshot({ path: resolve(evidenceDir, `empty-tabs-${theme.toLowerCase()}.png`) });
+      await page.screenshot({ path: resolve(evidenceDir, `empty-workspace-${theme.toLowerCase()}.png`) });
     }
+  }
+
+  await page.locator('#file-items .file-item').click();
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expect(page.locator('#view-score')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#source-pane')).toBeHidden();
+  await expect(page.locator('#score-pane')).toBeVisible();
+  await expect(page.locator('#inspector-heading')).toHaveText('Inspector');
+  await expect(page.locator('.inspector')).toHaveAttribute('aria-label', 'Inspector');
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('#inspector-heading')).toHaveText('インスペクタ');
+  await expect(page.locator('.inspector')).toHaveAttribute('aria-label', 'インスペクタ');
+  if (process.env.GUITARDSL_CAPTURE_ISSUE178 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = '/private/tmp/vscode-guitar-dsl-issue-178';
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, 'inspector-title-japanese.png') });
   }
 });
 
