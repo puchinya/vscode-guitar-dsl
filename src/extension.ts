@@ -374,7 +374,13 @@ export function activate(context: vscode.ExtensionContext) {
     if (updated) setVariablesContext(updated, false);
   });
   const refreshInspectorContext = (document?: vscode.TextDocument) => {
-    settingsController?.invalidateIfDifferent(isGuitarDslDocument(document) ? document.uri.toString() : undefined);
+    const previewDocumentUri = currentPanel?.active === true
+      ? previewLifecycleProbe.currentDocumentUri ?? lastActiveGuitarDslDoc?.uri.toString()
+      : undefined;
+    // Opening a Preview can clear activeTextEditor without changing the document being edited.
+    // Keep a matching Settings draft alive while its own Preview has focus.
+    settingsController?.invalidateIfDifferent(isGuitarDslDocument(document)
+      ? document.uri.toString() : previewDocumentUri);
     if (isGuitarDslDocument(document)) {
       if (inspector.currentContext.kind === 'variables' && inspector.currentContext.uri === document.uri.toString()) {
         if (inspector.currentContext.version !== document.version) setVariablesContext(document, false);
@@ -803,7 +809,9 @@ export function activate(context: vscode.ExtensionContext) {
     lastActiveGuitarDslDoc = doc;
 
     if (currentPanel) {
-      currentPanel.reveal(vscode.ViewColumn.Beside);
+      const requestedColumn = previewLifecycleProbe.nextPanelViewColumnForTests ?? vscode.ViewColumn.Beside;
+      previewLifecycleProbe.nextPanelViewColumnForTests = undefined;
+      currentPanel.reveal(requestedColumn);
     } else {
       previewLifecycleProbe.lastPlaybackAction = undefined;
       const previewColumn = previewLifecycleProbe.nextPanelViewColumnForTests ?? vscode.ViewColumn.Beside;

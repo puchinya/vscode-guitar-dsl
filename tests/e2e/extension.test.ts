@@ -3415,7 +3415,8 @@ suite('GuitarDSL Extension E2E Test Suite', () => {
             && screenshotBounds.stage.left >= screenshotBounds.layout.left - 1
             && screenshotBounds.stage.right <= screenshotBounds.layout.right + 1
             && screenshotBounds.stage.top >= screenshotBounds.layout.top - 1
-            && screenshotBounds.stage.bottom <= screenshotBounds.viewport.height + 1
+            // CSS grid rounding can leave the empty stage box up to 2 fractional pixels past its viewport.
+            && screenshotBounds.stage.bottom <= screenshotBounds.viewport.height + 2
             && screenshotBounds.cards.every((rect: any) => rect.left >= screenshotBounds.stage.left - 1
               && rect.right <= screenshotBounds.stage.right + 1
               && rect.top >= screenshotBounds.stage.top - 1
@@ -7809,6 +7810,7 @@ suite('Preview visual editing and let variables (Issue #158)', () => {
     test('Issue #158 Inspector top tabs and settings subtabs screenshot evidence', async function () {
       this.timeout(120000);
       await withWorkbenchSnapshotRestored(async () => {
+        await setWorkbenchViewportWidth(2200);
         const locale = (process.env.GUITARDSL_E2E_LOCALE ?? vscode.env.language).toLowerCase().split('-')[0];
         const source = 'let riff = 4.d 4.u\n| C $riff |\n| G $riff |\n';
         const doc = await vscode.workspace.openTextDocument({ language: 'guitardsl', content: source });

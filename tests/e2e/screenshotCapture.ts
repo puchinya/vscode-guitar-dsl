@@ -61,6 +61,17 @@ async function waitForWorkbenchTarget(port: number): Promise<DevToolsTarget> {
 }
 
 async function waitForPreviewTarget(port: number, expectedDocumentUri?: string): Promise<DevToolsTarget> {
+  let activePreviewDocumentUri = expectedDocumentUri;
+  if (!activePreviewDocumentUri) {
+    try {
+      const previewCapoModule = require('../../previewCapo') as {
+        previewLifecycleProbe?: { currentDocumentUri?: string };
+      };
+      activePreviewDocumentUri = previewCapoModule.previewLifecycleProbe?.currentDocumentUri;
+    } catch {
+      // Capture helpers may also run before the extension-owned probe is available.
+    }
+  }
   let lastTargets: DevToolsTarget[] = [];
   for (let attempt = 0; attempt < 50; attempt++) {
     lastTargets = await getTargets(port);
@@ -98,7 +109,7 @@ async function waitForPreviewTarget(port: number, expectedDocumentUri?: string):
             returnByValue: true
           });
           const state = JSON.parse(String((result.result as { value?: unknown } | undefined)?.value ?? '{}')) as { ready?: boolean; uri?: string };
-          return state.ready === true && (!expectedDocumentUri || state.uri === expectedDocumentUri);
+          return state.ready === true && (!activePreviewDocumentUri || state.uri === activePreviewDocumentUri);
         });
         if (containsPreviewDom) return candidate;
       } catch {
@@ -112,32 +123,65 @@ async function waitForPreviewTarget(port: number, expectedDocumentUri?: string):
 }
 
 /** Captures the selected VS Code workbench page through its local DevTools target. */
+let previewViewportWasOverridden = false;
+let previewWorkbenchMetricsWereOverridden = false;
+
 export async function captureWorkbenchScreenshot(filename: string, issueNumber = 134, viewportWidth?: number): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
   await withWorkbenchDevTools(async send => {
     const width = viewportWidth ?? Number(process.env.GUITARDSL_E2E_VIEWPORT_WIDTH ?? 800);
-    if (Number.isFinite(width) && width >= 320) {
-      await send('Emulation.setDeviceMetricsOverride', {
-        width,
-        height: 900,
-        deviceScaleFactor: 1,
-        mobile: false
+    const emulationApplied = Number.isFinite(width) && width >= 320;
+    let previousPreviewMetrics: { width: number; height: number; deviceScaleFactor: number } | undefined;
+    if (emulationApplied && previewWorkbenchMetricsWereOverridden) {
+      const previous = await send('Runtime.evaluate', {
+        expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio })',
+        returnByValue: true
       });
+      const value = (previous.result as { value?: unknown } | undefined)?.value;
+      if (typeof value === 'string') {
+        const metrics = JSON.parse(value) as { width?: unknown; height?: unknown; deviceScaleFactor?: unknown };
+        if (typeof metrics.width === 'number' && typeof metrics.height === 'number'
+          && typeof metrics.deviceScaleFactor === 'number') {
+          previousPreviewMetrics = {
+            width: metrics.width,
+            height: metrics.height,
+            deviceScaleFactor: metrics.deviceScaleFactor
+          };
+        }
+      }
     }
-    await send('Page.enable');
-    const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
-    const data = result.data;
-    if (typeof data !== 'string') throw new Error('DevTools did not return screenshot data');
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+    try {
+      if (emulationApplied) {
+        await send('Emulation.setDeviceMetricsOverride', {
+          width,
+          height: 900,
+          deviceScaleFactor: 1,
+          mobile: false
+        });
+      }
+      await send('Page.enable');
+      const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+      const data = result.data;
+      if (typeof data !== 'string') throw new Error('DevTools did not return screenshot data');
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.writeFile(outputPath, Buffer.from(data, 'base64'));
+    } finally {
+      if (emulationApplied && previousPreviewMetrics) {
+        await send('Emulation.setDeviceMetricsOverride', {
+          ...previousPreviewMetrics,
+          mobile: false,
+          screenWidth: previousPreviewMetrics.width,
+          screenHeight: previousPreviewMetrics.height
+        });
+      } else if (emulationApplied) {
+        await send('Emulation.clearDeviceMetricsOverride');
+      }
+    }
   });
 }
 
 /** Captures only the active Preview Webview at its real CSS viewport size. */
-let previewViewportWasOverridden = false;
-let previewWorkbenchMetricsWereOverridden = false;
-
 export async function capturePreviewWebviewScreenshot(
   filename: string,
   issueNumber = 145,
@@ -146,10 +190,30 @@ export async function capturePreviewWebviewScreenshot(
 ): Promise<void> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return;
   if (outputScale !== 1 && outputScale !== 2) throw new Error(`Invalid Preview screenshot output scale: ${outputScale}`);
+  try {
+    if (previewViewportWidth !== undefined) await setPreviewWebviewViewportWidth(previewViewportWidth);
+    await capturePreviewWebviewScreenshotAtCurrentViewport(filename, issueNumber, previewViewportWidth, outputScale);
+  } finally {
+    if (previewWorkbenchMetricsWereOverridden) {
+      await withWorkbenchDevTools(async send => {
+        await send('Emulation.clearDeviceMetricsOverride');
+      });
+      previewWorkbenchMetricsWereOverridden = false;
+    }
+  }
+}
+
+async function capturePreviewWebviewScreenshotAtCurrentViewport(
+  filename: string,
+  issueNumber: number,
+  previewViewportWidth: number | undefined,
+  outputScale: 1 | 2
+): Promise<void> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   const outputPath = path.resolve(__dirname, `../../../docs/status/evidence/issue-${issueNumber}`, filename);
-  if (previewViewportWidth !== undefined) await setPreviewWebviewViewportWidth(previewViewportWidth);
   const target = await waitForPreviewTarget(port);
+  const previewWebviewId = new URL(target.url).searchParams.get('id');
+  if (!previewWebviewId) throw new Error('The selected Preview Webview target has no Webview id');
   const viewport = await withDevToolsTarget(target, async send => {
     await send('Page.enable');
     const viewportResult = await send('Runtime.evaluate', {
@@ -181,16 +245,23 @@ export async function capturePreviewWebviewScreenshot(
     frames: Array<{ x: number; y: number; width: number; height: number }>;
   }> => withWorkbenchDevTools(async send => {
     const result = await send('Runtime.evaluate', {
-      expression: `JSON.stringify({
-        workbenchWidth: window.innerWidth,
-        workbenchHeight: window.innerHeight,
-        workbenchOuterWidth: window.outerWidth,
-        frames: [...document.querySelectorAll('iframe')].map(frame => {
-          const rect = frame.getBoundingClientRect();
-          return { src: frame.getAttribute('src') || '', width: rect.width, height: rect.height,
-            x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
-        }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://'))
-      })`,
+      expression: `JSON.stringify((() => {
+        const previewWebviewId = ${JSON.stringify(previewWebviewId)};
+        return {
+          workbenchWidth: window.innerWidth,
+          workbenchHeight: window.innerHeight,
+          workbenchOuterWidth: window.outerWidth,
+          frames: [...document.querySelectorAll('iframe')].map(frame => {
+            const rect = frame.getBoundingClientRect();
+            const src = frame.getAttribute('src') || '';
+            let webviewId = '';
+            try { webviewId = new URL(src, location.href).searchParams.get('id') || ''; } catch {}
+            return { src, webviewId, width: rect.width, height: rect.height,
+              x: rect.x, y: rect.y, visible: rect.width > 0 && rect.height > 0 };
+          }).filter(frame => frame.visible && frame.src.startsWith('vscode-webview://')
+            && frame.webviewId === previewWebviewId)
+        };
+      })())`,
       returnByValue: true
     });
     const value = (result.result as { value?: unknown } | undefined)?.value;
@@ -332,18 +403,23 @@ export async function setPreviewWebviewViewportWidth(width: number, height?: num
     previewWorkbenchMetricsWereOverridden = true;
   });
   await withDevToolsTarget(previewTarget, async send => {
-    const after = await send('Runtime.evaluate', {
-      expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight })',
-      returnByValue: true
-    });
-    const afterValue = (after.result as { value?: unknown } | undefined)?.value;
-    if (typeof afterValue !== 'string') throw new Error('Could not verify the Preview Webview viewport emulation');
-    const measured = JSON.parse(afterValue) as { width?: unknown; height?: unknown };
-    if (Math.abs(Number(measured.width) - width) > 1 || (height !== undefined && Math.abs(Number(measured.height) - height) > 1)) {
-      throw new Error(`Preview viewport emulation did not apply (actual=${measured.width}x${measured.height}, expected=${width}x${height ?? 'current'})`);
+    let measured = { width: Number.NaN, height: Number.NaN };
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const after = await send('Runtime.evaluate', {
+        expression: 'JSON.stringify({ width: window.innerWidth, height: window.innerHeight })',
+        returnByValue: true
+      });
+      const afterValue = (after.result as { value?: unknown } | undefined)?.value;
+      if (typeof afterValue === 'string') {
+        measured = JSON.parse(afterValue) as { width: number; height: number };
+        if (Math.abs(measured.width - width) <= 1
+          && (height === undefined || Math.abs(measured.height - height) <= 1)) return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
     }
+    throw new Error(`Preview viewport emulation did not apply (actual=${measured.width}x${measured.height}, expected=${width}x${height ?? 'current'})`);
   });
-  await new Promise(resolve => setTimeout(resolve, 200));
+  await new Promise(resolve => setTimeout(resolve, 50));
 }
 
 /** Clears the Preview Webview viewport override after exact-width acceptance. */
@@ -408,23 +484,68 @@ export async function scrollInspectorToControls(): Promise<void> {
 }
 
 /** Evaluates a test expression in the selected GuitarDSL Inspector renderer. */
-export async function evaluateInspectorWebview<T>(expression: string): Promise<T> {
-  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  let inspectorTargets: Awaited<ReturnType<typeof getTargets>> = [];
-  let lastTargetSummary: string[] = [];
-  for (let attempt = 0; attempt < 40; attempt++) {
+async function targetContainsInspectorDom(target: DevToolsTarget): Promise<boolean> {
+  return withDevToolsTarget(target, async send => {
+    await send('Runtime.enable');
+    const tree = await send('Page.getFrameTree');
+    const frameTree = tree.frameTree as Record<string, unknown> | undefined;
+    let activeFrameId: string | undefined;
+    let contentFrameId: string | undefined;
+    const visit = (node: Record<string, unknown>, depth: number): void => {
+      const frame = node.frame as { id?: string; name?: string; url?: string } | undefined;
+      if (frame?.name === 'active-frame') activeFrameId = frame.id;
+      if (depth > 0 && frame?.id && frame.url?.startsWith('vscode-webview://')) contentFrameId = frame.id;
+      if (Array.isArray(node.childFrames)) node.childFrames.forEach(child => visit(child as Record<string, unknown>, depth + 1));
+    };
+    if (frameTree) {
+      visit(frameTree, 0);
+      if (!activeFrameId && !contentFrameId) {
+        const root = frameTree.frame as { id?: string; url?: string } | undefined;
+        if (root?.url?.startsWith('vscode-webview://')) activeFrameId = root.id;
+      }
+    }
+    const frameId = activeFrameId ?? contentFrameId;
+    if (!frameId) return false;
+    const isolated = await send('Page.createIsolatedWorld', { frameId, worldName: 'guitardsl-inspector-target-check' });
+    if (typeof isolated.executionContextId !== 'number') return false;
+    const result = await send('Runtime.evaluate', {
+      contextId: isolated.executionContextId,
+      expression: "!!document.getElementById('inspector-context-tabs') && !!document.getElementById('inspector-state')",
+      returnByValue: true
+    });
+    return (result.result as { value?: unknown } | undefined)?.value === true;
+  });
+}
+
+async function waitForInspectorTarget(port: number): Promise<DevToolsTarget> {
+  let candidates: DevToolsTarget[] = [];
+  for (let attempt = 0; attempt < 60; attempt++) {
     const targets = await getTargets(port);
-    lastTargetSummary = targets.map(item => `${item.type}:${item.title}:${item.url.slice(0, 180)}`);
-    inspectorTargets = targets.filter(item => item.type === 'iframe'
-      && item.url.includes('purpose=webviewView')
+    candidates = targets.filter(item => item.type === 'iframe'
+      && item.url.startsWith('vscode-webview://')
       && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
-    if (inspectorTargets.length === 1) break;
+    const matches: DevToolsTarget[] = [];
+    for (const candidate of candidates) {
+      try {
+        if (await targetContainsInspectorDom(candidate)) matches.push(candidate);
+      } catch {
+        // Webview targets can disappear while the active Inspector is being rebuilt.
+      }
+    }
+    if (matches.length === 1) return matches[0];
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  if (inspectorTargets.length !== 1) {
-    throw new Error(`Expected one GuitarDSL Inspector webview target, found ${inspectorTargets.length}; DevTools targets: ${lastTargetSummary.join(' | ') || '(none)'}`);
-  }
-  return withDevToolsTarget(inspectorTargets[0], async send => {
+  const summary = candidates.map(item => {
+    const url = new URL(item.url);
+    return `${item.type}:${item.title}:id=${url.searchParams.get('id') ?? '(none)'}:purpose=${url.searchParams.get('purpose') ?? '(none)'}`;
+  });
+  throw new Error(`Expected one GuitarDSL Inspector webview target by DOM signature; found none or multiple among ${summary.join(' | ') || '(none)'}`);
+}
+
+export async function evaluateInspectorWebview<T>(expression: string): Promise<T> {
+  const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
+  const inspectorTarget = await waitForInspectorTarget(port);
+  return withDevToolsTarget(inspectorTarget, async send => {
     await send('Runtime.enable');
     let activeFrameId: string | undefined;
     let contentFrameId: string | undefined;
@@ -471,7 +592,7 @@ export async function evaluateInspectorWebview<T>(expression: string): Promise<T
         returnByValue: true
       });
       const description = (state.result as { value?: unknown } | undefined)?.value;
-      throw new Error(`Inspector Webview document did not finish rendering its top-level tabs (${String(description)}; ${inspectorTargets[0].url}; frames=${lastFrames.join(' | ')})`);
+      throw new Error(`Inspector Webview document did not finish rendering its top-level tabs (${String(description)}; ${inspectorTarget.url}; frames=${lastFrames.join(' | ')})`);
     }
     const response = await send('Runtime.evaluate', { contextId, expression, returnByValue: true, awaitPromise: true });
     if (response.exceptionDetails) {
@@ -680,9 +801,7 @@ export async function activateInspectorControlWithKeyboard(
 ): Promise<boolean> {
   if (process.env.GUITARDSL_E2E_CAPTURE_SCREENSHOTS !== '1') return false;
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
-  const targets = await getTargets(port);
-  const target = targets.find(item => item.type === 'iframe' && item.url.includes('purpose=webviewView') && item.url.includes('extensionId=puchinya.vscode-guitar-dsl'));
-  if (!target) throw new Error('Could not find the GuitarDSL Inspector webview target');
+  const target = await waitForInspectorTarget(port);
   return withDevToolsTarget(target, async send => {
     const result = await send('Page.getFrameTree');
     let activeFrameId: string | undefined;
@@ -787,6 +906,23 @@ type SendDevToolsCommand = (method: string, params?: Record<string, unknown>) =>
 
 let workbenchWindowSizeForRestore: { width: number; height: number } | undefined;
 
+async function waitForWorkbenchWindowSize(width: number, height: number): Promise<void> {
+  await withWorkbenchDevTools(async send => {
+    let actual = { width: 0, height: 0 };
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const result = await send('Runtime.evaluate', {
+        expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+        returnByValue: true
+      });
+      const value = (result.result as { value?: unknown } | undefined)?.value;
+      if (typeof value === 'string') actual = JSON.parse(value) as { width: number; height: number };
+      if (Math.abs(actual.width - width) <= 2 && Math.abs(actual.height - height) <= 2) return;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error(`Extension Development Host resize settled at ${actual.width}x${actual.height}; expected ${width}x${height}`);
+  });
+}
+
 async function withWorkbenchDevTools<T>(run: (send: SendDevToolsCommand) => Promise<T>): Promise<T> {
   const port = Number(process.env.GUITARDSL_E2E_CDP_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -801,18 +937,33 @@ export async function setWorkbenchViewportWidth(width: number): Promise<void> {
   if (!Number.isFinite(width) || width < 320) throw new Error(`Invalid workbench viewport width: ${width}`);
   await withWorkbenchDevTools(async send => {
     const sizeResult = await send('Runtime.evaluate', {
-      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight, availableWidth: screen.availWidth, availableHeight: screen.availHeight })',
       returnByValue: true
     });
     const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
     if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
-    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    const currentSize = JSON.parse(sizeValue) as {
+      width: number; height: number; availableWidth?: number; availableHeight?: number;
+    };
     workbenchWindowSizeForRestore ??= currentSize;
+    const targetWidth = Math.min(Math.round(width), currentSize.availableWidth ?? Math.round(width));
+    const targetHeight = Math.min(Math.max(900, currentSize.height), currentSize.availableHeight ?? Math.max(900, currentSize.height));
     await send('Runtime.evaluate', {
-      expression: `window.resizeTo(${Math.round(width)}, Math.max(900, window.outerHeight))`,
+      expression: `window.resizeTo(${Math.round(targetWidth)}, ${Math.round(targetHeight)})`,
       returnByValue: true
     });
-    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+  await withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ availableWidth: screen.availWidth, availableHeight: screen.availHeight })',
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not read the available Extension Development Host dimensions');
+    const available = JSON.parse(value) as { availableWidth: number; availableHeight: number };
+    const targetWidth = Math.min(Math.round(width), available.availableWidth);
+    const targetHeight = Math.min(Math.max(900, workbenchWindowSizeForRestore?.height ?? 900), available.availableHeight);
+    await waitForWorkbenchWindowSize(targetWidth, targetHeight);
   });
 }
 
@@ -822,32 +973,49 @@ export async function setWorkbenchViewportSize(width: number, height: number): P
   if (!Number.isFinite(height) || height < 500) throw new Error(`Invalid workbench viewport height: ${height}`);
   await withWorkbenchDevTools(async send => {
     const sizeResult = await send('Runtime.evaluate', {
-      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight })',
+      expression: 'JSON.stringify({ width: window.outerWidth, height: window.outerHeight, availableWidth: screen.availWidth, availableHeight: screen.availHeight })',
       returnByValue: true
     });
     const sizeValue = (sizeResult.result as { value?: unknown } | undefined)?.value;
     if (typeof sizeValue !== 'string') throw new Error('Could not read the Extension Development Host window size');
-    const currentSize = JSON.parse(sizeValue) as { width: number; height: number };
+    const currentSize = JSON.parse(sizeValue) as {
+      width: number; height: number; availableWidth?: number; availableHeight?: number;
+    };
     workbenchWindowSizeForRestore ??= currentSize;
+    const targetWidth = Math.min(Math.round(width), currentSize.availableWidth ?? Math.round(width));
+    const targetHeight = Math.min(Math.round(height), currentSize.availableHeight ?? Math.round(height));
     await send('Runtime.evaluate', {
-      expression: `window.resizeTo(${Math.round(width)}, ${Math.round(height)})`,
+      expression: `window.resizeTo(${Math.round(targetWidth)}, ${Math.round(targetHeight)})`,
       returnByValue: true
     });
-    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+  await withWorkbenchDevTools(async send => {
+    const result = await send('Runtime.evaluate', {
+      expression: 'JSON.stringify({ availableWidth: screen.availWidth, availableHeight: screen.availHeight })',
+      returnByValue: true
+    });
+    const value = (result.result as { value?: unknown } | undefined)?.value;
+    if (typeof value !== 'string') throw new Error('Could not read the available Extension Development Host dimensions');
+    const available = JSON.parse(value) as { availableWidth: number; availableHeight: number };
+    await waitForWorkbenchWindowSize(
+      Math.min(Math.round(width), available.availableWidth),
+      Math.min(Math.round(height), available.availableHeight)
+    );
   });
 }
 
 /** Clears the optional emulated viewport after a width-matrix test. */
 export async function resetWorkbenchViewport(): Promise<void> {
+  if (!workbenchWindowSizeForRestore) return;
+  const target = workbenchWindowSizeForRestore;
   await withWorkbenchDevTools(async send => {
-    if (workbenchWindowSizeForRestore) {
-      await send('Runtime.evaluate', {
-        expression: `window.resizeTo(${workbenchWindowSizeForRestore.width}, ${workbenchWindowSizeForRestore.height})`,
-        returnByValue: true
-      });
-    }
-    workbenchWindowSizeForRestore = undefined;
+    await send('Runtime.evaluate', {
+      expression: `window.resizeTo(${target.width}, ${target.height})`,
+      returnByValue: true
+    });
   });
+  await waitForWorkbenchWindowSize(target.width, target.height);
+  workbenchWindowSizeForRestore = undefined;
 }
 
 export async function inspectWorkbenchLayout(): Promise<string> {
@@ -981,7 +1149,14 @@ export async function resizePrimarySidebarToWidth(targetWidth: number): Promise<
 export async function resizeAuxiliarySidebarToWidth(targetWidth: number): Promise<number> {
   if (!Number.isFinite(targetWidth) || targetWidth < 200) throw new Error(`Invalid Auxiliary Bar width: ${targetWidth}`);
   return withWorkbenchDevTools(async send => {
-    const readLayout = async (): Promise<{ width: number; x: number; y: number; side: 'left' | 'right' }> => {
+    const readLayout = async (): Promise<{
+      width: number;
+      x: number;
+      y: number;
+      side: 'left' | 'right';
+      viewportWidth: number;
+      outerWidth: number;
+    }> => {
       const result = await send('Runtime.evaluate', {
         expression: `JSON.stringify((() => {
           const sidebar = document.querySelector('.part.auxiliarybar');
@@ -998,27 +1173,51 @@ export async function resizeAuxiliarySidebarToWidth(targetWidth: number): Promis
             width: Math.round(sidebarRect.width),
             x: adjacent.centerX,
             y: Math.min(sidebarRect.bottom - 40, sidebarRect.top + 160),
-            side: sidebarRect.left > window.innerWidth / 2 ? 'right' : 'left'
+            side: sidebarRect.left > window.innerWidth / 2 ? 'right' : 'left',
+            viewportWidth: window.innerWidth,
+            outerWidth: window.outerWidth
           };
         })())`,
         returnByValue: true
       });
       const value = (result.result as { value?: unknown } | undefined)?.value;
       if (typeof value !== 'string') throw new Error('Could not inspect the Auxiliary Bar sash');
-      const layout = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; side?: 'left' | 'right' };
+      const layout = JSON.parse(value) as {
+        error?: string; width?: number; x?: number; y?: number; side?: 'left' | 'right';
+        viewportWidth?: number; outerWidth?: number;
+      };
       if (layout.error || layout.width === undefined || layout.x === undefined || layout.y === undefined || !layout.side) {
         throw new Error(layout.error ?? 'Auxiliary Bar layout is incomplete');
       }
-      return { width: layout.width, x: layout.x, y: layout.y, side: layout.side };
+      return {
+        width: layout.width,
+        x: layout.x,
+        y: layout.y,
+        side: layout.side,
+        viewportWidth: layout.viewportWidth ?? 0,
+        outerWidth: layout.outerWidth ?? 0
+      };
     };
     const initial = await readLayout();
     if (initial.width !== targetWidth) {
       const delta = targetWidth - initial.width;
       const targetX = initial.x + (initial.side === 'right' ? -delta : delta);
       await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: initial.x, y: initial.y });
-      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: initial.x, y: initial.y, button: 'left', clickCount: 1 });
-      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: targetX, y: initial.y, button: 'left', buttons: 1 });
-      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetX, y: initial.y, button: 'left', clickCount: 1 });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      await send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: initial.x, y: initial.y, button: 'left', buttons: 1, clickCount: 1
+      });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const steps = Math.max(4, Math.ceil(Math.abs(targetX - initial.x) / 40));
+      for (let step = 1; step <= steps; step++) {
+        const x = initial.x + (targetX - initial.x) * step / steps;
+        await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y: initial.y, button: 'left', buttons: 1 });
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: targetX, y: initial.y, button: 'left', buttons: 0, clickCount: 1
+      });
+      await new Promise(resolve => setTimeout(resolve, 50));
       for (let attempt = 0; attempt < 50; attempt++) {
         const current = await readLayout();
         if (current.width === targetWidth) return current.width;
@@ -1026,55 +1225,87 @@ export async function resizeAuxiliarySidebarToWidth(targetWidth: number): Promis
       }
     }
     const final = await readLayout();
-    if (final.width !== targetWidth) throw new Error(`Auxiliary Bar width settled at ${final.width}px; expected ${targetWidth}px`);
+    if (final.width !== targetWidth) {
+      throw new Error(`Auxiliary Bar width settled at ${final.width}px; expected ${targetWidth}px `
+        + `(initial=${initial.width}px at x=${initial.x}, side=${initial.side}, viewport=${initial.viewportWidth}px, outer=${initial.outerWidth}px)`);
+    }
     return final.width;
   });
 }
 
 /** Resizes the active editor group through its real VS Code sash, in CSS pixels. */
 export async function resizeActiveEditorGroupToWidth(targetWidth: number): Promise<void> {
-  if (!Number.isFinite(targetWidth) || targetWidth < 320) throw new Error(`Invalid editor group width: ${targetWidth}`);
+  if (!Number.isFinite(targetWidth) || targetWidth < 100) throw new Error(`Invalid editor group width: ${targetWidth}`);
   await withWorkbenchDevTools(async send => {
-    const response = await send('Runtime.evaluate', {
-      expression: `JSON.stringify((() => {
-        const active = document.querySelector('.editor-group-container.active');
-        if (!active) return { error: 'active editor group not found' };
-        const activeRect = active.getBoundingClientRect();
-        const activeLeft = activeRect.left;
-        const activeRight = activeRect.right;
-        const sash = [...document.querySelectorAll('.monaco-sash.vertical:not(.primary-sidebar-sash)')]
-          .map(node => ({ node, rect: node.getBoundingClientRect() }))
-          .map(item => ({ ...item, leftDistance: Math.abs(item.rect.left - activeLeft), rightDistance: Math.abs(item.rect.left - activeRight) }))
-          .filter(item => Math.min(item.leftDistance, item.rightDistance) < 10)
-          .sort((a, b) => Math.min(a.leftDistance, a.rightDistance) - Math.min(b.leftDistance, b.rightDistance))[0];
-        if (!sash) return { error: 'active group sash not found', width: activeRect.width };
-        return { width: activeRect.width, x: sash.rect.left + sash.rect.width / 2,
-          y: Math.min(activeRect.bottom - 40, activeRect.top + 160),
-          direction: sash.leftDistance < 10 ? -1 : 1 };
-      })())`,
-      returnByValue: true
-    });
-    const value = (response.result as { value?: unknown } | undefined)?.value;
-    if (typeof value !== 'string') throw new Error('Could not measure the active editor group');
-    const geometry = JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; direction?: number };
-    if (geometry.error || geometry.width === undefined || geometry.x === undefined || geometry.y === undefined || geometry.direction === undefined) {
-      throw new Error(`Could not resize the active editor group: ${JSON.stringify(geometry)}`);
-    }
-    const delta = targetWidth - geometry.width;
-    if (Math.abs(delta) < 1) return;
-    const steps = Math.max(1, Math.ceil(Math.abs(delta) / 40));
-    const targetX = geometry.x + geometry.direction * delta;
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', clickCount: 1 });
-    for (let step = 1; step <= steps; step++) {
+    const expression = `JSON.stringify((() => {
+      const groups = [...document.querySelectorAll('.editor-group-container')]
+        .map(node => ({ node, rect: node.getBoundingClientRect() }))
+        .filter(item => item.rect.width > 0)
+        .sort((a, b) => a.rect.left - b.rect.left);
+      const activeIndex = groups.findIndex(item => item.node.classList.contains('active'));
+      const active = groups[activeIndex];
+      if (!active) return { error: 'active editor group not found' };
+      const useRightBoundary = activeIndex === 0;
+      const boundary = useRightBoundary ? active.rect.right : active.rect.left;
+      const sash = [...document.querySelectorAll('.monaco-sash.vertical:not(.primary-sidebar-sash)')]
+        .map(node => ({ node, rect: node.getBoundingClientRect() }))
+        .map(item => ({ ...item, distance: Math.abs(item.rect.left - boundary) }))
+        .filter(item => item.distance < 10)
+        .sort((a, b) => a.distance - b.distance)[0];
+      if (!sash) return { error: 'active group boundary sash not found', width: active.rect.width, activeIndex };
+      return { width: active.rect.width, x: sash.rect.left + sash.rect.width / 2,
+        y: Math.min(active.rect.bottom - 40, active.rect.top + 160),
+        direction: useRightBoundary ? 1 : -1, activeIndex };
+    })())`;
+    const readGeometry = async () => {
+      const response = await send('Runtime.evaluate', { expression, returnByValue: true });
+      const value = (response.result as { value?: unknown } | undefined)?.value;
+      if (typeof value !== 'string') throw new Error('Could not measure the active editor group');
+      return JSON.parse(value) as { error?: string; width?: number; x?: number; y?: number; direction?: number; activeIndex?: number };
+    };
+    let geometry = await readGeometry();
+    for (let correction = 0; correction < 5; correction++) {
+      if (geometry.error || geometry.width === undefined || geometry.x === undefined
+        || geometry.y === undefined || geometry.direction === undefined) {
+        throw new Error(`Could not resize the active editor group: ${JSON.stringify(geometry)}`);
+      }
+      const delta = targetWidth - geometry.width;
+      if (Math.abs(delta) <= 1) return;
+      const steps = Math.max(1, Math.ceil(Math.abs(delta) / 40));
+      const targetX = geometry.x + geometry.direction * delta;
       await send('Input.dispatchMouseEvent', {
-        type: 'mouseMoved',
-        x: geometry.x + (targetX - geometry.x) * step / steps,
-        y: geometry.y,
-        button: 'left',
-        buttons: 1
+        type: 'mousePressed', x: geometry.x, y: geometry.y, button: 'left', buttons: 1, clickCount: 1
       });
+      for (let step = 1; step <= steps; step++) {
+        await send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: geometry.x + (targetX - geometry.x) * step / steps,
+          y: geometry.y,
+          button: 'left',
+          buttons: 1
+        });
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: targetX, y: geometry.y, button: 'left', buttons: 0, clickCount: 1
+      });
+
+      let stableWidth: number | undefined;
+      let stableCount = 0;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        geometry = await readGeometry();
+        if (geometry.width !== undefined && Math.abs(geometry.width - targetWidth) <= 1) return;
+        if (geometry.width !== undefined && stableWidth !== undefined && Math.abs(geometry.width - stableWidth) < 0.5) {
+          stableCount++;
+          if (stableCount >= 3) break;
+        } else {
+          stableWidth = geometry.width;
+          stableCount = 0;
+        }
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
     }
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: targetX, y: geometry.y, button: 'left', clickCount: 1 });
+    throw new Error(`Editor group width settled at ${Math.round(geometry.width ?? 0)}px; expected ${targetWidth}px`);
   });
 }
 
