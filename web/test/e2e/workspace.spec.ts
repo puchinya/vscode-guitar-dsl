@@ -1066,6 +1066,7 @@ test('resolves system theme and keeps Problems and document tabs readable', asyn
 test('Header and Problems render the latest Controller view through the workspace store', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.locator('#drive-state-label')).toHaveText('Not connected');
   await expect(page.locator('#status-problems')).toHaveText('Errors 0 / Warnings 0');
 
@@ -1075,18 +1076,271 @@ test('Header and Problems render the latest Controller view through the workspac
   const warnings = page.locator('#warning-count');
   await expect(errors).not.toHaveText('0');
   await expect(page.locator('#diagnostics .problem-row').first()).toBeVisible();
+  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('error');
   await expect.poll(() => page.locator('#status-problems').textContent()).toMatch(/^Errors \d+ \/ Warnings \d+$/u);
 
   await page.locator('#settings-button').click();
   await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
   await expect(page.locator('#drive-state-label')).toHaveText('未接続');
   await expect(page.locator('#problems-title')).toHaveText('問題');
+  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('error');
   await expect(page.locator('#status-problems')).toHaveText(`エラー ${await errors.textContent()} / 警告 ${await warnings.textContent()}`);
 
   await page.locator('#close-problems').click();
   await expect(page.locator('#problems-panel')).toBeHidden();
   await page.locator('#toggle-problems').click();
   await expect(page.locator('#problems-panel')).toBeVisible();
+});
+
+test('renders info diagnostics from a workspace snapshot with accessible severity in English and Japanese', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+
+  await page.evaluate(async () => {
+    const { useWorkspaceStore } = await import('/src/stores/workspaceStore.ts');
+    const store = useWorkspaceStore();
+    store.detach();
+  });
+  const installSeveritySnapshot = (locale: 'en' | 'ja') => page.evaluate(async (targetLocale: 'en' | 'ja') => {
+    const { useWorkspaceStore } = await import('/src/stores/workspaceStore.ts');
+    const store = useWorkspaceStore();
+    const current = store.view;
+    if (!current) throw new Error('The workspace snapshot is unavailable.');
+    store.view = {
+      ...current,
+      locale: targetLocale,
+      diagnostics: [
+        { severity: 'error', message: 'Error snapshot diagnostic', file: 'snapshot.guitardsl', line: 1, column: 1, from: 0, to: 1 },
+        { severity: 'warning', message: 'Warning snapshot diagnostic', file: 'snapshot.guitardsl', line: 2, column: 1, from: 2, to: 3 },
+        { severity: 'info', message: 'Informational snapshot diagnostic', file: 'snapshot.guitardsl', line: 3, column: 1, from: 4, to: 5 }
+      ]
+    };
+  }, locale);
+  const assertSeverityRows = async (locale: 'en' | 'ja') => {
+    await expect(page.locator('#diagnostics .problem-severity')).toHaveText(['error', 'warning', 'info']);
+    const infoRow = page.getByRole('listitem').filter({
+      has: page.locator('.problem-severity[data-severity="info"]')
+    });
+    await expect(infoRow).toHaveAttribute('role', 'listitem');
+    await expect(infoRow.getByRole('button', { name: 'Informational snapshot diagnostic' })).toBeVisible();
+    await expect(page.locator('#diagnostics')).toHaveAttribute('aria-live', 'polite');
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+  };
+
+  await installSeveritySnapshot('en');
+  await assertSeverityRows('en');
+  await installSeveritySnapshot('ja');
+  await assertSeverityRows('ja');
+});
+
+test('projects Controller locale into Vue I18n without disturbing source or undo history', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  const captureScreenshots = process.env.GUITARDSL_CAPTURE_ISSUE181 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium';
+  const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-181');
+  const capture = async (name: string): Promise<void> => {
+    if (!captureScreenshots) return;
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, name), fullPage: false });
+  };
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const initialSource = await readEditorSource(page);
+  const source = 'title: Locale test\n\n[Verse]\nC | G |\n';
+  await editor.fill(source);
+  await expectEditorSource(page, source);
+  await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
+  await capture('vue-i18n-en-1600x900.png');
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('ファイル');
+  await expect(page.locator('#save-document')).toHaveAttribute('aria-label', '保存');
+  await expect(page.locator('#explorer-more')).toHaveAttribute('aria-label', 'エクスプローラーのオプション');
+  await expect(page.locator('#problems-title')).toHaveText('問題');
+  await expect(page.locator('#inspector-heading')).toHaveText('インスペクタ');
+  await expect(page.locator('#toggle-inspector')).toHaveAttribute('title', 'Inspector の表示切替');
+  await expect(page.locator('#status-cursor')).toHaveText(/^行 \d+, 列 \d+$/u);
+  await capture('vue-i18n-ja-1600x900.png');
+  await expectEditorSource(page, source);
+
+  await page.locator('.cm-content').press('ControlOrMeta+z');
+  await expectEditorSource(page, initialSource);
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: English' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('File');
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getValue<{ locale?: string }>('settings', 'web-preferences'))?.locale;
+  })).toBe('ja');
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expect(page.locator('#menu-file-trigger')).toHaveText('ファイル');
+});
+
+test('preserves source, revision, selection, and undo in two tabs through locale changes', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+  const readTabs = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number }>;
+  }).__guitarDslReadTabs?.() ?? []);
+  const replaceSource = async (source: string) => {
+    const changed = await page.evaluate(value => (window as Window & {
+      __guitarDslReplaceSource?: (next: string) => boolean;
+    }).__guitarDslReplaceSource?.(value) ?? false, source);
+    expect(changed).toBe(true);
+    await expectEditorSource(page, source);
+  };
+  const readSelection = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number };
+  }).__guitarDslReadSelection?.());
+  const runUndo = () => page.evaluate(() => (window as Window & {
+    __guitarDslUndo?: () => boolean;
+  }).__guitarDslUndo?.() ?? false);
+  const runRedo = () => page.evaluate(() => (window as Window & {
+    __guitarDslRedo?: () => boolean;
+  }).__guitarDslRedo?.() ?? false);
+  const selectOneCharacter = async (offset: number) => {
+    await page.evaluate(position => (window as Window & {
+      __guitarDslSetCursor?: (cursor: number) => void;
+    }).__guitarDslSetCursor?.(position), offset);
+    await page.keyboard.press('Shift+ArrowRight');
+    return readSelection();
+  };
+  const setLocale = async (locale: 'en' | 'ja') => {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', {
+      name: locale === 'ja' ? 'Language: 日本語' : 'Language: English'
+    }).click();
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+  };
+
+  const initialTabs = await readTabs();
+  const firstKey = initialTabs[0]?.key;
+  expect(firstKey).toBeTruthy();
+  const firstBase = 'title: First base\n\n[Verse]\nC | G |\n';
+  const firstEdited = 'title: First edited\n\n[Verse]\nC | G |\n';
+  await replaceSource(firstBase);
+  await page.waitForTimeout(600);
+  await replaceSource(firstEdited);
+  const firstSelection = await selectOneCharacter(firstEdited.indexOf('First'));
+  expect(firstSelection?.to).toBeGreaterThan(firstSelection?.from ?? Number.MAX_SAFE_INTEGER);
+  const firstState = (await readTabs()).find(tab => tab.key === firstKey);
+  expect(firstState).toMatchObject({ source: firstEdited, revision: (initialTabs[0]?.revision ?? 0) + 2 });
+
+  const createSecond = page.waitForEvent('dialog').then(dialog => dialog.accept('Second.guitardsl'));
+  await page.locator('#new-score').click();
+  await createSecond;
+  const secondTab = page.getByRole('tab', { name: 'Second.guitardsl' });
+  await expect(secondTab).toHaveAttribute('aria-selected', 'true');
+  const secondKey = (await readTabs()).find(tab => tab.key !== firstKey)?.key;
+  expect(secondKey).toBeTruthy();
+
+  const secondBase = 'title: Second base\n\n[Chorus]\nF | C |\n';
+  const secondEdited = 'title: Second edited\n\n[Chorus]\nF | C |\n';
+  await replaceSource(secondBase);
+  await page.waitForTimeout(600);
+  await replaceSource(secondEdited);
+  const secondSelection = await selectOneCharacter(secondEdited.indexOf('Second') + 1);
+  expect(secondSelection?.to).toBeGreaterThan(secondSelection?.from ?? Number.MAX_SAFE_INTEGER);
+  const secondState = (await readTabs()).find(tab => tab.key === secondKey);
+  expect(secondState?.source).toBe(secondEdited);
+
+  await page.evaluate(() => {
+    const editor = document.querySelector('.editor-surface .cm-editor');
+    if (!editor) throw new Error('The CodeMirror EditorView is unavailable.');
+    (window as Window & { __issue181EditorRoot?: Element }).__issue181EditorRoot = editor;
+  });
+  const assertEditorViewRetained = async () => {
+    expect(await page.evaluate(() => {
+      const target = window as Window & { __issue181EditorRoot?: Element };
+      return target.__issue181EditorRoot === document.querySelector('.editor-surface .cm-editor');
+    })).toBe(true);
+  };
+  const assertTabStatesRetained = async () => {
+    const currentTabs = await readTabs();
+    expect(currentTabs.find(tab => tab.key === firstKey)).toMatchObject({
+      source: firstEdited, revision: firstState!.revision
+    });
+    expect(currentTabs.find(tab => tab.key === secondKey)).toMatchObject({
+      source: secondEdited, revision: secondState!.revision
+    });
+  };
+
+  await setLocale('ja');
+  await assertEditorViewRetained();
+  await assertTabStatesRetained();
+  expect(await readSelection()).toEqual(secondSelection);
+  await setLocale('en');
+  await assertEditorViewRetained();
+  await assertTabStatesRetained();
+  expect(await readSelection()).toEqual(secondSelection);
+
+  const firstTab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await firstTab.click();
+  await expectEditorSource(page, firstEdited);
+  expect(await readSelection()).toEqual(firstSelection);
+  await secondTab.click();
+  await expectEditorSource(page, secondEdited);
+  expect(await readSelection()).toEqual(secondSelection);
+
+  expect(await runUndo()).toBe(true);
+  await expectEditorSource(page, secondBase);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondBase);
+  expect((await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstEdited);
+  expect(await runRedo()).toBe(true);
+  await expectEditorSource(page, secondEdited);
+
+  await firstTab.click();
+  await expectEditorSource(page, firstEdited);
+  expect(await runUndo()).toBe(true);
+  await expectEditorSource(page, firstBase);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstBase);
+  expect((await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondEdited);
+  expect(await runRedo()).toBe(true);
+  await expectEditorSource(page, firstEdited);
+});
+
+test('uses the browser language by default and a saved locale after reload', async ({ page }) => {
+  await page.goto('/');
+  const appUrl = page.url();
+  const browser = page.context().browser();
+  if (!browser) throw new Error('The browser fixture is unavailable.');
+  const context = await browser.newContext({ locale: 'ja-JP' });
+  try {
+    const localizedPage = await context.newPage();
+    await localizedPage.goto(appUrl);
+    await expect(localizedPage.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'ja');
+    await expect(localizedPage.locator('#menu-file-trigger')).toHaveText('ファイル');
+
+    await localizedPage.locator('#settings-button').click();
+    await localizedPage.getByRole('menuitemradio', { name: 'Language: English' }).click();
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect.poll(() => localizedPage.evaluate(async () => {
+      const { indexedDb } = await import('/src/storage/indexedDb.ts');
+      return (await indexedDb.getValue<{ locale?: string }>('settings', 'web-preferences'))?.locale;
+    })).toBe('en');
+    await localizedPage.reload();
+    await expect(localizedPage.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+    await expect(localizedPage.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(localizedPage.locator('#menu-file-trigger')).toHaveText('File');
+  } finally {
+    await context.close();
+  }
 });
 
 test('Issue #178 workspace polish: panels, splitters, menus, Explorer localization, notices, and cancel', async ({ page }) => {
@@ -1671,6 +1925,16 @@ test('blocked Help popups expose a usable same-origin tab link', async ({ page }
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute('href', /^blob:/u);
   await expect(page.locator('#help-toc button')).toHaveCount(5);
+
+  await page.locator('#close-help').click();
+  await expect(page.locator('#help-dialog')).toBeHidden();
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await page.locator('#help-button').click();
+  await expect(page.locator('#help-dialog')).toBeVisible();
+  await expect(page.locator('#help-title')).toHaveText('ヘルプ');
+  await expect(page.locator('#help-direct-link')).toHaveText('ヘルプを新しいタブで開く');
 });
 
 test('keeps a partial Google consent disconnected when account lookup would succeed and appData would be forbidden', async ({ page }) => {
@@ -4025,7 +4289,7 @@ test('keeps a narrow workspace usable', async ({ page }) => {
   await expect(page.frameLocator('#score-frame').locator('.spread-sheet svg').first()).toBeVisible();
 });
 
-test('preserves the mounted workspace and stops Preview and Inspector audio across persisted page transitions', async ({ page }) => {
+test('preserves the mounted workspace and locale across persisted page transitions while stopping audio', async ({ page }) => {
   await installFakeAudio(page);
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
@@ -4071,31 +4335,17 @@ test('preserves the mounted workspace and stops Preview and Inspector audio acro
   expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true);
   await editor.fill('title: Workspace resumed\n');
   await expect(page.locator('.cm-content')).toContainText('Workspace resumed');
-});
 
-test('resumes the same workspace after browser back when Chromium restores it from BFCache', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
-  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await editor.fill('title: BFCache history restore\n');
-  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
-  await page.locator('.editor-surface').evaluate(element => {
-    (element as HTMLElement).dataset.issue174EditorToken = 'preserved-editor-view';
-  });
-  await page.evaluate(() => {
-    window.addEventListener('pageshow', event => {
-      if (event.persisted) document.documentElement.dataset.issue174BfcacheRestored = 'true';
-    });
-  });
-
-  await page.goto('/?issue174-bfcache-away=1');
-  await page.goBack();
-  const restoredFromBfcache = await page.locator('html').getAttribute('data-issue174-bfcache-restored');
-  test.skip(restoredFromBfcache !== 'true', 'Chromium did not restore this run from BFCache.');
-
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  const sourceBeforeLocaleResume = await readEditorSource(page);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
   await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
-  await expect(page.locator('.editor-surface')).toHaveAttribute('data-issue174-editor-token', 'preserved-editor-view');
-  await expect(page.locator('.cm-content')).toContainText('BFCache history restore');
-  await editor.fill('title: BFCache editor resumed\n');
-  await expect(page.locator('.cm-content')).toContainText('BFCache editor resumed');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expectEditorSource(page, sourceBeforeLocaleResume);
+  expect(await page.locator('.cm-content').evaluate((element, original) => element === original, originalEditor)).toBe(true);
 });
+

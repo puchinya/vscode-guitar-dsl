@@ -14,7 +14,12 @@
 web/**
 packages/**
 node_modules/@guitardsl/**
-# Pinia and its package-only dependencies belong to the Web SPA, not the VSIX.
+# Web SPA runtime dependencies belong to the Web bundle, not the VSIX.
+node_modules/vue-i18n/**
+node_modules/@intlify/core-base/**
+node_modules/@intlify/devtools-types/**
+node_modules/@intlify/message-compiler/**
+node_modules/@intlify/shared/**
 node_modules/@vue/devtools-api/**
 node_modules/@vue/devtools-kit/**
 node_modules/@vue/devtools-shared/**
