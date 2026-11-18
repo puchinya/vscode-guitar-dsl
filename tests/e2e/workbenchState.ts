@@ -1,13 +1,6 @@
 import { createHash } from 'crypto';
 import * as vscode from 'vscode';
-import {
-  evaluatePreviewWebview,
-  inspectWorkbenchLayout,
-  resetPreviewWebviewViewport,
-  resetWorkbenchViewport,
-  resizeActiveEditorGroupToWidth,
-  waitForPreviewDocument
-} from './screenshotCapture';
+import { evaluatePreviewWebview, inspectWorkbenchLayout, resizeActiveEditorGroupToWidth, waitForPreviewDocument } from './screenshotCapture';
 import { ensureWorkbenchTestHostWindowFocused, focusEditorGroup, recordFocusTrace } from './workbenchFocus';
 
 type TabState = {
@@ -136,32 +129,6 @@ function tabKey(tab: vscode.Tab, group: vscode.TabGroup): string {
 
 function previewTab(group: vscode.TabGroup): vscode.Tab | undefined {
   return group.tabs.find(tab => tab.input instanceof vscode.TabInputWebview && tab.label.includes('GuitarDSL'));
-}
-
-async function restorePreviewTabPosition(snapshot: WorkbenchSnapshot): Promise<void> {
-  if (!snapshot.previewUri || snapshot.previewColumn === undefined) return;
-  const saved = snapshot.tabs.find(tab => tab.previewUri === snapshot.previewUri
-    && tab.group === snapshot.previewColumn);
-  if (!saved) return;
-
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const group = vscode.window.tabGroups.all.find(item => item.viewColumn === snapshot.previewColumn);
-    const currentPosition = group?.tabs.findIndex(tab => tab.input instanceof vscode.TabInputWebview
-      && tab.input.viewType.includes('guitardslPreview')) ?? -1;
-    if (currentPosition === saved.position) return;
-    if (currentPosition < 0) break;
-    await vscode.commands.executeCommand(currentPosition > saved.position
-      ? 'workbench.action.moveEditorLeftInGroup'
-      : 'workbench.action.moveEditorRightInGroup');
-    await new Promise(resolve => setTimeout(resolve, 20));
-  }
-
-  const group = vscode.window.tabGroups.all.find(item => item.viewColumn === snapshot.previewColumn);
-  const actualPosition = group?.tabs.findIndex(tab => tab.input instanceof vscode.TabInputWebview
-    && tab.input.viewType.includes('guitardslPreview')) ?? -1;
-  if (actualPosition !== saved.position) {
-    throw new Error(`Could not restore the Preview tab position in editor group ${snapshot.previewColumn}`);
-  }
 }
 
 function parseLayout(layout: string): WorkbenchLayout {
@@ -297,32 +264,7 @@ async function restorePreview(snapshot: WorkbenchSnapshot): Promise<void> {
     .map(tab => ({ tab, column: group.viewColumn })));
   const currentTabs = findPreviewTabs();
   if (probe.currentDocumentUri === snapshot.previewUri
-    && currentTabs.some(item => item.column === snapshot.previewColumn)) {
-    await restorePreviewTabPosition(snapshot);
-    return;
-  }
-
-  // Reuse the existing Preview when it is already in the captured group. The
-  // command updates the singleton panel's document in place, preserving its
-  // position among other tabs in that group. Closing and reopening it would
-  // append the tab and silently reorder the pre-existing tab inventory.
-  if (currentTabs.some(item => item.column === snapshot.previewColumn)) {
-    probe.nextPanelViewColumnForTests = snapshot.previewColumn;
-    try {
-      await vscode.commands.executeCommand('guitardsl.showPreview', vscode.Uri.parse(snapshot.previewUri));
-    } finally {
-      probe.nextPanelViewColumnForTests = undefined;
-    }
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (probe.currentDocumentUri === snapshot.previewUri
-        && findPreviewTabs().some(item => item.column === snapshot.previewColumn)) {
-        await restorePreviewTabPosition(snapshot);
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-    throw new Error(`Could not restore the Preview source in its captured editor group ${snapshot.previewColumn}`);
-  }
+    && currentTabs.some(item => item.column === snapshot.previewColumn)) return;
 
   if (currentTabs.length > 0) {
     const closed = await vscode.window.tabGroups.close(currentTabs.map(item => item.tab), true);
@@ -353,7 +295,6 @@ async function restorePreview(snapshot: WorkbenchSnapshot): Promise<void> {
     || !restoredTabs.some(item => item.column === snapshot.previewColumn)) {
     throw new Error(`Could not restore the Preview to its captured editor group ${snapshot.previewColumn}`);
   }
-  await restorePreviewTabPosition(snapshot);
 }
 
 async function restoreActiveEditor(snapshot: WorkbenchSnapshot): Promise<void> {
@@ -386,7 +327,7 @@ async function restoreActiveEditor(snapshot: WorkbenchSnapshot): Promise<void> {
 }
 
 async function restoreSecondGroupWidth(snapshot: WorkbenchSnapshot): Promise<void> {
-  if (snapshot.secondGroupWidth === undefined) return;
+  if (snapshot.secondGroupWidth === undefined || snapshot.secondGroupWidth < 320) return;
   const widths = widthsFromLayout(await inspectWorkbenchLayout());
   const groups = [...vscode.window.tabGroups.all].sort((a, b) => a.viewColumn - b.viewColumn);
   const secondGroupIndex = groups.findIndex(group => group.viewColumn === vscode.ViewColumn.Two);
@@ -394,11 +335,6 @@ async function restoreSecondGroupWidth(snapshot: WorkbenchSnapshot): Promise<voi
   if (currentWidth !== undefined && Math.abs(currentWidth - snapshot.secondGroupWidth) > 1) {
     await focusEditorGroup(vscode.ViewColumn.Two);
     await resizeActiveEditorGroupToWidth(snapshot.secondGroupWidth);
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const restoredWidth = await currentSecondGroupWidth();
-      if (restoredWidth !== undefined && Math.abs(restoredWidth - snapshot.secondGroupWidth) <= 1) return;
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
   }
 }
 
@@ -410,8 +346,6 @@ async function currentSecondGroupWidth(): Promise<number | undefined> {
 }
 
 export async function restoreWorkbenchSnapshot(snapshot: WorkbenchSnapshot): Promise<void> {
-  await resetPreviewWebviewViewport();
-  await resetWorkbenchViewport();
   await closeAddedTabs(snapshot);
   await closeAddedEmptyGroups(snapshot);
   await restoreVisibility(snapshot);
@@ -439,7 +373,7 @@ export async function restoreWorkbenchSnapshot(snapshot: WorkbenchSnapshot): Pro
   if (snapshot.secondGroupWidth !== undefined) {
     const width = await currentSecondGroupWidth();
     if (width === undefined || Math.abs(width - snapshot.secondGroupWidth) > 1) {
-      throw new Error(`Second editor group width differs from its initial state after P136 (expected ${snapshot.secondGroupWidth}px, got ${width ?? 'missing'})`);
+      throw new Error('Second editor group width differs from its initial state after P136');
     }
   }
   if (snapshot.previewUri && getPreviewProbe().currentDocumentUri !== snapshot.previewUri) {
