@@ -3,15 +3,16 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-18
+- **最終更新日**: 2026-11-19
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
 ## Issue #181: Web Vue I18n 11.4.22
 
 - **状態**: `feature/181-vue-i18n-11-4-22` で実装。対象バージョンは `0.1.0`。Controller / IndexedDBをlocaleの唯一の所有者に保ち、Vue I18n 11.4.22の静的en/jaメッセージをsnapshotからComposerと`html[lang]`へ一方向投影する。Controller生成メニュー・Help/Inspector DOM・共有packageの翻訳ownerは維持。
-- **検証（2026-11-18 / macOS arm64 / Node.js 26.7.0 / Safari 26.6.2）**: `npm run build:web`、Web unit 59/59、`npm test`（拡張unit 1,138件、Extension E2E 131件PASS・6件は音声連携フラグでpending。pendingの6件はフラグ有効の個別実行で6/6 PASS。Web E2EはChromium/WebKit合計168/168 PASS）、Production PWA 2/2、Safari smoke、`npm run vscode:prepublish`、`check:help`、`check:ai`、`validate-docs --issue 181`、`git diff --check` はPASS。追加したProblems severity / Help再表示 / 2タブ保持の各回帰はChromium・WebKitで各3/3 PASS。通常suiteでWebKitのDrive同意テストが一度タイムアウトしたが、単独再実行とsuite全体の再実行はPASS。VSIX inventoryは1,640 entriesで、`vue-i18n`/`@intlify`/`web/`/`docs/help/`は0件。
+- **検証（現HEAD `66eaae91520e62f989deec073c4c5857e9eaebac` / 2026-11-19）**: `npm run test:web` はWeb unit 59/59、Chromium/WebKit E2E 168/168 PASS。`npm run build:web`、Production PWA E2E、Safari smoke、`npm run vscode:prepublish`、`check:help`、`check:ai`、`validate-docs --issue 181`、`git diff --check` もPASS。GitHub Required Checksは4/4 PASS（agent-required-check、web-spa-chromium、web-spa-webkit、safari-smoke）。`npm test` は直前のscope-clean HEAD `c7c327e493f68f575e5a1f14a3f69c8f85044569` で実行し、unit 1,138件とcompile:allの後にExtension E2EのWorkbench復元で終了コード1。ユーザー指示に従い、Extension E2Eは現HEADで再実行していない。
+- **過去HEADでの実測（2026-11-17 / `5b6c0b6808f044ec0b24f113478dc1e74addd6ea`）**: VSIX inventory 1,640 entriesを確認し、`vue-i18n`/`@intlify`/`web/`/`docs/help/`は0件と記録。これは過去HEADの結果であり、現HEADのinventory確認を代替しない。
 - **視覚証拠**: Chromium、1600 × 900 CSS pxの[English UI](evidence/issue-181/vue-i18n-en-1600x900.png)と[日本語UI](evidence/issue-181/vue-i18n-ja-1600x900.png)。両画面でExplorer、Menu、Editor、Inspector、Problems、status barの表示を確認し、[Issue #181のcomment](https://github.com/puchinya/vscode-guitar-dsl/issues/181#issuecomment-6957229813)へ添付済み。
-- **配布と未検証**: VSIX inventoryに`vue-i18n`/`@intlify`/`web/`/`docs/help/`は0件で、Help/AI必須資産を確認。実Google OAuth/Drive、物理音声出力、iOS/iPadOS Safari、OSネイティブUndo/RedoとPDFファイル保存はNOT RUN（Safari smokeの契約対象外）。PR #182でGitHub Required Checksを確認する。
+- **配布と未検証**: 現HEADのVSIX inventoryはNOT RUN。`npx @vscode/vsce ls` はnpm registry `npm.flatt.tech` のDNS `ENOTFOUND`、offline実行は共有npm cacheのroot-ownedファイルによる`EPERM`で実行できなかった。現HEADの`vue-i18n`/`@intlify`/`web/`/`docs/help/`混入有無は未確認。実Google OAuth/Drive、物理音声出力、iOS/iPadOS Safari、OSネイティブUndo/RedoとPDFファイル保存もNOT RUN（Safari smokeの契約対象外）。PR #182はopenで、現HEADのRequired Checksは4/4 PASS。
 - **注意事項**: full-tree `npm ci` は17 vulnerabilities（2 low / 3 moderate / 12 high）を報告した一方、今回指定されたproduction Web dependency auditは0件。Viteは既存の500 kB超chunk warningを出し、WebKitサーバー終了時に`Importing a module script failed`を1回出力したが、関連Playwright suiteのexit codeは0。
 
 ## Issue #176: Web版Pinia 4表示ストア統合
