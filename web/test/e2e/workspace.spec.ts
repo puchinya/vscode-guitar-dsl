@@ -1203,6 +1203,12 @@ test('preserves source, revision, selection, and undo in two tabs through locale
   const readSelection = () => page.evaluate(() => (window as Window & {
     __guitarDslReadSelection?: () => { from: number; to: number; head: number };
   }).__guitarDslReadSelection?.());
+  const runUndo = () => page.evaluate(() => (window as Window & {
+    __guitarDslUndo?: () => boolean;
+  }).__guitarDslUndo?.() ?? false);
+  const runRedo = () => page.evaluate(() => (window as Window & {
+    __guitarDslRedo?: () => boolean;
+  }).__guitarDslRedo?.() ?? false);
   const selectOneCharacter = async (offset: number) => {
     await page.evaluate(position => (window as Window & {
       __guitarDslSetCursor?: (cursor: number) => void;
@@ -1287,21 +1293,20 @@ test('preserves source, revision, selection, and undo in two tabs through locale
   await expectEditorSource(page, secondEdited);
   expect(await readSelection()).toEqual(secondSelection);
 
-  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
-  await editor.press('ControlOrMeta+z');
+  expect(await runUndo()).toBe(true);
   await expectEditorSource(page, secondBase);
   await expect.poll(async () => (await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondBase);
   expect((await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstEdited);
-  await editor.press('ControlOrMeta+Shift+z');
+  expect(await runRedo()).toBe(true);
   await expectEditorSource(page, secondEdited);
 
   await firstTab.click();
   await expectEditorSource(page, firstEdited);
-  await editor.press('ControlOrMeta+z');
+  expect(await runUndo()).toBe(true);
   await expectEditorSource(page, firstBase);
   await expect.poll(async () => (await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstBase);
   expect((await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondEdited);
-  await editor.press('ControlOrMeta+Shift+z');
+  expect(await runRedo()).toBe(true);
   await expectEditorSource(page, firstEdited);
 });
 

@@ -509,6 +509,8 @@ if (import.meta.env.DEV) {
     __guitarDslReadSelection?: () => { from: number; to: number; head: number };
     __guitarDslRenderAll?: () => void;
     __guitarDslSetCursor?: (offset: number) => void;
+    __guitarDslUndo?: () => boolean;
+    __guitarDslRedo?: () => boolean;
   };
   testWindow.__guitarDslReadSource = () => sourceEditor.getSource();
   testWindow.__guitarDslReplaceSource = source => sourceEditor.replaceSource(source);
@@ -521,6 +523,8 @@ if (import.meta.env.DEV) {
   testWindow.__guitarDslReadSelection = () => sourceEditor.selection();
   testWindow.__guitarDslRenderAll = renderAll;
   testWindow.__guitarDslSetCursor = offset => sourceEditor.setSelection(offset);
+  testWindow.__guitarDslUndo = () => sourceEditor.undo();
+  testWindow.__guitarDslRedo = () => sourceEditor.redo();
 }
 const scoreFrame = app.querySelector<HTMLIFrameElement>('#score-frame')!;
 const inspectorContent = app.querySelector<HTMLDivElement>('#inspector-content')!;
