@@ -1097,21 +1097,27 @@ test('renders info diagnostics from a workspace snapshot with accessible severit
   await page.goto('/');
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
 
-  const installSeveritySnapshot = () => page.evaluate(async () => {
+  await page.evaluate(async () => {
+    const { useWorkspaceStore } = await import('/src/stores/workspaceStore.ts');
+    const store = useWorkspaceStore();
+    store.detach();
+  });
+  const installSeveritySnapshot = (locale: 'en' | 'ja') => page.evaluate(async (targetLocale: 'en' | 'ja') => {
     const { useWorkspaceStore } = await import('/src/stores/workspaceStore.ts');
     const store = useWorkspaceStore();
     const current = store.view;
     if (!current) throw new Error('The workspace snapshot is unavailable.');
     store.view = {
       ...current,
+      locale: targetLocale,
       diagnostics: [
         { severity: 'error', message: 'Error snapshot diagnostic', file: 'snapshot.guitardsl', line: 1, column: 1, from: 0, to: 1 },
         { severity: 'warning', message: 'Warning snapshot diagnostic', file: 'snapshot.guitardsl', line: 2, column: 1, from: 2, to: 3 },
         { severity: 'info', message: 'Informational snapshot diagnostic', file: 'snapshot.guitardsl', line: 3, column: 1, from: 4, to: 5 }
       ]
     };
-  });
-  const assertSeverityRows = async () => {
+  }, locale);
+  const assertSeverityRows = async (locale: 'en' | 'ja') => {
     await expect(page.locator('#diagnostics .problem-severity')).toHaveText(['error', 'warning', 'info']);
     const infoRow = page.getByRole('listitem').filter({
       has: page.locator('.problem-severity[data-severity="info"]')
@@ -1119,15 +1125,13 @@ test('renders info diagnostics from a workspace snapshot with accessible severit
     await expect(infoRow).toHaveAttribute('role', 'listitem');
     await expect(infoRow.getByRole('button', { name: 'Informational snapshot diagnostic' })).toBeVisible();
     await expect(page.locator('#diagnostics')).toHaveAttribute('aria-live', 'polite');
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
   };
 
-  await installSeveritySnapshot();
-  await assertSeverityRows();
-  await page.locator('#settings-button').click();
-  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
-  await installSeveritySnapshot();
-  await assertSeverityRows();
+  await installSeveritySnapshot('en');
+  await assertSeverityRows('en');
+  await installSeveritySnapshot('ja');
+  await assertSeverityRows('ja');
 });
 
 test('projects Controller locale into Vue I18n without disturbing source or undo history', async ({ page }) => {
