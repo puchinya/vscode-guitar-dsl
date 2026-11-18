@@ -83,7 +83,7 @@ function navigateMainMenu(menu: MainMenuId): void {
       <span class="status-dot" :class="{ unavailable: !snapshot.ready }" aria-hidden="true"></span><span class="saved-state" id="saved-state">{{ snapshot.storageStatus || t(snapshot.online ? 'status.ready' : 'status.offline') }}</span>
     </footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden @change="dispatch({ type: 'document.import-local' })" />
-    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title">{{ t('action.help') }}</h2><button type="button" id="close-help" class="icon-action" :aria-label="t('action.close')" :title="t('action.close')">×</button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer">{{ t('help.openNewTab') }}</a></p><nav id="help-toc" :aria-label="t('help.topics')"></nav><article id="help-content"></article></dialog>
+    <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title"></h2><button type="button" id="close-help" class="icon-action" :aria-label="t('action.close')" :title="t('action.close')">×</button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer"></a></p><nav id="help-toc" :aria-label="t('help.topics')"></nav><article id="help-content"></article></dialog>
     <MenuLayer :snapshot="snapshot" @command="dispatch" @context-request="requestContextMenu" @navigate-main="navigateMainMenu" />
     <PwaUpdatePrompt :state="snapshot.pwa" @update="dispatch({ type: 'pwa.update' })" @later="dispatch({ type: 'pwa.later' })" />
   </main>

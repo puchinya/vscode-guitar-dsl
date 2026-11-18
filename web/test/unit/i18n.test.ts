@@ -29,6 +29,12 @@ test('English and Japanese message keys and interpolation variables match', () =
   }
 });
 
+test('Problem severity labels keep their existing tokens and define info in both locales', () => {
+  const expected = { error: 'error', warning: 'warning', info: 'info' };
+  assert.deepEqual(en.problems.severityType, expected);
+  assert.deepEqual(ja.problems.severityType, expected);
+});
+
 test('global Composer starts at the Controller locale and switches both ways', () => {
   const i18n = createWebI18n('en');
   assert.equal(i18n.global.locale.value, 'en');

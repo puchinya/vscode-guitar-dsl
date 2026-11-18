@@ -60,7 +60,8 @@ export const en = {
     severity: 'Severity',
     severityType: {
       error: 'error',
-      warning: 'warning'
+      warning: 'warning',
+      info: 'info'
     },
     file: 'File',
     location: 'Line:Col',

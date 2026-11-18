@@ -1084,13 +1084,50 @@ test('Header and Problems render the latest Controller view through the workspac
   await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
   await expect(page.locator('#drive-state-label')).toHaveText('未接続');
   await expect(page.locator('#problems-title')).toHaveText('問題');
-  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('エラー');
+  await expect(page.locator('.problem-severity[data-severity="error"]').first()).toHaveText('error');
   await expect(page.locator('#status-problems')).toHaveText(`エラー ${await errors.textContent()} / 警告 ${await warnings.textContent()}`);
 
   await page.locator('#close-problems').click();
   await expect(page.locator('#problems-panel')).toBeHidden();
   await page.locator('#toggle-problems').click();
   await expect(page.locator('#problems-panel')).toBeVisible();
+});
+
+test('renders info diagnostics from a workspace snapshot with accessible severity in English and Japanese', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+
+  const installSeveritySnapshot = () => page.evaluate(async () => {
+    const { useWorkspaceStore } = await import('/src/stores/workspaceStore.ts');
+    const store = useWorkspaceStore();
+    const current = store.view;
+    if (!current) throw new Error('The workspace snapshot is unavailable.');
+    store.view = {
+      ...current,
+      diagnostics: [
+        { severity: 'error', message: 'Error snapshot diagnostic', file: 'snapshot.guitardsl', line: 1, column: 1, from: 0, to: 1 },
+        { severity: 'warning', message: 'Warning snapshot diagnostic', file: 'snapshot.guitardsl', line: 2, column: 1, from: 2, to: 3 },
+        { severity: 'info', message: 'Informational snapshot diagnostic', file: 'snapshot.guitardsl', line: 3, column: 1, from: 4, to: 5 }
+      ]
+    };
+  });
+  const assertSeverityRows = async () => {
+    await expect(page.locator('#diagnostics .problem-severity')).toHaveText(['error', 'warning', 'info']);
+    const infoRow = page.getByRole('listitem').filter({
+      has: page.locator('.problem-severity[data-severity="info"]')
+    });
+    await expect(infoRow).toHaveAttribute('role', 'listitem');
+    await expect(infoRow.getByRole('button', { name: 'Informational snapshot diagnostic' })).toBeVisible();
+    await expect(page.locator('#diagnostics')).toHaveAttribute('aria-live', 'polite');
+  };
+
+  await installSeveritySnapshot();
+  await assertSeverityRows();
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await installSeveritySnapshot();
+  await assertSeverityRows();
 });
 
 test('projects Controller locale into Vue I18n without disturbing source or undo history', async ({ page }) => {
@@ -1146,6 +1183,126 @@ test('projects Controller locale into Vue I18n without disturbing source or undo
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
   await expect(page.locator('#menu-file-trigger')).toHaveText('ファイル');
+});
+
+test('preserves source, revision, selection, and undo in two tabs through locale changes', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+  const readTabs = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => Array<{ key: string; source: string; revision: number }>;
+  }).__guitarDslReadTabs?.() ?? []);
+  const replaceSource = async (source: string) => {
+    const changed = await page.evaluate(value => (window as Window & {
+      __guitarDslReplaceSource?: (next: string) => boolean;
+    }).__guitarDslReplaceSource?.(value) ?? false, source);
+    expect(changed).toBe(true);
+    await expectEditorSource(page, source);
+  };
+  const readSelection = () => page.evaluate(() => (window as Window & {
+    __guitarDslReadSelection?: () => { from: number; to: number; head: number };
+  }).__guitarDslReadSelection?.());
+  const selectOneCharacter = async (offset: number) => {
+    await page.evaluate(position => (window as Window & {
+      __guitarDslSetCursor?: (cursor: number) => void;
+    }).__guitarDslSetCursor?.(position), offset);
+    await page.keyboard.press('Shift+ArrowRight');
+    return readSelection();
+  };
+  const setLocale = async (locale: 'en' | 'ja') => {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', {
+      name: locale === 'ja' ? 'Language: 日本語' : 'Language: English'
+    }).click();
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+  };
+
+  const initialTabs = await readTabs();
+  const firstKey = initialTabs[0]?.key;
+  expect(firstKey).toBeTruthy();
+  const firstBase = 'title: First base\n\n[Verse]\nC | G |\n';
+  const firstEdited = 'title: First edited\n\n[Verse]\nC | G |\n';
+  await replaceSource(firstBase);
+  await page.waitForTimeout(600);
+  await replaceSource(firstEdited);
+  const firstSelection = await selectOneCharacter(firstEdited.indexOf('First'));
+  expect(firstSelection?.to).toBeGreaterThan(firstSelection?.from ?? Number.MAX_SAFE_INTEGER);
+  const firstState = (await readTabs()).find(tab => tab.key === firstKey);
+  expect(firstState).toMatchObject({ source: firstEdited, revision: (initialTabs[0]?.revision ?? 0) + 2 });
+
+  const createSecond = page.waitForEvent('dialog').then(dialog => dialog.accept('Second.guitardsl'));
+  await page.locator('#new-score').click();
+  await createSecond;
+  const secondTab = page.getByRole('tab', { name: 'Second.guitardsl' });
+  await expect(secondTab).toHaveAttribute('aria-selected', 'true');
+  const secondKey = (await readTabs()).find(tab => tab.key !== firstKey)?.key;
+  expect(secondKey).toBeTruthy();
+
+  const secondBase = 'title: Second base\n\n[Chorus]\nF | C |\n';
+  const secondEdited = 'title: Second edited\n\n[Chorus]\nF | C |\n';
+  await replaceSource(secondBase);
+  await page.waitForTimeout(600);
+  await replaceSource(secondEdited);
+  const secondSelection = await selectOneCharacter(secondEdited.indexOf('Second') + 1);
+  expect(secondSelection?.to).toBeGreaterThan(secondSelection?.from ?? Number.MAX_SAFE_INTEGER);
+  const secondState = (await readTabs()).find(tab => tab.key === secondKey);
+  expect(secondState?.source).toBe(secondEdited);
+
+  await page.evaluate(() => {
+    const editor = document.querySelector('.editor-surface .cm-editor');
+    if (!editor) throw new Error('The CodeMirror EditorView is unavailable.');
+    (window as Window & { __issue181EditorRoot?: Element }).__issue181EditorRoot = editor;
+  });
+  const assertEditorViewRetained = async () => {
+    expect(await page.evaluate(() => {
+      const target = window as Window & { __issue181EditorRoot?: Element };
+      return target.__issue181EditorRoot === document.querySelector('.editor-surface .cm-editor');
+    })).toBe(true);
+  };
+  const assertTabStatesRetained = async () => {
+    const currentTabs = await readTabs();
+    expect(currentTabs.find(tab => tab.key === firstKey)).toMatchObject({
+      source: firstEdited, revision: firstState!.revision
+    });
+    expect(currentTabs.find(tab => tab.key === secondKey)).toMatchObject({
+      source: secondEdited, revision: secondState!.revision
+    });
+  };
+
+  await setLocale('ja');
+  await assertEditorViewRetained();
+  await assertTabStatesRetained();
+  expect(await readSelection()).toEqual(secondSelection);
+  await setLocale('en');
+  await assertEditorViewRetained();
+  await assertTabStatesRetained();
+  expect(await readSelection()).toEqual(secondSelection);
+
+  const firstTab = page.getByRole('tab', { name: 'Untitled.guitardsl' });
+  await firstTab.click();
+  await expectEditorSource(page, firstEdited);
+  expect(await readSelection()).toEqual(firstSelection);
+  await secondTab.click();
+  await expectEditorSource(page, secondEdited);
+  expect(await readSelection()).toEqual(secondSelection);
+
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, secondBase);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondBase);
+  expect((await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstEdited);
+  await editor.press('ControlOrMeta+Shift+z');
+  await expectEditorSource(page, secondEdited);
+
+  await firstTab.click();
+  await expectEditorSource(page, firstEdited);
+  await editor.press('ControlOrMeta+z');
+  await expectEditorSource(page, firstBase);
+  await expect.poll(async () => (await readTabs()).find(tab => tab.key === firstKey)?.source).toBe(firstBase);
+  expect((await readTabs()).find(tab => tab.key === secondKey)?.source).toBe(secondEdited);
+  await editor.press('ControlOrMeta+Shift+z');
+  await expectEditorSource(page, firstEdited);
 });
 
 test('uses the browser language by default and a saved locale after reload', async ({ page }) => {
@@ -1759,6 +1916,16 @@ test('blocked Help popups expose a usable same-origin tab link', async ({ page }
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute('href', /^blob:/u);
   await expect(page.locator('#help-toc button')).toHaveCount(5);
+
+  await page.locator('#close-help').click();
+  await expect(page.locator('#help-dialog')).toBeHidden();
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await page.locator('#help-button').click();
+  await expect(page.locator('#help-dialog')).toBeVisible();
+  await expect(page.locator('#help-title')).toHaveText('ヘルプ');
+  await expect(page.locator('#help-direct-link')).toHaveText('ヘルプを新しいタブで開く');
 });
 
 test('keeps a partial Google consent disconnected when account lookup would succeed and appData would be forbidden', async ({ page }) => {

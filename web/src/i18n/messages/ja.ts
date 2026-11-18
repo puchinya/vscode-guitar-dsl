@@ -61,8 +61,9 @@ export const ja = {
     close: '問題を閉じる',
     severity: '重要度',
     severityType: {
-      error: 'エラー',
-      warning: '警告'
+      error: 'error',
+      warning: 'warning',
+      info: 'info'
     },
     file: 'ファイル',
     location: '行:列',
