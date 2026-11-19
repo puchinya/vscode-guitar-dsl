@@ -70,6 +70,44 @@ export class GoogleDriveApi {
     return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`);
   }
 
+  async getMyDriveRootId(): Promise<string> {
+    const root = await this.request<{ id?: string }>('/files/root?fields=id');
+    if (!root.id) throw new Error('Google Drive did not return the My Drive root ID.');
+    return root.id;
+  }
+
+  async isWithinFolder(file: DriveFile, ancestorFolderId: string): Promise<boolean> {
+    let parentId = file.parents?.[0];
+    const visited = new Set<string>();
+    for (let depth = 0; parentId && depth < 100; depth += 1) {
+      if (parentId === ancestorFolderId) return true;
+      if (visited.has(parentId)) return false;
+      visited.add(parentId);
+      const parent = await this.getFolder(parentId);
+      if (parent.trashed || parent.mimeType !== 'application/vnd.google-apps.folder') return false;
+      parentId = parent.parents?.[0];
+    }
+    return false;
+  }
+
+  private async listAllByQuery(query: string, fileFields: string): Promise<DriveFile[]> {
+    const files: DriveFile[] = [];
+    const seen = new Set<string>();
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        q: query, pageSize: '100', fields: `nextPageToken,files(${fileFields})`
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
+      files.push(...(page.files ?? []));
+      if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
+      if (page.nextPageToken) seen.add(page.nextPageToken);
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return files;
+  }
+
   async createLibraryRoot(): Promise<DriveFile> {
     const created = await this.request<DriveFile>('/files?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime', {
       method: 'POST', body: JSON.stringify({
@@ -78,8 +116,9 @@ export class GoogleDriveApi {
       })
     });
     const readback = await this.getFolder(created.id);
+    const rootId = await this.getMyDriveRootId();
     if (readback.name !== 'GuitarDSL' || readback.mimeType !== 'application/vnd.google-apps.folder'
-      || readback.trashed || !readback.parents?.includes('root')
+      || readback.trashed || !readback.parents?.includes(rootId)
       || readback.appProperties?.guitardslLibraryRoot !== '1') {
       throw new Error('Google Drive did not confirm the new GuitarDSL library root.');
     }
@@ -87,15 +126,16 @@ export class GoogleDriveApi {
   }
 
   async markLibraryRoot(folder: DriveFile): Promise<DriveFile> {
+    const rootId = await this.getMyDriveRootId();
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.name !== 'GuitarDSL'
-      || !folder.parents?.includes('root') || folder.trashed) {
+      || !folder.parents?.includes(rootId) || folder.trashed) {
       throw new Error('Only the top-level My Drive GuitarDSL folder can be used as the library root.');
     }
     if (folder.appProperties?.guitardslLibraryRoot === '1') {
       const readback = await this.getFolder(folder.id);
       if (readback.id !== folder.id || readback.name !== 'GuitarDSL'
         || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
-        || !readback.parents?.includes('root') || readback.appProperties?.guitardslLibraryRoot !== '1') {
+        || !readback.parents?.includes(rootId) || readback.appProperties?.guitardslLibraryRoot !== '1') {
         throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
       }
       return readback;
@@ -108,7 +148,7 @@ export class GoogleDriveApi {
     const readback = await this.getFolder(folder.id);
     if (marked.id !== folder.id || readback.id !== folder.id || readback.name !== 'GuitarDSL'
       || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
-      || !readback.parents?.includes('root') || readback.appProperties?.guitardslLibraryRoot !== '1') {
+      || !readback.parents?.includes(rootId) || readback.appProperties?.guitardslLibraryRoot !== '1') {
       throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
     }
     return readback;
@@ -141,25 +181,18 @@ export class GoogleDriveApi {
   }
 
   async findAccessibleFolders(name = 'GuitarDSL'): Promise<DriveFile[]> {
-    const folders: DriveFile[] = [];
-    let pageToken: string | undefined;
-    const seen = new Set<string>();
-    do {
-      const params = new URLSearchParams({
-        q: `name='${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`,
-        pageSize: '100', orderBy: 'name_natural',
-        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink)'
-      });
-      if (pageToken) params.set('pageToken', pageToken);
-      const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
-      folders.push(...(page.files ?? []).filter(file => file.name === name
-        && file.mimeType === 'application/vnd.google-apps.folder'
-        && file.parents?.includes('root') && !file.trashed));
-      if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
-      if (page.nextPageToken) seen.add(page.nextPageToken);
-      pageToken = page.nextPageToken;
-    } while (pageToken);
-    return folders;
+    const rootId = await this.getMyDriveRootId();
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const query = `name='${escape(name)}' and mimeType='application/vnd.google-apps.folder' and '${escape(rootId)}' in parents and trashed=false`;
+    return (await this.listAllByQuery(query, 'id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink'))
+      .filter(file => file.name === name && file.mimeType === 'application/vnd.google-apps.folder'
+        && file.parents?.includes(rootId) && !file.trashed);
+  }
+
+  async isCanonicalLibraryRoot(folder: DriveFile): Promise<boolean> {
+    const rootId = await this.getMyDriveRootId();
+    return folder.name === 'GuitarDSL' && folder.mimeType === 'application/vnd.google-apps.folder'
+      && !folder.trashed && folder.parents?.includes(rootId) === true;
   }
 
   async createChildFolder(parentId: string, name: string, operationId?: string): Promise<DriveFile> {
@@ -171,12 +204,9 @@ export class GoogleDriveApi {
 
   async findFolderByOperation(parentId: string, operationId: string): Promise<DriveFile | undefined> {
     const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const params = new URLSearchParams({
-      q: `'${escape(parentId)}' in parents and trashed=false and appProperties has { key='guitardslFolderOperation' and value='${escape(operationId)}' }`,
-      pageSize: '100', fields: 'files(id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime)'
-    });
-    const result = await this.request<{ files?: DriveFile[] }>(`/files?${params}`);
-    return result.files?.find(file => file.parents?.includes(parentId)
+    const query = `'${escape(parentId)}' in parents and trashed=false and appProperties has { key='guitardslFolderOperation' and value='${escape(operationId)}' }`;
+    const files = await this.listAllByQuery(query, 'id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime');
+    return files.find(file => file.parents?.includes(parentId)
       && file.mimeType === 'application/vnd.google-apps.folder' && !file.trashed
       && file.appProperties?.guitardslFolderOperation === operationId);
   }
@@ -203,12 +233,9 @@ export class GoogleDriveApi {
 
   async findImportByOperation(folderId: string, operationId: string): Promise<DriveFile | undefined> {
     const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const params = new URLSearchParams({
-      q: `'${escape(folderId)}' in parents and trashed=false and appProperties has { key='guitardslImportOperation' and value='${escape(operationId)}' }`,
-      pageSize: '100', fields: 'files(id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime,headRevisionId)'
-    });
-    const result = await this.request<{ files?: DriveFile[] }>(`/files?${params}`);
-    return result.files?.find(file => file.parents?.includes(folderId) && file.appProperties?.guitardslImportOperation === operationId);
+    const query = `'${escape(folderId)}' in parents and trashed=false and appProperties has { key='guitardslImportOperation' and value='${escape(operationId)}' }`;
+    const files = await this.listAllByQuery(query, 'id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime,headRevisionId');
+    return files.find(file => file.parents?.includes(folderId) && file.appProperties?.guitardslImportOperation === operationId);
   }
 
   async moveFile(file: DriveFile, targetFolderId: string, sourceParentId: string): Promise<DriveFile> {
@@ -238,7 +265,7 @@ export class GoogleDriveApi {
 
   async getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }> {
     const token = this.auth.tokenForRequest();
-    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`, {}, token);
+    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`, {}, token);
     const headers = new Headers({ Authorization: `Bearer ${token}` });
     const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers });
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive download failed (${response.status}).`);
@@ -246,12 +273,10 @@ export class GoogleDriveApi {
   }
 
   async findMoveUpload(folderId: string, localFileId: string): Promise<DriveFile | undefined> {
-    const params = new URLSearchParams({
-      q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed=false and appProperties has { key='guitardslLocalId' and value='${localFileId.replace(/'/g, "\\'")}' }`,
-      pageSize: '100', fields: 'files(id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties)'
-    });
-    const result = await this.request<{ files?: DriveFile[] }>(`/files?${params}`);
-    return result.files?.find(file => isGuitarDslName(file.name));
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const query = `'${escape(folderId)}' in parents and trashed=false and appProperties has { key='guitardslLocalId' and value='${escape(localFileId)}' }`;
+    const files = await this.listAllByQuery(query, 'id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties');
+    return files.find(file => file.parents?.includes(folderId) && isGuitarDslName(file.name));
   }
 
   async createFile(folderId: string, name: string, source: string, localFileId?: string): Promise<DriveFile> {

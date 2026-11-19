@@ -124,6 +124,7 @@ interface DriveBrowserMockOptions {
   holdPickerSelection?: boolean;
   holdFileReadId?: string;
   missingFileIds?: string[];
+  forbiddenFileIdsOnce?: string[];
   remoteFiles?: Record<string, { name: string; source: string; version: string }>;
   folders?: Record<string, string>;
   rootFolders?: Record<string, { id?: string; marked?: boolean } | null>;
@@ -168,13 +169,14 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       } : options.appDataState]));
   const appDataStates = new Map<string, TestAppDataState | null>(Object.entries(initialStates));
   const rootFolders = new Map<string, { id: string; name: string; mimeType: string; parents: string[]; trashed: boolean; appProperties: Record<string, string> }>();
+  const myDriveRootId = (accountId: string) => `my-drive-root-${accountId}`;
   for (const accountId of accountSequence) {
     const configured = options.rootFolders && Object.hasOwn(options.rootFolders, accountId) ? options.rootFolders[accountId] : undefined;
     const exists = configured === undefined ? appDataStates.get(accountId) !== null : configured !== null;
     if (!exists) continue;
     rootFolders.set(accountId, {
       id: configured?.id ?? `folder-${accountId}`, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
-      parents: ['root'], trashed: false, appProperties: configured?.marked === false ? {} : { guitardslLibraryRoot: '1' }
+      parents: [myDriveRootId(accountId)], trashed: false, appProperties: configured?.marked === false ? {} : { guitardslLibraryRoot: '1' }
     });
   }
   mockedDriveAppData.set(page, appDataStates);
@@ -274,6 +276,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   let driveFileListCount = 0;
   let driveFileListPendingCount = 0;
   let heldFileRead = false;
+  const forbiddenFileIdsSeen = new Set<string>();
   let startDriveList!: () => void;
   const driveListStarted = new Promise<void>(resolve => { startDriveList = resolve; });
   let releaseDriveList!: () => void;
@@ -289,6 +292,9 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     const token = request.headers().authorization?.replace(/^Bearer test-token-/u, '');
     const accountId = token || 'account-a';
+    if (url.pathname === '/drive/v3/files/root') {
+      return route.fulfill({ headers, json: { id: myDriveRootId(accountId) } });
+    }
     if (url.pathname === '/drive/v3/about') {
       return route.fulfill({ headers, json: { user: { permissionId: accountId, emailAddress: `${accountId}@example.test` } } });
     }
@@ -310,7 +316,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
             createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] : [];
           return await route.fulfill({ headers, json: { files } });
         }
-        const isLibraryRootQuery = query.includes("name='GuitarDSL'") && query.includes("'root' in parents");
+        const isLibraryRootQuery = query.includes("name='GuitarDSL'") && query.includes(`'${myDriveRootId(accountId)}' in parents`);
         if (options.holdDriveListAccountId === accountId && !isLibraryRootQuery
           && driveFileListCount > (options.holdDriveListAfterCount ?? 0)) {
           startDriveList();
@@ -328,8 +334,9 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
           const body = request.postDataJSON() as { name?: string; mimeType?: string; parents?: string[]; appProperties?: Record<string, string> };
           const id = body.name === 'GuitarDSL' && body.parents?.includes('root') ? `folder-${accountId}` : `drive-folder-${crypto.randomUUID()}`;
           const created = { id, name: body.name ?? 'New folder', mimeType: body.mimeType ?? 'application/vnd.google-apps.folder',
-            parents: body.parents ?? ['root'], trashed: false, appProperties: body.appProperties ?? {} };
-          if (created.name === 'GuitarDSL' && created.parents.includes('root')) {
+            parents: body.name === 'GuitarDSL' && body.parents?.includes('root') ? [myDriveRootId(accountId)] : body.parents ?? [],
+            trashed: false, appProperties: body.appProperties ?? {} };
+          if (created.name === 'GuitarDSL' && created.parents.includes(myDriveRootId(accountId))) {
             visibleFolderCreateCount += 1;
             rootFolders.set(accountId, created);
             if (rootCreateUnknownOnce) {
@@ -365,8 +372,11 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         return route.fulfill({ headers, json: root });
       }
       if (child) return route.fulfill({ headers, json: child });
-      if (options.folders?.[id]) return route.fulfill({ headers, json: { id, name: options.folders[id], mimeType: 'application/vnd.google-apps.folder', parents: ['root'], trashed: false, appProperties: {} } });
+      if (options.folders?.[id]) return route.fulfill({ headers, json: { id, name: options.folders[id], mimeType: 'application/vnd.google-apps.folder', parents: [myDriveRootId(accountId)], trashed: false, appProperties: {} } });
       return route.fulfill({ status: 404, headers, json: { error: 'simulated missing Drive folder' } });
+    }
+    if (url.pathname === `/drive/v3/files/${myDriveRootId(accountId)}`) {
+      return route.fulfill({ headers, json: { id: myDriveRootId(accountId), name: 'My Drive', mimeType: 'application/vnd.google-apps.folder', parents: [] } });
     }
     if (/^\/drive\/v3\/files\/app-state-[^/]+$/u.test(url.pathname)) {
       appDataState = mockedDriveAppData.get(page)?.get(accountId) ?? null;
@@ -417,6 +427,11 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       }
       const remote = options.remoteFiles?.[fileId];
       const seeded = mockedDriveSeeds.get(page)?.get(fileId);
+      if (url.searchParams.get('alt') !== 'media' && options.forbiddenFileIdsOnce?.includes(fileId)
+        && !forbiddenFileIdsSeen.has(fileId)) {
+        forbiddenFileIdsSeen.add(fileId);
+        return route.fulfill({ status: 403, headers, json: { error: 'simulated first read permission denial' } });
+      }
       if (url.searchParams.get('alt') !== 'media' && options.missingFileIds?.includes(fileId)) {
         return route.fulfill({ status: 404, headers, json: { error: 'simulated missing Drive file' } });
       }
@@ -515,8 +530,10 @@ async function installStatefulDriveSaveMock(
   options: { holdPatch?: boolean; patchStatus?: number; readbackMismatch?: boolean } = {}
 ): Promise<{
   patchCalls: { fileId: string; source: string }[];
+  metadataPatchCalls: { fileId: string; body: Record<string, unknown> }[];
   patchStarted: Promise<void>;
   releasePatch(): void;
+  advanceVersion(source?: string): void;
   get createCount(): number;
 }> {
   mockedDriveAppData.set(page, new Map([['account-a', {
@@ -532,10 +549,13 @@ async function installStatefulDriveSaveMock(
     };
   });
   let remoteSource = 'title: Drive saved\n';
+  let remoteName = 'Song.guitardsl';
+  let trashed = false;
   let version = 1;
   let appDataVersion = 1;
   let createCount = 0;
   const patchCalls: { fileId: string; source: string }[] = [];
+  const metadataPatchCalls: { fileId: string; body: Record<string, unknown> }[] = [];
   let startPatch!: () => void;
   const patchStarted = new Promise<void>(resolve => { startPatch = resolve; });
   let releasePatch!: () => void;
@@ -552,13 +572,17 @@ async function installStatefulDriveSaveMock(
     if (url.pathname === '/drive/v3/about') {
       return route.fulfill({ headers, json: { user: { permissionId: 'account-a', emailAddress: 'account-a@example.test' } } });
     }
+    if (url.pathname === '/drive/v3/files/root') {
+      return route.fulfill({ headers, json: { id: 'my-drive-root-account-a' } });
+    }
     if (url.pathname === '/drive/v3/files') {
       if (url.searchParams.get('spaces') === 'appDataFolder') {
         return route.fulfill({ headers, json: { files: [{ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
           createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] } });
       }
       if (request.method() === 'POST') createCount += 1;
-      return route.fulfill({ headers, json: { files: [] } });
+      return route.fulfill({ headers, json: { files: [{ id: 'drive-save', name: remoteName, mimeType: 'text/plain',
+        version: String(version), modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a'], trashed: false }] } });
     }
     if (url.pathname === '/drive/v3/files/app-state-account-a') {
       const metadata = { id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
@@ -569,16 +593,27 @@ async function installStatefulDriveSaveMock(
         : route.fulfill({ headers, json: metadata });
     }
     if (url.pathname === '/drive/v3/files/folder-account-a') {
-      return route.fulfill({ headers, json: { id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'], appProperties: { guitardslLibraryRoot: '1' }, trashed: false } });
+      return route.fulfill({ headers, json: { id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['my-drive-root-account-a'], appProperties: { guitardslLibraryRoot: '1' }, trashed: false } });
     }
     if (url.pathname === '/drive/v3/files/drive-save') {
+      if (request.method() === 'PATCH') {
+        const body = request.postDataJSON() as Record<string, unknown>;
+        metadataPatchCalls.push({ fileId: 'drive-save', body });
+        if (typeof body.name === 'string') remoteName = body.name;
+        if (typeof body.trashed === 'boolean') trashed = body.trashed;
+        version += 1;
+        return route.fulfill({ headers, json: {
+          id: 'drive-save', name: remoteName, mimeType: 'text/plain', version: String(version),
+          modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a'], trashed
+        } });
+      }
       const metadata = {
-        id: 'drive-save', name: 'Song.guitardsl', mimeType: 'text/plain', version: String(version),
+        id: 'drive-save', name: remoteName, mimeType: 'text/plain', version: String(version),
         modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a']
       };
-      return url.searchParams.get('alt') === 'media'
+        return url.searchParams.get('alt') === 'media'
         ? route.fulfill({ headers, body: remoteSource })
-        : route.fulfill({ headers, json: metadata });
+          : route.fulfill({ headers, json: { ...metadata, trashed } });
     }
     if (url.pathname.startsWith('/upload/drive/v3/files')) {
       if (request.method() === 'POST') {
@@ -604,7 +639,7 @@ async function installStatefulDriveSaveMock(
         if (!options.readbackMismatch) remoteSource = request.postData() ?? remoteSource;
         version += 1;
         return route.fulfill({ headers, json: {
-          id: 'drive-save', name: 'Song.guitardsl', mimeType: 'text/plain', version: String(version),
+          id: 'drive-save', name: remoteName, mimeType: 'text/plain', version: String(version),
           modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a']
         } });
       }
@@ -612,7 +647,8 @@ async function installStatefulDriveSaveMock(
     return route.fulfill({ status: 404, headers, json: { error: 'unhandled test Drive request' } });
   });
   return {
-    patchCalls, patchStarted, releasePatch,
+    patchCalls, metadataPatchCalls, patchStarted, releasePatch,
+    advanceVersion: source => { version += 1; if (source !== undefined) remoteSource = source; },
     get createCount() { return createCount; }
   };
 }
@@ -2344,6 +2380,55 @@ test('imports multiple selected scores as copies and leaves Picker sources uncha
   expect(sources['source-two']?.source).toBe('title: Two source\n');
 });
 
+test('a Picker recovery selection is imported as a library copy instead of opened from an old Drive session', async ({ page }) => {
+  const selected = { id: 'picker-external', name: 'External score.guitardsl', mimeType: 'text/plain' };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: selected, missingFileIds: ['old-appdata-file'],
+    remoteFiles: { 'picker-external': { name: selected.name, source: 'title: External source\n', version: '1' } }
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'old-appdata-file', name: 'Old external reference.guitardsl', source: 'title: Cached old source\n'
+  }], { appDataState: {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: ['old-appdata-file'], activeDriveFileId: 'old-appdata-file', recentDriveFileIds: ['old-appdata-file']
+  } });
+  const dialogPromise = page.waitForEvent('dialog').then(async dialog => {
+    expect(dialog.message()).toContain('not authorized for GuitarDSL');
+    await dialog.accept();
+  });
+  await performAccountAction(page);
+  await dialogPromise;
+  await expect(page.locator('.drive-library-entry').filter({ hasText: selected.name })).toBeVisible();
+  await expect(page.getByRole('tab', { name: selected.name })).toHaveCount(0);
+  await expect(page.locator('#app-message')).toContainText('1 succeeded, 0 failed');
+  expect(drive.copySourceIds).toEqual([selected.id]);
+});
+
+test('a Picker reauthorization of the same old external ID still copies it into the canonical library', async ({ page }) => {
+  const externalId = 'old-external-reference';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: externalId, name: 'External score.guitardsl', mimeType: 'text/plain' },
+    forbiddenFileIdsOnce: [externalId],
+    remoteFiles: { [externalId]: { name: 'External score.guitardsl', source: 'title: External source\n', version: '1' } },
+    folders: { 'outside-folder': 'Shared scores' },
+    driveFiles: [{ id: externalId, name: 'External score.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['outside-folder'] }]
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: externalId, name: 'External score.guitardsl', source: 'title: Cached old source\n'
+  }], { appDataState: {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: [externalId], activeDriveFileId: externalId, recentDriveFileIds: [externalId]
+  } });
+  const dialogPromise = page.waitForEvent('dialog').then(dialog => dialog.accept());
+  await performAccountAction(page);
+  await dialogPromise;
+  await expect(page.locator('.drive-library-entry').filter({ hasText: 'External score.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'External score.guitardsl' })).toHaveCount(0);
+  expect(drive.copySourceIds).toEqual([externalId]);
+});
+
 test('loads nested physical folders on expansion and opens the clicked root, folder, or score in Drive', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a'], {
     driveFiles: [
@@ -3529,6 +3614,163 @@ test('Drive saves keep the same file, retain edits made during a save, and do no
   expect(drive.patchCalls.map(call => call.fileId)).toEqual(['drive-save', 'drive-save']);
   expect(drive.patchCalls.map(call => call.source)).toEqual(['title: Submitted version\n', 'title: Newer local draft\n']);
   expect(drive.createCount).toBe(0);
+});
+
+test('serializes save and rename, refreshes the open tab, and still detects a later Drive conflict', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { holdPatch: true });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await performAccountAction(page);
+  const tab = page.getByRole('tab', { name: 'Song.guitardsl' });
+  await expect(tab).toBeVisible();
+  await page.locator('#storage-drive').click();
+  const row = page.locator('.drive-library-entry[data-file-id="drive-save"]');
+  await expect(row).toBeVisible();
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('title: Saved before rename\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('#save-document').click();
+  await drive.patchStarted;
+
+  const renamePrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Renamed score'));
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /Rename/u }).click();
+  await renamePrompt;
+  await page.waitForTimeout(150);
+  expect(drive.metadataPatchCalls).toEqual([]);
+  drive.releasePatch();
+
+  const renamedTab = page.getByRole('tab', { name: 'Renamed score.guitardsl' });
+  await expect(renamedTab).toBeVisible();
+  await expect.poll(() => drive.metadataPatchCalls.length).toBe(1);
+  expect(drive.metadataPatchCalls[0]?.body).toMatchObject({ name: 'Renamed score.guitardsl' });
+  let local = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getSavedDocument({ storage: 'drive', fileId: 'drive-save' }, 'account-a');
+  });
+  expect(local).toMatchObject({ name: 'Renamed score.guitardsl', driveVersion: '3', source: 'title: Saved before rename\n' });
+
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('title: Save after rename\n');
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await page.locator('#save-document').click();
+  await expect(page.locator('#saved-state')).toHaveText('Saved to Drive');
+  expect(drive.patchCalls.map(call => call.source)).toEqual(['title: Saved before rename\n', 'title: Save after rename\n']);
+
+  await page.reload();
+  await performAccountAction(page);
+  await expect(page.getByRole('tab', { name: 'Renamed score.guitardsl' })).toBeVisible();
+  drive.advanceVersion('title: External Drive edit\n');
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('title: Local edit after reload\n');
+  await page.locator('#save-document').click();
+  await expect(page.getByRole('heading', { name: 'Drive version conflict' })).toBeVisible();
+  local = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getSavedDocument({ storage: 'drive', fileId: 'drive-save' }, 'account-a');
+  });
+  expect(local?.name).toBe('Renamed score.guitardsl');
+  expect(drive.patchCalls).toHaveLength(2);
+});
+
+test('trashing a clean open Drive score preserves it as an editable local copy', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page);
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Clean source\n'
+  }]);
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const row = page.locator('.drive-library-entry[data-file-id="drive-save"]');
+  await expect(row).toBeVisible();
+  const trashPrompt = page.waitForEvent('dialog').then(async dialog => {
+    expect(dialog.message()).toContain('Save a local copy');
+    await dialog.accept();
+  });
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move to trash', exact: true }).click();
+  await trashPrompt;
+
+  await expect(page.getByRole('tab', { name: 'Song (local copy).guitardsl' })).toBeVisible();
+  await expectEditorSource(page, 'title: Drive saved\n');
+  expect(drive.metadataPatchCalls).toContainEqual({ fileId: 'drive-save', body: { trashed: true } });
+  expect(drive.patchCalls).toEqual([]);
+  const documents = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      drive: await indexedDb.getSavedDocument({ storage: 'drive', fileId: 'drive-save' }, 'account-a'),
+      local: await indexedDb.listDocuments('local')
+    };
+  });
+  expect(documents.drive).toBeUndefined();
+  expect(documents.local).toContainEqual(expect.objectContaining({ name: 'Song (local copy).guitardsl', source: 'title: Drive saved\n' }));
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill('title: Edit recovered copy\n');
+  await page.locator('#save-document').click();
+  await expect(page.locator('#saved-state')).toHaveText('Saved locally');
+  expect(drive.patchCalls).toEqual([]);
+});
+
+test('trashing a dirty Drive score keeps the draft in a local copy', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page);
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Clean source\n'
+  }]);
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const row = page.locator('.drive-library-entry[data-file-id="drive-save"]');
+  await expect(row).toBeVisible();
+  const draftSource = 'title: Keep this dirty draft\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(draftSource);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  const trashPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept());
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move to trash', exact: true }).click();
+  await trashPrompt;
+
+  await expect(page.getByRole('tab', { name: 'Song (local copy).guitardsl' })).toBeVisible();
+  await expectEditorSource(page, draftSource);
+  const local = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.listDocuments('local')).find(document => document.name === 'Song (local copy).guitardsl');
+  });
+  expect(local?.source).toBe(draftSource);
+  expect(drive.patchCalls).toEqual([]);
+  expect(drive.metadataPatchCalls).toContainEqual({ fileId: 'drive-save', body: { trashed: true } });
+});
+
+test('waits for an in-flight Drive save before trashing and prevents another save to the trashed ID', async ({ page }) => {
+  const drive = await installStatefulDriveSaveMock(page, { holdPatch: true });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: 'drive-save', name: 'Song.guitardsl', source: 'title: Drive saved\n'
+  }]);
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const row = page.locator('.drive-library-entry[data-file-id="drive-save"]');
+  await expect(row).toBeVisible();
+  const submitted = 'title: Submitted before trash\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(submitted);
+  await page.locator('#save-document').click();
+  await drive.patchStarted;
+  const trashPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept());
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move to trash', exact: true }).click();
+  await trashPrompt;
+  await page.waitForTimeout(150);
+  expect(drive.metadataPatchCalls).toEqual([]);
+
+  drive.releasePatch();
+  await expect(page.getByRole('tab', { name: 'Song (local copy).guitardsl' })).toBeVisible();
+  await expectEditorSource(page, submitted);
+  await expect.poll(() => drive.metadataPatchCalls.length).toBe(1);
+  await page.waitForTimeout(100);
+  expect(drive.patchCalls.map(call => call.source)).toEqual([submitted]);
+  expect(drive.metadataPatchCalls[0]?.body).toEqual({ trashed: true });
+  const driveDocument = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getSavedDocument({ storage: 'drive', fileId: 'drive-save' }, 'account-a');
+  });
+  expect(driveDocument).toBeUndefined();
 });
 
 test('an unconfirmed Drive save keeps its draft and never sends an automatic retry', async ({ page }) => {

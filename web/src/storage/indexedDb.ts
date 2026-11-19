@@ -236,6 +236,27 @@ export const indexedDb = {
     await done;
   },
 
+  async updateDriveDocumentMetadata(
+    identity: DocumentIdentity, accountId: string,
+    metadata: Pick<StoredDocument, 'name' | 'driveVersion' | 'driveModifiedTime' | 'driveRevisionId' | 'driveFolderId'>
+  ): Promise<boolean> {
+    if (identity.storage !== 'drive') throw new TypeError('Drive metadata requires Drive identity');
+    const db = await openDatabase();
+    const tx = db.transaction(DOCUMENTS, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(DOCUMENTS);
+    const key = identityKey(identity, accountId);
+    const current = await idbRequest<StoredDocument & { key: string } | undefined>(store.get(key));
+    if (!current) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return false;
+    }
+    store.put({ ...current, ...metadata, driveEtag: undefined, updatedAt: Date.now() });
+    await done;
+    return true;
+  },
+
   async completeLocalMove(snapshot: DocumentSnapshot, expectedName: string, remote: StoredDocument): Promise<boolean> {
     if (snapshot.identity.storage !== 'local' || remote.identity.storage !== 'drive') {
       throw new TypeError('A local document and verified Drive document are required');

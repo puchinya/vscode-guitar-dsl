@@ -26,7 +26,7 @@ import { activeTab as findActiveTab, sameTabIdentity, tabKey } from './tabs/docu
 import { downloadScorePdf, scoreFontUrls } from './pdfExporter';
 import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type PreviewMessage, type PreviewPostMessage } from './adapters/previewBridge';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
-import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile } from './storage/googleDrive';
+import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile, type DrivePickerSelection } from './storage/googleDrive';
 import { DEFAULT_DRIVE_APPDATA_STATE, DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, validatePendingDriveAppData,
   type DriveAppDataSnapshot, type DriveAppDataState, type PendingDriveAppData } from './storage/driveAppData';
 import { serializeDriveSave } from './storage/driveSaveQueue';
@@ -58,6 +58,8 @@ interface OpenTab {
   persistable: boolean;
   persistedBase: { revision: number; source: string };
   saveStatus: 'local-saved' | 'drive-saved' | 'saving' | 'draft' | 'error';
+  driveTrashPending?: boolean;
+  driveTrashed?: boolean;
   variableSelectedName?: string;
 }
 
@@ -891,7 +893,8 @@ async function setActive(key: string, isCurrent?: () => boolean): Promise<void> 
 function driveWorkspaceState(): DriveAppDataState {
   const previous = state.appDataPending?.state ?? state.appDataSnapshot?.state ?? DEFAULT_DRIVE_APPDATA_STATE;
   const accountId = state.account?.accountId;
-  const tabs = accountId ? state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId) : [];
+  const tabs = accountId ? state.tabs.filter(tab => tab.document.identity.storage === 'drive' && tab.accountId === accountId
+    && !tab.driveTrashed) : [];
   const activeId = tabs.find(tab => tabKey(tab) === state.activeKey)?.document.identity.fileId ?? null;
   const recent = activeId ? [activeId, ...previous.recentDriveFileIds.filter(id => id !== activeId)] : previous.recentDriveFileIds;
   return {
@@ -1147,7 +1150,7 @@ function renderCursorPosition(): void {
 
 function scheduleDraft(tab: OpenTab): void {
   const operationGeneration = workspaceOperationGeneration;
-  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.tabs.includes(tab);
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.tabs.includes(tab) && tabKey(tab) === key;
   const key = tabKey(tab);
   tab.saveStatus = 'saving';
   renderStorageStatus();
@@ -2081,12 +2084,22 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
   const accountId = state.account?.accountId;
   if (!drive || !accountId) { showMessage(strings().connectHint, 'error'); return; }
   if (tab.accountId !== accountId) { showMessage(strings().reconnectOwner, 'error'); return; }
+  if (tab.driveTrashPending || tab.driveTrashed) {
+    showMessage(state.locale === 'ja' ? 'ゴミ箱へ移動したファイルには保存できません。ローカルコピーを編集してください。'
+      : 'This file is being moved to trash or is already trashed. Edit its local copy instead.', 'error');
+    return;
+  }
   const queuedFileId = tab.document.identity.fileId;
   let identityChanged = false;
   try {
     await withDriveOperation(() => serializeDriveSave(accountId, queuedFileId, async () => {
       if (tab.document.identity.fileId !== queuedFileId || tab.accountId !== accountId) {
         identityChanged = true;
+        return;
+      }
+      if (tab.driveTrashPending || tab.driveTrashed) {
+        showMessage(state.locale === 'ja' ? 'ゴミ箱へ移動したファイルには保存できません。ローカルコピーを編集してください。'
+          : 'This file is being moved to trash or is already trashed. Edit its local copy instead.', 'error');
         return;
       }
       if (!editorReadyForSnapshot(tab)) return;
@@ -2496,8 +2509,7 @@ async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriv
     try {
       const savedCandidate = await drive.getFolder(session.selectedFolderId);
       if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
-      if (savedCandidate.name === 'GuitarDSL' && savedCandidate.mimeType === 'application/vnd.google-apps.folder'
-        && !savedCandidate.trashed && savedCandidate.parents?.includes('root')) folder = savedCandidate;
+      if (await drive.isCanonicalLibraryRoot(savedCandidate)) folder = savedCandidate;
     } catch (error) {
       if (!(error instanceof DriveApiError && (error.status === 403 || error.status === 404))) throw error;
     }
@@ -2711,7 +2723,7 @@ function loadedLibraryFolders(): DriveFile[] {
   const folders = new Map<string, DriveFile>();
   if (state.folderId && state.folderName) {
     folders.set(state.folderId, { id: state.folderId, name: state.folderName, version: '', modifiedTime: '',
-      mimeType: 'application/vnd.google-apps.folder', parents: ['root'], appProperties: { guitardslLibraryRoot: '1' } });
+      mimeType: 'application/vnd.google-apps.folder', appProperties: { guitardslLibraryRoot: '1' } });
   }
   for (const rows of driveChildrenByParent.values()) {
     for (const row of rows) if (row.mimeType === 'application/vnd.google-apps.folder') folders.set(row.id, row);
@@ -2726,7 +2738,7 @@ function findDriveLibraryItem(itemId: string): DriveFile | undefined {
   }
   if (itemId === state.folderId && state.folderName) return {
     id: itemId, name: state.folderName, version: '', modifiedTime: '',
-    mimeType: 'application/vnd.google-apps.folder', parents: ['root'],
+    mimeType: 'application/vnd.google-apps.folder',
     appProperties: { guitardslLibraryRoot: '1' }
   };
   return undefined;
@@ -2854,7 +2866,10 @@ async function reconcilePendingDriveImports(accountId: string, drive: GoogleDriv
   return undefined;
 }
 
-async function importFromDrivePicker(accountId = state.account?.accountId, generation = state.driveGeneration, targetFolderId = state.folderId): Promise<void> {
+async function importFromDrivePicker(
+  accountId = state.account?.accountId, generation = state.driveGeneration, targetFolderId = state.folderId,
+  preselected?: DrivePickerSelection[]
+): Promise<void> {
   const drive = state.drive;
   if (!accountId || !drive || !targetFolderId || reloadPreparationActive || pageCacheSuspended) return;
   if (!isDriveCommandCurrent(accountId, generation) || !isLibraryFolder(targetFolderId)) { staleMenuTarget(); return; }
@@ -2863,7 +2878,7 @@ async function importFromDrivePicker(accountId = state.account?.accountId, gener
     && isDriveCommandCurrent(accountId, generation) && isLibraryFolder(targetFolderId);
   activeDriveWorkflowOperations += 1;
   try {
-    const selected = await drive.pickFiles();
+    const selected = preselected ?? await drive.pickFiles();
     if (!isCurrent() || !selected?.length) return;
     const children = await drive.listChildren(targetFolderId);
     if (!isCurrent()) return;
@@ -2924,24 +2939,69 @@ async function importFromDrivePicker(accountId = state.account?.accountId, gener
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
 
+async function withSerializedDriveMetadataMutation<T>(
+  accountId: string, generation: number, itemId: string, mutation: (drive: GoogleDriveApi, file: DriveFile, tab: OpenTab | undefined, isCurrent: () => boolean) => Promise<T>,
+  allowTrashPending = false
+): Promise<T | undefined> {
+  const drive = state.drive;
+  const cached = findDriveLibraryItem(itemId);
+  if (!drive || !cached || !isDriveCommandCurrent(accountId, generation)) return undefined;
+  const operationGeneration = workspaceOperationGeneration;
+  const isCurrent = () => workspaceOperationIsCurrent(operationGeneration)
+    && state.drive === drive && isDriveCommandCurrent(accountId, generation);
+  return withDriveOperation(() => serializeDriveSave(accountId, itemId, async () => {
+    if (!isCurrent()) return undefined;
+    const tab = state.tabs.find(candidate => candidate.document.identity.storage === 'drive'
+      && candidate.document.identity.fileId === itemId && candidate.accountId === accountId);
+    if (tab?.driveTrashed || tab?.driveTrashPending && !allowTrashPending) return undefined;
+    const latest = await drive.getMetadata(itemId);
+    if (!isCurrent()) return undefined;
+    const expectedVersion = tab?.document.driveVersion ?? cached.version;
+    const expectedModifiedTime = tab?.document.driveModifiedTime ?? cached.modifiedTime;
+    const expectedRevision = tab?.document.driveRevisionId ?? cached.headRevisionId;
+    if (latest.trashed || expectedVersion && latest.version !== expectedVersion
+      || expectedModifiedTime && latest.modifiedTime !== expectedModifiedTime
+      || expectedRevision && latest.headRevisionId !== expectedRevision) {
+      throw new Error('The Drive item changed since it was loaded. Refresh the library before trying again.');
+    }
+    return mutation(drive, latest, tab, isCurrent);
+  }));
+}
+
+async function syncOpenDriveTabMetadata(tab: OpenTab | undefined, accountId: string, file: DriveFile): Promise<void> {
+  if (!tab) return;
+  const updated = await indexedDb.updateDriveDocumentMetadata(tab.document.identity, accountId, {
+    name: file.name, driveVersion: file.version, driveModifiedTime: file.modifiedTime,
+    driveRevisionId: file.headRevisionId, driveFolderId: file.parents?.[0]
+  });
+  if (!updated) throw new Error('The open Drive document is missing from local storage.');
+  tab.document = {
+    ...tab.document, name: file.name, driveVersion: file.version, driveModifiedTime: file.modifiedTime,
+    driveRevisionId: file.headRevisionId, driveEtag: undefined, driveFolderId: file.parents?.[0]
+  };
+}
+
 async function renameDriveLibraryItem(accountId: string, generation: number, itemId: string, kind: 'folder' | 'score', parentId: string): Promise<void> {
   if (!isDriveCommandCurrent(accountId, generation)) { staleMenuTarget(); return; }
-  const drive = state.drive;
   const current = findDriveLibraryItem(itemId);
-  if (!drive || !current || kind === 'folder' && current.mimeType !== 'application/vnd.google-apps.folder') { staleMenuTarget(); return; }
+  if (!current || kind === 'folder' && current.mimeType !== 'application/vnd.google-apps.folder') { staleMenuTarget(); return; }
   const extension = kind === 'score' ? current.name.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '.guitardsl' : '';
   const initial = extension ? current.name.slice(0, -extension.length) : current.name;
   const entered = window.prompt(state.locale === 'ja' ? '新しい名前' : 'New name', initial);
   if (entered === null || !entered.trim()) return;
   const name = kind === 'score' ? normalizedScoreName(entered, extension) : entered.trim();
   if (!name) return;
-  const isCurrent = () => isDriveCommandCurrent(accountId, generation) && state.drive === drive;
   activeDriveWorkflowOperations += 1;
   try {
-    await drive.renameItem(current, name);
-    if (!isCurrent()) return;
-    await refreshDriveLibraryFolder(accountId, generation, parentId);
-  } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
+    const renamed = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (drive, latest, tab, isCurrent) => {
+      if (!latest.parents?.includes(parentId)) throw new Error('The item is no longer in the selected library folder.');
+      const updated = await drive.renameItem(latest, name);
+      if (!isCurrent()) return undefined;
+      await syncOpenDriveTabMetadata(tab, accountId, updated);
+      return updated;
+    });
+    if (renamed && isDriveCommandCurrent(accountId, generation)) await refreshDriveLibraryFolder(accountId, generation, parentId);
+  } catch (error) { if (isDriveCommandCurrent(accountId, generation)) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
 
@@ -2987,8 +3047,14 @@ async function moveDriveLibraryScore(accountId: string, generation: number, item
   if (!target || target.id === sourceParentId || !isDriveCommandCurrent(accountId, generation)) return;
   activeDriveWorkflowOperations += 1;
   try {
-    await drive.moveFile(source, target.id, sourceParentId);
-    if (!isDriveCommandCurrent(accountId, generation)) return;
+    const moved = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, tab, isCurrent) => {
+      if (!latest.parents?.includes(sourceParentId)) throw new Error('The score is no longer in the selected folder.');
+      const updated = await queuedDrive.moveFile(latest, target.id, sourceParentId);
+      if (!isCurrent()) return undefined;
+      await syncOpenDriveTabMetadata(tab, accountId, updated);
+      return updated;
+    });
+    if (!moved || !isDriveCommandCurrent(accountId, generation)) return;
     await refreshDriveLibraryFolder(accountId, generation, sourceParentId);
     await refreshDriveLibraryFolder(accountId, generation, target.id);
   } catch (error) { if (isDriveCommandCurrent(accountId, generation)) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
@@ -2996,17 +3062,92 @@ async function moveDriveLibraryScore(accountId: string, generation: number, item
 }
 
 async function trashDriveLibraryScore(accountId: string, generation: number, itemId: string, parentId: string): Promise<void> {
-  if (!window.confirm(state.locale === 'ja' ? 'この楽譜をGoogle Driveのゴミ箱へ移動しますか？' : 'Move this score to Google Drive trash?')) return;
   const drive = state.drive;
   const file = driveFileRows.find(row => row.id === itemId);
   if (!drive || !file || !isDriveCommandCurrent(accountId, generation)) { staleMenuTarget(); return; }
+  const identity = driveIdentity(itemId);
+  const openTab = state.tabs.find(tab => tab.document.identity.storage === 'drive'
+    && tab.document.identity.fileId === itemId && tab.accountId === accountId);
+  const draft = await indexedDb.getDraft(identity, accountId);
+  if (!isDriveCommandCurrent(accountId, generation)) return;
+  const needsLocalCopy = Boolean(openTab || draft);
+  const confirmed = window.confirm(needsLocalCopy
+    ? state.locale === 'ja'
+      ? 'この楽譜は開いているか下書きがあります。ローカルコピーを保存してからGoogle Driveのゴミ箱へ移動しますか？'
+      : 'This score is open or has a draft. Save a local copy, then move it to Google Drive trash?'
+    : state.locale === 'ja' ? 'この楽譜をGoogle Driveのゴミ箱へ移動しますか？' : 'Move this score to Google Drive trash?');
+  if (!confirmed || !isDriveCommandCurrent(accountId, generation)) return;
+  if (openTab) openTab.driveTrashPending = true;
   activeDriveWorkflowOperations += 1;
+  let convertedTab = false;
   try {
-    await drive.trashFile(file);
-    if (!isDriveCommandCurrent(accountId, generation)) return;
+    const trashed = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, tab, isCurrent) => {
+      let localCopy: StoredDocument | undefined;
+      if (tab) {
+        const oldKey = tabKey(tab);
+        await draftWrites.get(oldKey);
+        if (!isCurrent()) return undefined;
+      }
+      const savedOrDraft = await indexedDb.getDocument(identity, accountId);
+      const copySource = tab?.source ?? (needsLocalCopy ? savedOrDraft?.source : undefined);
+      if (copySource !== undefined) {
+        const extension = latest.name.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '.guitardsl';
+        const stem = latest.name.slice(0, -extension.length);
+        localCopy = await indexedDb.createLocal(`${stem} (local copy)${extension}`, copySource);
+      }
+      if (!isCurrent()) return undefined;
+      const result = await queuedDrive.trashFile(latest);
+      if (!isCurrent()) return undefined;
+      if (tab && localCopy) {
+        const oldKey = tabKey(tab);
+        await draftWrites.get(oldKey);
+        const currentSource = tab.source;
+        const revision = currentSource === localCopy.source ? 0 : 1;
+        const localBaseline = { revision: localCopy.revision, source: localCopy.source };
+        tab.document = localCopy;
+        tab.accountId = undefined;
+        tab.revision = revision;
+        tab.persistedBase = localBaseline;
+        tab.saveStatus = revision > 0 ? 'draft' : 'local-saved';
+        tab.driveTrashPending = undefined;
+        tab.driveTrashed = undefined;
+        if (state.activeKey === oldKey) {
+          state.activeKey = tabKey(tab);
+          state.activeStorage = 'local';
+        }
+        convertedTab = true;
+        renderAll();
+        void persistSessions();
+        if (revision > 0) {
+          const localKey = tabKey(tab);
+          const previousWrite = draftWrites.get(localKey) ?? Promise.resolve();
+          const localDraftWrite = previousWrite.catch(() => undefined).then(async () => {
+            if (!state.tabs.includes(tab) || tabKey(tab) !== localKey) return;
+            const kept = await indexedDb.saveDraft({ identity: localCopy.identity, revision, source: currentSource }, undefined, localBaseline);
+            if (!kept) throw new Error('The latest editor draft could not be copied to local storage.');
+            if (state.tabs.includes(tab) && tabKey(tab) === localKey) {
+              tab.persistedBase = { revision, source: currentSource };
+              if (tab.revision === revision && tab.source === currentSource) tab.saveStatus = 'draft';
+            }
+          });
+          draftWrites.set(localKey, localDraftWrite);
+          try { await localDraftWrite; }
+          finally { if (draftWrites.get(localKey) === localDraftWrite) draftWrites.delete(localKey); }
+        }
+        await indexedDb.deleteDocument(identity, accountId);
+      } else if (localCopy) {
+        await indexedDb.deleteDocument(identity, accountId);
+      }
+      return result;
+    }, true);
+    if (!trashed || !isDriveCommandCurrent(accountId, generation)) return;
     await refreshDriveLibraryFolder(accountId, generation, parentId);
+    if (needsLocalCopy) showMessage(state.locale === 'ja' ? 'ローカルコピーを保存し、Drive のゴミ箱へ移動しました。' : 'Saved a local copy and moved the Drive score to trash.');
   } catch (error) { if (isDriveCommandCurrent(accountId, generation)) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
-  finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
+  finally {
+    if (openTab && !convertedTab) openTab.driveTrashPending = undefined;
+    activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1);
+  }
 }
 
 function safeDriveLink(webViewLink: string | undefined, itemId: string, kind: 'folder' | 'score'): string {
@@ -3080,6 +3221,7 @@ async function openDriveDocument(
       drive.getFile(file.id)
     ]);
     if (!isCurrent()) return;
+    if (latest.file.trashed) throw new Error('This Google Drive score is in the trash.');
     if (draft && saved && (saved.driveVersion !== latest.file.version || saved.driveModifiedTime !== latest.file.modifiedTime
       || saved.driveRevisionId !== latest.file.headRevisionId)) {
       const choice = await conflictDialog();
@@ -3130,8 +3272,24 @@ async function openDriveDocument(
       if (retry && isCurrent()) {
         const selection = await drive.pickFile();
         if (!isCurrent() || !selection) return;
-        if (selection.id !== file.id) { await openDriveDocument({ id: selection.id }, accountId, drive, generation, true); return; }
-        await openDriveDocument(file, accountId, drive, generation, true);
+        if (selection.id !== file.id) {
+          await importFromDrivePicker(accountId, generation, state.folderId, [selection]);
+          return;
+        }
+        let selectedManagedFile = false;
+        try {
+          const selectedMetadata = await drive.getMetadata(selection.id);
+          if (!isCurrent()) return;
+          selectedManagedFile = !selectedMetadata.trashed && isSupportedDriveFile(selectedMetadata.name)
+            && Boolean(state.folderId && await drive.isWithinFolder(selectedMetadata, state.folderId));
+        } catch (selectionError) {
+          if (!(selectionError instanceof DriveApiError && (selectionError.status === 403 || selectionError.status === 404))) throw selectionError;
+        }
+        if (selectedManagedFile) {
+          await openDriveDocument(file, accountId, drive, generation, true);
+        } else {
+          await importFromDrivePicker(accountId, generation, state.folderId, [selection]);
+        }
         return;
       }
     }
