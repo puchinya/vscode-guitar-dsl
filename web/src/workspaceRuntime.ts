@@ -3971,7 +3971,7 @@ function openHelp(): void {
     ['getting-started', '基本操作', '新しい楽譜を作成するか、Explorer からローカル文書または Google Drive の文書を開きます。編集内容はブラウザー内の下書きとして保存されます。'],
     ['editing', 'ソース編集', '行番号、構文色分け、補完、検索・置換、元に戻す／やり直しを利用できます。Problems の項目を選ぶと、該当行へ移動します。'],
     ['preview', 'プレビュー', 'Source・Split・Score の表示を切り替えます。譜面プレビュー内の Normal・Edit・Practice は表示レイアウトとは独立しています。'],
-    ['drive', 'Google Drive', 'Google Drive は任意です。初回接続時に保存先フォルダーを作成・選択するか、後で設定できます。選んだフォルダー内でも、Google Drive Picker で認可した楽譜だけを開けます。フォルダー、開いているファイルID、最近使ったファイルIDはアカウントごとのアプリ状態として同期します。ソースと未保存の下書きはこの端末に残ります。'],
+    ['drive', 'Google Drive', 'Google Drive は任意です。接続すると、マイドライブ直下の `GuitarDSL` フォルダーを探し、あれば同じフォルダーを使います。見つからない場合は、確認してライブラリを作成するか、後で設定できます。ライブラリではサブフォルダーと対応する楽譜を表示します。「Google Driveで開く」は選んだアイテムをDriveで開きます。「Google Driveからインポート」は選んだ楽譜をライブラリのフォルダーへコピーし、元ファイルは変更しません。開いた楽譜と最近使った楽譜のIDはDriveアプリデータでアカウントごとに同期します。ソースと未保存の下書きはこの端末に残ります。'],
     ['shortcuts', 'キーボード操作', '⌘/Ctrl+S で保存、⌘/Ctrl+F で検索、⌘/Ctrl+H で置換、⌘/Ctrl+G で行へ移動します。Escape でメニューを閉じます。']
   ] : [
     ['getting-started', 'Getting started', 'Create a score or open a local or Google Drive document from Explorer. Edits are stored as a recoverable browser draft.'],
