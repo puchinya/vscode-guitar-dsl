@@ -16,6 +16,15 @@
 - **配布と未検証**: VSIX inventoryは測定時PR HEAD `1832c5c` で確認済み。実Google OAuth/Drive、物理音声出力、iOS/iPadOS Safari、OSネイティブUndo/RedoとPDFファイル保存はNOT RUN（Safari smokeの契約対象外）。VSCode Extension E2Eはユーザー指示によりスキップ。PR #182はopen。
 - **注意事項**: full-tree `npm ci` は17 vulnerabilities（2 low / 3 moderate / 12 high）を報告した一方、今回指定されたproduction Web dependency auditは0件。Viteは既存の500 kB超chunk warningを出し、WebKitサーバー終了時に`Importing a module script failed`を1回出力したが、関連Playwright suiteのexit codeは0。
 
+## Issue #180: Web版Google Driveライブラリ
+
+- **状態**: `feature/180-google-drive-library` で実装。開発中の新仕様として旧保存先・旧IndexedDB設定の移行やファイルのコピーは行わない。接続時にマイドライブ直下の `GuitarDSL` をライブラリとして使い、同じ物理フォルダーIDを保つ。現行appDataのIDは同一の正準ルートだとmetadataで確認できる場合だけ再利用し、新規ルート作成の確認は正準ルートがない場合に限る。
+- **機能**: Explorerに実フォルダー階層と対応する楽譜を遅延表示。Pickerは選択元を変更せず、選択したライブラリフォルダーへのコピーインポートだけを行う。フォルダー作成・名前変更、楽譜の名前変更・複製・ライブラリ内移動、右クリックとShift+F10のメニュー、Google Driveで開く操作を追加。
+- **検証（2026-11-19）**: Web unit 63/63、Chromium 85/85、WebKit 85/85、production PWA E2E 2/2、Safari smoke 7/7、`npm test`、`npm run compile`、`npm run compile:tests`、`npm run typecheck --workspace @guitardsl/web`、`npm run build:web`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、`check:help`、`check:ai`、`git diff --check` はPASS。`npm test` はHelp/AI同期、core/web package、単体・VS Code/Electron E2E、Chromium/WebKitを含み終了コード0。
+- **画面証拠**: [ライブラリ接続とDriveルートメニュー](evidence/issue-180/library-setup.png)。画像の出典・確認範囲は[証跡README](evidence/issue-180/README.md)。
+- **未検証**: 実Google OAuth/Drive、本番Googleアカウント上のアクセス、iOS/iPadOS SafariはNOT RUN。OAuth/Drive APIはテストでmock。
+- **注意事項**: Vite buildは既存の500 kB超chunk warningを出すが成功。issue #180用のプレビュー画像は設計previewから作成したもので、実Google Driveの画面ではない。
+
 ## Issue #176: Web版Pinia 4表示ストア統合
 
 - **状態**: Issue comment `6918080883` の承認Contract（18,756 bytes、SHA-256 `ce8054df6064f9c90c59de32f329fd7194be89a54ec87bad6bb12347120167d7`）に基づき実装。ソースHEAD `fca2d35ea3169b74815fc36a00c1a5cd0e56fd94` の内容はmainのmerge commit `642c82600efbc8c3d56e65dbbaa863f63333d239` に含まれ、両者のtree hashは一致する。Document impactはWebの外部動作不変、設計とStatusを更新としてIssue本文とContractに記録した。

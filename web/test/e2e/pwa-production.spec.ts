@@ -80,6 +80,10 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
         createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] });
     }
     if (url.pathname === '/drive/v3/files') {
+      if (url.searchParams.get('q')?.includes("name='GuitarDSL'")) {
+        return json({ files: [{ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+          parents: ['root'], appProperties: { guitardslLibraryRoot: '1' } }] });
+      }
       const plan = driveListPlans.shift();
       plan?.started?.();
       if (plan?.gate) await plan.gate;
@@ -92,7 +96,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
         createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` });
     }
     if (url.pathname === '/drive/v3/files/folder-account-a') {
-      return json({ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' });
+      return json({ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+        trashed: false, parents: ['root'], appProperties: { guitardslLibraryRoot: '1' } });
     }
     if (url.pathname === '/drive/v3/files/drive-song') {
       if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers: apiHeaders, body: driveSource });

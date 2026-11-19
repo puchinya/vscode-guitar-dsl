@@ -20,6 +20,7 @@ export const ja = {
   },
   drive: {
     name: 'Google Drive',
+    library: 'GuitarDSL ライブラリ',
     connectionState: 'Google Drive: {status}',
     onThisDevice: 'このデバイス',
     status: {
@@ -36,7 +37,11 @@ export const ja = {
     },
     unavailableOffline: 'オフラインではDriveを利用できません',
     connectToShowFiles: '接続するとDriveのファイルが表示されます',
-    chooseDestinationFolder: '保存先フォルダーを選択してください'
+    chooseDestinationFolder: 'GuitarDSL ライブラリを設定してください',
+    emptyLibrary: '楽譜やフォルダーはありません',
+    importFromDrive: 'Google Drive からインポート…',
+    newFolder: '新しいフォルダー…',
+    refreshLibrary: '更新'
   },
   common: {
     collapse: '折りたたむ',

@@ -484,6 +484,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .file-list .storage-content .file-items { padding: 0 0 8px 20px; }
 .file-item { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 32px; border: 0; border-radius: 4px; padding: 0 8px; white-space: nowrap; overflow: hidden; }
 .file-item .web-icon { width: 16px; height: 16px; }
+.drive-tree-entry { min-width: 0; }
+.drive-library-entry { padding-right: 8px; }
+.drive-library-entry .folder-disclosure { flex: 0 0 12px; width: 12px; height: 12px; margin-right: -4px; }
+.drive-tree-state { min-height: 24px; padding-top: 4px; padding-right: 8px; color: #78808d; font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+.drive-tree-error { color: #b34b4b; }
+.drive-link-fallback { position: fixed; z-index: 1000; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid #cbd2df; border-radius: 6px; background: #fff; color: #303744; box-shadow: 0 6px 24px rgb(0 0 0 / 18%); font-size: 12px; }
+.drive-link-fallback a { color: #344db8; font-weight: 600; }
+.drive-link-fallback-close { flex: 0 0 24px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 18px; line-height: 20px; }
+.drive-link-fallback-close:hover, .drive-link-fallback-close:focus-visible { background: #eef0f5; }
 .file-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-subtitle { display: none; }
 .drive-folder-row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; color: inherit; font-weight: 600; white-space: nowrap; }
@@ -546,6 +555,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .drive-root-more { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #68717f; }
 .drive-root-more:hover, .drive-root-more:focus-visible { background: #eef0f5; }
 .drive-root-icon { object-fit: contain; }
+.storage-root-row .drive-root-icon { width: 14px; height: 14px; flex: 0 0 14px; }
+.app-shell[data-theme="dark"] .drive-tree-state { color: #aeb6c4; }
+.app-shell[data-theme="dark"] .drive-tree-error { color: #ff8d8d; }
+.drive-link-fallback { border-color: #535b6a; background: #242830; color: #e4e7ee; }
+.drive-link-fallback a { color: #aebcff; }
+.drive-link-fallback-close:hover, .drive-link-fallback-close:focus-visible { background: #333a46; }
 .top-actions .quiet-button { border: 0; background: transparent; }
 .top-actions .quiet-button:hover, .top-actions .quiet-button:focus-visible { background: #eff1f5; }
 .top-actions .drive-header-button { display: inline-flex; width: auto; min-width: 0; gap: 6px; padding: 0 7px; font-size: 11px; }

@@ -8,6 +8,96 @@ function createApi() {
   return new GoogleDriveApi(auth);
 }
 
+test('creates the visible library at the My Drive root and verifies the marker by readback', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  const calls: { method: string; url: URL; body?: Record<string, unknown> }[] = [];
+  let root: DriveFile = { id: 'library-root', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'], appProperties: { guitardslLibraryRoot: '1' } };
+  globalThis.fetch = async (input, init) => {
+    const call = { method: init?.method ?? 'GET', url: new URL(String(input)), body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined };
+    calls.push(call);
+    if (call.method === 'POST') return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const created = await api.createLibraryRoot();
+    assert.equal(created.id, 'library-root');
+    assert.equal(calls[0]?.method, 'POST');
+    assert.deepEqual(calls[0]?.body, {
+      name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'],
+      appProperties: { guitardslLibraryRoot: '1' }
+    });
+    assert.equal(calls[1]?.method, 'GET');
+    assert.match(calls[1]?.url.pathname ?? '', /\/files\/library-root$/u);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('reuses an existing unmarked canonical root by adding and verifying its marker on the same ID', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  const calls: { method: string; body?: Record<string, unknown> }[] = [];
+  let root: DriveFile = { id: 'existing-root', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'], appProperties: { owner: 'test' } };
+  globalThis.fetch = async (_input, init) => {
+    const method = init?.method ?? 'GET';
+    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
+    calls.push({ method, body });
+    if (method === 'PATCH') root = { ...root, appProperties: body?.appProperties as Record<string, string> };
+    return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const verified = await api.markLibraryRoot(root);
+    assert.equal(verified.id, 'existing-root');
+    assert.deepEqual(verified.appProperties, { owner: 'test', guitardslLibraryRoot: '1' });
+    assert.deepEqual(calls.map(call => call.method), ['PATCH', 'GET']);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('lists physical folders and supported scores as direct children only', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let callUrl: URL | undefined;
+  globalThis.fetch = async input => {
+    callUrl = new URL(String(input));
+    return new Response(JSON.stringify({ files: [
+      { id: 'subfolder', name: 'Band', mimeType: 'application/vnd.google-apps.folder', parents: ['root-id'] },
+      { id: 'score', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['root-id'] },
+      { id: 'unsupported', name: 'notes.txt', mimeType: 'text/plain', parents: ['root-id'] },
+      { id: 'google-doc', name: 'Song.gdsl', mimeType: 'application/vnd.google-apps.document', parents: ['root-id'] },
+      { id: 'trashed', name: 'Old.gdsl', mimeType: 'text/plain', parents: ['root-id'], trashed: true }
+    ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const children = await api.listChildren('root-id');
+    assert.deepEqual(children.map(file => file.id), ['subfolder', 'score']);
+    assert.match(callUrl?.searchParams.get('q') ?? '', /'root-id' in parents and trashed=false/u);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('copies an import into its library parent and finds it by the operation marker', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  const calls: { url: URL; method: string; body?: Record<string, unknown> }[] = [];
+  const copy: DriveFile = { id: 'copy-id', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['library'], appProperties: { guitardslImportOperation: 'op-1' } };
+  globalThis.fetch = async (input, init) => {
+    const call = { url: new URL(String(input)), method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined };
+    calls.push(call);
+    if (call.method === 'POST') return new Response(JSON.stringify(copy), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ files: [copy] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const copied = await api.copyFile('source-id', 'library', 'Song.guitardsl', 'op-1');
+    const recovered = await api.findImportByOperation('library', 'op-1');
+    assert.equal(copied.id, 'copy-id');
+    assert.equal(recovered?.id, 'copy-id');
+    assert.match(calls[0]?.url.pathname ?? '', /\/files\/source-id\/copy$/u);
+    assert.deepEqual(calls[0]?.body, {
+      name: 'Song.guitardsl', parents: ['library'], appProperties: { guitardslImportOperation: 'op-1' }
+    });
+    assert.match(calls[1]?.url.searchParams.get('q') ?? '', /'library' in parents and trashed=false/u);
+    assert.match(calls[1]?.url.searchParams.get('q') ?? '', /guitardslImportOperation/u);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('one Drive file read keeps the account token it started with across its metadata and media requests', async () => {
   let token = 'account-a-token';
   let releaseMetadata!: () => void;

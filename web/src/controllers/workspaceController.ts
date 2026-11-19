@@ -9,7 +9,7 @@ const initialSnapshot: Readonly<WorkspaceViewSnapshot> = Object.freeze({
   tabs: [], activeKey: null, activeStorage: 'local', locale: 'en', theme: 'system', viewMode: 'split',
   explorerOpen: true, inspectorOpen: true, problemsOpen: true, explorerAutoHidden: false, inspectorAutoHidden: false,
   localExpanded: true, driveExpanded: true, explorerWidth: 220, inspectorWidth: 300, problemsHeight: 200, splitRatio: 0.4,
-  localFiles: [], driveFiles: [], diagnostics: [], online: typeof navigator === 'undefined' || navigator.onLine,
+  localFiles: [], driveFiles: [], driveEntries: [], diagnostics: [], online: typeof navigator === 'undefined' || navigator.onLine,
   driveStatus: typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'disconnected', driveGeneration: 0,
   driveBusy: false, saveDisabled: false,
   pwa: { updateAvailable: false, offlineReady: false, updating: false, online: typeof navigator === 'undefined' || navigator.onLine }

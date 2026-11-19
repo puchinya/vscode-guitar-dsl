@@ -18,6 +18,8 @@ export interface DriveFile {
   trashed?: boolean;
   etag?: string;
   appProperties?: Record<string, string>;
+  webViewLink?: string;
+  capabilities?: { canCopy?: boolean; canRename?: boolean; canMoveItemWithinDrive?: boolean; canTrash?: boolean };
 }
 
 export type DriveSaveResult =
@@ -65,16 +67,58 @@ export class GoogleDriveApi {
   }
 
   async getFolder(folderId: string): Promise<DriveFile> {
-    return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed`);
+    return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`);
   }
 
-  async createFolder(name = 'GuitarDSL'): Promise<DriveFile> {
-    return this.request<DriveFile>('/files?fields=id,name,mimeType,parents', {
-      method: 'POST', body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder' })
+  async createLibraryRoot(): Promise<DriveFile> {
+    const created = await this.request<DriveFile>('/files?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime', {
+      method: 'POST', body: JSON.stringify({
+        name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'],
+        appProperties: { guitardslLibraryRoot: '1' }
+      })
     });
+    const readback = await this.getFolder(created.id);
+    if (readback.name !== 'GuitarDSL' || readback.mimeType !== 'application/vnd.google-apps.folder'
+      || readback.trashed || !readback.parents?.includes('root')
+      || readback.appProperties?.guitardslLibraryRoot !== '1') {
+      throw new Error('Google Drive did not confirm the new GuitarDSL library root.');
+    }
+    return readback;
+  }
+
+  async markLibraryRoot(folder: DriveFile): Promise<DriveFile> {
+    if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.name !== 'GuitarDSL'
+      || !folder.parents?.includes('root') || folder.trashed) {
+      throw new Error('Only the top-level My Drive GuitarDSL folder can be used as the library root.');
+    }
+    if (folder.appProperties?.guitardslLibraryRoot === '1') {
+      const readback = await this.getFolder(folder.id);
+      if (readback.id !== folder.id || readback.name !== 'GuitarDSL'
+        || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
+        || !readback.parents?.includes('root') || readback.appProperties?.guitardslLibraryRoot !== '1') {
+        throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
+      }
+      return readback;
+    }
+    const marked = await this.request<DriveFile>(`/files/${encodeURIComponent(folder.id)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`, {
+      method: 'PATCH', body: JSON.stringify({
+        appProperties: { ...folder.appProperties, guitardslLibraryRoot: '1' }
+      })
+    });
+    const readback = await this.getFolder(folder.id);
+    if (marked.id !== folder.id || readback.id !== folder.id || readback.name !== 'GuitarDSL'
+      || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
+      || !readback.parents?.includes('root') || readback.appProperties?.guitardslLibraryRoot !== '1') {
+      throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
+    }
+    return readback;
   }
 
   async listFiles(folderId: string): Promise<DriveFile[]> {
+    return (await this.listChildren(folderId)).filter(file => file.mimeType !== 'application/vnd.google-apps.folder');
+  }
+
+  async listChildren(folderId: string): Promise<DriveFile[]> {
     const files: DriveFile[] = [];
     let pageToken: string | undefined;
     const seen = new Set<string>();
@@ -82,11 +126,13 @@ export class GoogleDriveApi {
       const params = new URLSearchParams({
         q: `'${folderId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' in parents and trashed=false`,
         pageSize: '100', orderBy: 'name_natural',
-        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties)'
+        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash))'
       });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
-      files.push(...(page.files ?? []).filter(file => file.mimeType !== 'application/vnd.google-apps.folder' && isGuitarDslName(file.name)));
+      files.push(...(page.files ?? []).filter(file => !file.trashed
+        && (file.mimeType === 'application/vnd.google-apps.folder'
+          || (isGuitarDslName(file.name) && (file.mimeType === 'text/plain' || file.mimeType === 'application/octet-stream')))));
       if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
       if (page.nextPageToken) seen.add(page.nextPageToken);
       pageToken = page.nextPageToken;
@@ -102,7 +148,7 @@ export class GoogleDriveApi {
       const params = new URLSearchParams({
         q: `name='${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`,
         pageSize: '100', orderBy: 'name_natural',
-        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,parents,trashed)'
+        fields: 'nextPageToken,files(id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink)'
       });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
@@ -116,9 +162,83 @@ export class GoogleDriveApi {
     return folders;
   }
 
+  async createChildFolder(parentId: string, name: string, operationId?: string): Promise<DriveFile> {
+    return this.request<DriveFile>('/files?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime', {
+      method: 'POST', body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId],
+        ...(operationId ? { appProperties: { guitardslFolderOperation: operationId } } : {}) })
+    });
+  }
+
+  async findFolderByOperation(parentId: string, operationId: string): Promise<DriveFile | undefined> {
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const params = new URLSearchParams({
+      q: `'${escape(parentId)}' in parents and trashed=false and appProperties has { key='guitardslFolderOperation' and value='${escape(operationId)}' }`,
+      pageSize: '100', fields: 'files(id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime)'
+    });
+    const result = await this.request<{ files?: DriveFile[] }>(`/files?${params}`);
+    return result.files?.find(file => file.parents?.includes(parentId)
+      && file.mimeType === 'application/vnd.google-apps.folder' && !file.trashed
+      && file.appProperties?.guitardslFolderOperation === operationId);
+  }
+
+  async renameItem(file: DriveFile, name: string): Promise<DriveFile> {
+    const updated = await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime`, {
+      method: 'PATCH', body: JSON.stringify({ name })
+    });
+    const readback = await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime`);
+    if (updated.id !== file.id || readback.id !== file.id || readback.name !== name || readback.mimeType !== file.mimeType
+      || (file.parents ?? []).some(parent => !readback.parents?.includes(parent))) {
+      throw new Error('Google Drive did not confirm the item rename.');
+    }
+    return readback;
+  }
+
+  async copyFile(fileId: string, targetFolderId: string, name: string, operationId?: string): Promise<DriveFile> {
+    return this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}/copy?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime,headRevisionId`, {
+      method: 'POST', body: JSON.stringify({
+        name, parents: [targetFolderId], ...(operationId ? { appProperties: { guitardslImportOperation: operationId } } : {})
+      })
+    });
+  }
+
+  async findImportByOperation(folderId: string, operationId: string): Promise<DriveFile | undefined> {
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const params = new URLSearchParams({
+      q: `'${escape(folderId)}' in parents and trashed=false and appProperties has { key='guitardslImportOperation' and value='${escape(operationId)}' }`,
+      pageSize: '100', fields: 'files(id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime,headRevisionId)'
+    });
+    const result = await this.request<{ files?: DriveFile[] }>(`/files?${params}`);
+    return result.files?.find(file => file.parents?.includes(folderId) && file.appProperties?.guitardslImportOperation === operationId);
+  }
+
+  async moveFile(file: DriveFile, targetFolderId: string, sourceParentId: string): Promise<DriveFile> {
+    const params = new URLSearchParams({ addParents: targetFolderId, removeParents: sourceParentId,
+      fields: 'id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime,headRevisionId' });
+    const updated = await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?${params}`, { method: 'PATCH' });
+    const readback = await this.getMetadata(file.id);
+    if (updated.id !== file.id || readback.id !== file.id || !readback.parents?.includes(targetFolderId)
+      || readback.parents.includes(sourceParentId)) throw new Error('Google Drive did not confirm the file move.');
+    return readback;
+  }
+
+  async trashFile(file: DriveFile): Promise<DriveFile> {
+    const updated = await this.request<DriveFile>(`/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime`, {
+      method: 'PATCH', body: JSON.stringify({ trashed: true })
+    });
+    const readback = await this.getMetadata(file.id);
+    if (updated.id !== file.id || readback.id !== file.id || !readback.trashed) {
+      throw new Error('Google Drive did not confirm moving the score to trash.');
+    }
+    return readback;
+  }
+
+  async getMetadata(fileId: string): Promise<DriveFile> {
+    return this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`);
+  }
+
   async getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }> {
     const token = this.auth.tokenForRequest();
-    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`, {}, token);
+    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`, {}, token);
     const headers = new Headers({ Authorization: `Bearer ${token}` });
     const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers });
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive download failed (${response.status}).`);
@@ -197,37 +317,6 @@ export class GoogleDriveApi {
     catch { return undefined; }
   }
 
-  async pickFolder(): Promise<DrivePickerSelection | undefined> {
-    const token = this.auth.tokenForRequest();
-    if (!APP_ID || !API_KEY) throw new Error('Google Drive Picker is not configured for this deployment.');
-    await loadGooglePicker();
-    const picker = pickerApi();
-    if (!picker) throw new Error('Google Picker is unavailable.');
-    const view = new picker.DocsView(picker.ViewId.FOLDERS);
-    view.setIncludeFolders(true);
-    view.setSelectFolderEnabled(true);
-    return new Promise((resolve, reject) => {
-      try {
-        const builder = new picker.PickerBuilder();
-        builder.addView(view);
-        builder.setDeveloperKey(API_KEY);
-        builder.setAppId(APP_ID);
-        builder.setOAuthToken(token);
-        builder.setOrigin(window.location.origin);
-        builder.enableFeature(picker.Feature.NAV_HIDDEN);
-        builder.setCallback(data => {
-          const action = data[picker.Response.ACTION];
-          if (action === picker.Action.CANCEL) resolve(undefined);
-          else if (action === picker.Action.PICKED) {
-            const item = (data[picker.Response.DOCUMENTS] as DrivePickerSelection[] | undefined)?.[0];
-            resolve(item);
-          }
-        });
-        builder.build().setVisible(true);
-      } catch (error) { reject(error); }
-    });
-  }
-
   async pickFile(): Promise<DrivePickerSelection | undefined> {
     const token = this.auth.tokenForRequest();
     if (!APP_ID || !API_KEY) throw new Error('Google Drive Picker is not configured for this deployment.');
@@ -251,6 +340,39 @@ export class GoogleDriveApi {
           else if (action === picker.Action.PICKED) {
             const item = (data[picker.Response.DOCUMENTS] as DrivePickerSelection[] | undefined)?.[0];
             resolve(item);
+          }
+        });
+        builder.build().setVisible(true);
+      } catch (error) { reject(error); }
+    });
+  }
+
+  async pickFiles(): Promise<DrivePickerSelection[] | undefined> {
+    const token = this.auth.tokenForRequest();
+    if (!APP_ID || !API_KEY) throw new Error('Google Drive Picker is not configured for this deployment.');
+    await loadGooglePicker();
+    const picker = pickerApi();
+    if (!picker) throw new Error('Google Picker is unavailable.');
+    const view = new picker.DocsView(picker.ViewId.DOCS);
+    view.setIncludeFolders(false);
+    view.setSelectFolderEnabled(false);
+    view.setMimeTypes('text/plain,application/octet-stream');
+    return new Promise((resolve, reject) => {
+      try {
+        const builder = new picker.PickerBuilder();
+        builder.addView(view);
+        builder.setDeveloperKey(API_KEY);
+        builder.setAppId(APP_ID);
+        builder.setOAuthToken(token);
+        builder.setOrigin(window.location.origin);
+        builder.enableFeature(picker.Feature.NAV_HIDDEN);
+        builder.enableFeature(picker.Feature.MULTISELECT_ENABLED);
+        builder.setCallback(data => {
+          const action = data[picker.Response.ACTION];
+          if (action === picker.Action.CANCEL) resolve(undefined);
+          else if (action === picker.Action.PICKED) {
+            const items = data[picker.Response.DOCUMENTS] as DrivePickerSelection[] | undefined;
+            resolve(items ?? []);
           }
         });
         builder.build().setVisible(true);
