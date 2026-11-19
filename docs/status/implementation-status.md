@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-19
+- **最終更新日**: 2026-11-20
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
 ## Issue #181: Web Vue I18n 11.4.22
@@ -20,10 +20,11 @@
 
 - **状態**: `feature/180-google-drive-library` で実装。開発中の新仕様として旧保存先・旧IndexedDB設定の移行やファイルのコピーは行わない。接続時にマイドライブ直下の `GuitarDSL` をライブラリとして使い、同じ物理フォルダーIDを保つ。現行appDataのIDは同一の正準ルートだとmetadataで確認できる場合だけ再利用し、新規ルート作成の確認は正準ルートがない場合に限る。
 - **機能**: Explorerに実フォルダー階層と対応する楽譜を遅延表示。Pickerは選択元を変更せず、選択したライブラリフォルダーへのコピーインポートだけを行う。フォルダー作成・名前変更、楽譜の名前変更・複製・ライブラリ内移動、右クリックとShift+F10のメニュー、Google Driveで開く操作を追加。
-- **検証（2026-11-20）**: root unit 1,138件、Web unit 66/66、Chromium 182/182、WebKit 182/182、production PWA E2E 2/2、Safari smoke 7/7、`npm run compile`、`npm run compile:tests`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`、Help/AI同期、`git diff --check` はPASS。`npm test` はIssue #162のVS Code/Electron E2E 2件がタイムアウトし終了コード1（129 passed / 6 pending / 2 failed）で、Web suiteには到達しなかった。失敗はクロスフェードの120秒timeoutと400pxフェード中の歌詞サイズの90秒timeout。前者だけガイドに沿って1回のfocused rerunを行い1/1 PASS。別実行したWeb suiteはChromium/WebKitそれぞれ182/182 PASS。
-- **画面証拠**: [ライブラリ接続とDriveルートメニュー](evidence/issue-180/library-setup.png)。画像の出典・確認範囲は[証跡README](evidence/issue-180/README.md)。
+- **レビュー指摘対応（2026-11-20）**: `drive.file` で My Drive `root` のmetadataが403/404でも動作するよう、正準ルートの発見・確認を `'root' in parents` の `files.list` に統一。作成時は `parents` を省略し、返却IDを読み戻して同じ検索結果と照合する。保存後の複製を元ファイルの保存キューへ入れ、最新source/versionを読み戻してからcopyする。保存キュー待機後に移動先metadataとルート配下の関係を再確認し、外部移動/ゴミ箱化されたフォルダーへの変更を中止する。
+- **検証（2026-11-20 / 現行作業HEAD）**: root unit 1,138/1,138 PASS。Extension E2E は130 passing / 6 pending / 1 failing。唯一の失敗は対象外のIssue #62 `E2E-PB03 closing the Preview webview disposes its current HTML generation`（generation破棄assertion）で、1回のfocused diagnosticでも再現したため修正対象から外している。`npm test` はこの失敗でWeb suite前に終了したため、`npm run test:web` を個別実行しWeb unit 67/67、Chromium 186/186、WebKit 186/186 PASS。production PWA E2E 2/2、Safari smoke 7/7、`npm run compile`、`npm run vscode:prepublish`、VSIX inventory 1,640 entries、Help/AI同期、`git diff --check`、Issue document validation はPASS。focused regressions for root 404/unknown create recovery, latest-version duplicate ordering and stale move destination passed in Chromium/WebKit.
+- **画面証拠**: [実画面の接続ダイアログとDriveルートメニュー](evidence/issue-180/README.md)。セットアップとライブラリ表示はChromiumから取得し目視確認。OAuth/Drive APIはモックで、本番Googleアカウントの画面ではない。
 - **未検証**: 実Google OAuth/Drive、本番Googleアカウント上のアクセス、iOS/iPadOS SafariはNOT RUN。OAuth/Drive APIはテストでmock。
-- **注意事項**: Vite buildは既存の500 kB超chunk warningを出すが成功。wasm-packはこの環境用の事前ビルド済みwasm-bindgenを取得できず、cargo install fallbackで `vscode:prepublish` が成功。issue #180用のプレビュー画像は設計previewから作成したもので、実Google Driveの画面ではない。
+- **注意事項**: Vite buildは既存の500 kB超chunk warningを出すが成功。wasm-packはこの環境用の事前ビルド済みwasm-bindgenを取得できず、cargo install fallbackで `vscode:prepublish` が成功。実Google OAuth/DriveはNOT RUN。
 
 ## Issue #176: Web版Pinia 4表示ストア統合
 

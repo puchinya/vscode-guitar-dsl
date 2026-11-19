@@ -2968,6 +2968,31 @@ async function withSerializedDriveMetadataMutation<T>(
   }));
 }
 
+async function getVerifiedDriveLibraryRoot(
+  drive: GoogleDriveApi, rootId: string, isCurrent: () => boolean
+): Promise<DriveFile | undefined> {
+  const root = await drive.getMetadata(rootId);
+  if (!isCurrent()) return undefined;
+  if (!root.trashed && await drive.isCanonicalLibraryRoot(root)) return isCurrent() ? root : undefined;
+  if (!isCurrent()) return undefined;
+  throw new Error('The GuitarDSL library root is no longer a top-level My Drive folder.');
+}
+
+async function getVerifiedDriveLibraryFolder(
+  drive: GoogleDriveApi, folderId: string, rootId: string, root: DriveFile, isCurrent: () => boolean
+): Promise<DriveFile | undefined> {
+  if (folderId === rootId) return root;
+  const folder = await drive.getMetadata(folderId);
+  if (!isCurrent()) return undefined;
+  if (folder.id !== folderId || folder.trashed || folder.mimeType !== 'application/vnd.google-apps.folder') {
+    throw new Error('The selected Drive folder is no longer available in the library.');
+  }
+  const isWithinLibrary = await drive.isWithinFolder(folder, rootId);
+  if (!isCurrent()) return undefined;
+  if (!isWithinLibrary) throw new Error('The selected Drive folder is outside the GuitarDSL library.');
+  return folder;
+}
+
 async function syncOpenDriveTabMetadata(tab: OpenTab | undefined, accountId: string, file: DriveFile): Promise<void> {
   if (!tab) return;
   const updated = await indexedDb.updateDriveDocumentMetadata(tab.document.identity, accountId, {
@@ -3009,32 +3034,51 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
   const drive = state.drive;
   const source = driveFileRows.find(row => row.id === itemId);
   if (!drive || !source || !isDriveCommandCurrent(accountId, generation)) { staleMenuTarget(); return; }
-  const original = await drive.getFile(itemId);
-  if (!isDriveCommandCurrent(accountId, generation)) return;
-  const extension = source.name.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '.guitardsl';
-  const stem = extension ? source.name.slice(0, -extension.length) : source.name;
-  const children = await drive.listChildren(parentId);
-  if (!isDriveCommandCurrent(accountId, generation)) return;
-  const names = new Set(children.map(item => item.name.toLocaleLowerCase()));
-  let name = `${stem} (copy)${extension}`;
-  for (let suffix = 2; names.has(name.toLocaleLowerCase()); suffix += 1) name = `${stem} (copy ${suffix})${extension}`;
-  const operationId = crypto.randomUUID();
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) { staleMenuTarget(); return; }
   activeDriveWorkflowOperations += 1;
   try {
-    let copied: DriveFile;
-    try { copied = await drive.copyFile(itemId, parentId, name, operationId); }
-    catch (error) {
-      if (!(error instanceof TypeError) && !(error instanceof DriveApiError && (error.status === 429 || error.status >= 500))) throw error;
-      const reconciled = await drive.findImportByOperation(parentId, operationId);
-      if (!reconciled) throw error;
-      copied = reconciled;
-    }
-    if (!isDriveCommandCurrent(accountId, generation)) return;
-    const readback = await drive.getFile(copied.id);
-    if (!isDriveCommandCurrent(accountId, generation)) return;
-    if (readback.file.id === itemId || readback.file.name !== name || !readback.file.parents?.includes(parentId)
-      || readback.source !== original.source) throw new Error('Google Drive did not confirm the duplicate score.');
-    await refreshDriveLibraryFolder(accountId, generation, parentId);
+    const copied = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, _tab, isCurrent) => {
+      const operationIsCurrent = () => isCurrent() && state.folderId === libraryRootId;
+      if (!operationIsCurrent()) return undefined;
+      if (!latest.parents?.includes(parentId) || !isSupportedDriveFile(latest.name)) {
+        throw new Error('The score is no longer in the selected library folder.');
+      }
+      const root = await getVerifiedDriveLibraryRoot(queuedDrive, libraryRootId, operationIsCurrent);
+      if (!operationIsCurrent() || !root) return undefined;
+      const parent = await getVerifiedDriveLibraryFolder(queuedDrive, parentId, libraryRootId, root, operationIsCurrent);
+      if (!operationIsCurrent() || !parent) return undefined;
+      const original = await queuedDrive.getFile(itemId);
+      if (!operationIsCurrent()) return undefined;
+      if (original.file.id !== latest.id || original.file.trashed || original.file.name !== latest.name
+        || original.file.version !== latest.version || original.file.modifiedTime !== latest.modifiedTime
+        || original.file.headRevisionId !== latest.headRevisionId || !original.file.parents?.includes(parentId)) {
+        throw new Error('The score changed before it could be copied. Refresh the library and try again.');
+      }
+      const children = await queuedDrive.listChildren(parentId);
+      if (!operationIsCurrent()) return undefined;
+      const extension = latest.name.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '.guitardsl';
+      const stem = latest.name.slice(0, -extension.length);
+      const names = new Set(children.map(item => item.name.toLocaleLowerCase()));
+      let name = `${stem} (copy)${extension}`;
+      for (let suffix = 2; names.has(name.toLocaleLowerCase()); suffix += 1) name = `${stem} (copy ${suffix})${extension}`;
+      const operationId = crypto.randomUUID();
+      let copy: DriveFile;
+      try { copy = await queuedDrive.copyFile(itemId, parent.id, name, operationId); }
+      catch (error) {
+        if (!(error instanceof TypeError) && !(error instanceof DriveApiError && (error.status === 429 || error.status >= 500))) throw error;
+        const reconciled = await queuedDrive.findImportByOperation(parent.id, operationId);
+        if (!reconciled) throw error;
+        copy = reconciled;
+      }
+      if (!operationIsCurrent()) return undefined;
+      const readback = await queuedDrive.getFile(copy.id);
+      if (!operationIsCurrent()) return undefined;
+      if (readback.file.id === itemId || readback.file.name !== name || !readback.file.parents?.includes(parent.id)
+        || readback.source !== original.source) throw new Error('Google Drive did not confirm the duplicate score.');
+      return copy;
+    });
+    if (copied && isDriveCommandCurrent(accountId, generation)) await refreshDriveLibraryFolder(accountId, generation, parentId);
   } catch (error) { if (isDriveCommandCurrent(accountId, generation)) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
@@ -3045,12 +3089,22 @@ async function moveDriveLibraryScore(accountId: string, generation: number, item
   if (!drive || !source || !isDriveCommandCurrent(accountId, generation)) { staleMenuTarget(); return; }
   const target = chooseLoadedLibraryFolder();
   if (!target || target.id === sourceParentId || !isDriveCommandCurrent(accountId, generation)) return;
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) { staleMenuTarget(); return; }
   activeDriveWorkflowOperations += 1;
   try {
     const moved = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, tab, isCurrent) => {
+      const operationIsCurrent = () => isCurrent() && state.folderId === libraryRootId;
+      if (!operationIsCurrent()) return undefined;
       if (!latest.parents?.includes(sourceParentId)) throw new Error('The score is no longer in the selected folder.');
+      const root = await getVerifiedDriveLibraryRoot(queuedDrive, libraryRootId, operationIsCurrent);
+      if (!operationIsCurrent() || !root) return undefined;
+      const sourceParent = await getVerifiedDriveLibraryFolder(queuedDrive, sourceParentId, libraryRootId, root, operationIsCurrent);
+      if (!operationIsCurrent() || !sourceParent) return undefined;
+      const targetParent = await getVerifiedDriveLibraryFolder(queuedDrive, target.id, libraryRootId, root, operationIsCurrent);
+      if (!operationIsCurrent() || !targetParent) return undefined;
       const updated = await queuedDrive.moveFile(latest, target.id, sourceParentId);
-      if (!isCurrent()) return undefined;
+      if (!operationIsCurrent()) return undefined;
       await syncOpenDriveTabMetadata(tab, accountId, updated);
       return updated;
     });

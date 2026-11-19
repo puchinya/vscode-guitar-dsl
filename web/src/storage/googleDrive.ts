@@ -70,12 +70,6 @@ export class GoogleDriveApi {
     return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`);
   }
 
-  async getMyDriveRootId(): Promise<string> {
-    const root = await this.request<{ id?: string }>('/files/root?fields=id');
-    if (!root.id) throw new Error('Google Drive did not return the My Drive root ID.');
-    return root.id;
-  }
-
   async isWithinFolder(file: DriveFile, ancestorFolderId: string): Promise<boolean> {
     let parentId = file.parents?.[0];
     const visited = new Set<string>();
@@ -111,31 +105,37 @@ export class GoogleDriveApi {
   async createLibraryRoot(): Promise<DriveFile> {
     const created = await this.request<DriveFile>('/files?fields=id,name,mimeType,parents,trashed,appProperties,webViewLink,version,modifiedTime', {
       method: 'POST', body: JSON.stringify({
-        name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'],
+        name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
         appProperties: { guitardslLibraryRoot: '1' }
       })
     });
     const readback = await this.getFolder(created.id);
-    const rootId = await this.getMyDriveRootId();
+    const listed = (await this.findAccessibleFolders()).find(folder => folder.id === created.id);
     if (readback.name !== 'GuitarDSL' || readback.mimeType !== 'application/vnd.google-apps.folder'
-      || readback.trashed || !readback.parents?.includes(rootId)
-      || readback.appProperties?.guitardslLibraryRoot !== '1') {
+      || readback.trashed || !listed || readback.parents?.length !== 1
+      || listed.parents?.length !== 1 || readback.parents[0] !== listed.parents[0]
+      || readback.appProperties?.guitardslLibraryRoot !== '1'
+      || listed.appProperties?.guitardslLibraryRoot !== '1') {
       throw new Error('Google Drive did not confirm the new GuitarDSL library root.');
     }
     return readback;
   }
 
   async markLibraryRoot(folder: DriveFile): Promise<DriveFile> {
-    const rootId = await this.getMyDriveRootId();
+    const listed = (await this.findAccessibleFolders()).find(candidate => candidate.id === folder.id);
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.name !== 'GuitarDSL'
-      || !folder.parents?.includes(rootId) || folder.trashed) {
+      || folder.parents?.length !== 1 || !listed || listed.parents?.length !== 1
+      || folder.parents[0] !== listed.parents[0] || folder.trashed) {
       throw new Error('Only the top-level My Drive GuitarDSL folder can be used as the library root.');
     }
     if (folder.appProperties?.guitardslLibraryRoot === '1') {
       const readback = await this.getFolder(folder.id);
+      const confirmed = (await this.findAccessibleFolders()).find(candidate => candidate.id === folder.id);
       if (readback.id !== folder.id || readback.name !== 'GuitarDSL'
         || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
-        || !readback.parents?.includes(rootId) || readback.appProperties?.guitardslLibraryRoot !== '1') {
+        || readback.parents?.length !== 1 || !confirmed || confirmed.parents?.length !== 1
+        || readback.parents[0] !== confirmed.parents[0] || readback.appProperties?.guitardslLibraryRoot !== '1'
+        || confirmed.appProperties?.guitardslLibraryRoot !== '1') {
         throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
       }
       return readback;
@@ -146,9 +146,12 @@ export class GoogleDriveApi {
       })
     });
     const readback = await this.getFolder(folder.id);
+    const confirmed = (await this.findAccessibleFolders()).find(candidate => candidate.id === folder.id);
     if (marked.id !== folder.id || readback.id !== folder.id || readback.name !== 'GuitarDSL'
       || readback.mimeType !== 'application/vnd.google-apps.folder' || readback.trashed
-      || !readback.parents?.includes(rootId) || readback.appProperties?.guitardslLibraryRoot !== '1') {
+      || readback.parents?.length !== 1 || !confirmed || confirmed.parents?.length !== 1
+      || readback.parents[0] !== confirmed.parents[0] || readback.appProperties?.guitardslLibraryRoot !== '1'
+      || confirmed.appProperties?.guitardslLibraryRoot !== '1') {
       throw new Error('Google Drive did not confirm the GuitarDSL library marker.');
     }
     return readback;
@@ -181,18 +184,18 @@ export class GoogleDriveApi {
   }
 
   async findAccessibleFolders(name = 'GuitarDSL'): Promise<DriveFile[]> {
-    const rootId = await this.getMyDriveRootId();
     const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const query = `name='${escape(name)}' and mimeType='application/vnd.google-apps.folder' and '${escape(rootId)}' in parents and trashed=false`;
+    const query = `name='${escape(name)}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
     return (await this.listAllByQuery(query, 'id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink'))
       .filter(file => file.name === name && file.mimeType === 'application/vnd.google-apps.folder'
-        && file.parents?.includes(rootId) && !file.trashed);
+        && file.parents?.length === 1 && !file.trashed);
   }
 
   async isCanonicalLibraryRoot(folder: DriveFile): Promise<boolean> {
-    const rootId = await this.getMyDriveRootId();
-    return folder.name === 'GuitarDSL' && folder.mimeType === 'application/vnd.google-apps.folder'
-      && !folder.trashed && folder.parents?.includes(rootId) === true;
+    if (folder.name !== 'GuitarDSL' || folder.mimeType !== 'application/vnd.google-apps.folder'
+      || folder.trashed || folder.parents?.length !== 1) return false;
+    const listed = (await this.findAccessibleFolders()).find(candidate => candidate.id === folder.id);
+    return Boolean(listed && listed.parents?.length === 1 && listed.parents[0] === folder.parents[0]);
   }
 
   async createChildFolder(parentId: string, name: string, operationId?: string): Promise<DriveFile> {

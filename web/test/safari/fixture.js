@@ -141,7 +141,7 @@ window.fetch = async (input, init = {}) => {
     try { return JSON.parse(value); } catch { return undefined; }
   }).find(value => value?.schemaVersion === 1 && Array.isArray(value.openDriveFileIds));
   if (url.pathname === '/drive/v3/about') return json({ user: { permissionId: 'safari-smoke', emailAddress: 'safari-smoke@example.test' } });
-  if (url.pathname === '/drive/v3/files/root') return json({ id: myDriveRootId });
+  if (url.pathname === '/drive/v3/files/root') return route.fulfill({ status: 404, headers, json: { error: 'My Drive root metadata is unavailable under drive.file' } });
   if (url.pathname === '/drive/v3/files' && method === 'GET') {
     if (url.searchParams.get('spaces') === 'appDataFolder') return json({ files: appDataState ? [appDataMetadata()] : [] });
     const query = url.searchParams.get('q') ?? '';

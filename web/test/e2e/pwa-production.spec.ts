@@ -77,7 +77,7 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
       return json({ user: { permissionId: 'account-a', emailAddress: 'account-a@example.test' } });
     }
     if (url.pathname === '/drive/v3/files/root') {
-      return json({ id: myDriveRootId });
+      return route.fulfill({ status: 404, headers: apiHeaders, json: { error: 'My Drive root metadata is unavailable under drive.file' } });
     }
     if (url.pathname === '/drive/v3/files' && url.searchParams.get('spaces') === 'appDataFolder') {
       return json({ files: [{ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',

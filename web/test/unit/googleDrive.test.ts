@@ -16,8 +16,12 @@ test('creates the visible library at the My Drive root and verifies the marker b
   globalThis.fetch = async (input, init) => {
     const call = { method: init?.method ?? 'GET', url: new URL(String(input)), body: init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined };
     calls.push(call);
-    if (call.url.pathname.endsWith('/files/root')) return new Response(JSON.stringify({ id: 'my-drive-root' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    if (call.method === 'POST') return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (call.url.pathname.endsWith('/files/root')) return new Response('', { status: 404 });
+    if (call.method === 'POST') {
+      assert.equal(call.body?.parents, undefined);
+      return new Response(JSON.stringify({ id: 'library-root' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (call.url.pathname.endsWith('/files')) return new Response(JSON.stringify({ files: [root] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
@@ -25,12 +29,15 @@ test('creates the visible library at the My Drive root and verifies the marker b
     assert.equal(created.id, 'library-root');
     assert.equal(calls[0]?.method, 'POST');
     assert.deepEqual(calls[0]?.body, {
-      name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'],
+      name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
       appProperties: { guitardslLibraryRoot: '1' }
     });
     assert.equal(calls[1]?.method, 'GET');
     assert.match(calls[1]?.url.pathname ?? '', /\/files\/library-root$/u);
-    assert.match(calls[2]?.url.pathname ?? '', /\/files\/root$/u);
+    assert.equal(calls[2]?.method, 'GET');
+    assert.match(calls[2]?.url.pathname ?? '', /\/files$/u);
+    assert.match(calls[2]?.url.searchParams.get('q') ?? '', /'root' in parents/u);
+    assert.equal(calls.some(call => call.url.pathname.endsWith('/files/root')), false);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -44,7 +51,8 @@ test('reuses an existing unmarked canonical root by adding and verifying its mar
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ method, body });
-    if (url.pathname.endsWith('/files/root')) return new Response(JSON.stringify({ id: 'my-drive-root' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.pathname.endsWith('/files/root')) return new Response('', { status: 404 });
+    if (url.pathname.endsWith('/files') && method === 'GET') return new Response(JSON.stringify({ files: [root] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     if (method === 'PATCH') root = { ...root, appProperties: body?.appProperties as Record<string, string> };
     return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
@@ -52,7 +60,34 @@ test('reuses an existing unmarked canonical root by adding and verifying its mar
     const verified = await api.markLibraryRoot(root);
     assert.equal(verified.id, 'existing-root');
     assert.deepEqual(verified.appProperties, { owner: 'test', guitardslLibraryRoot: '1' });
-    assert.deepEqual(calls.map(call => call.method), ['GET', 'PATCH', 'GET']);
+    assert.deepEqual(calls.map(call => call.method), ['GET', 'PATCH', 'GET', 'GET']);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('verifies an already marked canonical root through its ID and the root query without reading files/root', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  const calls: { method: string; pathname: string }[] = [];
+  const root: DriveFile = {
+    id: 'marked-root', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+    parents: ['my-drive-root'], appProperties: { guitardslLibraryRoot: '1' }
+  };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    calls.push({ method, pathname: url.pathname });
+    if (url.pathname.endsWith('/files/root')) return new Response('', { status: 404 });
+    if (url.pathname === '/drive/v3/files') {
+      return new Response(JSON.stringify({ files: [root] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify(root), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const verified = await api.markLibraryRoot(root);
+    assert.equal(verified.id, 'marked-root');
+    assert.equal(verified.appProperties?.guitardslLibraryRoot, '1');
+    assert.deepEqual(calls.map(call => call.method), ['GET', 'GET', 'GET']);
+    assert.equal(calls.some(call => call.pathname === '/drive/v3/files/root'), false);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -166,21 +201,21 @@ test('accessible GuitarDSL folder discovery searches only the exact untrashed My
   globalThis.fetch = async input => {
     const url = new URL(String(input));
     calls.push(url);
-    if (url.pathname.endsWith('/files/root')) return new Response(JSON.stringify({ id: 'my-drive-root-id' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.pathname.endsWith('/files/root')) return new Response('', { status: 404 });
     return new Response(JSON.stringify({ files: [
       { id: 'folder-1', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['my-drive-root-id'] },
       { id: 'folder-2', name: 'GuitarDSL Archive', mimeType: 'application/vnd.google-apps.folder', parents: ['my-drive-root-id'] },
-      { id: 'folder-3', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['parent'] },
-      { id: 'folder-alias', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: ['root'] },
       { id: 'file-1', name: 'GuitarDSL', mimeType: 'text/plain', parents: ['my-drive-root-id'] }
     ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
     const folders = await api.findAccessibleFolders();
     assert.deepEqual(folders.map(folder => folder.id), ['folder-1']);
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].pathname, '/drive/v3/files/root');
-    assert.match(calls[1].searchParams.get('q')!, /mimeType='application\/vnd\.google-apps\.folder'.*'my-drive-root-id' in parents and trashed=false/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, '/drive/v3/files');
+    assert.match(calls[0].searchParams.get('q')!, /name='GuitarDSL'.*mimeType='application\/vnd\.google-apps\.folder'.*'root' in parents and trashed=false/);
+    assert.deepEqual(folders[0]?.parents, ['my-drive-root-id']);
+    assert.equal(calls.some(url => url.pathname.endsWith('/files/root')), false);
   } finally { globalThis.fetch = originalFetch; }
 });
 
