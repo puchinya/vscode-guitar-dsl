@@ -2607,9 +2607,11 @@ test('coalesces a user close with remote tab restoration while the Drive draft s
   await holdDraftSave(page);
   await page.locator('.tab-close[aria-label="Close Shared.guitardsl"]').click();
   await page.waitForFunction(() => (window as Window & { __draftSaveStarted?: boolean }).__draftSaveStarted === true);
-  drive.setAppDataState('account-a', { ...initial, openDriveFileIds: [], activeDriveFileId: null });
   await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  drive.setAppDataState('account-a', { ...initial, openDriveFileIds: [], activeDriveFileId: null });
 
+  // Select the local tab before changing remote state so the appData conflict
+  // cannot race ahead of the user action and cover its target.
   const conflict = page.getByRole('dialog');
   await expect(conflict.getByRole('heading', { name: 'Google Drive settings changed elsewhere' })).toBeVisible();
   await conflict.getByRole('button', { name: 'Reload remote' }).click();
