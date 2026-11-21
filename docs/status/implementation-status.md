@@ -6,6 +6,13 @@
 - **最終更新日**: 2026-11-21
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #186: Google Drive の不要な競合ダイアログ
+
+- **状態**: `feature/186-drive-conflict-rebase` で実装中。Milestone #1、対象バージョン `0.1.0`。Drive の metadata 変更と本文競合を分け、stable readで確認できた同一本文はPATCHせず、最終確認済みbaselineのままなら最新metadataへrebaseして保存する。別本文だけを真の競合として扱う。
+- **同期安全性**: appDataのschema v1とpending形式を維持し、account/generation-scopedな最新desired sequence、pending先行永続化、同値同期の抑止を追加する。結果不明時はpendingを保持して自動PATCHを再送しない。
+- **文書同期**: 正本は [`docs/specs/web-app.md`](../specs/web-app.md) と [`docs/design/web-app.md`](../design/web-app.md)。ユーザーHelpは [`docs/help/ja/features.md`](../help/ja/features.md) / [`docs/help/en/features.md`](../help/en/features.md) から生成し、manifestを更新する。
+- **検証（2026-11-21 / `feature/186-drive-conflict-rebase`）**: `npm run compile`、`npm run test:unit`（1,138件）、`npm run build:web`、Web unit（75件）、Chromium E2E（112件）、WebKit E2E（112件）、Safari smoke（Safari 26.6.2、7/7 checks）、`npm run vscode:prepublish`、VSIX inventory（1,640 entries）、`check:help`、`check:ai`、`validate-docs --issue 186`（3 owners）、契約照合、`git diff --check` はPASS。`npm test` は以前のユーザー指示に従いExtension E2Eを再実行しないためNOT RUN。実Google OAuth/DriveとiOS/iPadOS SafariはNOT RUN。GitHub Required ChecksはPR作成後に確認する。
+
 ## Issue #181: Web Vue I18n 11.4.22
 
 - **状態**: `feature/181-vue-i18n-11-4-22` で実装。対象バージョンは `0.1.0`。Controller / IndexedDBをlocaleの唯一の所有者に保ち、Vue I18n 11.4.22の静的en/jaメッセージをsnapshotからComposerと`html[lang]`へ一方向投影する。Controller生成メニュー・Help/Inspector DOM・共有packageの翻訳ownerは維持。

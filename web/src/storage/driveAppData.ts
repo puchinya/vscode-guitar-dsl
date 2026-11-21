@@ -130,6 +130,11 @@ function canonicalFile(files: DriveAppDataFile[]): DriveAppDataFile | undefined 
   return [...files].sort((a, b) => a.createdTime.localeCompare(b.createdTime) || a.id.localeCompare(b.id))[0];
 }
 
+function sameFileVersion(left: DriveAppDataFile, right: DriveAppDataFile): boolean {
+  return left.id === right.id && left.name === right.name && left.mimeType === right.mimeType
+    && left.createdTime === right.createdTime && left.version === right.version && left.modifiedTime === right.modifiedTime;
+}
+
 export class DriveAppDataStore {
   constructor(
     private readonly auth: Pick<GoogleOAuth, 'tokenForRequest'>,
@@ -153,8 +158,8 @@ export class DriveAppDataStore {
   }
 
   async readFile(fileId: string, token = this.auth.tokenForRequest(), duplicateCount = 1): Promise<DriveAppDataSnapshot> {
-    const file = await this.getMetadata(fileId, token);
-    this.assertStateFile(file);
+    const before = await this.getMetadata(fileId, token);
+    this.assertStateFile(before);
     const response = await this.fetchRequest(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) {
       const code = response.status === 401 || response.status === 403 ? 'permission' : 'http';
@@ -164,15 +169,46 @@ export class DriveAppDataStore {
     let value: unknown;
     try { value = JSON.parse(source); }
     catch { throw new DriveAppDataError('invalid-json', 'The Drive app state file is not valid JSON.'); }
-    return { file, state: validateDriveAppDataState(value), duplicateCount };
+    const state = validateDriveAppDataState(value);
+    const after = await this.getMetadata(fileId, token);
+    this.assertStateFile(after);
+    if (!sameFileVersion(before, after)) {
+      throw new DriveAppDataError('unknown-outcome', 'Drive app state changed while it was being read; the version could not be verified.');
+    }
+    return { file: after, state, duplicateCount };
   }
 
   async update(snapshot: DriveAppDataSnapshot, nextState: DriveAppDataState): Promise<DriveAppDataSaveResult> {
     const normalized = validateDriveAppDataState(nextState);
     const token = this.auth.tokenForRequest();
     const latestMetadata = await this.getMetadata(snapshot.file.id, token);
-    if (latestMetadata.version !== snapshot.file.version || latestMetadata.modifiedTime !== snapshot.file.modifiedTime) {
-      return { kind: 'conflict', latest: await this.readFile(snapshot.file.id, token, snapshot.duplicateCount) };
+    this.assertStateFile(latestMetadata);
+    if (latestMetadata.id !== snapshot.file.id) {
+      throw new DriveAppDataError('invalid-state', 'The selected Drive app state file identity changed.');
+    }
+    let updateSnapshot = snapshot;
+    if (!sameFileVersion(latestMetadata, snapshot.file)) {
+      let latest = await this.readFile(snapshot.file.id, token, snapshot.duplicateCount);
+      if (serializedState(latest.state) === serializedState(normalized)) return { kind: 'saved', snapshot: latest };
+      if (serializedState(latest.state) !== serializedState(snapshot.state)) return { kind: 'conflict', latest };
+
+      // A metadata-only change can be rebased, but the version used for PATCH must
+      // still be the one whose content was just compared with the baseline.
+      let confirmed = await this.getMetadata(snapshot.file.id, token);
+      this.assertStateFile(confirmed);
+      if (confirmed.id !== snapshot.file.id) throw new DriveAppDataError('invalid-state', 'The selected Drive app state file identity changed.');
+      if (!sameFileVersion(confirmed, latest.file)) {
+        latest = await this.readFile(snapshot.file.id, token, snapshot.duplicateCount);
+        if (serializedState(latest.state) === serializedState(normalized)) return { kind: 'saved', snapshot: latest };
+        if (serializedState(latest.state) !== serializedState(snapshot.state)) return { kind: 'conflict', latest };
+        confirmed = await this.getMetadata(snapshot.file.id, token);
+        this.assertStateFile(confirmed);
+        if (confirmed.id !== snapshot.file.id) throw new DriveAppDataError('invalid-state', 'The selected Drive app state file identity changed.');
+        if (!sameFileVersion(confirmed, latest.file)) {
+          throw new DriveAppDataError('unknown-outcome', 'Drive app state kept changing during revalidation; it was not updated.');
+        }
+      }
+      updateSnapshot = latest;
     }
 
     let response: Response;
@@ -185,17 +221,22 @@ export class DriveAppDataStore {
     } catch {
       return this.reconcileUncertainUpdate(snapshot, normalized, token);
     }
-    if (response.status === 412) return { kind: 'conflict', latest: await this.readFile(snapshot.file.id, token, snapshot.duplicateCount) };
+    if (response.status === 412) {
+      const latest = await this.readFile(snapshot.file.id, token, snapshot.duplicateCount);
+      return serializedState(latest.state) === serializedState(normalized)
+        ? { kind: 'saved', snapshot: latest }
+        : { kind: 'conflict', latest };
+    }
     if (response.status === 401 || response.status === 403) {
       throw new DriveAppDataError('permission', `Google Drive denied app state access (${response.status}).`, response.status);
     }
-    if (response.status === 429 || response.status >= 500) return this.reconcileUncertainUpdate(snapshot, normalized, token);
+    if (response.status === 429 || response.status >= 500) return this.reconcileUncertainUpdate(updateSnapshot, normalized, token);
     if (!response.ok) throw new DriveAppDataError('http', `Google Drive app state update failed (${response.status}).`, response.status);
     try { await response.json(); }
-    catch { return this.reconcileUncertainUpdate(snapshot, normalized, token); }
+    catch { return this.reconcileUncertainUpdate(updateSnapshot, normalized, token); }
 
     let readback: DriveAppDataSnapshot;
-    try { readback = await this.readFile(snapshot.file.id, token, snapshot.duplicateCount); }
+    try { readback = await this.readFile(updateSnapshot.file.id, token, updateSnapshot.duplicateCount); }
     catch { throw new DriveAppDataError('unknown-outcome', 'Drive app state update could not be verified; it was not retried.'); }
     if (serializedState(readback.state) !== serializedState(normalized)) {
       throw new DriveAppDataError('unknown-outcome', 'Drive app state readback did not match; the update was not retried.');
@@ -209,7 +250,7 @@ export class DriveAppDataStore {
     try {
       const latest = await this.readFile(baseline.file.id, token, baseline.duplicateCount);
       if (serializedState(latest.state) === serializedState(desired)) return { kind: 'saved', snapshot: latest };
-      return { kind: 'conflict', latest };
+      throw new DriveAppDataError('unknown-outcome', 'Drive app state was not confirmed after the update; the pending state was kept and no retry was sent.');
     } catch {
       throw new DriveAppDataError('unknown-outcome', 'Drive app state update is unconfirmed; it was not retried.');
     }

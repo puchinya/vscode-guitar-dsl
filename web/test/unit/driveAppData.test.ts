@@ -159,6 +159,67 @@ test('a version conflict is returned before PATCH and includes the current state
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('an appData metadata-only version change rebases the baseline and performs one verified PATCH', async () => {
+  const originalFetch = globalThis.fetch;
+  let version = '2';
+  let remoteState = state;
+  let patches = 0;
+  const next = { ...state, folderPrompt: 'deferred' as const };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') {
+      patches += 1;
+      remoteState = JSON.parse(String(init.body)) as DriveAppDataState;
+      version = '3';
+      return json(file('state-1', version));
+    }
+    if (url.searchParams.get('alt') === 'media') return new Response(JSON.stringify(remoteState));
+    return json(file('state-1', version));
+  };
+  try {
+    const result = await new DriveAppDataStore(auth).update({ file: file('state-1'), state, duplicateCount: 1 }, next);
+    assert.equal(result.kind, 'saved');
+    assert.equal(result.snapshot.state.folderPrompt, 'deferred');
+    assert.equal(patches, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an appData version change already containing the desired state is saved without PATCH', async () => {
+  const originalFetch = globalThis.fetch;
+  let patches = 0;
+  const desired = { ...state, folderPrompt: 'deferred' as const };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') return new Response(JSON.stringify(desired));
+    return json(file('state-1', '2'));
+  };
+  try {
+    const result = await new DriveAppDataStore(auth).update({ file: file('state-1'), state, duplicateCount: 1 }, desired);
+    assert.equal(result.kind, 'saved');
+    assert.equal(result.snapshot.state.folderPrompt, 'deferred');
+    assert.equal(patches, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an appData read that spans metadata versions is unknown and never writes', async () => {
+  const originalFetch = globalThis.fetch;
+  let metadataReads = 0;
+  let patches = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') return new Response(JSON.stringify(state));
+    metadataReads += 1;
+    return json(file('state-1', metadataReads < 3 ? '2' : '3'));
+  };
+  try {
+    await assert.rejects(new DriveAppDataStore(auth).update({ file: file('state-1'), state, duplicateCount: 1 }, { ...state, folderPrompt: 'deferred' }), error =>
+      error instanceof DriveAppDataError && error.code === 'unknown-outcome');
+    assert.equal(patches, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('a lost PATCH response is reconciled once and is never automatically resent', async () => {
   const originalFetch = globalThis.fetch;
   let patches = 0; let remoteState = state;
@@ -172,6 +233,23 @@ test('a lost PATCH response is reconciled once and is never automatically resent
   try {
     const result = await new DriveAppDataStore(auth).update({ file: file('state-1'), state, duplicateCount: 1 }, next);
     assert.equal(result.kind, 'saved');
+    assert.equal(patches, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an uncertain appData update with a different readback stays unknown instead of opening a conflict', async () => {
+  const originalFetch = globalThis.fetch;
+  let patches = 0;
+  const remoteState = { ...state, folderPrompt: 'deferred' as const };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') { patches += 1; return json({}, 500); }
+    if (url.searchParams.get('alt') === 'media') return new Response(JSON.stringify(remoteState));
+    return json(file('state-1', patches ? '2' : '1'));
+  };
+  try {
+    await assert.rejects(new DriveAppDataStore(auth).update({ file: file('state-1'), state, duplicateCount: 1 }, { ...state, folderPrompt: 'completed' }), error =>
+      error instanceof DriveAppDataError && error.code === 'unknown-outcome');
     assert.equal(patches, 1);
   } finally { globalThis.fetch = originalFetch; }
 });

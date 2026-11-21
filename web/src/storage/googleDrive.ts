@@ -32,6 +32,22 @@ export class DriveApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); this.name = 'DriveApiError'; }
 }
 
+class DriveSnapshotChangedError extends Error {
+  constructor() {
+    super('Google Drive file metadata changed while its content was being read.');
+    this.name = 'DriveSnapshotChangedError';
+  }
+}
+
+function sameDriveSnapshot(left: DriveFile, right: DriveFile): boolean {
+  const leftParents = [...(left.parents ?? [])].sort();
+  const rightParents = [...(right.parents ?? [])].sort();
+  return left.id === right.id && left.name === right.name && left.mimeType === right.mimeType
+    && left.version === right.version && left.modifiedTime === right.modifiedTime
+    && left.headRevisionId === right.headRevisionId && left.trashed === right.trashed
+    && JSON.stringify(leftParents) === JSON.stringify(rightParents);
+}
+
 export interface DrivePickerSelection { id: string; name: string; mimeType?: string }
 
 interface PickerApi {
@@ -70,18 +86,18 @@ export class GoogleDriveApi {
     return response.status === 204 ? undefined as T : await response.json() as T;
   }
 
-  async getFolder(folderId: string): Promise<DriveFile> {
-    return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`);
+  async getFolder(folderId: string, token?: string): Promise<DriveFile> {
+    return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`, {}, token);
   }
 
-  async isWithinFolder(file: DriveFile, ancestorFolderId: string): Promise<boolean> {
+  async isWithinFolder(file: DriveFile, ancestorFolderId: string, token?: string): Promise<boolean> {
     let parentId = file.parents?.[0];
     const visited = new Set<string>();
     for (let depth = 0; parentId && depth < 100; depth += 1) {
       if (parentId === ancestorFolderId) return true;
       if (visited.has(parentId)) return false;
       visited.add(parentId);
-      const parent = await this.getFolder(parentId);
+      const parent = await this.getFolder(parentId, token);
       if (parent.trashed || parent.mimeType !== 'application/vnd.google-apps.folder') return false;
       parentId = parent.parents?.[0];
     }
@@ -270,13 +286,16 @@ export class GoogleDriveApi {
     return this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`);
   }
 
-  async getFile(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string }> {
-    const token = this.auth.tokenForRequest();
-    const metadata = await this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`, {}, token);
+  async getFile(fileId: string, token = this.auth.tokenForRequest()): Promise<{ file: DriveFile; source: string; etag?: string }> {
+    const metadataPath = `/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`;
+    const metadata = await this.request<DriveFile>(metadataPath, {}, token);
     const headers = new Headers({ Authorization: `Bearer ${token}` });
     const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers });
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive download failed (${response.status}).`);
-    return { file: metadata, source: await response.text(), etag: response.headers.get('ETag') ?? undefined };
+    const source = await response.text();
+    const confirmed = await this.request<DriveFile>(metadataPath, {}, token);
+    if (!sameDriveSnapshot(metadata, confirmed)) throw new DriveSnapshotChangedError();
+    return { file: confirmed, source, etag: response.headers.get('ETag') ?? undefined };
   }
 
   async findMoveUpload(folderId: string, localFileId: string): Promise<DriveFile | undefined> {
@@ -305,47 +324,88 @@ export class GoogleDriveApi {
     return await response.json() as DriveFile;
   }
 
-  async updateFile(file: DriveFile, source: string, expectedEtag?: string): Promise<DriveSaveResult> {
-    const metadataPath = `/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,appProperties`;
-    const current = await this.request<DriveFile>(metadataPath);
-    if (current.version !== file.version || current.modifiedTime !== file.modifiedTime
-      || current.headRevisionId !== file.headRevisionId) return { kind: 'conflict', latest: current };
-
+  async updateFile(file: DriveFile, source: string, expectedSource: string, libraryRootId?: string): Promise<DriveSaveResult> {
     const token = this.auth.tokenForRequest();
+    const metadataPath = `/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties`;
+    const readStable = async () => {
+      try { return await this.getFile(file.id, token); }
+      catch (error) {
+        if (error instanceof DriveSnapshotChangedError) return undefined;
+        throw error;
+      }
+    };
+    const validateTarget = async (latest: DriveFile): Promise<DriveSaveResult | undefined> => {
+      if (latest.id !== file.id || latest.trashed || !isSupportedDriveMimeType(latest.mimeType)) {
+        return { kind: 'unavailable', message: 'This Google Drive file is no longer an available GuitarDSL score.' };
+      }
+      if (libraryRootId && !await this.isWithinFolder(latest, libraryRootId, token)) {
+        return { kind: 'unavailable', message: 'This Google Drive score is no longer inside the GuitarDSL library.' };
+      }
+      return undefined;
+    };
+
+    let latest = await readStable();
+    if (!latest) return { kind: 'unknown' };
+    const unavailable = await validateTarget(latest.file);
+    if (unavailable) return unavailable;
+    if (latest.source === source) return { kind: 'saved', file: latest.file, readback: latest };
+    if (latest.source !== expectedSource) return { kind: 'conflict', latest: latest.file };
+
+    // The baseline still owns the content, so a metadata-only change can be
+    // rebased. Recheck that the version whose content was compared is current.
+    let current = await this.request<DriveFile>(metadataPath, {}, token);
+    if (!sameDriveSnapshot(latest.file, current)) {
+      latest = await readStable();
+      if (!latest) return { kind: 'unknown' };
+      const latestUnavailable = await validateTarget(latest.file);
+      if (latestUnavailable) return latestUnavailable;
+      if (latest.source === source) return { kind: 'saved', file: latest.file, readback: latest };
+      if (latest.source !== expectedSource) return { kind: 'conflict', latest: latest.file };
+      current = await this.request<DriveFile>(metadataPath, {}, token);
+      if (!sameDriveSnapshot(latest.file, current)) return { kind: 'unknown', latest };
+    } else {
+      current = latest.file;
+    }
+
     let response: Response;
     try {
       response = await fetch(`${UPLOAD_API}/files/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name,mimeType,version,modifiedTime,parents,appProperties`, {
         method: 'PATCH', headers: {
           Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=UTF-8',
-          // Best-effort only. The preflight comparison is the app's observable conflict check.
-          ...(expectedEtag ? { 'If-Match': expectedEtag } : {})
+          // Use the ETag from the same stable read as the content comparison,
+          // never the possibly stale baseline ETag after a metadata rebase.
+          ...(latest.etag ? { 'If-Match': latest.etag } : {})
         }, body: source
       });
     } catch {
-      const readback = await this.readAfterUncertainWrite(file.id);
+      const readback = await this.readAfterUncertainWrite(file.id, token);
       if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
       return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
     }
 
-    if (response.status === 412) return { kind: 'conflict', latest: await this.request<DriveFile>(metadataPath) };
+    if (response.status === 412) {
+      const readback = await readStable();
+      if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
+      return { kind: 'conflict', latest: readback?.file ?? await this.request<DriveFile>(metadataPath, {}, token) };
+    }
     if ([401, 403, 429].includes(response.status) || response.status >= 500) {
       // These responses may not reveal whether Drive applied the media update. Observe once;
       // callers retain the draft and must never retry this PATCH automatically.
-      const latest = await this.readAfterUncertainWrite(file.id);
-      return { kind: 'unknown', status: response.status, ...(latest ? { latest } : {}) };
+      const uncertainLatest = await this.readAfterUncertainWrite(file.id, token);
+      return { kind: 'unknown', status: response.status, ...(uncertainLatest ? { latest: uncertainLatest } : {}) };
     }
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive save failed (${response.status}).`);
 
     try { return { kind: 'saved', file: await response.json() as DriveFile }; }
     catch {
-      const readback = await this.readAfterUncertainWrite(file.id);
+      const readback = await this.readAfterUncertainWrite(file.id, token);
       if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
       return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
     }
   }
 
-  private async readAfterUncertainWrite(fileId: string): Promise<{ file: DriveFile; source: string; etag?: string } | undefined> {
-    try { return await this.getFile(fileId); }
+  private async readAfterUncertainWrite(fileId: string, token?: string): Promise<{ file: DriveFile; source: string; etag?: string } | undefined> {
+    try { return await this.getFile(fileId, token); }
     catch { return undefined; }
   }
 

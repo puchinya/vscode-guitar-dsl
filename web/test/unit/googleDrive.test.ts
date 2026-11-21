@@ -164,7 +164,7 @@ test('one Drive file read keeps the account token it started with across its met
     releaseMetadata();
     const result = await opening;
     assert.equal(result.source, 'account A source');
-    assert.deepEqual(authorizationHeaders, ['Bearer account-a-token', 'Bearer account-a-token']);
+    assert.deepEqual(authorizationHeaders, ['Bearer account-a-token', 'Bearer account-a-token', 'Bearer account-a-token']);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -293,42 +293,128 @@ test('Drive list surfaces authorization and access-scope errors without hiding t
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('Drive save reports a newer remote version without uploading', async () => {
+test('Drive save skips PATCH when the stable remote content already matches the submitted source', async () => {
   const api = createApi();
   const originalFetch = globalThis.fetch;
-  let uploads = 0;
+  let patches = 0;
+  let mediaReads = 0;
+  const current: DriveFile = { id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '8', modifiedTime: 'new', headRevisionId: 'rev-8' };
   globalThis.fetch = async (input, init) => {
-    if (init?.method === 'PATCH') uploads += 1;
-    return new Response(JSON.stringify({ id: 'drive-1', name: 'Song.guitardsl', version: '8', modifiedTime: 'new', headRevisionId: 'rev-8' }), {
-      status: 200, headers: { 'Content-Type': 'application/json' }
-    });
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') { mediaReads += 1; return new Response('submitted source'); }
+    return new Response(JSON.stringify(current), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
-    const result = await api.updateFile({
-      id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 'old', headRevisionId: 'rev-7'
-    }, 'local source');
-    assert.deepEqual(result, { kind: 'conflict', latest: { id: 'drive-1', name: 'Song.guitardsl', version: '8', modifiedTime: 'new', headRevisionId: 'rev-8' } });
-    assert.equal(uploads, 0);
+    const result = await api.updateFile({ ...current, version: '7', modifiedTime: 'old', headRevisionId: 'rev-7' }, 'submitted source', 'baseline');
+    assert.equal(result.kind, 'saved');
+    if (result.kind === 'saved') {
+      assert.equal(result.file.version, '8');
+      assert.equal(result.readback?.source, 'submitted source');
+    }
+    assert.equal(patches, 0);
+    assert.equal(mediaReads, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('Drive save uses the media update endpoint after version checks', async () => {
+test('Drive save reports a true content conflict before PATCH', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let patches = 0;
+  const latest: DriveFile = { id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '8', modifiedTime: 'new', headRevisionId: 'rev-8' };
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') return new Response('third remote source');
+    return new Response(JSON.stringify(latest), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const result = await api.updateFile({ ...latest, version: '7', modifiedTime: 'old', headRevisionId: 'rev-7' }, 'local source', 'baseline');
+    assert.deepEqual(result, { kind: 'conflict', latest });
+    assert.equal(patches, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Drive save refuses a score that moved outside the library', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let patches = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.pathname.endsWith('/outside-folder')) return new Response(JSON.stringify({
+      id: 'outside-folder', name: 'Outside', mimeType: 'application/vnd.google-apps.folder', parents: ['other-root'], trashed: false
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.searchParams.get('alt') === 'media') return new Response('baseline');
+    return new Response(JSON.stringify({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '8', modifiedTime: 't8',
+      headRevisionId: 'r8', parents: ['outside-folder'], trashed: false
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const result = await api.updateFile({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '7', modifiedTime: 't7',
+      headRevisionId: 'r7', parents: ['library']
+    }, 'submitted', 'baseline', 'library');
+    assert.equal(result.kind, 'unavailable');
+    assert.equal(patches, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Drive save refuses a trashed score before comparing or writing its content', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let patches = 0;
+  let mediaReads = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') { mediaReads += 1; return new Response('baseline'); }
+    return new Response(JSON.stringify({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '8', modifiedTime: 't8',
+      headRevisionId: 'r8', parents: ['library'], trashed: true
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const result = await api.updateFile({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '7', modifiedTime: 't7',
+      headRevisionId: 'r7', parents: ['library']
+    }, 'submitted', 'baseline', 'library');
+    assert.equal(result.kind, 'unavailable');
+    assert.equal(patches, 0);
+    assert.equal(mediaReads, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Drive save rebases metadata-only drift and patches the same file using the stable ETag', async () => {
   const api = createApi();
   const originalFetch = globalThis.fetch;
   const calls: { url: string; method: string; headers: Headers }[] = [];
-  const current: DriveFile = { id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 'same', headRevisionId: 'rev-7' };
+  let remoteVersion = 8;
+  let remoteSource = 'baseline';
+  const current = (): DriveFile => ({ id: 'drive-1', name: 'Renamed.guitardsl', mimeType: 'text/plain', version: String(remoteVersion), modifiedTime: `t${remoteVersion}`, headRevisionId: `rev-${remoteVersion}`, parents: ['library'] });
   globalThis.fetch = async (input, init) => {
-    calls.push({ url: String(input), method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
-    return new Response(JSON.stringify({ ...current, version: calls.length > 1 ? '8' : current.version }), {
-      status: 200, headers: { 'Content-Type': 'application/json' }
-    });
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    calls.push({ url: String(input), method, headers: new Headers(init?.headers) });
+    if (url.pathname.startsWith('/upload/drive/v3/files') && method === 'PATCH') {
+      remoteSource = String(init?.body);
+      remoteVersion += 1;
+      return new Response(JSON.stringify(current()), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.searchParams.get('alt') === 'media') return new Response(remoteSource, { status: 200, headers: { ETag: 'fresh-etag' } });
+    return new Response(JSON.stringify(current()), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
-    const result = await api.updateFile(current, 'next source');
+    const baseline: DriveFile = { id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '7', modifiedTime: 't7', headRevisionId: 'rev-7', parents: ['library'] };
+    const result = await api.updateFile(baseline, 'next source', 'baseline', 'library');
     assert.equal(result.kind, 'saved');
-    assert.equal(calls[1].method, 'PATCH');
-    assert.match(calls[1].url, /upload\/drive\/v3\/files\/drive-1\?uploadType=media/);
-    assert.equal(calls[1].headers.get('Authorization'), 'Bearer test-token');
+    const patch = calls.find(call => call.method === 'PATCH')!;
+    assert.match(patch.url, /upload\/drive\/v3\/files\/drive-1\?uploadType=media/);
+    assert.equal(patch.headers.get('Authorization'), 'Bearer test-token');
+    assert.equal(patch.headers.get('If-Match'), 'fresh-etag');
+    assert.equal(remoteSource, 'next source');
+    assert.equal(current().name, 'Renamed.guitardsl');
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -340,7 +426,8 @@ test('repeated saves update the same Drive file and never create another file', 
   let creates = 0;
   const patchIds: string[] = [];
   const metadata = () => ({
-    id: 'drive-1', name: 'Song.guitardsl', version: String(version), modifiedTime: `t${version}`, headRevisionId: `r${version}`
+    id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['library'],
+    version: String(version), modifiedTime: `t${version}`, headRevisionId: `r${version}`
   });
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -353,12 +440,13 @@ test('repeated saves update the same Drive file and never create another file', 
       }
       return new Response(JSON.stringify(metadata()), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
+    if (url.searchParams.get('alt') === 'media') return new Response(source, { status: 200, headers: { ETag: `etag-${version}` } });
     return new Response(JSON.stringify(metadata()), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
-    const first = await api.updateFile({ ...metadata(), version: '7', modifiedTime: 't7', headRevisionId: 'r7' }, 'first save');
+    const first = await api.updateFile({ ...metadata(), version: '7', modifiedTime: 't7', headRevisionId: 'r7' }, 'first save', 'original', 'library');
     assert.equal(first.kind, 'saved');
-    const second = await api.updateFile(first.file, 'second save');
+    const second = await api.updateFile(first.file, 'second save', 'first save', 'library');
     assert.equal(second.kind, 'saved');
     assert.deepEqual(patchIds, ['drive-1', 'drive-1']);
     assert.equal(creates, 0);
@@ -372,30 +460,34 @@ test('an ambiguous network result is read back once and is never automatically p
   let patchCalls = 0;
   let mediaReads = 0;
   let metadataReads = 0;
+  let remoteVersion = 7;
+  let remoteSource = 'baseline';
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname.startsWith('/upload/drive/v3/files')) {
       patchCalls += 1;
+      remoteSource = String(init?.body);
+      remoteVersion += 1;
       throw new TypeError('connection closed after request dispatch');
     }
     if (url.searchParams.get('alt') === 'media') {
       mediaReads += 1;
-      return new Response('submitted source', { status: 200 });
+      return new Response(remoteSource, { status: 200 });
     }
     metadataReads += 1;
     return new Response(JSON.stringify({
-      id: 'drive-1', name: 'Song.guitardsl', version: metadataReads === 1 ? '7' : '8',
-      modifiedTime: metadataReads === 1 ? 't7' : 't8', headRevisionId: metadataReads === 1 ? 'r7' : 'r8'
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['library'],
+      version: String(remoteVersion), modifiedTime: `t${remoteVersion}`, headRevisionId: `r${remoteVersion}`
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
     const result = await api.updateFile({
       id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
-    }, 'submitted source');
+    }, 'submitted source', 'baseline', 'library');
     assert.equal(result.kind, 'saved');
     if (result.kind === 'saved') assert.equal(result.readback?.source, 'submitted source');
     assert.equal(patchCalls, 1);
-    assert.equal(mediaReads, 1);
+    assert.equal(mediaReads, 2);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -404,31 +496,33 @@ test('a Drive server error keeps an unknown result after one readback and does n
   const originalFetch = globalThis.fetch;
   let patchCalls = 0;
   let mediaReads = 0;
+  let remoteSource = 'baseline';
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname.startsWith('/upload/drive/v3/files')) {
       patchCalls += 1;
+      remoteSource = 'third remote source';
       return new Response('', { status: 500 });
     }
     if (url.searchParams.get('alt') === 'media') {
       mediaReads += 1;
-      return new Response('old remote source', { status: 200 });
+      return new Response(remoteSource, { status: 200 });
     }
     return new Response(JSON.stringify({
-      id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['library'], version: '7', modifiedTime: 't7', headRevisionId: 'r7'
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
     const result = await api.updateFile({
       id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
-    }, 'submitted source');
+    }, 'submitted source', 'baseline', 'library');
     assert.equal(result.kind, 'unknown');
     if (result.kind === 'unknown') {
       assert.equal(result.status, 500);
-      assert.equal(result.latest?.source, 'old remote source');
+      assert.equal(result.latest?.source, 'third remote source');
     }
     assert.equal(patchCalls, 1);
-    assert.equal(mediaReads, 1);
+    assert.equal(mediaReads, 2);
   } finally { globalThis.fetch = originalFetch; }
 });
 
@@ -446,20 +540,49 @@ test('a Drive 401 remains an unknown save result with its status after one readb
     }
     if (url.searchParams.get('alt') === 'media') {
       mediaReads += 1;
-      return new Response('', { status: 401 });
+      return new Response('baseline', { status: 200 });
     }
     metadataReads += 1;
     return new Response(JSON.stringify({
-      id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', parents: ['library'], version: '7', modifiedTime: 't7', headRevisionId: 'r7'
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   try {
     const result = await api.updateFile({
       id: 'drive-1', name: 'Song.guitardsl', version: '7', modifiedTime: 't7', headRevisionId: 'r7'
-    }, 'submitted source');
-    assert.deepEqual(result, { kind: 'unknown', status: 401 });
+    }, 'submitted source', 'baseline', 'library');
+    assert.equal(result.kind, 'unknown');
+    if (result.kind === 'unknown') {
+      assert.equal(result.status, 401);
+      assert.equal(result.latest?.source, 'baseline');
+    }
     assert.equal(patchCalls, 1);
-    assert.equal(metadataReads, 2);
-    assert.equal(mediaReads, 1);
+    assert.equal(metadataReads, 5);
+    assert.equal(mediaReads, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('an unstable metadata-to-media read is unknown and does not PATCH', async () => {
+  const api = createApi();
+  const originalFetch = globalThis.fetch;
+  let metadataReads = 0;
+  let patches = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (init?.method === 'PATCH') patches += 1;
+    if (url.searchParams.get('alt') === 'media') return new Response('baseline');
+    metadataReads += 1;
+    const version = metadataReads === 1 ? '7' : '8';
+    return new Response(JSON.stringify({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version,
+      modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['library']
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const result = await api.updateFile({
+      id: 'drive-1', name: 'Song.guitardsl', mimeType: 'text/plain', version: '7', modifiedTime: 't7', headRevisionId: 'r7', parents: ['library']
+    }, 'submitted', 'baseline', 'library');
+    assert.deepEqual(result, { kind: 'unknown' });
+    assert.equal(patches, 0);
   } finally { globalThis.fetch = originalFetch; }
 });
