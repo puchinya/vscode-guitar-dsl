@@ -20,12 +20,14 @@ export const ja = {
   },
   drive: {
     name: 'Google Drive',
+    library: 'ライブラリ',
     connectionState: 'Google Drive: {status}',
     onThisDevice: 'このデバイス',
     status: {
       connected: '接続済み',
       connecting: '接続中…',
-      reauth: '再接続が必要',
+      reauth: '再接続',
+      reauthDescription: 'Google Drive の再認証が必要です',
       offline: 'オフライン',
       disconnected: '未接続'
     },
@@ -36,7 +38,11 @@ export const ja = {
     },
     unavailableOffline: 'オフラインではDriveを利用できません',
     connectToShowFiles: '接続するとDriveのファイルが表示されます',
-    chooseDestinationFolder: '保存先フォルダーを選択してください'
+    chooseDestinationFolder: 'GuitarDSL ライブラリを設定してください',
+    emptyLibrary: '楽譜やフォルダーはありません',
+    importFromDrive: 'Google Drive からインポート…',
+    newFolder: '新しいフォルダー…',
+    refreshLibrary: '更新'
   },
   common: {
     collapse: '折りたたむ',

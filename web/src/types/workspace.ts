@@ -25,6 +25,15 @@ export interface WorkspaceFileSnapshot {
   localDraft?: boolean;
 }
 
+export interface DriveLibraryEntrySnapshot extends WorkspaceFileSnapshot {
+  kind: 'folder' | 'score';
+  parentId: string;
+  depth: number;
+  expanded: boolean;
+  loading: boolean;
+  error?: string;
+}
+
 export interface WorkspaceDiagnosticSnapshot {
   severity: 'error' | 'warning' | 'info';
   message: string;
@@ -80,11 +89,13 @@ export interface WorkspaceViewSnapshot {
   splitRatio: number;
   localFiles: readonly WorkspaceFileSnapshot[];
   driveFiles: readonly WorkspaceFileSnapshot[];
+  driveEntries: readonly DriveLibraryEntrySnapshot[];
   diagnostics: readonly WorkspaceDiagnosticSnapshot[];
   menu?: Readonly<WorkspaceMenuSnapshot>;
   online: boolean;
   driveStatus: 'connected' | 'connecting' | 'reauth' | 'offline' | 'disconnected';
   driveGeneration: number;
+  driveAccountId?: string;
   driveAccountLabel?: string;
   driveFolderName?: string;
   driveFolderId?: string;
@@ -117,8 +128,17 @@ export type WorkspaceCommand =
   | { type: 'layout.reset' }
   | { type: 'drive.connect' }
   | { type: 'drive.open-picker' }
-  | { type: 'drive.choose-folder' }
   | { type: 'drive.create-folder' }
+  | { type: 'drive.library.import'; accountId: string; driveGeneration: number; targetFolderId: string }
+  | { type: 'drive.library.create-score'; accountId: string; driveGeneration: number; targetFolderId: string }
+  | { type: 'drive.library.create-folder'; accountId: string; driveGeneration: number; targetFolderId: string }
+  | { type: 'drive.library.toggle-folder'; accountId: string; driveGeneration: number; folderId: string }
+  | { type: 'drive.library.refresh'; accountId: string; driveGeneration: number; folderId: string }
+  | { type: 'drive.library.rename'; accountId: string; driveGeneration: number; itemId: string; kind: 'folder' | 'score'; parentId: string }
+  | { type: 'drive.library.duplicate'; accountId: string; driveGeneration: number; itemId: string; parentId: string }
+  | { type: 'drive.library.move'; accountId: string; driveGeneration: number; itemId: string; parentId: string }
+  | { type: 'drive.library.trash'; accountId: string; driveGeneration: number; itemId: string; parentId: string }
+  | { type: 'drive.library.open-web'; accountId: string; driveGeneration: number; itemId: string; kind: 'folder' | 'score'; webViewLink?: string }
   | { type: 'settings.set-locale'; locale: WorkspaceLocale }
   | { type: 'settings.set-theme'; theme: WorkspaceTheme }
   | { type: 'pwa.update' }

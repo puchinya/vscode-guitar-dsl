@@ -18,12 +18,14 @@ export const en = {
   },
   drive: {
     name: 'Google Drive',
+    library: 'Library',
     connectionState: 'Google Drive: {status}',
     onThisDevice: 'On this device',
     status: {
       connected: 'Connected',
       connecting: 'Connecting…',
-      reauth: 'Reconnect required',
+      reauth: 'Reconnect',
+      reauthDescription: 'Google Drive needs reauthorization',
       offline: 'Offline',
       disconnected: 'Not connected'
     },
@@ -34,7 +36,11 @@ export const en = {
     },
     unavailableOffline: 'Google Drive is unavailable offline',
     connectToShowFiles: 'Connect to show Google Drive files',
-    chooseDestinationFolder: 'Choose a destination folder'
+    chooseDestinationFolder: 'Set up the GuitarDSL Library',
+    emptyLibrary: 'No scores or folders yet',
+    importFromDrive: 'Import from Google Drive…',
+    newFolder: 'New folder…',
+    refreshLibrary: 'Refresh'
   },
   common: {
     collapse: 'Collapse',

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 test('production PWA precaches offline authoring and gates updates on draft, IME, Drive, and appData safety', async ({ page }) => {
   let driveVersion = 1;
   let appDataVersion = 1;
+  const myDriveRootId = 'my-drive-root-a';
   let driveSource = 'title: Drive saved\n';
   let driveListFallback: unknown[] = [{ id: 'drive-song', name: 'Drive Song.guitardsl', mimeType: 'text/plain',
     version: '1', modifiedTime: 't1', headRevisionId: 'r1', parents: ['folder-account-a'] }];
@@ -75,11 +76,18 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
     if (url.pathname === '/drive/v3/about') {
       return json({ user: { permissionId: 'account-a', emailAddress: 'account-a@example.test' } });
     }
+    if (url.pathname === '/drive/v3/files/root') {
+      return route.fulfill({ status: 404, headers: apiHeaders, json: { error: 'My Drive root metadata is unavailable under drive.file' } });
+    }
     if (url.pathname === '/drive/v3/files' && url.searchParams.get('spaces') === 'appDataFolder') {
       return json({ files: [{ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
         createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] });
     }
     if (url.pathname === '/drive/v3/files') {
+      if (url.searchParams.get('q')?.includes("name='GuitarDSL'")) {
+        return json({ files: [{ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+          parents: [myDriveRootId], appProperties: { guitardslLibraryRoot: '1' } }] });
+      }
       const plan = driveListPlans.shift();
       plan?.started?.();
       if (plan?.gate) await plan.gate;
@@ -92,7 +100,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
         createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` });
     }
     if (url.pathname === '/drive/v3/files/folder-account-a') {
-      return json({ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' });
+      return json({ id: 'folder-account-a', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+        trashed: false, parents: [myDriveRootId], appProperties: { guitardslLibraryRoot: '1' } });
     }
     if (url.pathname === '/drive/v3/files/drive-song') {
       if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers: apiHeaders, body: driveSource });
@@ -156,7 +165,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
   await expect(page.locator('#connect-drive')).toBeDisabled();
-  await expect(page.locator('#drive-connect-inline')).toBeDisabled();
+  await expect(page.locator('#drive-connection-row')).toHaveAttribute('data-state', 'offline');
+  await expect(page.locator('#drive-connect-inline')).toHaveCount(0);
   await expect(page.locator('#drive-state-label')).toHaveText('Offline');
 
   const newLocalDocument = page.waitForEvent('dialog').then(dialog => dialog.accept('Offline recovery.guitardsl'));

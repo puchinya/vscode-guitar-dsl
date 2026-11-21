@@ -236,6 +236,27 @@ export const indexedDb = {
     await done;
   },
 
+  async updateDriveDocumentMetadata(
+    identity: DocumentIdentity, accountId: string,
+    metadata: Pick<StoredDocument, 'name' | 'driveVersion' | 'driveModifiedTime' | 'driveRevisionId' | 'driveFolderId'>
+  ): Promise<boolean> {
+    if (identity.storage !== 'drive') throw new TypeError('Drive metadata requires Drive identity');
+    const db = await openDatabase();
+    const tx = db.transaction(DOCUMENTS, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(DOCUMENTS);
+    const key = identityKey(identity, accountId);
+    const current = await idbRequest<StoredDocument & { key: string } | undefined>(store.get(key));
+    if (!current) {
+      tx.abort();
+      await done.catch(() => undefined);
+      return false;
+    }
+    store.put({ ...current, ...metadata, driveEtag: undefined, updatedAt: Date.now() });
+    await done;
+    return true;
+  },
+
   async completeLocalMove(snapshot: DocumentSnapshot, expectedName: string, remote: StoredDocument): Promise<boolean> {
     if (snapshot.identity.storage !== 'local' || remote.identity.storage !== 'drive') {
       throw new TypeError('A local document and verified Drive document are required');
@@ -352,6 +373,28 @@ export const indexedDb = {
     const done = transactionDone(tx);
     tx.objectStore(storeName).put({ key, value } satisfies KeyValueRecord<T>);
     await done;
+  },
+
+  async updateValue<T>(
+    storeName: typeof SETTINGS | typeof SESSIONS, key: string,
+    update: (current: T | undefined) => T | undefined
+  ): Promise<T | undefined> {
+    const db = await openDatabase();
+    const tx = db.transaction(storeName, 'readwrite');
+    const done = transactionDone(tx);
+    try {
+      const store = tx.objectStore(storeName);
+      const current = await idbRequest<KeyValueRecord<T> | undefined>(store.get(key));
+      const next = update(current?.value);
+      if (next === undefined) store.delete(key);
+      else store.put({ key, value: next } satisfies KeyValueRecord<T>);
+      await done;
+      return next;
+    } catch (error) {
+      try { tx.abort(); } catch { /* The transaction may already have completed. */ }
+      await done.catch(() => undefined);
+      throw error;
+    }
   },
 
   async deleteValue(storeName: typeof SETTINGS | typeof SESSIONS, key: string): Promise<void> {

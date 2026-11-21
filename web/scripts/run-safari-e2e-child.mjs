@@ -504,17 +504,6 @@ try {
     }), 'Google Account menu did not open.');
     const connectMenuAction = await driver.findElement(By.css('#drive-menu button'));
     await driver.executeScript(action => action.click(), connectMenuAction);
-    await waitUntil(async () => await driver.executeScript(() =>
-      document.querySelector('dialog[open] h2')?.textContent === 'Set up a Google Drive folder?'
-      || document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
-    'Mock Google OAuth connection did not reach folder setup or completion.', 10_000);
-    const firstConnectPrompt = await driver.executeScript(() => document.querySelector('dialog[open] h2')?.textContent === 'Set up a Google Drive folder?');
-    if (firstConnectPrompt) {
-      await driver.executeScript(() => {
-        const button = Array.from(document.querySelectorAll('dialog button')).find(candidate => candidate.textContent?.trim() === 'Later');
-        button?.click();
-      });
-    }
     await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Connected to Google Drive')),
       'Mock Google OAuth connection did not complete.', 10_000).catch(async error => {
         const details = await driver.executeScript(() => ({
@@ -540,15 +529,18 @@ try {
     }, driveRoot);
     await waitUntil(async () => await driver.executeScript(() => {
       const menu = document.querySelector('#context-menu');
-      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Open from Google Drive')));
-    }), 'The connected Drive root menu did not open.');
+      return Boolean(menu && !menu.hidden && Array.from(menu.querySelectorAll('button')).some(button => button.textContent?.includes('Import from Google Drive')));
+    }), 'The connected Drive root import menu did not open.');
     const openPicker = await driver.findElements(By.css('#context-menu button')).then(async buttons => {
-      for (const button of buttons) if ((await button.getText()).includes('Open from Google Drive')) return button;
-      throw new Error('Open from Google Drive action was not rendered in the connected Drive root menu.');
+      for (const button of buttons) if ((await button.getText()).includes('Import from Google Drive')) return button;
+      throw new Error('Import from Google Drive action was not rendered in the connected Drive root menu.');
     });
     await openPicker.sendKeys(Key.ENTER);
+    await waitUntil(async () => await driver.executeScript(() => Boolean(document.querySelector('.drive-library-entry[data-file-id="safari-copy"]'))),
+      'Picker selection was not copied into the GuitarDSL library.');
+    await click('.drive-library-entry[data-file-id="safari-copy"]');
     await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),
-      'Mock Picker result did not open the Drive document.');
+      'Opening the imported Drive copy did not load the score.');
     const details = await driver.executeScript(() => ({
       tokenRequests: window.__guitardslSafariSmoke.tokenRequests,
       pickerOpened: window.__guitardslSafariSmoke.pickerOpened,

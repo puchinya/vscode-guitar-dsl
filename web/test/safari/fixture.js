@@ -98,7 +98,7 @@ window.google = {
         return { setVisible: visible => {
           if (!visible) return;
           state.pickerOpened = true;
-          this.callback?.({ action: 'picked', documents: [{ id: 'safari-file', name: 'Safari Smoke.guitardsl' }] });
+          this.callback?.({ action: 'picked', documents: [{ id: 'safari-file', name: 'Safari Smoke.guitardsl', mimeType: 'text/plain' }] });
         } };
       }
     }
@@ -108,12 +108,18 @@ window.gapi = { load: (_name, callbacks) => callbacks.callback() };
 
 const driveFile = {
   id: 'safari-file', name: 'Safari Smoke.guitardsl', mimeType: 'text/plain', version: '1',
-  modifiedTime: '2026-11-14T00:00:00.000Z', headRevisionId: 'safari-revision-1', parents: ['safari-folder']
+  modifiedTime: '2026-11-14T00:00:00.000Z', headRevisionId: 'safari-revision-1', parents: ['safari-source-folder']
+};
+const myDriveRootId = 'safari-my-drive-root';
+const driveFolder = {
+  id: 'safari-folder', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder', parents: [myDriveRootId],
+  trashed: false, appProperties: { guitardslLibraryRoot: '1' }
 };
 const driveSource = 'title: Safari Drive mock\n\n[Verse]\nAm | F | C | G |\n';
 const appDataFileId = 'safari-app-state';
 let appDataVersion = 1;
 let appDataState;
+let importedDriveFile;
 const appDataMetadata = () => ({
   id: appDataFileId, name: 'guitardsl-state-v1.json', mimeType: 'application/json',
   createdTime: '2026-11-15T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}`
@@ -135,8 +141,12 @@ window.fetch = async (input, init = {}) => {
     try { return JSON.parse(value); } catch { return undefined; }
   }).find(value => value?.schemaVersion === 1 && Array.isArray(value.openDriveFileIds));
   if (url.pathname === '/drive/v3/about') return json({ user: { permissionId: 'safari-smoke', emailAddress: 'safari-smoke@example.test' } });
+  if (url.pathname === '/drive/v3/files/root') return route.fulfill({ status: 404, headers, json: { error: 'My Drive root metadata is unavailable under drive.file' } });
   if (url.pathname === '/drive/v3/files' && method === 'GET') {
     if (url.searchParams.get('spaces') === 'appDataFolder') return json({ files: appDataState ? [appDataMetadata()] : [] });
+    const query = url.searchParams.get('q') ?? '';
+    if (query.includes("name='GuitarDSL'")) return json({ files: [driveFolder] });
+    if (query.includes("'safari-folder' in parents")) return json({ files: importedDriveFile ? [importedDriveFile] : [] });
     return json({ files: [driveFile] });
   }
   if (url.pathname === `/drive/v3/files/${appDataFileId}`) {
@@ -144,12 +154,26 @@ window.fetch = async (input, init = {}) => {
     return url.searchParams.get('alt') === 'media' ? json(appDataState) : json(appDataMetadata());
   }
   if (url.pathname === '/drive/v3/files/safari-folder') {
-    return json({ id: 'safari-folder', name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder' });
+    return json(driveFolder);
   }
   if (url.pathname === '/drive/v3/files/safari-file') {
     return url.searchParams.get('alt') === 'media'
       ? new Response(driveSource, { status: 200, headers: { ETag: '"safari-etag"' } })
       : json(driveFile);
+  }
+  if (url.pathname === '/drive/v3/files/safari-file/copy' && method === 'POST') {
+    const request = JSON.parse(await requestBody());
+    importedDriveFile = {
+      id: 'safari-copy', name: request.name, mimeType: 'text/plain', version: '1',
+      modifiedTime: '2026-11-15T00:00:00.000Z', headRevisionId: 'safari-copy-revision', parents: ['safari-folder'],
+      appProperties: request.appProperties
+    };
+    return json(importedDriveFile);
+  }
+  if (url.pathname === '/drive/v3/files/safari-copy') {
+    return url.searchParams.get('alt') === 'media'
+      ? new Response(driveSource, { status: 200, headers: { ETag: '"safari-copy-etag"' } })
+      : json(importedDriveFile ?? { id: 'safari-copy', name: 'Safari Smoke.guitardsl', mimeType: 'text/plain', parents: ['safari-folder'] });
   }
   if (url.pathname === '/upload/drive/v3/files' && method === 'POST' && url.searchParams.get('uploadType') === 'multipart') {
     appDataState = parseAppData(await requestBody());
