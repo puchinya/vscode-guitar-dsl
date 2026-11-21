@@ -98,7 +98,7 @@ window.google = {
         return { setVisible: visible => {
           if (!visible) return;
           state.pickerOpened = true;
-          this.callback?.({ action: 'picked', documents: [{ id: 'safari-file', name: 'Safari Smoke.guitardsl' }] });
+          this.callback?.({ action: 'picked', documents: [{ id: 'safari-file', name: 'Safari Smoke.guitardsl', mimeType: 'text/plain' }] });
         } };
       }
     }

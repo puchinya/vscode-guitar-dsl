@@ -26,7 +26,8 @@ import { activeTab as findActiveTab, sameTabIdentity, tabKey } from './tabs/docu
 import { downloadScorePdf, scoreFontUrls } from './pdfExporter';
 import { listenForPreviewMessages, WEB_PREVIEW_BRIDGE, WEB_PREVIEW_STYLE, type PreviewMessage, type PreviewPostMessage } from './adapters/previewBridge';
 import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleOAuth';
-import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, type DriveFile, type DrivePickerSelection } from './storage/googleDrive';
+import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, isSupportedDriveMimeType,
+  type DriveFile, type DrivePickerSelection } from './storage/googleDrive';
 import { DEFAULT_DRIVE_APPDATA_STATE, DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, validatePendingDriveAppData,
   type DriveAppDataSnapshot, type DriveAppDataState, type PendingDriveAppData } from './storage/driveAppData';
 import { serializeDriveSave } from './storage/driveSaveQueue';
@@ -2845,8 +2846,14 @@ interface PendingDriveImport {
   targetFolderId: string;
   name: string;
   kind: PendingDriveCopyKind;
+  sourceSha256?: string;
   copiedFileId?: string;
   mayHaveSentCopy: boolean;
+}
+
+async function sha256Utf8Hex(source: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function parsePendingDriveImports(value: unknown): PendingDriveImport[] {
@@ -2862,6 +2869,8 @@ function parsePendingDriveImports(value: unknown): PendingDriveImport[] {
       targetFolderId: record.targetFolderId,
       name: record.name,
       kind: record.kind === 'duplicate' ? 'duplicate' : 'import',
+      ...(typeof record.sourceSha256 === 'string' && /^[a-f\d]{64}$/iu.test(record.sourceSha256)
+        ? { sourceSha256: record.sourceSha256.toLowerCase() } : {}),
       ...(typeof record.copiedFileId === 'string' ? { copiedFileId: record.copiedFileId } : {}),
       // Older import records were written before files.copy and may already have reached Drive.
       mayHaveSentCopy: record.mayHaveSentCopy === false ? false : true
@@ -2925,10 +2934,15 @@ async function removePendingDriveCopy(accountId: string, operationId: string, on
   return removed;
 }
 
-function isConfirmedPendingCopy(file: DriveFile, entry: PendingDriveImport): boolean {
+async function isConfirmedPendingCopy(
+  readback: { file: DriveFile; source: string }, entry: PendingDriveImport, sourceSha256: string
+): Promise<boolean> {
+  const file = readback.file;
   return file.id !== entry.sourceId && (!entry.copiedFileId || file.id === entry.copiedFileId)
-    && file.name === entry.name && !file.trashed && file.parents?.includes(entry.targetFolderId) === true
-    && file.appProperties?.guitardslImportOperation === entry.operationId;
+    && file.name === entry.name && isSupportedDriveFile(file.name) && isSupportedDriveMimeType(file.mimeType)
+    && !file.trashed && file.parents?.includes(entry.targetFolderId) === true
+    && file.appProperties?.guitardslImportOperation === entry.operationId
+    && await sha256Utf8Hex(readback.source) === sourceSha256;
 }
 
 async function reconcilePendingDriveCopy(
@@ -2942,12 +2956,22 @@ async function reconcilePendingDriveCopy(
   }
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
   if (!isCurrent()) return 'unresolved';
+  let sourceSha256 = entry.sourceSha256;
+  if (!sourceSha256) {
+    try {
+      const original = await drive.getFile(entry.sourceId);
+      if (!isCurrent() || original.file.id !== entry.sourceId || original.file.trashed
+        || !isSupportedDriveFile(original.file.name) || !isSupportedDriveMimeType(original.file.mimeType)) return 'unresolved';
+      sourceSha256 = await sha256Utf8Hex(original.source);
+      if (!isCurrent()) return 'unresolved';
+    } catch { return 'unresolved'; }
+  }
   let confirmed: DriveFile | undefined;
   if (entry.copiedFileId) {
     try {
       const known = await drive.getFile(entry.copiedFileId);
       if (!isCurrent()) return 'unresolved';
-      if (isConfirmedPendingCopy(known.file, entry)) confirmed = known.file;
+      if (await isConfirmedPendingCopy(known, entry, sourceSha256)) confirmed = known.file;
     } catch { /* Try the operation marker when direct readback is temporarily unavailable. */ }
   }
   if (!isCurrent()) return 'unresolved';
@@ -2958,7 +2982,7 @@ async function reconcilePendingDriveCopy(
       if (marked) {
         const readback = await drive.getFile(marked.id);
         if (!isCurrent()) return 'unresolved';
-        if (isConfirmedPendingCopy(readback.file, entry)) confirmed = readback.file;
+        if (await isConfirmedPendingCopy(readback, entry, sourceSha256)) confirmed = readback.file;
       }
     } catch { /* Preserve the journal until an ID or marker can be read back. */ }
   }
@@ -3035,8 +3059,7 @@ async function importFromDrivePicker(
     let unknown = 0;
     for (const source of selected) {
       if (!isCurrent()) return;
-      if (!isSupportedDriveFile(source.name) || source.mimeType === 'application/vnd.google-apps.folder'
-        || source.mimeType?.startsWith('application/vnd.google-apps.')) { failed += 1; continue; }
+      if (!isSupportedDriveFile(source.name) || !isSupportedDriveMimeType(source.mimeType)) { failed += 1; continue; }
       const previous = await findPendingDriveCopy(accountId, source.id, targetFolderId, 'import');
       if (previous) {
         if (!previous.mayHaveSentCopy) { unknown += 1; continue; }
@@ -3061,13 +3084,17 @@ async function importFromDrivePicker(
       try {
         const original = await drive.getFile(source.id);
         if (!isCurrent()) return;
-        if (original.file.id !== source.id || original.file.trashed || !isSupportedDriveFile(original.file.name)) {
+        if (original.file.id !== source.id || original.file.trashed || !isSupportedDriveFile(original.file.name)
+          || !isSupportedDriveMimeType(original.file.mimeType)) {
           throw new Error('The selected Drive file is no longer available for import.');
         }
+        const sourceSha256 = await sha256Utf8Hex(original.source);
+        if (!isCurrent()) return;
         const currentTarget = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
         if (!isCurrent() || !currentTarget) return;
         const entry: PendingDriveImport = {
-          operationId: crypto.randomUUID(), sourceId: source.id, targetFolderId, name, kind: 'import', mayHaveSentCopy: false
+          operationId: crypto.randomUUID(), sourceId: source.id, targetFolderId, name, kind: 'import', sourceSha256,
+          mayHaveSentCopy: false
         };
         const reservation = await reservePendingDriveCopy(accountId, entry);
         if (!reservation.reserved) {
@@ -3092,8 +3119,9 @@ async function importFromDrivePicker(
         if (!isCurrent()) return;
         const readback = await drive.getFile(copied.id);
         if (!isCurrent()) return;
-        if (!isConfirmedPendingCopy(readback.file, { ...entry, copiedFileId: copied.id })
-          || readback.source !== original.source) { unknown += 1; continue; }
+        if (!await isConfirmedPendingCopy(readback, { ...entry, copiedFileId: copied.id }, sourceSha256)) {
+          unknown += 1; continue;
+        }
         const verifiedAfterCopy = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
         if (!isCurrent() || !verifiedAfterCopy || !readback.file.parents?.includes(verifiedAfterCopy.target.id)) {
           unknown += 1;
@@ -3232,7 +3260,8 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
     const outcome = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, _tab, isCurrent) => {
       const operationIsCurrent = () => isCurrent() && state.folderId === libraryRootId;
       if (!operationIsCurrent()) return undefined;
-      if (!latest.parents?.includes(parentId) || !isSupportedDriveFile(latest.name)) {
+      if (!latest.parents?.includes(parentId) || !isSupportedDriveFile(latest.name)
+        || !isSupportedDriveMimeType(latest.mimeType)) {
         throw new Error('The score is no longer in the selected library folder.');
       }
       const root = await getVerifiedDriveLibraryRoot(queuedDrive, libraryRootId, operationIsCurrent);
@@ -3243,9 +3272,12 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
       if (!operationIsCurrent()) return undefined;
       if (original.file.id !== latest.id || original.file.trashed || original.file.name !== latest.name
         || original.file.version !== latest.version || original.file.modifiedTime !== latest.modifiedTime
-        || original.file.headRevisionId !== latest.headRevisionId || !original.file.parents?.includes(parentId)) {
+        || original.file.headRevisionId !== latest.headRevisionId || !original.file.parents?.includes(parentId)
+        || !isSupportedDriveMimeType(original.file.mimeType)) {
         throw new Error('The score changed before it could be copied. Refresh the library and try again.');
       }
+      const sourceSha256 = await sha256Utf8Hex(original.source);
+      if (!operationIsCurrent()) return undefined;
       const previous = await findPendingDriveCopy(accountId, itemId, parentId, 'duplicate');
       if (previous) {
         const reconciled = previous.mayHaveSentCopy
@@ -3264,7 +3296,7 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
       if (!operationIsCurrent() || !targetBeforeCopy) return undefined;
       const entry: PendingDriveImport = {
         operationId: crypto.randomUUID(), sourceId: itemId, targetFolderId: parent.id, name,
-        kind: 'duplicate', mayHaveSentCopy: false
+        kind: 'duplicate', sourceSha256, mayHaveSentCopy: false
       };
       const reservation = await reservePendingDriveCopy(accountId, entry);
       if (!reservation.reserved) {
@@ -3288,7 +3320,7 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
         if (!operationIsCurrent()) return { status: 'unresolved' as const };
         const readback = await queuedDrive.getFile(copy.id);
         if (!operationIsCurrent()) return { status: 'unresolved' as const };
-        if (!isConfirmedPendingCopy(readback.file, { ...entry, copiedFileId: copy.id }) || readback.source !== original.source) {
+        if (!await isConfirmedPendingCopy(readback, { ...entry, copiedFileId: copy.id }, sourceSha256)) {
           return { status: 'unresolved' as const };
         }
         const verifiedAfterCopy = await getVerifiedLibraryTarget(queuedDrive, libraryRootId, parent.id, operationIsCurrent);

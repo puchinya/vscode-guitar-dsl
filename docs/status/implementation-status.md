@@ -3,7 +3,7 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-20
+- **最終更新日**: 2026-11-21
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
 ## Issue #181: Web Vue I18n 11.4.22
@@ -20,9 +20,9 @@
 
 - **状態**: `feature/180-google-drive-library` で実装。開発中の新仕様として旧保存先・旧IndexedDB設定の移行やファイルのコピーは行わない。接続時にマイドライブ直下の `GuitarDSL` をライブラリとして使い、同じ物理フォルダーIDを保つ。現行appDataのIDは同一の正準ルートだとmetadataで確認できる場合だけ再利用し、新規ルート作成の確認は正準ルートがない場合に限る。
 - **機能**: Explorerに実フォルダー階層と対応する楽譜を遅延表示。Pickerは選択元を変更せず、選択したライブラリフォルダーへのコピーインポートだけを行う。フォルダー作成・名前変更、楽譜の名前変更・複製・ライブラリ内移動、右クリックとShift+F10のメニュー、Google Driveで開く操作を追加。
-- **レビュー指摘対応（2026-11-21）**: フォルダー/楽譜作成と各COPYの直前に、Drive上のライブラリrootと対象フォルダーの現在の親子関係を再検証する。Picker復帰後とCOPY readback後にも検証し、rootや対象が移動・ゴミ箱化・アクセス不能なら書き込みを始めず、結果を確認できないCOPYはjournalを保持する。インポートと複製はアカウント別の同一IndexedDB journalを使い、COPY前に操作を保存し、送信前に送信された可能性を記録する。返却IDを先に読み戻し、その後marker検索を行い、確認できるまでjournalを残して自動再コピーしない。journalの追加・更新・削除は1つのIndexedDB readwrite transactionで行う。Explorerに32pxのライブラリ行と22pxのGoogle Drive状態行を実装し、幅220px/236px、英語/日本語、折りたたみ状態を検証。
-- **検証（2026-11-21 / 現行作業ツリー）**: `npm run compile:all`、Help/AI同期はPASS。Web unit 67/67 PASS。`npm run test:web` は198 browser checks中195 PASS、3件FAIL（WebKitのIssue #178通知タイマー、Drive draft復元、Preview編集）。各失敗を含むWebKit focused diagnosticは3/3 PASS。Issue #180のroot/folder移動、Picker後検証、reload後journal復旧、legacy pending journal、複製の既知ID照合、タブ間journal同時更新、接続行の幅/ローカライズ回帰はChromium/WebKitでPASS。production PWA 2/2 PASS、Safari smoke 7項目PASS（Safari 26.6.2）。VS Code拡張E2Eは初回の全体ゲートで実行済み。以後はユーザー指示に従いWeb-onlyの検証で進め、拡張E2Eを再実行していない。
-- **画面証拠**: [接続ダイアログ、状態行、DriveルートメニューのChromiumスクリーンショット](evidence/issue-180/README.md)。OAuth/Drive APIはモックで、本番Googleアカウントの画面ではない。
+- **レビュー指摘対応（2026-11-21）**: Driveにあるファイルの実MIME型が`text/plain`または`application/octet-stream`の場合だけPicker選択とCOPYを許可し、作成されたコピーのMIME型もreadbackで検証する。COPY前に保存するjournalには本文を含めず、UTF-8本文のSHA-256を保存して、成功判定・既知ID・操作markerの復旧時に内容一致を確認する。digestのない旧journalは元ファイルを再読込し、現在の本文とコピーが一致した場合のみ復旧し、それ以外は未解決のまま保持してCOPYを再試行しない。Safari smoke fixtureにも許可MIME型を設定した。Explorerに32pxのライブラリ行と22pxのGoogle Drive状態行を実装し、幅220px/236px、英語/日本語、折りたたみ状態を検証。
+- **検証（2026-11-21 / PR #185の最新レビュー `7054800348` 対応後）**: `npm run compile:all`、`npm run check:help`、`npm run check:ai`はPASS。`npm run test:web`はWeb unit 67/67、Chromium/WebKit 210/210 PASS。production PWA E2E 2/2 PASS。Safari 26.6.2 smokeは7/7 PASS（mocked OAuth/Picker/Drive）。VS Code拡張に影響しないWeb専用変更のため、ユーザー指示に従ってVS Code Extension E2Eは省略。
+- **画面証拠**: [接続ダイアログ、接続状態行、Driveルートメニュー、日本語ダークテーマ220pxの接続済み状態を含むChromiumスクリーンショット](evidence/issue-180/README.md)。OAuth/Drive APIはモックで、本番Googleアカウントの画面ではない。
 - **未検証**: 実Google OAuth/Drive、本番Googleアカウント上のアクセス、iOS/iPadOS SafariはNOT RUN。OAuth/Drive APIはテストでmock。
 - **注意事項**: Vite buildは既存の500 kB超chunk warningを出すが成功。wasm-packはこの環境用の事前ビルド済みwasm-bindgenを取得できず、cargo install fallbackで `vscode:prepublish` が成功。実Google OAuth/DriveはNOT RUN。
 

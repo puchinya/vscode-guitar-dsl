@@ -125,7 +125,9 @@ interface DriveBrowserMockOptions {
   holdFileReadId?: string;
   missingFileIds?: string[];
   forbiddenFileIdsOnce?: string[];
-  remoteFiles?: Record<string, { name: string; source: string; version: string }>;
+  remoteFiles?: Record<string, { name: string; source: string; version: string; mimeType?: string }>;
+  copySourceOverrides?: Record<string, string>;
+  copyMimeType?: string;
   folders?: Record<string, string>;
   rootFolders?: Record<string, { id?: string; marked?: boolean } | null>;
   rootCreateUnknownOnce?: boolean;
@@ -244,7 +246,10 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
           const callback = this.callback;
           return { setVisible: visible => {
             if (!visible) return;
-            const complete = () => callback?.({ [actionKey]: 'picked', [documentsKey]: config.pickerSelections ?? [config.pickerSelection] });
+            const complete = () => {
+              const selections = config.pickerSelections ?? (config.pickerSelection ? [config.pickerSelection] : []);
+              callback?.({ [actionKey]: 'picked', [documentsKey]: selections.map(selection => ({ mimeType: 'text/plain', ...selection })) });
+            };
             const target = window as unknown as { __pickerOpened?: boolean; __releasePickerSelection?: () => void };
             target.__pickerOpened = true;
             if (config.holdPickerSelection) target.__releasePickerSelection = complete;
@@ -417,11 +422,12 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         const operationId = body.appProperties?.guitardslImportOperation;
         const fileId = `drive-copy-${operationId ?? crypto.randomUUID()}`;
         copyFileIds.push(fileId);
-        const copy = { id: fileId, name: body.name ?? 'Copy.guitardsl', mimeType: 'text/plain', version: '1', modifiedTime: 'copy-created',
+        const copy = { id: fileId, name: body.name ?? 'Copy.guitardsl', mimeType: options.copyMimeType ?? 'text/plain', version: '1', modifiedTime: 'copy-created',
           parents: body.parents ?? [], appProperties: body.appProperties ?? {}, trashed: false };
         (options.driveFiles ?? (options.driveFiles = [])).push(copy);
         if (options.remoteFiles) options.remoteFiles[fileId] = {
-          name: copy.name, source: options.remoteFiles[sourceId]?.source ?? `title: ${sourceId}\n`, version: '1'
+          name: copy.name, source: options.copySourceOverrides?.[sourceId] ?? options.remoteFiles[sourceId]?.source ?? `title: ${sourceId}\n`,
+          version: '1', mimeType: copy.mimeType
         };
         return route.fulfill({ headers, json: copy });
       }
@@ -479,6 +485,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       return route.fulfill({ headers, json: {
         ...(existingRoot ?? driveRecord ?? {}), id: fileId,
         name: remote?.name ?? seeded?.name ?? driveRecord?.name ?? existingRoot?.name ?? `${fileId}.guitardsl`,
+        mimeType: remote?.mimeType ?? driveRecord?.mimeType ?? existingRoot?.mimeType ?? 'text/plain',
         version, modifiedTime: `t${version}`, headRevisionId: `r${version}`,
         parents: driveRecord?.parents ?? existingRoot?.parents ?? [seeded?.folderId ?? `folder-${accountId}`]
       } });
@@ -2498,6 +2505,62 @@ test('imports multiple selected scores as copies and leaves Picker sources uncha
   expect(sources['source-two']?.source).toBe('title: Two source\n');
 });
 
+test('rejects Picker files whose MIME type is unsupported even when their score extension is allowed', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelections: [
+      { id: 'picker-pdf', name: 'Picker PDF.guitardsl', mimeType: 'application/pdf' },
+      { id: 'metadata-pdf', name: 'Metadata PDF.gdsl', mimeType: 'text/plain' }
+    ],
+    remoteFiles: {
+      'picker-pdf': { name: 'Picker PDF.guitardsl', source: 'title: Picker PDF\n', version: '1', mimeType: 'application/pdf' },
+      'metadata-pdf': { name: 'Metadata PDF.gdsl', source: 'title: Metadata PDF\n', version: '1', mimeType: 'application/pdf' }
+    }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
+
+  await expect(page.locator('#app-message')).toContainText('Import: 0 confirmed, 2 failed, 0 unconfirmed');
+  expect(drive.copySourceIds).toEqual([]);
+  await expect(page.locator('.drive-library-entry[data-file-id="picker-pdf"]')).toHaveCount(0);
+  await expect(page.locator('.drive-library-entry[data-file-id="metadata-pdf"]')).toHaveCount(0);
+});
+
+test('keeps an unsupported MIME copy unresolved without reporting success or copying again', async ({ page }) => {
+  const sourceText = 'title: MIME source\n';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'mime-source', name: 'MIME source.guitardsl', mimeType: 'text/plain' },
+    remoteFiles: { 'mime-source': { name: 'MIME source.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' } },
+    copyMimeType: 'application/pdf'
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
+  await expect(page.locator('#app-message')).toContainText('Import: 0 confirmed, 0 failed, 1 unconfirmed');
+  expect(drive.copySourceIds).toEqual(['mime-source']);
+
+  const firstJournal = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ sourceSha256?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(firstJournal?.[0]?.sourceSha256).toMatch(/^[a-f\d]{64}$/u);
+  expect(JSON.stringify(firstJournal)).not.toContain(sourceText);
+  const copiedFileId = drive.copyFileIds[0]!;
+  await expect(page.locator(`.drive-library-entry[data-file-id="${copiedFileId}"]`)).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await performAccountAction(page);
+  await expect(page.locator('#app-message')).toContainText('remain unconfirmed');
+  expect(drive.copySourceIds).toEqual(['mime-source']);
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  })).not.toBeUndefined();
+});
+
 test('revalidates a loaded library folder before creating folders or scores after it moves outside', async ({ page }) => {
   const folderId = 'folder-child-account-a';
   const drive = await installDriveBrowserMock(page, ['account-a'], {
@@ -2598,14 +2661,52 @@ test('keeps an import journal across reloads until its copied Drive file can be 
   expect(drive.copySourceIds).toEqual(['reload-source']);
 });
 
+test('does not confirm an import after its copied content differs before and after reload', async ({ page }) => {
+  const sourceText = 'title: Original import\n';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'changed-import-source', name: 'Changed import.guitardsl', mimeType: 'text/plain' },
+    remoteFiles: { 'changed-import-source': { name: 'Changed import.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' } },
+    copySourceOverrides: { 'changed-import-source': 'title: Altered copy\n' }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
+  await expect(page.locator('#app-message')).toContainText('Import: 0 confirmed, 0 failed, 1 unconfirmed');
+  expect(drive.copySourceIds).toEqual(['changed-import-source']);
+
+  const firstJournal = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ sourceSha256?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(firstJournal?.[0]?.sourceSha256).toMatch(/^[a-f\d]{64}$/u);
+  expect(JSON.stringify(firstJournal)).not.toContain(sourceText);
+
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await performAccountAction(page);
+  await expect(page.locator('#app-message')).toContainText('remain unconfirmed');
+  const retained = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ sourceSha256?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(retained).toEqual(firstJournal);
+  expect(drive.copySourceIds).toEqual(['changed-import-source']);
+});
+
 test('reconciles a legacy pending import record as possibly sent without copying again', async ({ page }) => {
   const operationId = 'legacy-operation';
   const copiedFileId = 'legacy-import-copy';
+  const sourceText = 'title: Legacy import\n';
   const drive = await installDriveBrowserMock(page, ['account-a'], {
     driveFiles: [{
       id: copiedFileId, name: 'Legacy import.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain',
       parents: ['folder-account-a'], appProperties: { guitardslImportOperation: operationId }
-    }]
+    }],
+    remoteFiles: {
+      'legacy-source': { name: 'Original legacy.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' },
+      [copiedFileId]: { name: 'Legacy import.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' }
+    }
   });
   await page.goto('/');
   await page.evaluate(async operation => {
@@ -2621,6 +2722,36 @@ test('reconciles a legacy pending import record as possibly sent without copying
   })).toBeUndefined();
   expect(drive.copySourceIds).toEqual([]);
   expect(drive.operationMarkerSearchCount).toBeGreaterThan(0);
+});
+
+test('keeps a legacy pending import unresolved when its source content cannot be compared', async ({ page }) => {
+  const operationId = 'legacy-without-source-operation';
+  const copiedFileId = 'legacy-without-source-copy';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [{
+      id: copiedFileId, name: 'Legacy unknown.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain',
+      parents: ['folder-account-a'], appProperties: { guitardslImportOperation: operationId }
+    }],
+    missingFileIds: ['legacy-source-unavailable']
+  });
+  await page.goto('/');
+  await page.evaluate(async operation => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'pending-drive-imports:account-a', [{
+      operationId: operation, sourceId: 'legacy-source-unavailable', targetFolderId: 'folder-account-a', name: 'Legacy unknown.guitardsl'
+    }]);
+  }, operationId);
+
+  await performAccountAction(page);
+  await expect(page.locator('#app-message')).toContainText('remain unconfirmed');
+  const pending = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ operationId: string; sourceSha256?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(pending).toHaveLength(1);
+  expect(pending?.[0]).toMatchObject({ operationId });
+  expect(pending?.[0]?.sourceSha256).toBeUndefined();
+  expect(drive.copySourceIds).toEqual([]);
 });
 
 test('reconciles an unconfirmed duplicate by its known Drive ID without a second copy', async ({ page }) => {
@@ -2661,6 +2792,45 @@ test('reconciles an unconfirmed duplicate by its known Drive ID without a second
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
   })).toBeUndefined();
+  expect(drive.copySourceIds).toEqual([sourceFile.id]);
+});
+
+test('keeps a duplicate unresolved across reload when copied content does not match its saved digest', async ({ page }) => {
+  const sourceText = 'title: Duplicate baseline\n';
+  const sourceFile = {
+    id: 'duplicate-changed-source', name: 'Duplicate changed.guitardsl', version: '1', modifiedTime: 't1',
+    mimeType: 'text/plain', parents: ['folder-account-a']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [sourceFile],
+    remoteFiles: { [sourceFile.id]: { name: sourceFile.name, source: sourceText, version: '1', mimeType: 'text/plain' } },
+    copySourceOverrides: { [sourceFile.id]: 'title: Altered duplicate\n' }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const source = page.locator(`.drive-library-entry[data-file-id="${sourceFile.id}"]`);
+  await expect(source).toBeVisible();
+  await source.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
+  await expect(page.locator('#app-message')).toContainText('unconfirmed');
+  expect(drive.copySourceIds).toEqual([sourceFile.id]);
+  const firstJournal = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ kind: string; sourceSha256?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(firstJournal).toEqual([expect.objectContaining({ kind: 'duplicate', sourceSha256: expect.stringMatching(/^[a-f\d]{64}$/u) })]);
+  expect(JSON.stringify(firstJournal)).not.toContain(sourceText);
+
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await performAccountAction(page, 15000);
+  await expect(page.locator('#app-message')).toContainText('remain unconfirmed');
+  const retained = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  });
+  expect(retained).toEqual(firstJournal);
   expect(drive.copySourceIds).toEqual([sourceFile.id]);
 });
 
@@ -3352,6 +3522,36 @@ for (const locale of ['en', 'ja'] as const) {
     await expectStatusHeight();
   });
 }
+
+test('shows the connected Japanese Drive status in dark theme at 220px', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a']);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語' }).click();
+  await page.getByRole('button', { name: '設定' }).click();
+  await page.getByRole('menuitemradio', { name: 'テーマ: ダーク' }).click();
+  await expect(page.locator('#app')).toHaveAttribute('data-theme', 'dark');
+  await page.locator('#workspace').evaluate(element => element.style.setProperty('--explorer-width', '220px'));
+  await expect(page.locator('#workspace')).toHaveCSS('--explorer-width', '220px');
+
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Google Drive に接続' }).click();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'connected');
+  const connectionRow = page.locator('#drive-connection-row');
+  await expect(connectionRow).toContainText('Google Drive');
+  await expect(connectionRow).toContainText('接続済み');
+  await expect(connectionRow.locator('.drive-status-dot')).toBeVisible();
+  await expect(connectionRow.locator('.drive-status-dot')).toHaveCSS('background-color', 'rgb(34, 160, 107)');
+  await expect(connectionRow).toHaveCSS('height', '22px');
+  expect(await connectionRow.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  if (process.env.GUITARDSL_CAPTURE_ISSUE180 === '1'
+    && page.context().browser()?.browserType().name() === 'chromium') {
+    const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-180');
+    await mkdir(evidenceDir, { recursive: true });
+    await page.locator('.file-list').screenshot({ path: resolve(evidenceDir, 'library-connection-row-connected-ja-dark-220-runtime.png') });
+  }
+});
 
 test('connects and reconnects from the Google Drive root menu', async ({ page }) => {
   await installDriveBrowserMock(page, ['account-a']);

@@ -54,6 +54,10 @@ function pickerApi(): PickerApi | undefined {
 
 function isGuitarDslName(name: string): boolean { return /\.(guitardsl|gdsl)$/i.test(name); }
 
+export function isSupportedDriveMimeType(mimeType: string | undefined): boolean {
+  return mimeType === 'text/plain' || mimeType === 'application/octet-stream';
+}
+
 export class GoogleDriveApi {
   constructor(private readonly auth: GoogleOAuth) {}
 
@@ -175,7 +179,7 @@ export class GoogleDriveApi {
       const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
       files.push(...(page.files ?? []).filter(file => !file.trashed
         && (file.mimeType === 'application/vnd.google-apps.folder'
-          || (isGuitarDslName(file.name) && (file.mimeType === 'text/plain' || file.mimeType === 'application/octet-stream')))));
+          || (isGuitarDslName(file.name) && isSupportedDriveMimeType(file.mimeType)))));
       if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
       if (page.nextPageToken) seen.add(page.nextPageToken);
       pageToken = page.nextPageToken;
