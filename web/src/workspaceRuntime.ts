@@ -239,6 +239,8 @@ let runtimeDisposed = false;
 let workspaceInitializing = true;
 let reloadPreparationActive = false;
 let reloadBaselineMatches: (() => boolean) | undefined;
+let remoteAppDataRestoreInProgress = false;
+let reloadPreparationRemoteRestoreOutcome: 'restored' | 'failed' | undefined;
 let pageCacheSuspended = false;
 let pageCacheBaseline: { activeKey: string | null; identity: DocumentIdentity; accountId: string | undefined; source: string; revision: number; editorSource: string } | undefined;
 let deferredExplorerRefresh = false;
@@ -326,7 +328,8 @@ const derivedScoreCache = createWorkspaceScoreCache(
 );
 
 function syncWorkspaceInteractionLock(): void {
-  const locked = workspaceInitializing || moveToDriveInProgress || reloadPreparationActive || pageCacheSuspended;
+  const locked = workspaceInitializing || moveToDriveInProgress || reloadPreparationActive
+    || remoteAppDataRestoreInProgress || pageCacheSuspended;
   app.inert = locked;
   if (locked) app.setAttribute('aria-busy', 'true');
   else app.removeAttribute('aria-busy');
@@ -605,7 +608,7 @@ function renderDriveOperationControls(): void {
 }
 
 function trackWorkspaceOperation<T>(operation: () => T | Promise<T>): T | Promise<T> | undefined {
-  if (runtimeDisposed || reloadPreparationActive || pageCacheSuspended) return undefined;
+  if (runtimeDisposed || reloadPreparationActive || remoteAppDataRestoreInProgress || pageCacheSuspended) return undefined;
   activeWorkspaceOperationCount += 1;
   try {
     const result = operation();
@@ -636,7 +639,9 @@ function workspaceOperationIsCurrent(generation: number): boolean {
 }
 
 async function withDriveOperation<T>(operation: () => Promise<T>): Promise<T> {
-  if (reloadPreparationActive || pageCacheSuspended) throw new Error('Drive operations are paused while the workspace is preparing to update or is in browser history cache.');
+  if (reloadPreparationActive || remoteAppDataRestoreInProgress || pageCacheSuspended) {
+    throw new Error('Drive operations are paused while workspace settings are being restored or the page is in browser history cache.');
+  }
   activeDriveOperations += 1;
   renderDriveOperationControls();
   try { return await operation(); }
@@ -813,7 +818,10 @@ async function loadDriveChildren(parentId: string, force = false, stillCurrent: 
 
 function refreshExplorerSnapshot(): Promise<void> {
   if (runtimeDisposed) return Promise.resolve();
-  if (reloadPreparationActive || pageCacheSuspended) { deferredExplorerRefresh = true; return Promise.resolve(); }
+  if (reloadPreparationActive || remoteAppDataRestoreInProgress || pageCacheSuspended) {
+    deferredExplorerRefresh = true;
+    return Promise.resolve();
+  }
   const tracked = trackWorkspaceOperation(refreshExplorerSnapshotOperation);
   return tracked instanceof Promise ? tracked : Promise.resolve();
 }
@@ -992,6 +1000,7 @@ async function clearPendingDriveAppData(
 }
 
 function scheduleDriveAppDataSync(): void {
+  if (remoteAppDataRestoreInProgress) return;
   if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
   if (driveConnectInProgress) {
     deferredAppDataSync = true;
@@ -1039,40 +1048,106 @@ function scheduleDriveAppDataSync(): void {
 async function restoreRemoteDriveAppData(
   snapshot: DriveAppDataSnapshot, accountId: string, drive: GoogleDriveApi, generation: number
 ): Promise<boolean> {
-  if (!driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
-  const desired = desiredDriveAppData(accountId, drive, generation, snapshot.state);
-  const pendingState = state.appDataPending?.state;
-  state.appDataSnapshot = snapshot;
-  state.appDataPending = undefined;
-  state.appDataPendingChoice = undefined;
-  state.folderId = undefined;
-  state.folderName = undefined;
-  state.appDataSync = 'syncing';
-  state.appDataError = undefined;
-  if (pendingState && !await clearPendingDriveAppData(accountId, drive, generation, pendingState, desired)) return false;
-  appDataUnknownOutcome = false;
-  if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
-  await setUpDriveFolderAfterConnect(accountId, drive, generation);
-  if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
-  await renderExplorer();
-  if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
-  const restored = await restoreDriveSession(accountId, drive, generation, snapshot.state);
-  if (!restored || !driveSessionIsCurrent(accountId, drive, generation)) {
-    if (driveSessionIsCurrent(accountId, drive, generation)) {
+  if (remoteAppDataRestoreInProgress || !driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
+  const cancelledReloadPreparation = reloadPreparationActive;
+  remoteAppDataRestoreInProgress = true;
+  syncWorkspaceInteractionLock();
+  publishWorkspaceSnapshot();
+  if (cancelledReloadPreparation) {
+    // A remote choice changes the workspace baseline. Cancel this update attempt, but keep
+    // the shell locked until the selected Drive folder and tabs have finished restoring.
+    deferredAppDataSync = false;
+    deferredExplorerRefresh = false;
+    releaseReloadPreparation();
+  }
+
+  let succeeded = false;
+  const previousPending = state.appDataPending;
+  let pending = previousPending;
+  try {
+    // Let any earlier durable pending write settle before remembering what the remote choice
+    // is allowed to clear. The choice must not delete a newer account-scoped record.
+    await appDataPendingQueue;
+    if (!driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
+    const persistedPending = await readPendingDriveAppData(accountId);
+    if (!driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
+    pending = persistedPending ?? previousPending;
+
+    const desired = desiredDriveAppData(accountId, drive, generation, snapshot.state);
+    state.appDataSnapshot = snapshot;
+    // Hide the local pending value only while applying the explicitly selected remote state;
+    // restore it below if any part of that operation fails.
+    state.appDataPending = undefined;
+    state.appDataPendingChoice = 'remote';
+    state.folderId = undefined;
+    state.folderName = undefined;
+    state.appDataSync = 'syncing';
+    state.appDataError = undefined;
+    appDataUnknownOutcome = true;
+    renderStorageStatus();
+
+    await setUpDriveFolderAfterConnect(accountId, drive, generation, snapshot.state);
+    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
+      throw new Error('The Drive session changed while restoring the selected settings.');
+    }
+    const folderId = state.folderId;
+    if (!folderId) throw new Error('The selected Drive library folder could not be restored.');
+    // Resolve the selected folder's listing before clearing pending state or releasing the shell lock.
+    const children = await drive.listChildren(folderId);
+    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot || state.folderId !== folderId) {
+      throw new Error('The Drive session changed while restoring the selected library.');
+    }
+    driveChildrenByParent.set(folderId, children);
+    driveFolderErrors.delete(folderId);
+    rebuildDriveFileRows();
+    const restored = await restoreDriveSession(accountId, drive, generation, snapshot.state);
+    if (!restored || !driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
+      throw new Error(state.locale === 'ja'
+        ? 'Drive のタブを復元できません。保留中の設定は保持されています。'
+        : 'Drive tabs could not be restored. Pending settings have been kept.');
+    }
+    deferredExplorerRefresh = false;
+    if (pending && !await clearPendingDriveAppData(accountId, drive, generation, pending.state, desired)) {
+      throw new Error(state.locale === 'ja'
+        ? 'Drive のタブは復元しましたが、保留中の設定を安全に消去できませんでした。'
+        : 'Drive tabs were restored, but the pending settings could not be safely cleared.');
+    }
+    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
+      throw new Error('The Drive session changed before pending settings could be cleared.');
+    }
+    state.appDataPending = undefined;
+    state.appDataPendingChoice = undefined;
+    state.appDataSync = 'idle';
+    state.appDataError = undefined;
+    appDataOfflinePending = false;
+    appDataUnknownOutcome = false;
+    succeeded = true;
+  } catch (error) {
+    if (driveSessionIsCurrent(accountId, drive, generation) && state.appDataStore) {
+      state.appDataPending = pending ?? previousPending;
+      state.appDataPendingChoice = 'remote';
       state.appDataSync = 'error';
       state.appDataError = state.locale === 'ja'
-        ? 'Drive のタブを復元できません。保留中の設定は保持されています。'
-        : 'Drive tabs could not be restored. Pending settings have been kept.';
+        ? `Drive の選択した設定を復元できません。保留中の設定は保持されています。${shortError(error)}`
+        : `The selected Drive settings could not be restored. Pending settings have been kept. ${shortError(error)}`;
+      appDataUnknownOutcome = true;
       renderStorageStatus();
+      showMessage(`${strings().appDataError}: ${state.appDataError}`, 'error');
     }
-    return false;
+  } finally {
+    if (cancelledReloadPreparation) reloadPreparationRemoteRestoreOutcome = succeeded ? 'restored' : 'failed';
+    remoteAppDataRestoreInProgress = false;
+    deferredAppDataSync = false;
+    syncWorkspaceInteractionLock();
+    publishWorkspaceSnapshot();
+    if (deferredExplorerRefresh && !runtimeDisposed && !pageCacheSuspended) {
+      deferredExplorerRefresh = false;
+      void refreshExplorerSnapshot();
+    }
   }
-  state.appDataSync = 'idle';
-  state.appDataError = undefined;
-  appDataOfflinePending = false;
+  if (!succeeded) return false;
   renderAll();
-  if (state.activeStorage === 'drive') await renderExplorer();
-  return true;
+  return driveSessionIsCurrent(accountId, drive, generation) && state.appDataSync === 'idle' && !state.appDataPending;
 }
 
 async function persistDriveAppData(
@@ -2610,7 +2685,7 @@ async function commitSelectedDriveFolder(
     driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
   }
   const next = { ...(baseState ?? driveWorkspaceState()), selectedFolderId: folder.id, folderPrompt: prompt };
-  if (accountId && drive && state.appDataSnapshot) {
+  if (!remoteAppDataRestoreInProgress && accountId && drive && state.appDataSnapshot) {
     try {
       if (!await persistPendingDriveAppData(accountId, drive, generation, next)) return;
     } catch (error) {
@@ -2625,7 +2700,7 @@ async function commitSelectedDriveFolder(
   }
   state.folderId = folder.id;
   state.folderName = folder.name;
-  if (accountId && drive && state.appDataSnapshot) {
+  if (!remoteAppDataRestoreInProgress && accountId && drive && state.appDataSnapshot) {
     state.appDataSync = 'pending';
     state.appDataPendingChoice = 'local';
     renderStorageStatus();
@@ -2634,9 +2709,11 @@ async function commitSelectedDriveFolder(
   await renderExplorer();
 }
 
-async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriveApi, generation: number): Promise<void> {
+async function setUpDriveFolderAfterConnect(
+  accountId: string, drive: GoogleDriveApi, generation: number, sessionOverride?: DriveAppDataState
+): Promise<void> {
   const snapshot = state.appDataSnapshot;
-  const session = state.appDataPending?.state ?? snapshot?.state;
+  const session = sessionOverride ?? state.appDataPending?.state ?? snapshot?.state;
   if (!snapshot || !session) return;
   let folders = await drive.findAccessibleFolders();
   if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
@@ -5187,10 +5264,14 @@ function releaseReloadPreparation(): void {
 async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: string }> {
   const blocked = (ja: string, en: string) => ({ ok: false as const, reason: state.locale === 'ja' ? ja : en });
   if (reloadPreparationActive) return blocked('更新の準備がすでに進行中です。', 'An update is already being prepared.');
+  if (remoteAppDataRestoreInProgress) {
+    return blocked('Drive の設定を復元しています。完了後に更新してください。', 'Wait for Drive settings to finish restoring before updating.');
+  }
   if (pageCacheSuspended || runtimeDisposed) return blocked('ワークスペース復帰後にもう一度更新してください。', 'Resume the workspace before preparing an update.');
 
   // Lock synchronously before the first await. Existing actions remain registered until they
   // settle; an update attempt fails closed rather than reloading across an in-flight operation.
+  reloadPreparationRemoteRestoreOutcome = undefined;
   updatePreparationGeneration += 1;
   reloadPreparationActive = true;
   syncWorkspaceInteractionLock();
@@ -5226,6 +5307,7 @@ async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: s
   reloadBaselineMatches = baselineMatches;
   const validate = (requireDrafts: boolean, requireAppDataIdle: boolean): { ok: true } | { ok: false; reason: string } => {
     if (!reloadPreparationActive || runtimeDisposed) return blocked('更新準備が中断されました。', 'Update preparation was interrupted.');
+    if (remoteAppDataRestoreInProgress) return blocked('Drive の設定を復元しています。', 'Drive settings are still being restored.');
     if (pageCacheSuspended) return blocked('ページ復帰後にもう一度確認してください。', 'Recheck the workspace after it resumes from browser history.');
     if (!baselineMatches()) return blocked('更新準備中に文書が変わりました。編集状態を確認してから再試行してください。', 'A document changed during update preparation. Review the edits and try again.');
     if (sourceEditor.hasPendingEdit()) return blocked('確定していない編集があります。入力を完了してから再試行してください。', 'An editor change is still pending. Finish the input and try again.');
@@ -5257,6 +5339,19 @@ async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: s
     || state.appDataSync === 'error' || appDataSyncTimer > 0 || Boolean(state.appDataPending) || deferredAppDataSync;
   if (appDataNeedsFlush) {
     const synced = await flushDriveAppData(() => validate(false, false).ok);
+    if (reloadPreparationRemoteRestoreOutcome) {
+      const outcome = reloadPreparationRemoteRestoreOutcome;
+      reloadPreparationRemoteRestoreOutcome = undefined;
+      return outcome === 'restored'
+        ? blocked(
+          'Drive から設定を復元しました。内容を確認してから更新をもう一度選んでください。',
+          'Drive settings were restored. Review the workspace and choose Update again.'
+        )
+        : blocked(
+          'Drive から設定を復元できませんでした。保留中の設定を保持しました。内容を確認して再試行してください。',
+          'Drive settings could not be restored. Pending settings were kept; review the workspace before retrying.'
+        );
+    }
     if (!synced) return fail('Google Drive の設定同期が完了するまで更新できません。', 'Wait for Google Drive settings to finish syncing before updating.');
     deferredAppDataSync = false;
     check = validate(true, true);
@@ -5285,7 +5380,7 @@ pwaRuntime = registerPwa({
   revalidateForActivation() {
     const blocked = (ja: string, en: string) => ({ ok: false as const, reason: state.locale === 'ja' ? ja : en });
     if (runtimeDisposed) return blocked('ワークスペースが終了しています。', 'The workspace has been disposed.');
-    if (!reloadPreparationActive || pageCacheSuspended) {
+    if (!reloadPreparationActive || remoteAppDataRestoreInProgress || pageCacheSuspended) {
       return blocked('更新準備が安全な状態ではありません。', 'The workspace is not in a safe update-preparation state.');
     }
     if (!reloadBaselineMatches?.()) return blocked('更新準備中に文書が変わりました。編集状態を確認してから再試行してください。', 'A document identity or source revision changed during update preparation.');
