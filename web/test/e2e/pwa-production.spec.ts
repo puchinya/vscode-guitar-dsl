@@ -356,6 +356,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   expect(await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.scriptURL)).toBe(activeWorkerBeforeGate);
   releaseAppDataPatch();
   holdAppDataPatch = false;
+  await expect(page.getByRole('dialog')).toContainText('Choose which settings to use.');
+  await page.getByRole('button', { name: 'Keep this device’s settings', exact: true }).click();
   await reload;
   const driveDraftPersisted = await page.evaluate(() => new Promise<boolean>(resolve => {
     const request = indexedDB.open('guitardsl-workspace');
