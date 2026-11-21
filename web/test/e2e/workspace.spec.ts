@@ -28,13 +28,227 @@ interface TestAppDataState {
 const mockedDriveAppData = new WeakMap<Page, Map<string, TestAppDataState | null>>();
 const mockedDriveSeeds = new WeakMap<Page, Map<string, DriveSeed>>();
 
+// Keep the pre-existing workspace tests focused on score editing. The dedicated Welcome test
+// uses ?welcome=1 to exercise the real first-start preference (missing means show Welcome).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    if (new URL(location.href).searchParams.has('welcome')) return;
+    const nativeOpen = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function(name: string, version?: number): IDBOpenDBRequest {
+      const request = nativeOpen.call(this, name, version);
+      if (name === 'guitardsl-workspace') request.addEventListener('success', () => {
+        try {
+          const db = request.result;
+          if (!db.objectStoreNames.contains('settings')) return;
+          const transaction = db.transaction('settings', 'readwrite');
+          transaction.objectStore('settings').put({ key: 'web-welcome-v1', value: { suppressOnStartup: true } });
+        } catch { /* The app will report actual storage failures through its normal UI. */ }
+      }, { once: true });
+      return request;
+    };
+  });
+});
+
 async function readEditorSource(page: Page): Promise<string> {
   return page.evaluate(() => (window as Window & { __guitarDslReadSource?: () => string }).__guitarDslReadSource?.() ?? '');
 }
 
+test('shows and persists the non-document Welcome tab without mutating the restored score', async ({ page }, testInfo) => {
+  const googleRequests: string[] = [];
+  page.on('request', request => { if (/googleapis\.com|accounts\.google\.com/.test(request.url())) googleRequests.push(request.url()); });
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto('/?welcome=1');
+  const welcomeTab = page.getByRole('tab', { name: 'Welcome', exact: true });
+  await expect(welcomeTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#open-tabs [role="tab"][aria-selected="true"]')).toHaveCount(1);
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toHaveAttribute('aria-selected', 'false');
+  await expect(page.locator('.welcome-actions button')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Create New Score' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start Tutorial' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Import file' })).toHaveCount(0);
+  await expect(page.locator('#source-pane')).toBeHidden();
+  await expect(page.locator('#inspector-tabs-host')).toBeAttached();
+  await expect(page.locator('#inspector-content')).toBeAttached();
+  const wideColumns = await page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(wideColumns).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath('welcome-en.png'), fullPage: true });
+  await page.context().setOffline(true);
+  await expect(page.getByRole('region', { name: 'Welcome to GuitarDSL' }).getByText('Google Drive is unavailable offline', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toHaveCount(0);
+  await page.context().setOffline(false);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect.poll(() => page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+  const originalSource = await readEditorSource(page);
+  expect(originalSource).toContain('title: My song');
+  await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).not.toBeChecked();
+
+  await page.getByRole('checkbox', { name: 'Do not show this page again' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).toBeChecked();
+  await page.reload();
+  await expect(welcomeTab).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await expectEditorSource(page, originalSource);
+
+  await page.locator('#menu-help-trigger').click();
+  await page.getByRole('menuitem', { name: 'Welcome', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveCount(1);
+  await page.getByRole('checkbox', { name: 'Do not show this page again' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).not.toBeChecked();
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expectEditorSource(page, originalSource);
+  expect(googleRequests).toEqual([]);
+});
+
+test('defaults Welcome to visible when its stored preference has an invalid value', async ({ page }) => {
+  await page.goto('/?welcome=invalid');
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'web-welcome-v1', { suppressOnStartup: 'yes' });
+  });
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).not.toBeChecked();
+});
+test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?welcome=1');
+  await waitForWorkspaceReady(page);
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await expect(page.locator('.welcome-grid')).toBeVisible();
+  await expect.poll(() => page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('welcome-ja-mobile.png') });
+
+  await page.getByRole('button', { name: 'チュートリアルを開始', exact: true }).click();
+  await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.inspector')).toBeVisible();
+  const mobileDockWidth = await page.locator('.inspector').evaluate(element => element.getBoundingClientRect().width);
+  expect(mobileDockWidth).toBeGreaterThan(280);
+  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeVisible();
+  await expect(page.getByText('ステップ 1 / 10')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('tutorial-ja-mobile.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#toggle-tutorial')).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeHidden();
+  await page.locator('#toggle-tutorial').click();
+  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeVisible();
+});
+
+test('Connect from Welcome stays on the page without opening Picker or listing score files', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a'], { appDataState: null });
+  const scoreListQueries: string[] = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname !== '/drive/v3/files' || url.searchParams.get('spaces') === 'appDataFolder') return;
+    const query = url.searchParams.get('q') ?? '';
+    if (!query.includes("name='GuitarDSL'") || !query.includes("'root' in parents")) scoreListQueries.push(query);
+  });
+  await page.goto('/?welcome=1');
+  await page.getByRole('button', { name: 'Connect and Use Google Drive' }).click();
+  const setup = page.getByRole('dialog');
+  await expect(setup.getByRole('heading', { name: 'Set up the GuitarDSL Library?' })).toBeVisible();
+  await setup.getByRole('button', { name: 'Later' }).click();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText('Google Drive connected')).toBeVisible();
+  await expect(page.getByText('Manage Google Drive scores from Explorer.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toHaveCount(0);
+  await expect(page.locator('#drive-file-items .drive-library-entry')).toHaveCount(0);
+  expect(drive.visibleFolderCreateCount).toBe(0);
+  expect(scoreListQueries).toEqual([]);
+  expect(await page.evaluate(() => (window as Window & { __pickerOpened?: boolean }).__pickerOpened)).not.toBe(true);
+});
+
+test('opens the same right-dock tutorial from Help and persists its ten-step progress', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await page.locator('#menu-help-trigger').click();
+  await page.getByRole('menuitem', { name: 'Tutorial', exact: true }).click();
+  await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Prepare a score' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('tutorial-en.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 2 of 10')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText('Step 2 of 10')).toBeVisible();
+  for (let index = 0; index < 5; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Chord-only lesson complete')).toBeVisible();
+  await expect(page.getByText('Step 7 of 10')).toBeVisible();
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  await expect(page.getByText('Step 1 of 10')).toBeVisible();
+  await expect(page.getByText('Chord-only lesson complete')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  for (let index = 0; index < 9; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 10 of 10')).toBeVisible();
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+  await expect(page.getByText('Melody lesson complete')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+});
+
+test('serves all legal routes as static bilingual pages with a no-script English fallback', async ({ page }) => {
+  for (const pageName of ['licenses', 'privacy', 'terms']) {
+    for (const locale of ['en', 'ja']) {
+      for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        const response = await page.goto(`/${pageName}/${locale}/`);
+        expect(response?.status()).toBe(200);
+        await expect(page.locator('html')).toHaveAttribute('lang', locale);
+        await expect(page.locator('article h1')).toBeVisible();
+        await expect(page.locator('script')).toHaveCount(0);
+        await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://guitardsl.app/${pageName}/${locale}/`);
+        const dimensions = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth
+        }));
+        expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+      }
+    }
+    const baseResponse = await page.goto(`/${pageName}/`);
+    expect(baseResponse?.status()).toBe(200);
+    await expect(page.locator('article h1')).toBeVisible();
+  }
+
+  const browser = page.context().browser();
+  if (!browser) throw new Error('Playwright browser is unavailable');
+  const japaneseContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4179', locale: 'ja-JP' });
+  try {
+    const japanesePage = await japaneseContext.newPage();
+    await japanesePage.goto('/privacy/');
+    await expect(japanesePage).toHaveURL(/\/privacy\/ja\/$/);
+    await japanesePage.goto('/terms/en/');
+    await expect(japanesePage).toHaveURL(/\/terms\/en\/$/);
+  } finally { await japaneseContext.close(); }
+
+  const noScriptContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4179', locale: 'ja-JP', javaScriptEnabled: false });
+  try {
+    const noScriptPage = await noScriptContext.newPage();
+    await noScriptPage.goto('/privacy/');
+    await expect(noScriptPage).toHaveURL(/\/privacy\/$/);
+    await expect(noScriptPage.locator('article')).toContainText('Privacy Policy');
+    await expect(noScriptPage.locator('article')).toContainText('Google Drive is optional');
+  } finally { await noScriptContext.close(); }
+});
+
 async function expectEditorSource(page: Page, expected: string | RegExp): Promise<void> {
   if (typeof expected === 'string') await expect.poll(() => readEditorSource(page)).toBe(expected);
   else await expect.poll(() => readEditorSource(page)).toMatch(expected);
+}
+
+async function waitForWorkspaceReady(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const target = window as Window & { __guitarDslReadSource?: () => string };
+    return typeof target.__guitarDslReadSource === 'function'
+      && !(document.querySelector('.app-shell') as HTMLElement | null)?.inert;
+  });
 }
 
 async function seedPendingDriveAppData(page: Page, state: TestAppDataState): Promise<void> {
@@ -2217,12 +2431,86 @@ test('opens Help, Settings, and host-owned context menus from workspace surfaces
   await expect(page.getByRole('menuitem', { name: 'Download PDF' })).toBeVisible();
 });
 
+test('captures the Help menu in both locales, themes, and desktop viewports', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await waitForWorkspaceReady(page);
+
+  for (const locale of ['en', 'ja'] as const) {
+    if (locale === 'ja') {
+      await page.locator('#settings-button').click();
+      await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
+    }
+
+    for (const theme of ['light', 'dark'] as const) {
+      await page.locator('#settings-button').click();
+      const setting = locale === 'ja'
+        ? `テーマ: ${theme === 'light' ? 'ライト' : 'ダーク'}`
+        : `Theme: ${theme === 'light' ? 'Light' : 'Dark'}`;
+      await page.getByRole('menuitemradio', { name: setting, exact: true }).click();
+      await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', theme);
+
+      for (const viewport of [{ width: 1600, height: 900 }, { width: 1280, height: 800 }]) {
+        await page.setViewportSize(viewport);
+        await page.locator('#menu-help-trigger').click();
+        const menu = page.locator('#help-menu');
+        await expect(menu).toBeVisible();
+        await expect(menu.getByRole('menuitem')).toHaveCount(8);
+        await page.screenshot({
+          path: testInfo.outputPath(`help-menu-${locale}-${theme}-${viewport.width}x${viewport.height}.png`)
+        });
+        await page.keyboard.press('Escape');
+        await expect(menu).toBeHidden();
+      }
+    }
+  }
+});
+
+test('Help menu keeps its eight ordered actions, safe links, and versioned About dialog', async ({ page }) => {
+  await page.goto('/');
+  await waitForWorkspaceReady(page);
+  const trigger = page.locator('#menu-help-trigger');
+  await trigger.click();
+  const menu = page.locator('#help-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Welcome', 'Tutorial', 'Help', 'Source code (GitHub)',
+    'Licenses', 'Privacy Policy', 'Terms of Service', 'About GuitarDSL'
+  ]);
+  await expect(menu.getByRole('separator')).toHaveCount(2);
+
+  const externalLinks = menu.locator('a[role="menuitem"]');
+  const externalLinkAttributes = await externalLinks.evaluateAll(links => links.map(link => ({
+    href: link.getAttribute('href'),
+    target: link.getAttribute('target'),
+    rel: link.getAttribute('rel')
+  })));
+  expect(externalLinkAttributes).toEqual([
+    { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' },
+    { href: 'https://guitardsl.app/licenses/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: 'https://guitardsl.app/privacy/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: 'https://guitardsl.app/terms/', target: '_blank', rel: 'noopener noreferrer' }
+  ]);
+
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(menu.getByRole('menuitem', { name: 'About GuitarDSL' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  const about = page.getByRole('dialog', { name: 'About GuitarDSL' });
+  await expect(about).toBeVisible();
+  await expect(about).toContainText('GuitarDSL Web');
+  const webPackage = JSON.parse(await readFile(resolve(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+  await expect(about).toContainText(webPackage.version);
+  await page.keyboard.press('Escape');
+  await expect(about).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test('header menus keep their actions bound to the active editor and switch accessibly', async ({ page }) => {
   await page.goto('/');
   await expectEditorSource(page, /^title: My song/m);
   const triggers = page.locator('.main-menu-bar [role="menuitem"]');
-  await expect(triggers).toHaveCount(3);
-  await expect(triggers).toHaveText(['File', 'Edit', 'View']);
+  await expect(triggers).toHaveCount(4);
+  await expect(triggers).toHaveText(['File', 'Edit', 'View', 'Help']);
   await expect(page.getByRole('menuitem', { name: 'Window', exact: true })).toHaveCount(0);
 
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
@@ -5597,6 +5885,12 @@ test('keeps source export available when browser storage is blocked', async ({ p
   });
   await page.goto('/');
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  const suppression = page.getByRole('checkbox', { name: 'Do not show this page again' });
+  await expect(suppression).not.toBeChecked();
+  await suppression.click();
+  await expect(suppression).not.toBeChecked();
+  await expect(page.getByRole('alert')).toContainText('Could not save the Welcome preference. Your previous setting is still active.');
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
   const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
   await expect(page.locator('#saved-state')).toContainText('Local storage is unavailable');
   const source = 'title: Keep this source\n\n[Verse]\nC | G | Am | F |\n';

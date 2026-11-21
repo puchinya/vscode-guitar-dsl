@@ -1,0 +1,27 @@
+title: 紅葉（もみじ）
+artist: 作詞 高野辰之 / 作曲 岡野貞一
+key: C
+bpm: 88
+time: 4/4
+measures_per_row: 4
+
+[Verse 1]
+| C G7     | 4.d 8.d 8.u 4.d 8.d 8.u l:"秋の" |
+| C G7     | % l:"夕日に" |
+| C G7     | 4.d 8.d 8.u 4.d 8.d 8.u l:"照る山" |
+| C G7     | % l:"紅葉" |
+
+| C G7     | 4.d 8.d 8.u 4.d 8.d 8.u l:"濃いも" |
+| C G7     | % l:"薄いも" |
+| C G7     | 4.d 8.d 8.u 4.d 8.d 8.u l:"数ある" |
+| C G7     | % l:"中に" |
+
+| C Fmaj7  | 4.d 8.d 8.u 4.d 8.d 8.u l:"松を" |
+| C Em     | % l:"いろどる" |
+| Am Dm    | 4.d 8.d 8.u 4.d 8.d 8.u l:"楓や" |
+| G7       | % l:"蔦は" |
+
+| C G7     | 4.d 8.d 8.u 4.d 8.d 8.u l:"山の" |
+| Am Fmaj7 | % l:"ふもとの" |
+| Dm G7    | 4.d 8.d 8.u 4.d 8.d 8.u l:"裾" |
+| C        | % l:"模様" |

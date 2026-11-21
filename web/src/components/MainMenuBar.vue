@@ -2,12 +2,12 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-export type MainMenuId = 'file' | 'edit' | 'view';
+export type MainMenuId = 'file' | 'edit' | 'view' | 'help';
 
 const props = defineProps<{ activeMenu?: string }>();
 const emit = defineEmits<{ open: [menu: MainMenuId] }>();
 const root = ref<HTMLElement>();
-const menus: MainMenuId[] = ['file', 'edit', 'view'];
+const menus: MainMenuId[] = ['file', 'edit', 'view', 'help'];
 const { t } = useI18n({ useScope: 'global' });
 const labels = (menu: MainMenuId) => t(`menu.${menu}`);
 
@@ -47,5 +47,6 @@ defineExpose({ focusMenu });
     <button id="menu-file-trigger" type="button" role="menuitem" aria-haspopup="menu" :aria-expanded="activeMenu === 'file'" @click="emit('open', 'file')" @keydown="onTriggerKeydown('file', $event)" @pointerenter="onTriggerPointerEnter('file')">{{ labels('file') }}</button>
     <button id="menu-edit-trigger" type="button" role="menuitem" aria-haspopup="menu" :aria-expanded="activeMenu === 'edit'" @click="emit('open', 'edit')" @keydown="onTriggerKeydown('edit', $event)" @pointerenter="onTriggerPointerEnter('edit')">{{ labels('edit') }}</button>
     <button id="menu-view-trigger" type="button" role="menuitem" aria-haspopup="menu" :aria-expanded="activeMenu === 'view'" @click="emit('open', 'view')" @keydown="onTriggerKeydown('view', $event)" @pointerenter="onTriggerPointerEnter('view')">{{ labels('view') }}</button>
+    <button id="menu-help-trigger" type="button" role="menuitem" aria-haspopup="menu" :aria-expanded="activeMenu === 'help'" @click="emit('open', 'help')" @keydown="onTriggerKeydown('help', $event)" @pointerenter="onTriggerPointerEnter('help')">{{ labels('help') }}</button>
   </nav>
 </template>

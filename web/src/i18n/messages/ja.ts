@@ -5,7 +5,8 @@ export const ja = {
     main: 'メインメニュー',
     file: 'ファイル',
     edit: '編集',
-    view: '表示'
+    view: '表示',
+    help: 'ヘルプ'
   },
   action: {
     save: '保存',
@@ -60,7 +61,9 @@ export const ja = {
     workspaceView: 'ワークスペース表示',
     sourceView: 'ソース表示',
     splitView: '分割表示',
-    scoreView: '譜面表示'
+    scoreView: '譜面表示',
+    welcome: 'ようこそ',
+    closeWelcome: 'ようこそを閉じる'
   },
   problems: {
     title: '問題',
@@ -85,11 +88,69 @@ export const ja = {
     resizeInspector: 'Inspector の幅を変更',
     resizeProblems: '問題パネルの高さを変更',
     toolWindows: 'ツールウィンドウ',
-    toggleInspector: 'Inspector の表示切替'
+    toggleInspector: 'Inspector の表示切替',
+    toggleTutorial: 'チュートリアルの表示切替'
   },
   inspector: {
     title: 'インスペクタ',
-    options: 'Inspector のオプション'
+    options: 'Inspector のオプション',
+    tutorial: 'チュートリアル',
+    welcomePlaceholder: '設定を編集するには、楽譜を選択または作成してください。'
+  },
+  about: {
+    title: 'GuitarDSL について',
+    product: 'GuitarDSL Web',
+    version: 'バージョン {version}',
+    license: 'MIT License',
+    source: 'ソースコード（GitHub）',
+    support: 'サポートに問い合わせる'
+  },
+  welcome: {
+    heading: 'GuitarDSL へようこそ',
+    subtitle: 'コード譜、リズム、TAB、メロディを編集できるギター譜エディターです。',
+    start: 'はじめる',
+    about: 'GuitarDSL について',
+    create: '新しい楽譜を作成',
+    connect: 'Google Drive に接続して利用',
+    connected: 'Google Drive 接続済み',
+    driveHint: '左側のEXPLORERからGoogle Driveの楽譜を管理できます。',
+    driveOffline: 'オフラインではGoogle Driveを利用できません',
+    driveOfflineHint: 'オンラインに戻ってから再接続してください。この端末の楽譜は引き続き利用できます。',
+    tutorial: 'チュートリアルを開始',
+    storage: '保存について',
+    storageText: '楽譜と下書きはこの端末に保存されます。Google Drive は任意で、利用を選んだときだけ接続します。',
+    help: 'ヘルプ',
+    terms: '利用規約',
+    licenses: 'ライセンス（MIT/OSS）',
+    privacy: 'プライバシーポリシー',
+    source: 'ソースコード（GitHub）',
+    suppress: '次回からこの画面を表示しない',
+    storageError: '設定を保存できませんでした。変更前の設定を維持しています。'
+  },
+  tutorial: {
+    title: 'チュートリアル',
+    step: 'ステップ {current} / 10',
+    previous: '戻る',
+    next: '次へ',
+    restart: '最初から',
+    finish: '完了',
+    completedA: 'メロディなしのレッスン完了',
+    completedB: 'メロディ付きのレッスン完了',
+    copy: '例をコピー',
+    copied: '例をコピーしました。',
+    copyFailed: '例をコピーできませんでした。',
+    steps: {
+      step1: { title: '楽譜を用意する', body: '既存の Untitled.guitardsl を使うか、自分で新しい楽譜を作成します。チュートリアルを始めてもファイルは作成・編集されません。' },
+      step2: { title: '楽曲情報を設定する', body: '原曲はヘ長調です。このレッスンではハ長調に移調します。コード譜の例にある曲名、作者、調、テンポ、拍子、1段あたりの小節数を入力します。' },
+      step3: { title: 'コードとストロークを付ける', body: '16小節それぞれでコードセルとリズムセルを分けます。コードが2つなら各コードは2拍ずつです。%は直前の小節のリズムだけを繰り返し、コードセルは省略しません。' },
+      step4: { title: '1〜8小節に歌詞を付ける', body: 'コード譜の前半8小節に小節単位の l: 歌詞を追加します。例には前半を示しています。歌詞はそれぞれのリズムセルに記します。' },
+      step5: { title: '9〜16小節に歌詞を付ける', body: '9〜16小節を加えて1番を完成させます。リズムが%の小節でもコードセルは明示します。' },
+      step6: { title: 'A版を確認して保存する', body: 'メロディなしのコード譜をPreviewとProblemsで確認し、必要ならPDFを書き出してローカル保存します。ここでA版が完成します。B版は後から再開できます。' },
+      step7: { title: 'B版を別ファイルにする', body: 'Explorerでメロディなしのファイルを複製または名前変更し、A版を残してB版を用意します。チュートリアルが自動で複製・編集することはありません。' },
+      step8: { title: '前半8小節のメロディを付ける', body: 'B版では小節単位の l: 歌詞を削除し、1〜8小節にメロディと音符単位の lyr: を追加します。例はA版と同じ前半のコードとリズムセルを含みます。音価と休符を保ちます。' },
+      step9: { title: '後半8小節のメロディを付ける', body: 'メロディと lyr: を加えて9〜16小節を完成させます。8つの%を含め、A版と同じコードとリズムの小節を保ちます。' },
+      step10: { title: 'B版を確認して保存する', body: 'メロディ譜表、伴奏リズム譜表、歌詞、Problemsの診断なし、PDF、再読み込みを確認します。A版とB版を別ファイルで残します。' }
+    }
   },
   pwa: {
     title: 'アプリの更新',

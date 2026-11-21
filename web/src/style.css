@@ -455,6 +455,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .topbar .workspace-name { display: none; }
   .top-actions { flex: 0 0 auto; margin-left: auto; }
   .top-actions button { min-height: 26px; padding: 3px 5px; font-size: 10px; }
+  .workspace { position: relative; }
+  .workspace #inspector-splitter { display: none; }
+  .workspace:not(.inspector-auto-hidden):not(.inspector-closed) .inspector {
+    position: absolute; z-index: 20; inset: 0 36px 0 auto; width: calc(100vw - 80px);
+    max-width: 320px; border-left: 1px solid #dfe2e7; box-shadow: -8px 0 22px #0003;
+  }
   .workspace { grid-template-columns: 40px minmax(0, var(--explorer-width, 220px)) 6px minmax(0, 1fr) 6px minmax(0, var(--inspector-width, 300px)); }
   .file-list .storage-switch button { padding: 5px 4px; font-size: 10px; }
   .toolbar { overflow-x: auto; }
@@ -635,3 +641,64 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .top-actions .icon-action { width: 29px; min-width: 29px; }
 }
 .app-shell[data-theme="dark"] .tabs.tabs-empty { background: transparent; }
+
+/* Issue #188: Welcome and the second pane in the existing right dock. */
+.welcome-page { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; container-type: inline-size; background: #f7f8fa; }
+.welcome-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px; width: min(1080px, 100%); margin: 0 auto; padding: clamp(22px, 5vw, 56px); }
+.welcome-start, .welcome-about { min-width: 0; padding: clamp(18px, 3vw, 34px); border: 1px solid #dfe2e7; border-radius: 10px; background: #fff; }
+.welcome-eyebrow { margin: 0 0 8px; color: #5364d9; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.welcome-grid h1 { margin: 0 0 8px; font-size: clamp(23px, 3vw, 32px); line-height: 1.2; }
+.welcome-grid h2 { margin: 22px 0 10px; font-size: 15px; }
+.welcome-subtitle, .welcome-storage p, .welcome-capabilities { color: #596273; line-height: 1.6; }
+.welcome-actions, .welcome-links { display: grid; gap: 9px; }
+.welcome-drive-connected { padding: 12px; border: 1px solid #b9d5c2; border-radius: 6px; background: #eff8f1; }
+.welcome-drive-connected p { margin: 6px 0 0; color: #42534a; line-height: 1.5; }
+.inspector-welcome-placeholder { padding: 18px; color: #596273; line-height: 1.55; }
+.welcome-actions button { min-height: 40px; padding: 9px 12px; border: 1px solid #cbd2df; border-radius: 6px; background: #fff; color: inherit; text-align: left; }
+.welcome-actions .welcome-primary { border-color: #5364d9; background: #5364d9; color: #fff; font-weight: 600; }
+.welcome-links { margin-top: 18px; }
+.welcome-links a, .welcome-links button { width: fit-content; padding: 2px 0; border: 0; background: transparent; color: #3444b8; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.welcome-capabilities { padding-left: 20px; }
+.welcome-suppress { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; line-height: 1.45; }
+.welcome-suppress input { margin-top: 2px; }
+.inspector { display: flex; flex-direction: column; overflow: hidden; }
+.right-dock-tabs { display: flex; flex: 0 0 36px; gap: 2px; padding: 4px 8px; border-bottom: 1px solid #dfe2e7; }
+.right-dock-tabs button { padding: 5px 9px; border: 0; border-radius: 5px; background: transparent; color: #596273; }
+.right-dock-tabs button[aria-selected="true"] { background: #eef0ff; color: #3444b8; font-weight: 600; }
+.inspector-view, .tutorial-view { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.tutorial-view { display: flex; flex-direction: column; }
+.tutorial-panel { display: flex; flex-direction: column; min-height: 100%; padding: 12px; }
+.tutorial-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid #dfe2e7; }
+.tutorial-heading h2 { margin: 0; font-size: 15px; }
+.tutorial-heading p { margin: 4px 0 0; color: #69717e; font-size: 11px; }
+.tutorial-completion { display: flex; gap: 5px; }
+.tutorial-completion span { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #b8bfcc; border-radius: 50%; color: #69717e; font-size: 10px; font-weight: 700; }
+.tutorial-completion span[data-complete="true"] { border-color: #27865d; background: #e7f5ed; color: #176541; }
+.tutorial-step { padding: 12px 0; line-height: 1.5; }
+.tutorial-step h3 { margin: 0 0 8px; font-size: 14px; }
+.tutorial-step p { margin: 0 0 10px; color: #596273; }
+.tutorial-step pre { max-height: 190px; overflow: auto; padding: 9px; border: 1px solid #dfe2e7; border-radius: 5px; background: #f6f7f9; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+.tutorial-step button, .tutorial-actions button { min-height: 30px; padding: 5px 8px; border: 1px solid #cbd2df; border-radius: 5px; background: #fff; color: inherit; }
+.tutorial-copy-status { min-height: 16px; margin-top: 7px !important; font-size: 11px; }
+.tutorial-completion-labels { display: grid; gap: 4px; color: #176541; font-size: 11px; }
+.tutorial-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; padding-top: 10px; border-top: 1px solid #dfe2e7; }
+.tutorial-actions button:disabled { opacity: .45; cursor: default; }
+.tutorial-actions .tutorial-finish { margin-left: auto; border-color: #5364d9; background: #5364d9; color: #fff; }
+.settings-menu a, .context-menu a { display: flex; align-items: center; min-height: 32px; padding: 6px 9px; border-radius: 4px; color: inherit; text-decoration: none; }
+.settings-menu a:hover, .settings-menu a:focus-visible, .context-menu a:hover, .context-menu a:focus-visible { background: #eef0ff; outline: none; }
+.app-shell[data-theme="dark"] .welcome-page, .app-shell[data-theme="dark"] .welcome-start, .app-shell[data-theme="dark"] .welcome-about { background: #242830; color: #e4e7ee; border-color: #3a3f4a; }
+.app-shell[data-theme="dark"] .welcome-subtitle, .app-shell[data-theme="dark"] .welcome-storage p, .app-shell[data-theme="dark"] .welcome-capabilities,
+.app-shell[data-theme="dark"] .welcome-drive-connected p,
+.app-shell[data-theme="dark"] .inspector-welcome-placeholder,
+.app-shell[data-theme="dark"] .tutorial-step p, .app-shell[data-theme="dark"] .tutorial-heading p { color: #aeb5c2; }
+.app-shell[data-theme="dark"] .welcome-actions button, .app-shell[data-theme="dark"] .tutorial-step pre, .app-shell[data-theme="dark"] .tutorial-step button, .app-shell[data-theme="dark"] .tutorial-actions button { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
+.app-shell[data-theme="dark"] .welcome-drive-connected { background: #26392c; border-color: #3d6249; }
+.app-shell[data-theme="dark"] .welcome-actions .welcome-primary, .app-shell[data-theme="dark"] .tutorial-actions .tutorial-finish { background: #6877eb; border-color: #6877eb; color: #fff; }
+.app-shell[data-theme="dark"] .welcome-links a, .app-shell[data-theme="dark"] .welcome-links button { color: #aebcff; }
+.app-shell[data-theme="dark"] .right-dock-tabs, .app-shell[data-theme="dark"] .tutorial-heading, .app-shell[data-theme="dark"] .tutorial-actions { border-color: #3a3f4a; }
+.app-shell[data-theme="dark"] .right-dock-tabs button { color: #aeb5c2; }
+.app-shell[data-theme="dark"] .right-dock-tabs button[aria-selected="true"] { background: #343b6f; color: #dce0ff; }
+.app-shell[data-theme="dark"] .tutorial-completion span[data-complete="true"] { border-color: #3f9a70; background: #193a2b; color: #a8e3c1; }
+.app-shell[data-theme="dark"] .settings-menu a:hover, .app-shell[data-theme="dark"] .settings-menu a:focus-visible,
+.app-shell[data-theme="dark"] .context-menu a:hover, .app-shell[data-theme="dark"] .context-menu a:focus-visible { background: #eef0ff; color: #20242b; }
+@container (max-width: 850px) { .welcome-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 16px; } }

@@ -3,8 +3,17 @@
 本書は、Visual Studio Code 拡張機能 **GuitarDSL Previewer** (`vscode-guitar-dsl`) の現在の機能実装状況、検証状態、および今後の拡張予定を管理するドキュメントである。
 
 - **現在のバージョン**: `0.1.0`
-- **最終更新日**: 2026-11-21
+- **最終更新日**: 2026-11-22
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
+
+## Issue #188: Web ようこそ・チュートリアル・Help・法的文書
+
+- **状態**: `feature/188-web-welcome-tutorial-legal-pages` で実装し、[PR #190](https://github.com/puchinya/vscode-guitar-dsl/pull/190) でレビュー待ち。Issue #188 の承認済みImplementation Contract（comment 7065498079、SHA-256 `3d1cef67487a6cf69dc51594a8082668f48a639b321ab2d724fba6f13b84450e`）に基づく。対象はWebアプリ、バージョン `0.1.0`。
+- **実装**: IndexedDB の `web-welcome-v1` 設定を使う非文書 Welcome タブに、New Score・Google Drive 接続・Tutorial の3操作と利用案内を追加。10ステップ Tutorial は Inspector と切替可能な右Dockペインとして既存の楽譜／Inspectorを保持し、手順・A/Bの完了状態を保存する。Aは1911年「紅葉」のメロディなし歌詞付き譜面、Bは原譜からハ長調へ移調したメロディと音符単位歌詞付き譜面。比較表、日英レッスン資料と独立したDSL fixtureを `docs/tutorials/` に追加した。File/Edit/Viewに続くHelpメニューは8操作、区切り、矢印／Home／End／Escapeのフォーカス操作を持ち、既存右上Helpボタンを保つ。MITと第三者ライセンス、日英Privacy/Termsの静的ページを9URLで生成し、言語選択・検索向けメタデータを含めた。
+- **検証（2026-11-22）**: `npm run check:help`、`npm run check:ai`、`npm run check:legal`（9ページ、74本番依存）、`npm run build:web`、`npm run compile`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`（1,641行）、`git diff --check`、`validate-docs --issue 188`、`verify-implementation-contract 188` はPASS。Web unit 81/81、Web Chromium+WebKit E2E 264/264 PASS。Chromium production PWA E2E 3/3 PASS。Legal pagesの日英6ルートは390pxと1280pxの両幅で横overflowなし。Welcomeの不正な保存値での初期表示も両ブラウザーでPASS。Helpメニュー8条件の証跡テストと日本語モバイル Welcome/Tutorial（390×844 CSS px、Escapeで閉じてフォーカス復帰、再表示・reload後の復元）は両ブラウザーでPASS。Safari 26.6.2 smoke 7/7 PASS。root `npm test` はunit 130 PASS / 6 pendingの後、Issue #158 P136の既存E2Eが予期しないタブを報告して失敗した。これはIssue #188の変更箇所に触れない既存ケース。production buildは成功し、`workspaceRuntime`の1.13 MB chunkに既存のViteサイズ警告が出る。
+- **未確認事項**: 原譜の書誌と公開条件は[広島大学図書館デジタルアーカイブ](https://dc.lib.hiroshima-u.ac.jp/da/en/4102)を参照し、譜面から16小節を比較表へ転記して5半音下への移調を記録した。B版の実音を聴いての原曲照合は実施していないため、**メロディの音楽的／聴取受入はBLOCKED**とし、聴取済みとは扱わない。実Google OAuth/Drive、実メール配信、本番デプロイ後の9 URL readback／Google審査、iOS/iPadOS Safari、支援技術はNOT RUN。Cloudflareの転送設定確認は配信テストではない。`build:web` では既存の大きな `workspaceRuntime` chunk（約1.13 MB）のVite警告が出るがbuildは成功。
+- **画面証拠**: [Welcome](evidence/issue-188/welcome-en-chromium.png)、[Tutorial](evidence/issue-188/tutorial-en-chromium.png)、およびHelpメニューの英日×Light/Dark×1600×900/1280×800の8枚を[evidence/issue-188/README.md](evidence/issue-188/README.md)に保存。Welcome/Tutorialのモバイル画面も含め、ローカル由来の12枚を[Issue #188のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/188#issuecomment-7068116860)に添付済み。
+- **文書オーナー**: docs/specs/web-app.md、docs/specs/gui_design.md、docs/design/web-app.md、docs/tutorials/、docs/legal/、docs/help/、media/help/、docs/status/implementation-status.md、本項の画面証拠。
 
 ## Issue #186: Google Drive の不要な競合ダイアログ
 

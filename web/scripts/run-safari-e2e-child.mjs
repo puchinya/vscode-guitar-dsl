@@ -293,7 +293,11 @@ try {
   startStep('load-guitardsl-safari-fixture');
   await driver.get(`${baseUrl}/test/safari/fixture.html`);
   console.log('Safari smoke fixture loaded.');
-  await driver.wait(async () => await driver.executeScript(() => Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane .cm-content'))), 20_000);
+  await driver.wait(async () => await driver.executeScript(() => {
+    const appShell = document.querySelector('.app-shell');
+    return Boolean(document.querySelector('#saved-state') && document.querySelector('#source-pane .cm-content')
+      && appShell instanceof HTMLElement && !appShell.inert);
+  }), 20_000);
   await driver.manage().window().setRect({ width: 1280, height: 900, x: 0, y: 0 });
   await waitUntil(async () => await driver.executeScript(() => window.innerWidth >= 1200), 'Safari smoke did not enter the wide layout.');
   await installAppEditorEventRecorder();
