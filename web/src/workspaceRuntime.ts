@@ -976,6 +976,10 @@ async function clearPendingDriveAppData(
 
 function scheduleDriveAppDataSync(): void {
   if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
+  if (driveConnectInProgress) {
+    deferredAppDataSync = true;
+    return;
+  }
   if (reloadPreparationActive || pageCacheSuspended) {
     deferredAppDataSync = true;
     state.appDataSync = 'pending';
@@ -1165,12 +1169,16 @@ async function flushDriveAppData(shouldContinue: () => boolean = () => true): Pr
 
 async function persistSessions(_additionalDriveAccounts: string[] = []): Promise<void> {
   if (!state.storageReady) return;
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const generation = state.driveGeneration;
   const localTabs = state.tabs.filter(tab => tab.document.identity.storage === 'local');
   const localActive = localTabs.find(tab => tabKey(tab) === state.activeKey);
   try {
     await indexedDb.setValue('sessions', 'workspace-local', {
       tabs: localTabs.map(tab => tab.document.identity.fileId), active: localActive?.document.identity.fileId ?? null
     } satisfies WorkspaceSession);
+    if (state.account?.accountId !== accountId || state.drive !== drive || state.driveGeneration !== generation) return;
     scheduleDriveAppDataSync();
   } catch { state.storageReady = false; renderStorageStatus(); }
 }
@@ -2510,7 +2518,9 @@ async function loadDriveAppData(accountId: string, drive: GoogleDriveApi, genera
   return { snapshot, pending, pendingChoice };
 }
 
-async function commitSelectedDriveFolder(folder: DriveFile, prompt: DriveAppDataState['folderPrompt'] = 'completed'): Promise<void> {
+async function commitSelectedDriveFolder(
+  folder: DriveFile, prompt: DriveAppDataState['folderPrompt'] = 'completed', baseState?: DriveAppDataState
+): Promise<void> {
   const accountId = state.account?.accountId;
   const drive = state.drive;
   const generation = state.driveGeneration;
@@ -2518,7 +2528,7 @@ async function commitSelectedDriveFolder(folder: DriveFile, prompt: DriveAppData
     driveChildrenByParent.clear(); driveExpandedFolders.clear(); driveLoadingFolders.clear();
     driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
   }
-  const next = { ...driveWorkspaceState(), selectedFolderId: folder.id, folderPrompt: prompt };
+  const next = { ...(baseState ?? driveWorkspaceState()), selectedFolderId: folder.id, folderPrompt: prompt };
   if (accountId && drive && state.appDataSnapshot) {
     try {
       if (!await persistPendingDriveAppData(accountId, drive, generation, next)) return;
@@ -2567,7 +2577,7 @@ async function setUpDriveFolderAfterConnect(accountId: string, drive: GoogleDriv
   if (folder) {
     const verified = await drive.markLibraryRoot(folder);
     if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
-    await commitSelectedDriveFolder(verified, 'completed');
+    await commitSelectedDriveFolder(verified, 'completed', session);
     return;
   }
   if (session.folderPrompt === 'deferred') return;
@@ -2677,7 +2687,16 @@ async function connectDrive(): Promise<void> {
       markDriveAuthState(error); showMessage(shortError(error), 'error');
     }
   }
-  finally { if (operationIsCurrent()) { driveConnectInProgress = false; renderAll(); } }
+  finally {
+    if (operationIsCurrent()) {
+      driveConnectInProgress = false;
+      renderAll();
+      if (deferredAppDataSync && state.appDataSync !== 'error' && navigator.onLine) {
+        deferredAppDataSync = false;
+        scheduleDriveAppDataSync();
+      }
+    }
+  }
 }
 
 async function createDriveFolder(alreadyConfirmed = false): Promise<void> {

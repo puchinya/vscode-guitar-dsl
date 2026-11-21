@@ -3215,6 +3215,68 @@ test('coalesces a user close with remote tab restoration while the Drive draft s
   expect(recovered).toBe(driveDraft);
 });
 
+test('offline appData pending survives reload and choosing remote does not resend it', async ({ page }) => {
+  const initial: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-shared'], activeDriveFileId: 'drive-shared', recentDriveFileIds: ['drive-shared']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: initial,
+    driveFiles: [{ id: 'drive-shared', name: 'Shared.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a'] }],
+    remoteFiles: { 'drive-shared': { name: 'Shared.guitardsl', source: 'title: Shared\n', version: '1' } }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await expect(page.getByRole('tab', { name: 'Shared.guitardsl' })).toBeVisible();
+  expect(drive.appDataPatchCalls).toEqual([]);
+  expect(drive.appDataState).toEqual(initial);
+  const patchCountBeforeOffline = drive.appDataPatchCalls.length;
+
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('__issue186-drive-offline') === 'true') {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    }
+  });
+  await page.evaluate(() => {
+    sessionStorage.setItem('__issue186-drive-offline', 'true');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    window.dispatchEvent(new Event('offline'));
+  });
+  await page.getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  const readPending = () => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-state:account-a');
+  });
+  await expect.poll(async () => (await readPending() as { accountId?: string; state?: TestAppDataState } | undefined)?.accountId)
+    .toBe('account-a');
+  await expect.poll(async () => (await readPending() as { state?: TestAppDataState } | undefined)?.state?.activeDriveFileId)
+    .toBeNull();
+  expect(drive.appDataPatchCalls).toHaveLength(patchCountBeforeOffline);
+
+  await page.reload();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'false');
+  await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
+  await expectEditorSource(page, /title: My song/u);
+  await page.evaluate(() => {
+    sessionStorage.removeItem('__issue186-drive-offline');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+  });
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Review Google Drive settings' })).toBeVisible();
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'true');
+  await expect.poll(readPending).toBeUndefined();
+  await expect(page.getByRole('tab', { name: 'Shared.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Shared.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  expect(drive.appDataPatchCalls).toHaveLength(patchCountBeforeOffline);
+  expect(drive.appDataState).toEqual(initial);
+});
+
 test('local-only tab and draft changes do not PATCH unchanged Drive appData', async ({ page }) => {
   const initial: TestAppDataState = {
     schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
@@ -3356,11 +3418,11 @@ test('newer appData desires survive an older in-flight PATCH and become the fina
   });
   expect(drive.appDataPatchCalls[0]).toMatchObject({ openDriveFileIds: ['score-a'], activeDriveFileId: 'score-a' });
   expect(drive.appDataPatchCalls[1]).toMatchObject({ openDriveFileIds: ['score-a', 'score-b'], activeDriveFileId: 'score-a' });
-  const pending = await page.evaluate(async () => {
+  const readPending = () => page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     return indexedDb.getValue('settings', 'pending-drive-state:account-a');
   });
-  expect(pending).toBeUndefined();
+  await expect.poll(readPending).toBeUndefined();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
