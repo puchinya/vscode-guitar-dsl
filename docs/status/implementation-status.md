@@ -19,6 +19,7 @@
 ## Issue #180: Web版Google Driveライブラリ
 
 - **状態**: `feature/180-google-drive-library` で実装。開発中の新仕様として旧保存先・旧IndexedDB設定の移行やファイルのコピーは行わない。接続時にマイドライブ直下の `GuitarDSL` をライブラリとして使い、同じ物理フォルダーIDを保つ。現行appDataのIDは同一の正準ルートだとmetadataで確認できる場合だけ再利用し、新規ルート作成の確認は正準ルートがない場合に限る。
+- **表示名（2026-11-21 / PR #185）**: Explorerのライブラリルートは日本語「ライブラリ」、英語「Library」に短縮する。フォルダー・展開・メニューの余白と幅220pxは維持。Google Drive上の実フォルダ名 `GuitarDSL`、ID、OAuth、保存処理、初回設定画面の製品名は変更しない。
 - **機能**: Explorerに実フォルダー階層と対応する楽譜を遅延表示。Pickerは選択元を変更せず、選択したライブラリフォルダーへのコピーインポートだけを行う。フォルダー作成・名前変更、楽譜の名前変更・複製・ライブラリ内移動、右クリックとShift+F10のメニュー、Google Driveで開く操作を追加。
 - **レビュー指摘対応（2026-11-21）**: Driveにあるファイルの実MIME型が`text/plain`または`application/octet-stream`の場合だけPicker選択とCOPYを許可し、作成されたコピーのMIME型もreadbackで検証する。COPY前に保存するjournalには本文を含めず、UTF-8本文のSHA-256を保存して、成功判定・既知ID・操作markerの復旧時に内容一致を確認する。digestのない旧journalは元ファイルを再読込し、現在の本文とコピーが一致した場合のみ復旧し、それ以外は未解決のまま保持してCOPYを再試行しない。Safari smoke fixtureにも許可MIME型を設定した。Explorerに32pxのライブラリ行と22pxのGoogle Drive状態行を実装し、幅220px/236px、英語/日本語、折りたたみ状態を検証。
 - **検証（2026-11-21 / PR #185の最新レビュー `7054800348` 対応後）**: `npm run compile:all`、`npm run check:help`、`npm run check:ai`はPASS。`npm run test:web`はWeb unit 67/67、Chromium/WebKit 210/210 PASS。production PWA E2E 2/2 PASS。Safari 26.6.2 smokeは7/7 PASS（mocked OAuth/Picker/Drive）。VS Code拡張に影響しないWeb専用変更のため、ユーザー指示に従ってVS Code Extension E2Eは省略。
