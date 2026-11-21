@@ -163,7 +163,9 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   await page.goto('/');
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).not.toHaveAttribute('aria-busy', 'true');
-  await page.getByRole('checkbox', { name: 'Do not show this page again' }).check();
+  const suppressWelcome = page.getByRole('checkbox', { name: 'Do not show this page again' });
+  await suppressWelcome.click();
+  await expect(suppressWelcome).toBeChecked();
   await page.reload();
   await expect(page.getByRole('textbox', { name: 'GuitarDSL source editor' })).toBeVisible();
 
@@ -650,7 +652,9 @@ test('production PWA cold-starts offline from the same persistent browser profil
     await firstPage.goto('http://127.0.0.1:4179/');
     await expect(firstPage.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
     await expect(firstPage.getByRole('main', { name: 'GuitarDSL' })).not.toHaveAttribute('aria-busy', 'true');
-    await firstPage.getByRole('checkbox', { name: 'Do not show this page again' }).check();
+    const suppressWelcome = firstPage.getByRole('checkbox', { name: 'Do not show this page again' });
+    await suppressWelcome.click();
+    await expect(suppressWelcome).toBeChecked();
     await firstPage.evaluate(async () => { await navigator.serviceWorker.ready; });
     await firstPage.reload();
     await expect.poll(() => firstPage.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
