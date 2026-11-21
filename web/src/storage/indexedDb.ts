@@ -375,6 +375,28 @@ export const indexedDb = {
     await done;
   },
 
+  async updateValue<T>(
+    storeName: typeof SETTINGS | typeof SESSIONS, key: string,
+    update: (current: T | undefined) => T | undefined
+  ): Promise<T | undefined> {
+    const db = await openDatabase();
+    const tx = db.transaction(storeName, 'readwrite');
+    const done = transactionDone(tx);
+    try {
+      const store = tx.objectStore(storeName);
+      const current = await idbRequest<KeyValueRecord<T> | undefined>(store.get(key));
+      const next = update(current?.value);
+      if (next === undefined) store.delete(key);
+      else store.put({ key, value: next } satisfies KeyValueRecord<T>);
+      await done;
+      return next;
+    } catch (error) {
+      try { tx.abort(); } catch { /* The transaction may already have completed. */ }
+      await done.catch(() => undefined);
+      throw error;
+    }
+  },
+
   async deleteValue(storeName: typeof SETTINGS | typeof SESSIONS, key: string): Promise<void> {
     const db = await openDatabase();
     const tx = db.transaction(storeName, 'readwrite');

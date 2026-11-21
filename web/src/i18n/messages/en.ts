@@ -24,7 +24,8 @@ export const en = {
     status: {
       connected: 'Connected',
       connecting: 'Connecting…',
-      reauth: 'Reconnect required',
+      reauth: 'Reconnect',
+      reauthDescription: 'Google Drive needs reauthorization',
       offline: 'Offline',
       disconnected: 'Not connected'
     },

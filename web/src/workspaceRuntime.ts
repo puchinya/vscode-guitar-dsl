@@ -2758,15 +2758,19 @@ function chooseLoadedLibraryFolder(): DriveFile | undefined {
 
 async function createDriveLibraryFolder(accountId: string, generation: number, parentId: string): Promise<void> {
   if (!isDriveCommandCurrent(accountId, generation) || !isLibraryFolder(parentId)) { staleMenuTarget(); return; }
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) { staleMenuTarget(); return; }
   const name = window.prompt(state.locale === 'ja' ? 'フォルダー名' : 'Folder name', 'New folder')?.trim();
   if (!name) return;
   const drive = state.drive;
   if (!drive) return;
   const operationGeneration = workspaceOperationGeneration;
   const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.drive === drive
-    && isDriveCommandCurrent(accountId, generation) && isLibraryFolder(parentId);
+    && isDriveCommandCurrent(accountId, generation) && state.folderId === libraryRootId && isLibraryFolder(parentId);
   activeDriveWorkflowOperations += 1;
   try {
+    const verified = await getVerifiedLibraryTarget(drive, libraryRootId, parentId, isCurrent);
+    if (!isCurrent() || !verified) return;
     const operationId = crypto.randomUUID();
     let created: DriveFile;
     try { created = await drive.createChildFolder(parentId, name, operationId); }
@@ -2783,6 +2787,8 @@ async function createDriveLibraryFolder(accountId: string, generation: number, p
     if (!isCurrent()) return;
     if (readback.id !== created.id || readback.name !== name || readback.mimeType !== 'application/vnd.google-apps.folder'
       || readback.trashed || !readback.parents?.includes(parentId)) throw new Error('Google Drive did not confirm the new folder.');
+    const stillVerified = await getVerifiedLibraryTarget(drive, libraryRootId, parentId, isCurrent);
+    if (!isCurrent() || !stillVerified || !readback.parents?.includes(stillVerified.target.id)) return;
     await refreshDriveLibraryFolder(accountId, generation, parentId);
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
@@ -2790,6 +2796,8 @@ async function createDriveLibraryFolder(accountId: string, generation: number, p
 
 async function createDriveLibraryScore(accountId: string, generation: number, parentId: string): Promise<void> {
   if (!isDriveCommandCurrent(accountId, generation) || !isLibraryFolder(parentId)) { staleMenuTarget(); return; }
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) { staleMenuTarget(); return; }
   const entered = window.prompt(state.locale === 'ja' ? '楽譜名（拡張子なし）' : 'Score name (without extension)', 'Untitled');
   if (entered === null) return;
   const name = normalizedScoreName(entered);
@@ -2799,9 +2807,11 @@ async function createDriveLibraryScore(accountId: string, generation: number, pa
   const localOperationId = crypto.randomUUID();
   const operationGeneration = workspaceOperationGeneration;
   const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.drive === drive
-    && isDriveCommandCurrent(accountId, generation) && isLibraryFolder(parentId);
+    && isDriveCommandCurrent(accountId, generation) && state.folderId === libraryRootId && isLibraryFolder(parentId);
   activeDriveWorkflowOperations += 1;
   try {
+    const verified = await getVerifiedLibraryTarget(drive, libraryRootId, parentId, isCurrent);
+    if (!isCurrent() || !verified) return;
     let file: DriveFile;
     try { file = await drive.createFile(parentId, name, DEFAULT_SOURCE, localOperationId); }
     catch (error) {
@@ -2815,7 +2825,12 @@ async function createDriveLibraryScore(accountId: string, generation: number, pa
     if (!isCurrent()) return;
     const readback = await drive.getFile(file.id);
     if (!isCurrent()) return;
-    if (!readback.file.parents?.includes(parentId) || readback.source !== DEFAULT_SOURCE) throw new Error('Google Drive did not confirm the new score.');
+    if (readback.file.id !== file.id || readback.file.name !== name || !isSupportedDriveFile(readback.file.name)
+      || readback.file.trashed || !readback.file.parents?.includes(parentId) || readback.source !== DEFAULT_SOURCE) {
+      throw new Error('Google Drive did not confirm the new score.');
+    }
+    const stillVerified = await getVerifiedLibraryTarget(drive, libraryRootId, parentId, isCurrent);
+    if (!isCurrent() || !stillVerified || !readback.file.parents?.includes(stillVerified.target.id)) return;
     await refreshDriveLibraryFolder(accountId, generation, parentId);
     await openDriveDocument(readback.file, accountId, drive, generation);
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
@@ -2823,46 +2838,170 @@ async function createDriveLibraryScore(accountId: string, generation: number, pa
 }
 
 const pendingDriveImportKey = (accountId: string) => `pending-drive-imports:${accountId}`;
-interface PendingDriveImport { operationId: string; sourceId: string; targetFolderId: string; name: string }
+type PendingDriveCopyKind = 'import' | 'duplicate';
+interface PendingDriveImport {
+  operationId: string;
+  sourceId: string;
+  targetFolderId: string;
+  name: string;
+  kind: PendingDriveCopyKind;
+  copiedFileId?: string;
+  mayHaveSentCopy: boolean;
+}
+
+function parsePendingDriveImports(value: unknown): PendingDriveImport[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Partial<PendingDriveImport>;
+    if (typeof record.operationId !== 'string' || typeof record.sourceId !== 'string'
+      || typeof record.targetFolderId !== 'string' || typeof record.name !== 'string') return [];
+    return [{
+      operationId: record.operationId,
+      sourceId: record.sourceId,
+      targetFolderId: record.targetFolderId,
+      name: record.name,
+      kind: record.kind === 'duplicate' ? 'duplicate' : 'import',
+      ...(typeof record.copiedFileId === 'string' ? { copiedFileId: record.copiedFileId } : {}),
+      // Older import records were written before files.copy and may already have reached Drive.
+      mayHaveSentCopy: record.mayHaveSentCopy === false ? false : true
+    }];
+  });
+}
+
 async function readPendingDriveImports(accountId: string): Promise<PendingDriveImport[]> {
   const value = await indexedDb.getValue<unknown>('settings', pendingDriveImportKey(accountId));
-  return Array.isArray(value) ? value.filter((item): item is PendingDriveImport => Boolean(item && typeof item === 'object'
-    && typeof (item as PendingDriveImport).operationId === 'string' && typeof (item as PendingDriveImport).sourceId === 'string'
-    && typeof (item as PendingDriveImport).targetFolderId === 'string' && typeof (item as PendingDriveImport).name === 'string')) : [];
+  return parsePendingDriveImports(value);
 }
-async function updatePendingDriveImports(accountId: string, pending: PendingDriveImport[]): Promise<void> {
-  if (pending.length) await indexedDb.setValue('settings', pendingDriveImportKey(accountId), pending);
-  else await indexedDb.deleteValue('settings', pendingDriveImportKey(accountId));
+
+async function updatePendingDriveImports(
+  accountId: string, update: (pending: PendingDriveImport[]) => PendingDriveImport[]
+): Promise<PendingDriveImport[]> {
+  const value = await indexedDb.updateValue<unknown>('settings', pendingDriveImportKey(accountId), current => {
+    const next = update(parsePendingDriveImports(current));
+    return next.length ? next : undefined;
+  });
+  return parsePendingDriveImports(value);
+}
+
+async function findPendingDriveCopy(
+  accountId: string, sourceId: string, targetFolderId: string, kind: PendingDriveCopyKind
+): Promise<PendingDriveImport | undefined> {
+  return (await readPendingDriveImports(accountId)).find(entry => entry.sourceId === sourceId
+    && entry.targetFolderId === targetFolderId && entry.kind === kind);
+}
+
+async function reservePendingDriveCopy(
+  accountId: string, entry: PendingDriveImport
+): Promise<{ entry: PendingDriveImport; reserved: boolean }> {
+  let existing: PendingDriveImport | undefined;
+  await updatePendingDriveImports(accountId, pending => {
+    existing = pending.find(item => item.sourceId === entry.sourceId && item.targetFolderId === entry.targetFolderId
+      && item.kind === entry.kind && item.name === entry.name);
+    return existing ? pending : [...pending, entry];
+  });
+  return existing ? { entry: existing, reserved: false } : { entry, reserved: true };
+}
+
+async function updatePendingDriveCopy(
+  accountId: string, operationId: string, changes: Partial<PendingDriveImport>, onlyIfUnsent = false
+): Promise<boolean> {
+  let updated = false;
+  await updatePendingDriveImports(accountId, pending => pending.map(entry => {
+    if (entry.operationId !== operationId || onlyIfUnsent && entry.mayHaveSentCopy) return entry;
+    updated = true;
+    return { ...entry, ...changes };
+  }));
+  return updated;
+}
+
+async function removePendingDriveCopy(accountId: string, operationId: string, onlyIfUnsent = false): Promise<boolean> {
+  let removed = false;
+  await updatePendingDriveImports(accountId, pending => pending.filter(entry => {
+    if (entry.operationId !== operationId || onlyIfUnsent && entry.mayHaveSentCopy) return true;
+    removed = true;
+    return false;
+  }));
+  return removed;
+}
+
+function isConfirmedPendingCopy(file: DriveFile, entry: PendingDriveImport): boolean {
+  return file.id !== entry.sourceId && (!entry.copiedFileId || file.id === entry.copiedFileId)
+    && file.name === entry.name && !file.trashed && file.parents?.includes(entry.targetFolderId) === true
+    && file.appProperties?.guitardslImportOperation === entry.operationId;
+}
+
+async function reconcilePendingDriveCopy(
+  accountId: string, drive: GoogleDriveApi, generation: number, entry: PendingDriveImport
+): Promise<'confirmed' | 'unresolved' | 'not-sent'> {
+  if (!entry.mayHaveSentCopy) {
+    if (await removePendingDriveCopy(accountId, entry.operationId, true)) return 'not-sent';
+    const latest = (await readPendingDriveImports(accountId)).find(item => item.operationId === entry.operationId);
+    if (!latest?.mayHaveSentCopy) return 'unresolved';
+    entry = latest;
+  }
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  if (!isCurrent()) return 'unresolved';
+  let confirmed: DriveFile | undefined;
+  if (entry.copiedFileId) {
+    try {
+      const known = await drive.getFile(entry.copiedFileId);
+      if (!isCurrent()) return 'unresolved';
+      if (isConfirmedPendingCopy(known.file, entry)) confirmed = known.file;
+    } catch { /* Try the operation marker when direct readback is temporarily unavailable. */ }
+  }
+  if (!isCurrent()) return 'unresolved';
+  if (!confirmed) {
+    try {
+      const marked = await drive.findImportByOperation(entry.targetFolderId, entry.operationId);
+      if (!isCurrent()) return 'unresolved';
+      if (marked) {
+        const readback = await drive.getFile(marked.id);
+        if (!isCurrent()) return 'unresolved';
+        if (isConfirmedPendingCopy(readback.file, entry)) confirmed = readback.file;
+      }
+    } catch { /* Preserve the journal until an ID or marker can be read back. */ }
+  }
+  if (!confirmed || !isCurrent()) return 'unresolved';
+  const rootId = state.folderId;
+  if (!rootId) return 'unresolved';
+  try {
+    const target = await getVerifiedLibraryTarget(drive, rootId, entry.targetFolderId, isCurrent);
+    if (!isCurrent() || !target || !confirmed.parents?.includes(target.target.id)) return 'unresolved';
+  } catch { return 'unresolved'; }
+  try { await removePendingDriveCopy(accountId, entry.operationId); }
+  catch { /* The confirmed copy is safe; a retained record will confirm it again later. */ }
+  return 'confirmed';
 }
 
 async function reconcilePendingDriveImports(accountId: string, drive: GoogleDriveApi, generation: number): Promise<string | undefined> {
   const pending = await readPendingDriveImports(accountId);
   if (!pending.length) return undefined;
-  const unresolved: PendingDriveImport[] = [];
-  let recovered = 0;
+  let recoveredImports = 0;
+  let recoveredDuplicates = 0;
+  let unresolved = 0;
+  const refreshedFolders = new Set<string>();
   for (const entry of pending) {
     if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
-    try {
-      const copied = await drive.findImportByOperation(entry.targetFolderId, entry.operationId);
-      if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
-      if (!copied) { unresolved.push(entry); continue; }
-      const readback = await drive.getFile(copied.id);
-      if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
-      if (readback.file.name !== entry.name || !readback.file.parents?.includes(entry.targetFolderId)) { unresolved.push(entry); continue; }
-      recovered += 1;
-    } catch { unresolved.push(entry); }
+    const result = await reconcilePendingDriveCopy(accountId, drive, generation, entry);
+    if (result === 'confirmed') {
+      if (entry.kind === 'duplicate') recoveredDuplicates += 1;
+      else recoveredImports += 1;
+      refreshedFolders.add(entry.targetFolderId);
+    } else if (result === 'unresolved') unresolved += 1;
   }
-  await updatePendingDriveImports(accountId, unresolved);
-  if (recovered && state.folderId) {
-    driveChildrenByParent.delete(state.folderId);
-    await loadDriveChildren(state.folderId, true);
+  for (const folderId of refreshedFolders) {
+    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    driveChildrenByParent.delete(folderId);
+    await loadDriveChildren(folderId, true);
   }
-  if (unresolved.length) return state.locale === 'ja'
-    ? 'Driveのコピー結果を確認できないインポートがあります。Driveを確認してから手動で再試行してください。'
-    : 'An import result is still unknown. Check Drive before manually retrying it.';
+  if (unresolved) return state.locale === 'ja'
+    ? `Driveのコピー結果を確認できない操作が ${unresolved} 件あります。再コピーせず、Driveを確認してください。`
+    : `${unresolved} Drive copy result${unresolved === 1 ? '' : 's'} remain unconfirmed. Check Drive; no new copy was sent.`;
+  const recovered = recoveredImports + recoveredDuplicates;
   if (recovered) return state.locale === 'ja'
-    ? `前回のインポート結果を確認しました（${recovered} 件）。`
-    : `Confirmed ${recovered} previous import result${recovered === 1 ? '' : 's'}.`;
+    ? `前回のコピー結果を確認しました（インポート ${recoveredImports} 件、複製 ${recoveredDuplicates} 件）。`
+    : `Confirmed previous copies: ${recoveredImports} import${recoveredImports === 1 ? '' : 's'}, ${recoveredDuplicates} duplicate${recoveredDuplicates === 1 ? '' : 's'}.`;
   return undefined;
 }
 
@@ -2873,22 +3012,40 @@ async function importFromDrivePicker(
   const drive = state.drive;
   if (!accountId || !drive || !targetFolderId || reloadPreparationActive || pageCacheSuspended) return;
   if (!isDriveCommandCurrent(accountId, generation) || !isLibraryFolder(targetFolderId)) { staleMenuTarget(); return; }
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) { staleMenuTarget(); return; }
   const operationGeneration = workspaceOperationGeneration;
   const isCurrent = () => workspaceOperationIsCurrent(operationGeneration) && state.drive === drive
-    && isDriveCommandCurrent(accountId, generation) && isLibraryFolder(targetFolderId);
+    && isDriveCommandCurrent(accountId, generation) && state.folderId === libraryRootId && isLibraryFolder(targetFolderId);
   activeDriveWorkflowOperations += 1;
   try {
+    if (!preselected) {
+      const beforePicker = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
+      if (!isCurrent() || !beforePicker) return;
+    }
     const selected = preselected ?? await drive.pickFiles();
     if (!isCurrent() || !selected?.length) return;
+    const selectedTarget = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
+    if (!isCurrent() || !selectedTarget) return;
     const children = await drive.listChildren(targetFolderId);
     if (!isCurrent()) return;
     const names = new Set(children.map(item => item.name.toLocaleLowerCase()));
     let imported = 0;
     let failed = 0;
+    let unknown = 0;
     for (const source of selected) {
       if (!isCurrent()) return;
       if (!isSupportedDriveFile(source.name) || source.mimeType === 'application/vnd.google-apps.folder'
         || source.mimeType?.startsWith('application/vnd.google-apps.')) { failed += 1; continue; }
+      const previous = await findPendingDriveCopy(accountId, source.id, targetFolderId, 'import');
+      if (previous) {
+        if (!previous.mayHaveSentCopy) { unknown += 1; continue; }
+        const reconciled = await reconcilePendingDriveCopy(accountId, drive, generation, previous);
+        if (!isCurrent()) return;
+        if (reconciled === 'confirmed') { imported += 1; names.add(previous.name.toLocaleLowerCase()); }
+        else unknown += 1;
+        continue;
+      }
       let name = source.name;
       if (names.has(name.toLocaleLowerCase())) {
         const entered = window.prompt(state.locale === 'ja'
@@ -2899,42 +3056,66 @@ async function importFromDrivePicker(
         name = normalizedScoreName(entered, oldExtension) ?? '';
         if (!name || names.has(name.toLocaleLowerCase())) { failed += 1; continue; }
       }
-      const operationId = crypto.randomUUID();
-      const pendingEntry: PendingDriveImport = { operationId, sourceId: source.id, targetFolderId, name };
-      const pending = await readPendingDriveImports(accountId);
-      await updatePendingDriveImports(accountId, [...pending, pendingEntry]);
-      if (!isCurrent()) return;
+      let pendingEntry: PendingDriveImport | undefined;
+      let requestStarted = false;
       try {
         const original = await drive.getFile(source.id);
         if (!isCurrent()) return;
-        let copied: DriveFile;
-        try { copied = await drive.copyFile(source.id, targetFolderId, name, operationId); }
-        catch (error) {
-          if (!(error instanceof TypeError) && !(error instanceof DriveApiError && (error.status === 429 || error.status >= 500))) throw error;
-          const reconciled = await drive.findImportByOperation(targetFolderId, operationId);
-          if (!reconciled) throw error;
-          copied = reconciled;
+        if (original.file.id !== source.id || original.file.trashed || !isSupportedDriveFile(original.file.name)) {
+          throw new Error('The selected Drive file is no longer available for import.');
         }
+        const currentTarget = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
+        if (!isCurrent() || !currentTarget) return;
+        const entry: PendingDriveImport = {
+          operationId: crypto.randomUUID(), sourceId: source.id, targetFolderId, name, kind: 'import', mayHaveSentCopy: false
+        };
+        const reservation = await reservePendingDriveCopy(accountId, entry);
+        if (!reservation.reserved) {
+          const reconciled = reservation.entry.mayHaveSentCopy
+            ? await reconcilePendingDriveCopy(accountId, drive, generation, reservation.entry) : 'unresolved';
+          if (!isCurrent()) return;
+          if (reconciled === 'confirmed') { imported += 1; names.add(reservation.entry.name.toLocaleLowerCase()); }
+          else unknown += 1;
+          continue;
+        }
+        pendingEntry = entry;
+        const markedSent = await updatePendingDriveCopy(accountId, entry.operationId, { mayHaveSentCopy: true }, true);
+        if (!markedSent) { unknown += 1; continue; }
+        if (!isCurrent()) {
+          await removePendingDriveCopy(accountId, entry.operationId);
+          return;
+        }
+        requestStarted = true;
+        const copied = await drive.copyFile(source.id, currentTarget.target.id, name, entry.operationId);
+        try { await updatePendingDriveCopy(accountId, entry.operationId, { copiedFileId: copied.id }); }
+        catch { /* The operation marker remains the fallback if this best-effort ID write fails. */ }
         if (!isCurrent()) return;
         const readback = await drive.getFile(copied.id);
         if (!isCurrent()) return;
-        if (readback.file.id === source.id || readback.file.name !== name || !readback.file.parents?.includes(targetFolderId)
-          || readback.source !== original.source) throw new Error('The imported copy did not match the source file.');
+        if (!isConfirmedPendingCopy(readback.file, { ...entry, copiedFileId: copied.id })
+          || readback.source !== original.source) { unknown += 1; continue; }
+        const verifiedAfterCopy = await getVerifiedLibraryTarget(drive, libraryRootId, targetFolderId, isCurrent);
+        if (!isCurrent() || !verifiedAfterCopy || !readback.file.parents?.includes(verifiedAfterCopy.target.id)) {
+          unknown += 1;
+          continue;
+        }
+        try { await removePendingDriveCopy(accountId, entry.operationId); }
+        catch { /* A confirmed copy remains safe to report; a retained record will reconcile later. */ }
         imported += 1;
         names.add(name.toLocaleLowerCase());
-        const latestPending = await readPendingDriveImports(accountId);
-        await updatePendingDriveImports(accountId, latestPending.filter(item => item.operationId !== operationId));
       } catch (error) {
         if (!isCurrent()) return;
-        failed += 1;
-        if (!(error instanceof TypeError) && !(error instanceof DriveApiError && (error.status === 429 || error.status >= 500))) {
-          const latestPending = await readPendingDriveImports(accountId);
-          await updatePendingDriveImports(accountId, latestPending.filter(item => item.operationId !== operationId));
+        if (requestStarted) unknown += 1;
+        else {
+          if (pendingEntry) await removePendingDriveCopy(accountId, pendingEntry.operationId, true);
+          failed += 1;
         }
       }
     }
     await refreshDriveLibraryFolder(accountId, generation, targetFolderId);
-    showMessage(state.locale === 'ja' ? `インポート: ${imported} 件成功、${failed} 件失敗` : `Import complete: ${imported} succeeded, ${failed} failed`, failed ? 'error' : 'info');
+    showMessage(state.locale === 'ja'
+      ? `インポート: ${imported} 件確認、${failed} 件失敗、${unknown} 件結果不明`
+      : `Import: ${imported} confirmed, ${failed} failed, ${unknown} unconfirmed`, failed || unknown ? 'error' : 'info');
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }
@@ -2993,6 +3174,16 @@ async function getVerifiedDriveLibraryFolder(
   return folder;
 }
 
+async function getVerifiedLibraryTarget(
+  drive: GoogleDriveApi, rootId: string, targetFolderId: string, isCurrent: () => boolean
+): Promise<{ root: DriveFile; target: DriveFile } | undefined> {
+  const root = await getVerifiedDriveLibraryRoot(drive, rootId, isCurrent);
+  if (!isCurrent() || !root) return undefined;
+  const target = await getVerifiedDriveLibraryFolder(drive, targetFolderId, rootId, root, isCurrent);
+  if (!isCurrent() || !target) return undefined;
+  return { root, target };
+}
+
 async function syncOpenDriveTabMetadata(tab: OpenTab | undefined, accountId: string, file: DriveFile): Promise<void> {
   if (!tab) return;
   const updated = await indexedDb.updateDriveDocumentMetadata(tab.document.identity, accountId, {
@@ -3038,7 +3229,7 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
   if (!libraryRootId) { staleMenuTarget(); return; }
   activeDriveWorkflowOperations += 1;
   try {
-    const copied = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, _tab, isCurrent) => {
+    const outcome = await withSerializedDriveMetadataMutation(accountId, generation, itemId, async (queuedDrive, latest, _tab, isCurrent) => {
       const operationIsCurrent = () => isCurrent() && state.folderId === libraryRootId;
       if (!operationIsCurrent()) return undefined;
       if (!latest.parents?.includes(parentId) || !isSupportedDriveFile(latest.name)) {
@@ -3055,6 +3246,13 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
         || original.file.headRevisionId !== latest.headRevisionId || !original.file.parents?.includes(parentId)) {
         throw new Error('The score changed before it could be copied. Refresh the library and try again.');
       }
+      const previous = await findPendingDriveCopy(accountId, itemId, parentId, 'duplicate');
+      if (previous) {
+        const reconciled = previous.mayHaveSentCopy
+          ? await reconcilePendingDriveCopy(accountId, queuedDrive, generation, previous) : 'unresolved';
+        if (!operationIsCurrent()) return undefined;
+        return { status: reconciled === 'confirmed' ? 'recovered' as const : 'unresolved' as const };
+      }
       const children = await queuedDrive.listChildren(parentId);
       if (!operationIsCurrent()) return undefined;
       const extension = latest.name.match(/\.(?:guitardsl|gdsl)$/iu)?.[0] ?? '.guitardsl';
@@ -3062,23 +3260,61 @@ async function duplicateDriveLibraryScore(accountId: string, generation: number,
       const names = new Set(children.map(item => item.name.toLocaleLowerCase()));
       let name = `${stem} (copy)${extension}`;
       for (let suffix = 2; names.has(name.toLocaleLowerCase()); suffix += 1) name = `${stem} (copy ${suffix})${extension}`;
-      const operationId = crypto.randomUUID();
-      let copy: DriveFile;
-      try { copy = await queuedDrive.copyFile(itemId, parent.id, name, operationId); }
-      catch (error) {
-        if (!(error instanceof TypeError) && !(error instanceof DriveApiError && (error.status === 429 || error.status >= 500))) throw error;
-        const reconciled = await queuedDrive.findImportByOperation(parent.id, operationId);
-        if (!reconciled) throw error;
-        copy = reconciled;
+      const targetBeforeCopy = await getVerifiedLibraryTarget(queuedDrive, libraryRootId, parent.id, operationIsCurrent);
+      if (!operationIsCurrent() || !targetBeforeCopy) return undefined;
+      const entry: PendingDriveImport = {
+        operationId: crypto.randomUUID(), sourceId: itemId, targetFolderId: parent.id, name,
+        kind: 'duplicate', mayHaveSentCopy: false
+      };
+      const reservation = await reservePendingDriveCopy(accountId, entry);
+      if (!reservation.reserved) {
+        const reconciled = reservation.entry.mayHaveSentCopy
+          ? await reconcilePendingDriveCopy(accountId, queuedDrive, generation, reservation.entry) : 'unresolved';
+        if (!operationIsCurrent()) return undefined;
+        return { status: reconciled === 'confirmed' ? 'recovered' as const : 'unresolved' as const };
       }
-      if (!operationIsCurrent()) return undefined;
-      const readback = await queuedDrive.getFile(copy.id);
-      if (!operationIsCurrent()) return undefined;
-      if (readback.file.id === itemId || readback.file.name !== name || !readback.file.parents?.includes(parent.id)
-        || readback.source !== original.source) throw new Error('Google Drive did not confirm the duplicate score.');
-      return copy;
+      let requestStarted = false;
+      try {
+        const markedSent = await updatePendingDriveCopy(accountId, entry.operationId, { mayHaveSentCopy: true }, true);
+        if (!markedSent) return { status: 'unresolved' as const };
+        if (!operationIsCurrent()) {
+          await removePendingDriveCopy(accountId, entry.operationId);
+          return undefined;
+        }
+        requestStarted = true;
+        const copy = await queuedDrive.copyFile(itemId, targetBeforeCopy.target.id, name, entry.operationId);
+        try { await updatePendingDriveCopy(accountId, entry.operationId, { copiedFileId: copy.id }); }
+        catch { /* The operation marker remains the fallback if this best-effort ID write fails. */ }
+        if (!operationIsCurrent()) return { status: 'unresolved' as const };
+        const readback = await queuedDrive.getFile(copy.id);
+        if (!operationIsCurrent()) return { status: 'unresolved' as const };
+        if (!isConfirmedPendingCopy(readback.file, { ...entry, copiedFileId: copy.id }) || readback.source !== original.source) {
+          return { status: 'unresolved' as const };
+        }
+        const verifiedAfterCopy = await getVerifiedLibraryTarget(queuedDrive, libraryRootId, parent.id, operationIsCurrent);
+        if (!operationIsCurrent() || !verifiedAfterCopy || !readback.file.parents?.includes(verifiedAfterCopy.target.id)) {
+          return { status: 'unresolved' as const };
+        }
+        try { await removePendingDriveCopy(accountId, entry.operationId); }
+        catch { /* A confirmed copy remains safe to report; a retained record will reconcile later. */ }
+        return { status: 'copied' as const };
+      } catch (error) {
+        if (requestStarted) return { status: 'unresolved' as const };
+        await removePendingDriveCopy(accountId, entry.operationId, true);
+        throw error;
+      }
     });
-    if (copied && isDriveCommandCurrent(accountId, generation)) await refreshDriveLibraryFolder(accountId, generation, parentId);
+    if (!outcome || !isDriveCommandCurrent(accountId, generation)) return;
+    if (outcome.status === 'copied' || outcome.status === 'recovered') {
+      await refreshDriveLibraryFolder(accountId, generation, parentId);
+      if (outcome.status === 'recovered') showMessage(state.locale === 'ja'
+        ? '前回の複製結果を確認しました。新しいコピーは作成していません。'
+        : 'The previous duplicate was confirmed. No new copy was created.', 'info');
+    } else {
+      showMessage(state.locale === 'ja'
+        ? '複製結果を確認できません。再コピーせず、Driveを確認してください。'
+        : 'The duplicate result is unconfirmed. Check Drive; no second copy was sent.', 'error');
+    }
   } catch (error) { if (isDriveCommandCurrent(accountId, generation)) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
 }

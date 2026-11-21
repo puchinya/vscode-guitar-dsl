@@ -476,10 +476,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .storage-root-label { min-width: 0; padding: 5px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .storage-root-label.selected { background: transparent; }
 .storage-root-label:hover, .storage-root-label:focus-visible { background: transparent; }
-.drive-status-dot { flex: 0 0 8px; width: 8px; height: 8px; margin: 0 7px; border-radius: 50%; background: #64cba2; box-shadow: 0 0 0 2px rgb(100 203 162 / 18%); }
-.drive-status-dot[hidden], .drive-connect-inline[hidden] { display: none; }
-.drive-connect-inline { display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 92px; height: 26px; min-height: 26px; padding: 0 6px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: #5364d9; font-size: 11px; line-height: 26px; text-overflow: ellipsis; white-space: nowrap; }
-.drive-connect-inline:hover { background: #eef0ff; }
+.drive-connection-row { display: flex; align-items: center; gap: 6px; box-sizing: border-box; width: 100%; min-width: 0; height: 22px; min-height: 22px; padding: 0 8px 0 32px; overflow: hidden; color: #78808d; font-size: 11px; line-height: 16px; white-space: nowrap; }
+.drive-provider-icon { flex: 0 0 15px; width: 15px; height: 15px; object-fit: contain; }
+.drive-provider-name, .drive-connection-state { flex: 0 0 auto; white-space: nowrap; }
+.drive-status-dot { flex: 0 0 7px; width: 7px; height: 7px; margin: 0; border-radius: 50%; background: #22a06b; box-shadow: 0 0 0 2px rgb(34 160 107 / 18%); }
+.drive-connection-action { display: inline-flex; align-items: center; flex: 0 0 auto; min-width: 0; height: 18px; min-height: 18px; padding: 0 2px; border: 0; border-radius: 3px; background: transparent; color: #5364d9; font: inherit; line-height: 16px; white-space: nowrap; }
+.drive-connection-action:hover { background: #eef0ff; }
+.drive-connection-action:focus-visible { outline: 2px solid #5364d9; outline-offset: 1px; }
 .file-list .file-actions { display: none; }
 .file-list .storage-content .file-items { padding: 0 0 8px 20px; }
 .file-item { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 32px; border: 0; border-radius: 4px; padding: 0 8px; white-space: nowrap; overflow: hidden; }
@@ -531,9 +534,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .file-item { color: #e4e7ee; }
 .app-shell[data-theme="dark"] .file-item[aria-current="page"] { background: #333f59; color: #e4e7ee; box-shadow: none; }
 .app-shell[data-theme="dark"] .storage-root-label, .app-shell[data-theme="dark"] .drive-folder-row { color: #e4e7ee; }
-.app-shell[data-theme="dark"] .drive-root-icon { color: #99a3b5; }
-.app-shell[data-theme="dark"] .drive-connect-inline { color: #7692f4; }
-.app-shell[data-theme="dark"] .drive-connect-inline:hover { background: #333f59; }
+.app-shell[data-theme="dark"] .drive-connection-row { color: #aeb6c4; }
+.app-shell[data-theme="dark"] .drive-connection-action { color: #9aabff; }
+.app-shell[data-theme="dark"] .drive-connection-action:hover { background: #333f59; }
 .app-shell[data-theme="dark"] .tool-window-bar button[aria-expanded="true"] { background: #333f59; color: #7692f4; }
 .app-shell[data-theme="dark"] .tool-window-bar button[aria-pressed="true"] { background: #333f59; color: #7692f4; box-shadow: none; }
 .app-shell[data-theme="dark"] .problem-columns, .app-shell[data-theme="dark"] .problem-file,
@@ -554,8 +557,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .file-list .pane-heading { border-bottom: 0; }
 .drive-root-more { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #68717f; }
 .drive-root-more:hover, .drive-root-more:focus-visible { background: #eef0f5; }
-.drive-root-icon { object-fit: contain; }
-.storage-root-row .drive-root-icon { width: 14px; height: 14px; flex: 0 0 14px; }
 .app-shell[data-theme="dark"] .drive-tree-state { color: #aeb6c4; }
 .app-shell[data-theme="dark"] .drive-tree-error { color: #ff8d8d; }
 .drive-link-fallback { border-color: #535b6a; background: #242830; color: #e4e7ee; }

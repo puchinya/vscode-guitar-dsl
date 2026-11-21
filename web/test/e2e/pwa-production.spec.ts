@@ -165,7 +165,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
   await expect(page.locator('#connect-drive')).toBeDisabled();
-  await expect(page.locator('#drive-connect-inline')).toBeDisabled();
+  await expect(page.locator('#drive-connection-row')).toHaveAttribute('data-state', 'offline');
+  await expect(page.locator('#drive-connect-inline')).toHaveCount(0);
   await expect(page.locator('#drive-state-label')).toHaveText('Offline');
 
   const newLocalDocument = page.waitForEvent('dialog').then(dialog => dialog.accept('Offline recovery.guitardsl'));

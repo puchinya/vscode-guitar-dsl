@@ -26,7 +26,8 @@ export const ja = {
     status: {
       connected: '接続済み',
       connecting: '接続中…',
-      reauth: '再接続が必要',
+      reauth: '再接続',
+      reauthDescription: 'Google Drive の再認証が必要です',
       offline: 'オフライン',
       disconnected: '未接続'
     },

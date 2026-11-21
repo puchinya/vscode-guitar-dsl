@@ -129,6 +129,7 @@ interface DriveBrowserMockOptions {
   folders?: Record<string, string>;
   rootFolders?: Record<string, { id?: string; marked?: boolean } | null>;
   rootCreateUnknownOnce?: boolean;
+  copyReadbackFailures?: number;
   driveFiles?: Array<{ id: string; name: string; version: string; modifiedTime: string; mimeType?: string; parents?: string[]; appProperties?: Record<string, string>; trashed?: boolean; webViewLink?: string }>;
   unauthorizedList?: boolean;
   unauthorizedListAccountId?: string;
@@ -151,8 +152,15 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   setAppDataState(accountId: string, value: TestAppDataState): void;
   get appDataCreateCount(): number;
   get visibleFolderCreateCount(): number;
+  get childFolderCreateParents(): string[];
+  get scoreCreateCount(): number;
   get rootMarkerPatchIds(): string[];
   get copySourceIds(): string[];
+  get copyFileIds(): string[];
+  get metadataReadIds(): string[];
+  get operationMarkerSearchCount(): number;
+  moveFolderOutside(folderId: string): void;
+  trashFolder(folderId: string): void;
   fileReadStarted: Promise<void>;
   releaseFileRead(): void;
   get fileReadCount(): number;
@@ -266,12 +274,18 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   let appDataListFailureCount = options.failAppDataListCount ?? 0;
   let appDataPatchFailureCount = options.failAppDataPatchCount ?? 0;
   let visibleFolderCreateCount = 0;
+  const childFolderCreateParents: string[] = [];
+  const scoreCreateBodies: string[] = [];
   let rootCreateUnknownOnce = options.rootCreateUnknownOnce ?? false;
+  let copyReadbackFailures = options.copyReadbackFailures ?? 0;
   let holdDriveListAfterCount = options.holdDriveListAfterCount ?? 0;
   let unauthorizedListAfterCount = options.unauthorizedListAfterCount ?? 0;
   let driveListFailureArmed = false;
   const rootMarkerPatchIds: string[] = [];
   const copySourceIds: string[] = [];
+  const copyFileIds: string[] = [];
+  const metadataReadIds: string[] = [];
+  let operationMarkerSearchCount = 0;
   let startFileRead!: () => void;
   const fileReadStarted = new Promise<void>(resolve => { startFileRead = resolve; });
   let releaseFileRead!: () => void;
@@ -310,6 +324,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       }
       try {
         const query = url.searchParams.get('q') ?? '';
+        if (query.includes("key='guitardslImportOperation'")) operationMarkerSearchCount += 1;
         if (url.searchParams.get('spaces') === 'appDataFolder') {
           if (appDataListFailureCount > 0) {
             appDataListFailureCount -= 1;
@@ -332,7 +347,8 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         }
         if (isLibraryRootQuery) {
           const root = rootFolders.get(accountId);
-          return await route.fulfill({ headers, json: { files: root ? [root] : [] } });
+          const visibleRoot = root && !root.trashed && root.parents.includes(myDriveRootId(accountId)) ? [root] : [];
+          return await route.fulfill({ headers, json: { files: visibleRoot } });
         }
         if (request.method() === 'POST') {
           const body = request.postDataJSON() as { name?: string; mimeType?: string; parents?: string[]; appProperties?: Record<string, string> };
@@ -349,12 +365,13 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
               return await route.fulfill({ status: 500, headers, json: { error: 'simulated unknown root-create outcome' } });
             }
           } else {
+            if (created.mimeType === 'application/vnd.google-apps.folder') childFolderCreateParents.push(...created.parents);
             (options.driveFiles ?? (options.driveFiles = [])).push({ ...created, version: '1', modifiedTime: 'folder-created' });
           }
           return await route.fulfill({ headers, json: created });
         }
         const parent = query.match(/^'([^']+)' in parents/u)?.[1];
-        const files = (options.driveFiles ?? []).filter(file => !parent || file.parents?.includes(parent));
+        const files = (options.driveFiles ?? []).filter(file => !file.trashed && (!parent || file.parents?.includes(parent)));
         return await route.fulfill({ headers, json: { files } });
       } finally {
         if (isDriveFileList) driveFileListPendingCount -= 1;
@@ -399,6 +416,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         const body = request.postDataJSON() as { name?: string; parents?: string[]; appProperties?: Record<string, string> };
         const operationId = body.appProperties?.guitardslImportOperation;
         const fileId = `drive-copy-${operationId ?? crypto.randomUUID()}`;
+        copyFileIds.push(fileId);
         const copy = { id: fileId, name: body.name ?? 'Copy.guitardsl', mimeType: 'text/plain', version: '1', modifiedTime: 'copy-created',
           parents: body.parents ?? [], appProperties: body.appProperties ?? {}, trashed: false };
         (options.driveFiles ?? (options.driveFiles = [])).push(copy);
@@ -408,6 +426,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         return route.fulfill({ headers, json: copy });
       }
       const fileId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      if (url.searchParams.get('alt') !== 'media') metadataReadIds.push(fileId);
       const existingRoot = [...rootFolders.values()].find(folder => folder.id === fileId);
       const driveRecord = (options.driveFiles ?? []).find(file => file.id === fileId);
       if (request.method() === 'PATCH') {
@@ -439,6 +458,10 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       }
       if (url.searchParams.get('alt') !== 'media' && options.missingFileIds?.includes(fileId)) {
         return route.fulfill({ status: 404, headers, json: { error: 'simulated missing Drive file' } });
+      }
+      if (url.searchParams.get('alt') !== 'media' && copyFileIds.includes(fileId) && copyReadbackFailures > 0) {
+        copyReadbackFailures -= 1;
+        return route.fulfill({ status: 404, headers, json: { error: 'simulated copy readback failure' } });
       }
       const version = remote?.version ?? seeded?.version ?? '1';
       if (url.searchParams.get('alt') !== 'media') {
@@ -498,6 +521,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         }
         const remote = options.remoteFiles?.['created-drive-copy'];
         const fileList = options.driveFiles ?? (options.driveFiles = []);
+        scoreCreateBodies.push(body);
         if (!fileList.some(file => file.id === 'created-drive-copy')) fileList.push({
           id: 'created-drive-copy', name: remote?.name ?? 'Song (local copy).guitardsl', version: remote?.version ?? '1',
           modifiedTime: '2026-11-17T00:00:00.000Z', mimeType: 'text/plain', parents: [`folder-${accountId}`]
@@ -523,8 +547,25 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     },
     get appDataCreateCount() { return appDataCreateCount; },
     get visibleFolderCreateCount() { return visibleFolderCreateCount; },
+    get childFolderCreateParents() { return [...childFolderCreateParents]; },
+    get scoreCreateCount() { return scoreCreateBodies.length; },
     get rootMarkerPatchIds() { return [...rootMarkerPatchIds]; },
     get copySourceIds() { return [...copySourceIds]; },
+    get copyFileIds() { return [...copyFileIds]; },
+    get metadataReadIds() { return [...metadataReadIds]; },
+    get operationMarkerSearchCount() { return operationMarkerSearchCount; },
+    moveFolderOutside(folderId) {
+      const root = [...rootFolders.values()].find(folder => folder.id === folderId);
+      if (root) root.parents = ['outside-folder'];
+      const child = (options.driveFiles ?? []).find(file => file.id === folderId);
+      if (child) child.parents = ['outside-folder'];
+    },
+    trashFolder(folderId) {
+      const root = [...rootFolders.values()].find(folder => folder.id === folderId);
+      if (root) root.trashed = true;
+      const child = (options.driveFiles ?? []).find(file => file.id === folderId);
+      if (child) child.trashed = true;
+    },
     fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; },
     driveListStarted, releaseDriveList,
     armDriveListFailureAfterCurrentCount() {
@@ -571,6 +612,7 @@ async function installStatefulDriveSaveMock(
   let moveTarget = { parents: ['folder-account-a'], trashed: false };
   let copySource = '';
   let copyVersion = '1';
+  let copyOperationId = '';
   const patchCalls: { fileId: string; source: string }[] = [];
   const metadataPatchCalls: { fileId: string; body: Record<string, unknown> }[] = [];
   const copyCalls: { sourceId: string; source: string; version: string }[] = [];
@@ -605,12 +647,13 @@ async function installStatefulDriveSaveMock(
           parents: ['my-drive-root-account-a'], appProperties: { guitardslLibraryRoot: '1' }, trashed: false }] } });
       }
       if (request.method() === 'POST') createCount += 1;
-      const files: { id: string; name: string; mimeType: string; version: string; modifiedTime: string; headRevisionId?: string; parents: string[]; trashed: boolean }[] = [{ id: 'drive-save', name: remoteName, mimeType: 'text/plain',
+      const files: { id: string; name: string; mimeType: string; version: string; modifiedTime: string; headRevisionId?: string; parents: string[]; appProperties?: Record<string, string>; trashed: boolean }[] = [{ id: 'drive-save', name: remoteName, mimeType: 'text/plain',
         version: String(version), modifiedTime: `t${version}`, headRevisionId: `r${version}`, parents: ['folder-account-a'], trashed }];
       if (options.includeMoveTarget) files.push({ id: 'move-target', name: 'Target', mimeType: 'application/vnd.google-apps.folder',
         version: '1', modifiedTime: 'folder1', parents: moveTarget.parents, trashed: moveTarget.trashed });
       if (copySource) files.push({ id: 'drive-save-copy', name: 'Song (copy).guitardsl', mimeType: 'text/plain',
-        version: copyVersion, modifiedTime: `copy-${copyVersion}`, headRevisionId: `copy-r${copyVersion}`, parents: ['folder-account-a'], trashed: false });
+        version: copyVersion, modifiedTime: `copy-${copyVersion}`, headRevisionId: `copy-r${copyVersion}`, parents: ['folder-account-a'],
+        appProperties: { guitardslImportOperation: copyOperationId }, trashed: false });
       return route.fulfill({ headers, json: { files } });
     }
     if (url.pathname === '/drive/v3/files/app-state-account-a') {
@@ -633,17 +676,19 @@ async function installStatefulDriveSaveMock(
     }
     const copyPath = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)\/copy$/u);
     if (copyPath && request.method() === 'POST') {
-      const body = request.postDataJSON() as { name?: string; parents?: string[] };
+      const body = request.postDataJSON() as { name?: string; parents?: string[]; appProperties?: Record<string, string> };
       copySource = remoteSource;
       copyVersion = String(version);
+      copyOperationId = body.appProperties?.guitardslImportOperation ?? '';
       copyCalls.push({ sourceId: decodeURIComponent(copyPath[1]!), source: copySource, version: copyVersion });
       return route.fulfill({ headers, json: { id: 'drive-save-copy', name: body.name, mimeType: 'text/plain',
         version: copyVersion, modifiedTime: `copy-${copyVersion}`, headRevisionId: `copy-r${copyVersion}`,
-        parents: body.parents ?? [], trashed: false } });
+        parents: body.parents ?? [], appProperties: { guitardslImportOperation: copyOperationId }, trashed: false } });
     }
     if (url.pathname === '/drive/v3/files/drive-save-copy') {
       const metadata = { id: 'drive-save-copy', name: 'Song (copy).guitardsl', mimeType: 'text/plain',
-        version: copyVersion, modifiedTime: `copy-${copyVersion}`, headRevisionId: `copy-r${copyVersion}`, parents: ['folder-account-a'], trashed: false };
+        version: copyVersion, modifiedTime: `copy-${copyVersion}`, headRevisionId: `copy-r${copyVersion}`, parents: ['folder-account-a'],
+        appProperties: { guitardslImportOperation: copyOperationId }, trashed: false };
       return url.searchParams.get('alt') === 'media'
         ? route.fulfill({ headers, body: copySource })
         : route.fulfill({ headers, json: metadata });
@@ -2443,7 +2488,7 @@ test('imports multiple selected scores as copies and leaves Picker sources uncha
   await page.locator('#storage-drive').click();
   await page.locator('#storage-drive').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
-  await expect(page.locator('#app-message')).toContainText('2 succeeded, 2 failed');
+  await expect(page.locator('#app-message')).toContainText('Import: 2 confirmed, 2 failed, 0 unconfirmed');
   await expect(page.locator('.drive-library-entry').filter({ hasText: 'One.guitardsl' })).toBeVisible();
   await expect(page.locator('.drive-library-entry').filter({ hasText: 'Two.gdsl' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'One.guitardsl' })).toHaveCount(0);
@@ -2451,6 +2496,205 @@ test('imports multiple selected scores as copies and leaves Picker sources uncha
   expect(drive.patchCalls).toEqual([]);
   expect(sources['source-one']?.source).toBe('title: One source\n');
   expect(sources['source-two']?.source).toBe('title: Two source\n');
+});
+
+test('revalidates a loaded library folder before creating folders or scores after it moves outside', async ({ page }) => {
+  const folderId = 'folder-child-account-a';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [{ id: folderId, name: 'Band', version: '1', modifiedTime: 't1', mimeType: 'application/vnd.google-apps.folder', parents: ['folder-account-a'] }]
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const folder = page.locator(`.drive-library-entry[data-file-id="${folderId}"]`);
+  await expect(folder).toBeVisible();
+
+  drive.moveFolderOutside(folderId);
+  const folderPrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Must not be created'));
+  await folder.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'New folder…', exact: true }).click();
+  await folderPrompt;
+  await expect(page.locator('#app-message')).toContainText('outside the GuitarDSL library');
+  expect(drive.childFolderCreateParents).toEqual([]);
+
+  const scorePrompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Must not be created'));
+  await folder.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'New score', exact: true }).click();
+  await scorePrompt;
+  await expect(page.locator('#app-message')).toContainText('outside the GuitarDSL library');
+  expect(drive.scoreCreateCount).toBe(0);
+  expect(drive.childFolderCreateParents).toEqual([]);
+});
+
+test('does not import after the library root moves while Google Picker is open', async ({ page }) => {
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'picker-source', name: 'Picker source.guitardsl', mimeType: 'text/plain' },
+    holdPickerSelection: true,
+    remoteFiles: { 'picker-source': { name: 'Picker source.guitardsl', source: 'title: Picker source\n', version: '1' } }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __pickerOpened?: boolean }).__pickerOpened)).toBe(true);
+
+  drive.moveFolderOutside('folder-account-a');
+  await page.evaluate(() => (window as unknown as { __releasePickerSelection?: () => void }).__releasePickerSelection?.());
+  await expect(page.locator('#app-message')).toContainText('no longer a top-level My Drive folder');
+  expect(drive.copySourceIds).toEqual([]);
+  const pending = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  });
+  expect(pending).toBeUndefined();
+});
+
+test('keeps an import journal across reloads until its copied Drive file can be read back', async ({ page }) => {
+  const missingFileIds: string[] = [];
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    pickerSelection: { id: 'reload-source', name: 'Reload source.guitardsl', mimeType: 'text/plain' },
+    remoteFiles: { 'reload-source': { name: 'Reload source.guitardsl', source: 'title: Reload source\n', version: '1' } },
+    copyReadbackFailures: 1,
+    missingFileIds
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import from Google Drive…' }).click();
+  await expect(page.locator('#app-message')).toContainText('1 unconfirmed');
+  expect(drive.copySourceIds).toEqual(['reload-source']);
+  const copiedFileId = drive.copyFileIds[0]!;
+  const firstJournal = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ kind: string; copiedFileId?: string; mayHaveSentCopy: boolean }>>(
+      'settings', 'pending-drive-imports:account-a'
+    );
+  });
+  expect(firstJournal).toEqual([expect.objectContaining({ kind: 'import', copiedFileId, mayHaveSentCopy: true })]);
+
+  missingFileIds.push(copiedFileId);
+  const beforeRecovery = drive.operationMarkerSearchCount;
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await performAccountAction(page);
+  await expect(page.locator('#app-message')).toContainText('remain unconfirmed');
+  expect(drive.operationMarkerSearchCount).toBeGreaterThan(beforeRecovery);
+  expect(drive.metadataReadIds.slice(-2)).toEqual([copiedFileId, copiedFileId]);
+  const retained = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ copiedFileId?: string }>>('settings', 'pending-drive-imports:account-a');
+  });
+  expect(retained?.[0]?.copiedFileId).toBe(copiedFileId);
+  expect(drive.copySourceIds).toEqual(['reload-source']);
+
+  missingFileIds.splice(0, missingFileIds.length);
+  await page.reload();
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
+  await performAccountAction(page);
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  })).toBeUndefined();
+  expect(drive.copySourceIds).toEqual(['reload-source']);
+});
+
+test('reconciles a legacy pending import record as possibly sent without copying again', async ({ page }) => {
+  const operationId = 'legacy-operation';
+  const copiedFileId = 'legacy-import-copy';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [{
+      id: copiedFileId, name: 'Legacy import.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain',
+      parents: ['folder-account-a'], appProperties: { guitardslImportOperation: operationId }
+    }]
+  });
+  await page.goto('/');
+  await page.evaluate(async operation => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'pending-drive-imports:account-a', [{
+      operationId: operation, sourceId: 'legacy-source', targetFolderId: 'folder-account-a', name: 'Legacy import.guitardsl'
+    }]);
+  }, operationId);
+  await performAccountAction(page);
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  })).toBeUndefined();
+  expect(drive.copySourceIds).toEqual([]);
+  expect(drive.operationMarkerSearchCount).toBeGreaterThan(0);
+});
+
+test('reconciles an unconfirmed duplicate by its known Drive ID without a second copy', async ({ page }) => {
+  const sourceFile = {
+    id: 'duplicate-source', name: 'Duplicate source.guitardsl', version: '1', modifiedTime: 't1',
+    mimeType: 'text/plain', parents: ['folder-account-a']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    driveFiles: [sourceFile],
+    remoteFiles: { 'duplicate-source': { name: sourceFile.name, source: 'title: Duplicate source\n', version: '1' } },
+    copyReadbackFailures: 1
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [{
+    accountId: 'account-a', fileId: sourceFile.id, name: sourceFile.name, source: 'title: Duplicate source\n'
+  }]);
+  await performAccountAction(page);
+  await page.locator('#storage-drive').click();
+  const source = page.locator(`.drive-library-entry[data-file-id="${sourceFile.id}"]`);
+  await expect(source).toBeVisible();
+  await source.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
+  await expect(page.locator('#app-message')).toContainText('unconfirmed');
+  expect(drive.copySourceIds).toEqual([sourceFile.id]);
+  const copiedFileId = drive.copyFileIds[0]!;
+  const pending = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<Array<{ kind: string; copiedFileId?: string; mayHaveSentCopy: boolean }>>(
+      'settings', 'pending-drive-imports:account-a'
+    );
+  });
+  expect(pending).toEqual([expect.objectContaining({ kind: 'duplicate', copiedFileId, mayHaveSentCopy: true })]);
+
+  await source.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
+  await expect(page.locator('#app-message')).toContainText('previous duplicate was confirmed');
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  })).toBeUndefined();
+  expect(drive.copySourceIds).toEqual([sourceFile.id]);
+});
+
+test('preserves the other pending Drive copy when tabs add and confirm journal entries concurrently', async ({ page }) => {
+  await page.goto('/');
+  const secondTab = await page.context().newPage();
+  await secondTab.goto('/');
+  const key = 'pending-drive-imports:parallel-account';
+  type JournalEntry = { operationId: string; sourceId: string; targetFolderId: string; name: string; kind: 'import'; mayHaveSentCopy: boolean };
+  await page.evaluate(async journalKey => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', journalKey, []);
+  }, key);
+  await Promise.all([
+    page.evaluate(async (input: { key: string; entry: JournalEntry }) => {
+      const { indexedDb } = await import('/src/storage/indexedDb.ts');
+      await indexedDb.updateValue<JournalEntry[]>('settings', input.key, current => [...(current ?? []), input.entry]);
+    }, { key, entry: { operationId: 'tab-one-op', sourceId: 'source-one', targetFolderId: 'folder-account-a', name: 'One.guitardsl', kind: 'import', mayHaveSentCopy: true } }),
+    secondTab.evaluate(async (input: { key: string; entry: JournalEntry }) => {
+      const { indexedDb } = await import('/src/storage/indexedDb.ts');
+      await indexedDb.updateValue<JournalEntry[]>('settings', input.key, current => [...(current ?? []), input.entry]);
+    }, { key, entry: { operationId: 'tab-two-op', sourceId: 'source-two', targetFolderId: 'folder-account-a', name: 'Two.guitardsl', kind: 'import', mayHaveSentCopy: true } })
+  ]);
+  await page.evaluate(async journalKey => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.updateValue<JournalEntry[]>('settings', journalKey,
+      current => (current ?? []).filter(entry => entry.operationId !== 'tab-one-op'));
+  }, key);
+  const journal = await secondTab.evaluate(async journalKey => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<JournalEntry[]>('settings', journalKey);
+  }, key);
+  expect(journal).toEqual([expect.objectContaining({ operationId: 'tab-two-op', mayHaveSentCopy: true })]);
+  await secondTab.close();
 });
 
 test('a Picker recovery selection is imported as a library copy instead of opened from an old Drive session', async ({ page }) => {
@@ -2474,7 +2718,7 @@ test('a Picker recovery selection is imported as a library copy instead of opene
   await dialogPromise;
   await expect(page.locator('.drive-library-entry').filter({ hasText: selected.name })).toBeVisible();
   await expect(page.getByRole('tab', { name: selected.name })).toHaveCount(0);
-  await expect(page.locator('#app-message')).toContainText('1 succeeded, 0 failed');
+  await expect(page.locator('#app-message')).toContainText('Import: 1 confirmed, 0 failed, 0 unconfirmed');
   expect(drive.copySourceIds).toEqual([selected.id]);
 });
 
@@ -2971,7 +3215,9 @@ test('uses compact Explorer, Inspector, and Problems panel controls', async ({ p
   await page.goto('/');
   await expect(page.locator('#files-heading')).toHaveText('EXPLORER');
   await expect(page.locator('[data-storage-section="local"] .root-icon use')).toHaveAttribute('href', '#ic-folder');
-  await expect(page.locator('[data-storage-section="drive"] .drive-root-icon')).toHaveAttribute('src', /google-drive-2026-color/u);
+  await expect(page.locator('#drive-connection-row .drive-provider-icon')).toHaveAttribute('src', /google-drive-2026-color/u);
+  await expect(page.locator('#drive-connection-row')).toContainText('Not connected');
+  expect(await page.locator('#drive-connection-row').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.locator('.storage-root-label.selected')).toHaveCount(0);
   await expect(page.locator('#storage-local')).not.toHaveAttribute('aria-pressed', /.*/u);
   await expect(page.locator('#file-items .file-item[aria-current="page"]')).toHaveCount(1);
@@ -2981,6 +3227,10 @@ test('uses compact Explorer, Inspector, and Problems panel controls', async ({ p
   await expect(page.locator('#local-storage-content')).toBeHidden();
   await expect(page.locator('[data-storage-expander="local"] .web-icon use')).toHaveAttribute('href', '#ic-right');
   await page.locator('[data-storage-expander="local"]').click();
+  await page.locator('[data-storage-expander="drive"]').click();
+  await expect(page.locator('#drive-storage-content')).toBeHidden();
+  await expect(page.locator('#drive-connection-row')).toBeVisible();
+  await page.locator('[data-storage-expander="drive"]').click();
 
   await page.locator('#explorer-splitter').focus();
   await page.keyboard.press('End');
@@ -3027,57 +3277,79 @@ test('uses compact Explorer, Inspector, and Problems panel controls', async ({ p
 });
 
 for (const locale of ['en', 'ja'] as const) {
-  test(`keeps the Drive root 32px tall across auth states (${locale})`, async ({ page }) => {
+  test(`keeps the Drive connection row readable across auth states (${locale})`, async ({ page }) => {
     await installDriveBrowserMock(page, ['account-a'], {
       appDataState: { schemaVersion: 1, selectedFolderId: null, folderPrompt: 'deferred', openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: [] },
       pickerSelection: { id: 'folder-account-a', name: 'GuitarDSL' }, unauthorizedList: true
     });
     await page.goto('/');
     const copy = locale === 'ja'
-      ? { language: 'Language: 日本語', settings: 'Settings', connectMenu: 'Google Drive に接続', connect: '接続', connecting: '接続中…', reconnect: 'Drive に再接続' }
-      : { language: '', settings: '', connectMenu: 'Connect to Google Drive', connect: 'Connect', connecting: 'Connecting…', reconnect: 'Reconnect Drive' };
+      ? { language: 'Language: 日本語', settings: 'Settings', connectMenu: 'Google Drive に接続', disconnected: '未接続', connecting: '接続中…', reauth: '再接続', reconnectMenu: 'Drive に再接続', reauthDescription: 'Google Drive の再認証が必要です' }
+      : { language: '', settings: '', connectMenu: 'Connect to Google Drive', disconnected: 'Not connected', connecting: 'Connecting…', reauth: 'Reconnect', reconnectMenu: 'Reconnect Drive', reauthDescription: 'Google Drive needs reauthorization' };
     if (locale === 'ja') {
       await page.getByRole('button', { name: copy.settings }).click();
       await page.getByRole('menuitemradio', { name: copy.language }).click();
     }
     const driveRoot = page.locator('[data-storage-section="drive"] .storage-root-row');
+    const connectionRow = page.locator('#drive-connection-row');
     const connect = page.locator('#drive-connect-inline');
     const expectRootHeight = async (): Promise<void> => { await expect(driveRoot).toHaveCSS('height', '32px'); };
-    const expectTextOnlyConnect = async (label: string): Promise<void> => {
+    const expectStatusHeight = async (): Promise<void> => {
+      await expect(connectionRow).toHaveCSS('height', '22px');
+      expect(await connectionRow.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    };
+    const expectConnectionAction = async (label: string): Promise<void> => {
       await expect(connect).toHaveText(label);
-      await expect(connect.locator('.web-icon')).toHaveCount(0);
       await expect(connect).toHaveCSS('white-space', 'nowrap');
-      await expect(connect).toHaveCSS('height', '26px');
+    };
+    const setExplorerWidth = async (width: number): Promise<void> => {
+      await page.locator('#workspace').evaluate((element, value) => {
+        element.style.setProperty('--explorer-width', `${value}px`);
+      }, width);
+      await expect(page.locator('#workspace')).toHaveCSS('--explorer-width', `${width}px`);
     };
 
     await expectRootHeight();
-    await expectTextOnlyConnect(copy.connect);
+    await setExplorerWidth(220);
+    await expectStatusHeight();
+    await expectConnectionAction(copy.disconnected);
     await page.evaluate((connectingLabel: string) => {
       const target = window as Window & { __driveConnectingRootHeights?: number[] };
-      const button = document.querySelector<HTMLButtonElement>('#drive-connect-inline')!;
-      const root = button.closest<HTMLElement>('.storage-root-row')!;
+      const row = document.querySelector<HTMLElement>('#drive-connection-row')!;
       const heights = target.__driveConnectingRootHeights = [];
       new MutationObserver(() => {
-        if (button.getAttribute('aria-label') === connectingLabel) {
-          heights.push(root.getBoundingClientRect().height);
+        if (row.dataset.state === 'connecting' && row.textContent?.includes(connectingLabel)) {
+          heights.push(row.getBoundingClientRect().height);
         }
-      }).observe(button, { attributes: true, attributeFilter: ['aria-label'] });
+      }).observe(row, { attributes: true, attributeFilter: ['data-state'] });
     }, copy.connecting);
     await page.locator('#connect-drive').click();
     await page.getByRole('menuitem', { name: copy.connectMenu }).click();
     await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'reauth');
     await expect(connect).toBeVisible();
-    await expectTextOnlyConnect(copy.reconnect);
+    await expectConnectionAction(copy.reauth);
     await expectRootHeight();
+    await setExplorerWidth(236);
+    await expectStatusHeight();
+    if (process.env.GUITARDSL_CAPTURE_ISSUE180 === '1' && locale === 'en'
+      && page.context().browser()?.browserType().name() === 'chromium') {
+      const evidenceDir = resolve(process.cwd(), '../docs/status/evidence/issue-180');
+      await mkdir(evidenceDir, { recursive: true });
+      await page.locator('.file-list').screenshot({ path: resolve(evidenceDir, 'library-connection-row-runtime.png') });
+    }
     const connectingHeights = await page.evaluate(() => (window as Window & { __driveConnectingRootHeights?: number[] }).__driveConnectingRootHeights ?? []);
     expect(connectingHeights.length).toBeGreaterThan(0);
-    expect(connectingHeights.every(height => Math.abs(height - 32) <= 1)).toBe(true);
+    expect(connectingHeights.every(height => Math.abs(height - 22) <= 1)).toBe(true);
 
     await page.locator('#storage-drive').click({ button: 'right' });
-    await expect(page.getByRole('menuitem', { name: copy.reconnect })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: copy.reconnectMenu })).toBeVisible();
     await page.keyboard.press('Escape');
     await expectRootHeight();
-    expect((await connect.getAttribute('title'))?.startsWith(copy.reconnect)).toBe(true);
+    expect((await connect.getAttribute('title'))?.startsWith(copy.reauthDescription)).toBe(true);
+    await page.locator('[data-storage-expander="drive"]').click();
+    await expect(page.locator('#drive-storage-content')).toBeHidden();
+    await expect(connectionRow).toBeVisible();
+    await expectStatusHeight();
   });
 }
 
@@ -3094,6 +3366,7 @@ test('connects and reconnects from the Google Drive root menu', async ({ page })
   await driveRoot.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
   await expect(page.locator('#drive-status')).toBeVisible();
+  await expect(page.locator('#drive-connection-row')).toContainText('Connected');
 
   await driveRoot.click({ button: 'right' });
   for (const label of ['New score', 'New folder…', 'Import from Google Drive…', 'Refresh', 'Open in Google Drive']) {
@@ -3126,7 +3399,7 @@ test('selects only the active Explorer file across local and Drive identities', 
   });
   await page.goto('/');
   await expect(page.locator('#drive-status')).toBeHidden();
-  await expect(page.locator('#drive-connect-inline')).toHaveText('Connect');
+  await expect(page.locator('#drive-connect-inline')).toHaveText('Not connected');
   const prompt = page.waitForEvent('dialog').then(dialog => dialog.accept('Second Local.guitardsl'));
   await page.locator('#new-score').click();
   await prompt;
