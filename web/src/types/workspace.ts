@@ -51,6 +51,7 @@ export interface WorkspaceMenuItemSnapshot {
   disabled?: boolean;
   checked?: boolean;
   separator?: boolean;
+  href?: string;
 }
 
 export interface WorkspaceMenuSnapshot {
@@ -87,6 +88,14 @@ export interface WorkspaceViewSnapshot {
   inspectorWidth: number;
   problemsHeight: number;
   splitRatio: number;
+  welcomeOpen: boolean;
+  welcomeActive: boolean;
+  welcomeSuppressed: boolean;
+  rightDockPane: 'inspector' | 'tutorial';
+  tutorialStepIndex: number;
+  tutorialChordOnlyCompleted: boolean;
+  tutorialMelodyCompleted: boolean;
+  aboutOpen: boolean;
   localFiles: readonly WorkspaceFileSnapshot[];
   driveFiles: readonly WorkspaceFileSnapshot[];
   driveEntries: readonly DriveLibraryEntrySnapshot[];
@@ -125,8 +134,16 @@ export type WorkspaceCommand =
   | { type: 'view.set-mode'; mode: WorkspaceViewMode }
   | { type: 'panel.toggle'; panel: 'explorer' | 'inspector' | 'problems' }
   | { type: 'panel.set-open'; panel: 'explorer' | 'inspector' | 'problems'; open: boolean }
+  | { type: 'panel.select-right'; pane: 'inspector' | 'tutorial'; mode: 'show' | 'toggle' }
+  | { type: 'welcome.open' }
+  | { type: 'welcome.close' }
+  | { type: 'welcome.set-suppressed'; suppressed: boolean }
+  | { type: 'tutorial.open' }
+  | { type: 'tutorial.navigate'; action: 'next' | 'previous' | 'restart' | 'finish' }
+  | { type: 'about.open' }
+  | { type: 'about.close' }
   | { type: 'layout.reset' }
-  | { type: 'drive.connect' }
+  | { type: 'drive.connect'; source?: 'welcome' }
   | { type: 'drive.open-picker' }
   | { type: 'drive.create-folder' }
   | { type: 'drive.library.import'; accountId: string; driveGeneration: number; targetFolderId: string }
@@ -143,7 +160,7 @@ export type WorkspaceCommand =
   | { type: 'settings.set-theme'; theme: WorkspaceTheme }
   | { type: 'pwa.update' }
   | { type: 'pwa.later' }
-  | { type: 'menu.open'; menu: 'file' | 'edit' | 'view' | 'drive' | 'drive-root' | 'settings' | 'explorer' | 'inspector' }
+  | { type: 'menu.open'; menu: 'file' | 'edit' | 'view' | 'help' | 'drive' | 'drive-root' | 'settings' | 'explorer' | 'inspector' }
   | { type: 'menu.close' }
   | { type: 'menu.activate'; itemId: string }
   | { type: 'help.open' }

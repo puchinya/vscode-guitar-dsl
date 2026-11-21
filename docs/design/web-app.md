@@ -34,6 +34,9 @@ The design follows the approved Issue #172, #174, and #180 contracts. It does no
 | Compact workspace grid, display modes, and splitter state | `web/src/layout/`, `web/src/adapters/`, IndexedDB layout preferences |
 | Shared compiler diagnostics for editor lint and Problems | `web/src/editor/`, `web/src/layout/`, `packages/core/` |
 | Browser layout, tabs, file list, Help, Settings, and context menus | `web/src/tabs/`, `web/src/explorer/`, `web/src/help/`, `web/src/menus/`, `web/src/adapters/` |
+| Welcome, right-dock Tutorial state, About, and fixed external actions | `web/src/workspaceRuntime.ts`, `web/src/components/{WelcomePage, TutorialPanel, InspectorHost}.vue`, Web I18n snapshots |
+| Standalone legal pages and build version | `web/public/{licenses,privacy,terms}/`, `web/vite.config.ts`, `web/package.json`, root `LICENSE` |
+| Redistributed Web license inventory and notices | audited `web` production dependency tree, `media/fonts/`, static Licenses pages and sync checks |
 | Public interaction and security requirements | [Web application specification](../specs/web-app.md) |
 
 ## Architecture
@@ -203,7 +206,15 @@ For Issue #178, `web/src/components/Snackbar.vue` owns transient notice presenta
 
 ### Shared menu components
 
-`MainMenuBar.vue` owns File/Edit/View trigger rendering and horizontal/Home/End navigation. `WorkspaceMenu.vue` renders the shared dropdown surface and owns item focus, Arrow/Home/End navigation, Escape handling, outside dismissal, and focus return; menu snapshots and action callbacks remain in `workspaceRuntime.ts`. Checked state remains semantic and shows its check indicator without painting multiple rows as selected.
+`MainMenuBar.vue` owns File/Edit/View/Help trigger rendering and horizontal/Home/End navigation. `WorkspaceMenu.vue` renders the shared dropdown surface and owns item focus, Arrow/Home/End navigation, Escape handling, outside dismissal, and focus return; menu snapshots and action callbacks remain in `workspaceRuntime.ts`. Checked state remains semantic and shows its check indicator without painting multiple rows as selected. Fixed source and legal destinations are represented as real `noopener,noreferrer` anchors so browser navigation remains a direct user-gesture action.
+
+### Welcome, right dock, and legal page ownership
+
+`workspaceRuntime.ts` remains the sole owner of Welcome open/active state, the `settings:web-welcome-v1` startup suppression value, right-dock selection, tutorial step and completion state, and their IndexedDB persistence. The score editor and Preview keep their existing stable hosts while Welcome is active. Inspector and Tutorial are outer panes in the existing `InspectorHost.vue`; switching only changes visibility and continues to mount the controller-owned Inspector tabs, content, and settings hosts. `web/src/components/WelcomePage.vue` and `TutorialPanel.vue` render immutable snapshots and emit typed commands.
+
+The three legal document sources are authored as static content and emitted to nine physical HTML documents: English substantive base entries and explicit Japanese and English locale destinations. `web/public/` owns the published files; Vite does not route these paths through the SPA. Base entries only redirect after a single browser-language read when JavaScript is enabled; explicit locale pages contain no detection script. Their generated nav URLs are same-origin and resolve to the same document type in the other locale. No external fonts, scripts, analytics, or cookies are required.
+
+`web/package.json.version` is injected by Vite as the compile-time Web version and displayed by About. It is not copied into a second source constant. Root `LICENSE` and root package metadata cover GuitarDSL-owned software only. The production Web dependency and asset inventory is generated from the actual package distribution graph and shipped fonts; each redistributed license text/notice is carried by the Licenses page. Font name, copyright, origin, and OFL text are verified against the actual file metadata and upstream license before publication.
 
 `ContextMenu.vue` delegates supported right-click and context-key activation to the workspace runtime, anchors the shared menu surface to pointer or focused-target coordinates, and presents the existing target-specific snapshot. Preview iframe messages use the same context-menu surface. Runtime action builders retain captured document identity, revision, row identity, and stale-target checks.
 
