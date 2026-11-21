@@ -23,10 +23,18 @@ export interface DriveFile {
 }
 
 export type DriveSaveResult =
-  | { kind: 'saved'; file: DriveFile; readback?: { file: DriveFile; source: string; etag?: string } }
+  | { kind: 'saved'; file: DriveFile; readback: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'conflict'; latest: DriveFile }
   | { kind: 'unknown'; status?: number; latest?: { file: DriveFile; source: string; etag?: string } }
   | { kind: 'unavailable'; message: string };
+
+export interface DriveUpdateOptions {
+  shouldContinue?: () => boolean;
+}
+
+function assertDriveOperationCurrent(shouldContinue: () => boolean): void {
+  if (!shouldContinue()) throw new DOMException('Drive operation was cancelled.', 'AbortError');
+}
 
 export class DriveApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); this.name = 'DriveApiError'; }
@@ -77,34 +85,45 @@ export function isSupportedDriveMimeType(mimeType: string | undefined): boolean 
 export class GoogleDriveApi {
   constructor(private readonly auth: GoogleOAuth) {}
 
-  private async request<T>(path: string, init: RequestInit = {}, token = this.auth.tokenForRequest()): Promise<T> {
+  private async request<T>(
+    path: string, init: RequestInit = {}, token = this.auth.tokenForRequest(),
+    shouldContinue: () => boolean = () => true
+  ): Promise<T> {
+    assertDriveOperationCurrent(shouldContinue);
     const headers = new Headers(init.headers);
     headers.set('Authorization', `Bearer ${token}`);
     if (!headers.has('Content-Type') && init.body && !(init.body instanceof Blob)) headers.set('Content-Type', 'application/json');
     const response = await fetch(`${DRIVE_API}${path}`, { ...init, headers });
+    assertDriveOperationCurrent(shouldContinue);
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive request failed (${response.status}).`);
     return response.status === 204 ? undefined as T : await response.json() as T;
   }
 
-  async getFolder(folderId: string, token?: string): Promise<DriveFile> {
-    return this.request<DriveFile>(`/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`, {}, token);
+  async getFolder(folderId: string, token?: string, shouldContinue: () => boolean = () => true): Promise<DriveFile> {
+    return this.request<DriveFile>(
+      `/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed,parents,appProperties,webViewLink,version,modifiedTime`,
+      {}, token, shouldContinue
+    );
   }
 
-  async isWithinFolder(file: DriveFile, ancestorFolderId: string, token?: string): Promise<boolean> {
+  async isWithinFolder(file: DriveFile, ancestorFolderId: string, token?: string, shouldContinue: () => boolean = () => true): Promise<boolean> {
     let parentId = file.parents?.[0];
     const visited = new Set<string>();
     for (let depth = 0; parentId && depth < 100; depth += 1) {
+      assertDriveOperationCurrent(shouldContinue);
       if (parentId === ancestorFolderId) return true;
       if (visited.has(parentId)) return false;
       visited.add(parentId);
-      const parent = await this.getFolder(parentId, token);
+      const parent = await this.getFolder(parentId, token, shouldContinue);
       if (parent.trashed || parent.mimeType !== 'application/vnd.google-apps.folder') return false;
       parentId = parent.parents?.[0];
     }
     return false;
   }
 
-  private async listAllByQuery(query: string, fileFields: string): Promise<DriveFile[]> {
+  private async listAllByQuery(
+    query: string, fileFields: string, token?: string, shouldContinue: () => boolean = () => true
+  ): Promise<DriveFile[]> {
     const files: DriveFile[] = [];
     const seen = new Set<string>();
     let pageToken: string | undefined;
@@ -113,7 +132,7 @@ export class GoogleDriveApi {
         q: query, pageSize: '100', fields: `nextPageToken,files(${fileFields})`
       });
       if (pageToken) params.set('pageToken', pageToken);
-      const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`);
+      const page = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(`/files?${params}`, {}, token, shouldContinue);
       files.push(...(page.files ?? []));
       if (page.nextPageToken && seen.has(page.nextPageToken)) throw new Error('Drive returned a repeated pagination token.');
       if (page.nextPageToken) seen.add(page.nextPageToken);
@@ -203,18 +222,24 @@ export class GoogleDriveApi {
     return files;
   }
 
-  async findAccessibleFolders(name = 'GuitarDSL'): Promise<DriveFile[]> {
+  async findAccessibleFolders(
+    name = 'GuitarDSL', token?: string, shouldContinue: () => boolean = () => true
+  ): Promise<DriveFile[]> {
     const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const query = `name='${escape(name)}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`;
-    return (await this.listAllByQuery(query, 'id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink'))
+    return (await this.listAllByQuery(
+      query, 'id,name,mimeType,version,modifiedTime,parents,trashed,appProperties,webViewLink', token, shouldContinue
+    ))
       .filter(file => file.name === name && file.mimeType === 'application/vnd.google-apps.folder'
         && file.parents?.length === 1 && !file.trashed);
   }
 
-  async isCanonicalLibraryRoot(folder: DriveFile): Promise<boolean> {
+  async isCanonicalLibraryRoot(
+    folder: DriveFile, token?: string, shouldContinue: () => boolean = () => true
+  ): Promise<boolean> {
     if (folder.name !== 'GuitarDSL' || folder.mimeType !== 'application/vnd.google-apps.folder'
       || folder.trashed || folder.parents?.length !== 1) return false;
-    const listed = (await this.findAccessibleFolders()).find(candidate => candidate.id === folder.id);
+    const listed = (await this.findAccessibleFolders('GuitarDSL', token, shouldContinue)).find(candidate => candidate.id === folder.id);
     return Boolean(listed && listed.parents?.length === 1 && listed.parents[0] === folder.parents[0]);
   }
 
@@ -286,14 +311,19 @@ export class GoogleDriveApi {
     return this.request<DriveFile>(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`);
   }
 
-  async getFile(fileId: string, token = this.auth.tokenForRequest()): Promise<{ file: DriveFile; source: string; etag?: string }> {
+  async getFile(
+    fileId: string, token = this.auth.tokenForRequest(), shouldContinue: () => boolean = () => true
+  ): Promise<{ file: DriveFile; source: string; etag?: string }> {
     const metadataPath = `/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties,webViewLink,capabilities(canCopy,canRename,canMoveItemWithinDrive,canTrash)`;
-    const metadata = await this.request<DriveFile>(metadataPath, {}, token);
+    const metadata = await this.request<DriveFile>(metadataPath, {}, token, shouldContinue);
+    assertDriveOperationCurrent(shouldContinue);
     const headers = new Headers({ Authorization: `Bearer ${token}` });
     const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`, { headers });
+    assertDriveOperationCurrent(shouldContinue);
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive download failed (${response.status}).`);
     const source = await response.text();
-    const confirmed = await this.request<DriveFile>(metadataPath, {}, token);
+    assertDriveOperationCurrent(shouldContinue);
+    const confirmed = await this.request<DriveFile>(metadataPath, {}, token, shouldContinue);
     if (!sameDriveSnapshot(metadata, confirmed)) throw new DriveSnapshotChangedError();
     return { file: confirmed, source, etag: response.headers.get('ETag') ?? undefined };
   }
@@ -324,21 +354,30 @@ export class GoogleDriveApi {
     return await response.json() as DriveFile;
   }
 
-  async updateFile(file: DriveFile, source: string, expectedSource: string, libraryRootId?: string): Promise<DriveSaveResult> {
+  async updateFile(
+    file: DriveFile, source: string, expectedSource: string, libraryRootId: string,
+    options: DriveUpdateOptions = {}
+  ): Promise<DriveSaveResult> {
     const token = this.auth.tokenForRequest();
+    const shouldContinue = options.shouldContinue ?? (() => true);
+    if (!libraryRootId) return { kind: 'unavailable', message: 'The GuitarDSL library folder has not been confirmed.' };
     const metadataPath = `/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,version,modifiedTime,headRevisionId,parents,trashed,appProperties`;
     const readStable = async () => {
-      try { return await this.getFile(file.id, token); }
+      try { return await this.getFile(file.id, token, shouldContinue); }
       catch (error) {
         if (error instanceof DriveSnapshotChangedError) return undefined;
         throw error;
       }
     };
+    const validateLibraryRoot = async (): Promise<boolean> => {
+      const root = await this.getFolder(libraryRootId, token, shouldContinue);
+      return root.id === libraryRootId && await this.isCanonicalLibraryRoot(root, token, shouldContinue);
+    };
     const validateTarget = async (latest: DriveFile): Promise<DriveSaveResult | undefined> => {
       if (latest.id !== file.id || latest.trashed || !isSupportedDriveMimeType(latest.mimeType)) {
         return { kind: 'unavailable', message: 'This Google Drive file is no longer an available GuitarDSL score.' };
       }
-      if (libraryRootId && !await this.isWithinFolder(latest, libraryRootId, token)) {
+      if (!await validateLibraryRoot() || !await this.isWithinFolder(latest, libraryRootId, token, shouldContinue)) {
         return { kind: 'unavailable', message: 'This Google Drive score is no longer inside the GuitarDSL library.' };
       }
       return undefined;
@@ -353,7 +392,7 @@ export class GoogleDriveApi {
 
     // The baseline still owns the content, so a metadata-only change can be
     // rebased. Recheck that the version whose content was compared is current.
-    let current = await this.request<DriveFile>(metadataPath, {}, token);
+    let current = await this.request<DriveFile>(metadataPath, {}, token, shouldContinue);
     if (!sameDriveSnapshot(latest.file, current)) {
       latest = await readStable();
       if (!latest) return { kind: 'unknown' };
@@ -361,14 +400,20 @@ export class GoogleDriveApi {
       if (latestUnavailable) return latestUnavailable;
       if (latest.source === source) return { kind: 'saved', file: latest.file, readback: latest };
       if (latest.source !== expectedSource) return { kind: 'conflict', latest: latest.file };
-      current = await this.request<DriveFile>(metadataPath, {}, token);
+      current = await this.request<DriveFile>(metadataPath, {}, token, shouldContinue);
       if (!sameDriveSnapshot(latest.file, current)) return { kind: 'unknown', latest };
     } else {
       current = latest.file;
     }
 
+    current = await this.request<DriveFile>(metadataPath, {}, token, shouldContinue);
+    if (!sameDriveSnapshot(latest.file, current)) return { kind: 'unknown', latest };
+    const latestUnavailable = await validateTarget(latest.file);
+    if (latestUnavailable) return latestUnavailable;
+
     let response: Response;
     try {
+      assertDriveOperationCurrent(shouldContinue);
       response = await fetch(`${UPLOAD_API}/files/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name,mimeType,version,modifiedTime,parents,appProperties`, {
         method: 'PATCH', headers: {
           Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=UTF-8',
@@ -378,34 +423,41 @@ export class GoogleDriveApi {
         }, body: source
       });
     } catch {
-      const readback = await this.readAfterUncertainWrite(file.id, token);
+      if (!shouldContinue()) return { kind: 'unknown' };
+      const readback = await this.readAfterUncertainWrite(file.id, token, shouldContinue);
       if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
       return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
     }
+    if (!shouldContinue()) return { kind: 'unknown' };
 
     if (response.status === 412) {
       const readback = await readStable();
       if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
-      return { kind: 'conflict', latest: readback?.file ?? await this.request<DriveFile>(metadataPath, {}, token) };
+      return { kind: 'conflict', latest: readback?.file ?? await this.request<DriveFile>(metadataPath, {}, token, shouldContinue) };
     }
     if ([401, 403, 429].includes(response.status) || response.status >= 500) {
       // These responses may not reveal whether Drive applied the media update. Observe once;
       // callers retain the draft and must never retry this PATCH automatically.
-      const uncertainLatest = await this.readAfterUncertainWrite(file.id, token);
+      const uncertainLatest = shouldContinue() ? await this.readAfterUncertainWrite(file.id, token, shouldContinue) : undefined;
       return { kind: 'unknown', status: response.status, ...(uncertainLatest ? { latest: uncertainLatest } : {}) };
     }
     if (!response.ok) throw new DriveApiError(response.status, `Google Drive save failed (${response.status}).`);
 
-    try { return { kind: 'saved', file: await response.json() as DriveFile }; }
+    try { await response.json() as DriveFile; }
     catch {
-      const readback = await this.readAfterUncertainWrite(file.id, token);
+      const readback = await this.readAfterUncertainWrite(file.id, token, shouldContinue);
       if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
       return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
     }
+    const readback = shouldContinue() ? await this.readAfterUncertainWrite(file.id, token, shouldContinue) : undefined;
+    if (readback?.source === source) return { kind: 'saved', file: readback.file, readback };
+    return { kind: 'unknown', ...(readback ? { latest: readback } : {}) };
   }
 
-  private async readAfterUncertainWrite(fileId: string, token?: string): Promise<{ file: DriveFile; source: string; etag?: string } | undefined> {
-    try { return await this.getFile(fileId, token); }
+  private async readAfterUncertainWrite(
+    fileId: string, token?: string, shouldContinue: () => boolean = () => true
+  ): Promise<{ file: DriveFile; source: string; etag?: string } | undefined> {
+    try { return await this.getFile(fileId, token, shouldContinue); }
     catch { return undefined; }
   }
 

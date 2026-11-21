@@ -29,7 +29,7 @@ import { GoogleAuthError, GoogleOAuth, type GoogleAccount } from './auth/googleO
 import { DriveApiError, driveIdentity, GoogleDriveApi, isSupportedDriveFile, isSupportedDriveMimeType,
   type DriveFile, type DrivePickerSelection } from './storage/googleDrive';
 import { DEFAULT_DRIVE_APPDATA_STATE, DriveAppDataError, DriveAppDataStore, validateDriveAppDataState, validatePendingDriveAppData,
-  type DriveAppDataSnapshot, type DriveAppDataState, type PendingDriveAppData } from './storage/driveAppData';
+  type DriveAppDataSaveResult, type DriveAppDataSnapshot, type DriveAppDataState, type PendingDriveAppData } from './storage/driveAppData';
 import { serializeDriveSave } from './storage/driveSaveQueue';
 import { indexedDb, type StoredDocument } from './storage/indexedDb';
 import { downloadSource, importLocalFile, moveLocalDocumentToDrive, LocalMoveConflictError, MoveRecoveryError, MoveVerificationError } from './storage/fileTransfer';
@@ -295,9 +295,11 @@ let appDataSyncQueue: Promise<void> = Promise.resolve();
 let appDataPendingQueue: Promise<void> = Promise.resolve();
 let appDataDesiredSequence = 0;
 let latestAppDataDesired: {
-  accountId: string; drive: GoogleDriveApi; generation: number; sequence: number; state: DriveAppDataState
+  accountId: string; drive: GoogleDriveApi; generation: number; workspaceGeneration: number;
+  sequence: number; state: DriveAppDataState
 } | undefined;
 let appDataOfflinePending = false;
+let appDataUnknownOutcome = false;
 let restoringDriveSession = false;
 let helpBlobUrl = '';
 let localExpanded = true;
@@ -503,7 +505,8 @@ async function resumeWorkspaceFromBfcache(): Promise<void> {
     deferredExplorerRefresh = false;
     void refreshExplorerSnapshot();
   }
-  if (deferredAppDataSync && !reloadPreparationActive && state.appDataSync !== 'error' && navigator.onLine) {
+  if (!reloadPreparationActive && navigator.onLine && (deferredAppDataSync || state.appDataSync === 'pending'
+    || appDataUnknownOutcome)) {
     deferredAppDataSync = false;
     scheduleDriveAppDataSync();
   }
@@ -923,14 +926,26 @@ function desiredDriveAppData(
   const normalized = validateDriveAppDataState(value);
   const latest = latestAppDataDesired;
   if (!force && latest?.accountId === accountId && latest.drive === drive && latest.generation === generation
+    && latest.workspaceGeneration === workspaceOperationGeneration
     && sameDriveAppDataState(latest.state, normalized)) return latest;
-  const desired = { accountId, drive, generation, sequence: ++appDataDesiredSequence, state: normalized };
+  const desired = {
+    accountId, drive, generation, workspaceGeneration: workspaceOperationGeneration,
+    sequence: ++appDataDesiredSequence, state: normalized
+  };
   latestAppDataDesired = desired;
   return desired;
 }
 
+function appDataDesiredIsCurrent(
+  desired: NonNullable<typeof latestAppDataDesired>, allowReloadPreparation = false
+): boolean {
+  return latestAppDataDesired === desired && desired.workspaceGeneration === workspaceOperationGeneration
+    && !runtimeDisposed && !pageCacheSuspended && (!reloadPreparationActive || allowReloadPreparation)
+    && driveSessionIsCurrent(desired.accountId, desired.drive, desired.generation);
+}
+
 function isLatestAppDataDesired(desired: NonNullable<typeof latestAppDataDesired>): boolean {
-  return latestAppDataDesired === desired && driveSessionIsCurrent(desired.accountId, desired.drive, desired.generation);
+  return appDataDesiredIsCurrent(desired);
 }
 
 async function readPendingDriveAppData(accountId: string): Promise<PendingDriveAppData | undefined> {
@@ -940,13 +955,13 @@ async function readPendingDriveAppData(accountId: string): Promise<PendingDriveA
 
 async function persistPendingDriveAppData(
   accountId: string, drive: GoogleDriveApi, generation: number, value: DriveAppDataState,
-  desired = desiredDriveAppData(accountId, drive, generation, value)
+  desired = desiredDriveAppData(accountId, drive, generation, value), allowReloadPreparation = false
 ): Promise<boolean> {
   const pending = validatePendingDriveAppData({ schemaVersion: 1, accountId, state: value, updatedAt: Date.now() }, accountId);
   const write = appDataPendingQueue.then(async () => {
-    if (!isLatestAppDataDesired(desired)) return false;
+    if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
     await indexedDb.setValue('settings', pendingDriveAppDataKey(accountId), pending);
-    if (!isLatestAppDataDesired(desired)) return false;
+    if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
     state.appDataPending = pending;
     return true;
   });
@@ -956,16 +971,18 @@ async function persistPendingDriveAppData(
 
 async function clearPendingDriveAppData(
   accountId: string, drive: GoogleDriveApi, generation: number, expectedState?: DriveAppDataState,
-  desired?: NonNullable<typeof latestAppDataDesired>
+  desired?: NonNullable<typeof latestAppDataDesired>, allowReloadPreparation = false
 ): Promise<boolean> {
   const write = appDataPendingQueue.then(async () => {
-    if (desired ? !isLatestAppDataDesired(desired) : !driveSessionIsCurrent(accountId, drive, generation)) return false;
+    if (desired ? !appDataDesiredIsCurrent(desired, allowReloadPreparation)
+      : !driveSessionIsCurrent(accountId, drive, generation)) return false;
     const persisted = await readPendingDriveAppData(accountId);
-    if (desired && !isLatestAppDataDesired(desired)) return false;
+    if (desired && !appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
     if (expectedState && persisted && !sameDriveAppDataState(persisted.state, expectedState)) return false;
     if (expectedState && !persisted && state.appDataPending) return false;
     await indexedDb.deleteValue('settings', pendingDriveAppDataKey(accountId));
-    if (desired ? !isLatestAppDataDesired(desired) : !driveSessionIsCurrent(accountId, drive, generation)) return false;
+    if (desired ? !appDataDesiredIsCurrent(desired, allowReloadPreparation)
+      : !driveSessionIsCurrent(accountId, drive, generation)) return false;
     state.appDataPending = undefined;
     state.appDataPendingChoice = undefined;
     return true;
@@ -991,8 +1008,8 @@ function scheduleDriveAppDataSync(): void {
   const generation = state.driveGeneration;
   const next = driveWorkspaceState();
   const previous = latestAppDataDesired;
-  const desired = desiredDriveAppData(accountId, drive, generation, next, state.appDataSync === 'error');
-  if (previous === desired && state.appDataSync !== 'error') return;
+  const desired = desiredDriveAppData(accountId, drive, generation, next);
+  if (previous === desired && !appDataUnknownOutcome) return;
   if (sameDriveAppDataState(next, state.appDataSnapshot.state) && !state.appDataPending
     && state.appDataSync === 'idle' && !appDataSyncTimer) return;
   state.appDataSync = 'pending';
@@ -1033,6 +1050,7 @@ async function restoreRemoteDriveAppData(
   state.appDataSync = 'syncing';
   state.appDataError = undefined;
   if (pendingState && !await clearPendingDriveAppData(accountId, drive, generation, pendingState, desired)) return false;
+  appDataUnknownOutcome = false;
   if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
   await setUpDriveFolderAfterConnect(accountId, drive, generation);
   if (!driveSessionIsCurrent(accountId, drive, generation)) return false;
@@ -1058,7 +1076,7 @@ async function restoreRemoteDriveAppData(
 }
 
 async function persistDriveAppData(
-  next = driveWorkspaceState(), requestedDesired?: NonNullable<typeof latestAppDataDesired>
+  next = driveWorkspaceState(), requestedDesired?: NonNullable<typeof latestAppDataDesired>, allowReloadPreparation = false
 ): Promise<boolean> {
   window.clearTimeout(appDataSyncTimer);
   appDataSyncTimer = 0;
@@ -1071,20 +1089,20 @@ async function persistDriveAppData(
     && requestedDesired.generation === generation && sameDriveAppDataState(requestedDesired.state, next)
     ? requestedDesired : desiredDriveAppData(accountId, drive, generation, next);
   const write = appDataSyncQueue.then(async () => {
-    if (!isLatestAppDataDesired(desired) || state.appDataStore !== store) return false;
+    if (!appDataDesiredIsCurrent(desired, allowReloadPreparation) || state.appDataStore !== store) return false;
     const baseline = state.appDataSnapshot;
     if (!baseline) return false;
-    if (sameDriveAppDataState(baseline.state, next)) {
-      if (!await clearPendingDriveAppData(accountId, drive, generation, state.appDataPending?.state, desired)) return false;
-      if (!isLatestAppDataDesired(desired)) return false;
+    if (!appDataUnknownOutcome && sameDriveAppDataState(baseline.state, next)) {
+      if (!await clearPendingDriveAppData(accountId, drive, generation, state.appDataPending?.state, desired, allowReloadPreparation)) return false;
+      if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
       state.appDataSync = 'idle';
       state.appDataError = undefined;
       appDataOfflinePending = false;
       renderStorageStatus();
       return true;
     }
-    if (!await persistPendingDriveAppData(accountId, drive, generation, next, desired)) return false;
-    if (!isLatestAppDataDesired(desired)) return false;
+    if (!await persistPendingDriveAppData(accountId, drive, generation, next, desired, allowReloadPreparation)) return false;
+    if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
     if (!navigator.onLine) {
       appDataOfflinePending = true;
       state.appDataSync = 'pending';
@@ -1093,37 +1111,67 @@ async function persistDriveAppData(
     }
     state.appDataSync = 'syncing';
     renderStorageStatus();
+    let patchMayHaveBeenSent = false;
+    const shouldContinue = () => appDataDesiredIsCurrent(desired, allowReloadPreparation)
+      && state.appDataStore === store;
     try {
-      let result = await store.update(baseline, next);
+      let result: DriveAppDataSaveResult;
+      if (appDataUnknownOutcome) {
+        const latest = await store.load(shouldContinue);
+        if (!shouldContinue()) return false;
+        if (!latest) throw new DriveAppDataError('unknown-outcome', 'Drive app state could not be read to resolve an earlier update.');
+        result = sameDriveAppDataState(latest.state, next)
+          ? { kind: 'saved' as const, snapshot: latest }
+          : { kind: 'conflict' as const, latest };
+      } else {
+        result = await store.update(baseline, next, {
+          shouldContinue,
+          onPatchStart: () => { patchMayHaveBeenSent = true; },
+          onPatchSettled: () => { patchMayHaveBeenSent = false; }
+        });
+        patchMayHaveBeenSent = false;
+      }
       if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store) return false;
-      if (!isLatestAppDataDesired(desired)) {
-        state.appDataSnapshot = result.kind === 'saved' ? result.snapshot : result.latest;
+      if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) {
+        if (result.kind === 'saved') state.appDataSnapshot = result.snapshot;
         return false;
       }
-      if (result.kind === 'conflict') {
+      while (result.kind === 'conflict') {
         const choice = await appDataConflictDialog();
-        if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store || !isLatestAppDataDesired(desired)) return false;
+        if (!appDataDesiredIsCurrent(desired, allowReloadPreparation) || state.appDataStore !== store) return false;
         if (choice === 'local') {
-          state.appDataSnapshot = result.latest;
-          result = await store.update(result.latest, next);
-          if (!isLatestAppDataDesired(desired)) {
-            state.appDataSnapshot = result.kind === 'saved' ? result.snapshot : result.latest;
+          // The user's choice authorizes one update against the exact snapshot
+          // shown in the dialog. A newer conflict requires another choice.
+          appDataUnknownOutcome = false;
+          try {
+            result = await store.update(result.latest, next, {
+              shouldContinue,
+              onPatchStart: () => { patchMayHaveBeenSent = true; },
+              onPatchSettled: () => { patchMayHaveBeenSent = false; }
+            });
+            patchMayHaveBeenSent = false;
+          } catch (error) {
+            if (patchMayHaveBeenSent || error instanceof DriveAppDataError && error.code === 'unknown-outcome') {
+              appDataUnknownOutcome = true;
+            }
+            throw error;
+          }
+          if (!appDataDesiredIsCurrent(desired, allowReloadPreparation)) {
+            if (result.kind === 'saved') state.appDataSnapshot = result.snapshot;
             return false;
           }
         } else {
           const restored = await restoreRemoteDriveAppData(result.latest, accountId, drive, generation);
           return restored;
         }
-        if (result.kind === 'conflict') {
-          state.appDataSnapshot = result.latest;
-          throw new DriveAppDataError('conflict', strings().appDataPending);
-        }
       }
-      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store || !isLatestAppDataDesired(desired)) return false;
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store
+        || !appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
       state.appDataSnapshot = result.snapshot;
-      if (!await clearPendingDriveAppData(accountId, drive, generation, next, desired)) {
+      if (!await clearPendingDriveAppData(accountId, drive, generation, next, desired, allowReloadPreparation)) {
         throw new DriveAppDataError('unknown-outcome', 'Drive saved its metadata, but the local pending record could not be cleared.');
       }
+      appDataUnknownOutcome = false;
       state.appDataSync = 'idle';
       state.appDataError = undefined;
       appDataOfflinePending = false;
@@ -1131,7 +1179,11 @@ async function persistDriveAppData(
       if (result.snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
       return true;
     } catch (error) {
-      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store || !isLatestAppDataDesired(desired)) return false;
+      if (patchMayHaveBeenSent || error instanceof DriveAppDataError && error.code === 'unknown-outcome') {
+        appDataUnknownOutcome = true;
+      }
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataStore !== store
+        || !appDataDesiredIsCurrent(desired, allowReloadPreparation)) return false;
       state.appDataSync = 'error';
       state.appDataError = shortError(error);
       renderStorageStatus();
@@ -1150,15 +1202,15 @@ async function flushDriveAppData(shouldContinue: () => boolean = () => true): Pr
       appDataSyncTimer = 0;
     }
     await appDataPendingQueue;
-    if (!shouldContinue() || state.appDataSync === 'error') return false;
+    if (!shouldContinue() || state.appDataSync === 'error' && !appDataUnknownOutcome) return false;
     if (state.appDataSync === 'syncing') {
       await appDataSyncQueue;
       if (!shouldContinue()) return false;
       continue;
     }
-    if (state.appDataSync === 'pending' || state.appDataPending || deferredAppDataSync) {
+    if (state.appDataSync === 'pending' || state.appDataPending || deferredAppDataSync || appDataUnknownOutcome) {
       deferredAppDataSync = false;
-      const synced = await persistDriveAppData();
+      const synced = await persistDriveAppData(driveWorkspaceState(), latestAppDataDesired, true);
       if (!synced || !shouldContinue()) return false;
       continue;
     }
@@ -1963,8 +2015,14 @@ async function openDocument(
     return operationIsCurrent() ? match : undefined;
   }
   let savedDocument: StoredDocument | undefined;
+  let savedDraftBaseline: Awaited<ReturnType<typeof indexedDb.getDraftBaseline>> = undefined;
   if (persistable) {
-    try { savedDocument = await indexedDb.getSavedDocument(documentRow.identity, accountId); }
+    try {
+      [savedDocument, savedDraftBaseline] = await Promise.all([
+        indexedDb.getSavedDocument(documentRow.identity, accountId),
+        indexedDb.getDraftBaseline(documentRow.identity, accountId)
+      ]);
+    }
     catch { if (operationIsCurrent()) state.storageReady = false; }
   }
   if (!operationIsCurrent()) return undefined;
@@ -1972,7 +2030,10 @@ async function openDocument(
     || savedDocument.revision !== documentRow.revision || savedDocument.source !== source);
   const tab: OpenTab = {
     document: documentRow, source, revision: documentRow.revision, accountId, persistable,
-    persistedBase: { revision: documentRow.revision, source },
+    persistedBase: {
+      revision: savedDraftBaseline?.revision ?? savedDocument?.revision ?? documentRow.revision,
+      source: savedDraftBaseline?.source ?? savedDocument?.source ?? documentRow.source
+    },
     saveStatus: hasDraft ? 'draft' : documentRow.identity.storage === 'drive' ? 'drive-saved' : 'local-saved',
     previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation
   };
@@ -2136,9 +2197,9 @@ async function saveActiveDocument(): Promise<void> {
 
 async function saveDriveDocument(tab: OpenTab): Promise<void> {
   const operationGeneration = workspaceOperationGeneration;
-  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
   const drive = state.drive;
   const accountId = state.account?.accountId;
+  const driveGeneration = state.driveGeneration;
   if (!drive || !accountId) { showMessage(strings().connectHint, 'error'); return; }
   if (tab.accountId !== accountId) { showMessage(strings().reconnectOwner, 'error'); return; }
   if (tab.driveTrashPending || tab.driveTrashed) {
@@ -2147,9 +2208,21 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
     return;
   }
   const queuedFileId = tab.document.identity.fileId;
+  const sessionIsCurrent = () => workspaceOperationIsCurrent(operationGeneration)
+    && driveSessionIsCurrent(accountId, drive, driveGeneration) && state.tabs.includes(tab);
+  const operationIsCurrent = () => sessionIsCurrent() && tab.accountId === accountId
+    && tab.document.identity.storage === 'drive' && tab.document.identity.fileId === queuedFileId;
+  const libraryRootId = state.folderId;
+  if (!libraryRootId) {
+    showMessage(state.locale === 'ja' ? 'GuitarDSL ライブラリを確認できないため保存できません。'
+      : 'The GuitarDSL library folder is not confirmed, so this score cannot be saved.', 'error');
+    return;
+  }
   let identityChanged = false;
   try {
+    if (!sessionIsCurrent()) return;
     await withDriveOperation(() => serializeDriveSave(accountId, queuedFileId, async () => {
+      if (!sessionIsCurrent()) return;
       if (tab.document.identity.fileId !== queuedFileId || tab.accountId !== accountId) {
         identityChanged = true;
         return;
@@ -2167,10 +2240,12 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         ...(tab.document.driveFolderId ? { parents: [tab.document.driveFolderId] } : {})
       };
       const submitted = tabOperationSnapshot(tab);
-      const result = await drive.updateFile(file, submitted.source, tab.document.source, state.folderId);
+      const result = await drive.updateFile(file, submitted.source, tab.document.source, libraryRootId, {
+        shouldContinue: operationIsCurrent
+      });
       if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (result.kind === 'conflict') {
-        await handleDriveConflict(tab, result.latest, drive, accountId);
+        await handleDriveConflict(tab, result.latest, drive, accountId, operationIsCurrent);
         if (!operationIsCurrent()) driveSaveNeedsReviewAfterBfcache = true;
         return;
       }
@@ -2183,7 +2258,7 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         showMessage(message, 'error');
         return;
       }
-      const verified = result.readback ?? await drive.getFile(result.file.id);
+      const verified = result.readback;
       if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (verified.source !== submitted.source) throw new Error('Drive did not return the saved source; the local draft was kept.');
       const updated: StoredDocument = {
@@ -2193,11 +2268,11 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
         driveFolderId: verified.file.parents?.[0] ?? tab.document.driveFolderId,
         driveEtag: verified.etag, updatedAt: Date.now()
       };
-      const committed = await indexedDb.commitDriveDocument(updated, submitted, true);
+      const committed = await indexedDb.commitDriveDocument(updated, submitted, true, operationIsCurrent);
       if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
       if (!committed) throw new DOMException('A newer local draft exists; the Drive copy was saved but the local draft was kept.', 'InvalidStateError');
       if (!tabMatchesSnapshot(tab, submitted)) {
-        await preserveNewerTabDraftAfterRemoteCommit(tab, updated);
+        await preserveNewerTabDraftAfterRemoteCommit(tab, updated, operationIsCurrent);
         if (!operationIsCurrent()) { driveSaveNeedsReviewAfterBfcache = true; return; }
         showMessage(state.locale === 'ja'
           ? 'Drive には保存しましたが、保存中に行った新しい編集は下書きとして保持しました。'
@@ -2212,10 +2287,12 @@ async function saveDriveDocument(tab: OpenTab): Promise<void> {
       void renderExplorer();
     }));
   } catch (error) {
-    if (!operationIsCurrent()) driveSaveNeedsReviewAfterBfcache = true;
+    if (!operationIsCurrent()) {
+      if (pageCacheSuspended) driveSaveNeedsReviewAfterBfcache = true;
+    }
     else { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
   }
-  if (operationIsCurrent() && identityChanged && state.tabs.includes(tab) && tab.document.identity.storage === 'drive'
+  if (sessionIsCurrent() && identityChanged && state.tabs.includes(tab) && tab.document.identity.storage === 'drive'
     && tab.saveStatus !== 'drive-saved') await saveDriveDocument(tab);
 }
 
@@ -2244,17 +2321,18 @@ async function preserveNewerTabDraftAfterRemoteCommit(
 }
 
 async function handleDriveConflict(
-  tab: OpenTab, latest: DriveFile, drive = state.drive, accountId = state.account?.accountId
+  tab: OpenTab, latest: DriveFile, drive = state.drive, accountId = state.account?.accountId,
+  operationIsCurrent?: () => boolean
 ): Promise<void> {
   if (!drive || !accountId) return;
   const generation = state.driveGeneration;
-  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && (operationIsCurrent?.() ?? true);
   const choice = await conflictDialog();
   if (choice === 'cancel' || !isCurrent()) return;
   if (choice === 'reload') {
     try {
       const expected = tabOperationSnapshot(tab);
-      const remote = await withDriveOperation(() => drive.getFile(latest.id));
+      const remote = await withDriveOperation(() => drive.getFile(latest.id, undefined, isCurrent));
       if (!isCurrent()) return;
       if (!tabMatchesSnapshot(tab, expected)) {
         if (!state.tabs.includes(tab) || !sameTabIdentity(tab, expected.identity, expected.accountId)) {
@@ -2264,7 +2342,7 @@ async function handleDriveConflict(
           return;
         }
         if (!await saveDraftNow(tab) || !isCurrent()) return;
-        await handleDriveConflict(tab, remote.file, drive, accountId);
+        await handleDriveConflict(tab, remote.file, drive, accountId, operationIsCurrent);
         return;
       }
       const updated: StoredDocument = {
@@ -2277,13 +2355,13 @@ async function handleDriveConflict(
       if (!isCurrent()) return;
       const committed = await indexedDb.commitDriveDocument(updated, {
         identity: expected.identity, revision: expected.revision, source: expected.source
-      });
+      }, false, isCurrent);
       if (!isCurrent()) return;
       if (!committed) throw new Error('A newer local draft exists. It was kept.');
       if (!tabMatchesSnapshot(tab, expected)) {
         await preserveNewerTabDraftAfterRemoteCommit(tab, updated, isCurrent);
         if (!isCurrent()) return;
-        await handleDriveConflict(tab, remote.file, drive, accountId);
+        await handleDriveConflict(tab, remote.file, drive, accountId, operationIsCurrent);
         return;
       }
       tab.document = updated; tab.source = remote.source; tab.revision = updated.revision;
@@ -2350,7 +2428,7 @@ async function saveDriveCopy(
   await withDriveOperation(async () => {
     const file = await drive.createFile(folderId, copyName, submitted.source);
     if (!current()) return;
-    const verified = await drive.getFile(file.id);
+    const verified = await drive.getFile(file.id, undefined, current);
     if (!current()) return;
     if (verified.source !== submitted.source) throw new Error('Drive copy verification failed; the original draft was kept.');
     const doc: StoredDocument = {
@@ -2360,7 +2438,7 @@ async function saveDriveCopy(
       driveEtag: verified.etag, driveFolderId: verified.file.parents?.[0] ?? folderId
     };
     if (!current()) return;
-    await indexedDb.upsertDriveDocument(doc);
+    await indexedDb.upsertDriveDocument(doc, current);
     if (!current()) return;
     if (!editorReadyForDocumentChange()) return;
     if (!tabMatchesSnapshot(tab, submitted)) {
@@ -2491,24 +2569,27 @@ function folderSetupDialog(): Promise<'create' | 'later'> {
   });
 }
 
-async function loadDriveAppData(accountId: string, drive: GoogleDriveApi, generation: number): Promise<{
+async function loadDriveAppData(
+  accountId: string, drive: GoogleDriveApi, generation: number, shouldContinue: () => boolean = () => true
+): Promise<{
   snapshot: DriveAppDataSnapshot; pending?: PendingDriveAppData; pendingChoice?: 'remote' | 'local'
 } | undefined> {
   const store = new DriveAppDataStore(auth);
-  const [existing, pending] = await Promise.all([store.load(), readPendingDriveAppData(accountId)]);
-  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  const isCurrent = () => shouldContinue() && driveSessionIsCurrent(accountId, drive, generation);
+  const [existing, pending] = await Promise.all([store.load(isCurrent), readPendingDriveAppData(accountId)]);
+  if (!isCurrent()) return undefined;
   let snapshot = existing;
   let pendingChoice: 'remote' | 'local' | undefined;
   if (!snapshot) {
-    snapshot = await store.loadOrCreate(pending?.state ?? DEFAULT_DRIVE_APPDATA_STATE, true);
-    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    snapshot = await store.loadOrCreate(pending?.state ?? DEFAULT_DRIVE_APPDATA_STATE, true, isCurrent);
+    if (!isCurrent()) return undefined;
     if (pending) pendingChoice = 'local';
   } else if (pending) {
     if (sameDriveAppDataState(pending.state, snapshot.state)) pendingChoice = 'remote';
     else pendingChoice = (await appDataConflictDialog()) === 'local' ? 'local' : 'remote';
-    if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+    if (!isCurrent()) return undefined;
   }
-  if (!driveSessionIsCurrent(accountId, drive, generation)) return undefined;
+  if (!isCurrent()) return undefined;
   state.appDataStore = store;
   state.appDataSnapshot = snapshot;
   state.appDataPending = pending;
@@ -2613,6 +2694,7 @@ async function connectDrive(): Promise<void> {
       state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
       state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
       appDataOfflinePending = false;
+      appDataUnknownOutcome = false;
       renderAll(); await persistSessions(); return;
     }
     await flushDriveAppData();
@@ -2631,7 +2713,8 @@ async function connectDrive(): Promise<void> {
     state.folderId = undefined; state.folderName = undefined;
     state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
     state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
-    const loaded = await loadDriveAppData(account.accountId, drive, generation);
+    appDataUnknownOutcome = false;
+    const loaded = await loadDriveAppData(account.accountId, drive, generation, operationIsCurrent);
     if (!operationIsCurrent() || !loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) {
       if (!operationIsCurrent()) driveConnectInterrupted = true;
       return;
@@ -3608,50 +3691,92 @@ async function openDriveDocument(
     const [saved, draft, latest] = await Promise.all([
       indexedDb.getSavedDocument(identity, accountId),
       indexedDb.getDraft(identity, accountId),
-      drive.getFile(file.id)
+      drive.getFile(file.id, undefined, isCurrent)
     ]);
     if (!isCurrent()) return;
-    if (latest.file.trashed) throw new Error('This Google Drive score is in the trash.');
-    if (draft && saved && (saved.driveVersion !== latest.file.version || saved.driveModifiedTime !== latest.file.modifiedTime
-      || saved.driveRevisionId !== latest.file.headRevisionId)) {
+    if (latest.file.id !== file.id || latest.file.trashed || !isSupportedDriveFile(latest.file.name)
+      || !isSupportedDriveMimeType(latest.file.mimeType)) {
+      throw new Error('This Google Drive file is no longer an available GuitarDSL score.');
+    }
+    if (!state.folderId || !await drive.isWithinFolder(latest.file, state.folderId, undefined, isCurrent)) {
+      if (!isCurrent()) return;
+      throw new Error('This Google Drive score is no longer inside the GuitarDSL library.');
+    }
+
+    if (draft && latest.source === draft.source) {
+      const base = saved ?? {
+        identity, accountId, name: latest.file.name, source: latest.source, revision: 0,
+        createdAt: Date.now(), updatedAt: Date.now()
+      } satisfies StoredDocument;
+      const refreshed: StoredDocument = {
+        ...base, name: latest.file.name, source: latest.source, revision: draft.revision,
+        driveVersion: latest.file.version, driveModifiedTime: latest.file.modifiedTime, driveEtag: latest.etag,
+        driveRevisionId: latest.file.headRevisionId, driveFolderId: latest.file.parents?.[0], updatedAt: Date.now()
+      };
+      const committed = await indexedDb.commitDriveDocument(refreshed, draft, false, isCurrent);
+      if (!isCurrent()) return;
+      if (!committed) throw new Error('A newer local draft exists; it was kept.');
+      await openDocument(refreshed, latest.source, accountId, true, isCurrent);
+      return;
+    }
+    if (draft && saved && latest.source === saved.source) {
+      const refreshed: StoredDocument = {
+        ...saved, name: latest.file.name, driveVersion: latest.file.version,
+        driveModifiedTime: latest.file.modifiedTime, driveEtag: latest.etag,
+        driveRevisionId: latest.file.headRevisionId, driveFolderId: latest.file.parents?.[0], updatedAt: Date.now()
+      };
+      const updated = await indexedDb.upsertDriveDocument(refreshed, isCurrent);
+      if (!isCurrent()) return;
+      if (!updated) return;
+      await openDocument({ ...refreshed, revision: draft.revision }, draft.source, accountId, true, isCurrent);
+      return;
+    }
+    if (draft) {
       const choice = await conflictDialog();
       if (choice === 'cancel' || !isCurrent()) return;
       if (choice === 'save-as') {
-        const oldDoc = { ...saved, source: draft.source, revision: draft.revision };
+        const base = saved ?? {
+          identity, accountId, name: latest.file.name, source: latest.source, revision: 0,
+          createdAt: Date.now(), updatedAt: Date.now(), driveVersion: latest.file.version,
+          driveModifiedTime: latest.file.modifiedTime, driveRevisionId: latest.file.headRevisionId,
+          driveEtag: latest.etag, driveFolderId: latest.file.parents?.[0]
+        } satisfies StoredDocument;
+        const oldDoc = { ...base, source: draft.source, revision: draft.revision };
         const opened = await openDocument(oldDoc, draft.source, accountId, true, isCurrent);
         if (!opened || !isCurrent()) return;
         await saveDriveCopy(opened, latest.file.parents?.[0] ?? state.folderId, drive, accountId, isCurrent);
         return;
       }
       const refreshed: StoredDocument = {
-        ...saved, source: latest.source, revision: Math.max(saved.revision, draft.revision) + 1,
+        ...(saved ?? {
+          identity, accountId, name: latest.file.name, source: latest.source,
+          revision: 0, createdAt: Date.now(), updatedAt: Date.now()
+        }),
+        name: latest.file.name, source: latest.source, revision: Math.max(saved?.revision ?? 0, draft.revision) + 1,
         driveVersion: latest.file.version, driveModifiedTime: latest.file.modifiedTime, driveEtag: latest.etag,
         driveRevisionId: latest.file.headRevisionId,
         driveFolderId: latest.file.parents?.[0] ?? state.folderId, updatedAt: Date.now()
       };
       if (!isCurrent()) return;
-      const committed = await indexedDb.commitDriveDocument(refreshed, { identity, revision: refreshed.revision, source: latest.source });
+      const committed = await indexedDb.commitDriveDocument(refreshed, {
+        identity, revision: draft.revision, source: draft.source
+      }, false, isCurrent);
       if (!isCurrent()) return;
       if (!committed) throw new Error('A newer local draft exists; it was kept.');
       await openDocument(refreshed, refreshed.source, accountId, true, isCurrent); return;
     }
-    let documentRow: StoredDocument;
-    let source: string;
-    if (saved && draft) { documentRow = { ...saved, accountId }; source = draft.source; documentRow.revision = draft.revision; }
-    else {
-      documentRow = {
-        identity, accountId, name: latest.file.name, source: latest.source,
-        revision: saved ? saved.revision + Number(saved.source !== latest.source) : 0,
-        createdAt: saved?.createdAt ?? Date.now(), updatedAt: Date.now(), driveVersion: latest.file.version,
-        driveModifiedTime: latest.file.modifiedTime, driveRevisionId: latest.file.headRevisionId, driveEtag: latest.etag,
-        driveFolderId: latest.file.parents?.[0] ?? state.folderId
-      };
-      source = latest.source;
-      if (!isCurrent()) return;
-      await indexedDb.upsertDriveDocument(documentRow);
-      if (!isCurrent()) return;
-    }
-    await openDocument(documentRow, source, accountId, true, isCurrent);
+    const documentRow: StoredDocument = {
+      identity, accountId, name: latest.file.name, source: latest.source,
+      revision: saved ? saved.revision + Number(saved.source !== latest.source) : 0,
+      createdAt: saved?.createdAt ?? Date.now(), updatedAt: Date.now(), driveVersion: latest.file.version,
+      driveModifiedTime: latest.file.modifiedTime, driveRevisionId: latest.file.headRevisionId, driveEtag: latest.etag,
+      driveFolderId: latest.file.parents?.[0] ?? state.folderId
+    };
+    if (!isCurrent()) return;
+    const updated = await indexedDb.upsertDriveDocument(documentRow, isCurrent);
+    if (!isCurrent()) return;
+    if (!updated) return;
+    await openDocument(documentRow, latest.source, accountId, true, isCurrent);
   } catch (error) {
     if (!isCurrent()) return;
     markDriveAuthState(error);
@@ -4815,7 +4940,7 @@ window.addEventListener('online', () => {
   if (appDataOfflinePending) {
     appDataOfflinePending = false;
     void persistDriveAppData();
-  } else if (deferredAppDataSync && state.appDataSync !== 'error') {
+  } else if ((appDataUnknownOutcome || deferredAppDataSync) && (appDataUnknownOutcome || state.appDataSync !== 'error')) {
     deferredAppDataSync = false;
     scheduleDriveAppDataSync();
   }
