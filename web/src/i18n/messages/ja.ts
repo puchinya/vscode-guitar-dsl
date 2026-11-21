@@ -20,7 +20,7 @@ export const ja = {
   },
   drive: {
     name: 'Google Drive',
-    library: 'GuitarDSL ライブラリ',
+    library: 'ライブラリ',
     connectionState: 'Google Drive: {status}',
     onThisDevice: 'このデバイス',
     status: {
