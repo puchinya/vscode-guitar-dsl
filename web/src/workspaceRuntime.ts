@@ -1086,20 +1086,37 @@ async function restoreRemoteDriveAppData(
     appDataUnknownOutcome = true;
     renderStorageStatus();
 
-    await setUpDriveFolderAfterConnect(accountId, drive, generation, snapshot.state);
+    const folder = await findCanonicalLibraryRoot(accountId, drive, generation, snapshot, snapshot.state, true);
     if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
       throw new Error('The Drive session changed while restoring the selected settings.');
     }
-    const folderId = state.folderId;
-    if (!folderId) throw new Error('The selected Drive library folder could not be restored.');
-    // Resolve the selected folder's listing before clearing pending state or releasing the shell lock.
-    const children = await drive.listChildren(folderId);
-    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot || state.folderId !== folderId) {
-      throw new Error('The Drive session changed while restoring the selected library.');
+    const hasDriveTabReferences = snapshot.state.openDriveFileIds.length > 0 || snapshot.state.activeDriveFileId !== null;
+    if (folder) {
+      if (snapshot.state.selectedFolderId && snapshot.state.selectedFolderId !== folder.id) {
+        throw new Error('The selected Drive library folder no longer matches the verified GuitarDSL root.');
+      }
+      await commitSelectedDriveFolder(folder, 'completed', snapshot.state);
+      const folderId = state.folderId;
+      if (!folderId || folderId !== folder.id) throw new Error('The selected Drive library folder could not be restored.');
+      // Resolve the selected folder's listing before clearing pending state or releasing the shell lock.
+      const children = await drive.listChildren(folderId);
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot || state.folderId !== folderId) {
+        throw new Error('The Drive session changed while restoring the selected library.');
+      }
+      driveChildrenByParent.set(folderId, children);
+      driveFolderErrors.delete(folderId);
+      rebuildDriveFileRows();
+    } else {
+      if (snapshot.state.selectedFolderId !== null || hasDriveTabReferences || snapshot.state.folderPrompt === 'completed') {
+        throw new Error('The selected Drive library folder could not be verified.');
+      }
+      // An unset library with no open Drive references is a valid remote v1 state.
+      // Clear old account rows and restore the local-only session without inventing a root.
+      driveChildrenByParent.clear(); driveExpandedFolders.clear(); driveLoadingFolders.clear();
+      driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
+      state.folderId = undefined;
+      state.folderName = undefined;
     }
-    driveChildrenByParent.set(folderId, children);
-    driveFolderErrors.delete(folderId);
-    rebuildDriveFileRows();
     const restored = await restoreDriveSession(accountId, drive, generation, snapshot.state);
     if (!restored || !driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
       throw new Error(state.locale === 'ja'
@@ -1144,10 +1161,27 @@ async function restoreRemoteDriveAppData(
       deferredExplorerRefresh = false;
       void refreshExplorerSnapshot();
     }
+    if (succeeded && !state.folderId && snapshot.state.folderPrompt === 'unasked'
+      && !snapshot.state.selectedFolderId && snapshot.state.openDriveFileIds.length === 0
+      && snapshot.state.activeDriveFileId === null) {
+      // Keep the optional setup choice outside the appData queue and restore lock. A Later
+      // dismissal preserves the explicitly selected remote state and sends no PATCH.
+      window.setTimeout(() => { void promptForLibraryAfterRemoteRestore(accountId, drive, generation, snapshot); }, 0);
+    }
   }
   if (!succeeded) return false;
   renderAll();
   return driveSessionIsCurrent(accountId, drive, generation) && state.appDataSync === 'idle' && !state.appDataPending;
+}
+
+async function promptForLibraryAfterRemoteRestore(
+  accountId: string, drive: GoogleDriveApi, generation: number, snapshot: DriveAppDataSnapshot
+): Promise<void> {
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot || state.folderId
+    || state.appDataPending || state.appDataSync !== 'idle' || reloadPreparationActive || pageCacheSuspended) return;
+  const choice = await folderSetupDialog();
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot || state.folderId) return;
+  if (choice === 'create') await createDriveFolder(true);
 }
 
 async function persistDriveAppData(
@@ -2709,14 +2743,12 @@ async function commitSelectedDriveFolder(
   await renderExplorer();
 }
 
-async function setUpDriveFolderAfterConnect(
-  accountId: string, drive: GoogleDriveApi, generation: number, sessionOverride?: DriveAppDataState
-): Promise<void> {
-  const snapshot = state.appDataSnapshot;
-  const session = sessionOverride ?? state.appDataPending?.state ?? snapshot?.state;
-  if (!snapshot || !session) return;
+async function findCanonicalLibraryRoot(
+  accountId: string, drive: GoogleDriveApi, generation: number,
+  snapshot: DriveAppDataSnapshot, session: DriveAppDataState, requireSelectedFolderMatch = false
+): Promise<DriveFile | undefined> {
   let folders = await drive.findAccessibleFolders();
-  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return undefined;
   const marked = folders.filter(folder => folder.appProperties?.guitardslLibraryRoot === '1');
   let folder: DriveFile | undefined;
   if (marked.length === 1) folder = marked[0];
@@ -2726,16 +2758,31 @@ async function setUpDriveFolderAfterConnect(
   if (!folder && session.selectedFolderId) {
     try {
       const savedCandidate = await drive.getFolder(session.selectedFolderId);
-      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
+      if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return undefined;
       if (await drive.isCanonicalLibraryRoot(savedCandidate)) folder = savedCandidate;
     } catch (error) {
       if (!(error instanceof DriveApiError && (error.status === 403 || error.status === 404))) throw error;
     }
   }
+  if (!folder) return undefined;
+  if (requireSelectedFolderMatch && session.selectedFolderId && session.selectedFolderId !== folder.id) {
+    throw new Error('The selected Drive library folder no longer matches the verified GuitarDSL root.');
+  }
+  const verified = await drive.markLibraryRoot(folder);
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return undefined;
+  return verified;
+}
+
+async function setUpDriveFolderAfterConnect(
+  accountId: string, drive: GoogleDriveApi, generation: number, sessionOverride?: DriveAppDataState
+): Promise<void> {
+  const snapshot = state.appDataSnapshot;
+  const session = sessionOverride ?? state.appDataPending?.state ?? snapshot?.state;
+  if (!snapshot || !session) return;
+  const folder = await findCanonicalLibraryRoot(accountId, drive, generation, snapshot, session);
+  if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
   if (folder) {
-    const verified = await drive.markLibraryRoot(folder);
-    if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
-    await commitSelectedDriveFolder(verified, 'completed', session);
+    await commitSelectedDriveFolder(folder, 'completed', session);
     return;
   }
   if (session.folderPrompt === 'deferred') return;

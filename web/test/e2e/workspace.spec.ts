@@ -37,6 +37,15 @@ async function expectEditorSource(page: Page, expected: string | RegExp): Promis
   else await expect.poll(() => readEditorSource(page)).toMatch(expected);
 }
 
+async function seedPendingDriveAppData(page: Page, state: TestAppDataState): Promise<void> {
+  await page.evaluate(async pendingState => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'pending-drive-state:account-a', {
+      schemaVersion: 1, accountId: 'account-a', state: pendingState, updatedAt: Date.now()
+    });
+  }, state);
+}
+
 async function installDeferredClipboard(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const target = window as Window & {
@@ -3337,6 +3346,134 @@ test('offline appData pending survives reload and choosing remote does not resen
   await expect(page.getByRole('tab', { name: 'Shared.guitardsl' })).toHaveAttribute('aria-selected', 'true');
   expect(drive.appDataPatchCalls).toHaveLength(patchCountBeforeOffline);
   expect(drive.appDataState).toEqual(initial);
+});
+
+test('remote unasked appData restores without a root and Later releases the sync queue', async ({ page }) => {
+  const remote: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: null, folderPrompt: 'unasked',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const pending: TestAppDataState = { ...remote, folderPrompt: 'deferred' };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: remote, rootFolders: { 'account-a': null }
+  });
+  await page.goto('/');
+  await seedPendingDriveAppData(page, pending);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Review Google Drive settings' })).toBeVisible();
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  const setup = page.getByRole('dialog');
+  await expect(setup.getByRole('heading', { name: 'Set up the GuitarDSL Library?' })).toBeVisible();
+  await setup.getByRole('button', { name: 'Later', exact: true }).click();
+  await expect(setup).toHaveCount(0);
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'true');
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-state:account-a');
+  })).toBeUndefined();
+  expect(drive.appDataPatchCalls).toEqual([]);
+  expect(drive.appDataState).toEqual(remote);
+  expect(drive.visibleFolderCreateCount).toBe(0);
+  await expect(page.locator('#storage-drive')).toBeVisible();
+});
+
+test('remote Drive tabs fail closed when their library root is missing', async ({ page }) => {
+  const remote: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: null, folderPrompt: 'deferred',
+    openDriveFileIds: ['remote-score'], activeDriveFileId: 'remote-score', recentDriveFileIds: ['remote-score']
+  };
+  const pending: TestAppDataState = { ...remote, openDriveFileIds: [], activeDriveFileId: null };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: remote, rootFolders: { 'account-a': null }
+  });
+  await page.goto('/');
+  const draft = 'title: Keep local draft on invalid remote library\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+  await seedPendingDriveAppData(page, pending);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Review Google Drive settings' })).toBeVisible();
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  await expect(page.locator('#saved-state')).toContainText('could not be synchronized');
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  expect((await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<{ state: TestAppDataState }>('settings', 'pending-drive-state:account-a');
+  }))?.state).toEqual(pending);
+  expect(await page.evaluate(async fragment => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const documents = await indexedDb.listDocuments('local');
+    for (const document of documents) {
+      if ((await indexedDb.getDraft(document.identity))?.source.includes(fragment)) return true;
+    }
+    return false;
+  }, 'Keep local draft on invalid remote library')).toBe(true);
+  expect(drive.visibleFolderCreateCount).toBe(0);
+  expect(drive.appDataPatchCalls).toEqual([]);
+});
+
+test('remote deferred appData with no folder restores successfully without opening Drive tabs', async ({ page }) => {
+  const remote: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: null, folderPrompt: 'deferred',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const pending: TestAppDataState = { ...remote, folderPrompt: 'unasked' };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: remote, rootFolders: { 'account-a': null }
+  });
+  await page.goto('/');
+  await seedPendingDriveAppData(page, pending);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Review Google Drive settings' })).toBeVisible();
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-connected', 'true');
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-state:account-a');
+  })).toBeUndefined();
+  expect(drive.appDataState).toEqual(remote);
+  expect(drive.appDataPatchCalls).toEqual([]);
+  expect(drive.visibleFolderCreateCount).toBe(0);
+  await expect(page.locator('#storage-drive')).toBeVisible();
+  await expect(page.locator('.drive-library-entry')).toHaveCount(0);
+});
+
+test('remote selected folder must match the verified canonical root', async ({ page }) => {
+  const remote: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'stale-root-id', folderPrompt: 'deferred',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  const pending: TestAppDataState = { ...remote, selectedFolderId: null };
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: remote, rootFolders: { 'account-a': { id: 'verified-root-id' } }
+  });
+  await page.goto('/');
+  await seedPendingDriveAppData(page, pending);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const conflict = page.getByRole('dialog');
+  await expect(conflict.getByRole('heading', { name: 'Review Google Drive settings' })).toBeVisible();
+  await conflict.getByRole('button', { name: 'Reload remote' }).click();
+
+  await expect(page.locator('#saved-state')).toContainText('could not be synchronized');
+  expect((await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue<{ state: TestAppDataState }>('settings', 'pending-drive-state:account-a');
+  }))?.state).toEqual(pending);
+  expect(drive.rootMarkerPatchIds).toEqual([]);
+  expect(drive.appDataPatchCalls).toEqual([]);
 });
 
 test('local-only tab and draft changes do not PATCH unchanged Drive appData', async ({ page }) => {
