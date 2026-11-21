@@ -1149,7 +1149,7 @@ test('opens a local-first GuitarDSL workspace', async ({ page }) => {
     await page.locator('#storage-drive').click({ button: 'right' });
     await expect(page.getByRole('menuitem', { name: '新しい楽譜' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Google Driveで開く' })).toBeVisible();
-    await expect(page.locator('#storage-drive')).toHaveText('GuitarDSL ライブラリ');
+    await expect(page.locator('#storage-drive')).toHaveText('ライブラリ');
     await expect(page.locator('#drive-file-items .file-item')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await page.locator('#app-message').evaluate(element => { (element as HTMLElement).hidden = true; });
@@ -3481,6 +3481,8 @@ for (const locale of ['en', 'ja'] as const) {
 
     await expectRootHeight();
     await setExplorerWidth(220);
+    await expect(page.locator('#storage-drive')).toHaveText(locale === 'ja' ? 'ライブラリ' : 'Library');
+    expect(await page.locator('#storage-drive').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expectStatusHeight();
     await expectConnectionAction(copy.disconnected);
     await page.evaluate((connectingLabel: string) => {
@@ -3538,6 +3540,9 @@ test('shows the connected Japanese Drive status in dark theme at 220px', async (
   await page.getByRole('menuitem', { name: 'Google Drive に接続' }).click();
   await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'connected');
   const connectionRow = page.locator('#drive-connection-row');
+  const rootLabel = page.locator('#storage-drive');
+  await expect(rootLabel).toHaveText('ライブラリ');
+  expect(await rootLabel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(connectionRow).toContainText('Google Drive');
   await expect(connectionRow).toContainText('接続済み');
   await expect(connectionRow.locator('.drive-status-dot')).toBeVisible();
