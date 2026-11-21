@@ -102,6 +102,17 @@ test('shows and persists the non-document Welcome tab without mutating the resto
   expect(googleRequests).toEqual([]);
 });
 
+test('defaults Welcome to visible when its stored preference has an invalid value', async ({ page }) => {
+  await page.goto('/?welcome=invalid');
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'web-welcome-v1', { suppressOnStartup: 'yes' });
+  });
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).not.toBeChecked();
+});
 test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/?welcome=1');
@@ -186,12 +197,20 @@ test('opens the same right-dock tutorial from Help and persists its ten-step pro
 test('serves all legal routes as static bilingual pages with a no-script English fallback', async ({ page }) => {
   for (const pageName of ['licenses', 'privacy', 'terms']) {
     for (const locale of ['en', 'ja']) {
-      const response = await page.goto(`/${pageName}/${locale}/`);
-      expect(response?.status()).toBe(200);
-      await expect(page.locator('html')).toHaveAttribute('lang', locale);
-      await expect(page.locator('article h1')).toBeVisible();
-      await expect(page.locator('script')).toHaveCount(0);
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://guitardsl.app/${pageName}/${locale}/`);
+      for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        const response = await page.goto(`/${pageName}/${locale}/`);
+        expect(response?.status()).toBe(200);
+        await expect(page.locator('html')).toHaveAttribute('lang', locale);
+        await expect(page.locator('article h1')).toBeVisible();
+        await expect(page.locator('script')).toHaveCount(0);
+        await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://guitardsl.app/${pageName}/${locale}/`);
+        const dimensions = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth
+        }));
+        expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+      }
     }
     const baseResponse = await page.goto(`/${pageName}/`);
     expect(baseResponse?.status()).toBe(200);
