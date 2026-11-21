@@ -3459,8 +3459,13 @@ for (const locale of ['en', 'ja'] as const) {
     if (locale === 'ja') {
       await page.getByRole('button', { name: copy.settings }).click();
       await page.getByRole('menuitemradio', { name: copy.language }).click();
+      await page.getByRole('button', { name: '設定' }).click();
+      await page.getByRole('menuitemradio', { name: 'テーマ: ライト' }).click();
+      await expect(page.locator('#app')).toHaveAttribute('data-theme', 'light');
     }
     const driveRoot = page.locator('[data-storage-section="drive"] .storage-root-row');
+    const localRootLabel = page.locator('#storage-local');
+    const driveRootLabel = page.locator('#storage-drive');
     const connectionRow = page.locator('#drive-connection-row');
     const connect = page.locator('#drive-connect-inline');
     const expectRootHeight = async (): Promise<void> => { await expect(driveRoot).toHaveCSS('height', '32px'); };
@@ -3472,6 +3477,34 @@ for (const locale of ['en', 'ja'] as const) {
       await expect(connect).toHaveText(label);
       await expect(connect).toHaveCSS('white-space', 'nowrap');
     };
+    const expectRootsAligned = async (): Promise<void> => {
+      await expect(localRootLabel).toHaveText(locale === 'ja' ? 'このデバイス' : 'On this device');
+      await expect(driveRootLabel).toHaveText(locale === 'ja' ? 'ライブラリ' : 'Library');
+      const metrics = await page.evaluate(() => {
+        const localSection = document.querySelector<HTMLElement>('[data-storage-section="local"]')!;
+        const driveSection = document.querySelector<HTMLElement>('[data-storage-section="drive"]')!;
+        const localLabel = document.querySelector<HTMLElement>('#storage-local')!;
+        const driveLabel = document.querySelector<HTMLElement>('#storage-drive')!;
+        const localIcon = localSection.querySelector<HTMLElement>('.root-icon')!;
+        const driveIcon = driveSection.querySelector<HTMLElement>('.root-icon')!;
+        return {
+          localHeight: localSection.querySelector('.storage-root-row')?.getBoundingClientRect().height,
+          driveHeight: driveSection.querySelector('.storage-root-row')?.getBoundingClientRect().height,
+          localIconLeft: localIcon.getBoundingClientRect().left,
+          driveIconLeft: driveIcon.getBoundingClientRect().left,
+          localLabelLeft: localLabel.getBoundingClientRect().left,
+          driveLabelLeft: driveLabel.getBoundingClientRect().left,
+          localLabelFits: localLabel.scrollWidth <= localLabel.clientWidth,
+          driveLabelFits: driveLabel.scrollWidth <= driveLabel.clientWidth
+        };
+      });
+      expect(metrics.localHeight).toBe(32);
+      expect(metrics.driveHeight).toBe(32);
+      expect(metrics.localIconLeft).toBe(metrics.driveIconLeft);
+      expect(metrics.localLabelLeft).toBe(metrics.driveLabelLeft);
+      expect(metrics.localLabelFits).toBe(true);
+      expect(metrics.driveLabelFits).toBe(true);
+    };
     const setExplorerWidth = async (width: number): Promise<void> => {
       await page.locator('#workspace').evaluate((element, value) => {
         element.style.setProperty('--explorer-width', `${value}px`);
@@ -3481,8 +3514,9 @@ for (const locale of ['en', 'ja'] as const) {
 
     await expectRootHeight();
     await setExplorerWidth(220);
-    await expect(page.locator('#storage-drive')).toHaveText(locale === 'ja' ? 'ライブラリ' : 'Library');
-    expect(await page.locator('#storage-drive').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(driveRootLabel).toHaveText(locale === 'ja' ? 'ライブラリ' : 'Library');
+    expect(await driveRootLabel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expectRootsAligned();
     await expectStatusHeight();
     await expectConnectionAction(copy.disconnected);
     await page.evaluate((connectingLabel: string) => {
@@ -3500,8 +3534,29 @@ for (const locale of ['en', 'ja'] as const) {
     await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'reauth');
     await expect(connect).toBeVisible();
     await expectConnectionAction(copy.reauth);
+    await expectRootsAligned();
     await expectRootHeight();
+    const connectingHeights = await page.evaluate(() => (window as Window & { __driveConnectingRootHeights?: number[] }).__driveConnectingRootHeights ?? []);
+    expect(connectingHeights.length).toBeGreaterThan(0);
+    expect(connectingHeights.every(height => Math.abs(height - 22) <= 1)).toBe(true);
+
+    await page.locator('#storage-drive').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: copy.reconnectMenu })).toBeVisible();
+    await expectRootsAligned();
+    await page.keyboard.press('Escape');
+    await expectRootHeight();
+    expect((await connect.getAttribute('title'))?.startsWith(copy.reauthDescription)).toBe(true);
+    await page.locator('[data-storage-expander="drive"]').click();
+    await expect(page.locator('#drive-storage-content')).toBeHidden();
+    await expect(connectionRow).toBeVisible();
+    await expectRootsAligned();
+    await expectStatusHeight();
+    await page.locator('[data-storage-expander="drive"]').click();
+    await expect(page.locator('#drive-storage-content')).toBeVisible();
+    await expectRootsAligned();
+
     await setExplorerWidth(236);
+    await expectRootsAligned();
     await expectStatusHeight();
     if (process.env.GUITARDSL_CAPTURE_ISSUE180 === '1' && locale === 'en'
       && page.context().browser()?.browserType().name() === 'chromium') {
@@ -3509,19 +3564,6 @@ for (const locale of ['en', 'ja'] as const) {
       await mkdir(evidenceDir, { recursive: true });
       await page.locator('.file-list').screenshot({ path: resolve(evidenceDir, 'library-connection-row-runtime.png') });
     }
-    const connectingHeights = await page.evaluate(() => (window as Window & { __driveConnectingRootHeights?: number[] }).__driveConnectingRootHeights ?? []);
-    expect(connectingHeights.length).toBeGreaterThan(0);
-    expect(connectingHeights.every(height => Math.abs(height - 22) <= 1)).toBe(true);
-
-    await page.locator('#storage-drive').click({ button: 'right' });
-    await expect(page.getByRole('menuitem', { name: copy.reconnectMenu })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expectRootHeight();
-    expect((await connect.getAttribute('title'))?.startsWith(copy.reauthDescription)).toBe(true);
-    await page.locator('[data-storage-expander="drive"]').click();
-    await expect(page.locator('#drive-storage-content')).toBeHidden();
-    await expect(connectionRow).toBeVisible();
-    await expectStatusHeight();
   });
 }
 
@@ -3543,6 +3585,30 @@ test('shows the connected Japanese Drive status in dark theme at 220px', async (
   const rootLabel = page.locator('#storage-drive');
   await expect(rootLabel).toHaveText('ライブラリ');
   expect(await rootLabel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const rootRowsAligned = await page.evaluate(() => {
+    const local = document.querySelector<HTMLElement>('[data-storage-section="local"]')!;
+    const drive = document.querySelector<HTMLElement>('[data-storage-section="drive"]')!;
+    const localLabel = local.querySelector<HTMLElement>('#storage-local')!;
+    const driveLabel = drive.querySelector<HTMLElement>('#storage-drive')!;
+    const localIcon = local.querySelector<HTMLElement>('.root-icon')!;
+    const driveIcon = drive.querySelector<HTMLElement>('.root-icon')!;
+    return {
+      localHeight: local.querySelector('.storage-root-row')?.getBoundingClientRect().height,
+      driveHeight: drive.querySelector('.storage-root-row')?.getBoundingClientRect().height,
+      localIconLeft: localIcon.getBoundingClientRect().left,
+      driveIconLeft: driveIcon.getBoundingClientRect().left,
+      localLabelLeft: localLabel.getBoundingClientRect().left,
+      driveLabelLeft: driveLabel.getBoundingClientRect().left,
+      localLabelFits: localLabel.scrollWidth <= localLabel.clientWidth,
+      driveLabelFits: driveLabel.scrollWidth <= driveLabel.clientWidth
+    };
+  });
+  expect(rootRowsAligned.localHeight).toBe(32);
+  expect(rootRowsAligned.driveHeight).toBe(32);
+  expect(rootRowsAligned.localIconLeft).toBe(rootRowsAligned.driveIconLeft);
+  expect(rootRowsAligned.localLabelLeft).toBe(rootRowsAligned.driveLabelLeft);
+  expect(rootRowsAligned.localLabelFits).toBe(true);
+  expect(rootRowsAligned.driveLabelFits).toBe(true);
   await expect(connectionRow).toContainText('Google Drive');
   await expect(connectionRow).toContainText('接続済み');
   await expect(connectionRow.locator('.drive-status-dot')).toBeVisible();
