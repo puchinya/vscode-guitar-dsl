@@ -18,7 +18,7 @@ export const en = {
   },
   drive: {
     name: 'Google Drive',
-    library: 'GuitarDSL Library',
+    library: 'Library',
     connectionState: 'Google Drive: {status}',
     onThisDevice: 'On this device',
     status: {
