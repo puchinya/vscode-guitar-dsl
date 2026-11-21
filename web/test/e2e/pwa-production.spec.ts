@@ -4,6 +4,32 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+async function readSettingsValue(page: import('@playwright/test').Page, key: string): Promise<unknown> {
+  return page.evaluate(key => new Promise<unknown>(resolve => {
+    const opening = indexedDB.open('guitardsl-workspace');
+    opening.onerror = () => resolve(undefined);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const request = db.transaction('settings', 'readonly').objectStore('settings').get(key) as IDBRequest<{ value?: unknown } | undefined>;
+      request.onsuccess = () => { resolve(request.result?.value); db.close(); };
+      request.onerror = () => { resolve(undefined); db.close(); };
+    };
+  }), key);
+}
+
+async function hasDraftSource(page: import('@playwright/test').Page, fragment: string): Promise<boolean> {
+  return page.evaluate(fragment => new Promise<boolean>(resolve => {
+    const opening = indexedDB.open('guitardsl-workspace');
+    opening.onerror = () => resolve(false);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const request = db.transaction('drafts', 'readonly').objectStore('drafts').getAll() as IDBRequest<Array<{ source?: string }>>;
+      request.onsuccess = () => { resolve(request.result.some(row => row.source?.includes(fragment))); db.close(); };
+      request.onerror = () => { resolve(false); db.close(); };
+    };
+  }), fragment);
+}
+
 test('production PWA precaches offline authoring and gates updates on draft, IME, Drive, and appData safety', async ({ page }) => {
   let driveVersion = 1;
   let appDataVersion = 1;
@@ -11,7 +37,10 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   let driveSource = 'title: Drive saved\n';
   let driveListFallback: unknown[] = [{ id: 'drive-song', name: 'Drive Song.guitardsl', mimeType: 'text/plain',
     version: '1', modifiedTime: 't1', headRevisionId: 'r1', parents: ['folder-account-a'] }];
-  let appDataState = {
+  let appDataState: {
+    schemaVersion: 1; selectedFolderId: string | null; folderPrompt: 'unasked' | 'deferred' | 'completed';
+    openDriveFileIds: string[]; activeDriveFileId: string | null; recentDriveFileIds: string[];
+  } = {
     schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
     openDriveFileIds: ['drive-song'], activeDriveFileId: 'drive-song', recentDriveFileIds: ['drive-song']
   };
@@ -356,6 +385,8 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   expect(await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.scriptURL)).toBe(activeWorkerBeforeGate);
   releaseAppDataPatch();
   holdAppDataPatch = false;
+  await expect(page.getByRole('dialog')).toContainText('Choose which settings to use.');
+  await page.getByRole('button', { name: 'Keep this device’s settings', exact: true }).click();
   await reload;
   const driveDraftPersisted = await page.evaluate(() => new Promise<boolean>(resolve => {
     const request = indexedDB.open('guitardsl-workspace');
@@ -376,6 +407,233 @@ test('production PWA precaches offline authoring and gates updates on draft, IME
   await page.locator('#open-tabs').getByRole('tab', { name: 'Offline recovery.guitardsl' }).click();
   await expect(page.locator('.cm-content')).toContainText('Offline draft after update');
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+});
+
+test('production PWA cancels update preparation until a remote appData restore completes', async ({ page }) => {
+  await fetch('http://127.0.0.1:4179/__test/reset-update', { method: 'POST' });
+  const myDriveRootId = 'my-drive-root-a';
+  let appDataVersion = 1;
+  let appDataPatchCount = 0;
+  let appDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-song'], activeDriveFileId: 'drive-song', recentDriveFileIds: ['drive-song']
+  };
+  let appDataRemoteAfterPatch: typeof appDataState | undefined;
+  let holdAppDataPatch = false;
+  let failRemoteRestore = true;
+  let remoteLibraryRootIsCurrent = false;
+  let remoteLibraryRootUnavailable = false;
+  let remoteFolderListingRequested = false;
+  let holdRemoteFolderListing = false;
+  let startRemoteFolderListing!: () => void;
+  let releaseRemoteFolderListing!: () => void;
+  const remoteFolderListingStarted = new Promise<void>(resolve => { startRemoteFolderListing = resolve; });
+  const remoteFolderListingGate = new Promise<void>(resolve => { releaseRemoteFolderListing = resolve; });
+  let startAppDataPatch!: () => void;
+  let releaseAppDataPatch!: () => void;
+  let appDataPatchStarted!: Promise<void>;
+  let appDataPatchGate!: Promise<void>;
+  const armAppDataPatch = () => {
+    appDataPatchStarted = new Promise<void>(resolve => { startAppDataPatch = resolve; });
+    appDataPatchGate = new Promise<void>(resolve => { releaseAppDataPatch = resolve; });
+  };
+  armAppDataPatch();
+  let driveSource = 'title: Saved to Drive\n';
+  const apiHeaders = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+    'access-control-allow-headers': 'Authorization, Content-Type, If-Match'
+  };
+  await page.addInitScript(() => {
+    (window as unknown as { google: unknown }).google = {
+      accounts: { oauth2: {
+        initTokenClient: (options: { callback(result: { access_token: string; expires_in: number; scope: string }): void }) => ({
+          requestAccessToken: () => options.callback({
+            access_token: 'pwa-remote-restore-test-token', expires_in: 3600,
+            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata'
+          })
+        }),
+        hasGrantedAllScopes: (_response: unknown, ..._scopes: string[]) => true,
+        revoke: (_token: string, callback?: () => void) => callback?.()
+      } }
+    };
+  });
+  await page.route('https://www.googleapis.com/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value: unknown) => route.fulfill({ headers: apiHeaders, json: value });
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: apiHeaders });
+    if (url.pathname === '/drive/v3/about') return json({ user: { permissionId: 'account-a', emailAddress: 'account-a@example.test' } });
+    if (url.pathname === '/drive/v3/files/root') {
+      return route.fulfill({ status: 404, headers: apiHeaders, json: { error: 'My Drive root metadata is unavailable under drive.file' } });
+    }
+    if (url.pathname === '/drive/v3/files' && url.searchParams.get('spaces') === 'appDataFolder') {
+      return json({ files: [{ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+        createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` }] });
+    }
+    if (url.pathname === '/drive/v3/files' && url.searchParams.get('q')?.includes("name='GuitarDSL'")) {
+      if (remoteLibraryRootUnavailable) return json({ files: [] });
+      const id = remoteLibraryRootIsCurrent ? 'folder-remote' : 'folder-account-a';
+      return json({ files: [{ id, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+        parents: [myDriveRootId], appProperties: { guitardslLibraryRoot: '1' } }] });
+    }
+    if (url.pathname === '/drive/v3/files/app-state-account-a') {
+      if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers: apiHeaders, body: JSON.stringify(appDataState) });
+      return json({ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+        createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` });
+    }
+    if (url.pathname === '/drive/v3/files/folder-account-a' || url.pathname === '/drive/v3/files/folder-remote') {
+      const id = url.pathname.endsWith('/folder-remote') ? 'folder-remote' : 'folder-account-a';
+      return json({ id, name: 'GuitarDSL', mimeType: 'application/vnd.google-apps.folder',
+        trashed: false, parents: [myDriveRootId], appProperties: { guitardslLibraryRoot: '1' } });
+    }
+    if (url.pathname === '/drive/v3/files/drive-song' || url.pathname === '/drive/v3/files/remote-song') {
+      const remote = url.pathname.endsWith('/remote-song');
+      if (remote && failRemoteRestore) {
+        return route.fulfill({ status: 404, headers: apiHeaders, json: { error: 'The selected remote score is temporarily unavailable' } });
+      }
+      const source = remote ? 'title: Remote Drive score\n' : driveSource;
+      if (url.searchParams.get('alt') === 'media') return route.fulfill({ headers: apiHeaders, body: source });
+      const id = remote ? 'remote-song' : 'drive-song';
+      const name = remote ? 'Remote Song.guitardsl' : 'Drive Song.guitardsl';
+      return json({ id, name, mimeType: 'text/plain', version: '1', modifiedTime: 't1',
+        headRevisionId: 'r1', parents: [remote ? 'folder-remote' : 'folder-account-a'] });
+    }
+    if (url.pathname === '/drive/v3/files' && !url.searchParams.get('spaces')) {
+      const query = url.searchParams.get('q') ?? '';
+      if (query.includes("'folder-remote' in parents")) {
+        remoteFolderListingRequested = true;
+        if (holdRemoteFolderListing) {
+          holdRemoteFolderListing = false;
+          startRemoteFolderListing();
+          await remoteFolderListingGate;
+        }
+        return json({ files: [{ id: 'remote-song', name: 'Remote Song.guitardsl', mimeType: 'text/plain', version: '1', modifiedTime: 't1', parents: ['folder-remote'] }] });
+      }
+      return json({ files: [{ id: 'drive-song', name: 'Drive Song.guitardsl', mimeType: 'text/plain', version: '1', modifiedTime: 't1', parents: ['folder-account-a'] }] });
+    }
+    if (url.pathname === '/upload/drive/v3/files/app-state-account-a' && request.method() === 'PATCH') {
+      appDataPatchCount += 1;
+      if (holdAppDataPatch) {
+        startAppDataPatch();
+        await appDataPatchGate;
+      }
+      appDataState = JSON.parse(request.postData() ?? '{}') as typeof appDataState;
+      appDataVersion += 1;
+      if (appDataRemoteAfterPatch) {
+        appDataState = appDataRemoteAfterPatch;
+        appDataRemoteAfterPatch = undefined;
+        remoteLibraryRootIsCurrent = true;
+        appDataVersion += 1;
+      }
+      return json({ id: 'app-state-account-a', name: 'guitardsl-state-v1.json', mimeType: 'application/json',
+        createdTime: '2026-01-01T00:00:00.000Z', version: String(appDataVersion), modifiedTime: `app-${appDataVersion}` });
+    }
+    return route.fulfill({ status: 404, headers: apiHeaders, json: { error: 'unhandled test Drive request' } });
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('main', { name: 'GuitarDSL' })).toBeVisible();
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  const driveTab = page.locator('#open-tabs [role="tab"]').filter({ hasText: 'Drive Song.guitardsl' });
+  await expect(driveTab).toBeVisible();
+  const editor = page.getByRole('textbox', { name: 'GuitarDSL source editor' });
+  const draft = 'title: Keep this Drive draft after failed remote restore\n';
+  await editor.fill(draft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await page.evaluate(async () => {
+    await fetch('/__test/enable-update', { method: 'POST' });
+    await (await navigator.serviceWorker.ready).update();
+  });
+  await expect(page.locator('.pwa-update-prompt')).toBeVisible();
+  holdAppDataPatch = true;
+  await page.locator('#open-tabs [role="tab"]').filter({ hasText: 'Untitled.guitardsl' }).click();
+  await appDataPatchStarted;
+  await driveTab.click();
+  appDataRemoteAfterPatch = {
+    schemaVersion: 1, selectedFolderId: 'folder-remote', folderPrompt: 'completed',
+    openDriveFileIds: ['remote-song'], activeDriveFileId: 'remote-song', recentDriveFileIds: ['remote-song']
+  };
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  releaseAppDataPatch();
+  holdAppDataPatch = false;
+  await expect(page.getByRole('dialog')).toContainText('Choose which settings to use.');
+  await page.getByRole('button', { name: 'Reload remote', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.locator('.pwa-update-blocked')).toContainText('could not be restored');
+  await expect(page.locator('#saved-state')).toContainText('could not be synchronized');
+  const pendingAfterFailedRestore = await readSettingsValue(page, 'pending-drive-state:account-a') as { state?: typeof appDataState } | undefined;
+  expect(pendingAfterFailedRestore?.state?.activeDriveFileId).toBe('drive-song');
+  expect(await hasDraftSource(page, 'Keep this Drive draft after failed remote restore')).toBe(true);
+  expect(appDataPatchCount).toBe(1);
+
+  failRemoteRestore = false;
+  holdRemoteFolderListing = true;
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Choose which settings to use.');
+  await page.getByRole('button', { name: 'Reload remote', exact: true }).click();
+  await remoteFolderListingStarted;
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', true);
+  const pendingDuringRestore = await readSettingsValue(page, 'pending-drive-state:account-a') as { state?: typeof appDataState } | undefined;
+  expect(pendingDuringRestore?.state).toBeTruthy();
+  await expect(page.locator('#saved-state')).toContainText('sync pending');
+  releaseRemoteFolderListing();
+  await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  await expect(page.locator('.pwa-update-blocked')).toContainText('Drive settings were restored');
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.locator('#open-tabs [role="tab"]').filter({ hasText: 'Remote Song.guitardsl' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.file-item[data-file-id="remote-song"]')).toBeVisible();
+  expect(remoteFolderListingRequested).toBe(true);
+  await expect(page.locator('.file-item[data-file-id="drive-song"]')).toHaveCount(0);
+  await expect.poll(() => readSettingsValue(page, 'pending-drive-state:account-a')).toBeUndefined();
+  expect(appDataPatchCount).toBe(1);
+  await expect(page.locator('#saved-state')).toHaveText('Saved to Drive');
+  expect(await hasDraftSource(page, 'Keep this Drive draft after failed remote restore')).toBe(true);
+
+  const rootlessUnaskedState = {
+    schemaVersion: 1, selectedFolderId: null, folderPrompt: 'unasked',
+    openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+  };
+  holdAppDataPatch = true;
+  armAppDataPatch();
+  await page.locator('#open-tabs').getByRole('tab', { name: 'Untitled.guitardsl' }).click();
+  await appDataPatchStarted;
+  await page.locator('#open-tabs').getByRole('tab', { name: 'Remote Song.guitardsl' }).click();
+  appDataRemoteAfterPatch = rootlessUnaskedState;
+  remoteLibraryRootUnavailable = true;
+  const patchCountBeforeRootlessRestore = appDataPatchCount;
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+  releaseAppDataPatch();
+  holdAppDataPatch = false;
+  await expect(page.getByRole('dialog')).toContainText('Choose which settings to use.');
+  await page.getByRole('button', { name: 'Reload remote', exact: true }).click();
+  const setup = page.getByRole('dialog');
+  await expect(setup.getByRole('heading', { name: 'Set up the GuitarDSL Library?' })).toBeVisible();
+  await setup.getByRole('button', { name: 'Later', exact: true }).click();
+  await expect(setup).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  await expect(page.locator('.app-shell')).toHaveJSProperty('inert', false);
+  await expect(page.locator('.pwa-update-blocked')).toContainText('Drive settings were restored');
+  await expect.poll(() => readSettingsValue(page, 'pending-drive-state:account-a')).toBeUndefined();
+  expect(appDataState).toEqual(rootlessUnaskedState);
+  expect(appDataPatchCount).toBe(patchCountBeforeRootlessRestore);
+  await expect(page.locator('.drive-library-entry')).toHaveCount(0);
+  expect(await hasDraftSource(page, 'Keep this Drive draft after failed remote restore')).toBe(true);
+
+  const updateReload = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await updateReload;
+  expect(await hasDraftSource(page, 'Keep this Drive draft after failed remote restore')).toBe(true);
 });
 
 test('production PWA cold-starts offline from the same persistent browser profile', async () => {
