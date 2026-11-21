@@ -476,8 +476,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .storage-root-label { min-width: 0; padding: 5px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .storage-root-label.selected { background: transparent; }
 .storage-root-label:hover, .storage-root-label:focus-visible { background: transparent; }
-.drive-connection-row { display: flex; align-items: center; gap: 6px; box-sizing: border-box; width: 100%; min-width: 0; height: 22px; min-height: 22px; padding: 0 8px 0 32px; overflow: hidden; color: #78808d; font-size: 11px; line-height: 16px; white-space: nowrap; }
-.drive-provider-icon { flex: 0 0 15px; width: 15px; height: 15px; object-fit: contain; }
+.drive-connection-row { display: flex; align-items: center; gap: 3px; box-sizing: border-box; width: 100%; min-width: 0; height: 22px; min-height: 22px; padding: 0 2px 0 28px; overflow: hidden; color: #78808d; font-size: 11px; line-height: 16px; white-space: nowrap; }
+.drive-provider-icon { flex: 0 0 14px; width: 14px; height: 14px; object-fit: contain; }
 .drive-provider-name, .drive-connection-state { flex: 0 0 auto; white-space: nowrap; }
 .drive-status-dot { flex: 0 0 7px; width: 7px; height: 7px; margin: 0; border-radius: 50%; background: #22a06b; box-shadow: 0 0 0 2px rgb(34 160 107 / 18%); }
 .drive-connection-action { display: inline-flex; align-items: center; flex: 0 0 auto; min-width: 0; height: 18px; min-height: 18px; padding: 0 2px; border: 0; border-radius: 3px; background: transparent; color: #5364d9; font: inherit; line-height: 16px; white-space: nowrap; }
