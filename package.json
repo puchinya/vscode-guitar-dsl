@@ -957,6 +957,8 @@
     "test:audio-mir-wasm": "node --import tsx scripts/test-audio-mir-wasm.mjs",
     "generate:legal": "node scripts/generate-legal-pages.mjs",
     "check:legal": "node scripts/generate-legal-pages.mjs --check",
+    "build:marketing": "node scripts/build-marketing.mjs",
+    "check:marketing": "node --import tsx scripts/verify-marketing.mjs",
     "generate:help": "node scripts/generate-help.mjs",
     "check:help": "node scripts/check-help-sync.mjs",
     "generate:ai": "node scripts/generate-ai-assets.mjs",

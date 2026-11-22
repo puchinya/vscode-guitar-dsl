@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "guitardsl-marketing-dev",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": false,
+  "assets": {
+    "directory": "./marketing/dist"
+  },
+  "routes": [
+    {
+      "pattern": "wwwdev.guitardsl.app",
+      "custom_domain": true
+    }
+  ]
+}

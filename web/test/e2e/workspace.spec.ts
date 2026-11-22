@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 const DEFAULT_CAPTURE_SOURCE = 'title: Cloud song\n\n[Verse]\nC | G | Am | F |\n';
+const PRODUCT_INTRO_URL = process.env.VITE_GUITARDSL_PRODUCT_INTRO_URL ?? 'https://www.guitardsl.app/';
 const REQUIRED_DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata';
 
 interface DriveSeed {
@@ -2454,7 +2455,7 @@ test('captures the Help menu in both locales, themes, and desktop viewports', as
         await page.locator('#menu-help-trigger').click();
         const menu = page.locator('#help-menu');
         await expect(menu).toBeVisible();
-        await expect(menu.getByRole('menuitem')).toHaveCount(8);
+        await expect(menu.getByRole('menuitem')).toHaveCount(9);
         await page.screenshot({
           path: testInfo.outputPath(`help-menu-${locale}-${theme}-${viewport.width}x${viewport.height}.png`)
         });
@@ -2465,7 +2466,7 @@ test('captures the Help menu in both locales, themes, and desktop viewports', as
   }
 });
 
-test('Help menu keeps its eight ordered actions, safe links, and versioned About dialog', async ({ page }) => {
+test('Help menu keeps its nine ordered actions, safe links, and versioned About dialog', async ({ page }) => {
   await page.goto('/');
   await waitForWorkspaceReady(page);
   const trigger = page.locator('#menu-help-trigger');
@@ -2473,7 +2474,7 @@ test('Help menu keeps its eight ordered actions, safe links, and versioned About
   const menu = page.locator('#help-menu');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem')).toHaveText([
-    'Welcome', 'Tutorial', 'Help', 'Source code (GitHub)',
+    'Welcome', 'Tutorial', 'Product introduction', 'Help', 'Source code (GitHub)',
     'Licenses', 'Privacy Policy', 'Terms of Service', 'About GuitarDSL'
   ]);
   await expect(menu.getByRole('separator')).toHaveCount(2);
@@ -2485,6 +2486,7 @@ test('Help menu keeps its eight ordered actions, safe links, and versioned About
     rel: link.getAttribute('rel')
   })));
   expect(externalLinkAttributes).toEqual([
+    { href: PRODUCT_INTRO_URL, target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://guitardsl.app/licenses/', target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://guitardsl.app/privacy/', target: '_blank', rel: 'noopener noreferrer' },
@@ -2492,6 +2494,22 @@ test('Help menu keeps its eight ordered actions, safe links, and versioned About
   ]);
 
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  const originalSource = await readEditorSource(page);
+  await page.context().route(url => url.href === PRODUCT_INTRO_URL, route => route.fulfill({
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: '<!doctype html><html lang="en"><title>Product introduction test</title></html>'
+  }));
+  const popupPromise = page.context().waitForEvent('page');
+  await menu.getByRole('menuitem', { name: 'Product introduction', exact: true }).click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL(PRODUCT_INTRO_URL);
+  expect(await popup.evaluate(() => window.opener)).toBeNull();
+  expect(await readEditorSource(page)).toBe(originalSource);
+  await popup.close();
+
+  await trigger.click();
+  await expect(menu).toBeVisible();
   await page.keyboard.press('End');
   await expect(menu.getByRole('menuitem', { name: 'About GuitarDSL' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -2503,6 +2521,12 @@ test('Help menu keeps its eight ordered actions, safe links, and versioned About
   await page.keyboard.press('Escape');
   await expect(about).toBeHidden();
   await expect(trigger).toBeFocused();
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
+  await trigger.click();
+  await expect(menu.getByRole('menuitem').nth(2)).toHaveText('GuitarDSLの紹介');
+  await expect(menu.locator('a[role="menuitem"]').first()).toHaveAttribute('href', PRODUCT_INTRO_URL);
 });
 
 test('header menus keep their actions bound to the active editor and switch accessibly', async ({ page }) => {

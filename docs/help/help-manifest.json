@@ -221,7 +221,7 @@
       "source": "web",
       "section": "3",
       "helpPage": "features",
-      "reviewedSourceSha256": "6d7b6dbe62da187350f9b8c244f5c279970ba2ea2eb4310928f0fecdc4296ece"
+      "reviewedSourceSha256": "da745d0bd4fb6333cd8e124bd9ceeccffeeadba2ceddfff706a5d5a0308e80dc"
     },
     {
       "source": "web",
@@ -252,6 +252,12 @@
       "section": "11",
       "helpPage": "features",
       "reviewedSourceSha256": "bdee57d1462a2d2a57a30aafa44ceab474a42618cdaf210c5a71cc52d7e90d8b"
+    },
+    {
+      "source": "web",
+      "section": "12",
+      "helpPage": "features",
+      "reviewedSourceSha256": "c2e658bd34ff0ecfbe068fd819816fcb9dbcd6a1855f52a48cdc5a0a4bf35e83"
     }
   ],
   "excludedSections": [

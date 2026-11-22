@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icons/guitardsl-sidebar.svg" type="image/svg+xml">
+  <meta name="color-scheme" content="light">
+  <title>GuitarDSL — テキストから、ギターの楽譜を作成。</title>
+  <meta name="description" content="GuitarDSLはオープンソースソフトウェア（OSS）のギター譜エディターです。コード・ストローク・歌詞の譜面、歌唱メロディ付きの譜面、ソロギターのTAB譜をテキストで作成できます。">
+  <link rel="canonical" href="__SITE_URL__/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GuitarDSL — テキストから、ギターの楽譜を作成。">
+  <meta property="og:description" content="テキストからギターの楽譜を作成し、編集しながらプレビューできます。">
+  <meta property="og:url" content="__SITE_URL__/">
+  <meta property="og:image" content="__SITE_URL__/images/editor-split.webp">
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body id="top">
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="#top"><img alt="" width="27" height="27" src="/icons/guitardsl-sidebar.svg">GuitarDSL</a>
+      <nav class="nav" aria-label="ページ内ナビゲーション">
+        <a href="#usage">楽譜の例</a>
+        <a href="#editing-and-storage">編集と保存</a>
+        <a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="wrap hero-layout">
+        <div>
+          <div class="eyebrow">オープンソースのギター譜エディター</div>
+          <h1>テキストから、<br>ギターの楽譜を作成。</h1>
+          <p class="hero-copy"><strong>GuitarDSLは、オープンソースソフトウェア（OSS）です。</strong> 市販の弾き語り楽譜でよく見るコード・ストローク・歌詞付きの譜面や、歌唱メロディを載せた弾き語り譜、ソロギターのTAB譜をテキストで作成できます。専用のテキスト記法（DSL）を編集しながら、譜面のプレビューを同じ画面で確認できます。</p>
+          <a class="button" href="__APP_URL__">GuitarDSLの使用を開始する</a>
+          <p class="intro-note">ブラウザーで楽譜を作成し、入力内容を譜面で確認できます。</p>
+        </div>
+        <figure class="hero-shot">
+          <div class="shotframe"><img src="/images/editor-split.webp" alt="GuitarDSL Webの画面。ソースエディターと、コード・リズム・歌詞を含む譜面プレビューを表示" width="1600" height="900"></div>
+          <figcaption>GuitarDSL Webでオリジナル譜面「空色の合図」を表示した画面です。</figcaption>
+        </figure>
+      </div>
+    </section>
+    <section id="usage" class="intro-block">
+      <div class="wrap">
+        <div class="section-label">用途別の楽譜</div>
+        <h2>3つの楽譜の作成例</h2>
+        <p>オリジナル曲「空色の合図」を使い、歌唱メロディのない弾き語り譜、歌唱メロディ付きの弾き語り譜、ソロギターのTAB譜を紹介します。各例にはGuitarDSLの記述と、同じ内容をWebアプリで表示した画面を掲載しています。曲・歌詞・旋律は紹介用に作成したオリジナルで、既存の作品や楽曲とは関係ありません。</p>
+      </div>
+    </section>
+    <section class="usecase" id="chord-lyrics" aria-labelledby="heading-1">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">作成例 01 / コード・ストローク・歌詞</span><h2 id="heading-1">弾き語り楽譜（メロディなし）</h2><p>市販の弾き語り楽譜でよく使われる、コード名・ストローク・歌詞をまとめた譜面を作成できます。歌唱メロディの音符は載せず、ギター伴奏と歌詞を確認したい場合に向いています。</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="A_chord_lyrics">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;あさのそらに&quot; |
+| Am Em | % l:&quot;ひかりがさす&quot; |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;まだみぬみち&quot; |
+| Dm G7 | % l:&quot;かぜをこえて&quot; |</code></pre></div>
+          <figure class="shot-card"><img src="/images/melody-free.webp" alt="4小節のコード譜。C–G、Am–Em、F–C、Dm–G7の進行、ストローク記号、各小節の歌詞を表示" width="1600" height="900"><figcaption>「空色の合図」のコードとリズム、歌詞をGuitarDSL Webで表示しています。</figcaption></figure>
+        </div>
+        <ul class="details"><li>コードとリズムを別セルで記述</li><li>直前小節のストロークは % で再利用</li><li>小節単位の歌詞を l: で追加</li></ul>
+      </div>
+    </section>
+    <section class="usecase" id="melody-lyrics" aria-labelledby="heading-2">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">作成例 02 / メロディ・歌詞・伴奏</span><h2 id="heading-2">弾き語り楽譜（メロディあり）</h2><p>コードとストロークに加えて、歌うメロディの音符と歌詞を記述できます。音の高さや長さを五線譜で確認しながら、同じ曲のギター伴奏も扱えます。</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="B_melody_lyrics">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Am Em | % |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Dm G7 | % |
+
+mel: | e4/8 g g/4 d/8 b3 g/4 | a4/8 c5 e/4 b4/8 g e/4 |
+lyr: | あ さ の そ ら に | ひ か り が さ す |
+mel: | f4/8 a c5/4 g4/8 e c/4 | d4/8 f a/4 b/8 d5 g/4 |
+lyr: | ま だ み ぬ み ち | か ぜ を こ え て |</code></pre></div>
+          <figure class="shot-card"><img src="/images/melody-lyrics.webp" alt="五線譜に描かれた歌唱メロディと対応する歌詞、コード、ギター伴奏の譜面" width="1600" height="900"><figcaption>「空色の合図」の歌唱メロディ、音符ごとの歌詞、ギター伴奏をGuitarDSL Webで表示しています。</figcaption></figure>
+        </div>
+        <ul class="details"><li>歌唱メロディを mel: で記述</li><li>各音符に対応する歌詞を lyr: に記述</li><li>メロディなし版と同じコード進行を利用</li></ul>
+      </div>
+    </section>
+    <section class="usecase" id="guitar-tab" aria-labelledby="heading-3">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">作成例 03 / ソロギター・TAB譜</span><h2 id="heading-3">ソロギターのTAB譜</h2><p>低音の伴奏と高音のメロディを1本のギターで弾く、フィンガースタイルの譜面例です。弦・フレット・音価を記述し、<code>[5f3,2f1]</code> のように同時に鳴らす弦も指定できます。</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="C_guitar_tab">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   |
+| Am Em |
+| F C   |
+| Dm G7 |
+
+tab: | [5f3,2f1]/8 3f0 1f0 2f1 [6f3,2f0] 3f0 1f3 2f0 |
+tab: | [5f0,2f1]/8 3f2 1f0 2f1 [6f0,2f0] 3f0 1f0 2f0 |
+tab: | [6f1,2f1]/8 3f2 1f1 2f1 [5f3,2f1] 3f0 1f0 2f1 |
+tab: | [4f0,2f3]/8 3f2 1f1 2f3 [6f3,2f0] 3f0 1f1 2f0 |</code></pre></div>
+          <figure class="shot-card"><img src="/images/solo-guitar-tab.webp" alt="6本のTAB譜。低音と高音の交互のフレーズ、同時発音のフレット位置、C–GからDm–G7へのコードを表示" width="1600" height="900"><figcaption>低音と高音のフレーズを含む「空色の合図」のソロギターTAB譜を表示しています。</figcaption></figure>
+        </div>
+        <ul class="details"><li>低音と高音を交互に弾くフィンガースタイル</li><li>[5f3,2f1] でベース音と旋律を同時に発音</li><li>直前と同じ音価は省略できる</li></ul>
+      </div>
+    </section>
+    <section class="feature-foot" id="editing-and-storage"><div class="wrap"><div class="section-label">編集・プレビュー・保存</div><h2>書いた内容を譜面で確認</h2><p>DSLを編集しながら譜面をプレビューし、必要に応じてPDFに書き出せます。楽譜と下書きはブラウザー内に保存できます。Google Driveは任意で接続でき、Explorerからファイルを管理できます。</p></div></section>
+    <section class="closing"><div class="wrap"><h2>GuitarDSLを使う</h2><p>ブラウザーでWebエディターを開き、楽譜を作成できます。操作方法はアプリ内のヘルプから確認できます。</p><a class="button" href="__APP_URL__">GuitarDSLの使用を開始する</a></div></section>
+  </main>
+  <footer class="footer"><div class="wrap"><span>GuitarDSL — オープンソースソフトウェア</span><nav class="links" aria-label="関連リンク"><a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://guitardsl.app/licenses/" target="_blank" rel="noopener noreferrer">ライセンス</a><a href="https://guitardsl.app/privacy/" target="_blank" rel="noopener noreferrer">プライバシーポリシー</a></nav></div></footer>
+</body>
+</html>

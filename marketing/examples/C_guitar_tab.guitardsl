@@ -1,0 +1,17 @@
+title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   |
+| Am Em |
+| F C   |
+| Dm G7 |
+
+tab: | [5f3,2f1]/8 3f0 1f0 2f1 [6f3,2f0] 3f0 1f3 2f0 |
+tab: | [5f0,2f1]/8 3f2 1f0 2f1 [6f0,2f0] 3f0 1f0 2f0 |
+tab: | [6f1,2f1]/8 3f2 1f1 2f1 [5f3,2f1] 3f0 1f0 2f1 |
+tab: | [4f0,2f3]/8 3f2 1f1 2f3 [6f3,2f0] 3f0 1f1 2f0 |

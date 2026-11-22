@@ -7,10 +7,18 @@ import { VitePWA } from 'vite-plugin-pwa';
 const packagesRoot = fileURLToPath(new URL('../packages/', import.meta.url));
 const publicRoot = fileURLToPath(new URL('./public/', import.meta.url));
 const webPackage = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+const productIntroUrl = process.env.VITE_GUITARDSL_PRODUCT_INTRO_URL ?? 'https://www.guitardsl.app/';
+const allowedProductIntroUrls = new Set(['https://www.guitardsl.app/', 'https://wwwdev.guitardsl.app/']);
+if (!allowedProductIntroUrls.has(productIntroUrl)) {
+  throw new Error('VITE_GUITARDSL_PRODUCT_INTRO_URL must be an approved GuitarDSL marketing origin.');
+}
 
 export default defineConfig({
   base: '/',
-  define: { __WEB_VERSION__: JSON.stringify(webPackage.version) },
+  define: {
+    __WEB_VERSION__: JSON.stringify(webPackage.version),
+    __PRODUCT_INTRO_URL__: JSON.stringify(productIntroUrl)
+  },
   plugins: [
     {
       name: 'guitardsl-static-legal-pages-dev',

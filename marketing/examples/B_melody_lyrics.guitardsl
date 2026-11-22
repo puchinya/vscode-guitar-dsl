@@ -1,0 +1,17 @@
+title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Am Em | % |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Dm G7 | % |
+
+mel: | e4/8 g g/4 d/8 b3 g/4 | a4/8 c5 e/4 b4/8 g e/4 |
+lyr: | あ さ の そ ら に | ひ か り が さ す |
+mel: | f4/8 a c5/4 g4/8 e c/4 | d4/8 f a/4 b/8 d5 g/4 |
+lyr: | ま だ み ぬ み ち | か ぜ を こ え て |

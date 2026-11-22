@@ -31,9 +31,9 @@ Inspector は、機能の移行に合わせて文書ごとの編集補助をま�
 - **Code Actions**: 選択したコード名・音符の実音移調、異名同音の切り替え、長さの2倍 / 半分、音名の標準化、リズムの `let` 抽出・展開を行えます。未使用コード定義の Quick Fix と、繰り返し候補から一か所を抽出する Hint も表示します。編集できるトークン全体を選択してください。コメントや選択範囲外の書式は保持されます。
 
 ### GuitarDSL Web アプリ
-<!-- help-sources: web:2 web:3 web:4 web:5 web:6 web:7 -->
+<!-- help-sources: web:2 web:3 web:4 web:5 web:6 web:7 web:12 -->
 
-初回起動時はスコアタブの前に補助タブ **Welcome** が表示されます。**新しい楽譜を作成**、**Google Driveに接続して利用**、**チュートリアルを開始** の3つの操作があり、楽譜と下書きはDriveを選択するまでこの端末に保存されます。チェックボックスの設定は保存後に反映され、次回以降のWelcome表示を抑制できます。WelcomeからファイルをインポートしたりDrive Pickerを開いたりはしません。オフライン時はDriveを利用できないことを表示し、この端末上の楽譜は引き続き使えます。**GuitarDSLについて** からヘルプ、利用規約、ライセンス、プライバシー、ソースコードに移動できます。ヘッダーには **File**、**Edit**、**View**、**Help** メニューがあります。HelpにはWelcome、Tutorial、Help、Source code、Licenses、Privacy、Terms、Aboutがあります。HelpまたはWelcomeからTutorialを選ぶと、同じ右側のペインが開きます。外側の **Inspector** と **Tutorial** タブを切り替え、Inspectorに戻ると既存の内部タブを利用できます。Tutorialはコード譜版とメロディ版の「紅葉」を10ステップで説明し、進捗はこのブラウザーに保存されます。例をコピーできますが、楽譜を自動で作成・変更することはありません。**GuitarDSLについて** ダイアログにはアプリのバージョン、MITライセンス、ソースコード、問い合わせ先が表示されます。
+初回起動時はスコアタブの前に補助タブ **Welcome** が表示されます。**新しい楽譜を作成**、**Google Driveに接続して利用**、**チュートリアルを開始** の3つの操作があり、楽譜と下書きはDriveを選択するまでこの端末に保存されます。チェックボックスの設定は保存後に反映され、次回以降のWelcome表示を抑制できます。WelcomeからファイルをインポートしたりDrive Pickerを開いたりはしません。オフライン時はDriveを利用できないことを表示し、この端末上の楽譜は引き続き使えます。**GuitarDSLについて** からヘルプ、利用規約、ライセンス、プライバシー、ソースコードに移動できます。ヘッダーには **File**、**Edit**、**View**、**Help** メニューがあります。HelpにはWelcome、Tutorial、GuitarDSLの紹介、Help、Source code、Licenses、Privacy、Terms、Aboutがあります。GuitarDSLの紹介は用途別の楽譜例を載せた別サイトを開き、Aboutにはアプリのバージョン情報が表示されます。HelpまたはWelcomeからTutorialを選ぶと、同じ右側のペインが開きます。外側の **Inspector** と **Tutorial** タブを切り替え、Inspectorに戻ると既存の内部タブを利用できます。Tutorialはコード譜版とメロディ版の「紅葉」を10ステップで説明し、進捗はこのブラウザーに保存されます。例をコピーできますが、楽譜を自動で作成・変更することはありません。**GuitarDSLについて** ダイアログにはアプリのバージョン、MITライセンス、ソースコード、問い合わせ先が表示されます。
 
 対応対象はデスクトップ Chromium と macOS の Safari です。iPhone/iPad の Safari は対象外です。
 

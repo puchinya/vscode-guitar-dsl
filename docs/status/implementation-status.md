@@ -15,6 +15,14 @@
 - **画面証拠**: [Welcome](evidence/issue-188/welcome-en-chromium.png)、[Tutorial](evidence/issue-188/tutorial-en-chromium.png)、およびHelpメニューの英日×Light/Dark×1600×900/1280×800の8枚を[evidence/issue-188/README.md](evidence/issue-188/README.md)に保存。Welcome/Tutorialのモバイル画面も含め、ローカル由来の12枚を[Issue #188のコメント](https://github.com/puchinya/vscode-guitar-dsl/issues/188#issuecomment-7068116860)に添付済み。
 - **文書オーナー**: docs/specs/web-app.md、docs/specs/gui_design.md、docs/design/web-app.md、docs/tutorials/、docs/legal/、docs/help/、media/help/、docs/status/implementation-status.md、本項の画面証拠。
 
+### Product introduction / CI/CD 追加契約
+
+- **状態**: 承認済み追加契約（Issue #188 comment 7072685483、SHA-256 `bc1f51c806bbe3060c2b3404c3d7dd2545503c818e4e8d47ba01738e9383fb22`）に基づく実装を既存PR #190へ追加中。コード検証は完了したが、契約の最終受入れは本番配信と4ホストの実応答確認まで `BLOCKED`。
+- **実装**: `marketing/src/` にJavaScript不要の日英静的ページ、`marketing/examples/` にコンパイラー検証済み3譜例、`marketing/public/images/` にアプリ実画面から作成した4画像を追加。環境を明示して `marketing/dist/` を生成するビルダー、HTML・譜例・画像・Chromium/WebKit応答を確認する検証スクリプト、`www.guitardsl.app` / `wwwdev.guitardsl.app` 用の独立Worker設定を追加。Helpに現環境の紹介ページを安全な別タブで開く操作を追加。既存アプリWorkerと `wrangler.jsonc` は変更していない。PR検証はビルドのみで配信せず、main開発Previewとtag本番配信は各環境のアプリ・紹介サイト両方の検証後に順次公開する。
+- **検証（2026-11-22）**: `npm ci`、開発/本番 `npm run build:web`、両targetの `build:marketing` / `check:marketing`、両環境URLを使ったHelp Chromium E2E、`npm run test:web`（unit 81/81、Chromium + WebKit E2E 264/264）、`npm run check:help`、`npm run check:legal`（9ページ、74本番依存）、`npm run check:ai`、`npm run compile`、`npm run vscode:prepublish`、`npx --yes @vscode/vsce ls`（1,661行）、`git diff --check` はPASS。開発/本番成果物は8パスで一致し、2 HTMLの差は環境ホスト値のみ。不正なtargetは出力を変更せず拒否。`npm test` は既存Issue #158 の `E2E-PB05` で `assertTabInventoryRestored` のタブ一覧復元検査が1件失敗し、Web suiteへ進む前に終了した。Web suiteは別途PASS。
+- **画面証拠と未解決の視覚指摘**: 4つの元PNGと日英×Chromium/WebKit×desktop/mobileの8ページ画像を [evidence](evidence/issue-188/README.md) に保存。TABは実アプリの未加工キャプチャを保持。数字とリズム記号の位置ずれはユーザー指示により本Issueではrendererを変更せず、合格扱いにもしていない。詳細は別対応。
+- **配信ゲート**: Cloudflareの読み取りでzoneがactive、`Always Use HTTPS=on`、SSL mode `Full` を確認。4ホストのDNS/Worker設定は未配信で、現在のcustom domainはアプリapexのみ。デプロイ、HTTP転送、証明書、および4ホストの本番readbackは未実施。`validate-docs --issue 188` は GitHub API の `GET repos/puchinya/vscode-guitar-dsl/issues/188` が失敗し実行できなかった。契約に従い配信済みとは主張しない。
+
 ## Issue #186: Google Drive の不要な競合ダイアログ
 
 - **状態**: `feature/186-drive-conflict-rebase` で実装中。Milestone #1、対象バージョン `0.1.0`。Drive の metadata 変更と本文競合を分け、stable readで確認できた同一本文はPATCHせず、最終確認済みbaselineのままなら最新metadataへrebaseして保存する。再オープン時はDrive本文を保存済みbaselineとローカルdraftの両方と比較し、第三の本文だけを真の競合として扱う。
