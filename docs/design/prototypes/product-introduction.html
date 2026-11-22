@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>GuitarDSL — テキストから、ギターの楽譜を作成。</title>
+<meta name="description" content="GuitarDSLはオープンソースのギター譜エディターです。コード・ストローク・歌詞付きの弾き語り譜、歌唱メロディ付きの譜面、ソロギターのTAB譜をテキストで作成できます。">
+<!-- APPROVED EDITORIAL DESIGN — NOT A DEPLOYED WEBSITE. Runtime integration and genuine score screenshots remain pending.
+ Uses official GuitarDSL icon embedded from web/public/icons/guitardsl-sidebar.svg.
+ Three ORIGINAL variants of the same demo piece are saved beside this HTML (guitardsl_intro_draft/*.guitardsl).
+ Music excerpts are illustrative compositions generated for this project; NOT copied from an anime.
+ Syntax based on docs/specs/guitardsl-syntax.md §§6.2,8.7,9,12,13,19.
+ CODEX TODO: parse/validate all three .guitardsl fixtures, check warnings, verify melody syllable/chord
+ fit, render each score with REAL Web app, capture suitable 1600×900 and mobile screenshots, then
+ replace three marked placeholders. Do not represent CSS placeholder as a real score screenshot.
+ Source image in hero is a real PR #190 app screenshot but not from the original demo; recapture
+ with validated demo for production. TAB example C uses paired bass+melody notes in a single six-string score; confirm valid compiler durations and rendered frets. Map CTA to prod app guitardsl.app / dev app dev.guitardsl.app;
+ Help should open www.guitardsl.app / wwwdev.guitardsl.app in a new tab. Handle OAuth/legal on app.
+ This draft uses nonoperative Start CTA to avoid accidental app navigation during review.
+ Responsive rule: code examples may scroll horizontally inside their own panels; the document and
+ top header must never expand or be horizontally scrollable. Color scheme is fixed light.
+ -->
+<style>
+
+/* GuitarDSL introduction draft: intentionally light throughout, including in dark OS mode. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --paper: #ffffff;
+  --soft: #f5f8fe;
+  --hero: #f1f6ff;
+  --text: #213148;
+  --muted: #56667b;
+  --edge: #dde6f2;
+  --accent: #435acb;
+  --link: #3656b7;
+  --code: #f8fbff;
+  --codefg: #263751;
+  --focus: #b66e27;
+  --shadow: 0 10px 26px rgba(46, 72, 116, .055);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; max-width: 100%; }
+section[id] { scroll-margin-top: 80px; }
+body {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Hiragino Sans', 'Noto Sans JP', Meiryo, sans-serif;
+  line-height: 1.75;
+}
+a { color: var(--link); }
+button { font: inherit; }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.wrap { width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 0 36px; }
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  width: 100%;
+  background: rgba(255, 255, 255, .975);
+  border-bottom: 1px solid var(--edge);
+  backdrop-filter: blur(12px);
+}
+.top-inner { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.brand { min-width: 0; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-size: 20px; font-weight: 740; color: var(--text); white-space: nowrap; }
+.brand img { width: 27px; height: 27px; flex: 0 0 auto; }
+.nav { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; column-gap: 25px; row-gap: 5px; font-size: 13px; }
+.nav a { color: #344b68; text-decoration: none; white-space: nowrap; }
+.nav a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.hero { width: 100%; background: linear-gradient(120deg, #eef4ff 0%, #f7faff 56%, #ffffff 100%); padding: 74px 0 64px; border-bottom: 1px solid var(--edge); }
+.hero-layout { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); align-items: center; gap: 44px; }
+.hero-layout > *, .usecase-pair > *, .shot-card { min-width: 0; max-width: 100%; }
+.eyebrow, .section-label { display: block; color: #5969aa; font-size: 11px; letter-spacing: .065em; font-weight: 750; }
+h1 { font-size: clamp(32px, 3.9vw, 49px); line-height: 1.31; letter-spacing: -.05em; margin: 14px 0 21px; }
+h2 { font-size: clamp(25px, 2.55vw, 34px); letter-spacing: -.035em; line-height: 1.43; margin: 10px 0 16px; }
+h3 { font-size: 17px; }
+p { margin: 0 0 16px; }
+.hero-copy { font-size: 15px; line-height: 1.95; color: var(--muted); }
+.hero-copy strong { color: var(--text); font-weight: 680; }
+.button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #435acb; border-radius: 5px; padding: 11px 20px; background: #435acb; color: #fff; cursor: pointer; font-size: 14px; font-weight: 660; margin-top: 10px; text-align: center; }
+.button:hover { background: #3349b0; }
+.intro-note { font-size: 12px; color: var(--muted); margin-top: 16px; }
+.hero-shot { margin: 0; }
+.shotframe { width: 100%; border: 1px solid var(--edge); background: var(--paper); border-radius: 7px; overflow: hidden; box-shadow: var(--shadow); }
+.shotframe img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; }
+figcaption { font-size: 11px; color: var(--muted); line-height: 1.65; margin-top: 10px; }
+.intro-block { background: #f7faff; padding: 60px 0 38px; }
+.intro-block h2 { margin-bottom: 12px; }
+.intro-block p { color: var(--muted); max-width: 800px; }
+.usecase { padding: 74px 0; border-top: 1px solid var(--edge); }
+.usecase:nth-of-type(even) { background: #f8faff; }
+.usecase-head { max-width: 850px; margin-bottom: 27px; }
+.usecase-head p { color: var(--muted); }
+.usecase-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; gap: 26px; }
+.code-card { background: var(--code); color: var(--codefg); border: 1px solid #d6e0ee; border-radius: 6px; min-width: 0; max-width: 100%; overflow: hidden; }
+.code-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 12px; background: #eaf0fb; color: #365071; border-bottom: 1px solid #d7e0ef; min-width: 0; }
+.code-header strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.code-header span:last-child { margin-left: auto; font-weight: 400; flex: 0 0 auto; }
+.tiny-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #a1aec4; flex: 0 0 auto; }
+pre.dsl {
+  width: 100%; max-width: 100%; margin: 0; padding: 18px;
+  white-space: pre;
+  overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  tab-size: 2;
+  font: 12.2px/1.85 ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  scrollbar-width: thin;
+}
+pre.dsl code { font: inherit; }
+.shot-card { margin: 0; display: flex; flex-direction: column; }
+.preview-pending { min-height: 360px; min-width: 0; max-width: 100%; flex: 1; padding: 28px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; text-align: center; border: 1px dashed #a5b4c8; border-radius: 6px; background: #f9fbff; }
+.preview-pending strong { font-size: 16px; }
+.preview-pending p { max-width: 325px; font-size: 13px; color: var(--muted); }
+.preview-symbol { font-size: 39px; color: #8d9db2; }
+.pending-label { border: 1px solid #d7e0ed; border-radius: 3px; padding: 4px 10px; color: #526681; background: white; font-size: 11px; }
+.details { display: flex; flex-wrap: wrap; gap: 10px 25px; margin: 22px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.details li::before { content: '✓'; color: var(--accent); font-weight: 700; margin-right: 8px; }
+.feature-foot { padding: 69px 0; background: #eef4ff; color: var(--text); border-top: 1px solid var(--edge); }
+.feature-foot h2 { margin-top: 0; }
+.feature-foot p { max-width: 780px; color: var(--muted); }
+.closing { padding: 74px 0 84px; text-align: center; }
+.closing p { color: var(--muted); }
+.footer { background: #fafcff; padding: 27px 0; border-top: 1px solid var(--edge); color: var(--muted); font-size: 12px; }
+.footer .wrap { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.footer .links { display: flex; gap: 17px; flex-wrap: wrap; }
+.footer .links a { margin: 0; }
+.demo-status { border: 1px solid var(--edge); border-radius: 5px; background: var(--soft); max-width: 550px; margin: 18px auto 0; padding: 12px; color: var(--muted); }
+.demo-status[hidden] { display: none; }
+@media (max-width: 980px) {
+  .hero-layout, .usecase-pair { grid-template-columns: minmax(0, 1fr); }
+  .hero { padding: 54px 0; }
+  .preview-pending { min-height: 270px; }
+  .usecase { padding: 62px 0; }
+}
+@media (max-width: 600px) {
+  .wrap { padding: 0 18px; }
+  .top-inner { min-height: 62px; }
+  .brand { font-size: 18px; }
+  .brand img { width: 24px; height: 24px; }
+  .nav { gap: 11px; font-size: 12px; }
+  .nav a[href='#editing-and-storage'] { display: none; }
+  h1 { font-size: 32px; }
+  .hero { padding: 42px 0; }
+  .intro-block { padding: 46px 0 30px; }
+  .usecase { padding: 54px 0; }
+  pre.dsl { font-size: 11.4px; padding: 13px; }
+  .button { width: 100%; }
+  .feature-foot { padding: 53px 0; }
+  .footer .wrap { flex-direction: column; }
+}
+@media (max-width: 370px) { .brand { font-size: 17px; } .nav a[href='#usage'] { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body id="top">
+<header class="top"><div class="wrap top-inner"><a class="brand" href="#top"><img alt="" width="27" height="27" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJjdXJyZW50Q29sb3IiPgogIDxtYXNrIGlkPSJzb3VuZGhvbGUiPgogICAgPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjZmZmIi8+CiAgICA8Y2lyY2xlIGN4PSI3IiBjeT0iMTQiIHI9IjEuNCIgZmlsbD0iIzAwMCIvPgogICAgPHJlY3QgeD0iNC41IiB5PSIxOC42IiB3aWR0aD0iNSIgaGVpZ2h0PSIxLjIiIHJ4PSIwLjYiIGZpbGw9IiMwMDAiLz4KICA8L21hc2s+CiAgPGcgbWFzaz0idXJsKCNzb3VuZGhvbGUpIj4KICAgIDxyZWN0IHg9IjUiIHk9IjAuNSIgd2lkdGg9IjQiIGhlaWdodD0iMi41IiByeD0iMC44Ii8+CiAgICA8cmVjdCB4PSI2LjEiIHk9IjIiIHdpZHRoPSIxLjgiIGhlaWdodD0iOC41Ii8+CiAgICA8Y2lyY2xlIGN4PSI3IiBjeT0iMTIuMiIgcj0iMy4zIi8+CiAgICA8Y2lyY2xlIGN4PSI3IiBjeT0iMTgiIHI9IjQuOCIvPgogIDwvZz4KICA8cmVjdCB4PSIxMyIgeT0iNi41IiB3aWR0aD0iMTAiIGhlaWdodD0iMSIgcng9IjAuNSIvPgogIDxyZWN0IHg9IjEzIiB5PSIxMC41IiB3aWR0aD0iMTAiIGhlaWdodD0iMSIgcng9IjAuNSIvPgogIDxyZWN0IHg9IjEzIiB5PSIxNC41IiB3aWR0aD0iMTAiIGhlaWdodD0iMSIgcng9IjAuNSIvPgogIDxyZWN0IHg9IjEzIiB5PSIxOC41IiB3aWR0aD0iMTAiIGhlaWdodD0iMSIgcng9IjAuNSIvPgogIDxlbGxpcHNlIGN4PSIxNS4yIiBjeT0iMTciIHJ4PSIxLjciIHJ5PSIxLjQiLz4KICA8ZWxsaXBzZSBjeD0iMTguMiIgY3k9IjEzIiByeD0iMS43IiByeT0iMS40Ii8+CiAgPGVsbGlwc2UgY3g9IjIxLjIiIGN5PSI5IiByeD0iMS43IiByeT0iMS40Ii8+Cjwvc3ZnPgo=">GuitarDSL</a><nav class="nav" aria-label="ページ内ナビゲーション"><a href="#usage">楽譜の例</a><a href="#editing-and-storage">編集と保存</a><a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a></nav></div></header>
+<main>
+<section class="hero"><div class="wrap hero-layout"><div><div class="eyebrow">オープンソースのギター譜エディター</div><h1>テキストから、<br>ギターの楽譜を作成。</h1><p class="hero-copy"><strong>GuitarDSLは、オープンソースソフトウェア（OSS）です。</strong> 市販の弾き語り楽譜でよく見るコード・ストローク・歌詞付きの譜面や、歌唱メロディを載せた弾き語り譜、ソロギターのTAB譜をテキストで作成できます。専用のテキスト記法（DSL）を編集しながら、譜面のプレビューを同じ画面で確認できます。</p><button type="button" class="button" data-start>GuitarDSLの使用を開始する</button><p class="intro-note">このページは公開前のデザイン資料です。実際の遷移と譜面画像は実装・検証後に差し替えます。</p></div><figure class="hero-shot"><div class="shotframe"><img src="https://raw.githubusercontent.com/puchinya/vscode-guitar-dsl/eb6bd0b9fac9032e15d433feb834c4e04f9a9c57/docs/status/evidence/issue-188/help-menu-ja-light-1600x900.png" alt="PR #190のGuitarDSL Web開発版の実画面。エディターと譜面のプレビューを表示" width="1600" height="900"></div><figcaption>既存PRで撮影した開発版の画面です。左の作成例とは別の内容のため、公開前に撮影し直します。</figcaption></figure></div></section>
+<section id="usage" class="intro-block"><div class="wrap"><div class="section-label">用途別の楽譜</div><h2>3つの楽譜の作成例</h2><p>オリジナル曲「空色の合図」を使い、歌唱メロディのない弾き語り譜、歌唱メロディ付きの弾き語り譜、ソロギターのTAB譜を紹介します。各例にはGuitarDSLの記述例と、対応する譜面の表示例を掲載します。曲・歌詞・旋律は紹介用に作成したもので、既存のアニメ作品や楽曲とは関係ありません。</p></div></section>
+<section class="usecase" id="chord-lyrics" aria-labelledby="heading-1">
+  <div class="wrap"><div class="usecase-head"><span class="section-label">作成例 01 / コード・ストローク・歌詞</span><h2 id="heading-1">弾き語り楽譜（メロディなし）</h2><p>市販の弾き語り楽譜でよく使われる、コード名・ストローク・歌詞をまとめた譜面を作成できます。歌唱メロディの音符は載せず、ギター伴奏と歌詞を確認したい場合に向いています。</p></div>
+    <div class="usecase-pair">
+      <div class="code-card"><div class="code-header"><span class="tiny-dot"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code>title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;あさのそらに&quot; |
+| Am Em | % l:&quot;ひかりがさす&quot; |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;まだみぬみち&quot; |
+| Dm G7 | % l:&quot;かぜをこえて&quot; |</code></pre></div>
+      <figure class="shot-card"><div class="preview-pending" data-replace-with="chord-lyrics.webp"><span class="preview-symbol" aria-hidden="true">▤</span><strong>弾き語り用コード譜の表示例</strong><p>コード名、ストロークの上下方向、歌詞が実際の譜面に並んだ画面へ差し替えます。</p><div class="pending-label">実アプリの画面を撮影して掲載予定</div></div><figcaption>現在は撮影予定位置です。掲載時は左のDSLをWebアプリで表示した実画面に置き換えます。</figcaption></figure>
+    </div><ul class="details"><li>コードとリズムを別セルで記述</li><li>直前小節のストロークは % で再利用</li><li>小節単位の歌詞を l: で追加</li></ul>
+  </div></section><section class="usecase" id="melody-lyrics" aria-labelledby="heading-2">
+  <div class="wrap"><div class="usecase-head"><span class="section-label">作成例 02 / メロディ・歌詞・伴奏</span><h2 id="heading-2">弾き語り楽譜（メロディあり）</h2><p>コードとストロークに加えて、歌うメロディの音符と歌詞を記述できます。音の高さや長さを五線譜で確認しながら、同じ曲のギター伴奏も扱えます。</p></div>
+    <div class="usecase-pair">
+      <div class="code-card"><div class="code-header"><span class="tiny-dot"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code>title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Am Em | % |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Dm G7 | % |
+
+mel: | e4/8 g g/4 d/8 b3 g/4 | a4/8 c5 e/4 b4/8 g e/4 |
+lyr: | あ さ の そ ら に | ひ か り が さ す |
+mel: | f4/8 a c5/4 g4/8 e c/4 | d4/8 f a/4 b/8 d5 g/4 |
+lyr: | ま だ み ぬ み ち | か ぜ を こ え て |</code></pre></div>
+      <figure class="shot-card"><div class="preview-pending" data-replace-with="melody-lyrics.webp"><span class="preview-symbol" aria-hidden="true">▤</span><strong>歌唱メロディ付きの譜面表示例</strong><p>五線譜、音符に対応した歌詞、コードとギター伴奏が分かる画面へ差し替えます。</p><div class="pending-label">実アプリの画面を撮影して掲載予定</div></div><figcaption>現在は撮影予定位置です。掲載時は左のDSLをWebアプリで表示した実画面に置き換えます。</figcaption></figure>
+    </div><ul class="details"><li>歌唱メロディを mel: で記述</li><li>各音符に対応する歌詞を lyr: に記述</li><li>メロディなし版と同じコード進行を利用</li></ul>
+  </div></section><section class="usecase" id="guitar-tab" aria-labelledby="heading-3">
+  <div class="wrap"><div class="usecase-head"><span class="section-label">作成例 03 / ソロギター・TAB譜</span><h2 id="heading-3">ソロギターのTAB譜</h2><p>低音の伴奏と高音のメロディを1本のギターで弾く、フィンガースタイルの譜面例です。弦・フレット・音価を記述し、<code>[5f3,2f1]</code> のように同時に鳴らす弦も指定できます。</p></div>
+    <div class="usecase-pair">
+      <div class="code-card"><div class="code-header"><span class="tiny-dot"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code>title: 空色の合図 — ソロギター
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   |
+| Am Em |
+| F C   |
+| Dm G7 |
+
+tab: | [5f3,2f1]/8 3f0 1f0 2f1 [6f3,2f0] 3f0 1f3 2f0 |
+tab: | [5f0,2f1]/8 3f2 1f0 2f1 [6f0,2f0] 3f0 1f0 2f0 |
+tab: | [6f1,2f1]/8 3f2 1f1 2f1 [5f3,2f1] 3f0 1f0 2f1 |
+tab: | [4f0,2f3]/8 3f2 1f1 2f3 [6f3,2f0] 3f0 1f1 2f0 |</code></pre></div>
+      <figure class="shot-card"><div class="preview-pending" data-replace-with="guitar-tab.webp"><span class="preview-symbol" aria-hidden="true">▤</span><strong>ソロギターのTAB譜表示例</strong><p>ベース音とメロディ、複数弦の同時発音が読み取れる実際のTABプレビューへ差し替えます。</p><div class="pending-label">実アプリの画面を撮影して掲載予定</div></div><figcaption>現在は撮影予定位置です。掲載時は左のDSLをWebアプリで表示した実画面に置き換えます。</figcaption></figure>
+    </div><ul class="details"><li>低音と高音を交互に弾くフィンガースタイル</li><li>[5f3,2f1] でベース音と旋律を同時に発音</li><li>直前と同じ音価は省略できる</li></ul>
+  </div></section>
+<section class="feature-foot" id="editing-and-storage"><div class="wrap"><div class="section-label">編集・プレビュー・保存</div><h2>書いた内容を譜面で確認</h2><p>DSLを編集しながら譜面をプレビューし、必要に応じてPDFに書き出せます。楽譜と下書きはブラウザー内に保存できます。Google Driveは任意で接続でき、Explorerからファイルを管理できます。</p></div></section>
+<section class="closing"><div class="wrap"><h2>GuitarDSLを使う</h2><p>ブラウザーでWebエディターを開き、楽譜を作成できます。操作方法はアプリ内のヘルプから確認できます。</p><button type="button" class="button" data-start>GuitarDSLの使用を開始する</button><p id="draft-notice" role="status" class="demo-status" hidden>設計参照用HTMLのため遷移は未実装です。公開版では本番 www.guitardsl.app → guitardsl.app、開発 wwwdev.guitardsl.app → dev.guitardsl.app に遷移します。</p></div></section>
+</main><footer class="footer"><div class="wrap"><span>GuitarDSL — オープンソースソフトウェア</span><nav class="links" aria-label="外部リンク"><a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://guitardsl.app/licenses/" target="_blank" rel="noopener noreferrer">ライセンス</a><a href="https://guitardsl.app/privacy/" target="_blank" rel="noopener noreferrer">プライバシーポリシー</a></nav></div></footer>
+<script>document.querySelectorAll('[data-start]').forEach(b=>b.addEventListener('click',()=>{const e=document.getElementById('draft-notice');e.hidden=false;e.scrollIntoView({block:'center',behavior:'smooth'})}));</script>
+</body></html>
