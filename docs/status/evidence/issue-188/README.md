@@ -16,6 +16,13 @@ The first-run Welcome and the right-dock Tutorial captures are 1600×950 Chromiu
 - [Welcome, Japanese mobile](welcome-ja-mobile.png)
 - [Tutorial, Japanese mobile](tutorial-ja-mobile.png)
 
+### Welcome layout after PR review — 2026-11-23
+
+The one-column Welcome was recaptured from the local app based on PR #190 HEAD `a3ab2e1e35a82fb23f983c7fa894ab66e1a237bb`, with the current uncommitted review fixes. The English desktop capture uses Chromium at 1600×950 CSS pixels; the Japanese mobile capture uses WebKit at 390×844 CSS pixels (780×1688 device pixels). Both were visually inspected. The mobile document width is 390px for a 390px viewport. These captures show the flat layout, three unboxed icon-and-text actions, storage note, and suppression checkbox; the marketing score image and TAB renderer were not changed.
+
+- [Updated Welcome, English desktop / Chromium](welcome-en-chromium.png)
+- [Updated Welcome, Japanese mobile / WebKit](welcome-ja-mobile.png)
+
 ## Product introduction score captures
 
 The four original PNG captures below were taken from the real GuitarDSL Web app served by local Vite at `127.0.0.1:4179`, using Playwright 1.65.0 Chromium at 1600×900 CSS pixels, device scale factor 1, English UI, and the light color scheme. Each clean browser context loaded its named fixture into the editor; the compiler reported zero errors and warnings, and the capture run made no external requests. The rendering source revision was `25cd861264888582d1fc575118e413b004dede71`; the worktree changes used for this capture only affect the Help link and product-introduction pages, not the score compiler or renderer.
@@ -39,3 +46,7 @@ The development build completed with `npm run build:marketing -- --target develo
 
 - [Usage introduction and hero copy](marketing-site/marketing-site-review-ja-usage-1600x900-2026-11-23.png)
 - [TAB example heading and caption](marketing-site/marketing-site-review-ja-tab-1600x900-2026-11-23.png)
+
+### Release readback gate — 2026-11-23
+
+Both `npm run build:marketing -- --target development|production` and the corresponding `npm run check:marketing` passed with Chromium and WebKit. Release-readback unit tests cover zone settings, each environment's redirect/link targets, TLS failure handling, marketing 404, and app/site HTTP 200 expectations. No live release readback was run: this work did not deploy any of the four hosts.

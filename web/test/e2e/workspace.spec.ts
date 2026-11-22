@@ -64,6 +64,9 @@ test('shows and persists the non-document Welcome tab without mutating the resto
   await expect(page.locator('#open-tabs [role="tab"][aria-selected="true"]')).toHaveCount(1);
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toHaveAttribute('aria-selected', 'false');
   await expect(page.locator('.welcome-actions button')).toHaveCount(3);
+  await expect(page.locator('.welcome-page > .welcome-content > .welcome-hero')).toBeVisible();
+  await expect(page.locator('.welcome-page .welcome-footer')).toBeVisible();
+  await expect(page.locator('.welcome-about, .welcome-links, .welcome-eyebrow, .welcome-grid')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Create New Score' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start Tutorial' })).toBeVisible();
@@ -71,15 +74,42 @@ test('shows and persists the non-document Welcome tab without mutating the resto
   await expect(page.locator('#source-pane')).toBeHidden();
   await expect(page.locator('#inspector-tabs-host')).toBeAttached();
   await expect(page.locator('#inspector-content')).toBeAttached();
-  const wideColumns = await page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
-  expect(wideColumns).toBe(2);
+  const actionStyles = await page.locator('.welcome-actions button').evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element);
+    return { borderStyle: style.borderStyle, borderWidth: style.borderWidth, background: style.backgroundColor,
+      boxShadow: style.boxShadow, borderRadius: style.borderRadius, width: element.getBoundingClientRect().width };
+  }));
+  for (const style of actionStyles) {
+    expect(style.borderStyle).toBe('none');
+    expect(style.borderWidth).toBe('0px');
+    expect(style.background).toBe('rgba(0, 0, 0, 0)');
+    expect(style.boxShadow).toBe('none');
+    expect(style.borderRadius).toBe('0px');
+    expect(style.width).toBeLessThan(400);
+  }
+  expect(new Set(actionStyles.map(style => style.width)).size).toBeGreaterThan(1);
+  await page.getByRole('button', { name: 'Create New Score' }).hover();
+  await expect.poll(() => page.getByRole('button', { name: 'Create New Score' }).evaluate(element => getComputedStyle(element.querySelector('span')!).textDecorationLine)).toBe('underline');
+  const keyboardFocusedAction = page.getByRole('button', { name: 'Connect and Use Google Drive' });
+  if (testInfo.project.name !== 'webkit') {
+    await page.getByRole('button', { name: 'Create New Score' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(keyboardFocusedAction).toBeFocused();
+    const focusOutline = await keyboardFocusedAction.evaluate(element => ({ style: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth }));
+    expect(focusOutline).toEqual({ style: 'solid', width: '2px' });
+  } else {
+    // WebKit follows the host's macOS setting for tabbing through buttons. Verify focus styling
+    // in Chromium/Firefox and retain WebKit's layout/state checks without assuming that setting.
+    await keyboardFocusedAction.focus();
+    await expect(keyboardFocusedAction).toBeFocused();
+  }
   await page.screenshot({ path: testInfo.outputPath('welcome-en.png'), fullPage: true });
   await page.context().setOffline(true);
   await expect(page.getByRole('region', { name: 'Welcome to GuitarDSL' }).getByText('Google Drive is unavailable offline', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toHaveCount(0);
   await page.context().setOffline(false);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect.poll(() => page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const originalSource = await readEditorSource(page);
   expect(originalSource).toContain('title: My song');
   await expect(page.getByRole('checkbox', { name: 'Do not show this page again' })).not.toBeChecked();
@@ -103,6 +133,48 @@ test('shows and persists the non-document Welcome tab without mutating the resto
   expect(googleRequests).toEqual([]);
 });
 
+test('renders the flat Welcome in both locales and themes without narrow-screen overflow', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/?welcome=1');
+  const chooseSetting = async (name: string) => {
+    await page.locator('#settings-button').click();
+    await page.getByRole('menuitemradio', { name, exact: true }).click();
+  };
+
+  for (const locale of ['en', 'ja'] as const) {
+    await chooseSetting(locale === 'en' ? 'Language: English' : 'Language: 日本語');
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+    for (const theme of ['light', 'dark'] as const) {
+      const themeLabel = locale === 'en'
+        ? (theme === 'light' ? 'Theme: Light' : 'Theme: Dark')
+        : (theme === 'light' ? 'テーマ: ライト' : 'テーマ: ダーク');
+      await chooseSetting(themeLabel);
+      await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', theme);
+      const screenshotLocale = locale;
+      const screenshotTheme = theme;
+      await page.screenshot({ path: testInfo.outputPath(`welcome-${screenshotLocale}-${screenshotTheme}.png`), fullPage: true });
+    }
+  }
+
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.locator('.welcome-hero, .welcome-actions, .welcome-storage, .welcome-footer')).toHaveCount(4);
+  }
+});
+
+test('Welcome create and tutorial actions dispatch their existing commands', async ({ page }) => {
+  await page.goto('/?welcome=1');
+  await page.evaluate(() => { window.prompt = () => 'Welcome action score'; });
+  await page.getByRole('button', { name: 'Create New Score' }).click();
+  await expect(page.getByRole('tab', { name: 'Welcome action score.guitardsl', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.locator('#menu-help-trigger').click();
+  await page.getByRole('menuitem', { name: 'Welcome', exact: true }).click();
+  await page.getByRole('button', { name: 'Start Tutorial' }).click();
+  await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Prepare a score' })).toBeVisible();
+});
+
 test('defaults Welcome to visible when its stored preference has an invalid value', async ({ page }) => {
   await page.goto('/?welcome=invalid');
   await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
@@ -121,10 +193,17 @@ test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({
   await page.locator('#settings-button').click();
   await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
-  await expect(page.locator('.welcome-grid')).toBeVisible();
-  await expect.poll(() => page.locator('.welcome-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+  await expect(page.locator('.welcome-hero')).toBeVisible();
+  await expect(page.locator('.welcome-about, .welcome-links')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('welcome-ja-mobile.png') });
+
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const layout = await indexedDb.getValue<Record<string, unknown>>('settings', 'web-layout-v1') ?? {};
+    await indexedDb.setValue('settings', 'web-layout-v1', { ...layout, inspectorOpen: false });
+  });
+  await page.reload();
 
   await page.getByRole('button', { name: 'チュートリアルを開始', exact: true }).click();
   await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
@@ -138,11 +217,18 @@ test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({
   await page.keyboard.press('Escape');
   await expect(page.locator('#toggle-tutorial')).toBeFocused();
   await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeHidden();
+  const inspectorPreferenceAfterEscape = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return (await indexedDb.getValue<{ inspectorOpen?: boolean }>('settings', 'web-layout-v1'))?.inspectorOpen;
+  });
+  expect(inspectorPreferenceAfterEscape).toBe(false);
   await page.locator('#toggle-tutorial').click();
   await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeVisible();
   await page.reload();
   await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'チュートリアル' })).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('.inspector')).toBeHidden();
 });
 
 test('Connect from Welcome stays on the page without opening Picker or listing score files', async ({ page }) => {
@@ -169,6 +255,46 @@ test('Connect from Welcome stays on the page without opening Picker or listing s
   expect(await page.evaluate(() => (window as Window & { __pickerOpened?: boolean }).__pickerOpened)).not.toBe(true);
 });
 
+test('Connect from Welcome reconciles a pending Drive import without opening Picker or a score', async ({ page }) => {
+  const operationId = 'welcome-pending-import';
+  const copiedFileId = 'welcome-recovered-copy';
+  const sourceText = 'title: Recovered from Welcome\n';
+  const drive = await installDriveBrowserMock(page, ['account-a'], {
+    appDataState: {
+      schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+      openDriveFileIds: [], activeDriveFileId: null, recentDriveFileIds: []
+    },
+    driveFiles: [{
+      id: copiedFileId, name: 'Recovered from Welcome.guitardsl', version: '1', modifiedTime: 't1',
+      mimeType: 'text/plain', parents: ['folder-account-a'], appProperties: { guitardslImportOperation: operationId }
+    }],
+    remoteFiles: {
+      'welcome-original-source': { name: 'Original.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' },
+      [copiedFileId]: { name: 'Recovered from Welcome.guitardsl', source: sourceText, version: '1', mimeType: 'text/plain' }
+    }
+  });
+  await page.goto('/?welcome=1');
+  await page.evaluate(async operation => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    await indexedDb.setValue('settings', 'pending-drive-imports:account-a', [{
+      operationId: operation, sourceId: 'welcome-original-source', targetFolderId: 'folder-account-a',
+      name: 'Recovered from Welcome.guitardsl'
+    }]);
+  }, operationId);
+
+  await page.getByRole('button', { name: 'Connect and Use Google Drive' }).click();
+  await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#app-message')).toContainText('Confirmed previous copies');
+  await expect.poll(() => page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return indexedDb.getValue('settings', 'pending-drive-imports:account-a');
+  })).toBeUndefined();
+  await expect(page.locator('#open-tabs [role="tab"][aria-selected="true"]')).toHaveText('Welcome');
+  expect(drive.copySourceIds).toEqual([]);
+  expect(drive.operationMarkerSearchCount).toBeGreaterThan(0);
+  expect(await page.evaluate(() => (window as Window & { __pickerOpened?: boolean }).__pickerOpened)).not.toBe(true);
+});
+
 test('opens the same right-dock tutorial from Help and persists its ten-step progress', async ({ page }, testInfo) => {
   await page.goto('/');
   await page.locator('#menu-help-trigger').click();
@@ -181,18 +307,62 @@ test('opens the same right-dock tutorial from Help and persists its ten-step pro
   await page.reload();
   await expect(page.locator('#right-dock-tutorial')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('Step 2 of 10')).toBeVisible();
-  for (let index = 0; index < 5; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByText('Chord-only lesson complete')).toBeVisible();
+  for (let index = 0; index < 4; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 6 of 10')).toBeVisible();
+  await expect(page.getByText('Chord-only lesson complete')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('Step 7 of 10')).toBeVisible();
+  await expect(page.getByText('Chord-only lesson complete')).toHaveCount(0);
+  await expect(page.getByText(/duplicate version A into B/u)).toBeVisible();
+  await expect(page.getByText(/rename version A/iu)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByText('Step 6 of 10')).toBeVisible();
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+  await expect(page.getByText('Chord-only lesson complete')).toBeVisible();
   await page.getByRole('button', { name: 'Restart', exact: true }).click();
   await expect(page.getByText('Step 1 of 10')).toBeVisible();
   await expect(page.getByText('Chord-only lesson complete')).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Untitled.guitardsl' })).toBeVisible();
-  for (let index = 0; index < 9; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  for (let index = 0; index < 8; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 9 of 10')).toBeVisible();
+  await expect(page.getByText('Melody lesson complete')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByText('Step 10 of 10')).toBeVisible();
+  await expect(page.getByText('Melody lesson complete')).toHaveCount(0);
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(page.getByText('Melody lesson complete')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+});
+
+test('copies tutorial examples with the exact source grouping and blank lines', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => { (window as Window & { __tutorialClipboardText?: string }).__tutorialClipboardText = text; } }
+    });
+  });
+  await page.goto('/');
+  await page.locator('#menu-help-trigger').click();
+  await page.getByRole('menuitem', { name: 'Tutorial', exact: true }).click();
+  for (let index = 0; index < 3; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+
+  const chordFixture = (await readFile(new URL('../../../docs/tutorials/momiji-4-4-no-melody.guitardsl', import.meta.url), 'utf8')).replace(/\r\n?/gu, '\n');
+  const chordGroups = chordFixture.split('\n\n[Verse 1]\n')[1]!.trimEnd().split('\n\n');
+  const expectedChordExample = chordGroups.slice(0, 2).join('\n\n');
+  expect(await page.locator('.tutorial-step pre code').textContent()).toBe(expectedChordExample);
+  await page.getByRole('button', { name: 'Copy example', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __tutorialClipboardText?: string }).__tutorialClipboardText)).toBe(expectedChordExample);
+
+  for (let index = 0; index < 4; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  const melodyFixture = (await readFile(new URL('../../../docs/tutorials/momiji-4-4-with-melody.guitardsl', import.meta.url), 'utf8')).replace(/\r\n?/gu, '\n');
+  const [metadata, verse = ''] = melodyFixture.split('\n\n[Verse 1]\n');
+  const melodyGroups = verse.trimEnd().split('\n\n');
+  const expectedMelodyExample = `${metadata}\n\n[Verse 1]\n${[
+    ...melodyGroups.slice(0, 2), ...melodyGroups.slice(4, 6)
+  ].join('\n\n')}`;
+  expect(await page.locator('.tutorial-step pre code').textContent()).toBe(expectedMelodyExample);
+  await page.getByRole('button', { name: 'Copy example', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __tutorialClipboardText?: string }).__tutorialClipboardText)).toBe(expectedMelodyExample);
 });
 
 test('serves all legal routes as static bilingual pages with a no-script English fallback', async ({ page }) => {

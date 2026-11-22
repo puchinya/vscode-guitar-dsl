@@ -107,6 +107,10 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '4.160.0'
           command: deploy --config wrangler-marketing-dev.jsonc
+      - name: Read back development HTTPS origins
+        run: node scripts/release-readback.mjs --environment development
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   production:
     name: Deploy guitardsl.app
@@ -175,3 +179,7 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '4.160.0'
           command: deploy --config wrangler-marketing.jsonc
+      - name: Read back all production and development HTTPS origins
+        run: node scripts/release-readback.mjs --environment all
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

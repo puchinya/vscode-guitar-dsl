@@ -5,7 +5,7 @@ import type { WorkspaceCommand, WorkspaceViewSnapshot } from '../types/workspace
 const props = defineProps<{ snapshot: Readonly<WorkspaceViewSnapshot> }>();
 const emit = defineEmits<{ command: [command: WorkspaceCommand] }>();
 const { t } = useI18n({ useScope: 'global' });
-const legalUrl = (page: string, locale: string) => `https://guitardsl.app/${page}/${locale}/`;
+
 function setWelcomeSuppressed(event: Event): void {
   const input = event.currentTarget as HTMLInputElement;
   const requested = input.checked;
@@ -15,46 +15,46 @@ function setWelcomeSuppressed(event: Event): void {
 </script>
 
 <template>
-  <section class="welcome-page" :aria-label="t('welcome.heading')">
-    <div class="welcome-grid">
-      <section class="welcome-start" :aria-labelledby="'welcome-start-heading'">
-        <p class="welcome-eyebrow">GuitarDSL</p>
-        <h1>{{ t('welcome.heading') }}</h1>
+  <section class="welcome-page" :aria-labelledby="'welcome-heading'">
+    <div class="welcome-content">
+      <header class="welcome-hero">
+        <h1 id="welcome-heading">{{ t('welcome.heading') }}</h1>
         <p class="welcome-subtitle">{{ t('welcome.subtitle') }}</p>
+      </header>
+
+      <section class="welcome-start" aria-labelledby="welcome-start-heading">
         <h2 id="welcome-start-heading">{{ t('welcome.start') }}</h2>
         <div class="welcome-actions">
-          <button type="button" class="welcome-primary" @click="emit('command', { type: 'document.create' })">{{ t('welcome.create') }}</button>
-          <button v-if="['disconnected', 'reauth', 'connecting'].includes(snapshot.driveStatus)" type="button" :disabled="snapshot.driveStatus === 'connecting'" @click="emit('command', { type: 'drive.connect', source: 'welcome' })">{{ t('welcome.connect') }}</button>
-          <div v-else-if="snapshot.driveStatus === 'offline'" class="welcome-drive-connected" role="status">
-            <strong>{{ t('welcome.driveOffline') }}</strong>
-            <p>{{ t('welcome.driveOfflineHint') }}</p>
+          <button type="button" class="welcome-action" @click="emit('command', { type: 'document.create' })">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2.75h7l4 4v10.5H4z" /><path d="M11 2.75v4h4M10 9v6m-3-3h6" /></svg>
+            <span>{{ t('welcome.create') }}</span>
+          </button>
+          <button v-if="['disconnected', 'reauth', 'connecting'].includes(snapshot.driveStatus)" type="button" class="welcome-action" :disabled="snapshot.driveStatus === 'connecting'" @click="emit('command', { type: 'drive.connect', source: 'welcome' })">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 5 6 0M5.4 6.2 3.8 9m1.6 4.8 1.6 2.8m7.6-2.8-1.6 2.8M14.6 6.2 16.2 9" /><circle cx="4.6" cy="5" r="2" /><circle cx="15.4" cy="5" r="2" /><circle cx="2.8" cy="11" r="2" /><circle cx="17.2" cy="11" r="2" /><circle cx="10" cy="16" r="2" /></svg>
+            <span>{{ t('welcome.connect') }}</span>
+          </button>
+          <div v-else class="welcome-drive-status" role="status">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 5 6 0M5.4 6.2 3.8 9m1.6 4.8 1.6 2.8m7.6-2.8-1.6 2.8M14.6 6.2 16.2 9" /><circle cx="4.6" cy="5" r="2" /><circle cx="15.4" cy="5" r="2" /><circle cx="2.8" cy="11" r="2" /><circle cx="17.2" cy="11" r="2" /><circle cx="10" cy="16" r="2" /></svg>
+            <div>
+              <strong>{{ snapshot.driveStatus === 'offline' ? t('welcome.driveOffline') : t('welcome.connected') }}</strong>
+              <p>{{ snapshot.driveStatus === 'offline' ? t('welcome.driveOfflineHint') : t('welcome.driveHint') }}</p>
+            </div>
           </div>
-          <div v-else class="welcome-drive-connected" role="status">
-            <strong>{{ t('welcome.connected') }}</strong>
-            <p>{{ t('welcome.driveHint') }}</p>
-          </div>
-          <button type="button" @click="emit('command', { type: 'tutorial.open' })">{{ t('welcome.tutorial') }}</button>
+          <button type="button" class="welcome-action" @click="emit('command', { type: 'tutorial.open' })">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.25c2.4-.8 4.6-.45 6.5 1.1 1.9-1.55 4.1-1.9 6.5-1.1v11c-2.4-.8-4.6-.45-6.5 1.1-1.9-1.55-4.1-1.9-6.5-1.1zM10 5.35v11" /></svg>
+            <span>{{ t('welcome.tutorial') }}</span>
+          </button>
         </div>
-        <div class="welcome-storage">
-          <h2>{{ t('welcome.storage') }}</h2>
-          <p>{{ t('welcome.storageText') }}</p>
-        </div>
+      </section>
+
+      <section class="welcome-storage" aria-labelledby="welcome-storage-heading">
+        <h2 id="welcome-storage-heading">{{ t('welcome.storage') }}</h2>
+        <p>{{ t('welcome.storageText') }}</p>
+      </section>
+
+      <footer class="welcome-footer">
         <label class="welcome-suppress"><input type="checkbox" :checked="snapshot.welcomeSuppressed" @change="setWelcomeSuppressed" />{{ t('welcome.suppress') }}</label>
-      </section>
-      <section class="welcome-about" :aria-labelledby="'welcome-about-heading'">
-        <h2 id="welcome-about-heading">{{ t('welcome.about') }}</h2>
-        <ul class="welcome-capabilities">
-          <li>{{ t('welcome.subtitle') }}</li>
-          <li>{{ t('welcome.storageText') }}</li>
-        </ul>
-        <nav class="welcome-links" :aria-label="t('welcome.about')">
-          <button type="button" @click="emit('command', { type: 'help.open' })">{{ t('welcome.help') }}</button>
-          <a :href="legalUrl('terms', snapshot.locale)" target="_blank" rel="noopener noreferrer">{{ t('welcome.terms') }}</a>
-          <a :href="legalUrl('licenses', snapshot.locale)" target="_blank" rel="noopener noreferrer">{{ t('welcome.licenses') }}</a>
-          <a :href="legalUrl('privacy', snapshot.locale)" target="_blank" rel="noopener noreferrer">{{ t('welcome.privacy') }}</a>
-          <a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">{{ t('welcome.source') }}</a>
-        </nav>
-      </section>
+      </footer>
     </div>
   </section>
 </template>

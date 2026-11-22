@@ -105,9 +105,8 @@ export const en = {
   },
   welcome: {
     heading: 'Welcome to GuitarDSL',
-    subtitle: 'A guitar score editor for chords, rhythm, TAB, and melody.',
+    subtitle: 'GuitarDSL is a guitar score editor for writing chord progressions, strumming, lyrics, melodies, and TAB as text and viewing them as a score. Scores can be saved on this device, and Google Drive is available when you choose to use it.',
     start: 'Get started',
-    about: 'About GuitarDSL',
     create: 'Create New Score',
     connect: 'Connect and Use Google Drive',
     connected: 'Google Drive connected',
@@ -117,11 +116,6 @@ export const en = {
     tutorial: 'Start Tutorial',
     storage: 'Storage',
     storageText: 'Scores and drafts are saved on this device. Google Drive is optional and connects only when you choose to use it.',
-    help: 'Help',
-    terms: 'Terms of Service',
-    licenses: 'Licenses (MIT/OSS)',
-    privacy: 'Privacy Policy',
-    source: 'Source code (GitHub)',
     suppress: 'Do not show this page again',
     storageError: 'Could not save this preference. Your previous setting is still active.'
   },
@@ -144,7 +138,7 @@ export const en = {
       step4: { title: 'Add lyrics to bars 1–8', body: 'Add the first eight bar-level l: lyrics to the chord chart. The example shows the first half; each lyric belongs in its own rhythm cell.' },
       step5: { title: 'Add lyrics to bars 9–16', body: 'Finish the first verse with bars 9–16. Keep each chord cell explicit, including bars whose rhythm uses %.' },
       step6: { title: 'Check and save version A', body: 'Confirm the melody-free chord chart in Preview and Problems, export a PDF if you like, and save the local file. Version A is complete here; you can return to version B later.' },
-      step7: { title: 'Make a separate version B', body: 'Use Explorer to duplicate or rename the melody-free file so version A remains unchanged. This tutorial never duplicates or edits a file for you.' },
+      step7: { title: 'Make a separate version B', body: 'Use Explorer to duplicate version A into B, or create a new file and copy the source into it. Keep version A under its existing name and edit only version B. This tutorial never duplicates or edits a file for you.' },
       step8: { title: 'Add the first eight melody bars', body: 'Remove the l: bar lyrics in version B, then add the melody and note-by-note lyr: lines for bars 1–8. The example includes the same first eight chord and rhythm cells as version A. Preserve each note duration and rest.' },
       step9: { title: 'Add the last eight melody bars', body: 'Complete bars 9–16 with the matching melody and lyr: lines. Keep the same chords and rhythm cells as version A, including the same eight % bars.' },
       step10: { title: 'Check and save version B', body: 'Verify the melody staff, accompaniment rhythm staff, lyrics, zero Problems diagnostics, PDF, and reload. Keep both A and B as separate files.' }

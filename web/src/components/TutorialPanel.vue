@@ -11,27 +11,26 @@ const { t, tm } = useI18n({ useScope: 'global' });
 const copyState = ref<'copied' | 'failed' | ''>('');
 const steps = computed(() => Object.values(tm('tutorial.steps') as Record<string, { title: string; body: string; code?: string }>));
 const fixtureExamples = computed(() => {
-  const chordParts = chordFixture.split('\n\n[Verse 1]\n');
-  const chordRows = (chordParts[1] ?? '').split(/\r?\n/).filter((line) => line.startsWith('|'));
-  const melodyParts = melodyFixture.split('\n\n[Verse 1]\n');
-  const melodyGroups = (melodyParts[1] ?? '').split('\n\n');
-  const chordHeader = `${chordParts[0]}\n\n[Verse 1]`;
-  const melodyHeader = `${melodyParts[0]}\n\n[Verse 1]`;
-  const chordOnly = chordRows.map((line) => line.replace(/ l:"[^"]*"/g, ''));
-  const chunkLines = (groupIndex: number): string[] => (melodyGroups[groupIndex] ?? '').split(/\r?\n/).filter(Boolean);
-  const bFirstHalf = [
-    ...chunkLines(0), ...chunkLines(1), '',
-    ...chunkLines(4), '', ...chunkLines(5)
-  ].join('\n');
-  const bSecondHalf = [
-    ...chunkLines(2), ...chunkLines(3), '',
-    ...chunkLines(6), '', ...chunkLines(7)
-  ].join('\n');
+  const splitVerseGroups = (fixture: string) => {
+    const normalized = fixture.replace(/\r\n?/gu, '\n');
+    const [metadata, verse = ''] = normalized.split('\n\n[Verse 1]\n');
+    return { header: `${metadata}\n\n[Verse 1]`, groups: verse.trimEnd().split('\n\n') };
+  };
+  const chordParts = splitVerseGroups(chordFixture);
+  const melodyParts = splitVerseGroups(melodyFixture);
+  const chordGroups = chordParts.groups.map((group) => group.replace(/ l:"[^"]*"/gu, ''));
+  const joinGroups = (groups: string[]) => groups.join('\n\n');
+  const bFirstHalf = joinGroups([
+    ...melodyParts.groups.slice(0, 2), ...melodyParts.groups.slice(4, 6)
+  ]);
+  const bSecondHalf = joinGroups([
+    ...melodyParts.groups.slice(2, 4), ...melodyParts.groups.slice(6, 8)
+  ]);
   return [
-    `${chordHeader}\n${chordOnly.join('\n')}`,
-    chordRows.slice(0, 8).join('\n'),
-    chordRows.slice(8, 16).join('\n'),
-    `${melodyHeader}\n${bFirstHalf}`,
+    `${chordParts.header}\n${joinGroups(chordGroups)}`,
+    joinGroups(chordParts.groups.slice(0, 2)),
+    joinGroups(chordParts.groups.slice(2, 4)),
+    `${melodyParts.header}\n${bFirstHalf}`,
     bSecondHalf
   ];
 });

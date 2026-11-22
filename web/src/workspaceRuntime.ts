@@ -770,7 +770,7 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
       name: item.document.name, source: item.source, revision: item.revision, saveStatus: item.saveStatus
     })),
     activeKey: state.activeKey, activeStorage: state.activeStorage, locale: state.locale, theme: state.theme,
-    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
+    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen || mobileDockOpen,
     problemsOpen: state.problemsOpen, explorerAutoHidden, inspectorAutoHidden,
     localExpanded, driveExpanded, explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
     problemsHeight: state.problemsHeight, splitRatio: state.splitRatio,
@@ -1869,7 +1869,6 @@ interface WorkspaceLayoutPreference {
   problemsHeight: number;
   splitRatio: number;
   rightDockPane?: 'inspector' | 'tutorial';
-  mobileDockOpen?: boolean;
 }
 const workspace = app.querySelector<HTMLDivElement>('#workspace')!;
 const splitDivider = app.querySelector<HTMLDivElement>('#center-splitter')!;
@@ -1885,7 +1884,7 @@ function layoutSnapshot(): WorkspaceLayoutPreference {
     viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
     explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
     problemsOpen: state.problemsOpen, problemsHeight: state.problemsHeight, splitRatio: state.splitRatio,
-    rightDockPane: state.rightDockPane, mobileDockOpen
+    rightDockPane: state.rightDockPane
   };
 }
 
@@ -1917,12 +1916,14 @@ function setWorkspaceViewMode(mode: WorkspaceViewMode, persist = true): void {
 
 function updateResponsiveCollapse(): void {
   const available = workspace.clientWidth;
+  if (available > 680) mobileDockOpen = false;
+  const inspectorRequested = state.inspectorOpen || mobileDockOpen;
   let autoHideInspector = false;
   let autoHideExplorer = false;
   const required = () => 40 + 36 + (state.explorerOpen && !autoHideExplorer ? state.explorerWidth + 6 : 0)
-    + 240 + (state.inspectorOpen && !autoHideInspector ? 6 + state.inspectorWidth : 0);
+    + 240 + (inspectorRequested && !autoHideInspector ? 6 + state.inspectorWidth : 0);
   if (available <= 680) {
-    autoHideInspector = state.inspectorOpen && !mobileDockOpen;
+    autoHideInspector = inspectorRequested && !mobileDockOpen;
     if (required() > available) autoHideExplorer = state.explorerOpen;
   } else {
     if (required() > available) autoHideInspector = state.inspectorOpen;
@@ -1961,7 +1962,7 @@ async function loadLayoutPreferences(): Promise<void> {
     if (typeof saved.problemsHeight === 'number' && Number.isFinite(saved.problemsHeight)) state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, saved.problemsHeight));
     if (typeof saved.splitRatio === 'number' && Number.isFinite(saved.splitRatio)) state.splitRatio = Math.max(0.24, Math.min(0.76, saved.splitRatio));
     if (saved.rightDockPane === 'inspector' || saved.rightDockPane === 'tutorial') state.rightDockPane = saved.rightDockPane;
-    if (typeof saved.mobileDockOpen === 'boolean') mobileDockOpen = saved.mobileDockOpen;
+    // Narrow-screen dock visibility is ephemeral and is never restored from storage.
   } else {
     state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, state.problemsHeight));
     await indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => undefined);
@@ -2917,13 +2918,18 @@ async function connectDrive(options: { source?: 'welcome' } = {}): Promise<void>
     if (state.activeStorage === 'drive') await renderExplorer();
     if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
-    if (options.source !== 'welcome') {
-      const importRecoveryMessage = await reconcilePendingDriveImports(account.accountId, drive, generation);
-      if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
-      if (importRecoveryMessage) {
-        const hasUnresolved = (await readPendingDriveImports(account.accountId)).length > 0;
-        showMessage(importRecoveryMessage, hasUnresolved ? 'error' : 'info');
+    const importRecoveryMessage = await reconcilePendingDriveImports(account.accountId, drive, generation);
+    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+      if (!operationIsCurrent()) driveConnectInterrupted = true;
+      return;
+    }
+    if (importRecoveryMessage) {
+      const hasUnresolved = (await readPendingDriveImports(account.accountId)).length > 0;
+      if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+        if (!operationIsCurrent()) driveConnectInterrupted = true;
+        return;
       }
+      showMessage(importRecoveryMessage, hasUnresolved ? 'error' : 'info');
     }
   } catch (error) {
     if (!operationIsCurrent()) driveConnectInterrupted = true;
@@ -4922,7 +4928,11 @@ function resetWorkspaceLayout(): void {
 }
 
 const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
-const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutNow(); };
+const toggleInspector = () => {
+  if (workspace.clientWidth <= 680) mobileDockOpen = !mobileDockOpen;
+  else { state.inspectorOpen = !state.inspectorOpen; saveLayoutNow(); }
+  applyWorkspaceLayout();
+};
 const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
 
 function openViewMenu(): void {
@@ -4934,7 +4944,7 @@ function openViewMenu(): void {
     { label: t.scoreView, checked: state.viewMode === 'score', run: () => setWorkspaceViewMode('score') },
     { separator: true, label: '', run: () => {} },
     { label: t.toggleExplorer, checked: state.explorerOpen, run: () => toggleExplorer() },
-    { label: t.toggleInspector, checked: state.inspectorOpen, run: () => toggleInspector() },
+    { label: t.toggleInspector, checked: state.inspectorOpen || mobileDockOpen, run: () => toggleInspector() },
     { label: t.problems, checked: state.problemsOpen, run: () => toggleProblems() },
     { separator: true, label: '', run: () => {} },
     { label: `${t.resetLayout}…`, run: resetWorkspaceLayout }
@@ -4969,8 +4979,11 @@ function showWelcome(): void {
 function openTutorial(): void {
   state.welcomeActive = false;
   state.rightDockPane = 'tutorial';
-  state.inspectorOpen = true;
-  mobileDockOpen = workspace.clientWidth <= 680;
+  if (workspace.clientWidth <= 680) mobileDockOpen = true;
+  else {
+    state.inspectorOpen = true;
+    mobileDockOpen = false;
+  }
   applyWorkspaceLayout();
   saveLayoutNow();
 }
@@ -5003,10 +5016,8 @@ async function navigateTutorial(action: 'next' | 'previous' | 'restart' | 'finis
     progress.chordOnlyCompleted = false;
     progress.melodyCompleted = false;
   } else if (action === 'previous') progress.stepIndex = Math.max(0, progress.stepIndex - 1);
-  else if (action === 'next') {
-    if (progress.stepIndex === 5) progress.chordOnlyCompleted = true;
-    progress.stepIndex = Math.min(9, progress.stepIndex + 1);
-  } else {
+  else if (action === 'next') progress.stepIndex = Math.min(9, progress.stepIndex + 1);
+  else {
     if (progress.stepIndex === 5) progress.chordOnlyCompleted = true;
     if (progress.stepIndex === 9) progress.melodyCompleted = true;
   }
@@ -5092,9 +5103,9 @@ function openInspectorMenu(): void {
   const t = strings();
   showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
     { label: t.closeInspector, run: () => {
-      state.inspectorOpen = false;
-      mobileDockOpen = false;
-      applyWorkspaceLayout(); saveLayoutNow();
+      if (workspace.clientWidth <= 680) mobileDockOpen = false;
+      else { state.inspectorOpen = false; saveLayoutNow(); }
+      applyWorkspaceLayout();
       app.querySelector<HTMLButtonElement>('#toggle-inspector')!.focus();
     } },
     { label: t.resetInspectorWidth, run: () => {
@@ -5108,11 +5119,10 @@ app.querySelector('#close-help')!.addEventListener('click', () => app.querySelec
 app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus(), runtimeListenerOptions);
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing
-    || workspace.clientWidth > 680 || !mobileDockOpen || !state.inspectorOpen) return;
+    || workspace.clientWidth > 680 || !mobileDockOpen) return;
   event.preventDefault();
-  state.inspectorOpen = false;
   mobileDockOpen = false;
-  applyWorkspaceLayout(); saveLayoutNow();
+  applyWorkspaceLayout();
   app.querySelector<HTMLButtonElement>(state.rightDockPane === 'tutorial' ? '#toggle-tutorial' : '#toggle-inspector')?.focus();
 }, runtimeListenerOptions);
 app.addEventListener('keydown', event => {
@@ -5287,31 +5297,34 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
     case 'panel.toggle':
       if (command.panel === 'explorer') state.explorerOpen = !state.explorerOpen;
       else if (command.panel === 'inspector') {
-        state.inspectorOpen = !state.inspectorOpen;
-        mobileDockOpen = workspace.clientWidth <= 680 && state.inspectorOpen;
+        if (workspace.clientWidth <= 680) mobileDockOpen = !mobileDockOpen;
+        else state.inspectorOpen = !state.inspectorOpen;
       }
       else state.problemsOpen = !state.problemsOpen;
-      applyWorkspaceLayout(); saveLayoutNow();
+      applyWorkspaceLayout();
+      if (command.panel !== 'inspector' || workspace.clientWidth > 680) saveLayoutNow();
       return;
     case 'panel.set-open':
       if (command.panel === 'explorer') state.explorerOpen = command.open;
       else if (command.panel === 'inspector') {
-        state.inspectorOpen = command.open;
-        mobileDockOpen = workspace.clientWidth <= 680 && command.open;
+        if (workspace.clientWidth <= 680) mobileDockOpen = command.open;
+        else state.inspectorOpen = command.open;
       }
       else state.problemsOpen = command.open;
-      applyWorkspaceLayout(); saveLayoutNow();
+      applyWorkspaceLayout();
+      if (command.panel !== 'inspector' || workspace.clientWidth > 680) saveLayoutNow();
       return;
     case 'panel.select-right':
-      if (command.mode === 'toggle' && state.inspectorOpen && state.rightDockPane === command.pane) {
-        state.inspectorOpen = false;
-        mobileDockOpen = false;
+      if (command.mode === 'toggle' && (workspace.clientWidth <= 680 ? mobileDockOpen : state.inspectorOpen) && state.rightDockPane === command.pane) {
+        if (workspace.clientWidth <= 680) mobileDockOpen = false;
+        else state.inspectorOpen = false;
       } else {
         state.rightDockPane = command.pane;
-        state.inspectorOpen = true;
-        mobileDockOpen = workspace.clientWidth <= 680;
+        if (workspace.clientWidth <= 680) mobileDockOpen = true;
+        else { state.inspectorOpen = true; mobileDockOpen = false; }
       }
-      applyWorkspaceLayout(); saveLayoutNow();
+      applyWorkspaceLayout();
+      saveLayoutNow(); // Persists the selected pane but never the transient overlay state.
       return;
     case 'welcome.open': return showWelcome();
     case 'welcome.close':
