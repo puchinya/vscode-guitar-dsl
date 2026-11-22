@@ -26,6 +26,10 @@
     4. Replace [data-screenshot] sources with LOCAL, newly captured authentic
        app images: editor-split-ja.webp, lyric-chord-ja.webp,
        melody-lyrics-ja.webp, tab-ja.webp, tutorial-ja.webp.
+       The lyric-chord screenshot must illustrate a commercially familiar
+       singer-songwriter chord+strum+lyrics layout, using the verified
+       public-domain tutorial fixture; the TAB screenshot must be a true
+       ordinary guitar TAB rendering from valid source, not a mockup.
        The two source images currently shown below are real development
        screenshots pinned to PR #190 HEAD, NOT final marketing captures.
        Missing screenshots are openly labeled, NOT fabricated or implied
@@ -164,7 +168,7 @@
         <div>
           <span class="eyebrow">GUITAR SCORE EDITOR · OPEN SOURCE</span>
           <h1 id="intro-heading">テキストで書く、<br>ギターのための楽譜。</h1>
-          <p class="lead">GuitarDSLは、コード進行、ストローク、TAB、メロディ、歌詞をテキストで記述し、譜面として確認できるオープンソースのエディターです。弾き語り用のコード譜からメロディ付きの楽譜まで、ソースの編集と譜面の確認を同じ画面で行えます。</p>
+          <p class="lead">GuitarDSLは、ギターの楽譜をテキストで記述し、譜面として確認できるオープンソースのエディターです。市販の弾き語り楽譜のように、<strong>コード・ストローク・歌詞を組み合わせた楽譜を手軽に作成</strong>できます。一般的なTAB譜や、五線譜のメロディと歌詞を含む楽譜にも対応し、ソースの編集と譜面の確認を同じ画面で行えます。</p>
           <span class="oss-note">個人開発のOSSプロジェクトとして公開・開発しています。</span>
           <button class="primary-action" type="button" data-intro-start>GuitarDSLの使用を開始する</button>
           <a class="quiet-link" href="#features">機能を見る</a>
@@ -185,12 +189,12 @@
       <div class="container">
         <div class="section-heading">
           <span class="small-label">FEATURES</span>
-          <h2>GuitarDSLで扱える楽譜と情報</h2>
-          <p>コード進行やリズムを記述するほか、TAB、メロディ、歌詞にも対応しています。下記はWeb版で扱う主な要素です。</p>
+          <h2>弾き語りのコード譜から、TAB譜まで</h2>
+          <p>まずはコード、ストローク、歌詞を入力して、市販の弾き語り楽譜に近い構成のコード譜を作成できます。通常のTAB譜やメロディ付きの五線譜も扱えます。</p>
         </div>
         <div class="feature-list">
-          <article><h3>コードとストローク</h3><p>コード進行とストロークを別セルで記述し、繰り返し記号も使用できます。</p></article>
-          <article><h3>メロディ・TAB・歌詞</h3><p>小節単位の歌詞に加え、音符と歌詞の対応やTAB譜も記述できます。</p></article>
+          <article><h3>弾き語り用のコード譜</h3><p>コード進行、ストロークの上下方向や繰り返し記号、歌詞を組み合わせて、一般的な弾き語り楽譜の形式を手軽に作成できます。</p></article>
+          <article><h3>TAB譜とメロディ譜</h3><p>通常のギターTAB譜や、五線譜のメロディ、音符に対応した歌詞も記述できます。弾き語り以外の楽譜にも利用できます。</p></article>
           <article><h3>編集とプレビュー</h3><p>ソースを編集しながら譜面を確認できます。記述に問題があればProblemsパネルで確認します。</p></article>
         </div>
       </div>
@@ -222,9 +226,9 @@
       <div class="container split reverse">
         <div class="section-copy">
           <span class="small-label">SCORE AS CODE</span>
-          <h2>コードとストロークの記述例</h2>
-          <p>コードを左セル、ストロークを右セルに記述します。直前小節のストロークを繰り返す場合は <code>%</code> を使います。</p>
-          <p>歌詞は小節ごとに追加できます。メロディ付き楽譜では音符に対応した歌詞も記述できます。</p>
+          <h2>弾き語りのコード譜を手軽に作成</h2>
+          <p>市販の弾き語り楽譜のように、コード、ストローク、歌詞をまとめた譜面を作成できます。コードを左セル、ストロークを右セルに記述し、直前小節のリズムを繰り返す場合は <code>%</code> を使います。</p>
+          <p>歌詞は小節ごとに追加できます。メロディ付きの楽譜では、音符に対応した歌詞も記述できます。</p>
           <p class="notice">右はDSLテキストの例であり、GuitarDSLがレンダリングした譜面画像ではありません。</p>
         </div>
         <div class="code-panel">
@@ -246,8 +250,8 @@ time: 4/4
       <div class="container split">
         <div class="section-copy">
           <span class="small-label">MELODY, TAB, LYRICS</span>
-          <h2>歌詞・メロディ・TABの扱い</h2>
-          <p>歌詞付きのコード譜を作り、必要に応じて音符を伴うメロディやTABを記述できます。原曲のメロディーとその歌詞を使う場合は、音高・音価・音節の対応を確認します。</p>
+          <h2>一般的なTAB譜やメロディ譜も作成</h2>
+          <p>弾き語り用のコード譜だけでなく、ギターの弦・フレットを示す通常のTAB譜、五線譜のメロディや音符に対応する歌詞も記述できます。原曲のメロディーを扱う場合は、音高・音価・音節の対応を確認します。</p>
           <p class="notice">「紅葉」メロディ版は原譜照合と試奏の受入条件が残るため、未確認の画像を実画面として載せません。</p>
         </div>
         <div class="capture-needed" data-screenshot="melody-lyrics-ja.webp" data-requires-capture="melody">
