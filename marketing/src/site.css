@@ -39,7 +39,9 @@ a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .hero { width: 100%; background: linear-gradient(120deg,#eef4ff 0%,#f7faff 56%,#fff 100%); padding: 74px 0 64px; border-bottom: 1px solid var(--edge); }
 .hero-layout { display: grid; grid-template-columns: minmax(0,.92fr) minmax(0,1.08fr); align-items: center; gap: 44px; }
 .hero-layout > *, .usecase-pair > *, .shot-card { min-width: 0; max-width: 100%; }
-.eyebrow, .section-label { display: block; color: #5969aa; font-size: 11px; letter-spacing: .065em; font-weight: 750; }
+.eyebrow, .section-label { display: block; color: #5969aa; letter-spacing: .065em; font-weight: 750; }
+.eyebrow { font-size: 11px; }
+.section-label { font-size: 13px; }
 h1 { font-size: clamp(32px,3.9vw,49px); line-height: 1.31; letter-spacing: -.05em; margin: 14px 0 21px; }
 h2 { font-size: clamp(25px,2.55vw,34px); letter-spacing: -.035em; line-height: 1.43; margin: 10px 0 16px; }
 h3 { font-size: 17px; }

@@ -32,3 +32,10 @@ The WebP assets in `marketing/public/images/` were encoded from these PNGs with 
 ## Product introduction page screenshots
 
 `npm run check:marketing -- --target development|production` captures the generated Japanese and English pages in Chromium and WebKit with JavaScript disabled, a dark OS preference, and both required viewports. The committed snapshots are in [marketing-site/](marketing-site/): 1600×900 and 390×844 CSS pixels for each browser and locale. The screenshots are evidence of layout only; the automated checks separately assert links, image loading and dimensions, no horizontal page overflow, and HTTP 404 for an unknown route.
+
+### Japanese copy and section-label review — 2026-11-23
+
+The development build completed with `npm run build:marketing -- --target development` (exit 0) and served locally at `http://127.0.0.1:5173/` (HTTP 200). Playwright 1.65.0 Chromium on macOS captured the 1600×900 CSS-pixel views below at device scale factor 1. The hero description, example heading, and caption use the general term “TAB譜”; browser computed style reports `.section-label` at 13px. The page was visually inspected in the browser. The automated `check:marketing` suite was not run for this copy review.
+
+- [Usage introduction and hero copy](marketing-site/marketing-site-review-ja-usage-1600x900-2026-11-23.png)
+- [TAB example heading and caption](marketing-site/marketing-site-review-ja-tab-1600x900-2026-11-23.png)

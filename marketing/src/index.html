@@ -6,7 +6,7 @@
   <link rel="icon" href="/icons/guitardsl-sidebar.svg" type="image/svg+xml">
   <meta name="color-scheme" content="light">
   <title>GuitarDSL — テキストから、ギターの楽譜を作成。</title>
-  <meta name="description" content="GuitarDSLはオープンソースソフトウェア（OSS）のギター譜エディターです。コード・ストローク・歌詞の譜面、歌唱メロディ付きの譜面、ソロギターのTAB譜をテキストで作成できます。">
+  <meta name="description" content="GuitarDSLはオープンソースソフトウェア（OSS）のギター譜エディターです。コード・ストローク・歌詞の譜面、歌唱メロディ付きの譜面、TAB譜をテキストで作成できます。">
   <link rel="canonical" href="__SITE_URL__/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="GuitarDSL — テキストから、ギターの楽譜を作成。">
@@ -32,7 +32,7 @@
         <div>
           <div class="eyebrow">オープンソースのギター譜エディター</div>
           <h1>テキストから、<br>ギターの楽譜を作成。</h1>
-          <p class="hero-copy"><strong>GuitarDSLは、オープンソースソフトウェア（OSS）です。</strong> 市販の弾き語り楽譜でよく見るコード・ストローク・歌詞付きの譜面や、歌唱メロディを載せた弾き語り譜、ソロギターのTAB譜をテキストで作成できます。専用のテキスト記法（DSL）を編集しながら、譜面のプレビューを同じ画面で確認できます。</p>
+          <p class="hero-copy"><strong>GuitarDSLは、オープンソースソフトウェア（OSS）です。</strong> 市販の弾き語り楽譜でよく見るコード・ストローク・歌詞付きの譜面や、歌唱メロディを載せた弾き語り譜、TAB譜をテキストで作成できます。専用のテキスト記法（DSL）を編集しながら、譜面のプレビューを同じ画面で確認できます。</p>
           <a class="button" href="__APP_URL__">GuitarDSLの使用を開始する</a>
           <p class="intro-note">ブラウザーで楽譜を作成し、入力内容を譜面で確認できます。</p>
         </div>
@@ -46,7 +46,7 @@
       <div class="wrap">
         <div class="section-label">用途別の楽譜</div>
         <h2>3つの楽譜の作成例</h2>
-        <p>オリジナル曲「空色の合図」を使い、歌唱メロディのない弾き語り譜、歌唱メロディ付きの弾き語り譜、ソロギターのTAB譜を紹介します。各例にはGuitarDSLの記述と、同じ内容をWebアプリで表示した画面を掲載しています。曲・歌詞・旋律は紹介用に作成したオリジナルで、既存の作品や楽曲とは関係ありません。</p>
+        <p>オリジナル曲「空色の合図」を使い、歌唱メロディのない弾き語り譜、歌唱メロディ付きの弾き語り譜、TAB譜を紹介します。各例にはGuitarDSLの記述と、同じ内容をWebアプリで表示した画面を掲載しています。曲・歌詞・旋律は紹介用に作成したオリジナルで、既存の作品や楽曲とは関係ありません。</p>
       </div>
     </section>
     <section class="usecase" id="chord-lyrics" aria-labelledby="heading-1">
@@ -98,7 +98,7 @@ lyr: | ま だ み ぬ み ち | か ぜ を こ え て |</code></pre></div>
     </section>
     <section class="usecase" id="guitar-tab" aria-labelledby="heading-3">
       <div class="wrap">
-        <div class="usecase-head"><span class="section-label">作成例 03 / ソロギター・TAB譜</span><h2 id="heading-3">ソロギターのTAB譜</h2><p>低音の伴奏と高音のメロディを1本のギターで弾く、フィンガースタイルの譜面例です。弦・フレット・音価を記述し、<code>[5f3,2f1]</code> のように同時に鳴らす弦も指定できます。</p></div>
+        <div class="usecase-head"><span class="section-label">作成例 03 / TAB譜</span><h2 id="heading-3">TAB譜</h2><p>低音の伴奏と高音のメロディを1本のギターで弾く、フィンガースタイルの譜面例です。弦・フレット・音価を記述し、<code>[5f3,2f1]</code> のように同時に鳴らす弦も指定できます。</p></div>
         <div class="usecase-pair">
           <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>空色の合図.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="C_guitar_tab">title: 空色の合図
 artist: GuitarDSL Original Demo
@@ -117,7 +117,7 @@ tab: | [5f3,2f1]/8 3f0 1f0 2f1 [6f3,2f0] 3f0 1f3 2f0 |
 tab: | [5f0,2f1]/8 3f2 1f0 2f1 [6f0,2f0] 3f0 1f0 2f0 |
 tab: | [6f1,2f1]/8 3f2 1f1 2f1 [5f3,2f1] 3f0 1f0 2f1 |
 tab: | [4f0,2f3]/8 3f2 1f1 2f3 [6f3,2f0] 3f0 1f1 2f0 |</code></pre></div>
-          <figure class="shot-card"><img src="/images/solo-guitar-tab.webp" alt="6本のTAB譜。低音と高音の交互のフレーズ、同時発音のフレット位置、C–GからDm–G7へのコードを表示" width="1600" height="900"><figcaption>低音と高音のフレーズを含む「空色の合図」のソロギターTAB譜を表示しています。</figcaption></figure>
+          <figure class="shot-card"><img src="/images/solo-guitar-tab.webp" alt="6本のTAB譜。低音と高音の交互のフレーズ、同時発音のフレット位置、C–GからDm–G7へのコードを表示" width="1600" height="900"><figcaption>低音と高音のフレーズを含む「空色の合図」のTAB譜を表示しています。</figcaption></figure>
         </div>
         <ul class="details"><li>低音と高音を交互に弾くフィンガースタイル</li><li>[5f3,2f1] でベース音と旋律を同時に発音</li><li>直前と同じ音価は省略できる</li></ul>
       </div>
