@@ -71,11 +71,14 @@ async function assertWelcomeLinks(page: Page, locale: 'en' | 'ja') {
     rel: anchor.getAttribute('rel')
   })));
   expect(targets).toEqual([
-    { href: `https://guitardsl.app/terms/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
-    { href: `https://guitardsl.app/licenses/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
-    { href: `https://guitardsl.app/privacy/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `/terms/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `/licenses/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `/privacy/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' }
   ]);
+  for (const legalLink of targets.slice(0, 3)) {
+    expect(new URL(legalLink.href!, page.url()).origin).toBe(new URL(page.url()).origin);
+  }
   return links;
 }
 
@@ -2771,9 +2774,14 @@ test('Help menu keeps its nine ordered actions, safe links, and versioned About 
   expect(externalLinkAttributes).toEqual([
     { href: PRODUCT_INTRO_URL, target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' },
-    { href: 'https://guitardsl.app/licenses/', target: '_blank', rel: 'noopener noreferrer' },
-    { href: 'https://guitardsl.app/privacy/', target: '_blank', rel: 'noopener noreferrer' },
-    { href: 'https://guitardsl.app/terms/', target: '_blank', rel: 'noopener noreferrer' }
+    { href: '/licenses/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: '/privacy/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: '/terms/', target: '_blank', rel: 'noopener noreferrer' }
+  ]);
+
+  const currentOrigin = new URL(page.url()).origin;
+  expect(externalLinkAttributes.slice(2).map(link => new URL(link.href!, page.url()).origin)).toEqual([
+    currentOrigin, currentOrigin, currentOrigin
   ]);
 
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
