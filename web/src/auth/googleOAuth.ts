@@ -103,7 +103,7 @@ export class GoogleOAuth {
     };
     const api = await loadGoogleIdentity();
     assertCurrent();
-    const token = await new Promise<{ token: string; expiresIn: number }>((resolve, reject) => {
+    const token = await new Promise<{ token: string; expiresAt: number }>((resolve, reject) => {
       const client = api.oauth2.initTokenClient({
         client_id: this.clientId!, scope: TOKEN_SCOPE,
         callback: response => {
@@ -120,7 +120,8 @@ export class GoogleOAuth {
             reject(new GoogleAuthError('insufficient-scope', 'Both Google Drive permissions are required. Connect again and grant access to both requested permissions.'));
             return;
           }
-          resolve({ token: response.access_token, expiresIn: Math.max(0, Number(response.expires_in) || 0) });
+          const expiresIn = Math.max(0, Number(response.expires_in) || 0);
+          resolve({ token: response.access_token, expiresAt: Date.now() + expiresIn * 1000 });
         },
         error_callback: error => reject(new GoogleAuthError('unavailable', error.message || 'Google sign-in failed.'))
       });
@@ -128,7 +129,7 @@ export class GoogleOAuth {
       client.requestAccessToken({ prompt: 'select_account' });
     });
     assertCurrent();
-    if (token.expiresIn <= 15) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
+    if (Date.now() + 15_000 >= token.expiresAt) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
     const response = await fetch(`${DRIVE_API}/about?fields=user(permissionId,displayName,emailAddress)`, {
       headers: { Authorization: `Bearer ${token.token}` }
     });
@@ -137,8 +138,7 @@ export class GoogleOAuth {
     const data = await response.json() as { user?: { permissionId?: string; displayName?: string; emailAddress?: string } };
     assertCurrent();
     if (!data.user?.permissionId) throw new Error('Google did not return a stable Drive account identifier.');
-    const expiresAt = Date.now() + token.expiresIn * 1000;
-    if (Date.now() + 15_000 >= expiresAt) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
+    if (Date.now() + 15_000 >= token.expiresAt) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
     const account: GoogleAccount = {
       accountId: data.user.permissionId,
       ...(data.user.displayName ? { displayName: data.user.displayName } : {}),
@@ -146,7 +146,7 @@ export class GoogleOAuth {
     };
     // Publish the token and the account together only after this generation's /about result is valid.
     this.accessToken = token.token;
-    this.expiresAt = expiresAt;
+    this.expiresAt = token.expiresAt;
     this.account = account;
     return account;
   }

@@ -191,6 +191,41 @@ test('disconnect invalidates a pending /about result and allows only the newer a
   }
 });
 
+test('rejects an OAuth token whose safety window expires during a delayed /about lookup', async () => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const fetchOriginal = globalThis.fetch;
+  const dateNowOriginal = Date.now;
+  const callbacks: TokenCallback[] = [];
+  const accountLookup = deferred<Response>();
+  const accountLookupStarted = deferred<void>();
+  let currentTime = 1_000;
+  Date.now = () => currentTime;
+  installQueuedGoogle(callbacks);
+  globalThis.fetch = async (_input, init) => {
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer delayed-token');
+    accountLookupStarted.resolve();
+    return accountLookup.promise;
+  };
+  try {
+    const auth = new GoogleOAuth('public-client-id');
+    const connection = auth.connect();
+    await nextTurn();
+    callbacks[0]!({ access_token: 'delayed-token', expires_in: 20, scope: REQUIRED_SCOPE });
+    await accountLookupStarted.promise;
+    assert.equal(auth.currentAccount, undefined);
+
+    currentTime += 10_000;
+    accountLookup.resolve(new Response(JSON.stringify({ user: { permissionId: 'delayed-account' } }), { status: 200 }));
+    await assert.rejects(connection, error => error instanceof GoogleAuthError && error.code === 'expired');
+    assert.equal(auth.currentAccount, undefined);
+    assert.throws(() => auth.tokenForRequest(), error => error instanceof GoogleAuthError && error.code === 'expired');
+  } finally {
+    Date.now = dateNowOriginal;
+    globalThis.fetch = fetchOriginal;
+    restoreGlobal('window', windowDescriptor);
+  }
+});
+
 test('rejects a token that expires before account validation without publishing an account', async () => {
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const fetchOriginal = globalThis.fetch;
