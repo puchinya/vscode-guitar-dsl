@@ -295,8 +295,8 @@ async function verifyBrowser(browserType, origin, urls) {
     });
     const footerLinks = [
       'https://github.com/puchinya/vscode-guitar-dsl',
-      'https://guitardsl.app/licenses/',
-      'https://guitardsl.app/privacy/'
+      `${urls.appUrl}licenses/`,
+      `${urls.appUrl}privacy/`
     ];
     const evidenceDir = resolve(repoRoot, 'docs/status/evidence/issue-188/marketing-site');
     await mkdir(evidenceDir, { recursive: true });
@@ -319,7 +319,7 @@ async function verifyBrowser(browserType, origin, urls) {
       const canonical = await page.locator('link[rel=canonical]').getAttribute('href');
       assert.equal(canonical, `${urls.siteUrl}/${route === '/en/' ? 'en/' : ''}`);
       const footerHrefs = await page.locator('footer a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href')));
-      for (const expectedHref of footerLinks) assert.ok(footerHrefs.includes(expectedHref), `${browserType.name()} ${route} footer is missing ${expectedHref}`);
+      assert.deepEqual(footerHrefs, footerLinks, `${browserType.name()} ${route} footer must link to the matching app environment`);
 
       for (const viewport of [{ width: 1600, height: 900 }, { width: 390, height: 844 }]) {
         await page.setViewportSize(viewport);

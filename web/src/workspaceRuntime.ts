@@ -4962,9 +4962,9 @@ function openHelpMenu(): void {
     { label: t.help, run: openHelp },
     { label: t.menuSource, href: 'https://github.com/puchinya/vscode-guitar-dsl' },
     { label: '', separator: true },
-    { label: t.menuLicenses, href: 'https://guitardsl.app/licenses/' },
-    { label: t.menuPrivacy, href: 'https://guitardsl.app/privacy/' },
-    { label: t.menuTerms, href: 'https://guitardsl.app/terms/' },
+    { label: t.menuLicenses, href: '/licenses/' },
+    { label: t.menuPrivacy, href: '/privacy/' },
+    { label: t.menuTerms, href: '/terms/' },
     { label: '', separator: true },
     { label: t.menuAbout, run: () => { state.aboutOpen = true; publishWorkspaceSnapshot(); } }
   ], button);
