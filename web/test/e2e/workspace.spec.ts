@@ -314,6 +314,34 @@ test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({
   await expect(page.locator('.inspector')).toBeHidden();
 });
 
+test('Escape closes a mobile About dialog before the Tutorial drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await waitForWorkspaceReady(page);
+
+  await page.locator('#toggle-tutorial').click();
+  await expect(page.getByRole('heading', { name: 'Tutorial' })).toBeVisible();
+  const helpTrigger = page.locator('#menu-help-trigger');
+  await helpTrigger.click();
+  const helpMenu = page.locator('#help-menu');
+  await expect(helpMenu).toBeVisible();
+  await page.keyboard.press('End');
+  await expect(helpMenu.getByRole('menuitem', { name: 'About GuitarDSL' })).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  const about = page.getByRole('dialog', { name: 'About GuitarDSL' });
+  await expect(about).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tutorial' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(about).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Tutorial' })).toBeVisible();
+  await expect(helpTrigger).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'Tutorial' })).toBeHidden();
+  await expect(page.locator('#toggle-tutorial')).toBeFocused();
+});
+
 test('Connect from Welcome stays on the page without opening Picker or listing score files', async ({ page }) => {
   const drive = await installDriveBrowserMock(page, ['account-a'], { appDataState: null });
   const scoreListQueries: string[] = [];

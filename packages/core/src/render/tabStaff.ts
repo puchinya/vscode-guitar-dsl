@@ -87,7 +87,7 @@ export function renderTabStaff(
         ? undefined
         : beat.duration.parts.map(formatNoteValuePart).join('+');
       const part = normalizedPart ?? fallbackRhythmPart(beat.duration.parts);
-      const position: BeatPosition = { measureIndex: measure.measureIndex, localMeasure, beatIndex, globalIndex: globalIndex++, beat, offset: { ...offset }, x, measureEnd: bx + width - inset, part, durationLabel, stemX: x + maxFretMarkWidth(beat) / 2 + 2 };
+      const position: BeatPosition = { measureIndex: measure.measureIndex, localMeasure, beatIndex, globalIndex: globalIndex++, beat, offset: { ...offset }, x, measureEnd: bx + width - inset, part, durationLabel, stemX: x };
       offset = fadd(offset, beat.duration.beats);
       return position;
     });
@@ -114,9 +114,9 @@ export function renderTabStaff(
     for (const group of groups.values()) {
       if (group.length < 2) continue;
       group.forEach(entry => beamed.add(entry));
-      out += `<line class="tab-beam" x1="${fmt(group[0].stemX)}" y1="${fmt(top - 17)}" x2="${fmt(group[group.length - 1].stemX)}" y2="${fmt(top - 17)}" stroke="#000" stroke-width="2.6"/>`;
+      out += `<line class="tab-beam" data-measure-index="${measure.measureIndex}" data-first-beat="${group[0].beatIndex}" data-last-beat="${group[group.length - 1].beatIndex}" x1="${fmt(group[0].stemX)}" y1="${fmt(top - 17)}" x2="${fmt(group[group.length - 1].stemX)}" y2="${fmt(top - 17)}" stroke="#000" stroke-width="2.6"/>`;
       if (group.some(entry => entry.part.base >= 16)) {
-        out += `<line class="tab-beam-secondary" x1="${fmt(group[0].stemX)}" y1="${fmt(top - 13)}" x2="${fmt(group[group.length - 1].stemX)}" y2="${fmt(top - 13)}" stroke="#000" stroke-width="1.8"/>`;
+        out += `<line class="tab-beam-secondary" data-measure-index="${measure.measureIndex}" data-first-beat="${group[0].beatIndex}" data-last-beat="${group[group.length - 1].beatIndex}" x1="${fmt(group[0].stemX)}" y1="${fmt(top - 13)}" x2="${fmt(group[group.length - 1].stemX)}" y2="${fmt(top - 13)}" stroke="#000" stroke-width="1.8"/>`;
       }
     }
     for (const position of positions) {
@@ -125,10 +125,10 @@ export function renderTabStaff(
       const stemKind = position.part.base === 2 ? 'short' : 'full';
       if (position.part.base !== 1) {
         const markRight = position.x + maxFretMarkWidth(position.beat) / 2;
-        out += `<g class="tab-stem-${stemKind}"><line class="tab-stem" data-stem-kind="${stemKind}" x1="${fmt(position.stemX)}" data-mark-right="${fmt(markRight)}" y1="${fmt(top - 1)}" x2="${fmt(position.stemX)}" y2="${fmt(stemTop)}" stroke="#000" stroke-width="1.1"/></g>`;
+        out += `<g class="tab-stem-${stemKind}"><line class="tab-stem" data-stem-kind="${stemKind}" data-measure-index="${position.measureIndex}" data-beat-index="${position.beatIndex}" x1="${fmt(position.stemX)}" data-mark-right="${fmt(markRight)}" y1="${fmt(top - 1)}" x2="${fmt(position.stemX)}" y2="${fmt(stemTop)}" stroke="#000" stroke-width="1.1"/></g>`;
       }
       if (position.part.base >= 8 && !beamed.has(position)) {
-        out += renderFlags(position.part.base as NoteBase, position.stemX, top - 18);
+        out += `<g class="tab-rhythm-flag" data-measure-index="${position.measureIndex}" data-beat-index="${position.beatIndex}">${renderFlags(position.part.base as NoteBase, position.stemX, top - 18)}</g>`;
       }
       if (position.part.dotted) {
         const dotX = position.stemX + 2;
@@ -161,7 +161,7 @@ export function renderTabStaff(
       const label = note.dead ? 'x' : String(note.fret ?? 0);
       const labelWidth = estimateTextWidth(label, NUMBER_SIZE, true);
       out += `<rect class="tab-fret-mask" data-string="${note.string}" data-mark-width="${fmt(labelWidth)}" x="${fmt(position.x - (labelWidth + 3) / 2)}" y="${fmt(y - 1.8)}" width="${fmt(labelWidth + 3)}" height="3.6" fill="#fff"/>`;
-      out += `<text class="tab-fret" data-string="${note.string}"${visualBindingAttribute(bindingId)} x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="600" text-anchor="middle">${escapeXml(label)}</text>`;
+      out += `<text class="tab-fret" data-string="${note.string}" data-measure-index="${position.measureIndex}" data-beat-index="${position.beatIndex}"${visualBindingAttribute(bindingId)} x="${fmt(position.x)}" y="${fmt(y + 3.2)}" font-size="${NUMBER_SIZE}" font-weight="600" text-anchor="middle">${escapeXml(label)}</text>`;
       out += renderNoteEffects(note.effects, position, y, labelWidth);
     }
   }
@@ -183,13 +183,13 @@ function spreadCollisions(positions: BeatPosition[], min: number, max: number): 
     const beforeWidth = beatLabelWidth(before.beat);
     const currentWidth = beatLabelWidth(current.beat);
     current.x = Math.max(current.x, before.x + Math.max(9, (beforeWidth + currentWidth) / 2 + NUMBER_GAP));
-    current.stemX = current.x + maxFretMarkWidth(current.beat) / 2 + 2;
+    current.stemX = current.x;
   }
   if (positions.length === 0) return;
   const shift = Math.min(0, max - positions[positions.length - 1].x);
   positions.forEach(position => {
     position.x = Math.max(min, position.x + shift);
-    position.stemX = position.x + maxFretMarkWidth(position.beat) / 2 + 2;
+    position.stemX = position.x;
   });
 }
 

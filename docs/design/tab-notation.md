@@ -109,6 +109,8 @@ The fixed #89 profile is modern full six-string tablature: six equal-weight line
 
 Voice-1 rhythm sits above the TAB staff. Whole notes have no stem, half notes have a short stem, quarters have a normal stem, and eighth/sixteenth notes add flags or beams. TAB uses shared conventional rests and normal, double, final, and repeat barlines. Beat-scope P.M. and let-ring effects form continuous dashed spans across adjacent affected beats, with continuation labels across systems. Note-scope effects remain attached to their authored string and fret. This is a fixed score style; it is not a pixel clone of another editor or a selectable theme.
 
+Each beat position is the shared horizontal center for every fret mark in that beat and for its rhythm stem, flag origin, and beam endpoint. Multi-digit fret width contributes to spacing between adjacent beats, but never shifts its own rhythm anchor; collision spreading moves the fret marks and all associated rhythm anchors together.
+
 `src/render/svg.ts::renderScoreSheets()` and `renderContinuousSvg()` integrate the TAB helper using layout-owned geometry. Preview and PDF share page SVGs. `src/pdf.ts` stays a consumer of `renderScoreSheets()` and has no TAB-specific renderer or layout constants.
 
 ### Transform compatibility

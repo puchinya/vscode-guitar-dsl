@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { access, mkdir, readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from '@playwright/test';
 import { parseGuitarDsl } from '../packages/core/src/compiler.ts';
+import { renderContinuousSvg } from '../packages/core/src/render/svg.ts';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const distRoot = resolve(repoRoot, 'marketing/dist');
@@ -13,6 +15,11 @@ const targetMap = {
   production: { appUrl: 'https://guitardsl.app/', siteUrl: 'https://www.guitardsl.app' }
 };
 const fixtureNames = ['A_chord_lyrics', 'B_melody_lyrics', 'C_guitar_tab'];
+const tabVisualAcceptance = {
+  fixture: 'marketing/examples/C_guitar_tab.guitardsl',
+  capture: 'docs/status/evidence/issue-188/marketing-solo-guitar-tab-1600x900.png',
+  webp: 'marketing/public/images/solo-guitar-tab.webp'
+};
 const expectedChords = [['C', 'G'], ['Am', 'Em'], ['F', 'C'], ['Dm', 'G7']];
 const expectedLyrics = ['あさのそらに', 'ひかりがさす', 'まだみぬみち', 'かぜをこえて'];
 
@@ -31,6 +38,86 @@ function quarterBeats(noteValue) {
 
 function fraction(value) {
   return Number(value.n) / Number(value.d);
+}
+
+function svgAttributes(tag) {
+  return new Map([...tag.matchAll(/([\w-]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
+}
+
+function verifyTabRhythmAlignment(svg, score) {
+  const fretCenters = new Map();
+  const fretMarks = [...svg.matchAll(/<text class="tab-fret"[^>]*>/gu)];
+  const expectedFretCount = score.measures.reduce((sum, measure) => sum + (measure.tabVoices?.find(voice => voice.voice === 1)?.beats ?? [])
+    .reduce((beatSum, beat) => beatSum + beat.notes.length, 0), 0);
+  assert.equal(fretMarks.length, expectedFretCount, 'rendered fret labels differ from fixture note count');
+  for (const match of fretMarks) {
+    const attrs = svgAttributes(match[0]);
+    const key = `${attrs.get('data-measure-index')}:${attrs.get('data-beat-index')}`;
+    const centers = fretCenters.get(key) ?? [];
+    centers.push(Number(attrs.get('x')));
+    fretCenters.set(key, centers);
+  }
+
+  const assertAnchor = (measure, beat, x, kind) => {
+    const key = `${measure}:${beat}`;
+    const centers = fretCenters.get(key);
+    assert.ok(centers?.length, `${kind} refers to beat ${key} without fret labels`);
+    assert.ok(centers.every(center => Number.isFinite(center) && Math.abs(center - centers[0]) < 0.01), `simultaneous fret centers differ at beat ${key}`);
+    assert.ok(Number.isFinite(x) && Math.abs(x - centers[0]) < 0.01, `${kind} is not aligned with fret center at beat ${key}`);
+  };
+
+  const stems = [...svg.matchAll(/<line class="tab-stem"[^>]*>/gu)];
+  for (const match of stems) {
+    const attrs = svgAttributes(match[0]);
+    const measure = attrs.get('data-measure-index');
+    const beat = attrs.get('data-beat-index');
+    assertAnchor(measure, beat, Number(attrs.get('x1')), 'TAB stem');
+    assert.equal(attrs.get('x1'), attrs.get('x2'), `TAB stem is not vertical at beat ${measure}:${beat}`);
+  }
+  const flags = [...svg.matchAll(/<g class="tab-rhythm-flag"([^>]*)>([\s\S]*?)<\/g><\/g>/gu)];
+  for (const match of flags) {
+    const attrs = svgAttributes(match[1]);
+    const transform = match[2].match(/<g transform="translate\(([-\d.]+),/u);
+    assert.ok(transform, 'TAB flag anchor is missing');
+    assertAnchor(attrs.get('data-measure-index'), attrs.get('data-beat-index'), Number(transform[1]), 'TAB flag');
+  }
+  const beams = [...svg.matchAll(/<line class="tab-beam(?:-secondary)?"[^>]*>/gu)];
+  for (const match of beams) {
+    const attrs = svgAttributes(match[0]);
+    const measure = attrs.get('data-measure-index');
+    assertAnchor(measure, attrs.get('data-first-beat'), Number(attrs.get('x1')), 'TAB beam start');
+    assertAnchor(measure, attrs.get('data-last-beat'), Number(attrs.get('x2')), 'TAB beam end');
+  }
+  assert.ok(stems.length > 0, 'TAB fixture must render rhythmic stems');
+  assert.ok(beams.length > 0, 'TAB fixture must render beam endpoints');
+}
+
+async function verifyTabVisualAcceptance(tabScore) {
+  const manifestPath = resolve(repoRoot, 'docs/status/evidence/issue-188/tab-visual-acceptance.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  assert.equal(manifest.schemaVersion, 1, 'unsupported TAB visual acceptance manifest');
+  assert.equal(manifest.acceptance?.status, 'reviewed', 'TAB visual revision has not been reviewed');
+  assert.equal(manifest.acceptance?.reviewer, 'Codex', 'TAB visual reviewer is missing');
+  assert.equal(manifest.acceptance?.method, 'real-app-capture-and-svg-anchor-check', 'TAB visual acceptance method differs');
+  assert.equal(manifest.capture?.browser, 'Playwright Chromium 1.65.0', 'TAB capture browser provenance is missing');
+  assert.equal(manifest.capture?.viewportCssPixels, '1600x900', 'TAB capture viewport differs');
+  assert.equal(manifest.capture?.deviceScaleFactor, 1, 'TAB capture scale differs');
+  for (const [key, path] of Object.entries(tabVisualAcceptance)) {
+    assert.equal(manifest[key]?.path, path, `TAB visual acceptance ${key} path differs`);
+    const bytes = await readFile(resolve(repoRoot, path));
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    assert.match(manifest[key]?.sha256 ?? '', /^[a-f0-9]{64}$/u, `TAB visual acceptance ${key} SHA-256 is missing`);
+    assert.equal(digest, manifest[key].sha256, `TAB visual acceptance ${key} changed; review the new fixture/image revision and update the manifest`);
+    if (key === 'capture') {
+      assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], 'TAB source capture is not a PNG');
+      assert.equal(bytes.readUInt32BE(16), 1600, 'TAB source capture width changed');
+      assert.equal(bytes.readUInt32BE(20), 900, 'TAB source capture height changed');
+    }
+  }
+  const webpBytes = await readFile(resolve(repoRoot, tabVisualAcceptance.webp));
+  assert.equal(webpBytes.subarray(0, 4).toString('ascii'), 'RIFF', 'TAB image is not WebP');
+  assert.equal(webpBytes.subarray(8, 12).toString('ascii'), 'WEBP', 'TAB image is not WebP');
+  verifyTabRhythmAlignment(renderContinuousSvg(tabScore), tabScore);
 }
 
 function decodeHtmlText(value) {
@@ -112,6 +199,7 @@ async function verifyFixtures() {
       }
     }
   }
+  await verifyTabVisualAcceptance(tabScore);
   return parsed;
 }
 
@@ -157,6 +245,9 @@ async function verifyBuiltFiles(urls, parsed) {
     assert.equal(header.subarray(0, 4).toString('ascii'), 'RIFF', `${name}.webp is not a WebP asset`);
     assert.equal(header.subarray(8, 12).toString('ascii'), 'WEBP', `${name}.webp is not a WebP asset`);
   }
+  const publicTabImage = await readFile(resolve(repoRoot, tabVisualAcceptance.webp));
+  const builtTabImage = await readFile(resolve(distRoot, 'images/solo-guitar-tab.webp'));
+  assert.deepEqual(builtTabImage, publicTabImage, 'built TAB image differs from the revision-bound accepted source image');
 }
 
 function startStaticServer() {

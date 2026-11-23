@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "acceptance": {
+    "status": "reviewed",
+    "reviewer": "Codex",
+    "reviewedAt": "2026-11-23",
+    "method": "real-app-capture-and-svg-anchor-check"
+  },
+  "fixture": {
+    "path": "marketing/examples/C_guitar_tab.guitardsl",
+    "sha256": "b0d30c0d790296c453a821f2a04b5ab331195bbc49783e45b9070d0bcd3b8d8d"
+  },
+  "capture": {
+    "path": "docs/status/evidence/issue-188/marketing-solo-guitar-tab-1600x900.png",
+    "sha256": "9252c25319160ee21409418635270d5715a33d62d3c6d5ee56b4dfa5c6532722",
+    "browser": "Playwright Chromium 1.65.0",
+    "viewportCssPixels": "1600x900",
+    "deviceScaleFactor": 1,
+    "locale": "en-US",
+    "colorScheme": "light",
+    "source": "GuitarDSL Web local Vite app, C_guitar_tab.guitardsl, Source and Score split"
+  },
+  "webp": {
+    "path": "marketing/public/images/solo-guitar-tab.webp",
+    "sha256": "2a14d98f88e1612443053e41463fcb3f82da53b438de77c95c9424aaee94eb91",
+    "encoder": "cwebp 1.6.0 -q 82 -m 6"
+  }
+}

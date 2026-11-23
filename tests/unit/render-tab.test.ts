@@ -23,6 +23,45 @@ function staffGroupConnectors(svg: string): string[] {
     .map(match => match[1]);
 }
 
+function svgAttributes(tag: string): Map<string, string> {
+  return new Map([...tag.matchAll(/([\w-]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
+}
+
+function assertTabRhythmAnchors(svg: string): void {
+  const fretCenters = new Map<string, number[]>();
+  for (const match of svg.matchAll(/<text class="tab-fret"[^>]*>/gu)) {
+    const attrs = svgAttributes(match[0]);
+    const key = `${attrs.get('data-measure-index')}:${attrs.get('data-beat-index')}`;
+    const centers = fretCenters.get(key) ?? [];
+    centers.push(Number(attrs.get('x')));
+    fretCenters.set(key, centers);
+  }
+
+  const expectAnchor = (key: string, x: number, label: string): void => {
+    const centers = fretCenters.get(key);
+    assert.ok(centers?.length, `${label}: missing fret marks for beat ${key}`);
+    assert.ok(centers.every(center => Math.abs(center - centers[0]) < 0.01), `${label}: simultaneous frets are not centered at beat ${key}`);
+    assert.ok(Math.abs(x - centers[0]) < 0.01, `${label}: rhythm anchor is not centered at beat ${key}`);
+  };
+
+  for (const match of svg.matchAll(/<line class="tab-stem"[^>]*>/gu)) {
+    const attrs = svgAttributes(match[0]);
+    expectAnchor(`${attrs.get('data-measure-index')}:${attrs.get('data-beat-index')}`, Number(attrs.get('x1')), 'stem');
+  }
+  for (const match of svg.matchAll(/<g class="tab-rhythm-flag"([^>]*)>([\s\S]*?)<\/g><\/g>/gu)) {
+    const attrs = svgAttributes(match[1]);
+    const transform = match[2].match(/<g transform="translate\(([-\d.]+),/u);
+    assert.ok(transform, 'flag group has a translated rhythm anchor');
+    expectAnchor(`${attrs.get('data-measure-index')}:${attrs.get('data-beat-index')}`, Number(transform[1]), 'flag');
+  }
+  for (const match of svg.matchAll(/<line class="tab-beam(?:-secondary)?"[^>]*>/gu)) {
+    const attrs = svgAttributes(match[0]);
+    const measure = attrs.get('data-measure-index');
+    expectAnchor(`${measure}:${attrs.get('data-first-beat')}`, Number(attrs.get('x1')), 'beam start');
+    expectAnchor(`${measure}:${attrs.get('data-last-beat')}`, Number(attrs.get('x2')), 'beam end');
+  }
+}
+
 describe('TAB rendering and layout', () => {
   it('renders six string lines and authored fret values through the continuous SVG path', () => {
     const score = parseGuitarDsl('| C |\ntab: | [6f3,5f2,4f0,3f0,2f0,1f3]/1 |');
@@ -152,16 +191,16 @@ describe('TAB rendering and layout', () => {
     }
   });
 
-  it('draws line-break masks and places stems beyond measured multi-digit fret marks', () => {
-    const score = parseGuitarDsl('| C |\ntab: | 1f9/4 1f10/4 1f12/4 1f24/4 |');
+  it('draws line-break masks and centers stems on simultaneous multi-digit fret marks', () => {
+    const score = parseGuitarDsl('| C |\ntab: | [1f9,2f10]/4 [1f12,2f24]/4 1f12/4 1f24/4 |');
     const svg = renderContinuousSvg(score);
-    assert.strictEqual((svg.match(/class="tab-fret-mask"/g) ?? []).length, 4);
+    assert.strictEqual((svg.match(/class="tab-fret-mask"/g) ?? []).length, 6);
     assert.ok(!/class="tab-fret"[^>]*paint-order="stroke"/.test(svg));
     const marks = [...svg.matchAll(/<text class="tab-fret"[^>]*>(\d+)<\/text>/g)];
-    const stems = [...svg.matchAll(/<line class="tab-stem"[^>]*x1="([^"]+)"[^>]*data-mark-right="([^"]+)"/g)];
-    assert.deepStrictEqual(marks.map(match => match[1]), ['9', '10', '12', '24']);
+    const stems = [...svg.matchAll(/<line class="tab-stem"[^>]*>/g)];
+    assert.deepStrictEqual(marks.map(match => match[1]), ['9', '10', '12', '24', '12', '24']);
     assert.strictEqual(stems.length, 4);
-    assert.ok(stems.every(match => Number(match[1]) >= Number(match[2]) + 2));
+    assertTabRhythmAnchors(svg);
   });
 
   it('gives whole, half, quarter, eighth and sixteenth notes distinct rhythm marks', () => {
@@ -171,6 +210,7 @@ describe('TAB rendering and layout', () => {
     assert.strictEqual((svg.match(/class="tab-stem-full"/g) ?? []).length, 7);
     assert.strictEqual((svg.match(/class="tab-beam-secondary"/g) ?? []).length, 1);
     assert.strictEqual((svg.match(/class="tab-stem-short"/g) ?? []).length, 1, 'whole notes have no stem');
+    assertTabRhythmAnchors(svg);
   });
 
   it('keeps a dotted whole-note augmentation dot visible', () => {
@@ -193,7 +233,7 @@ describe('TAB rendering and layout', () => {
     const linked = renderContinuousSvg(parseGuitarDsl('| C |\ntab: | 3f10{hammer}~/2 3f10/2 |'));
     const sliding = renderContinuousSvg(parseGuitarDsl('| C |\ntab: | 3f10{slide}/2 3f12/2 |'));
     const marks = [...linked.matchAll(/<rect class="tab-fret-mask" data-string="3" data-mark-width="([\d.]+)"[^>]*width="[\d.]+"[^>]*\/>/g)];
-    const centers = [...linked.matchAll(/<text class="tab-fret" data-string="3" x="([\d.]+)"/g)].map(match => Number(match[1]));
+    const centers = [...linked.matchAll(/<text class="tab-fret" data-string="3"[^>]* x="([\d.]+)"/g)].map(match => Number(match[1]));
     assert.strictEqual(marks.length, 2);
     assert.strictEqual(centers.length, 2);
     const halfWidths = marks.map(match => Number(match[1]) / 2);

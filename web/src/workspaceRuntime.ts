@@ -5120,6 +5120,7 @@ app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', 
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing
     || workspace.clientWidth > 680 || !mobileDockOpen) return;
+  if (document.querySelector<HTMLDialogElement>('dialog[open]')) return;
   event.preventDefault();
   mobileDockOpen = false;
   applyWorkspaceLayout();
