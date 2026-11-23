@@ -6,6 +6,13 @@
 - **最終更新日**: 2026-11-23
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #168: Web Drive接続・フォルダー操作のアカウント分離
+
+- **状態**: 承認済みImplementation Contract comment `7100822517`（7,529 bytes、SHA-256 `caf2717d9fe62e5fc7b1dba58de4cb3e2c1eb5ab2c33142b077cb23c59fde5e3`）に基づく実装と最終検証が完了し、`feature/168-fix-web-google-drive-session` でPR作成準備中。Milestone #1、対象バージョン `0.1.0`。
+- **変更**: OAuth token/account候補をDrive `/about` 検証後に一括公開し、保留中の接続をsingle-flight化する。Drive接続試行・復元の世代と、フォルダー選択時に捕捉したaccount/Drive instance/appData desired stateを照合し、旧アカウントの遅延結果が新アカウントの設定・Explorer・タブへ適用されないようにする。アカウントごとのタブとIndexedDB下書きは保持する。
+- **検証状況**: Web unit 86/86、Playwright Chromium 141/141、Playwright WebKit 141/141、SafariDriver smoke 7/7、`npm run build:web`、typecheck、`check:help`、`check:ai`、`validate-docs --issue 168`、`git diff --check` はPASS。設定済み `verify_final`（`npm run compile`、`npm test`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`）も4段階すべて終了コード0。実Google OAuth/Drive、iOS/iPadOS Safari、実PDF保存、物理音声出力は未実施。
+- **文書オーナー**: `docs/specs/web-app.md`、`docs/design/web-app.md`、本ステータス。
+
 ## Issue #192: Web法的文書リンクの開発／本番環境分離
 
 - **問題**: Issue #188 / PR #190のWeb HelpメニューとWelcomeのライセンス・プライバシーポリシー・利用規約リンク、および紹介サイトのフッターのリンクが本番の `guitardsl.app` を固定参照し、開発サイトからも本番へ遷移していた。

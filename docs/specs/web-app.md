@@ -93,6 +93,7 @@ The numbered sections below define the Web application's normative behavior. The
 
 - Drive is optional. Users MUST be able to create, edit, save, and export local documents without signing in. The local root remains independent from the GuitarDSL Library.
 - Authentication uses the Google Identity Services browser token model. The access token is held in memory only. The requested scopes are exactly https://www.googleapis.com/auth/drive.file and https://www.googleapis.com/auth/drive.appdata; no full-Drive or metadata-wide scope is allowed. The app MUST verify both scopes before accepting the account or making Drive requests. Partial consent leaves the user disconnected or explicitly requiring reapproval.
+- An OAuth token and account are candidate values until Drive `/about` returns the stable account identifier and the token is still valid. Publish the validated token and account together only for the current connection generation. Concurrent connect requests share one authorization attempt, and disconnect invalidates any pending attempt so its later result cannot replace the current account.
 - A deployment supplies only a public Web OAuth client ID, a referrer-restricted Google API key, and its Google Cloud project number through Vite settings. No OAuth client secret is used in browser code.
 
 ### GuitarDSL Library root
@@ -124,7 +125,7 @@ The numbered sections below define the Web application's normative behavior. The
 - The root, each library folder, and each library score expose a context-menu item named Google Driveで開く / Open in Google Drive through both right-click and Shift+F10. Local documents do not expose it.
 - A folder opens https://drive.google.com/drive/folders/{encodeURIComponent(folderId)}. A file opens its verified HTTPS Drive-domain webViewLink when available, otherwise https://drive.google.com/open?id={encodeURIComponent(fileId)}. The URL is built from the clicked row's ID, never the active tab's ID.
 - Menu creation captures accountId, Drive generation, fileId, and item kind. The action revalidates this context before opening a new tab with noopener,noreferrer. An old menu after account switch is inert. If a popup is blocked, provide a direct clickable link; a null window.open result alone does not indicate failure. Opening a link does not modify source, undo history, tabs, selection, expansion, save state, or synchronization state. Explain that Drive access depends on the Google account selected in the new tab.
-- After any Picker, read, create, copy, rename, move, trash, conflict decision, or storage write, verify that the captured account, Drive API instance, generation, and target IDs still own the operation before applying a result. A result from an ended account session is discarded.
+- After any Picker, read, folder operation, create, copy, rename, move, trash, conflict decision, or storage write, verify that the captured account, Drive API instance, generation, and target IDs still own the operation before applying a result. A result from an ended account session is discarded. Switching accounts retains the previous account's open tabs and account-keyed drafts; stale folder or restore results MUST NOT alter the next account's settings, Explorer, tabs, or active document.
 
 ### Drive application state
 

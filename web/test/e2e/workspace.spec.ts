@@ -578,19 +578,22 @@ async function installDeferredClipboard(page: Page): Promise<void> {
 async function performAccountAction(page: Page, timeout = 5000): Promise<void> {
   const control = page.locator('#connect-drive');
   const state = await control.getAttribute('data-state');
+  const title = await control.getAttribute('title');
+  const hasSession = state === 'connected' || state === 'connecting' && title !== 'Connecting…' && title !== '接続中…';
   const dialogMessages: string[] = [];
   const handleDialog = async (dialog: Dialog) => {
     dialogMessages.push(dialog.message());
     await dialog.accept();
   };
-  if (state === 'connected') page.on('dialog', handleDialog);
-  const action = state === 'connected' ? 'Disconnect' : state === 'reauth' ? 'Reconnect Drive' : 'Connect to Google Drive';
+  if (hasSession) page.on('dialog', handleDialog);
+  const action = hasSession ? 'Disconnect' : state === 'reauth' ? 'Reconnect Drive' : 'Connect to Google Drive';
   try {
     await control.click();
     await page.getByRole('menuitem', { name: action, exact: true }).click();
-    await expect(control).toHaveAttribute('data-connected', String(state !== 'connected'), { timeout });
+    if (hasSession) await expect(control).toHaveAttribute('data-state', 'disconnected', { timeout });
+    else await expect(control).toHaveAttribute('data-connected', 'true', { timeout });
   } finally {
-    if (state === 'connected') page.off('dialog', handleDialog);
+    if (hasSession) page.off('dialog', handleDialog);
   }
   expect(dialogMessages.every(message => message.includes('Disconnect anyway?'))).toBe(true);
 }
@@ -641,6 +644,8 @@ interface DriveBrowserMockOptions {
   folders?: Record<string, string>;
   rootFolders?: Record<string, { id?: string; marked?: boolean } | null>;
   rootCreateUnknownOnce?: boolean;
+  holdRootCreate?: boolean;
+  holdAuthorization?: boolean;
   copyReadbackFailures?: number;
   driveFiles?: Array<{ id: string; name: string; version: string; modifiedTime: string; mimeType?: string; parents?: string[]; appProperties?: Record<string, string>; trashed?: boolean; webViewLink?: string }>;
   unauthorizedList?: boolean;
@@ -688,6 +693,8 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   fileReadStarted: Promise<void>;
   releaseFileRead(): void;
   get fileReadCount(): number;
+  rootCreateStarted: Promise<void>;
+  releaseRootCreate(): void;
   driveListStarted: Promise<void>;
   releaseDriveList(): void;
   armDriveListFailureAfterCurrentCount(): void;
@@ -717,7 +724,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   await page.addInitScript((config: {
     accounts: string[]; pickerSelection?: { id: string; name: string; mimeType?: string };
     pickerSelections?: Array<{ id: string; name: string; mimeType?: string }>;
-    holdPickerSelection?: boolean; grantedScopes: string;
+    holdPickerSelection?: boolean; holdAuthorization?: boolean; grantedScopes: string;
   }) => {
     let accounts = config.accounts;
     try {
@@ -728,15 +735,24 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       }
     } catch { /* use the configured account sequence */ }
     const tokens = [...accounts];
+    const target = window as Window & { __oauthRequestCount?: number; __releaseOAuth?: () => void };
+    let holdAuthorization = config.holdAuthorization ?? false;
     const google: Record<string, unknown> = {
       accounts: {
         oauth2: {
           initTokenClient: (tokenOptions: { callback: (result: { access_token: string; expires_in: number; scope: string }) => void }) => ({
-            requestAccessToken: () => tokenOptions.callback({
-              access_token: `test-token-${tokens.shift() ?? accounts.at(-1) ?? 'account-a'}`,
-              expires_in: 3600,
-              scope: config.grantedScopes
-            })
+            requestAccessToken: () => {
+              target.__oauthRequestCount = (target.__oauthRequestCount ?? 0) + 1;
+              const response = {
+                access_token: `test-token-${tokens.shift() ?? accounts.at(-1) ?? 'account-a'}`,
+                expires_in: 3600,
+                scope: config.grantedScopes
+              };
+              if (holdAuthorization) {
+                holdAuthorization = false;
+                target.__releaseOAuth = () => tokenOptions.callback(response);
+              } else tokenOptions.callback(response);
+            }
           }),
           hasGrantedAllScopes: (response: { scope: string }, ...scopes: string[]) => {
             const granted = new Set(response.scope.split(/\s+/u));
@@ -790,7 +806,8 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
     (window as unknown as { google: unknown }).google = google;
   }, {
     accounts: accountSequence, pickerSelection: options.pickerSelection, pickerSelections: options.pickerSelections,
-    holdPickerSelection: options.holdPickerSelection, grantedScopes: options.grantedScopes ?? REQUIRED_DRIVE_SCOPES
+    holdPickerSelection: options.holdPickerSelection, holdAuthorization: options.holdAuthorization,
+    grantedScopes: options.grantedScopes ?? REQUIRED_DRIVE_SCOPES
   });
   const patchCalls: { fileId: string; source: string }[] = [];
   const appDataPatchCalls: TestAppDataState[] = [];
@@ -818,6 +835,11 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
   const childFolderCreateParents: string[] = [];
   const scoreCreateBodies: string[] = [];
   let rootCreateUnknownOnce = options.rootCreateUnknownOnce ?? false;
+  let holdRootCreate = options.holdRootCreate ?? false;
+  let startRootCreate!: () => void;
+  const rootCreateStarted = new Promise<void>(resolve => { startRootCreate = resolve; });
+  let releaseRootCreate!: () => void;
+  const rootCreateGate = new Promise<void>(resolve => { releaseRootCreate = resolve; });
   let copyReadbackFailures = options.copyReadbackFailures ?? 0;
   let holdDriveListAfterCount = options.holdDriveListAfterCount ?? 0;
   let unauthorizedListAfterCount = options.unauthorizedListAfterCount ?? 0;
@@ -896,6 +918,11 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
         if (request.method() === 'POST') {
           const body = request.postDataJSON() as { name?: string; mimeType?: string; parents?: string[]; appProperties?: Record<string, string> };
           const isLibraryRoot = body.name === 'GuitarDSL' && body.parents === undefined;
+          if (isLibraryRoot && holdRootCreate) {
+            holdRootCreate = false;
+            startRootCreate();
+            await rootCreateGate;
+          }
           const id = isLibraryRoot ? `folder-${accountId}` : `drive-folder-${crypto.randomUUID()}`;
           const created = { id, name: body.name ?? 'New folder', mimeType: body.mimeType ?? 'application/vnd.google-apps.folder',
             parents: isLibraryRoot ? [myDriveRootId(accountId)] : body.parents ?? [],
@@ -1158,6 +1185,7 @@ async function installDriveBrowserMock(page: Page, accountSequence: string[], op
       if (child) child.trashed = true;
     },
     fileReadStarted, releaseFileRead, get fileReadCount() { return fileReadCount; },
+    rootCreateStarted, releaseRootCreate,
     driveListStarted, releaseDriveList,
     armDriveListFailureAfterCurrentCount() {
       holdDriveListAfterCount = driveFileListCount;
@@ -2895,6 +2923,68 @@ test('keeps a partial Google consent disconnected when account lookup would succ
   await page.getByRole('menuitem', { name: 'Connect to Google Drive' }).click();
   await expect(connect).toHaveAttribute('data-connected', 'false');
   await expect(page.locator('#app-message')).toContainText('Both Google Drive permissions are required');
+});
+
+test('keeps one pending OAuth request and disables the Connect control', async ({ page }) => {
+  await installDriveBrowserMock(page, ['account-a'], { holdAuthorization: true });
+  await page.goto('/');
+  const connect = page.locator('#connect-drive');
+  await connect.click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+
+  await expect(connect).toHaveAttribute('data-state', 'connecting');
+  await expect(connect).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __oauthRequestCount?: number }).__oauthRequestCount)).toBe(1);
+  await page.evaluate(async () => {
+    const { workspaceRuntimeController } = await import('/src/workspaceRuntime.ts');
+    await Promise.all([
+      workspaceRuntimeController.dispatch({ type: 'drive.connect' }),
+      workspaceRuntimeController.dispatch({ type: 'drive.connect' })
+    ]);
+  });
+  expect(await page.evaluate(() => (window as Window & { __oauthRequestCount?: number }).__oauthRequestCount)).toBe(1);
+
+  await page.evaluate(() => (window as Window & { __releaseOAuth?: () => void }).__releaseOAuth?.());
+  await expect(connect).toHaveAttribute('data-connected', 'true');
+  expect(await page.evaluate(() => (window as Window & { __oauthRequestCount?: number }).__oauthRequestCount)).toBe(1);
+});
+
+test('does not commit a delayed library-root creation into the next account', async ({ page }) => {
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-b'], activeDriveFileId: 'drive-b', recentDriveFileIds: ['drive-b']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-b'], {
+    appDataState: null,
+    appDataStates: { 'account-a': null, 'account-b': accountBState },
+    rootFolders: { 'account-a': null, 'account-b': { id: 'folder-account-b' } },
+    holdRootCreate: true,
+    driveFiles: [{ id: 'drive-b', name: 'Account B song.guitardsl', version: '1', modifiedTime: 't1',
+      mimeType: 'text/plain', parents: ['folder-account-b'] }],
+    remoteFiles: { 'drive-b': { name: 'Account B song.guitardsl', source: 'title: Account B song\n', version: '1' } }
+  });
+  await page.goto('/');
+  const connect = page.locator('#connect-drive');
+  await connect.click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Create library', exact: true }).click();
+  await drive.rootCreateStarted;
+
+  await expect(connect).toHaveAttribute('data-state', 'connecting');
+  await expect(connect).toBeEnabled();
+  await performAccountAction(page);
+  await expect(connect).toHaveAttribute('data-connected', 'false');
+  await performAccountAction(page);
+  await expect(connect).toHaveAttribute('data-connected', 'true');
+  await page.locator('#storage-drive').click();
+  await expect(page.locator('#drive-file-items .file-item[data-file-id="drive-b"]')).toBeVisible();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('title', 'account-b@example.test');
+
+  drive.releaseRootCreate();
+  await expect.poll(() => drive.getAppDataState('account-b')?.selectedFolderId).toBe('folder-account-b');
+  await expect.poll(() => drive.getAppDataState('account-a')?.selectedFolderId ?? null).toBe(null);
+  await expect(page.locator('#drive-file-items .file-item[data-file-id="drive-b"]')).toBeVisible();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('title', 'account-b@example.test');
 });
 
 test('ignores a delayed Drive list failure from the previous account and keeps the current account state', async ({ page }) => {
@@ -5403,6 +5493,100 @@ test('drops a Drive read that finishes after switching accounts', async ({ page 
   expect(cached.accountB).toBeUndefined();
   expect(cached.accountBDraft).toBeUndefined();
   expect(cached.accountBFiles).toEqual([]);
+});
+
+test('ignores a delayed IndexedDB draft read from account A during account B restore', async ({ page }) => {
+  const accountAFirstState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-a-open'], activeDriveFileId: 'drive-a-open', recentDriveFileIds: ['drive-a-open']
+  };
+  const accountASecondState: TestAppDataState = {
+    ...accountAFirstState,
+    openDriveFileIds: ['drive-a-open', 'drive-a-delayed'], recentDriveFileIds: ['drive-a-open', 'drive-a-delayed']
+  };
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-b'], activeDriveFileId: 'drive-b', recentDriveFileIds: ['drive-b']
+  };
+  const aOpenDraft = 'title: Account A open draft\n';
+  const aDelayedDraft = 'title: Account A delayed draft\n';
+  const bDraft = 'title: Account B draft\n';
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-a', 'account-b'], {
+    appDataStates: { 'account-a': accountAFirstState, 'account-b': accountBState },
+    driveFiles: [
+      { id: 'drive-a-open', name: 'Account A open.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a'] },
+      { id: 'drive-a-delayed', name: 'Account A delayed.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a'] },
+      { id: 'drive-b', name: 'Account B song.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-b'] }
+    ],
+    remoteFiles: {
+      'drive-a-open': { name: 'Account A open.guitardsl', source: 'title: Account A open\n', version: '1' },
+      'drive-a-delayed': { name: 'Account A delayed.guitardsl', source: 'title: Account A delayed\n', version: '1' },
+      'drive-b': { name: 'Account B song.guitardsl', source: 'title: Account B song\n', version: '1' }
+    }
+  });
+  await page.goto('/');
+  await seedDriveSessions(page, [
+    { accountId: 'account-a', fileId: 'drive-a-open', name: 'Account A open.guitardsl', source: 'title: Account A open\n', draftSource: aOpenDraft },
+    { accountId: 'account-a', fileId: 'drive-a-delayed', name: 'Account A delayed.guitardsl', source: 'title: Account A delayed\n', draftSource: aDelayedDraft },
+    { accountId: 'account-b', fileId: 'drive-b', name: 'Account B song.guitardsl', source: 'title: Account B song\n', draftSource: bDraft }
+  ], { appDataStates: { 'account-a': accountAFirstState, 'account-b': accountBState } });
+  await performAccountAction(page);
+  await expect(page.getByRole('tab', { name: 'Account A open.guitardsl' })).toBeVisible();
+  await expectEditorSource(page, aOpenDraft);
+
+  await performAccountAction(page);
+  drive.setAppDataState('account-a', accountASecondState);
+  await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    const target = window as Window & { __accountADraftReadStarted?: boolean; __releaseAccountADraftRead?: () => void };
+    const originalGetDraft = indexedDb.getDraft.bind(indexedDb);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__releaseAccountADraftRead = release;
+    indexedDb.getDraft = async (identity, accountId) => {
+      if (accountId === 'account-a' && identity.fileId === 'drive-a-delayed') {
+        target.__accountADraftReadStarted = true;
+        await gate;
+        target.__accountADraftReadStarted = false;
+      }
+      return originalGetDraft(identity, accountId);
+    };
+  });
+
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  await expect(page.locator('#connect-drive')).toHaveAttribute('data-state', 'connecting');
+  await expect.poll(() => page.evaluate(() => (window as Window & { __accountADraftReadStarted?: boolean }).__accountADraftReadStarted)).toBe(true);
+  await expect(page.getByRole('tab', { name: 'Account A open.guitardsl' })).toBeVisible();
+  await performAccountAction(page);
+  await performAccountAction(page);
+  await expect(page.locator('#drive-file-items .file-item[data-file-id="drive-b"]')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account B song.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account A open.guitardsl' })).toBeVisible();
+  await expectEditorSource(page, bDraft);
+
+  await page.evaluate(() => (window as Window & { __releaseAccountADraftRead?: () => void }).__releaseAccountADraftRead?.());
+  await expect.poll(() => page.evaluate(() => (window as Window & { __accountADraftReadStarted?: boolean }).__accountADraftReadStarted)).toBe(false);
+  await expect(page.locator('#drive-file-items .file-item[data-file-id="drive-b"]')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account B song.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account A open.guitardsl' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Account A delayed.guitardsl' })).toHaveCount(0);
+  await expectEditorSource(page, bDraft);
+
+  const drafts = await page.evaluate(async () => {
+    const { indexedDb } = await import('/src/storage/indexedDb.ts');
+    return {
+      aOpen: await indexedDb.getDraft({ storage: 'drive', fileId: 'drive-a-open' }, 'account-a'),
+      aDelayed: await indexedDb.getDraft({ storage: 'drive', fileId: 'drive-a-delayed' }, 'account-a'),
+      aDelayedUnderB: await indexedDb.getDraft({ storage: 'drive', fileId: 'drive-a-delayed' }, 'account-b'),
+      b: await indexedDb.getDraft({ storage: 'drive', fileId: 'drive-b' }, 'account-b')
+    };
+  });
+  expect(drafts.aOpen).toMatchObject({ source: aOpenDraft, revision: 1 });
+  expect(drafts.aDelayed).toMatchObject({ source: aDelayedDraft, revision: 1 });
+  expect(drafts.aDelayedUnderB).toBeUndefined();
+  expect(drafts.b).toMatchObject({ source: bDraft, revision: 1 });
+  expect(drive.getAppDataState('account-b')).toEqual(accountBState);
 });
 
 test('drops a Picker result returned after switching accounts without reading or caching it', async ({ page }) => {

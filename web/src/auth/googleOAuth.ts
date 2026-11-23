@@ -75,14 +75,34 @@ export class GoogleOAuth {
   private accessToken: string | undefined;
   private expiresAt = 0;
   private account: GoogleAccount | undefined;
+  private generation = 0;
+  private connectPromise: Promise<GoogleAccount> | undefined;
 
   constructor(private readonly clientId = VITE_ENV.VITE_GOOGLE_CLIENT_ID) {}
 
   get currentAccount(): GoogleAccount | undefined { return this.account; }
 
-  async connect(): Promise<GoogleAccount> {
-    if (!this.clientId) throw new GoogleAuthError('not-configured', 'Google Drive is not configured for this deployment.');
+  connect(): Promise<GoogleAccount> {
+    if (!this.clientId) return Promise.reject(new GoogleAuthError('not-configured', 'Google Drive is not configured for this deployment.'));
+    if (this.connectPromise) return this.connectPromise;
+    const generation = ++this.generation;
+    const pending = this.connectCandidate(generation);
+    let shared: Promise<GoogleAccount>;
+    shared = pending.finally(() => {
+      if (this.connectPromise === shared) this.connectPromise = undefined;
+    });
+    this.connectPromise = shared;
+    return shared;
+  }
+
+  private async connectCandidate(generation: number): Promise<GoogleAccount> {
+    const assertCurrent = (): void => {
+      if (this.generation !== generation) {
+        throw new GoogleAuthError('cancelled', 'Google Drive connection was cancelled.');
+      }
+    };
     const api = await loadGoogleIdentity();
+    assertCurrent();
     const token = await new Promise<{ token: string; expiresIn: number }>((resolve, reject) => {
       const client = api.oauth2.initTokenClient({
         client_id: this.clientId!, scope: TOKEN_SCOPE,
@@ -97,9 +117,6 @@ export class GoogleOAuth {
           const grantedByToken = requiredScopes.every(scope => grantedScopes.has(scope));
           const grantedByIdentity = api.oauth2.hasGrantedAllScopes?.(response, ...requiredScopes) ?? true;
           if (!grantedByToken || !grantedByIdentity) {
-            this.accessToken = undefined;
-            this.expiresAt = 0;
-            this.account = undefined;
             reject(new GoogleAuthError('insufficient-scope', 'Both Google Drive permissions are required. Connect again and grant access to both requested permissions.'));
             return;
           }
@@ -110,31 +127,35 @@ export class GoogleOAuth {
       // Requiring account selection keeps a reconnect from silently changing the active Drive identity.
       client.requestAccessToken({ prompt: 'select_account' });
     });
+    assertCurrent();
+    if (token.expiresIn <= 15) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
+    const response = await fetch(`${DRIVE_API}/about?fields=user(permissionId,displayName,emailAddress)`, {
+      headers: { Authorization: `Bearer ${token.token}` }
+    });
+    assertCurrent();
+    if (!response.ok) throw new Error(`Drive account lookup failed (${response.status}).`);
+    const data = await response.json() as { user?: { permissionId?: string; displayName?: string; emailAddress?: string } };
+    assertCurrent();
+    if (!data.user?.permissionId) throw new Error('Google did not return a stable Drive account identifier.');
+    const expiresAt = Date.now() + token.expiresIn * 1000;
+    if (Date.now() + 15_000 >= expiresAt) throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
+    const account: GoogleAccount = {
+      accountId: data.user.permissionId,
+      ...(data.user.displayName ? { displayName: data.user.displayName } : {}),
+      ...(data.user.emailAddress ? { emailAddress: data.user.emailAddress } : {})
+    };
+    // Publish the token and the account together only after this generation's /about result is valid.
     this.accessToken = token.token;
-    this.expiresAt = Date.now() + token.expiresIn * 1000;
-    try {
-      const response = await fetch(`${DRIVE_API}/about?fields=user(permissionId,displayName,emailAddress)`, {
-        headers: { Authorization: `Bearer ${token.token}` }
-      });
-      if (!response.ok) throw new Error(`Drive account lookup failed (${response.status}).`);
-      const data = await response.json() as { user?: { permissionId?: string; displayName?: string; emailAddress?: string } };
-      if (!data.user?.permissionId) throw new Error('Google did not return a stable Drive account identifier.');
-      this.account = {
-        accountId: data.user.permissionId,
-        ...(data.user.displayName ? { displayName: data.user.displayName } : {}),
-        ...(data.user.emailAddress ? { emailAddress: data.user.emailAddress } : {})
-      };
-      return this.account;
-    } catch (error) {
-      this.accessToken = undefined;
-      this.account = undefined;
-      throw error;
-    }
+    this.expiresAt = expiresAt;
+    this.account = account;
+    return account;
   }
 
   tokenForRequest(): string {
     if (!this.accessToken || Date.now() + 15_000 >= this.expiresAt) {
       this.accessToken = undefined;
+      this.expiresAt = 0;
+      this.account = undefined;
       throw new GoogleAuthError('expired', 'Reconnect Google Drive to continue.');
     }
     return this.accessToken;
@@ -142,6 +163,8 @@ export class GoogleOAuth {
 
   async disconnect(): Promise<void> {
     const token = this.accessToken;
+    this.generation += 1;
+    this.connectPromise = undefined;
     this.accessToken = undefined;
     this.expiresAt = 0;
     this.account = undefined;
