@@ -116,6 +116,12 @@ export const en = {
     tutorial: 'Start Tutorial',
     storage: 'Storage',
     storageText: 'Scores and drafts are saved on this device. Google Drive is optional and connects only when you choose to use it.',
+    links: 'Links',
+    help: 'Help',
+    terms: 'Terms of Service',
+    licenses: 'Licenses (MIT/OSS)',
+    privacy: 'Privacy Policy',
+    source: 'Source code (GitHub)',
     suppress: 'Do not show this page again',
     storageError: 'Could not save this preference. Your previous setting is still active.'
   },

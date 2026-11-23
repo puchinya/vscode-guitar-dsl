@@ -16,12 +16,13 @@ The first-run Welcome and the right-dock Tutorial captures are 1600×950 Chromiu
 - [Welcome, Japanese mobile](welcome-ja-mobile.png)
 - [Tutorial, Japanese mobile](tutorial-ja-mobile.png)
 
-### Welcome layout after PR review — 2026-11-23
+### Welcome link list restored after PR review — 2026-11-23
 
-The one-column Welcome was recaptured from the local app based on PR #190 HEAD `a3ab2e1e35a82fb23f983c7fa894ab66e1a237bb`, with the current uncommitted review fixes. The English desktop capture uses Chromium at 1600×950 CSS pixels; the Japanese mobile capture uses WebKit at 390×844 CSS pixels (780×1688 device pixels). Both were visually inspected. The mobile document width is 390px for a 390px viewport. These captures show the flat layout, three unboxed icon-and-text actions, storage note, and suppression checkbox; the marketing score image and TAB renderer were not changed.
+The English desktop and Japanese mobile Welcome captures were refreshed from the local app after restoring the five-item right-side Links list required by Issue #188 §2.1.1.2. The English capture uses Chromium at 1600×950 CSS pixels. The two Japanese mobile captures use WebKit at 390×844 CSS pixels (780×1688 device pixels): the first shows the page top, and the scrolled view shows the Links list and suppression checkbox. The desktop view shows both unboxed columns; mobile stacks Links after Start and Storage. Both layouts stay within the viewport. The marketing score image and TAB renderer were not changed.
 
 - [Updated Welcome, English desktop / Chromium](welcome-en-chromium.png)
 - [Updated Welcome, Japanese mobile / WebKit](welcome-ja-mobile.png)
+- [Updated Welcome, Japanese mobile Links / WebKit](welcome-ja-mobile-links.png)
 
 ## Product introduction score captures
 

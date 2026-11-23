@@ -54,6 +54,31 @@ async function readEditorSource(page: Page): Promise<string> {
   return page.evaluate(() => (window as Window & { __guitarDslReadSource?: () => string }).__guitarDslReadSource?.() ?? '');
 }
 
+async function assertWelcomeLinks(page: Page, locale: 'en' | 'ja') {
+  const labels = locale === 'en'
+    ? ['Help', 'Terms of Service', 'Licenses (MIT/OSS)', 'Privacy Policy', 'Source code (GitHub)']
+    : ['ヘルプ', '利用規約', 'ライセンス（MIT/OSS）', 'プライバシーポリシー', 'ソースコード（GitHub）'];
+  const links = page.getByRole('navigation', { name: locale === 'en' ? 'Links' : 'リンク', exact: true });
+  await expect(links).toBeVisible();
+  await expect(links.locator('li')).toHaveCount(5);
+  await expect(links.locator('li')).toHaveText(labels);
+  await expect(links.getByRole('button')).toHaveCount(1);
+  await expect(links.getByRole('link')).toHaveCount(4);
+  const language = locale;
+  const targets = await links.locator('a').evaluateAll(anchors => anchors.map(anchor => ({
+    href: anchor.getAttribute('href'),
+    target: anchor.getAttribute('target'),
+    rel: anchor.getAttribute('rel')
+  })));
+  expect(targets).toEqual([
+    { href: `https://guitardsl.app/terms/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `https://guitardsl.app/licenses/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `https://guitardsl.app/privacy/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' }
+  ]);
+  return links;
+}
+
 test('shows and persists the non-document Welcome tab without mutating the restored score', async ({ page }, testInfo) => {
   const googleRequests: string[] = [];
   page.on('request', request => { if (/googleapis\.com|accounts\.google\.com/.test(request.url())) googleRequests.push(request.url()); });
@@ -66,7 +91,19 @@ test('shows and persists the non-document Welcome tab without mutating the resto
   await expect(page.locator('.welcome-actions button')).toHaveCount(3);
   await expect(page.locator('.welcome-page > .welcome-content > .welcome-hero')).toBeVisible();
   await expect(page.locator('.welcome-page .welcome-footer')).toBeVisible();
-  await expect(page.locator('.welcome-about, .welcome-links, .welcome-eyebrow, .welcome-grid')).toHaveCount(0);
+  await expect(page.locator('.welcome-about, .welcome-eyebrow, .welcome-grid, .welcome-divider')).toHaveCount(0);
+  const welcomeLinks = await assertWelcomeLinks(page, 'en');
+  await expect(page.locator('.welcome-columns')).toHaveCSS('display', 'grid');
+  const flatSurfaceStyles = await page.locator('.welcome-columns, .welcome-start-column, .welcome-links, .welcome-links button, .welcome-links a').evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element);
+    return { borderWidth: style.borderWidth, borderRadius: style.borderRadius, background: style.backgroundColor, boxShadow: style.boxShadow };
+  }));
+  for (const style of flatSurfaceStyles) {
+    expect(style.borderWidth).toBe('0px');
+    expect(style.borderRadius).toBe('0px');
+    expect(style.background).toBe('rgba(0, 0, 0, 0)');
+    expect(style.boxShadow).toBe('none');
+  }
   await expect(page.getByRole('button', { name: 'Create New Score' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect and Use Google Drive' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start Tutorial' })).toBeVisible();
@@ -97,12 +134,24 @@ test('shows and persists the non-document Welcome tab without mutating the resto
     await expect(keyboardFocusedAction).toBeFocused();
     const focusOutline = await keyboardFocusedAction.evaluate(element => ({ style: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth }));
     expect(focusOutline).toEqual({ style: 'solid', width: '2px' });
+    await page.getByRole('button', { name: 'Start Tutorial' }).focus();
+    await page.keyboard.press('Tab');
+    const helpLink = welcomeLinks.getByRole('button', { name: 'Help', exact: true });
+    await expect(helpLink).toBeFocused();
+    const helpFocusOutline = await helpLink.evaluate(element => ({ style: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth }));
+    expect(helpFocusOutline).toEqual({ style: 'solid', width: '2px' });
+    await page.keyboard.press('Tab');
+    const termsLink = welcomeLinks.getByRole('link', { name: 'Terms of Service', exact: true });
+    await expect(termsLink).toBeFocused();
+    const termsFocusOutline = await termsLink.evaluate(element => ({ style: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth }));
+    expect(termsFocusOutline).toEqual({ style: 'solid', width: '2px' });
   } else {
     // WebKit follows the host's macOS setting for tabbing through buttons. Verify focus styling
     // in Chromium/Firefox and retain WebKit's layout/state checks without assuming that setting.
     await keyboardFocusedAction.focus();
     await expect(keyboardFocusedAction).toBeFocused();
   }
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.screenshot({ path: testInfo.outputPath('welcome-en.png'), fullPage: true });
   await page.context().setOffline(true);
   await expect(page.getByRole('region', { name: 'Welcome to GuitarDSL' }).getByText('Google Drive is unavailable offline', { exact: true })).toBeVisible();
@@ -144,6 +193,8 @@ test('renders the flat Welcome in both locales and themes without narrow-screen 
   for (const locale of ['en', 'ja'] as const) {
     await chooseSetting(locale === 'en' ? 'Language: English' : 'Language: 日本語');
     await expect(page.locator('html')).toHaveAttribute('lang', locale);
+      await assertWelcomeLinks(page, locale);
+      await expect(page.locator('.welcome-columns')).toHaveCSS('display', 'grid');
     for (const theme of ['light', 'dark'] as const) {
       const themeLabel = locale === 'en'
         ? (theme === 'light' ? 'Theme: Light' : 'Theme: Dark')
@@ -175,6 +226,25 @@ test('Welcome create and tutorial actions dispatch their existing commands', asy
   await expect(page.getByRole('heading', { name: 'Prepare a score' })).toBeVisible();
 });
 
+test('Welcome Links open the existing Help flow and preserve the active locale in legal URLs', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.goto('/?welcome=1');
+  const englishLinks = await assertWelcomeLinks(page, 'en');
+  const source = await readEditorSource(page);
+  const popupPromise = page.waitForEvent('popup');
+  await englishLinks.getByRole('button', { name: 'Help', exact: true }).click();
+  const helpWindow = await popupPromise;
+  await expect(helpWindow.locator('h1')).toContainText('GuitarDSL Help');
+  await expect(helpWindow.locator('nav a')).toHaveCount(5);
+  expect(await readEditorSource(page)).toBe(source);
+  await helpWindow.close();
+
+  await page.locator('#settings-button').click();
+  await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+  await assertWelcomeLinks(page, 'ja');
+});
+
 test('defaults Welcome to visible when its stored preference has an invalid value', async ({ page }) => {
   await page.goto('/?welcome=invalid');
   await expect(page.getByRole('tab', { name: 'Welcome', exact: true })).toHaveAttribute('aria-selected', 'true');
@@ -194,9 +264,22 @@ test('keeps Japanese Welcome and Tutorial usable at a mobile viewport', async ({
   await page.getByRole('menuitemradio', { name: 'Language: 日本語', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
   await expect(page.locator('.welcome-hero')).toBeVisible();
-  await expect(page.locator('.welcome-about, .welcome-links')).toHaveCount(0);
+  const welcomeLinks = await assertWelcomeLinks(page, 'ja');
+  await expect(page.locator('.welcome-columns')).toHaveCSS('display', 'block');
+  const mobileFlow = await page.evaluate(() => {
+    const storage = document.querySelector('.welcome-storage')!.getBoundingClientRect();
+    const links = document.querySelector('.welcome-links')!.getBoundingClientRect();
+    const footer = document.querySelector('.welcome-footer')!.getBoundingClientRect();
+    return { storageBottom: storage.bottom, linksTop: links.top, linksBottom: links.bottom, footerTop: footer.top };
+  });
+  expect(mobileFlow.linksTop).toBeGreaterThanOrEqual(mobileFlow.storageBottom);
+  expect(mobileFlow.footerTop).toBeGreaterThanOrEqual(mobileFlow.linksBottom);
+  await expect(welcomeLinks.getByRole('link').first()).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('welcome-ja-mobile.png') });
+  await welcomeLinks.scrollIntoViewIfNeeded();
+  await page.locator('.welcome-page').evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await page.screenshot({ path: testInfo.outputPath('welcome-ja-mobile-links.png') });
 
   await page.evaluate(async () => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
@@ -345,6 +428,7 @@ test('copies tutorial examples with the exact source grouping and blank lines', 
   await page.locator('#menu-help-trigger').click();
   await page.getByRole('menuitem', { name: 'Tutorial', exact: true }).click();
   for (let index = 0; index < 3; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 4 of 10')).toBeVisible();
 
   const chordFixture = (await readFile(new URL('../../../docs/tutorials/momiji-4-4-no-melody.guitardsl', import.meta.url), 'utf8')).replace(/\r\n?/gu, '\n');
   const chordGroups = chordFixture.split('\n\n[Verse 1]\n')[1]!.trimEnd().split('\n\n');
@@ -354,6 +438,7 @@ test('copies tutorial examples with the exact source grouping and blank lines', 
   await expect.poll(() => page.evaluate(() => (window as Window & { __tutorialClipboardText?: string }).__tutorialClipboardText)).toBe(expectedChordExample);
 
   for (let index = 0; index < 4; index++) await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByText('Step 8 of 10')).toBeVisible();
   const melodyFixture = (await readFile(new URL('../../../docs/tutorials/momiji-4-4-with-melody.guitardsl', import.meta.url), 'utf8')).replace(/\r\n?/gu, '\n');
   const [metadata, verse = ''] = melodyFixture.split('\n\n[Verse 1]\n');
   const melodyGroups = verse.trimEnd().split('\n\n');

@@ -118,6 +118,12 @@ export const ja = {
     tutorial: 'チュートリアルを開始',
     storage: '保存について',
     storageText: '楽譜と下書きはこの端末に保存されます。Google Drive は任意で、利用を選んだときだけ接続します。',
+    links: 'リンク',
+    help: 'ヘルプ',
+    terms: '利用規約',
+    licenses: 'ライセンス（MIT/OSS）',
+    privacy: 'プライバシーポリシー',
+    source: 'ソースコード（GitHub）',
     suppress: '次回からこの画面を表示しない',
     storageError: '設定を保存できませんでした。変更前の設定を維持しています。'
   },

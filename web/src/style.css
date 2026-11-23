@@ -643,12 +643,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .tabs.tabs-empty { background: transparent; }
 
 /* Issue #188: flat editor-embedded Welcome and the existing right-dock Tutorial. */
-.welcome-page { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; }
-.welcome-content { width: min(820px, 100%); margin: 0 auto; padding: clamp(20px, 3vw, 34px); }
+.welcome-page { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; container-name: welcome-pane; container-type: inline-size; }
+.welcome-content { box-sizing: border-box; width: min(980px, 100%); margin: 0 auto; padding: clamp(20px, 3vw, 34px); }
 .welcome-hero { margin: 4px 0 26px; }
 .welcome-hero h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; }
 .welcome-subtitle, .welcome-storage p { max-width: 68ch; margin: 0; color: #596273; line-height: 1.6; }
 .welcome-start h2, .welcome-storage h2 { margin: 0 0 9px; font-size: 14px; }
+.welcome-columns { min-width: 0; }
+.welcome-start-column, .welcome-links { min-width: 0; }
 .welcome-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .welcome-action { display: inline-flex; align-items: center; gap: 9px; width: auto; max-width: 100%; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #3444b8; text-align: left; }
 .welcome-action span { text-underline-offset: 3px; }
@@ -661,10 +663,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .welcome-drive-status svg { color: #27865d; }
 .welcome-drive-status p { margin: 3px 0 0; color: #596273; line-height: 1.45; }
 .welcome-storage { margin-top: 22px; }
+.welcome-links { margin-top: 24px; }
+.welcome-links h2 { margin: 0 0 9px; font-size: 14px; }
+.welcome-link-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.welcome-link-list button, .welcome-link-list a { display: flex; align-items: center; width: 100%; max-width: 100%; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #3444b8; font: inherit; line-height: 1.4; text-align: left; text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
+.welcome-link-list button:hover, .welcome-link-list a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.welcome-link-list button:focus-visible, .welcome-link-list a:focus-visible { outline: 2px solid #5364d9; outline-offset: 1px; }
 .welcome-footer { margin-top: 24px; }
 .inspector-welcome-placeholder { padding: 18px; color: #596273; line-height: 1.55; }
 .welcome-suppress { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; line-height: 1.45; }
 .welcome-suppress input { margin-top: 2px; }
+@container welcome-pane (min-width: 850px) {
+  .welcome-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .72fr); column-gap: clamp(36px, 5cqi, 46px); align-items: start; }
+  .welcome-links { margin-top: 0; }
+}
 .inspector { display: flex; flex-direction: column; overflow: hidden; }
 .right-dock-tabs { display: flex; flex: 0 0 36px; gap: 2px; padding: 4px 8px; border-bottom: 1px solid #dfe2e7; }
 .right-dock-tabs button { padding: 5px 9px; border: 0; border-radius: 5px; background: transparent; color: #596273; }
@@ -697,6 +709,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell[data-theme="dark"] .tutorial-step p, .app-shell[data-theme="dark"] .tutorial-heading p { color: #aeb5c2; }
 .app-shell[data-theme="dark"] .welcome-action { color: #aebcff; }
 .app-shell[data-theme="dark"] .welcome-action:focus-visible { outline-color: #aebcff; }
+.app-shell[data-theme="dark"] .welcome-link-list button, .app-shell[data-theme="dark"] .welcome-link-list a { color: #aebcff; }
+.app-shell[data-theme="dark"] .welcome-link-list button:focus-visible, .app-shell[data-theme="dark"] .welcome-link-list a:focus-visible { outline-color: #aebcff; }
 .app-shell[data-theme="dark"] .welcome-drive-status { color: #b8dec4; }
 .app-shell[data-theme="dark"] .welcome-drive-status p { color: #aeb5c2; }
 .app-shell[data-theme="dark"] .tutorial-step pre, .app-shell[data-theme="dark"] .tutorial-step button, .app-shell[data-theme="dark"] .tutorial-actions button { background: #2e333d; color: #e4e7ee; border-color: #454c59; }
