@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import HeaderBar from './components/HeaderBar.vue';
@@ -15,6 +15,7 @@ import type { MainMenuId } from './components/MainMenuBar.vue';
 const props = defineProps<{ controller: WebWorkspaceController & WorkspaceHostBindings }>();
 const { locale, t } = useI18n({ useScope: 'global' });
 const headerBar = ref<InstanceType<typeof HeaderBar>>();
+const aboutDialog = ref<HTMLDialogElement>();
 const workspaceStore = useWorkspaceStore();
 const { view: storeView, problemSummary } = storeToRefs(workspaceStore);
 const snapshot = computed<Readonly<WorkspaceViewSnapshot>>(() => {
@@ -22,6 +23,7 @@ const snapshot = computed<Readonly<WorkspaceViewSnapshot>>(() => {
   return storeView.value;
 });
 const iconSprite = WEB_ICON_SPRITE;
+const webVersion = __WEB_VERSION__;
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const systemDark = ref(systemTheme.matches);
 const updateSystemTheme = (event: MediaQueryListEvent) => { systemDark.value = event.matches; };
@@ -59,6 +61,15 @@ watch(() => snapshot.value.locale, value => {
 watch(() => snapshot.value.ready, ready => {
   document.querySelector('#app')?.setAttribute('aria-busy', String(!ready));
 }, { immediate: true });
+watch(() => snapshot.value.aboutOpen, async open => {
+  await nextTick();
+  const dialog = aboutDialog.value;
+  if (!dialog) return;
+  if (open && !dialog.open) {
+    dialog.showModal();
+    dialog.querySelector<HTMLButtonElement>('#close-about')?.focus();
+  } else if (!open && dialog.open) dialog.close();
+});
 function dispatch(command: WorkspaceCommand): void {
   void props.controller.dispatch(command);
 }
@@ -67,6 +78,10 @@ function requestContextMenu(request: WorkspaceContextMenuRequest): void {
 }
 function navigateMainMenu(menu: MainMenuId): void {
   headerBar.value?.focusMainMenu(menu);
+}
+function closeAbout(): void {
+  dispatch({ type: 'about.close' });
+  void nextTick(() => document.getElementById('menu-help-trigger')?.focus());
 }
 </script>
 
@@ -84,6 +99,7 @@ function navigateMainMenu(menu: MainMenuId): void {
     </footer>
     <input id="file-input" type="file" accept=".guitardsl,.gdsl,text/plain" hidden @change="dispatch({ type: 'document.import-local' })" />
     <dialog id="help-dialog" class="help-dialog"><header><h2 id="help-title"></h2><button type="button" id="close-help" class="icon-action" :aria-label="t('action.close')" :title="t('action.close')">×</button></header><p id="help-popup-note" hidden></p><p id="help-direct-link-row" hidden><a id="help-direct-link" target="_blank" rel="noopener noreferrer"></a></p><nav id="help-toc" :aria-label="t('help.topics')"></nav><article id="help-content"></article></dialog>
+    <dialog id="about-dialog" ref="aboutDialog" class="help-dialog" :aria-labelledby="'about-heading'" @cancel.prevent="closeAbout"><header><h2 id="about-heading">{{ t('about.title') }}</h2><button type="button" id="close-about" class="icon-action" :aria-label="t('action.close')" :title="t('action.close')" @click="closeAbout">×</button></header><p><strong>{{ t('about.product') }}</strong></p><p>{{ t('about.version', { version: webVersion }) }}</p><p><a href="https://guitardsl.app/licenses/" target="_blank" rel="noopener noreferrer">{{ t('about.license') }}</a></p><p><a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">{{ t('about.source') }}</a></p><p><a href="mailto:support@guitardsl.app">{{ t('about.support') }}</a></p></dialog>
     <MenuLayer :snapshot="snapshot" @command="dispatch" @context-request="requestContextMenu" @navigate-main="navigateMainMenu" />
     <PwaUpdatePrompt :state="snapshot.pwa" @update="dispatch({ type: 'pwa.update' })" @later="dispatch({ type: 'pwa.later' })" />
   </main>

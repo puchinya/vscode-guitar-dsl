@@ -1,0 +1,12 @@
+title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u l:"あさのそらに" |
+| Am Em | % l:"ひかりがさす" |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u l:"まだみぬみち" |
+| Dm G7 | % l:"かぜをこえて" |

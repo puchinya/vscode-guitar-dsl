@@ -7,6 +7,9 @@ type RuntimeController = Omit<WebWorkspaceController, 'start'> & WorkspaceHostBi
 const initialSnapshot: Readonly<WorkspaceViewSnapshot> = Object.freeze({
   ready: false,
   tabs: [], activeKey: null, activeStorage: 'local', locale: 'en', theme: 'system', viewMode: 'split',
+  welcomeOpen: false, welcomeActive: false, welcomeSuppressed: false,
+  rightDockPane: 'inspector', tutorialStepIndex: 0, tutorialChordOnlyCompleted: false, tutorialMelodyCompleted: false,
+  aboutOpen: false,
   explorerOpen: true, inspectorOpen: true, problemsOpen: true, explorerAutoHidden: false, inspectorAutoHidden: false,
   localExpanded: true, driveExpanded: true, explorerWidth: 220, inspectorWidth: 300, problemsHeight: 200, splitRatio: 0.4,
   localFiles: [], driveFiles: [], driveEntries: [], diagnostics: [], online: typeof navigator === 'undefined' || navigator.onLine,

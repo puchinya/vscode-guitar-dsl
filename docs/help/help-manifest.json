@@ -155,7 +155,7 @@
       "source": "extension",
       "section": "4",
       "helpPage": "features",
-      "reviewedSourceSha256": "3cdfbe2eda25d87029298527db923d1f17615b82a1ee1ea4ba4e8c8abb6f0578"
+      "reviewedSourceSha256": "0a76f72cbd4a0e3617e79e5014f29e733224587fe6adbe798d3ed75e6b6520d8"
     },
     {
       "source": "extension",
@@ -221,7 +221,7 @@
       "source": "web",
       "section": "3",
       "helpPage": "features",
-      "reviewedSourceSha256": "e3ee5f75a0494f6f02dd1364653e8219ce45cc10f3d8c3a029779027fe38345c"
+      "reviewedSourceSha256": "4a900ef910206ccae44f43cd1f03982220951f67afffbf0fa05cde826768ce43"
     },
     {
       "source": "web",
@@ -233,7 +233,7 @@
       "source": "web",
       "section": "5",
       "helpPage": "features",
-      "reviewedSourceSha256": "92bc41615ca3dcd8d9593a44b02f4789311911e005c0dda1d385db2a663137ef"
+      "reviewedSourceSha256": "4623352776a1616260e09a8292c0a31334d84158c07c0b2c1aa748eb4741ef86"
     },
     {
       "source": "web",
@@ -245,13 +245,19 @@
       "source": "web",
       "section": "7",
       "helpPage": "features",
-      "reviewedSourceSha256": "58ccc77798060bbec91e37c115c666f2bd156fd4ff545f0a83929644eea5be32"
+      "reviewedSourceSha256": "40c39c35c713a9fb0b2ff50921b7a5f77e721bc90d330ed960d7ba5ac62078f8"
     },
     {
       "source": "web",
       "section": "11",
       "helpPage": "features",
       "reviewedSourceSha256": "bdee57d1462a2d2a57a30aafa44ceab474a42618cdaf210c5a71cc52d7e90d8b"
+    },
+    {
+      "source": "web",
+      "section": "12",
+      "helpPage": "features",
+      "reviewedSourceSha256": "c2e658bd34ff0ecfbe068fd819816fcb9dbcd6a1855f52a48cdc5a0a4bf35e83"
     }
   ],
   "excludedSections": [

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icons/guitardsl-sidebar.svg" type="image/svg+xml">
+  <meta name="color-scheme" content="light">
+  <title>GuitarDSL — Create guitar scores from text.</title>
+  <meta name="description" content="GuitarDSL is open-source software for writing guitar scores. Create chord, strumming and lyric charts, vocal melody scores, and solo guitar tablature from text.">
+  <link rel="canonical" href="__SITE_URL__/en/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GuitarDSL — Create guitar scores from text.">
+  <meta property="og:description" content="Write guitar scores from text and preview the notation as you edit.">
+  <meta property="og:url" content="__SITE_URL__/en/">
+  <meta property="og:image" content="__SITE_URL__/images/editor-split.webp">
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body id="top">
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="#top"><img alt="" width="27" height="27" src="/icons/guitardsl-sidebar.svg">GuitarDSL</a>
+      <nav class="nav" aria-label="Page navigation">
+        <a href="#usage">Score examples</a>
+        <a href="#editing-and-storage">Editing and saving</a>
+        <a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="wrap hero-layout">
+        <div>
+          <div class="eyebrow">Open-source guitar score editor</div>
+          <h1>Create guitar scores<br>from text.</h1>
+          <p class="hero-copy"><strong>GuitarDSL is open-source software (OSS).</strong> Write the kind of chord, strumming and lyric charts often found in published singer-songwriter books, singer-songwriter scores with a vocal melody, or solo guitar tablature. Edit a compact domain-specific language (DSL) and see the score preview alongside your text.</p>
+          <a class="button" href="__APP_URL__">Start using GuitarDSL</a>
+          <p class="intro-note">Write a score in your browser and check its notation as you edit.</p>
+        </div>
+        <figure class="hero-shot">
+          <div class="shotframe"><img src="/images/editor-split.webp" alt="GuitarDSL Web with the source editor and a score preview showing chords, rhythm and lyrics" width="1600" height="900"></div>
+          <figcaption>The original score “Sora-iro no Shirushi” (“A Sign in the Blue Sky”) in GuitarDSL Web.</figcaption>
+        </figure>
+      </div>
+    </section>
+    <section id="usage" class="intro-block">
+      <div class="wrap">
+        <div class="section-label">Scores for different uses</div>
+        <h2>Three score examples</h2>
+        <p>Using the original song “Sora-iro no Shirushi” (“A Sign in the Blue Sky”), these examples show a singer-songwriter chart without a vocal melody, one with a vocal melody, and a solo guitar TAB score. Each DSL example is paired with the same content rendered in the Web app. The song, lyrics and melodies were written for this demonstration and are unrelated to existing works.</p>
+      </div>
+    </section>
+    <section class="usecase" id="chord-lyrics" aria-labelledby="heading-1">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">Example 01 / Chords, strumming and lyrics</span><h2>Singer-songwriter chart (without melody)</h2><p>Write a chart that brings chord names, strumming patterns and lyrics together. It is useful when you want to follow the guitar accompaniment and lyrics without showing sung notes.</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>Sora-iro no Shirushi.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="A_chord_lyrics">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;あさのそらに&quot; |
+| Am Em | % l:&quot;ひかりがさす&quot; |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u l:&quot;まだみぬみち&quot; |
+| Dm G7 | % l:&quot;かぜをこえて&quot; |</code></pre></div>
+          <figure class="shot-card"><img src="/images/melody-free.webp" alt="A four-bar chord chart showing C–G, Am–Em, F–C and Dm–G7, strumming symbols and one lyric line per bar" width="1600" height="900"><figcaption>Chords, rhythm and lyrics from “Sora-iro no Shirushi” rendered in GuitarDSL Web.</figcaption></figure>
+        </div>
+        <ul class="details"><li>Write chords and rhythm in separate cells</li><li>Reuse the previous bar’s strumming with %</li><li>Add bar-level lyrics with l:</li></ul>
+      </div>
+    </section>
+    <section class="usecase" id="melody-lyrics" aria-labelledby="heading-2">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">Example 02 / Melody, lyrics and accompaniment</span><h2>Singer-songwriter chart (with melody)</h2><p>In addition to chords and strumming, write the sung notes and lyrics. Read pitch and duration on the staff while keeping guitar accompaniment in the same score.</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>Sora-iro no Shirushi.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="B_melody_lyrics">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Am Em | % |
+| F C   | 4.d 8.d 8.u 4.d 8.d 8.u |
+| Dm G7 | % |
+
+mel: | e4/8 g g/4 d/8 b3 g/4 | a4/8 c5 e/4 b4/8 g e/4 |
+lyr: | あ さ の そ ら に | ひ か り が さ す |
+mel: | f4/8 a c5/4 g4/8 e c/4 | d4/8 f a/4 b/8 d5 g/4 |
+lyr: | ま だ み ぬ み ち | か ぜ を こ え て |</code></pre></div>
+          <figure class="shot-card"><img src="/images/melody-lyrics.webp" alt="A staff showing a sung melody and its lyrics, chords, and guitar accompaniment" width="1600" height="900"><figcaption>The vocal melody, note-by-note lyrics and guitar accompaniment rendered in GuitarDSL Web.</figcaption></figure>
+        </div>
+        <ul class="details"><li>Write the vocal melody with mel:</li><li>Align one lyric syllable to each note with lyr:</li><li>Keep the same chord progression as the melody-free version</li></ul>
+      </div>
+    </section>
+    <section class="usecase" id="guitar-tab" aria-labelledby="heading-3">
+      <div class="wrap">
+        <div class="usecase-head"><span class="section-label">Example 03 / Solo guitar and TAB</span><h2>Solo fingerstyle guitar TAB</h2><p>This fingerstyle example combines low accompaniment and an upper melody on one guitar. Specify strings, frets and note values, including simultaneous strings such as <code>[5f3,2f1]</code>.</p></div>
+        <div class="usecase-pair">
+          <div class="code-card"><div class="code-header"><span class="tiny-dot" aria-hidden="true"></span><strong>Sora-iro no Shirushi.guitardsl</strong><span>GuitarDSL</span></div><pre class="dsl"><code data-fixture="C_guitar_tab">title: 空色の合図
+artist: GuitarDSL Original Demo
+key: C
+bpm: 104
+time: 4/4
+measures_per_row: 4
+
+[Verse]
+| C G   |
+| Am Em |
+| F C   |
+| Dm G7 |
+
+tab: | [5f3,2f1]/8 3f0 1f0 2f1 [6f3,2f0] 3f0 1f3 2f0 |
+tab: | [5f0,2f1]/8 3f2 1f0 2f1 [6f0,2f0] 3f0 1f0 2f0 |
+tab: | [6f1,2f1]/8 3f2 1f1 2f1 [5f3,2f1] 3f0 1f0 2f1 |
+tab: | [4f0,2f3]/8 3f2 1f1 2f3 [6f3,2f0] 3f0 1f1 2f0 |</code></pre></div>
+          <figure class="shot-card"><img src="/images/solo-guitar-tab.webp" alt="Six-line guitar TAB with alternating bass and upper notes, simultaneous fret positions, and the C–G to Dm–G7 progression" width="1600" height="900"><figcaption>The solo guitar TAB for “Sora-iro no Shirushi,” including low and high notes in one phrase.</figcaption></figure>
+        </div>
+        <ul class="details"><li>Alternate low notes and upper-register melody</li><li>Play bass and melody strings together with [5f3,2f1]</li><li>Note values carry forward when omitted</li></ul>
+      </div>
+    </section>
+    <section class="feature-foot" id="editing-and-storage"><div class="wrap"><div class="section-label">Editing, preview and saving</div><h2>Check your score as you write</h2><p>Edit the DSL while previewing the score, then export a PDF when needed. Scores and drafts can be saved in your browser. Google Drive is optional and can be used to manage files from Explorer.</p></div></section>
+    <section class="closing"><div class="wrap"><h2>Use GuitarDSL</h2><p>Open the Web editor in your browser and start writing a score. The app’s Help menu explains how to use it.</p><a class="button" href="__APP_URL__">Start using GuitarDSL</a></div></section>
+  </main>
+  <footer class="footer"><div class="wrap"><span>GuitarDSL — Open-source software</span><nav class="links" aria-label="Related links"><a href="https://github.com/puchinya/vscode-guitar-dsl" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://guitardsl.app/licenses/" target="_blank" rel="noopener noreferrer">License</a><a href="https://guitardsl.app/privacy/" target="_blank" rel="noopener noreferrer">Privacy</a></nav></div></footer>
+</body>
+</html>

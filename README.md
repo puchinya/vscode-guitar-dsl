@@ -18,6 +18,8 @@
 ## ライセンス表記
 - 同梱フォント `media/fonts/NotoSansJP-*.ttf`（Noto Sans JP）は SIL Open Font License 1.1 に従います（`media/fonts/OFL.txt`）。
 
+GuitarDSL のソースコードは MIT License で公開しています（著作権者: puchinya, 2026）。Web 版の利用規約、プライバシーポリシー、ソフトウェア／フォントのライセンス一覧は [公開ページ](https://guitardsl.app/) の各リンクから確認できます。第三者のライブラリと素材には、それぞれのライセンスが適用されます。
+
 ## 動作環境
 - VS Code 1.109 以降（Agent Skill の提供に必要な最小バージョン。以前の最小バージョンは 1.85 でした）
 

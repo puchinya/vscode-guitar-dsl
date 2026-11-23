@@ -1,13 +1,45 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const packagesRoot = fileURLToPath(new URL('../packages/', import.meta.url));
+const publicRoot = fileURLToPath(new URL('./public/', import.meta.url));
+const webPackage = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+const productIntroUrl = process.env.VITE_GUITARDSL_PRODUCT_INTRO_URL ?? 'https://www.guitardsl.app/';
+const allowedProductIntroUrls = new Set(['https://www.guitardsl.app/', 'https://wwwdev.guitardsl.app/']);
+if (!allowedProductIntroUrls.has(productIntroUrl)) {
+  throw new Error('VITE_GUITARDSL_PRODUCT_INTRO_URL must be an approved GuitarDSL marketing origin.');
+}
 
 export default defineConfig({
   base: '/',
+  define: {
+    __WEB_VERSION__: JSON.stringify(webPackage.version),
+    __PRODUCT_INTRO_URL__: JSON.stringify(productIntroUrl)
+  },
   plugins: [
+    {
+      name: 'guitardsl-static-legal-pages-dev',
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (request.method !== 'GET' && request.method !== 'HEAD') return next();
+          const pathname = request.url?.split(/[?#]/u, 1)[0] ?? '/';
+          const match = /^\/(licenses|privacy|terms)(?:\/(ja|en))?\/?$/u.exec(pathname);
+          if (!match) return next();
+          const filePath = `${publicRoot}${match[1]}/${match[2] ? `${match[2]}/` : ''}index.html`;
+          try {
+            const html = readFileSync(filePath);
+            response.statusCode = 200;
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.setHeader('Content-Length', String(html.byteLength));
+            if (request.method === 'HEAD') response.end();
+            else response.end(html);
+          } catch { next(); }
+        });
+      }
+    },
     vue(),
     VitePWA({
       registerType: 'prompt',

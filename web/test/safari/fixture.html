@@ -9,6 +9,8 @@
     <div id="app"></div>
     <script type="module">
       import './fixture.js';
+      const { indexedDb } = await import('/src/storage/indexedDb.ts');
+      await indexedDb.setValue('settings', 'web-welcome-v1', { suppressOnStartup: true });
       await import('/src/main.ts');
     </script>
   </body>

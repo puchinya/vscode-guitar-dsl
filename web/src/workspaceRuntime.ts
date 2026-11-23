@@ -87,6 +87,14 @@ interface AppState {
   orientation: PageOrientation;
   expandPageBreakRepeats: boolean;
   storageReady: boolean;
+  welcomeOpen: boolean;
+  welcomeActive: boolean;
+  welcomeSuppressed: boolean;
+  rightDockPane: 'inspector' | 'tutorial';
+  tutorialStepIndex: number;
+  tutorialChordOnlyCompleted: boolean;
+  tutorialMelodyCompleted: boolean;
+  aboutOpen: boolean;
   previewGeneration: number;
   splitRatio: number;
   viewMode: WorkspaceViewMode;
@@ -168,7 +176,11 @@ const STRINGS = {
     goToSource: 'Go to source position', expand: 'Expand', collapse: 'Collapse',
     explorer: 'Explorer', toggleExplorer: 'Toggle Explorer', toggleInspector: 'Toggle Inspector',
     help: 'Help', close: 'Close', resetLayoutConfirm: 'Reset workspace layout to defaults?',
-    menuFile: 'File', menuEdit: 'Edit', menuView: 'View', downloadCopy: 'Download a copy', driveRootOptions: 'Google Drive options',
+    menuFile: 'File', menuEdit: 'Edit', menuView: 'View', menuHelp: 'Help',
+    menuWelcome: 'Welcome', menuTutorial: 'Tutorial', menuProductIntro: 'Product introduction', menuLicenses: 'Licenses', menuPrivacy: 'Privacy Policy', menuTerms: 'Terms of Service', menuSource: 'Source code (GitHub)', menuAbout: 'About GuitarDSL',
+    welcomeStorageError: 'Could not save the Welcome preference. Your previous setting is still active.',
+    tutorialStorageError: 'Could not save tutorial progress. Your previous progress is still active.',
+    downloadCopy: 'Download a copy', driveRootOptions: 'Google Drive options',
     account: 'Account', driveNotConnected: 'Not connected', driveConnecting: 'Connecting…', driveConnected: 'Connected', driveReauth: 'Reconnect required',
     undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select all', find: 'Find…', replace: 'Replace…', goToLine: 'Go to line…',
     folderPromptTitle: 'Set up the GuitarDSL Library?', folderPromptBody: 'An existing GuitarDSL folder in My Drive will be reused. If none is available, create a new library folder or do this later.',
@@ -221,7 +233,11 @@ const STRINGS = {
     goToSource: 'ソース位置へ移動', expand: '展開', collapse: '折りたたむ',
     explorer: 'エクスプローラー', toggleExplorer: 'Explorer の表示を切り替え', toggleInspector: 'Inspector の表示を切り替え',
     help: 'ヘルプ', close: '閉じる', resetLayoutConfirm: 'ワークスペースのレイアウトを初期状態に戻しますか？',
-    menuFile: 'ファイル', menuEdit: '編集', menuView: '表示', downloadCopy: 'コピーをダウンロード', driveRootOptions: 'Google Drive のオプション',
+    menuFile: 'ファイル', menuEdit: '編集', menuView: '表示', menuHelp: 'ヘルプ',
+    menuWelcome: 'ようこそ', menuTutorial: 'チュートリアル', menuProductIntro: 'GuitarDSLの紹介', menuLicenses: 'ライセンスの表示', menuPrivacy: 'プライバシーポリシー', menuTerms: '利用規約', menuSource: 'ソースコード（GitHub）', menuAbout: 'バージョン情報',
+    welcomeStorageError: 'ようこそ画面の設定を保存できませんでした。変更前の設定を維持しています。',
+    tutorialStorageError: 'チュートリアルの進捗を保存できませんでした。変更前の進捗を維持しています。',
+    downloadCopy: 'コピーをダウンロード', driveRootOptions: 'Google Drive のオプション',
     account: 'アカウント', driveNotConnected: '未接続', driveConnecting: '接続中…', driveConnected: '接続済み', driveReauth: '再認証が必要',
     undo: '元に戻す', redo: 'やり直す', cut: '切り取り', copy: 'コピー', paste: '貼り付け', selectAll: 'すべて選択', find: '検索…', replace: '置換…', goToLine: '行へ移動…',
     folderPromptTitle: 'GuitarDSL ライブラリを設定しますか？', folderPromptBody: 'マイドライブ直下に既存の GuitarDSL フォルダーがあれば同じフォルダーを使います。見つからない場合は、新しいライブラリを作成するか後で設定できます。',
@@ -263,7 +279,10 @@ sharedSettingsScript.remove();
 const state: AppState = {
   tabs: [], activeKey: null, activeStorage: 'local', inspectorTab: 'variables', mobilePane: 'source',
   locale: navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en', theme: 'system', pageSize: 'A4',
-    orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false, previewGeneration: 0,
+    orientation: 'portrait', expandPageBreakRepeats: true, storageReady: false,
+    welcomeOpen: false, welcomeActive: false, welcomeSuppressed: false,
+    rightDockPane: 'inspector', tutorialStepIndex: 0, tutorialChordOnlyCompleted: false, tutorialMelodyCompleted: false, aboutOpen: false,
+    previewGeneration: 0,
     progressionBars: 4, progressionOperation: 'append', progressionAuditionMode: 'bars', progressionSide: 'B', progressionSpeed: 100,
   scoreSettingsSection: 'capo',
     audioStatus: '',
@@ -308,6 +327,7 @@ let localExpanded = true;
 let driveExpanded = true;
 let explorerAutoHidden = false;
 let inspectorAutoHidden = false;
+let mobileDockOpen = false;
 let workspaceMessage: WorkspaceViewSnapshot['message'];
 let workspaceStorageStatus = '';
 let cursorPositionLabel = 'Ln 1, Col 1';
@@ -750,10 +770,14 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
       name: item.document.name, source: item.source, revision: item.revision, saveStatus: item.saveStatus
     })),
     activeKey: state.activeKey, activeStorage: state.activeStorage, locale: state.locale, theme: state.theme,
-    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
+    viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen || mobileDockOpen,
     problemsOpen: state.problemsOpen, explorerAutoHidden, inspectorAutoHidden,
     localExpanded, driveExpanded, explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
     problemsHeight: state.problemsHeight, splitRatio: state.splitRatio,
+    welcomeOpen: state.welcomeOpen, welcomeActive: state.welcomeActive, welcomeSuppressed: state.welcomeSuppressed,
+    rightDockPane: state.rightDockPane, tutorialStepIndex: state.tutorialStepIndex,
+    tutorialChordOnlyCompleted: state.tutorialChordOnlyCompleted, tutorialMelodyCompleted: state.tutorialMelodyCompleted,
+    aboutOpen: state.aboutOpen,
     localFiles, driveFiles, driveEntries, diagnostics, menu: workspaceMenuSnapshot,
     online: navigator.onLine, driveStatus,
     driveGeneration: state.driveGeneration,
@@ -899,6 +923,7 @@ async function setActive(key: string, isCurrent?: () => boolean): Promise<void> 
   if (!workspaceOperationIsCurrent(operationGeneration) || isCurrent && !isCurrent()) return;
   if (state.activeKey !== key && !editorReadyForDocumentChange()) return;
   state.activeKey = key;
+  state.welcomeActive = false;
   const tab = activeTab();
   if (!tab) return;
   state.activeStorage = tab.document.identity.storage;
@@ -1046,7 +1071,7 @@ function scheduleDriveAppDataSync(): void {
 }
 
 async function restoreRemoteDriveAppData(
-  snapshot: DriveAppDataSnapshot, accountId: string, drive: GoogleDriveApi, generation: number
+  snapshot: DriveAppDataSnapshot, accountId: string, drive: GoogleDriveApi, generation: number, restoreTabs = true
 ): Promise<boolean> {
   if (remoteAppDataRestoreInProgress || !driveSessionIsCurrent(accountId, drive, generation) || !state.appDataStore) return false;
   const cancelledReloadPreparation = reloadPreparationActive;
@@ -1107,7 +1132,7 @@ async function restoreRemoteDriveAppData(
       driveFolderErrors.delete(folderId);
       rebuildDriveFileRows();
     } else {
-      if (snapshot.state.selectedFolderId !== null || hasDriveTabReferences || snapshot.state.folderPrompt === 'completed') {
+      if (snapshot.state.selectedFolderId !== null || (restoreTabs && hasDriveTabReferences) || snapshot.state.folderPrompt === 'completed') {
         throw new Error('The selected Drive library folder could not be verified.');
       }
       // An unset library with no open Drive references is a valid remote v1 state.
@@ -1117,7 +1142,7 @@ async function restoreRemoteDriveAppData(
       state.folderId = undefined;
       state.folderName = undefined;
     }
-    const restored = await restoreDriveSession(accountId, drive, generation, snapshot.state);
+    const restored = !restoreTabs || await restoreDriveSession(accountId, drive, generation, snapshot.state);
     if (!restored || !driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) {
       throw new Error(state.locale === 'ja'
         ? 'Drive のタブを復元できません。保留中の設定は保持されています。'
@@ -1843,6 +1868,7 @@ interface WorkspaceLayoutPreference {
   problemsOpen: boolean;
   problemsHeight: number;
   splitRatio: number;
+  rightDockPane?: 'inspector' | 'tutorial';
 }
 const workspace = app.querySelector<HTMLDivElement>('#workspace')!;
 const splitDivider = app.querySelector<HTMLDivElement>('#center-splitter')!;
@@ -1857,7 +1883,8 @@ function layoutSnapshot(): WorkspaceLayoutPreference {
   return {
     viewMode: state.viewMode, explorerOpen: state.explorerOpen, inspectorOpen: state.inspectorOpen,
     explorerWidth: state.explorerWidth, inspectorWidth: state.inspectorWidth,
-    problemsOpen: state.problemsOpen, problemsHeight: state.problemsHeight, splitRatio: state.splitRatio
+    problemsOpen: state.problemsOpen, problemsHeight: state.problemsHeight, splitRatio: state.splitRatio,
+    rightDockPane: state.rightDockPane
   };
 }
 
@@ -1889,12 +1916,19 @@ function setWorkspaceViewMode(mode: WorkspaceViewMode, persist = true): void {
 
 function updateResponsiveCollapse(): void {
   const available = workspace.clientWidth;
+  if (available > 680) mobileDockOpen = false;
+  const inspectorRequested = state.inspectorOpen || mobileDockOpen;
   let autoHideInspector = false;
   let autoHideExplorer = false;
   const required = () => 40 + 36 + (state.explorerOpen && !autoHideExplorer ? state.explorerWidth + 6 : 0)
-    + 240 + (state.inspectorOpen && !autoHideInspector ? 6 + state.inspectorWidth : 0);
-  if (required() > available) autoHideInspector = state.inspectorOpen;
-  if (required() > available) autoHideExplorer = state.explorerOpen;
+    + 240 + (inspectorRequested && !autoHideInspector ? 6 + state.inspectorWidth : 0);
+  if (available <= 680) {
+    autoHideInspector = inspectorRequested && !mobileDockOpen;
+    if (required() > available) autoHideExplorer = state.explorerOpen;
+  } else {
+    if (required() > available) autoHideInspector = state.inspectorOpen;
+    if (required() > available) autoHideExplorer = state.explorerOpen;
+  }
   inspectorAutoHidden = autoHideInspector;
   explorerAutoHidden = autoHideExplorer;
   publishWorkspaceSnapshot();
@@ -1927,6 +1961,8 @@ async function loadLayoutPreferences(): Promise<void> {
     if (typeof saved.problemsOpen === 'boolean') state.problemsOpen = saved.problemsOpen;
     if (typeof saved.problemsHeight === 'number' && Number.isFinite(saved.problemsHeight)) state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, saved.problemsHeight));
     if (typeof saved.splitRatio === 'number' && Number.isFinite(saved.splitRatio)) state.splitRatio = Math.max(0.24, Math.min(0.76, saved.splitRatio));
+    if (saved.rightDockPane === 'inspector' || saved.rightDockPane === 'tutorial') state.rightDockPane = saved.rightDockPane;
+    // Narrow-screen dock visibility is ephemeral and is never restored from storage.
   } else {
     state.problemsHeight = Math.max(140, Math.min(window.innerHeight * 0.45, state.problemsHeight));
     await indexedDb.setValue('settings', 'web-layout-v1', layoutSnapshot()).catch(() => undefined);
@@ -2157,6 +2193,7 @@ async function openDocument(
   resetWebScoreSettings();
   state.tabs.push(tab);
   state.activeKey = tabKey(tab);
+  state.welcomeActive = false;
   state.activeStorage = tab.document.identity.storage;
   renderAll();
   void persistSessions();
@@ -2643,7 +2680,7 @@ async function createNewScore(): Promise<void> {
     const tab: OpenTab = { document: documentRow, source: DEFAULT_SOURCE, revision: 0, previewMode: 'normal', pageSize: state.pageSize, orientation: state.orientation, persistable: false,
       persistedBase: { revision: 0, source: DEFAULT_SOURCE }, saveStatus: 'error' };
     if (!editorReadyForDocumentChange()) return;
-    state.tabs.push(tab); state.activeKey = tabKey(tab); renderAll();
+    state.tabs.push(tab); state.activeKey = tabKey(tab); state.welcomeActive = false; renderAll();
     showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
   }
 }
@@ -2795,7 +2832,7 @@ async function setUpDriveFolderAfterConnect(
   await createDriveFolder(true);
 }
 
-async function connectDrive(): Promise<void> {
+async function connectDrive(options: { source?: 'welcome' } = {}): Promise<void> {
   if (driveConnectInProgress || reloadPreparationActive || pageCacheSuspended) return;
   const operationGeneration = workspaceOperationGeneration;
   const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
@@ -2847,7 +2884,7 @@ async function connectDrive(): Promise<void> {
     if (snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
     const session = pending?.state ?? snapshot.state;
     if (pendingChoice === 'remote' && pending) {
-      const restored = await restoreRemoteDriveAppData(snapshot, account.accountId, drive, generation);
+      const restored = await restoreRemoteDriveAppData(snapshot, account.accountId, drive, generation, options.source !== 'welcome');
       if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
         if (!operationIsCurrent()) driveConnectInterrupted = true;
         return;
@@ -2858,7 +2895,7 @@ async function connectDrive(): Promise<void> {
       if (!operationIsCurrent()) driveConnectInterrupted = true;
       return;
     }
-    const restored = await restoreDriveSession(account.accountId, drive, generation, session);
+    const restored = options.source === 'welcome' || await restoreDriveSession(account.accountId, drive, generation, session);
     if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
       if (!operationIsCurrent()) driveConnectInterrupted = true;
       return;
@@ -2882,9 +2919,16 @@ async function connectDrive(): Promise<void> {
     if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
     const importRecoveryMessage = await reconcilePendingDriveImports(account.accountId, drive, generation);
-    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+      if (!operationIsCurrent()) driveConnectInterrupted = true;
+      return;
+    }
     if (importRecoveryMessage) {
       const hasUnresolved = (await readPendingDriveImports(account.accountId)).length > 0;
+      if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
+        if (!operationIsCurrent()) driveConnectInterrupted = true;
+        return;
+      }
       showMessage(importRecoveryMessage, hasUnresolved ? 'error' : 'info');
     }
   } catch (error) {
@@ -4356,11 +4400,12 @@ function replaceEditorSourceWithUndo(source: string): void {
 
 interface WorkspaceMenuAction {
   label: string;
-  run: () => void | Promise<void>;
+  run?: () => void | Promise<void>;
   disabled?: boolean;
   checked?: boolean;
   shortcut?: string;
   separator?: boolean;
+  href?: string;
 }
 let activeMenuInvoker: HTMLElement | undefined;
 let menuInvokerSequence = 0;
@@ -4381,13 +4426,14 @@ function showWorkspaceMenu(_menu: HTMLElement | null | undefined, x: number, y: 
   const id = invoker?.id === 'menu-file-trigger' ? 'file'
     : invoker?.id === 'menu-edit-trigger' ? 'edit'
       : invoker?.id === 'menu-view-trigger' ? 'view'
-        : invoker?.id === 'connect-drive' ? 'drive'
+        : invoker?.id === 'menu-help-trigger' ? 'help'
+          : invoker?.id === 'connect-drive' ? 'drive'
           : invoker?.id === 'settings-button' ? 'settings'
             : invoker?.id === 'explorer-more' ? 'explorer'
               : invoker?.id === 'inspector-more' ? 'inspector'
                 : invoker?.id === 'drive-root-more' ? 'drive-root' : 'context';
   const labels: Record<string, string> = {
-    file: strings().menuFile, edit: strings().menuEdit, view: strings().menuView,
+    file: strings().menuFile, edit: strings().menuEdit, view: strings().menuView, help: strings().menuHelp,
     drive: strings().drive, 'drive-root': strings().driveRootOptions, settings: strings().settings,
     explorer: strings().explorerOptions, inspector: strings().inspectorOptions, context: strings().menuFile
   };
@@ -4397,7 +4443,7 @@ function showWorkspaceMenu(_menu: HTMLElement | null | undefined, x: number, y: 
     position: { left: x, top: y },
     items: actions.map((action, index) => ({
       id: `${id}-${index}`, label: action.label, shortcut: action.shortcut,
-      disabled: action.disabled, checked: action.checked, separator: action.separator
+      disabled: action.disabled, checked: action.checked, separator: action.separator, href: action.href
     }))
   };
   if (rect && invoker?.getAttribute('aria-haspopup') === 'menu') invoker.setAttribute('aria-expanded', 'true');
@@ -4882,7 +4928,11 @@ function resetWorkspaceLayout(): void {
 }
 
 const toggleExplorer = () => { state.explorerOpen = !state.explorerOpen; applyWorkspaceLayout(); saveLayoutSoon(); };
-const toggleInspector = () => { state.inspectorOpen = !state.inspectorOpen; applyWorkspaceLayout(); saveLayoutNow(); };
+const toggleInspector = () => {
+  if (workspace.clientWidth <= 680) mobileDockOpen = !mobileDockOpen;
+  else { state.inspectorOpen = !state.inspectorOpen; saveLayoutNow(); }
+  applyWorkspaceLayout();
+};
 const toggleProblems = () => { state.problemsOpen = !state.problemsOpen; renderProblemsLabels(); saveLayoutSoon(); };
 
 function openViewMenu(): void {
@@ -4894,11 +4944,92 @@ function openViewMenu(): void {
     { label: t.scoreView, checked: state.viewMode === 'score', run: () => setWorkspaceViewMode('score') },
     { separator: true, label: '', run: () => {} },
     { label: t.toggleExplorer, checked: state.explorerOpen, run: () => toggleExplorer() },
-    { label: t.toggleInspector, checked: state.inspectorOpen, run: () => toggleInspector() },
+    { label: t.toggleInspector, checked: state.inspectorOpen || mobileDockOpen, run: () => toggleInspector() },
     { label: t.problems, checked: state.problemsOpen, run: () => toggleProblems() },
     { separator: true, label: '', run: () => {} },
     { label: `${t.resetLayout}…`, run: resetWorkspaceLayout }
   ], button);
+}
+
+function openHelpMenu(): void {
+  const button = app.querySelector<HTMLButtonElement>('#menu-help-trigger')!;
+  const rect = button.getBoundingClientRect();
+  const t = strings();
+  showWorkspaceMenu(app.querySelector<HTMLElement>('#help-menu')!, rect.left, rect.bottom + 2, [
+    { label: t.menuWelcome, run: showWelcome },
+    { label: t.menuTutorial, run: openTutorial },
+    { label: t.menuProductIntro, href: __PRODUCT_INTRO_URL__ },
+    { label: t.help, run: openHelp },
+    { label: t.menuSource, href: 'https://github.com/puchinya/vscode-guitar-dsl' },
+    { label: '', separator: true },
+    { label: t.menuLicenses, href: 'https://guitardsl.app/licenses/' },
+    { label: t.menuPrivacy, href: 'https://guitardsl.app/privacy/' },
+    { label: t.menuTerms, href: 'https://guitardsl.app/terms/' },
+    { label: '', separator: true },
+    { label: t.menuAbout, run: () => { state.aboutOpen = true; publishWorkspaceSnapshot(); } }
+  ], button);
+}
+
+function showWelcome(): void {
+  state.welcomeOpen = true;
+  state.welcomeActive = true;
+  publishWorkspaceSnapshot();
+}
+
+function openTutorial(): void {
+  state.welcomeActive = false;
+  state.rightDockPane = 'tutorial';
+  if (workspace.clientWidth <= 680) mobileDockOpen = true;
+  else {
+    state.inspectorOpen = true;
+    mobileDockOpen = false;
+  }
+  applyWorkspaceLayout();
+  saveLayoutNow();
+}
+
+async function setWelcomeSuppressed(suppressed: boolean): Promise<void> {
+  try {
+    await indexedDb.setValue('settings', 'web-welcome-v1', { suppressOnStartup: suppressed });
+    state.welcomeSuppressed = suppressed;
+    publishWorkspaceSnapshot();
+  } catch {
+    showMessage(strings().welcomeStorageError, 'error');
+  }
+}
+
+interface TutorialProgressPreference {
+  version: 1;
+  stepIndex: number;
+  chordOnlyCompleted: boolean;
+  melodyCompleted: boolean;
+}
+
+async function navigateTutorial(action: 'next' | 'previous' | 'restart' | 'finish'): Promise<void> {
+  const progress: TutorialProgressPreference = {
+    version: 1, stepIndex: state.tutorialStepIndex,
+    chordOnlyCompleted: state.tutorialChordOnlyCompleted,
+    melodyCompleted: state.tutorialMelodyCompleted
+  };
+  if (action === 'restart') {
+    progress.stepIndex = 0;
+    progress.chordOnlyCompleted = false;
+    progress.melodyCompleted = false;
+  } else if (action === 'previous') progress.stepIndex = Math.max(0, progress.stepIndex - 1);
+  else if (action === 'next') progress.stepIndex = Math.min(9, progress.stepIndex + 1);
+  else {
+    if (progress.stepIndex === 5) progress.chordOnlyCompleted = true;
+    if (progress.stepIndex === 9) progress.melodyCompleted = true;
+  }
+  try {
+    await indexedDb.setValue('settings', 'web-tutorial-v1', progress);
+    state.tutorialStepIndex = progress.stepIndex;
+    state.tutorialChordOnlyCompleted = progress.chordOnlyCompleted;
+    state.tutorialMelodyCompleted = progress.melodyCompleted;
+    publishWorkspaceSnapshot();
+  } catch {
+    showMessage(strings().tutorialStorageError, 'error');
+  }
 }
 
 function openDriveHeaderMenu(): void {
@@ -4972,8 +5103,9 @@ function openInspectorMenu(): void {
   const t = strings();
   showWorkspaceMenu(menu, rect.left, rect.bottom + 3, [
     { label: t.closeInspector, run: () => {
-      state.inspectorOpen = false;
-      applyWorkspaceLayout(); saveLayoutNow();
+      if (workspace.clientWidth <= 680) mobileDockOpen = false;
+      else { state.inspectorOpen = false; saveLayoutNow(); }
+      applyWorkspaceLayout();
       app.querySelector<HTMLButtonElement>('#toggle-inspector')!.focus();
     } },
     { label: t.resetInspectorWidth, run: () => {
@@ -4985,6 +5117,15 @@ function openInspectorMenu(): void {
 
 app.querySelector('#close-help')!.addEventListener('click', () => app.querySelector<HTMLDialogElement>('#help-dialog')!.close(), runtimeListenerOptions);
 app.querySelector<HTMLDialogElement>('#help-dialog')!.addEventListener('close', () => app.querySelector<HTMLButtonElement>('#help-button')!.focus(), runtimeListenerOptions);
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing
+    || workspace.clientWidth > 680 || !mobileDockOpen) return;
+  if (document.querySelector<HTMLDialogElement>('dialog[open]')) return;
+  event.preventDefault();
+  mobileDockOpen = false;
+  applyWorkspaceLayout();
+  app.querySelector<HTMLButtonElement>(state.rightDockPane === 'tutorial' ? '#toggle-tutorial' : '#toggle-inspector')?.focus();
+}, runtimeListenerOptions);
 app.addEventListener('keydown', event => {
   if (event.key === 'F2' && !event.ctrlKey && !event.metaKey && !event.altKey) {
     const row = (event.target as HTMLElement).closest<HTMLButtonElement>('.drive-library-entry[data-kind="score"]');
@@ -5070,10 +5211,26 @@ window.addEventListener('online', () => {
   }
 }, runtimeListenerOptions);
 
+async function loadAuxiliaryPreferences(): Promise<void> {
+  const welcome = await indexedDb.getValue<unknown>('settings', 'web-welcome-v1').catch(() => undefined);
+  if (welcome && typeof welcome === 'object' && typeof (welcome as { suppressOnStartup?: unknown }).suppressOnStartup === 'boolean') {
+    state.welcomeSuppressed = (welcome as { suppressOnStartup: boolean }).suppressOnStartup;
+  }
+  const tutorial = await indexedDb.getValue<unknown>('settings', 'web-tutorial-v1').catch(() => undefined);
+  if (!tutorial || typeof tutorial !== 'object') return;
+  const saved = tutorial as Partial<TutorialProgressPreference>;
+  if (saved.version !== 1 || !Number.isInteger(saved.stepIndex) || saved.stepIndex! < 0 || saved.stepIndex! > 9
+    || typeof saved.chordOnlyCompleted !== 'boolean' || typeof saved.melodyCompleted !== 'boolean') return;
+  state.tutorialStepIndex = saved.stepIndex!;
+  state.tutorialChordOnlyCompleted = saved.chordOnlyCompleted;
+  state.tutorialMelodyCompleted = saved.melodyCompleted;
+}
+
 async function init(): Promise<void> {
   try {
     await loadPreferences();
     await loadLayoutPreferences();
+    await loadAuxiliaryPreferences();
     state.storageReady = true;
     await restoreLocalSession();
   } catch (error) {
@@ -5082,6 +5239,8 @@ async function init(): Promise<void> {
     await openDocument(doc, doc.source, undefined, false);
     showMessage(`${strings().unavailable} ${shortError(error)}`, 'error');
   }
+  state.welcomeOpen = !state.welcomeSuppressed;
+  state.welcomeActive = state.welcomeOpen;
   renderAll();
 }
 
@@ -5138,24 +5297,54 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
     case 'view.set-mode': return setWorkspaceViewMode(command.mode);
     case 'panel.toggle':
       if (command.panel === 'explorer') state.explorerOpen = !state.explorerOpen;
-      else if (command.panel === 'inspector') state.inspectorOpen = !state.inspectorOpen;
+      else if (command.panel === 'inspector') {
+        if (workspace.clientWidth <= 680) mobileDockOpen = !mobileDockOpen;
+        else state.inspectorOpen = !state.inspectorOpen;
+      }
       else state.problemsOpen = !state.problemsOpen;
-      applyWorkspaceLayout(); saveLayoutNow();
+      applyWorkspaceLayout();
+      if (command.panel !== 'inspector' || workspace.clientWidth > 680) saveLayoutNow();
       return;
     case 'panel.set-open':
       if (command.panel === 'explorer') state.explorerOpen = command.open;
-      else if (command.panel === 'inspector') state.inspectorOpen = command.open;
+      else if (command.panel === 'inspector') {
+        if (workspace.clientWidth <= 680) mobileDockOpen = command.open;
+        else state.inspectorOpen = command.open;
+      }
       else state.problemsOpen = command.open;
-      applyWorkspaceLayout(); saveLayoutNow();
+      applyWorkspaceLayout();
+      if (command.panel !== 'inspector' || workspace.clientWidth > 680) saveLayoutNow();
       return;
+    case 'panel.select-right':
+      if (command.mode === 'toggle' && (workspace.clientWidth <= 680 ? mobileDockOpen : state.inspectorOpen) && state.rightDockPane === command.pane) {
+        if (workspace.clientWidth <= 680) mobileDockOpen = false;
+        else state.inspectorOpen = false;
+      } else {
+        state.rightDockPane = command.pane;
+        if (workspace.clientWidth <= 680) mobileDockOpen = true;
+        else { state.inspectorOpen = true; mobileDockOpen = false; }
+      }
+      applyWorkspaceLayout();
+      saveLayoutNow(); // Persists the selected pane but never the transient overlay state.
+      return;
+    case 'welcome.open': return showWelcome();
+    case 'welcome.close':
+      state.welcomeOpen = false; state.welcomeActive = false; publishWorkspaceSnapshot();
+      return;
+    case 'welcome.set-suppressed': return setWelcomeSuppressed(command.suppressed);
+    case 'tutorial.open': return openTutorial();
+    case 'tutorial.navigate': return navigateTutorial(command.action);
+    case 'about.open': state.aboutOpen = true; publishWorkspaceSnapshot(); return;
+    case 'about.close': state.aboutOpen = false; publishWorkspaceSnapshot(); return;
     case 'layout.reset': {
       if (!window.confirm(strings().resetLayoutConfirm)) return;
       state.viewMode = 'split'; state.splitRatio = 0.4; state.explorerOpen = true; state.inspectorOpen = true;
+      mobileDockOpen = false;
       state.explorerWidth = 220; state.inspectorWidth = 300; state.problemsOpen = true; state.problemsHeight = 200;
       applyWorkspaceLayout(); saveLayoutNow();
       return;
     }
-    case 'drive.connect': return connectDrive();
+    case 'drive.connect': return connectDrive({ source: command.source });
     case 'drive.open-picker': return openFromDrivePicker();
     case 'drive.create-folder': return createDriveFolder();
     case 'drive.library.import': return importFromDrivePicker(command.accountId, command.driveGeneration, command.targetFolderId);
@@ -5178,6 +5367,7 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
       if (command.menu === 'file') openFileMenu();
       else if (command.menu === 'edit') openEditMenu();
       else if (command.menu === 'view') openViewMenu();
+      else if (command.menu === 'help') openHelpMenu();
       else if (command.menu === 'drive') openDriveHeaderMenu();
       else if (command.menu === 'drive-root') openDriveRootMenu();
       else if (command.menu === 'settings') openSettingsMenu();
@@ -5188,10 +5378,10 @@ function dispatchWorkspaceCommand(command: WorkspaceCommand): void | Promise<voi
     case 'menu.activate': {
       const index = workspaceMenuSnapshot?.items.findIndex(item => item.id === command.itemId) ?? -1;
       const action = index >= 0 ? workspaceMenuActions[index] : undefined;
-      if (!action || action.disabled || action.separator) return;
+      if (!action || action.disabled || action.separator || action.href) return;
       closeWorkspaceMenu();
       try {
-        const result = action.run();
+        const result = action.run?.();
         if (result instanceof Promise) return result.catch(error => showMessage(shortError(error), 'error'));
       } catch (error) { showMessage(shortError(error), 'error'); }
       return;

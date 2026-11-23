@@ -9,7 +9,7 @@ const emit = defineEmits<{
   navigateMain: [menu: MainMenuId];
 }>();
 const menuElement = ref<HTMLElement>();
-const menus: MainMenuId[] = ['file', 'edit', 'view'];
+const menus: MainMenuId[] = ['file', 'edit', 'view', 'help'];
 let removeDocumentListeners: (() => void) | undefined;
 
 function menuId(menu: Readonly<WorkspaceMenuSnapshot>): string {
@@ -37,6 +37,11 @@ function close(shouldRestoreFocus: boolean): void {
   const invokerId = props.menu?.invokerId;
   emit('command', { type: 'menu.close' });
   if (shouldRestoreFocus) void nextTick(() => restoreFocus(invokerId));
+}
+
+function closeAfterNavigation(): void {
+  // Let the browser run the anchor's target=_blank default action in the original user gesture.
+  window.setTimeout(() => close(false), 0);
 }
 
 function onOutsidePointer(event: PointerEvent): void {
@@ -68,13 +73,13 @@ function onMenuKeydown(event: KeyboardEvent): void {
     return;
   }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-  const buttons = Array.from(menuElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
-  if (!buttons.length) return;
+  const items = Array.from(menuElement.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? []);
+  if (!items.length) return;
   event.preventDefault();
-  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-  const next = event.key === 'Home' ? buttons[0]
-    : event.key === 'End' ? buttons.at(-1)
-      : buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length];
+  const index = items.indexOf(document.activeElement as HTMLElement);
+  const next = event.key === 'Home' ? items[0]
+    : event.key === 'End' ? items.at(-1)
+      : items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
   next?.focus();
 }
 
@@ -93,7 +98,7 @@ watch(() => props.menu, async menu => {
   const root = menuElement.value;
   if (!root) return;
   reposition();
-  root.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  root.querySelector<HTMLElement>('button:not(:disabled), a[href]')?.focus();
   const onPointer = (event: PointerEvent) => onOutsidePointer(event);
   const onFocus = (event: FocusEvent) => onOutsideFocus(event);
   document.addEventListener('pointerdown', onPointer, true);
@@ -123,6 +128,7 @@ onBeforeUnmount(() => removeDocumentListeners?.());
   >
     <template v-for="item in menu.items" :key="item.id">
       <div v-if="item.separator" role="separator"></div>
+      <a v-else-if="item.href" :href="item.href" target="_blank" rel="noopener noreferrer" role="menuitem" @click="closeAfterNavigation">{{ item.label }}</a>
       <button
         v-else
         type="button"

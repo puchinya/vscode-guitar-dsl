@@ -1,6 +1,9 @@
 name: Deploy Web to Cloudflare Workers
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -12,11 +15,49 @@ permissions:
   deployments: write
 
 jobs:
+  validate-marketing:
+    name: Validate marketing artifacts
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
+      - name: Build static Web app
+        run: npm run build:web
+        env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://www.guitardsl.app/
+      - name: Verify Web app build output
+        run: test -f web/dist/index.html
+      - name: Verify production Help link target and isolation
+        run: npm run test:e2e --workspace web -- --project=chromium --grep "Help menu keeps its nine ordered actions"
+        env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://www.guitardsl.app/
+      - name: Verify development Help link target and isolation
+        run: npm run test:e2e --workspace web -- --project=chromium --grep "Help menu keeps its nine ordered actions"
+        env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://wwwdev.guitardsl.app/
+      - name: Build and verify development product introduction
+        run: |
+          npm run build:marketing -- --target development
+          npm run check:marketing -- --target development
+      - name: Build and verify production product introduction
+        run: |
+          npm run build:marketing -- --target production
+          npm run check:marketing -- --target production
+
   development:
     name: Deploy dev.guitardsl.app
     if: github.ref == 'refs/heads/main' && github.event.deleted == false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     environment:
       name: development
       url: https://dev.guitardsl.app
@@ -31,14 +72,25 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
       - name: Build static Web app
         run: npm run build:web
         env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://wwwdev.guitardsl.app/
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
           VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
+      - name: Verify development Help link target and isolation
+        run: npm run test:e2e --workspace web -- --project=chromium --grep "Help menu keeps its nine ordered actions"
+        env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://wwwdev.guitardsl.app/
       - name: Verify build output
         run: test -f web/dist/index.html
+      - name: Build and verify development product introduction
+        run: |
+          npm run build:marketing -- --target development
+          npm run check:marketing -- --target development
       - name: Publish development Preview of production Worker
         uses: cloudflare/wrangler-action@v4
         with:
@@ -47,12 +99,24 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '4.160.0'
           command: preview --config wrangler.jsonc --name dev
+      - name: Publish development product introduction Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '4.160.0'
+          command: deploy --config wrangler-marketing-dev.jsonc
+      - name: Read back development HTTPS origins
+        run: node scripts/release-readback.mjs --environment development
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   production:
     name: Deploy guitardsl.app
     if: startsWith(github.ref, 'refs/tags/') && github.event.deleted == false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     environment:
       name: production
       url: https://guitardsl.app
@@ -80,14 +144,25 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
       - name: Build static Web app
         run: npm run build:web
         env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://www.guitardsl.app/
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
           VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
+      - name: Verify production Help link target and isolation
+        run: npm run test:e2e --workspace web -- --project=chromium --grep "Help menu keeps its nine ordered actions"
+        env:
+          VITE_GUITARDSL_PRODUCT_INTRO_URL: https://www.guitardsl.app/
       - name: Verify build output
         run: test -f web/dist/index.html
+      - name: Build and verify production product introduction
+        run: |
+          npm run build:marketing -- --target production
+          npm run check:marketing -- --target production
       - name: Publish to existing production Worker
         uses: cloudflare/wrangler-action@v4
         with:
@@ -96,3 +171,15 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '4.160.0'
           command: deploy --config wrangler.jsonc
+      - name: Publish production product introduction Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '4.160.0'
+          command: deploy --config wrangler-marketing.jsonc
+      - name: Read back all production and development HTTPS origins
+        run: node scripts/release-readback.mjs --environment all
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
