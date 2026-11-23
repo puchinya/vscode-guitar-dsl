@@ -1336,22 +1336,31 @@ async function persistDriveAppData(
 }
 
 async function flushDriveAppData(shouldContinue: () => boolean = () => true): Promise<boolean> {
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const generation = state.driveGeneration;
+  const sessionIsCurrent = () => accountId && drive
+    ? driveSessionIsCurrent(accountId, drive, generation)
+    : !state.account && !state.drive && state.driveGeneration === generation;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (appDataSyncTimer) {
       window.clearTimeout(appDataSyncTimer);
       appDataSyncTimer = 0;
     }
     await appDataPendingQueue;
-    if (!shouldContinue() || state.appDataSync === 'error' && !appDataUnknownOutcome) return false;
+    if (!sessionIsCurrent() || !shouldContinue() || state.appDataSync === 'error' && !appDataUnknownOutcome) return false;
     if (state.appDataSync === 'syncing') {
       await appDataSyncQueue;
-      if (!shouldContinue()) return false;
+      if (!sessionIsCurrent() || !shouldContinue()) return false;
       continue;
     }
     if (state.appDataSync === 'pending' || state.appDataPending || deferredAppDataSync || appDataUnknownOutcome) {
+      if (!accountId || !drive) return false;
       deferredAppDataSync = false;
-      const synced = await persistDriveAppData(driveWorkspaceState(), latestAppDataDesired, true);
-      if (!synced || !shouldContinue()) return false;
+      const next = driveWorkspaceState();
+      const desired = desiredDriveAppData(accountId, drive, generation, next);
+      const synced = await persistDriveAppData(next, desired, true);
+      if (!synced || !sessionIsCurrent() || !shouldContinue()) return false;
       continue;
     }
     if (state.appDataSync === 'idle' && !state.appDataPending && !appDataSyncTimer) return true;

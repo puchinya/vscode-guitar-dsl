@@ -111,6 +111,7 @@ async function pageDiagnostics() {
       tokenRequests: window.__guitardslSafariSmoke.tokenRequests,
       pickerOpened: window.__guitardslSafariSmoke.pickerOpened,
       driveRequests: window.__guitardslSafariSmoke.driveRequests.length,
+      driveRequestTrace: window.__guitardslSafariSmoke.driveRequests.slice(-8).map(({ method, path }) => ({ method, path })),
       pdfBlobSize: window.__guitardslSafariSmoke.pdfBlob?.size,
       download: window.__guitardslSafariSmoke.download,
       nativeEditorEvents: window.__guitardslSafariSmoke.nativeEditorEvents?.slice(-20)
@@ -542,9 +543,18 @@ try {
     await openPicker.sendKeys(Key.ENTER);
     await waitUntil(async () => await driver.executeScript(() => Boolean(document.querySelector('.drive-library-entry[data-file-id="safari-copy"]'))),
       'Picker selection was not copied into the GuitarDSL library.');
+    await waitUntil(async () => await driver.executeScript(() => document.querySelector('#app-message')?.textContent?.includes('Import: 1 confirmed')),
+      'Drive import did not report completion.');
+    const driveRequestStart = await driver.executeScript(() => window.__guitardslSafariSmoke.driveRequests.length);
     await click('.drive-library-entry[data-file-id="safari-copy"]');
-    await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),
-      'Opening the imported Drive copy did not load the score.');
+    try {
+      await waitUntil(async () => await driver.executeScript(() => window.__guitarDslReadSource?.().includes('Safari Drive mock')),
+        'Opening the imported Drive copy did not load the score.');
+    } catch (error) {
+      const driveRequestTrace = await driver.executeScript(start => window.__guitardslSafariSmoke.driveRequests
+        .slice(start).map(({ method, path }) => ({ method, path })).slice(-12), driveRequestStart);
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), { details: { driveRequestTrace } });
+    }
     const details = await driver.executeScript(() => ({
       tokenRequests: window.__guitardslSafariSmoke.tokenRequests,
       pickerOpened: window.__guitardslSafariSmoke.pickerOpened,
