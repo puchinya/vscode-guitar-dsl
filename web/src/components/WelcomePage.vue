@@ -8,7 +8,7 @@ const { t, locale } = useI18n({ useScope: 'global' });
 
 function legalHref(page: 'terms' | 'licenses' | 'privacy'): string {
   const activeLocale = locale.value === 'ja' ? 'ja' : 'en';
-  return `https://guitardsl.app/${page}/${activeLocale}/`;
+  return `/${page}/${activeLocale}/`;
 }
 
 function setWelcomeSuppressed(event: Event): void {
