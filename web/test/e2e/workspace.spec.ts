@@ -71,9 +71,9 @@ async function assertWelcomeLinks(page: Page, locale: 'en' | 'ja') {
     rel: anchor.getAttribute('rel')
   })));
   expect(targets).toEqual([
-    { href: `/terms/${language}/`, target: '_blank', rel: 'noopener noreferrer' }
-    { href: `/licenses/${language}/`, target: '_blank', rel: 'noopener noreferrer' }
-    { href: `/privacy/${language}/`, target: '_blank', rel: 'noopener noreferrer' }
+    { href: `/terms/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `/licenses/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
+    { href: `/privacy/${language}/`, target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' }
   ]);
   const resolvedLegalHrefs = await links.locator('a').evaluateAll(anchors => anchors.slice(0, 3).map(anchor => (anchor as HTMLAnchorElement).href));
@@ -2773,9 +2773,9 @@ test('Help menu keeps its nine ordered actions, safe links, and versioned About 
   expect(externalLinkAttributes).toEqual([
     { href: PRODUCT_INTRO_URL, target: '_blank', rel: 'noopener noreferrer' },
     { href: 'https://github.com/puchinya/vscode-guitar-dsl', target: '_blank', rel: 'noopener noreferrer' },
-    { href: '/licenses/', target: '_blank', rel: 'noopener noreferrer' }
-    { href: '/privacy/', target: '_blank', rel: 'noopener noreferrer' }
-    { href: '/terms/', target: '_blank', rel: 'noopener noreferrer' }
+    { href: '/licenses/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: '/privacy/', target: '_blank', rel: 'noopener noreferrer' },
+    { href: '/terms/', target: '_blank', rel: 'noopener noreferrer' },
   ]);
 
   const resolvedHelpLegalHrefs = await externalLinks.evaluateAll(links => links.slice(2).map(link => (link as HTMLAnchorElement).href));
