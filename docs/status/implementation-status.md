@@ -6,6 +6,12 @@
 - **最終更新日**: 2026-11-23
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #191: Web 法的文書リンクの開発・本番環境分離
+
+- **原因**: #188 / merged PR #190 の Welcome、Help、および紹介サイトフッターに本番 `https://guitardsl.app` が固定され、開発ホストから本番サイトへ遷移していた。
+- **修正（PR作成前・検証待ち）**: Welcome と Help の法的文書リンクをアプリルート相対 `/licenses/`・`/privacy/`・`/terms/`（Welcome は `/{en|ja}/` を付加）に変更。別オリジンの紹介サイトは既存の `__APP_URL__` により開発は `dev.guitardsl.app`、本番は `guitardsl.app` へのフッターリンクをビルドする。ライセンス本文・配信済みURL・本番 canonical・Cloudflare 設定は不変。
+- **回帰検証**: `web/test/e2e/workspace.spec.ts` に href 属性とブラウザーの同一オリジン解決を検査。 `scripts/verify-marketing.mjs` は両環境の期待フッターリンクを照合する。ローカル実行・GitHub CI・公開ホスト readback は未確認であり、検証済みとは扱わない。
+
 ## Issue #188: Web ようこそ・チュートリアル・Help・法的文書
 
 - **状態**: `feature/188-web-welcome-tutorial-legal-pages` の [PR #190](https://github.com/puchinya/vscode-guitar-dsl/pull/190) はレビュー中。最新レビュー #6019392636 のP1（TAB視覚受入れゲート）とP2（モバイルEscape優先順）、C006/C007を修正し、Issue ownerの指示でTAB描画も本Issueに含めた。Contract comment 7097507228（SHA-256 `133f3b8375521f5d23dc5f4b8b55f536ef8233aadedf78da5a21f6b7640b6fdf`）に対象・受入条件を固定済み。commit/push済み。GitHub Required Checks 5/5、現HEAD self-review、delivery-checkはPASS。Issue #188とPR #190はreview中。バージョン `0.1.0`。
