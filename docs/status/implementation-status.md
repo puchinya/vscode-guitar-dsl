@@ -9,8 +9,8 @@
 ## Issue #191: Web 法的文書リンクの開発・本番環境分離
 
 - **原因**: #188 / merged PR #190 の Welcome、Help、および紹介サイトフッターに本番 `https://guitardsl.app` が固定され、開発ホストから本番サイトへ遷移していた。
-- **修正（PR作成前・検証待ち）**: Welcome と Help の法的文書リンクをアプリルート相対 `/licenses/`・`/privacy/`・`/terms/`（Welcome は `/{en|ja}/` を付加）に変更。別オリジンの紹介サイトは既存の `__APP_URL__` により開発は `dev.guitardsl.app`、本番は `guitardsl.app` へのフッターリンクをビルドする。ライセンス本文・配信済みURL・本番 canonical・Cloudflare 設定は不変。
-- **回帰検証**: `web/test/e2e/workspace.spec.ts` に href 属性とブラウザーの同一オリジン解決を検査。 `scripts/verify-marketing.mjs` は両環境の期待フッターリンクを照合する。ローカル実行・GitHub CI・公開ホスト readback は未確認であり、検証済みとは扱わない。
+- **修正（PR #193・CI検証中）**: Welcome と Help の法的文書リンクをアプリルート相対 `/licenses/`・`/privacy/`・`/terms/`（Welcome は `/{en|ja}/` を付加）に変更。別オリジンの紹介サイトは既存の `__APP_URL__` により開発は `dev.guitardsl.app`、本番は `guitardsl.app` へのフッターリンクをビルドする。ライセンス本文・配信済みURL・本番 canonical・Cloudflare 設定は不変。
+- **回帰検証**: `web/test/e2e/workspace.spec.ts` に href 属性とブラウザーの同一オリジン解決を検査。 `scripts/verify-marketing.mjs` は両環境の期待フッターリンクを照合する。ローカル実行と公開ホスト readback は未実施。GitHub CI はPR HEADで検証中であり、結果確認前にPASSとは扱わない。
 
 ## Issue #188: Web ようこそ・チュートリアル・Help・法的文書
 
