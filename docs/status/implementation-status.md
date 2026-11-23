@@ -8,7 +8,7 @@
 
 ## Issue #168: Web Drive接続・フォルダー操作のアカウント分離
 
-- **状態**: 承認済みImplementation Contract comment `7100822517`（7,529 bytes、SHA-256 `caf2717d9fe62e5fc7b1dba58de4cb3e2c1eb5ab2c33142b077cb23c59fde5e3`）に基づく実装。最終修正を[PR #199](https://github.com/puchinya/vscode-guitar-dsl/pull/199)へ反映後、current-HEAD reviewとRequired Checksを更新する。Milestone #1、対象バージョン `0.1.0`。
+- **状態**: 承認済みImplementation Contract comment `7100822517`（7,529 bytes、SHA-256 `caf2717d9fe62e5fc7b1dba58de4cb3e2c1eb5ab2c33142b077cb23c59fde5e3`）に基づく実装を[PR #199](https://github.com/puchinya/vscode-guitar-dsl/pull/199)で提出。PRはcurrent-HEAD reviewとRequired Checksを通過し、maintainer review待ち。Milestone #1、対象バージョン `0.1.0`。
 - **変更**: OAuth token/account候補をDrive `/about` 検証後に一括公開し、保留中の接続をsingle-flight化する。Drive接続試行・復元の世代と、フォルダー選択時に捕捉したaccount/Drive instance/appData desired stateを照合し、旧アカウントの遅延結果が新アカウントの設定・Explorer・タブへ適用されないようにする。appData retry時も捕捉済みDrive sessionから最新 desired stateを再構成する。アカウントごとのタブとIndexedDB下書きは保持する。
 - **検証状況**: Web unit 86/86、production PWA E2E 3/3、Playwright Chromium 141/141、Playwright WebKit 141/141、SafariDriver smoke 7/7、`npm run build:web`、typecheck、`check:help`、`check:ai`、`validate-docs --issue 168`、`git diff --check` はPASS。Safari smokeはDrive import完了表示後に開く待機を加えてPASS。設定済み `verify_final`（`npm run compile`、`npm test`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`）は4段階すべて終了コード0、スキップなし。実Google OAuth/Drive、iOS/iPadOS Safari、実PDF保存、物理音声出力は未実施。
 - **文書オーナー**: `docs/specs/web-app.md`、`docs/design/web-app.md`、本ステータス。
