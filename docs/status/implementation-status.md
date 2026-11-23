@@ -6,6 +6,13 @@
 - **最終更新日**: 2026-11-23
 - **全体ステータス**: Issue #129（PR #131）、#132（PR #157）、#133（PR #138）、#134（PR #139）、#135（PR #140）、#136（PR #141）、#137（PR #152）、#144（PR #146）、#145（PR #149）、#153（PR #154）、#155（PR #156）、#158（PR #159）は `main` へマージ済みで、各Issueはclosed。PR #143 と Issue #142 もマージ済み。PR #163 / Issue #162 はcanonical Contract v28に基づく修正・全体テストを完了し、最新PRレビューを再確認中。Issue #164 の実装は[PR #165](https://github.com/puchinya/vscode-guitar-dsl/pull/165)でreview中。参考cropとv24 vector specimensの正確な対応は未確認として、現行の視覚検収対象から除外。
 
+## Issue #197: 法的文書ページ内部リンクの環境分離
+
+- **原因**: #192 / PR #195 はWebから法的文書への入口を修正したが、`scripts/generate-legal-pages.mjs::renderPage` の言語切替2リンクとフッター関連文書2リンクは依然として本番絶対URLだった。言語別6ページとJavaScript無効時の英語ベース3ページすべてに影響。
+- **修正**: 生成元のクリック可能な内部リンクをルート相対に変更し、生成HTML9ページを更新。Home `/` と言語判定によるリダイレクトは変更しない。SEOの `canonical`/`hreflang` は本番絶対URL、文書本文・外部参照・CSPも維持。
+- **回帰テスト**: `web/test/e2e/workspace.spec.ts` に全法的文書×英日×デスクトップ/モバイルのヘッダー・フッターリンク、同一origin、production canonical/hreflang、および実クリックとJavaScript無効英語ベースの検証を追加。
+- **検証状態**: GitHub連携でコード変更。ローカル依存関係がないためこのチャット内でnpmの実行は未検証。PRのCIで最終確認し、CloudflareデプロイはPRでは実施しない。
+
 ## Issue #192: Web法的文書リンクの開発／本番環境分離
 
 - **問題**: Issue #188 / PR #190のWeb HelpメニューとWelcomeのライセンス・プライバシーポリシー・利用規約リンク、および紹介サイトのフッターのリンクが本番の `guitardsl.app` を固定参照し、開発サイトからも本番へ遷移していた。
