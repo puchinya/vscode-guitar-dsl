@@ -492,6 +492,23 @@ test('serves all legal routes as static bilingual pages with a no-script English
         await expect(page.locator('article h1')).toBeVisible();
         await expect(page.locator('script')).toHaveCount(0);
         await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://guitardsl.app/${pageName}/${locale}/`);
+        const alternates = await page.locator('link[rel="alternate"]').evaluateAll(links => links.map(link => ({
+          locale: link.getAttribute('hreflang'), href: link.getAttribute('href')
+        })));
+        expect(alternates).toEqual([
+          { locale: 'en', href: `https://guitardsl.app/${pageName}/en/` },
+          { locale: 'ja', href: `https://guitardsl.app/${pageName}/ja/` },
+          { locale: 'x-default', href: `https://guitardsl.app/${pageName}/` }
+        ]);
+        const languageHrefs = await page.locator('header nav a').evaluateAll(anchors => anchors.map(anchor => anchor.getAttribute('href')));
+        expect(languageHrefs).toEqual([`/${pageName}/en/`, `/${pageName}/ja/`]);
+        const relatedPages = ['licenses', 'privacy', 'terms'].filter(name => name !== pageName);
+        const footerHrefs = await page.locator('footer nav a').evaluateAll(anchors => anchors.map(anchor => anchor.getAttribute('href')));
+        expect(footerHrefs).toEqual(['/', ...relatedPages.map(name => `/${name}/${locale}/`), 'mailto:support@guitardsl.app']);
+        const currentOrigin = new URL(page.url()).origin;
+        for (const href of [...languageHrefs, ...footerHrefs.slice(0, 3)]) {
+          expect(new URL(href!, page.url()).origin).toBe(currentOrigin);
+        }
         const dimensions = await page.evaluate(() => ({
           scrollWidth: document.documentElement.scrollWidth,
           clientWidth: document.documentElement.clientWidth
@@ -513,6 +530,13 @@ test('serves all legal routes as static bilingual pages with a no-script English
     await expect(japanesePage).toHaveURL(/\/privacy\/ja\/$/);
     await japanesePage.goto('/terms/en/');
     await expect(japanesePage).toHaveURL(/\/terms\/en\/$/);
+    const originalOrigin = new URL(japanesePage.url()).origin;
+    await japanesePage.locator('header nav a[lang="ja"]').click();
+    await expect(japanesePage).toHaveURL(/\/terms\/ja\/$/);
+    expect(new URL(japanesePage.url()).origin).toBe(originalOrigin);
+    await japanesePage.locator('footer nav a[href="/licenses/ja/"]').click();
+    await expect(japanesePage).toHaveURL(/\/licenses\/ja\/$/);
+    expect(new URL(japanesePage.url()).origin).toBe(originalOrigin);
   } finally { await japaneseContext.close(); }
 
   const noScriptContext = await browser.newContext({ baseURL: 'http://127.0.0.1:4179', locale: 'ja-JP', javaScriptEnabled: false });
@@ -522,6 +546,15 @@ test('serves all legal routes as static bilingual pages with a no-script English
     await expect(noScriptPage).toHaveURL(/\/privacy\/$/);
     await expect(noScriptPage.locator('article')).toContainText('Privacy Policy');
     await expect(noScriptPage.locator('article')).toContainText('Google Drive is optional');
+    await expect(noScriptPage.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://guitardsl.app/privacy/');
+    const originalOrigin = new URL(noScriptPage.url()).origin;
+    const baseLanguageHrefs = await noScriptPage.locator('header nav a').evaluateAll(anchors => anchors.map(anchor => anchor.getAttribute('href')));
+    expect(baseLanguageHrefs).toEqual(['/privacy/en/', '/privacy/ja/']);
+    const baseFooterHrefs = await noScriptPage.locator('footer nav a').evaluateAll(anchors => anchors.map(anchor => anchor.getAttribute('href')));
+    expect(baseFooterHrefs).toEqual(['/', '/licenses/en/', '/terms/en/', 'mailto:support@guitardsl.app']);
+    await noScriptPage.locator('header nav a[lang="ja"]').click();
+    await expect(noScriptPage).toHaveURL(/\/privacy\/ja\/$/);
+    expect(new URL(noScriptPage.url()).origin).toBe(originalOrigin);
   } finally { await noScriptContext.close(); }
 });
 

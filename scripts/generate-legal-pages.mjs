@@ -191,8 +191,8 @@ function renderPage(page, locale, markdown, isBase = false) {
   const localeHref = `${site}/${page}/${locale}/`;
   const canonical = isBase ? `${site}/${page}/` : localeHref;
   const body = renderMarkdown(markdown) + (page === 'licenses' ? licensesHtml : '');
-  const legalNav = pages.filter(id => id !== page).map(id => `<a href="${site}/${id}/${locale}/">${escapeHtml(id === 'privacy' ? (locale === 'ja' ? 'プライバシー' : 'Privacy') : id === 'terms' ? (locale === 'ja' ? '利用規約' : 'Terms') : (locale === 'ja' ? 'ライセンス' : 'Licenses'))}</a>`).join('');
-  const selector = `<nav aria-label="${escapeHtml(pageNames[locale].language)}"><span>${escapeHtml(pageNames[locale].language)}:</span> <a href="${site}/${page}/en/" lang="en">${pageNames[locale].english}</a><a href="${site}/${page}/ja/" lang="ja">${pageNames[locale].japanese}</a></nav>`;
+  const legalNav = pages.filter(id => id !== page).map(id => `<a href="/${id}/${locale}/">${escapeHtml(id === 'privacy' ? (locale === 'ja' ? 'プライバシー' : 'Privacy') : id === 'terms' ? (locale === 'ja' ? '利用規約' : 'Terms') : (locale === 'ja' ? 'ライセンス' : 'Licenses'))}</a>`).join('');
+  const selector = `<nav aria-label="${escapeHtml(pageNames[locale].language)}"><span>${escapeHtml(pageNames[locale].language)}:</span> <a href="/${page}/en/" lang="en">${pageNames[locale].english}</a><a href="/${page}/ja/" lang="ja">${pageNames[locale].japanese}</a></nav>`;
   const redirect = isBase ? `<script>(()=>{const langs=Array.isArray(navigator.languages)?navigator.languages:[];const candidate=String(langs[0]||navigator.language||'').toLowerCase();const locale=candidate==='ja'||candidate.startsWith('ja-')?'ja':'en';location.replace('/${page}/'+locale+'/')})()</script>` : '';
   const scriptPolicy = isBase ? "script-src 'unsafe-inline'" : "script-src 'none'";
   const html = `<!doctype html>

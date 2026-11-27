@@ -13,6 +13,13 @@
 - **検証状況**: Web unit 86/86、production PWA E2E 3/3、Playwright Chromium 141/141、Playwright WebKit 141/141、SafariDriver smoke 7/7、`npm run build:web`、typecheck、`check:help`、`check:ai`、`validate-docs --issue 168`、`git diff --check` はPASS。Safari smokeはDrive import完了表示後に開く待機を加えてPASS。設定済み `verify_final`（`npm run compile`、`npm test`、`npm run vscode:prepublish`、`npx @vscode/vsce ls`）は4段階すべて終了コード0、スキップなし。実Google OAuth/Drive、iOS/iPadOS Safari、実PDF保存、物理音声出力は未実施。
 - **文書オーナー**: `docs/specs/web-app.md`、`docs/design/web-app.md`、本ステータス。
 
+## Issue #197: 法的文書ページ内部リンクの環境分離
+
+- **原因**: #192 / PR #195 はWebから法的文書への入口を修正したが、`scripts/generate-legal-pages.mjs::renderPage` の言語切替2リンクとフッター関連文書2リンクは依然として本番絶対URLだった。言語別6ページとJavaScript無効時の英語ベース3ページすべてに影響。
+- **修正**: 生成元のクリック可能な内部リンクをルート相対に変更し、生成HTML9ページを更新。Home `/` と言語判定によるリダイレクトは変更しない。SEOの `canonical`/`hreflang` は本番絶対URL、文書本文・外部参照・CSPも維持。
+- **回帰テスト**: `web/test/e2e/workspace.spec.ts` に全法的文書×英日×デスクトップ/モバイルのヘッダー・フッターリンク、同一origin、production canonical/hreflang、および実クリックとJavaScript無効英語ベースの検証を追加。
+- **検証状態**: GitHub連携でコード変更。ローカル依存関係がないためこのチャット内でnpmの実行は未検証。PRのCIで最終確認し、CloudflareデプロイはPRでは実施しない。
+
 ## Issue #192: Web法的文書リンクの開発／本番環境分離
 
 - **問題**: Issue #188 / PR #190のWeb HelpメニューとWelcomeのライセンス・プライバシーポリシー・利用規約リンク、および紹介サイトのフッターのリンクが本番の `guitardsl.app` を固定参照し、開発サイトからも本番へ遷移していた。
