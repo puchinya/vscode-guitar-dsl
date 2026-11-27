@@ -300,7 +300,9 @@ const previewModeDraftChecks = new Map<string, PreviewModeDraftCheck>();
 let previewModeDraftCheckSequence = 0;
 let moveToDriveInProgress = false;
 let driveConnectInProgress = false;
+let driveSessionInitializationInProgress = false;
 let driveConnectInterrupted = false;
+let driveConnectAttemptSequence = 0;
 let activeDriveOperations = 0;
 let activeDriveListOperations = 0;
 let activeDriveReadOperations = 0;
@@ -322,6 +324,7 @@ let latestAppDataDesired: {
 let appDataOfflinePending = false;
 let appDataUnknownOutcome = false;
 let restoringDriveSession = false;
+let driveRestoreSequence = 0;
 let helpBlobUrl = '';
 let localExpanded = true;
 let driveExpanded = true;
@@ -408,9 +411,10 @@ function suspendWorkspaceForBfcache(): void {
   workspaceOperationGeneration += 1;
   capturePageCacheBaseline();
   if (pageCacheSuspended) return;
-  if (driveConnectInProgress) {
+  if (driveConnectInProgress || driveSessionInitializationInProgress) {
     driveConnectInterrupted = true;
     driveConnectInProgress = false;
+    driveSessionInitializationInProgress = false;
   }
   pageCacheSuspended = true;
   syncWorkspaceInteractionLock();
@@ -760,7 +764,7 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
   }));
   const driveEntries = driveLibraryEntriesSnapshot();
   const driveStatus = !navigator.onLine ? 'offline'
-    : driveConnectInProgress ? 'connecting'
+    : driveConnectInProgress || driveSessionInitializationInProgress ? 'connecting'
       : state.authExpired ? 'reauth'
         : state.account && state.drive ? 'connected' : 'disconnected';
   return Object.freeze({
@@ -787,7 +791,7 @@ function workspaceSnapshot(): Readonly<WorkspaceViewSnapshot> {
     driveScopeNote: state.account && state.drive && navigator.onLine ? strings().driveAccess : undefined,
     driveOverwriteWarning: state.account && state.drive && navigator.onLine ? strings().driveOverwriteWarning : undefined,
     storageStatus: workspaceStorageStatus, cursorPosition: cursorPositionLabel,
-    previewStatus: previewStatusLabel, driveBusy: activeDriveOperations > 0,
+    previewStatus: previewStatusLabel, driveBusy: activeDriveOperations > 0 || driveConnectInProgress,
     saveDisabled: activeDriveOperations > 0 || Boolean(tab?.document.identity.storage === 'drive' && tab.accountId !== state.account?.accountId),
     pwa: pwaRuntime?.snapshot() ?? { updateAvailable: false, offlineReady: false, updating: false, online: navigator.onLine },
     message: workspaceMessage
@@ -1027,7 +1031,7 @@ async function clearPendingDriveAppData(
 function scheduleDriveAppDataSync(): void {
   if (remoteAppDataRestoreInProgress) return;
   if (restoringDriveSession || !state.account || !state.drive || !state.appDataStore || !state.appDataSnapshot) return;
-  if (driveConnectInProgress) {
+  if (driveConnectInProgress || driveSessionInitializationInProgress) {
     deferredAppDataSync = true;
     return;
   }
@@ -1120,7 +1124,9 @@ async function restoreRemoteDriveAppData(
       if (snapshot.state.selectedFolderId && snapshot.state.selectedFolderId !== folder.id) {
         throw new Error('The selected Drive library folder no longer matches the verified GuitarDSL root.');
       }
-      await commitSelectedDriveFolder(folder, 'completed', snapshot.state);
+      if (!await commitSelectedDriveFolder(accountId, drive, generation, folder, 'completed', snapshot.state)) {
+        throw new Error('The Drive session changed while restoring the selected folder.');
+      }
       const folderId = state.folderId;
       if (!folderId || folderId !== folder.id) throw new Error('The selected Drive library folder could not be restored.');
       // Resolve the selected folder's listing before clearing pending state or releasing the shell lock.
@@ -1219,9 +1225,9 @@ async function persistDriveAppData(
   const store = state.appDataStore;
   const generation = state.driveGeneration;
   if (!accountId || !drive || !store || !state.appDataSnapshot) return false;
-  const desired = requestedDesired && requestedDesired.accountId === accountId && requestedDesired.drive === drive
-    && requestedDesired.generation === generation && sameDriveAppDataState(requestedDesired.state, next)
-    ? requestedDesired : desiredDriveAppData(accountId, drive, generation, next);
+  if (requestedDesired && (requestedDesired.accountId !== accountId || requestedDesired.drive !== drive
+    || requestedDesired.generation !== generation || !sameDriveAppDataState(requestedDesired.state, next))) return false;
+  const desired = requestedDesired ?? desiredDriveAppData(accountId, drive, generation, next);
   const write = appDataSyncQueue.then(async () => {
     if (!appDataDesiredIsCurrent(desired, allowReloadPreparation) || state.appDataStore !== store) return false;
     const baseline = state.appDataSnapshot;
@@ -1330,22 +1336,31 @@ async function persistDriveAppData(
 }
 
 async function flushDriveAppData(shouldContinue: () => boolean = () => true): Promise<boolean> {
+  const accountId = state.account?.accountId;
+  const drive = state.drive;
+  const generation = state.driveGeneration;
+  const sessionIsCurrent = () => accountId && drive
+    ? driveSessionIsCurrent(accountId, drive, generation)
+    : !state.account && !state.drive && state.driveGeneration === generation;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (appDataSyncTimer) {
       window.clearTimeout(appDataSyncTimer);
       appDataSyncTimer = 0;
     }
     await appDataPendingQueue;
-    if (!shouldContinue() || state.appDataSync === 'error' && !appDataUnknownOutcome) return false;
+    if (!sessionIsCurrent() || !shouldContinue() || state.appDataSync === 'error' && !appDataUnknownOutcome) return false;
     if (state.appDataSync === 'syncing') {
       await appDataSyncQueue;
-      if (!shouldContinue()) return false;
+      if (!sessionIsCurrent() || !shouldContinue()) return false;
       continue;
     }
     if (state.appDataSync === 'pending' || state.appDataPending || deferredAppDataSync || appDataUnknownOutcome) {
+      if (!accountId || !drive) return false;
       deferredAppDataSync = false;
-      const synced = await persistDriveAppData(driveWorkspaceState(), latestAppDataDesired, true);
-      if (!synced || !shouldContinue()) return false;
+      const next = driveWorkspaceState();
+      const desired = desiredDriveAppData(accountId, drive, generation, next);
+      const synced = await persistDriveAppData(next, desired, true);
+      if (!synced || !sessionIsCurrent() || !shouldContinue()) return false;
       continue;
     }
     if (state.appDataSync === 'idle' && !state.appDataPending && !appDataSyncTimer) return true;
@@ -2210,21 +2225,21 @@ async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   } catch (error) { if (workspaceOperationIsCurrent(operationGeneration)) showMessage(shortError(error), 'error'); }
 }
 
-function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
+function closeTab(tab: OpenTab, skipDraft = false, sessionIsCurrent: () => boolean = () => true): Promise<void> {
   const inFlight = closingTabs.get(tab);
   if (inFlight) return inFlight;
-  const closePromise = closeTabNow(tab, skipDraft).finally(() => {
+  const closePromise = closeTabNow(tab, skipDraft, sessionIsCurrent).finally(() => {
     if (closingTabs.get(tab) === closePromise) closingTabs.delete(tab);
   });
   closingTabs.set(tab, closePromise);
   return closePromise;
 }
 
-async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
+async function closeTabNow(tab: OpenTab, skipDraft = false, sessionIsCurrent: () => boolean = () => true): Promise<void> {
   const operationGeneration = workspaceOperationGeneration;
-  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && sessionIsCurrent();
   const key = tabKey(tab);
-  if (!state.tabs.includes(tab)) return;
+  if (!operationIsCurrent() || !state.tabs.includes(tab)) return;
   if (state.activeKey === key && !editorReadyForDocumentChange()) return;
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
   if (!operationIsCurrent()) return;
@@ -2243,7 +2258,7 @@ async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
     if (!operationIsCurrent()) return;
   }
   const index = state.tabs.indexOf(tab);
-  if (index < 0) return;
+  if (index < 0 || !operationIsCurrent()) return;
   state.tabs.splice(index, 1);
   derivedScoreCache.clear(activeIdentityLabel(tab));
   if (state.activeKey === key) {
@@ -2746,38 +2761,45 @@ async function loadDriveAppData(
 }
 
 async function commitSelectedDriveFolder(
-  folder: DriveFile, prompt: DriveAppDataState['folderPrompt'] = 'completed', baseState?: DriveAppDataState
-): Promise<void> {
-  const accountId = state.account?.accountId;
-  const drive = state.drive;
-  const generation = state.driveGeneration;
+  accountId: string, drive: GoogleDriveApi, generation: number, folder: DriveFile,
+  prompt: DriveAppDataState['folderPrompt'] = 'completed', baseState?: DriveAppDataState
+): Promise<boolean> {
+  const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation);
+  if (!isCurrent()) return false;
+  const snapshot = state.appDataSnapshot;
+  const store = state.appDataStore;
   if (state.folderId !== folder.id) {
     driveChildrenByParent.clear(); driveExpandedFolders.clear(); driveLoadingFolders.clear();
     driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
   }
   const next = { ...(baseState ?? driveWorkspaceState()), selectedFolderId: folder.id, folderPrompt: prompt };
-  if (!remoteAppDataRestoreInProgress && accountId && drive && state.appDataSnapshot) {
+  const desired = !remoteAppDataRestoreInProgress && store && snapshot
+    ? desiredDriveAppData(accountId, drive, generation, next)
+    : undefined;
+  if (desired) {
     try {
-      if (!await persistPendingDriveAppData(accountId, drive, generation, next)) return;
+      if (!await persistPendingDriveAppData(accountId, drive, generation, next, desired)) return false;
     } catch (error) {
-      if (driveSessionIsCurrent(accountId, drive, generation)) {
+      if (isCurrent() && state.appDataSnapshot === snapshot) {
         state.appDataSync = 'error';
         state.appDataError = shortError(error);
         renderStorageStatus();
       }
       throw error;
     }
-    if (!driveSessionIsCurrent(accountId, drive, generation)) return;
+    if (!isCurrent() || state.appDataSnapshot !== snapshot || state.appDataStore !== store) return false;
   }
+  if (!isCurrent() || state.appDataSnapshot !== snapshot) return false;
   state.folderId = folder.id;
   state.folderName = folder.name;
-  if (!remoteAppDataRestoreInProgress && accountId && drive && state.appDataSnapshot) {
+  if (desired) {
     state.appDataSync = 'pending';
     state.appDataPendingChoice = 'local';
     renderStorageStatus();
-    void persistDriveAppData(next);
+    void persistDriveAppData(next, desired);
   }
   await renderExplorer();
+  return isCurrent() && state.appDataSnapshot === snapshot;
 }
 
 async function findCanonicalLibraryRoot(
@@ -2819,7 +2841,7 @@ async function setUpDriveFolderAfterConnect(
   const folder = await findCanonicalLibraryRoot(accountId, drive, generation, snapshot, session);
   if (!driveSessionIsCurrent(accountId, drive, generation) || state.appDataSnapshot !== snapshot) return;
   if (folder) {
-    await commitSelectedDriveFolder(folder, 'completed', session);
+    await commitSelectedDriveFolder(accountId, drive, generation, folder, 'completed', session);
     return;
   }
   if (session.folderPrompt === 'deferred') return;
@@ -2835,21 +2857,27 @@ async function setUpDriveFolderAfterConnect(
 async function connectDrive(options: { source?: 'welcome' } = {}): Promise<void> {
   if (driveConnectInProgress || reloadPreparationActive || pageCacheSuspended) return;
   const operationGeneration = workspaceOperationGeneration;
-  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
+  const workspaceIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
+  const attemptId = ++driveConnectAttemptSequence;
+  const operationIsCurrent = () => workspaceIsCurrent() && driveConnectAttemptSequence === attemptId;
+  const abortIfStale = (): boolean => {
+    if (!workspaceIsCurrent()) driveConnectInterrupted = true;
+    return !operationIsCurrent();
+  };
   driveConnectInProgress = true;
   renderAll();
   try {
     if (state.account && !state.authExpired) {
       const synchronized = await flushDriveAppData();
-      if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
+      if (abortIfStale()) return;
       if (!synchronized || state.appDataSync !== 'idle') {
         await appDataPendingQueue;
-        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
+        if (abortIfStale()) return;
         if (!window.confirm(strings().disconnectPendingConfirm)) return;
       }
       ++state.driveGeneration;
       try { await auth.disconnect(); } catch { /* local drafts and tabs remain intact */ }
-      if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
+      if (abortIfStale()) return;
       state.account = undefined; state.drive = undefined; state.folderId = undefined; state.folderName = undefined;
       driveChildrenByParent.clear(); driveExpandedFolders.clear(); driveLoadingFolders.clear(); driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
       state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
@@ -2859,81 +2887,68 @@ async function connectDrive(options: { source?: 'welcome' } = {}): Promise<void>
       renderAll(); await persistSessions(); return;
     }
     await flushDriveAppData();
-    if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
+    if (abortIfStale()) return;
     const generation = ++state.driveGeneration;
     const previousAccount = state.account;
     const account = await auth.connect();
-    if (!operationIsCurrent() || state.driveGeneration !== generation) { driveConnectInterrupted = true; return; }
+    if (abortIfStale() || state.driveGeneration !== generation) return;
     if (previousAccount && previousAccount.accountId !== account.accountId) {
       state.folderId = undefined; state.folderName = undefined;
     }
     const drive = new GoogleDriveApi(auth);
     state.account = account; state.drive = drive;
+    driveSessionInitializationInProgress = true;
     driveChildrenByParent.clear(); driveExpandedFolders.clear(); driveLoadingFolders.clear(); driveFolderErrors.clear(); driveChildRequestSequences.clear(); driveFileRows = [];
     state.authExpired = false;
     state.folderId = undefined; state.folderName = undefined;
     state.appDataStore = undefined; state.appDataSnapshot = undefined; state.appDataPending = undefined;
     state.appDataPendingChoice = undefined; state.appDataSync = 'idle'; state.appDataError = undefined;
     appDataUnknownOutcome = false;
-    const loaded = await loadDriveAppData(account.accountId, drive, generation, operationIsCurrent);
-    if (!operationIsCurrent() || !loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-      if (!operationIsCurrent()) driveConnectInterrupted = true;
-      return;
+    if (operationIsCurrent()) {
+      driveConnectInProgress = false;
+      renderAll();
     }
+    const loaded = await loadDriveAppData(account.accountId, drive, generation, operationIsCurrent);
+    if (abortIfStale() || !loaded || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
     const { snapshot, pending, pendingChoice } = loaded;
     if (snapshot.duplicateCount > 1) showMessage(strings().appDataDuplicates, 'error');
     const session = pending?.state ?? snapshot.state;
     if (pendingChoice === 'remote' && pending) {
       const restored = await restoreRemoteDriveAppData(snapshot, account.accountId, drive, generation, options.source !== 'welcome');
-      if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-        if (!operationIsCurrent()) driveConnectInterrupted = true;
-        return;
-      }
+      if (abortIfStale() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
     } else {
-    await setUpDriveFolderAfterConnect(account.accountId, drive, generation);
-    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-      if (!operationIsCurrent()) driveConnectInterrupted = true;
-      return;
-    }
-    const restored = options.source === 'welcome' || await restoreDriveSession(account.accountId, drive, generation, session);
-    if (!operationIsCurrent() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-      if (!operationIsCurrent()) driveConnectInterrupted = true;
-      return;
-    }
-    if (pending) {
-      if (sameDriveAppDataState(pending.state, snapshot.state)) {
-        if (!await clearPendingDriveAppData(account.accountId, drive, generation, pending.state)) {
-          throw new DriveAppDataError('unknown-outcome', 'The remote state matched, but the pending local record could not be cleared.');
+      await setUpDriveFolderAfterConnect(account.accountId, drive, generation);
+      if (abortIfStale() || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+      const restored = options.source === 'welcome' || await restoreDriveSession(account.accountId, drive, generation, session);
+      if (abortIfStale() || !restored || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
+      if (pending) {
+        if (sameDriveAppDataState(pending.state, snapshot.state)) {
+          if (!await clearPendingDriveAppData(account.accountId, drive, generation, pending.state)) {
+            throw new DriveAppDataError('unknown-outcome', 'The remote state matched, but the pending local record could not be cleared.');
+          }
+          if (abortIfStale()) return;
+          state.appDataSync = 'idle';
+        } else if (pendingChoice === 'local') {
+          state.appDataSync = 'pending';
+          await persistDriveAppData(driveWorkspaceState());
+          if (abortIfStale()) return;
         }
-        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
-        state.appDataSync = 'idle';
-      } else if (pendingChoice === 'local') {
-        state.appDataSync = 'pending';
-        await persistDriveAppData(driveWorkspaceState());
-        if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
       }
-    }
     }
     renderAll();
     if (state.activeStorage === 'drive') await renderExplorer();
-    if (!operationIsCurrent()) { driveConnectInterrupted = true; return; }
+    if (abortIfStale()) return;
     showMessage(account.emailAddress ? `Connected to Google Drive (${account.emailAddress}).` : 'Connected to Google Drive.');
     const importRecoveryMessage = await reconcilePendingDriveImports(account.accountId, drive, generation);
-    if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-      if (!operationIsCurrent()) driveConnectInterrupted = true;
-      return;
-    }
+    if (abortIfStale() || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
     if (importRecoveryMessage) {
       const hasUnresolved = (await readPendingDriveImports(account.accountId)).length > 0;
-      if (!operationIsCurrent() || !driveSessionIsCurrent(account.accountId, drive, generation)) {
-        if (!operationIsCurrent()) driveConnectInterrupted = true;
-        return;
-      }
+      if (abortIfStale() || !driveSessionIsCurrent(account.accountId, drive, generation)) return;
       showMessage(importRecoveryMessage, hasUnresolved ? 'error' : 'info');
     }
   } catch (error) {
-    if (!operationIsCurrent()) driveConnectInterrupted = true;
-    else {
+    if (!workspaceIsCurrent()) driveConnectInterrupted = true;
+    else if (driveConnectAttemptSequence === attemptId) {
       if (error instanceof DriveAppDataError) { state.appDataSync = 'error'; state.appDataError = error.message; }
       markDriveAuthState(error); showMessage(shortError(error), 'error');
     }
@@ -2941,6 +2956,7 @@ async function connectDrive(options: { source?: 'welcome' } = {}): Promise<void>
   finally {
     if (operationIsCurrent()) {
       driveConnectInProgress = false;
+      driveSessionInitializationInProgress = false;
       renderAll();
       if (deferredAppDataSync && state.appDataSync !== 'error' && navigator.onLine) {
         deferredAppDataSync = false;
@@ -2981,7 +2997,7 @@ async function createDriveFolder(alreadyConfirmed = false): Promise<void> {
     if (!isCurrent()) return;
     const verified = await drive.markLibraryRoot(folder);
     if (!isCurrent()) return;
-    await commitSelectedDriveFolder(verified);
+    if (!await commitSelectedDriveFolder(accountId, drive, generation, verified)) return;
     showMessage(state.locale === 'ja' ? 'GuitarDSL ライブラリを設定しました。' : 'Set up the GuitarDSL Library.');
   } catch (error) { if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); } }
   finally { activeDriveWorkflowOperations = Math.max(0, activeDriveWorkflowOperations - 1); }
@@ -3989,12 +4005,13 @@ async function restoreDriveSession(
   const snapshot = state.appDataSnapshot;
   if (!state.storageReady || !drive || !snapshot || !session || state.account?.accountId !== accountId) return false;
   const isCurrent = () => driveSessionIsCurrent(accountId, drive, generation) && state.appDataSnapshot === snapshot;
+  const restoreSequence = ++driveRestoreSequence;
   restoringDriveSession = true;
   try {
     const ids = new Set([...session.openDriveFileIds, ...(session.activeDriveFileId ? [session.activeDriveFileId] : [])]);
     for (const tab of [...state.tabs]) {
       if (tab.document.identity.storage !== 'drive' || tab.accountId !== accountId || ids.has(tab.document.identity.fileId)) continue;
-      await closeTab(tab);
+      await closeTab(tab, false, isCurrent);
       if (!isCurrent()) return false;
       if (state.tabs.includes(tab)) throw new Error('Could not preserve the draft while restoring Drive tabs.');
     }
@@ -4022,7 +4039,9 @@ async function restoreDriveSession(
     if (isCurrent()) { markDriveAuthState(error); showMessage(shortError(error), 'error'); }
     return false;
   }
-  finally { restoringDriveSession = false; }
+  finally {
+    if (driveRestoreSequence === restoreSequence) restoringDriveSession = false;
+  }
 }
 
 async function moveToDrive(tab = activeTab()): Promise<void> {
@@ -4517,8 +4536,8 @@ function contextActionsFor(element: HTMLElement, keyboard = false): WorkspaceMen
         return connectDrive();
       }
     }];
-    if (!libraryRootId) return [{ label: t.driveRootMenuCreate, run: () => {
-      if (!driveIsCurrent()) { staleMenuTarget(); return; }
+    if (!libraryRootId) return [{ label: t.driveRootMenuCreate, disabled: driveSessionInitializationInProgress, run: () => {
+      if (!driveIsCurrent() || driveSessionInitializationInProgress) { staleMenuTarget(); return; }
       return createDriveFolder();
     } }];
     return [
@@ -5548,7 +5567,7 @@ async function prepareForReload(): Promise<{ ok: true } | { ok: false; reason: s
     if (pageCacheSuspended) return blocked('ページ復帰後にもう一度確認してください。', 'Recheck the workspace after it resumes from browser history.');
     if (!baselineMatches()) return blocked('更新準備中に文書が変わりました。編集状態を確認してから再試行してください。', 'A document changed during update preparation. Review the edits and try again.');
     if (sourceEditor.hasPendingEdit()) return blocked('確定していない編集があります。入力を完了してから再試行してください。', 'An editor change is still pending. Finish the input and try again.');
-    if (moveToDriveInProgress || driveConnectInProgress || restoringDriveSession
+    if (moveToDriveInProgress || driveConnectInProgress || driveSessionInitializationInProgress || restoringDriveSession
       || activeDriveOperations > 0 || activeDriveListOperations > 0
       || activeDriveReadOperations > 0 || activeDriveWorkflowOperations > 0) {
       return blocked('Google Drive の処理が完了してから更新してください。', 'Wait for current Google Drive operations to finish before updating.');
@@ -5625,7 +5644,7 @@ pwaRuntime = registerPwa({
     if (sourceEditor.hasPendingEdit() || active && sourceEditor.getText() !== active.source.replace(/\r\n?/gu, '\n')) {
       return blocked('更新準備中にエディターの入力状態が変わりました。内容を確認してから再試行してください。', 'Editor input changed during update preparation.');
     }
-    if (moveToDriveInProgress || driveConnectInProgress || restoringDriveSession
+    if (moveToDriveInProgress || driveConnectInProgress || driveSessionInitializationInProgress || restoringDriveSession
       || activeDriveOperations > 0 || activeDriveListOperations > 0
       || activeDriveReadOperations > 0 || activeDriveWorkflowOperations > 0) {
       return blocked('更新準備中にGoogle Driveの処理が始まりました。処理完了後に再試行してください。', 'A Google Drive operation started during update preparation.');
