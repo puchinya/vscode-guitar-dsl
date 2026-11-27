@@ -1416,15 +1416,21 @@ async function holdDraftSave(page: Page, fail = false): Promise<void> {
   await page.evaluate(async (shouldFail: boolean) => {
     const { indexedDb } = await import('/src/storage/indexedDb.ts');
     const original = indexedDb.saveDraft.bind(indexedDb);
-    const target = window as unknown as { __draftSaveStarted?: boolean; __releaseDraftSave?: () => void };
+    const target = window as unknown as { __draftSaveStarted?: boolean; __draftSaveSettled?: boolean; __releaseDraftSave?: () => void };
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
+    target.__draftSaveStarted = false;
+    target.__draftSaveSettled = false;
     target.__releaseDraftSave = release;
     indexedDb.saveDraft = async (...args) => {
       target.__draftSaveStarted = true;
-      if (shouldFail) throw new DOMException('Injected quota failure', 'QuotaExceededError');
+      if (shouldFail) {
+        target.__draftSaveSettled = true;
+        throw new DOMException('Injected quota failure', 'QuotaExceededError');
+      }
       await gate;
-      return original(...args);
+      try { return await original(...args); }
+      finally { target.__draftSaveSettled = true; }
     };
   }, fail);
 }
@@ -3977,6 +3983,64 @@ test('coalesces a user close with remote tab restoration while the Drive draft s
     return row?.source;
   });
   expect(recovered).toBe(driveDraft);
+});
+
+test('keeps an account A tab when its delayed restore close finishes after switching to account B', async ({ page }) => {
+  const accountAState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-a', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-a'], activeDriveFileId: 'drive-a', recentDriveFileIds: ['drive-a']
+  };
+  const accountBState: TestAppDataState = {
+    schemaVersion: 1, selectedFolderId: 'folder-account-b', folderPrompt: 'completed',
+    openDriveFileIds: ['drive-b'], activeDriveFileId: 'drive-b', recentDriveFileIds: ['drive-b']
+  };
+  const drive = await installDriveBrowserMock(page, ['account-a', 'account-a', 'account-b'], {
+    appDataStates: { 'account-a': accountAState, 'account-b': accountBState },
+    driveFiles: [
+      { id: 'drive-a', name: 'Account A song.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-a'] },
+      { id: 'drive-b', name: 'Account B song.guitardsl', version: '1', modifiedTime: 't1', mimeType: 'text/plain', parents: ['folder-account-b'] }
+    ],
+    remoteFiles: {
+      'drive-a': { name: 'Account A song.guitardsl', source: 'title: Account A song\n', version: '1' },
+      'drive-b': { name: 'Account B song.guitardsl', source: 'title: Account B song\n', version: '1' }
+    }
+  });
+  await page.goto('/');
+  await performAccountAction(page);
+  const accountATab = page.getByRole('tab', { name: 'Account A song.guitardsl' });
+  await expect(accountATab).toBeVisible();
+  const accountADraft = 'title: Account A recoverable draft\n';
+  await page.getByRole('textbox', { name: 'GuitarDSL source editor' }).fill(accountADraft);
+  await expect(page.locator('#saved-state')).toHaveText('Local draft saved');
+
+  await performAccountAction(page);
+  drive.setAppDataState('account-a', { ...accountAState, openDriveFileIds: [], activeDriveFileId: null });
+  await holdDraftSave(page);
+  await page.locator('#connect-drive').click();
+  await page.getByRole('menuitem', { name: 'Connect to Google Drive', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __oauthRequestCount?: number }).__oauthRequestCount)).toBe(2);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftSaveStarted?: boolean }).__draftSaveStarted)).toBe(true);
+  await expect(accountATab).toBeVisible();
+
+  await performAccountAction(page);
+  await performAccountAction(page);
+  const accountBTab = page.getByRole('tab', { name: 'Account B song.guitardsl' });
+  await expect(accountBTab).toBeVisible();
+  await expect(accountBTab).toHaveAttribute('aria-selected', 'true');
+  const tabsBeforeACompletes = await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => WorkspaceTestTab[]
+  }).__guitarDslReadTabs?.().map(({ identity, accountId, source, revision }) => ({ identity, accountId, source, revision })));
+  const accountBStateBeforeACompletes = drive.getAppDataState('account-b');
+
+  await page.evaluate(() => (window as Window & { __releaseDraftSave?: () => void }).__releaseDraftSave?.());
+  await expect.poll(() => page.evaluate(() => (window as Window & { __draftSaveSettled?: boolean }).__draftSaveSettled)).toBe(true);
+  await expect(accountATab).toBeVisible();
+  await expect(accountBTab).toHaveAttribute('aria-selected', 'true');
+  const tabsAfterACompletes = await page.evaluate(() => (window as Window & {
+    __guitarDslReadTabs?: () => WorkspaceTestTab[]
+  }).__guitarDslReadTabs?.().map(({ identity, accountId, source, revision }) => ({ identity, accountId, source, revision })));
+  expect(tabsAfterACompletes).toEqual(tabsBeforeACompletes);
+  expect(drive.getAppDataState('account-b')).toEqual(accountBStateBeforeACompletes);
 });
 
 test('offline appData pending survives reload and choosing remote does not resend it', async ({ page }) => {

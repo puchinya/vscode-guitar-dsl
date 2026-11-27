@@ -2225,21 +2225,21 @@ async function openLocalDocument(identity: DocumentIdentity): Promise<void> {
   } catch (error) { if (workspaceOperationIsCurrent(operationGeneration)) showMessage(shortError(error), 'error'); }
 }
 
-function closeTab(tab: OpenTab, skipDraft = false): Promise<void> {
+function closeTab(tab: OpenTab, skipDraft = false, sessionIsCurrent: () => boolean = () => true): Promise<void> {
   const inFlight = closingTabs.get(tab);
   if (inFlight) return inFlight;
-  const closePromise = closeTabNow(tab, skipDraft).finally(() => {
+  const closePromise = closeTabNow(tab, skipDraft, sessionIsCurrent).finally(() => {
     if (closingTabs.get(tab) === closePromise) closingTabs.delete(tab);
   });
   closingTabs.set(tab, closePromise);
   return closePromise;
 }
 
-async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
+async function closeTabNow(tab: OpenTab, skipDraft = false, sessionIsCurrent: () => boolean = () => true): Promise<void> {
   const operationGeneration = workspaceOperationGeneration;
-  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration);
+  const operationIsCurrent = () => workspaceOperationIsCurrent(operationGeneration) && sessionIsCurrent();
   const key = tabKey(tab);
-  if (!state.tabs.includes(tab)) return;
+  if (!operationIsCurrent() || !state.tabs.includes(tab)) return;
   if (state.activeKey === key && !editorReadyForDocumentChange()) return;
   if (progressionAudioLease.activeSessionUri === activeIdentityLabel(tab)) await stopCandidateAudition();
   if (!operationIsCurrent()) return;
@@ -2258,7 +2258,7 @@ async function closeTabNow(tab: OpenTab, skipDraft = false): Promise<void> {
     if (!operationIsCurrent()) return;
   }
   const index = state.tabs.indexOf(tab);
-  if (index < 0) return;
+  if (index < 0 || !operationIsCurrent()) return;
   state.tabs.splice(index, 1);
   derivedScoreCache.clear(activeIdentityLabel(tab));
   if (state.activeKey === key) {
@@ -4011,7 +4011,7 @@ async function restoreDriveSession(
     const ids = new Set([...session.openDriveFileIds, ...(session.activeDriveFileId ? [session.activeDriveFileId] : [])]);
     for (const tab of [...state.tabs]) {
       if (tab.document.identity.storage !== 'drive' || tab.accountId !== accountId || ids.has(tab.document.identity.fileId)) continue;
-      await closeTab(tab);
+      await closeTab(tab, false, isCurrent);
       if (!isCurrent()) return false;
       if (state.tabs.includes(tab)) throw new Error('Could not preserve the draft while restoring Drive tabs.');
     }
